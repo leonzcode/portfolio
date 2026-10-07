@@ -177,9 +177,8 @@ void main() {
 #else
     shadow = shadowHard(sc);
 #endif
-    // past the map, fall back on the light level
-    float edge = max(abs(sc.x - 0.5), abs(sc.y - 0.5)) * 2.0;
-    shadow = mix(shadow, smoothstep(0.85, 0.95, sky), linstep(0.85, 1.0, edge));
+    // past the shadows' reach, fall back on the light level
+    shadow = mix(shadow, smoothstep(0.85, 0.95, sky), shadowFade(sc));
   }
 #else
   // no shadow map: open sky is sunlit, anything under cover is not (vanilla's way)
@@ -288,6 +287,7 @@ uniform vec3 uAmbUp, uAmbSide, uAmbDown, uSunC;
 uniform float uDayK;
 uniform float uAO;          // the corners' shade (Shader Options: Ambient Occlusion)
 uniform float uChunkFade;   // a column fading in (Chunk Fade)
+uniform vec4 uShadowEye;    // the shadow map's texel size in blocks (w; glsl.js SHADOW)
 layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA; layout(location = 2) in uvec4 aL; layout(location = 3) in uvec4 aC;
 #define aPos vec4(aPos)
 #define aA vec4(aA)
@@ -373,9 +373,10 @@ void main() {
   // and never needs working out per pixel.
   float NoL = plant ? 1.0 : dot(Ng, Lt);
   float kF = (plant ? sat(Lt.y * 0.5 + 0.5) : sat(NoL)) + glow;
-  // the shadow map's view of this point, nudged off the face; squeezed per pixel, since the squeeze is not straight
+  // the shadow map's view of this point, nudged off the face (straight, so it is the same at every pixel between the corners)
   vec4 c = uShadowMat * world;
-  vec3 off = mat3(uShadowMat) * (Ng * 0.25 * clamp(0.12 + 0.01 * dist, 0.0, 1.0) * (2.0 - sat(NoL)));
+  // (glsl.js shadowNudge: a texel or two, more the more the face turns from the light)
+  vec3 off = mat3(uShadowMat) * (Ng * uShadowEye.w * (0.6 + 1.4 * (1.0 - sat(plant ? 1.0 : NoL))));
   vShadowP = vec4(c.xyz + off, smoothstep(0.85, 0.95, sky) + (wet ? 2.0 : 0.0));
 #if defined(CUTOUT) || defined(TRANSLUCENT)
   vSun = sun * keep;
@@ -459,24 +460,21 @@ void main() {
 #if defined(CUTOUT) || defined(TRANSLUCENT)
     if (!front) raw -= 2.0 * vShadowO;
 #endif
-    vec3 sc = raw;
-    sc.xy = distort(sc.xy);
-    sc.z *= 0.2;
-    sc = sc * 0.5 + 0.5;
+    vec3 sc = vec3(raw.xy, raw.z * 0.2) * 0.5 + 0.5;
     bool wet = vShadowP.w > 1.5;
     float guess = wet ? vShadowP.w - 2.0 : vShadowP.w;
+    float reach = shadowReach(raw.xy);
 #if SHADOWS > 1
-    // four taps within 16 blocks of you, where a shadow's edge is big enough to see how soft it is;
-    // one further out, where the squeezed map's texels are several times larger and one is as soft
-    float shadow = dot(raw.xy, raw.xy) < 0.0625 ? shadowSoft(sc, 0.0, uShadowSoft) : shadowHard(sc);
+    // the soft taps within a quarter of the shadow distance of you, where a shadow's edge is big
+    // enough to see how soft it is; one further out (it blends four texels by itself)
+    float shadow = reach < 0.25 ? shadowSoft(sc, 0.0, uShadowSoft) : shadowHard(sc);
 #elif SHADOWS > 0
     float shadow = shadowHard(sc);
 #else
     float shadow = guess;
 #endif
-    // past the map, the light level's guess
-    float edge = max(abs(sc.x - 0.5), abs(sc.y - 0.5)) * 2.0;
-    shadow = mix(shadow, guess, linstep(0.85, 1.0, edge));
+    // past the shadows' reach, the light level's guess
+    shadow = mix(shadow, guess, linstep(0.82, 1.0, reach));
     // your own body, from its small map round where you stand (render/shadows.js)
     if (uBody.w > 0.0) {
       vec2 b = raw.xy * uBody.x + uBody.yz;
@@ -518,16 +516,21 @@ void main() {
   vec4 info = layer < textureSize(uLayerInfo, 0).x ? texelFetch(uLayerInfo, ivec2(layer, 0), 0) : vec4(0.0);
   o = vec4(sss, emit > 0.02 ? 1.0 : 0.0, min(info.x, 255.0) / 255.0, min(info.y, 255.0) / 255.0);
 }`;
-export function bakeLayerMaterials(r, specTex, layerInfo) {
+// its shader, made apart so it can be built in the background before it is first wanted (render/looks.js)
+export function layerMatMaterial(specTex, layerInfo) {
   const layers = specTex && specTex.image ? specTex.image.depth : 0;
-  const rows = Math.max(1, Math.ceil(layers / 256));
-  const rt = new THREE.WebGLRenderTarget(256, rows, { type: THREE.UnsignedByteType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false });
-  const mat = new THREE.RawShaderMaterial({
+  return new THREE.RawShaderMaterial({
     glslVersion: THREE.GLSL3,
     vertexShader: 'precision highp float;\nin vec3 position;\nvoid main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
     fragmentShader: 'precision highp float; precision highp int; precision highp sampler2DArray;\n' + LAYER_MAT_FS,
     uniforms: { uSpecMap: { value: specTex }, uLayerInfo: { value: layerInfo }, uLayers: { value: layers } }, depthTest: false, depthWrite: false,
   });
+}
+export function bakeLayerMaterials(r, specTex, layerInfo, built) {
+  const layers = specTex && specTex.image ? specTex.image.depth : 0;
+  const rows = Math.max(1, Math.ceil(layers / 256));
+  const rt = new THREE.WebGLRenderTarget(256, rows, { type: THREE.UnsignedByteType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false });
+  const mat = built || layerMatMaterial(specTex, layerInfo);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
   const mesh = new THREE.Mesh(geo, mat);
@@ -543,20 +546,18 @@ export function bakeLayerMaterials(r, specTex, layerInfo) {
 }
 
 const SHADOW_VS = /* glsl */`
-uniform mat4 modelMatrix, uShadowMat;
+// (uShadowDraw: the view of the map being drawn, which is not the one the shaders read until it is done)
+uniform mat4 modelMatrix, uShadowDraw;
 layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA; layout(location = 2) in uvec4 aL;
 #define aPos vec4(aPos)
 #define aA vec4(aA)
 #define aL vec4(aL)
 uniform vec3 uChunk;
 out vec2 vUv; flat out float vLayer;
-const float SHADOW_B = 0.85;
 void main() {
   // still: the map is kept for many frames, so leaves caught mid-sway would jump each time it is drawn again
   vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0) + uChunk, 1.0);
-  vec4 c = uShadowMat * world;
-  float f = length(c.xy) * SHADOW_B + (1.0 - SHADOW_B);
-  c.xy /= f;
+  vec4 c = uShadowDraw * world;
   c.z *= 0.2;
   vUv = aA.xy / 16.0;
   vLayer = aPos.w;
@@ -591,7 +592,8 @@ export function makeLayerInfo(manifest) {
 export function lightDefines(q) {
   q = q || {};
   const cheap = q.ldr && !q.shadows;
-  return { CLOUD_SHADOW: q.cloudShadow !== undefined ? q.cloudShadow : cheap ? 1 : 2, CLOUD_Y: q.ldr ? '250.0' : '265.0' };
+  // (and how many taps a soft shadow takes: glsl.js shadowSoft)
+  return { CLOUD_SHADOW: q.cloudShadow !== undefined ? q.cloudShadow : cheap ? 1 : 2, CLOUD_Y: q.ldr ? '250.0' : '265.0', SHADOW_TAPS: q.shadowTaps || 4 };
 }
 
 export function makeMaterials(shared, q) {

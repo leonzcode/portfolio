@@ -268,8 +268,7 @@ void main() {
 #else
     shadow = shadowHard(sc);
 #endif
-    float edge = max(abs(sc.x - 0.5), abs(sc.y - 0.5)) * 2.0;
-    shadow = mix(shadow, smoothstep(0.85, 0.95, sky), linstep(0.85, 1.0, edge));
+    shadow = mix(shadow, smoothstep(0.85, 0.95, sky), shadowFade(sc));
   }
 #else
   shadow = smoothstep(0.8, 0.95, sky) * step(0.0, NoL);
@@ -325,7 +324,6 @@ uniform mat4 uParts[6];
 uniform int uShow;
 in vec3 position; in vec2 uv; in vec2 aPart;
 out vec2 vUv; flat out int vLayer;
-const float SHADOW_B = 0.85;
 #ifdef ARMOR
 uniform vec4 uPiece[5];
 uniform vec2 uSheet;

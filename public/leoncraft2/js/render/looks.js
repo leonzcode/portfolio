@@ -1,23 +1,23 @@
 /* ---------------------------------------------------------------------------
-   Leoncraft 2 - Shaders ON or OFF, and the shader's own settings, changed
-   while you play.
+   Leoncraft 2 - the Shaders setting (Off, Low, Medium, High, RIP Computer),
+   changed while you play.
 
-   Shaders OFF is the game as it draws itself (render/vanilla.js). Shaders ON
-   is our shader, in one of two pipelines: the light one (everything lit at
-   the corners and drawn in one pass straight to the screen) or, when a part
-   that needs the whole picture is on (bloom, light shafts, volumetric
-   clouds, screen-space reflections, normal maps), the full chain
-   (render/post.js) with the light worked out per pixel.
+   Off is the game as it draws itself (render/vanilla.js). The others are our
+   shader, in one of two pipelines: the light one (Low and Medium: everything
+   lit at the corners and drawn in one pass straight to the screen) or the
+   full chain (High and RIP Computer: render/post.js, the light worked out per
+   pixel, with bloom, light shafts, volumetric clouds, reflections of the
+   world in the water and normal maps).
 
-   The Shader Options screen (ui/video.js) edits a plain settings object
-   (SHADER_DEFAULTS); lookOf() turns it into what the renderer needs, and
-   applyLook() puts that into effect without reloading anything:
+   Each level is a plain settings object (SHADER_DEFAULTS and LEVEL_SETTINGS);
+   lookOf() turns it into what the renderer needs, and applyLook() puts that
+   into effect without reloading anything:
 
      - every material the world is drawn with keeps its identity (meshes all
        over the game hold on to them) and only takes the new shader code, so
        nothing has to find its material again; three.js builds the new
        programs the next time each is drawn
-     - the parts only one look uses (the atmosphere tables, the Fast look's
+     - the parts only one look uses (the atmosphere tables, the Off look's
        lightmap and sky, the post chain, the shadow maps) are made the first
        time they are wanted and kept, so switching back is quick
      - a part that is off is not drawn at all, and what it would cost is
@@ -29,7 +29,7 @@
 --------------------------------------------------------------------------- */
 import { Sky, FullScreen } from './sky.js?v=21';
 import { Post } from './post.js?v=21';
-import { makeMaterials } from './materials.js?v=21';
+import { makeMaterials, layerMatMaterial } from './materials.js?v=21';
 import { makeWaterMaterial } from './water.js?v=21';
 import { makeNoise3DAsync, makeNoise3DGPU } from './noisetex.js?v=21';
 import { makeLdrSky } from './ldrsky.js?v=21';
@@ -40,10 +40,9 @@ import { makeToneLut } from './glsl.js?v=21';
 const THREE = window.THREE;
 
 /* ---- the shader's settings ----
-   The defaults are the Medium preset, which is the look the game had before
-   these settings existed. */
+   The defaults are Medium, the look the game had before the levels. */
 export const SHADER_DEFAULTS = {
-  shadows: 'medium',         // off low medium high: how sharp the sun's shadow map is
+  shadows: 'medium',         // off low medium high ultra: how sharp the sun's shadow map is
   shadowDistance: 64,        // blocks the shadows reach
   shadowSoftness: 0.5,       // 0 hard edges, 1 the softest
   sunColour: 'natural',      // warm natural cool
@@ -56,50 +55,48 @@ export const SHADER_DEFAULTS = {
   wavingPlants: 'high',      // off low high: grass, flowers, crops, kelp
   wavingLeaves: 'high',      // off low high
   bloom: 'off',              // off low high
-  lightShafts: 'off',        // off low high
+  lightShafts: 'off',        // off low high max
   ao: 1,                     // ambient occlusion strength, 0 - 1
   fog: 1,                    // 0 none - 2 thick
   exposure: 0,               // stops brighter or darker, -2 - 2
   contrast: 1,               // 0.5 - 1.5
   saturation: 1,             // 0 grey - 2
   clouds: 'blocks',          // blocks volumetric off (blocks follow Clouds in Video Settings)
+  cloudDetail: 'normal',     // normal max: how finely the volumetric clouds are marched
   cloudShadows: false,
   normalMaps: false,
   heldLight: true,           // a torch in your hand lights what is round you
   antialiasing: 'off',       // off fxaa (the full chain only)
   tone: 'agx',               // agx aces reinhard: the tone curve from the scene's light to the screen
 };
-export const SHADER_PRESETS = {
-  low: { shadows: 'off', wavingPlants: 'low', wavingLeaves: 'off', waves: 'off' },
+/* The levels of the one Shaders button in Video Settings (Off is the game's
+   own look). Low and Medium are the light pipeline; High and RIP Computer
+   bring back the full look from before the shaders were lightened: bloom,
+   light shafts, volumetric clouds and their shadows, the world in the water,
+   normal maps and soft shadows far out. RIP Computer has every part at its
+   most. */
+export const SHADER_LEVELS = ['off', 'low', 'medium', 'high', 'rip'];
+export const LEVEL_SETTINGS = {
+  low: { shadows: 'low', shadowDistance: 48, shadowSoftness: 0, wavingPlants: 'low', wavingLeaves: 'off', waves: 'off' },
   medium: {},
-  high: { shadows: 'high', shadowDistance: 96, shadowSoftness: 0.6 },
-  ultra: { shadows: 'high', shadowDistance: 128, shadowSoftness: 0.6, bloom: 'low', lightShafts: 'low', clouds: 'volumetric', cloudShadows: true,
-    water: 'reflections', reflections: 'high', normalMaps: true },
+  high: { shadows: 'high', shadowDistance: 96, shadowSoftness: 0.6, bloom: 'low', lightShafts: 'low', clouds: 'volumetric', cloudShadows: true,
+    water: 'reflections', reflections: 'low', normalMaps: true },
+  rip: { shadows: 'ultra', shadowDistance: 128, shadowSoftness: 0.7, bloom: 'high', lightShafts: 'max', clouds: 'volumetric', cloudDetail: 'max', cloudShadows: true,
+    water: 'reflections', reflections: 'max', normalMaps: true },
 };
-export const SHADER_PRESET_NAMES = ['low', 'medium', 'high', 'ultra'];
 
-// the settings in effect: a preset's, or the player's own (Custom)
-export function shaderSettings(preset, own) {
-  if (preset === 'custom') {
-    const s = Object.assign({}, SHADER_DEFAULTS, own || {});
-    // (Waves was ON or OFF before it had levels)
-    if (s.waves === true) s.waves = 'high'; else if (s.waves === false) s.waves = 'off';
-    return s;
-  }
-  return Object.assign({}, SHADER_DEFAULTS, SHADER_PRESETS[preset] || {});
-}
-// which preset these settings are (or 'custom')
-export function presetOf(s) {
-  for (const name of SHADER_PRESET_NAMES) {
-    const p = shaderSettings(name);
-    let same = true;
-    for (const k in SHADER_DEFAULTS) if (p[k] !== s[k]) { same = false; break; }
-    if (same) return name;
-  }
-  return 'custom';
+// the settings of a level (Off has none: lookOf(_, false))
+export function shaderSettings(level) {
+  return Object.assign({}, SHADER_DEFAULTS, LEVEL_SETTINGS[level] || {});
 }
 
-const SHADOW_RES = { low: 512, medium: 1024, high: 2048 };
+/* The shadow map, by its sharpness: texels a side, how many frames a new one
+   is spread over, and how many taps a soft edge takes. The map is an even
+   grid now (render/shadows.js), a texel about a pixel of a block's texture
+   at every level but Low. */
+const SHADOW_RES = { low: 1024, medium: 2048, high: 3072, ultra: 4096 };
+const SHADOW_SLICES = { low: 8, medium: 6, high: 3, ultra: 1 };
+const SHADOW_TAPS = { low: 4, medium: 4, high: 8, ultra: 16 };
 const WAVE = { off: 0, low: 0.5, high: 1 };
 const SUN_TINT = { warm: [1.12, 0.97, 0.78], natural: [1.06, 1.0, 0.88], cool: [0.98, 1.0, 1.04] };
 
@@ -126,7 +123,8 @@ export function lookOf(s, on) {
   return {
     vanilla: false, ldr: !full,
     shadows: s.shadows === 'off' ? 0 : s.shadowSoftness > 0 ? 2 : 1,
-    shadowRes: SHADOW_RES[s.shadows] || 1024, shadowDist: s.shadowDistance,
+    shadowRes: SHADOW_RES[s.shadows] || 2048, shadowDist: s.shadowDistance,
+    shadowSlices: SHADOW_SLICES[s.shadows] || 6, shadowTaps: SHADOW_TAPS[s.shadows] || 4,
     shadowSoft: 0.4 + 2.4 * s.shadowSoftness,
     normals: full && !!s.normalMaps,
     cloudShadow: s.cloudShadows ? 2 : 0,
@@ -134,11 +132,12 @@ export function lookOf(s, on) {
     uploadMs: 3, plantDist: 96, leafInDist: 48, plantShadows: false, leafInShadows: false,
     wind: plants + leaves > 0, wave: [plants, leaves],
     water: s.water === 'vanilla' ? 0 : 1, waves: s.waves === 'off' ? false : s.waves === 'low' ? 'low' : true,
-    ssrSteps: s.water === 'reflections' ? (s.reflections === 'high' ? 28 : 12) : 0,
+    ssrSteps: s.water === 'reflections' ? ({ low: 12, high: 28, max: 48 }[s.reflections] || 12) : 0,
     bloom: s.bloom !== 'off', bloomMix: s.bloom === 'high' ? 0.08 : 0.045,
-    // (High: finer, and the beams stronger, so the level shows)
-    vlSteps: s.lightShafts === 'off' ? 0 : s.lightShafts === 'high' ? 20 : 10,
-    vlStrength: s.lightShafts === 'high' ? 1.5 : 1,
+    // (High and above: finer, and the beams stronger, so the level shows)
+    vlSteps: { off: 0, low: 10, high: 20, max: 32 }[s.lightShafts] || 0,
+    vlStrength: s.lightShafts === 'low' ? 1 : 1.5,
+    cloudSteps: s.cloudDetail === 'max' ? 32 : 20,
     volumetric: s.clouds === 'volumetric', shaderClouds: s.clouds,
     fxaa: s.antialiasing === 'fxaa',
     ao: s.ao, fog: s.fog, exposure: s.exposure, contrast: s.contrast, saturation: s.saturation, tone: s.tone || 'agx',
@@ -162,7 +161,7 @@ export function morph(dst, src) {
 
 // the key of everything that changes shader code: a change in any of it rebuilds the materials
 function codeKey(o) {
-  return [o.vanilla, o.ldr, o.shadows, o.normals, o.cloudShadow, o.wind, o.water, o.waves, o.ssrSteps, o.rgss, o.vlSteps > 0 ? o.vlSteps : 0, !!o.improvedTransparency].join(',');
+  return [o.vanilla, o.ldr, o.shadows, o.shadowTaps || 4, o.normals, o.cloudShadow, o.wind, o.water, o.waves, o.ssrSteps, o.rgss, o.vlSteps > 0 ? o.vlSteps : 0, o.ldr ? 0 : o.cloudSteps || 20, !!o.improvedTransparency].join(',');
 }
 
 /* ---- put a look into effect ----
@@ -236,10 +235,34 @@ export function applyLook(R, look, first) {
     step();
   });
   // (and the full chain's cloud noise, made in a worker the first time)
-  Promise.all([compiled, prep.noise]).then(done, done);
+  // (and the atmosphere's tables drawn the first time, a part a frame, before the look takes over)
+  Promise.all([compiled, prep.noise]).then(() => firstSky(R, token)).then(done, done);
   // a browser that cannot say when they are ready: after a while all the same
   setTimeout(done, 10000);
   return true;
+}
+
+/* The atmosphere's tables the first time a shader look is chosen while
+   playing, drawn before it takes over: the two that never change, then the
+   sky, the fog and the light table a frame each, and the light table read
+   back without waiting for it (the first read had waited for all of that to
+   be drawn, a fifth of a second and more). */
+function firstSky(R, token) {
+  const S = R.sky, U = R.U;
+  if (!S || S.lightRead) return Promise.resolve();
+  return new Promise(res => {
+    let k = -1;
+    const step = () => {
+      if (R.lookToken !== token) return res();
+      if (k < 0) S.init();
+      else if (k < 3) S.part(k, U.uSunDir.value, U.uMoonDir.value, R.camera.position.y, true);
+      else { S.readLight(); if (S.lightRead) return res(); }
+      R.r.setRenderTarget(null);
+      k = Math.min(k + 1, 3);
+      requestAnimationFrame(step);
+    };
+    step();
+  });
 }
 
 /* A look given up while it was still being built (another chosen before it
@@ -302,7 +325,11 @@ function noise3D(R) {
    with the list of what the graphics card is to compile. */
 function prepare(R, o) {
   const r = R.r, U = R.U, compile = [];
-  if (!o.vanilla && !R.sky) R.sky = new Sky(r);
+  // (the atmosphere's tables drawn only once their shaders are built: finishLook)
+  if (!o.vanilla && !R.sky) R.sky = new Sky(r, true);
+  if (!o.vanilla && !R.sky.ready) compile.push(...R.sky.materials);
+  // (and the light pipeline's table of what each texture is made of, worked out at its first frame: renderer.js)
+  if (!o.vanilla && o.ldr && !R.layerMatDone && !R.layerMatMat) { R.layerMatMat = layerMatMaterial(U.uSpecMap.value, U.uLayerInfo.value); compile.push(R.layerMatMat); }
   if (o.vanilla && !R._vanilla) R._vanilla = new Vanilla(R, R.textures);
   if (o.vanilla) for (const fs of [R._vanilla.skyFS]) compile.push(fs.mesh.material);
   if (o.vanilla) compile.push(R._vanilla.cloudMesh.depth.material, R._vanilla.cloudMesh.colour.material);
@@ -346,8 +373,8 @@ function finishLook(R, look, first, prep) {
   const wasLdr = R.ldr;
   R.ldr = !!o.ldr;
 
-  // the sun's shadow maps: a new pair when the size changes (token ones with no shadows)
-  const res = o.shadows ? o.shadowRes || 1024 : 4;
+  // the sun's shadow maps: a new pair when the size changes (token ones with no shadows; never more than the graphics card takes)
+  const res = o.shadows ? Math.min(o.shadowRes || 2048, r.capabilities.maxTextureSize || 4096) : 4;
   if (!R.shadows || R.shadows.res !== res) {
     const old = R.shadows;
     R.shadows = new ShadowMaps(R, res);
@@ -363,6 +390,7 @@ function finishLook(R, look, first, prep) {
     // the atmosphere and what is worked out from it
     if (!R.sky) R.sky = new Sky(r);
     const S = R.sky;
+    S.init();
     U.uAmbient.value = S.amb.texture; U.uView.value = S.view.texture; U.uTrans.value = S.trans.texture; U.uFogTab.value = S.fog.texture;
     const t = o.sunTint || SUN_TINT.natural;
     S.uniforms.uWarm.value.set(t[0], t[1], t[2]);
