@@ -57,6 +57,7 @@ export const EFFECTS = {
   weaving: E(0x78695A, 'bad', 'Weaving'),
   oozing: E(0x99FFA3, 'bad', 'Oozing'),
   infested: E(0x8C9B8C, 'bad', 'Infested'),
+  breath_of_the_nautilus: E(0x00FFFF, 'good', 'Breath of the Nautilus'),
 };
 /* each effect's picture: the gui sheet mob_effect.png (tools/leoncraft2/build_effects.py), 18 x 18,
    eight to a row in this order (the same list as the tool's) */

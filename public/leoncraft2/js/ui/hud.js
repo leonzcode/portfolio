@@ -19,10 +19,10 @@
      hud.setDebug(leftLines, rightLines); // or hud.setDebug(null) to hide F3
      hud.crosshair = false;               // third person
 --------------------------------------------------------------------------- */
-import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=25';
-import { drawBossBar } from '../dim/bossbar.js?v=25';
-import { BLOCKS, B } from '../blocks.js?v=25';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET } from '../effects.js?v=25';
+import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=26';
+import { drawBossBar } from '../dim/bossbar.js?v=26';
+import { BLOCKS, B } from '../blocks.js?v=26';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET } from '../effects.js?v=26';
 
 const TICK = 50;
 

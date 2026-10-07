@@ -19,43 +19,43 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=25';
-import { PathFinder, Navigation } from './path.js?v=25';
-import { Particles } from './particles.js?v=25';
-import { Ambient } from './ambient.js?v=25';
-import { Living, Mob, wrap, DEG } from './entity.js?v=25';
-import { TYPES } from './mobs.js?v=25';
-import './projectiles.js?v=25';
-import { placeBoat } from './boat.js?v=25';
-import './mobs2.js?v=25';
-import './mobs3.js?v=25';
-import './mobs4.js?v=25';
-import { wandererTick } from './merchant.js?v=25';
-import { tableBooks } from './tablebook.js?v=25';
-import { explode } from './explosion.js?v=25';
-import { splitXp } from './xporb.js?v=25';
-import { placeMinecart, isRail, Minecart } from './minecart.js?v=25';
-import { CART_ITEMS } from './carts.js?v=25';
-import { fallFrom, FALLS, free } from './fallingblock.js?v=25';
-import { Spawner, DESPAWN } from './spawner.js?v=25';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=25';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=25';
-import { EntityMeshes } from '../render/entitymesh.js?v=25';
-import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=25';
-import { breakAt } from '../place.js?v=25';
-import { dropOf } from '../survival.js?v=25';
-import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=25';
-import { Combat } from '../combat/combat.js?v=25';
-import './nether.js?v=25';
+import { Terrain } from './terrain.js?v=26';
+import { PathFinder, Navigation } from './path.js?v=26';
+import { Particles } from './particles.js?v=26';
+import { Ambient } from './ambient.js?v=26';
+import { Living, Mob, wrap, DEG } from './entity.js?v=26';
+import { TYPES } from './mobs.js?v=26';
+import './projectiles.js?v=26';
+import { placeBoat } from './boat.js?v=26';
+import './mobs2.js?v=26';
+import './mobs3.js?v=26';
+import './mobs4.js?v=26';
+import { wandererTick } from './merchant.js?v=26';
+import { tableBooks } from './tablebook.js?v=26';
+import { explode } from './explosion.js?v=26';
+import { splitXp } from './xporb.js?v=26';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=26';
+import { CART_ITEMS } from './carts.js?v=26';
+import { fallFrom, FALLS, free } from './fallingblock.js?v=26';
+import { Spawner, DESPAWN } from './spawner.js?v=26';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=26';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=26';
+import { EntityMeshes } from '../render/entitymesh.js?v=26';
+import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=26';
+import { breakAt } from '../place.js?v=26';
+import { dropOf } from '../survival.js?v=26';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=26';
+import { Combat } from '../combat/combat.js?v=26';
+import './nether.js?v=26';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
-import './mobs5.js?v=25';
-import './mobs6.js?v=25';
-import './mobs7.js?v=25';
-import { DIMS } from '../dims.js?v=25';
-import { armorLayers } from './armorlayer.js?v=25';
-import { MobHeld } from '../render/mobheld.js?v=25';
-import { setSpawnerMob } from '../struct/spawners.js?v=25';
-import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=25';
+import './mobs5.js?v=26';
+import './mobs6.js?v=26';
+import './mobs7.js?v=26';
+import { DIMS } from '../dims.js?v=26';
+import { armorLayers } from './armorlayer.js?v=26';
+import { MobHeld } from '../render/mobheld.js?v=26';
+import { setSpawnerMob } from '../struct/spawners.js?v=26';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=26';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -1076,4 +1076,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=25';
+import { rayBox } from './terrain.js?v=26';

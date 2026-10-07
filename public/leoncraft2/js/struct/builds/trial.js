@@ -22,8 +22,8 @@
    highest. Randomness comes from ctx.r in the plan and from a hash of the
    frame position in drawing, so chunks agree; g.r is left to the chests.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=25';
-import { hash32 } from '../rand.js?v=25';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=26';
+import { hash32 } from '../rand.js?v=26';
 
 export const PLANS = {};
 
@@ -38,6 +38,13 @@ const SIZE = { atrium: 25, combat: 17, vault: 11, supply: 11, cross: 9 };
 const HEIGHT = { atrium: 19, combat: 11, vault: 8, supply: 7, cross: 7 };
 
 /* ------------------------------------------------------------ drawing -- */
+// a dispenser holding one of the chambers' dispenser tables (struct/lootdata.js), facing f
+function dispenser(g, x, y, z, f, table) {
+  g.set(x, y, z, 'dispenser', { f });
+  if (!g.inside(x, y, z)) return;
+  const [X, Y, Z] = g.world(x, y, z);
+  g.wr.chest(X, Y, Z, table, String((X * 3129871) ^ (Z * 116129781) ^ Y));
+}
 // the shell every room shares: tuff brick walls, pilasters, a ceiling, doors
 // 5 wide and 5 high in the middle of each side listed in o.doors
 function shell(g, o) {
@@ -112,6 +119,17 @@ function drawCorridor(g, o) {
     const z = L >> 1;
     g.set(5, 1, z, 'air');
     g.chest(5, 1, z, 'trial_chambers/corridor', WEST);
+  }
+  /* now and then an arrow trap: a string across the corridor between two hooks, and in the wall over the
+     west hook's block a dispenser of arrows that fires across at head height when it is tripped (sim/tripwire.js) */
+  if (o.trap && L > 8) {
+    let z = 3 + Math.floor(h01(o.s, o.k, 0, 9) * (L - 6));
+    if (z % 6 === 0 || (z % 6 >= 2 && z % 6 <= 3)) z = z - (z % 6) + 4;
+    if (z >= L - 2) return;
+    g.set(1, 1, z, 'tripwire_hook', { f: EAST });
+    for (let x = 2; x <= 4; x++) g.set(x, 1, z, 'tripwire');
+    g.set(5, 1, z, 'tripwire_hook', { f: WEST });
+    dispenser(g, 0, 2, z, EAST, 'dispensers/trial_chambers/corridor');
   }
 }
 
@@ -202,6 +220,11 @@ function drawCombat(g, o) {
   for (const [x, z] of o.spawners) { g.set(x, 1, z, 'chiseled_tuff'); g.set(x, 2, z, 'trial_spawner'); }
   // pots on the walk
   for (const [x, z] of [[1, 1], [w - 2, 1], [1, d - 2], [w - 2, d - 2]]) if (h01(o.s, x, z, 3) < 0.7) g.set(x, 2, z, 'decorated_pot');
+  // two dispensers in the walls over the walk, facing in, with the chambers' things to throw
+  for (const [x, z, f] of [[0, m, EAST], [w - 1, m, WEST], [m, 0, SOUTH], [m, d - 1, NORTH]]) {
+    if (o.doors[f === EAST ? WEST : f === WEST ? EAST : f === SOUTH ? NORTH : SOUTH]) continue;
+    if (h01(o.s, x, z, 4) < 0.5) dispenser(g, x, 3, z, f, 'dispensers/trial_chambers/chamber');
+  }
 }
 
 // a vault room: two vaults on a dais behind copper bars, a spawner on guard
@@ -319,9 +342,9 @@ PLANS.trial_chambers = ctx => {
     const start = (alongX ? lx : lz) + half(lo) + 1, end = (alongX ? centre(hi)[0] : centre(hi)[1]) - half(hi) - 1;
     const L = end - start + 1;
     if (L <= 0) return;
-    const chest = r.nextFloat() < 0.35;
-    if (alongX) out.push(new Build(TYPE, start, Y, lz - (CW >> 1), CW, CH, L, 1, drawCorridor, { s: salt, k, chest }));
-    else out.push(new Build(TYPE, lx - (CW >> 1), Y, start, CW, CH, L, 0, drawCorridor, { s: salt, k, chest }));
+    const chest = r.nextFloat() < 0.35, trap = !chest && h01(salt, k, 1, 8) < 0.3;
+    if (alongX) out.push(new Build(TYPE, start, Y, lz - (CW >> 1), CW, CH, L, 1, drawCorridor, { s: salt, k, chest, trap }));
+    else out.push(new Build(TYPE, lx - (CW >> 1), Y, start, CW, CH, L, 0, drawCorridor, { s: salt, k, chest, trap }));
   });
 
   // rooms
@@ -359,5 +382,8 @@ function shift(g, dy) {
     get: (x, y, z) => g.get(x, y + dy, z),
     chest: (x, y, z, t, f) => g.chest(x, y + dy, z, t, f),
     barrel: (x, y, z, t) => g.barrel(x, y + dy, z, t),
+    inside: (x, y, z) => g.inside(x, y + dy, z),
+    world: (x, y, z) => g.world(x, y + dy, z),
+    wr: g.wr,
   };
 }
