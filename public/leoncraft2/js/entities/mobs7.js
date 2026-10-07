@@ -726,6 +726,8 @@ export class Creaking extends Monster {
     super.serverAi();
   }
   doHurtTarget(t) { return this.frozen ? false : super.doHurtTarget(t); }
+  // bound to a creaking heart (entities/hearts.js): nothing hurts it while the heart stands
+  hurt(amount, source) { if (this.heartGuard && this.heartGuard(amount, source)) return false; return super.hurt(amount, source); }
   loot() {}
   anim(A) { A.frozen = this.frozen; }
   layers(out) { if (!this.frozen) out.push(['creaking', 'creaking_eyes', null, false, true]); }

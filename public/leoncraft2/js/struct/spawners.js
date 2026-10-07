@@ -25,6 +25,7 @@ import { B } from '../blocks.js?v=24';
 import { BIOMES } from '../biomes.js?v=24';
 import { Y0, CH } from '../world-const.js?v=24';
 import { trialSpawners } from './trials.js?v=24';
+import { Hearts } from '../entities/hearts.js?v=24';
 
 // what a spawner can hold, by its meta (1 up): append only, saves keep the numbers
 export const SPAWNABLE = ['zombie', 'skeleton', 'spider', 'cave_spider', 'blaze', 'creeper', 'husk', 'stray', 'drowned', 'magma_cube', 'silverfish', 'endermite',
@@ -49,7 +50,7 @@ export function setSpawnerMob(world, x, y, z, type) {
 const RANGE = 16, SPAWN_RANGE = 4, COUNT = 4, MAX_NEAR = 6, MIN_DELAY = 200, MAX_DELAY = 800;
 
 export class Spawners {
-  constructor() { this.state = new Map(); this.edited = new Map(); this.shown = new Map(); this.n = 0; this.trials = trialSpawners(spawnerMob); }     // state: "x,y,z" -> ticks left
+  constructor() { this.state = new Map(); this.edited = new Map(); this.shown = new Map(); this.n = 0; this.trials = trialSpawners(spawnerMob); this.hearts = new Hearts(); }     // state: "x,y,z" -> ticks left
   tick(world, player) {
     if (!world || !player) return;
     const px = player.pos.x, py = player.pos.y + Y0, pz = player.pos.z;
@@ -83,6 +84,8 @@ export class Spawners {
     }
     // trial spawners (struct/trials.js), their mobs turning inside them too
     this.trials.tick(world, player, s => this.show(world, s, px, py, pz, seen));
+    // creaking hearts bringing out their creakings at night (entities/hearts.js)
+    this.hearts.tick(world, player);
     // the ones out of sight or gone lose their turning mob
     for (const [k, e] of this.shown) if (!seen.has(k)) this.unshow(k, e);
   }
