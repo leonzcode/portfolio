@@ -43,6 +43,8 @@
      sculk shrieker                bit 0 shrieking, bit 1 can summon a warden
      chiseled bookshelf            bits 0-1 facing, bits 2-7 which of its six slots hold a book
      lectern                       bits 0-1 facing, bit 2 holds a book, bit 3 powered
+     vault                         bits 0-1 facing, bit 3 ominous, bits 4-5 waiting, active (someone near
+                                   it may unlock it), unlocking, throwing out its reward (details.js)
      comparator output             kept in the simulation's state, not the meta
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, MAX_ID } from '../blocks.js?v=22';
@@ -87,6 +89,7 @@ addTex('powered_rail', { on: 'powered_rail_on' });
 addTex('detector_rail', { on: 'detector_rail_on' });
 addTex('activator_rail', { on: 'activator_rail_on' });
 addTex('tripwire_hook', { wood: 'oak_planks' });
+addTex('vault', { frontOn: 'vault_front_on', sideOn: 'vault_side_on', frontEject: 'vault_front_ejecting', topEject: 'vault_top_ejecting' });
 addTex('chiseled_bookshelf', { occupied: 'chiseled_bookshelf_occupied' });
 addTex('sculk_sensor', { tendril: 'sculk_sensor_tendril_inactive', tendrilOn: 'sculk_sensor_tendril_active' });
 addTex('calibrated_sculk_sensor', { tendril: 'sculk_sensor_tendril_inactive', tendrilOn: 'sculk_sensor_tendril_active',
@@ -175,6 +178,13 @@ function make(d, m) {
     case 'redstone_wire': return variant(d, { rgb: DUST[m & 15] });
     case 'melon_stem': case 'pumpkin_stem': return variant(d, { rgb: STEM[m & 7] });
     case 'piston': case 'sticky_piston': return m & 8 ? variant(d, { shape: 'pistonbase', asModel: true }) : null;
+    // a vault lit up while someone near it may unlock it, its front open while it gives out its reward
+    case 'vault': {
+      const st = (m >> 4) & 3;
+      if (!st || !ok(d, 'frontOn')) return null;
+      const side = L.sideOn, front = st === 1 ? L.frontOn : L.frontEject;
+      return variant(d, { front, faces: [side, side, d.faces[2], d.faces[3], side, side], L: Object.assign({}, L, st === 3 && ok(d, 'topEject') ? { top: L.topEject } : {}) });
+    }
     // a chiseled bookshelf is a full block to everything else, drawn as its model (models.js chiseled)
     case 'chiseled_bookshelf': return variant(d, { shape: 'chiseled', asModel: true });
   }
