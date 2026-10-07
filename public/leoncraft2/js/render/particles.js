@@ -17,9 +17,9 @@
    each frame from the live ones (at most MAX), lit by the light where the
    player stands.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, SOLID } from '../blocks.js?v=24';
-import { VANILLA } from './vanilla.js?v=24';
-import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=24';
+import { BLOCKS, B, SOLID } from '../blocks.js?v=25';
+import { VANILLA } from './vanilla.js?v=25';
+import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=25';
 const THREE = window.THREE;
 
 const MAX = 1500;
@@ -45,6 +45,7 @@ void main() {
   float sky = uLightLv.x, block = uLightLv.y;
   vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
   vLight = sunC * smoothstep(0.8, 0.95, sky) * 0.5 + amb * sky * sky * 0.8 / PI + (block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) / PI : vec3(0.0)) + vec3(0.002);
+  if (aCol.r < 0.0) vLight = vec3(1.5);   // flames glow: as bright as a surface right by a torch
 #ifdef LDR
   fogTerms(position, vKeep, vAdd);
 #else
@@ -63,7 +64,8 @@ out vec4 o;
 void main() {
   vec4 t = vUv.z >= 0.0 ? textureLod(uAlbedo, vUv, 0.0) : vec4(1.0);
   if (t.a < 0.1) discard;
-  vec3 c = t.rgb * vCol * lightmapAt(uLightLv.x, uLightLv.y);
+  // a colour below zero marks a quad drawn at full brightness (the flames on something burning)
+  vec3 c = t.rgb * abs(vCol) * (vCol.r < 0.0 ? vec3(1.0) : lightmapAt(uLightLv.x, uLightLv.y));
   o = vec4(linearFog(c, fogDistance(vWorld - cameraPosition)), 1.0);
 }`;
 // Detailed graphics: lit like the player model (sky, sun, block light), then fogged and tone mapped like the blocks
@@ -75,7 +77,7 @@ out vec4 o;
 void main() {
   vec4 t = vUv.z >= 0.0 ? textureLod(uAlbedo, vUv, 0.0) : vec4(1.0);
   if (t.a < 0.1) discard;
-  vec3 albedo = toLinear(t.rgb * vCol);
+  vec3 albedo = toLinear(t.rgb * abs(vCol));
 #ifdef LDR
   o = vec4(toneLDR(albedo * vLight * vKeep + vAdd), 1.0);
 #else
@@ -115,8 +117,51 @@ export class Particles {
     this.mesh.renderOrder = 5;
     renderer.scene.add(this.mesh);
     this.right = new THREE.Vector3(); this.up = new THREE.Vector3();
+    this.burning = [];              // x, y, z, width, height of each thing on fire this frame (burn())
   }
   setWorld(world) { this.world = world; this.list.length = 0; }
+
+  /* Something burning (render each frame, from entities/manager.js): the
+     game's flames round it, not particles. Its fire picture on quads facing
+     the camera across, 1.4 of the width wide (in units of that, the first
+     1.4 tall), stacked 0.45 apart up past the top of it, each a tenth
+     narrower and a little further back, starting 0.3 in front, every other
+     one the other frame and every other pair mirrored; at full brightness. */
+  burn(x, y, z, w, h) { if (this.burning.length < 64 * 5) this.burning.push(x, y, z, w, h); }
+  flames(o, cam) {
+    const B = this.burning;
+    if (!B.length) return o;
+    const fire = this.R.textures && this.R.textures.manifest.textures.fire_0;
+    if (!fire) { B.length = 0; return o; }
+    const P = this.pos, UV = this.uv, C = this.col;
+    const t = Math.floor((this.R.U.uTime.value || 0) * 20 / (fire.frametime || 1));
+    for (let k = 0; k < B.length; k += 5) {
+      const x = B[k], y = B[k + 1], z = B[k + 2], f = B[k + 3] * 1.4;
+      // across: at right angles to the camera's look, flat; forward: towards the camera
+      let fx = cam.position.x - x, fz = cam.position.z - z;
+      const l = Math.hypot(fx, fz) || 1; fx /= l; fz /= l;
+      const rx = -fz, rz = fx;
+      let left = B[k + 4] / f, hw = 0.5, lift = 0, back = 0.3 - Math.floor(left) * 0.02;
+      for (let i = 0; left > 0 && o < MAX; i++, o++) {
+        const cx = x + fx * back * f, cz = z + fz * back * f, y0 = y + lift * f, y1 = y0 + 1.4 * f, a = hw * f;
+        const q = o * 12;
+        P[q] = cx - rx * a; P[q + 1] = y0; P[q + 2] = cz - rz * a;
+        P[q + 3] = cx + rx * a; P[q + 4] = y0; P[q + 5] = cz + rz * a;
+        P[q + 6] = cx + rx * a; P[q + 7] = y1; P[q + 8] = cz + rz * a;
+        P[q + 9] = cx - rx * a; P[q + 10] = y1; P[q + 11] = cz - rz * a;
+        const layer = fire.layer + ((t + (i & 1) * 4) % (fire.frames || 1));
+        const m = (i >> 1) % 2 === 0, u0 = m ? 1 : 0, u1 = m ? 0 : 1;
+        UV[q] = u0; UV[q + 1] = 1; UV[q + 2] = layer;
+        UV[q + 3] = u1; UV[q + 4] = 1; UV[q + 5] = layer;
+        UV[q + 6] = u1; UV[q + 7] = 0; UV[q + 8] = layer;
+        UV[q + 9] = u0; UV[q + 10] = 0; UV[q + 11] = layer;
+        for (let c = 0; c < 12; c++) C[q + c] = -1;
+        left -= 0.45; lift += 0.45; hw *= 0.9; back -= 0.03;
+      }
+    }
+    B.length = 0;
+    return o;
+  }
 
   /* ---- what a block looks like as particles ---- */
   look(b, x, z) {
@@ -227,7 +272,8 @@ export class Particles {
 
   /* ---- each frame: the quads, between ticks ---- */
   render(cam, alpha) {
-    const L = this.list, n = Math.min(L.length, MAX);
+    const L = this.list;
+    let n = Math.min(L.length, MAX);
     const P = this.pos, UV = this.uv, C = this.col;
     const R = this.right.setFromMatrixColumn(cam.matrixWorld, 0), Up = this.up.setFromMatrixColumn(cam.matrixWorld, 1);
     for (let i = 0; i < n; i++) {
@@ -248,6 +294,8 @@ export class Particles {
       UV[o + 9] = u0; UV[o + 10] = v0; UV[o + 11] = p.layer;
       for (let k = 0; k < 4; k++) { C[o + k * 3] = p.r; C[o + k * 3 + 1] = p.g; C[o + k * 3 + 2] = p.b; }
     }
+    // the flames on anything burning go on after them
+    n = this.flames(n, cam);
     const g = this.geo;
     g.setDrawRange(0, n * 6);
     if (n) {

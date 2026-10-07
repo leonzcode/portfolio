@@ -42,11 +42,11 @@
    A trade gives the player 3 to 6 experience (5 more when the villager
    levels up) and the villager the trade's experience.
 --------------------------------------------------------------------------- */
-import { I, maxStack, withCount, stackToJSON, stackFromJSON } from './items.js?v=24';
-import { B } from './blocks.js?v=24';
-import { ENCH, ORDER, selectEnchants } from './enchanting.js?v=24';
-import { BREWABLE } from './brewing.js?v=24';
-import { dyeColour, mixColours } from './crafting.js?v=24';
+import { I, maxStack, withCount, stackToJSON, stackFromJSON } from './items.js?v=25';
+import { B } from './blocks.js?v=25';
+import { ENCH, ORDER, selectEnchants } from './enchanting.js?v=25';
+import { BREWABLE } from './brewing.js?v=25';
+import { dyeColour, mixColours } from './crafting.js?v=25';
 
 export const LEVEL_XP = [0, 10, 70, 150, 250];
 export const LEVEL_NAMES = ['Novice', 'Apprentice', 'Journeyman', 'Expert', 'Master'];

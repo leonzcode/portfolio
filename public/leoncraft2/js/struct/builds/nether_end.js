@@ -3,7 +3,7 @@
    own designs. Each is drawn in its own file next to this one (end_city.js,
    bastion_remnant.js); this one gathers their plans.
 --------------------------------------------------------------------------- */
-import { endCity } from './end_city.js?v=24';
+import { endCity } from './end_city.js?v=25';
 
 export const PLANS = {};
 

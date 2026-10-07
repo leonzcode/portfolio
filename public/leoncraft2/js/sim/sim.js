@@ -26,28 +26,28 @@
    The light the rules need (a crop wants 9) is the light the mesher worked
    out for the chunk, kept by world.js.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID, FLUID } from '../blocks.js?v=24';
-import { CH, H, idx } from '../world-const.js?v=24';
-import { BIOMES } from '../biomes.js?v=24';
-import { installPlants } from './plants.js?v=24';
-import { installFarming, resolveItem, itemName } from './farming.js?v=24';
-import { installFire } from './fire.js?v=24';
-import { Bodies } from './bodies.js?v=24';
-import { Lids } from './lids.js?v=24';
-import { Beams } from './beams.js?v=24';
-import { Sculk } from './sculk.js?v=24';
-import { Conduits } from './conduit.js?v=24';
-import { installBeds } from './beds.js?v=24';
-import { Weather } from './weather.js?v=24';
-import { installRedstone } from './redstone.js?v=24';
-import { installParts } from './rsparts.js?v=24';
-import { installPistons } from './pistons.js?v=24';
-import { installDispensers } from './dispense.js?v=24';
-import { explode } from '../explosion.js?v=24';
-import { blockDrops } from '../loot.js?v=24';
-import { itemName as itemNameOf } from '../items.js?v=24';
-import { Messages } from './messages.js?v=24';
-import { installContainers } from '../containers.js?v=24';
+import { B, BLOCKS, MAX_ID, FLUID } from '../blocks.js?v=25';
+import { CH, H, idx } from '../world-const.js?v=25';
+import { BIOMES } from '../biomes.js?v=25';
+import { installPlants } from './plants.js?v=25';
+import { installFarming, resolveItem, itemName } from './farming.js?v=25';
+import { installFire } from './fire.js?v=25';
+import { Bodies } from './bodies.js?v=25';
+import { Lids } from './lids.js?v=25';
+import { Beams } from './beams.js?v=25';
+import { Sculk } from './sculk.js?v=25';
+import { Conduits } from './conduit.js?v=25';
+import { installBeds } from './beds.js?v=25';
+import { Weather } from './weather.js?v=25';
+import { installRedstone } from './redstone.js?v=25';
+import { installParts } from './rsparts.js?v=25';
+import { installPistons } from './pistons.js?v=25';
+import { installDispensers } from './dispense.js?v=25';
+import { explode } from '../explosion.js?v=25';
+import { blockDrops } from '../loot.js?v=25';
+import { itemName as itemNameOf } from '../items.js?v=25';
+import { Messages } from './messages.js?v=25';
+import { installContainers } from '../containers.js?v=25';
 
 const SIN = new Float32Array(65536);
 for (let i = 0; i < 65536; i++) SIN[i] = Math.sin(i * Math.PI * 2 / 65536);

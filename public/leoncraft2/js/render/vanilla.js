@@ -25,9 +25,9 @@
    No shadow map, no post-processing, drawn straight to the screen at full
    resolution with nearest-neighbour textures.
 --------------------------------------------------------------------------- */
-import { COMMON, FILTER } from './glsl.js?v=24';
-import { FullScreen, VS_FULL } from './sky.js?v=24';
-import { BlockClouds } from './clouds.js?v=24';
+import { COMMON, FILTER } from './glsl.js?v=25';
+import { FullScreen, VS_FULL } from './sky.js?v=25';
+import { BlockClouds } from './clouds.js?v=25';
 const THREE = window.THREE;
 
 // the game's rain and thunder colour shift: towards a grey of the colour's own brightness times k
@@ -219,8 +219,10 @@ void main() {
   float a;
   if (lava) { c = t.rgb; a = 1.0; }
   else {
-    // the water texture's grain, in this biome's water colour
-    c = vec3(dot(t.rgb, vec3(0.299, 0.587, 0.114)) * 1.9) * vCol;
+    /* the water texture's grain, in this biome's water colour: the texture is
+       grey at the game's own mean (177 of 255), so it is multiplied as it is
+       (it was 1.9 times brighter, from when the pack's water was darker) */
+    c = vec3(dot(t.rgb, vec3(0.299, 0.587, 0.114))) * vCol;
     a = t.a;
   }
   c *= vLight;
@@ -235,7 +237,7 @@ uniform vec3 uCamPos, uSkyColor, uFogColor, uVSun;
 uniform vec4 uSunrise;          // colour and strength of the sunrise fan
 uniform vec3 uSky;              // fog end for the sky, star brightness, under a fluid
 uniform float uMoonPhase, uRain, uSkyMode, uVoidDisc;
-uniform sampler2D uSunTex, uMoon, uEndSky;
+uniform sampler2D uSunTex, uVMoon, uEndSky;
 in vec2 vUv; out vec4 o;
 void main() {
   vec4 p = uInvViewProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
@@ -264,23 +266,25 @@ void main() {
     w *= smoothstep(-0.25, 0.1, rd.y + 0.15) * (1.0 - smoothstep(0.0, 0.85, rd.y));
     col = mix(col, uSunrise.rgb, sat(w * uSunrise.a));
   }
-  // the sun and the moon: squares, added on
+  /* the sun and the moon: squares, added on, as big as the game's (its sun is
+     a quad 30 across at 100 blocks, the moon 20, each picture 32 pixels with
+     the lit part the middle 8: celestial() below) */
   vec3 s = uVSun;
   vec3 u = vec3(0.0, 0.0, 1.0), v = normalize(cross(s, u));
   float ds = dot(rd, s);
   if (ds > 0.0) {
     vec2 q = vec2(dot(rd, u), dot(rd, v)) / ds;
-    if (abs(q.x) < 0.15 && abs(q.y) < 0.15) {
-      vec4 t = texture(uSunTex, q / 0.3 + 0.5);
-      col += t.rgb * t.a * (1.0 - uRain);
+    if (abs(q.x) < 0.3 && abs(q.y) < 0.3) {
+      vec4 t = texture(uSunTex, q / 0.6 + 0.5);
+      col += t.rgb * (1.0 - uRain);
     }
   } else {
     vec2 q = vec2(dot(rd, u), dot(rd, v)) / -ds;
-    if (abs(q.x) < 0.1 && abs(q.y) < 0.1) {
+    if (abs(q.x) < 0.2 && abs(q.y) < 0.2) {
       vec2 cell = vec2(mod(uMoonPhase, 4.0), floor(uMoonPhase / 4.0));
-      vec2 mp = q / 0.2 + 0.5;
-      vec4 m = texture(uMoon, vec2((cell.x + mp.x) / 4.0, 1.0 - (cell.y + mp.y) / 2.0));
-      col += m.rgb * m.a * (1.0 - uRain);
+      vec2 mp = q / 0.4 + 0.5;
+      vec4 m = texture(uVMoon, vec2((cell.x + mp.x) / 4.0, (cell.y + mp.y) / 2.0));
+      col += m.rgb * (1.0 - uRain);
     }
   }
   // stars, turning with the sky
@@ -338,6 +342,43 @@ const rgb = (c, out) => out.set(((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255,
 const frac = x => x - Math.floor(x);
 const clamp01 = x => Math.max(0, Math.min(1, x));
 
+/* Our own sun and moon (no game files): the game's sizes, a 32 pixel picture
+   whose lit part is the middle 8 by 8, added onto the sky, so black is
+   nothing. The sun is a square going from a warm yellow rim to a near white
+   middle; the moon a grey square with darker patches, in the game's eight
+   phases (0 full, then waning to 4 new and waxing back), its 4 x 2 sheet laid
+   out as the game's was. */
+function celestial() {
+  const tex = (data, w, h) => {
+    const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.UnsignedByteType);
+    t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
+    return t;
+  };
+  const sun = new Uint8Array(32 * 32 * 4);
+  const SUN = [[250, 212, 88], [255, 236, 148], [255, 249, 204], [255, 255, 236]];
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    const ring = Math.min(x, y, 7 - x, 7 - y), c = SUN[ring], i = ((12 + y) * 32 + 12 + x) * 4;
+    sun[i] = c[0]; sun[i + 1] = c[1]; sun[i + 2] = c[2]; sun[i + 3] = 255;
+  }
+  // the moon's face: L light, M a little darker, D the dark patches
+  const FACE = ['LLMLLLML', 'LDDLLLLL', 'LDDLMLLL', 'LLLLLDLL', 'LMLLLLLL', 'LLLLDDLM', 'LLMLDDLL', 'MLLLLLLL'];
+  const TONE = { L: [214, 218, 228], M: [190, 194, 208], D: [150, 154, 172] };
+  // the columns lit in each phase, of the eight across: waning keeps the left side, waxing grows from the right
+  const LIT = [[0, 8], [0, 6], [0, 4], [0, 2], [0, 0], [6, 8], [4, 8], [2, 8]];
+  const moon = new Uint8Array(128 * 64 * 4);
+  for (let p = 0; p < 8; p++) {
+    const ox = (p % 4) * 32 + 12, oy = Math.floor(p / 4) * 32 + 12, [a, b] = LIT[p];
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+      const i = ((oy + y) * 128 + ox + x) * 4;
+      // the dark side is all but invisible, a new moon a faint square
+      const c = x >= a && x < b ? TONE[FACE[y][x]] : [14, 14, 20];
+      moon[i] = c[0]; moon[i + 1] = c[1]; moon[i + 2] = c[2]; moon[i + 3] = 255;
+    }
+  }
+  return { sun: tex(sun, 32, 32), moon: tex(moon, 128, 64) };
+}
+
 /* The game's own clock: how far round the sky the sun is (0 noon, 0.5
    midnight), from the day time in ticks. It is not even: the sun hangs
    a little longer near the horizon. */
@@ -368,11 +409,12 @@ export class Vanilla {
     lm.generateMipmaps = false;
     lm.needsUpdate = true;
     const man = textures.manifest.textures;
+    const sky = celestial();
     Object.assign(U, {
       uLightmap: { value: lm }, uFogColor: { value: new THREE.Vector3(0.75, 0.85, 1) }, uFog: { value: new THREE.Vector3(100, 128, 1) },
       uSkyColor: { value: new THREE.Vector3(0.47, 0.65, 1) }, uVSun: { value: new THREE.Vector3(0, 1, 0) },
       uSunrise: { value: new THREE.Vector4() }, uSky: { value: new THREE.Vector3(128, 0, 0) }, uRain: { value: 0 },
-      uSunTex: { value: textures.sun || null }, uCloudColor: { value: new THREE.Vector3(1, 1, 1) }, uCloudFog: { value: new THREE.Vector2(128, 256) },
+      uSunTex: { value: sky.sun }, uVMoon: { value: sky.moon }, uCloudColor: { value: new THREE.Vector3(1, 1, 1) }, uCloudFog: { value: new THREE.Vector2(128, 256) },
       uFlowLayers: { value: new THREE.Vector2(man.water_flow ? man.water_flow.layer : 0, man.lava_flow ? man.lava_flow.layer : 0) },
       uLightLv: renderer.uHandLight || (renderer.uHandLight = { value: new THREE.Vector2(1, 0) }),
       uConstAmb: { value: 0 }, uSkyMode: { value: 0 }, uEndSky: { value: textures.endSky || null }, uVoidDisc: { value: 0 },

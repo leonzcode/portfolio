@@ -18,10 +18,10 @@
    Your name on servers is set with the button where the game has Direct
    Connection (kept in this browser).
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=24';
-import { ConfirmScreen } from './menus.js?v=24';
-import { Net, listServers, createServer, editServer, deleteServer, playerName, setPlayerName, cleanName, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=24';
-import { parseSeed } from '../gen/random.js?v=24';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=25';
+import { ConfirmScreen } from './menus.js?v=25';
+import { Net, listServers, createServer, editServer, deleteServer, playerName, setPlayerName, cleanName, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=25';
+import { parseSeed } from '../gen/random.js?v=25';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };

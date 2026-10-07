@@ -7,8 +7,8 @@
    it, / opens it with a slash already typed; Enter sends, Esc closes, Up and
    Down walk back through what you sent, Tab finishes a command's name.
 --------------------------------------------------------------------------- */
-import { Screen } from './gui.js?v=24';
-import { execute, complete } from '../commands.js?v=24';
+import { Screen } from './gui.js?v=25';
+import { execute, complete } from '../commands.js?v=25';
 
 const LINE = 9, KEEP = 100, WIDTH = 320;
 
@@ -18,6 +18,7 @@ export class Chat {
     this.sent = [];         // what you typed, for Up and Down
     this.open = false;
     this.dirty = true;
+    this.under = true;      // part of the HUD: a screen (the inventory, a chest) covers it, as in the game
   }
   add(text, colour = 0xFFFFFF) {
     for (const part of String(text).split('\n')) this.lines.push({ text: part, colour, at: performance.now() });
@@ -35,7 +36,8 @@ export class Chat {
   draw(g) {
     if (!this.lines.length || (g.hideHud && !this.open)) return;
     const f = g.font, now = performance.now();
-    const bottom = g.height - (this.open ? 16 : 40);
+    // 40 above the bottom, open or not (the game's lines stay put; the line you type covers the hotbar's foot)
+    const bottom = g.height - 40;
     const max = this.open ? 20 : 10;
     const ctx = g.ctx;
     let y = bottom;
