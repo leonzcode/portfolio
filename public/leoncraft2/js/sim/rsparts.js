@@ -47,12 +47,12 @@
 
    Meta layouts are listed in sim/states.js.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=25';
-import { F6, HFACE, FACE6, FACE_H, FACE_F6, WEAK, STRONG, COND, SOURCE } from './redstone.js?v=25';
-import { lookFacing } from '../place.js?v=25';
-import { Living } from '../entities/entity.js?v=25';
-import { maxStack } from '../items.js?v=25';
-import { selectionBoxes } from '../models.js?v=25';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=26';
+import { F6, HFACE, FACE6, FACE_H, FACE_F6, WEAK, STRONG, COND, SOURCE } from './redstone.js?v=26';
+import { lookFacing } from '../place.js?v=26';
+import { Living } from '../entities/entity.js?v=26';
+import { maxStack } from '../items.js?v=26';
+import { selectionBoxes } from '../models.js?v=26';
 
 const SIN = new Float32Array(65536);
 for (let i = 0; i < 65536; i++) SIN[i] = Math.sin(i * Math.PI * 2 / 65536);
@@ -356,7 +356,8 @@ export function installParts(sim) {
       const D = S.game && S.game.details;
       return D ? (n === 'lectern' ? D.lecternSignal(x, y, z) : D.shelfSignal(x, y, z)) : 0;
     }
-    if (n === 'beehive' || n === 'bee_nest' || n === 'decorated_pot' || n === 'crafter') return 0;
+    if (n === 'beehive' || n === 'bee_nest') return (S.meta(x, y, z) >> 2) & 7;
+    if (n === 'decorated_pot' || n === 'crafter') return 0;
     if (n === 'detector_rail') return 0;
     return -1;
   };

@@ -11,16 +11,16 @@
    the fish's way (mobs3.js). Numbers from the Minecraft Wiki (Java Edition);
    the shapes are boxes in the game's units, the textures our own.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=25';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=26';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=25';
-import { Animal, Monster, register, TYPES } from './mobs.js?v=25';
-import { model } from './mobs2.js?v=25';
-import { addArt } from './mobart.js?v=25';
-import { MODELS } from './mobmodels.js?v=25';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=25';
-import { activeDrops } from '../drops.js?v=25';
-import { ITEMS, I } from '../items.js?v=25';
+  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=26';
+import { Animal, Monster, register, TYPES } from './mobs.js?v=26';
+import { model } from './mobs2.js?v=26';
+import { addArt } from './mobart.js?v=26';
+import { MODELS } from './mobmodels.js?v=26';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=26';
+import { activeDrops } from '../drops.js?v=26';
+import { ITEMS, I } from '../items.js?v=26';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -874,50 +874,170 @@ for (const k of AXOLOTL_KINDS) addArt('axolotl_' + k, [64, 64], p => {
   p.fill(14, 19, 12, 5, base, 0.05); p.fill(14, 19, 12, 1, dark);
 });
 
-/* ---- Nautilus (and the zombie nautilus, its undead kind): a shelled
-   swimmer that can be ridden under water; put a saddle on it and it goes
-   the way you look, Space for a dash. Slow and floundering on land.
-   (Numbers are our guess where the wiki had none to give.) ---- */
+/* ---- Nautilus (and the zombie nautilus, its undead kind), as 26.x has
+   them (Minecraft Wiki): 15 health, 0.875 x 0.95, 6.5 m/s in water and
+   barely moving on land. Neutral: it turns on whatever hurts it. It follows
+   a player holding any fish or bucket of fish (10 blocks); a pufferfish (or
+   a bucket of one) tames it one time in three. Fish heal a tamed one
+   (pufferfish 2, raw cod or salmon 4, cooked cod 10, cooked salmon 12).
+   Tamed, it takes a saddle and nautilus armour (by hand, or in its screen:
+   sneak and use it), and shears take them off again. Ridden, it goes the
+   way you look; hold Space to charge a dash (up to about 12 blocks, one
+   every 2 seconds), and its rider has Breath of the Nautilus, which keeps
+   the air bar where it is. The zombie nautilus is the same but undead: it
+   burns in daylight, never suffocates out of water, is a tenth faster and
+   dashes a little further. ---- */
+const FISH_HEAL = { pufferfish: 2, pufferfish_bucket: 2, cod: 4, salmon: 4, cod_bucket: 4, salmon_bucket: 4, tropical_fish: 4, tropical_fish_bucket: 4, cooked_cod: 10, cooked_salmon: 12 };
+const NAUTILUS_ARMOR = { copper: [4, 0], iron: [5, 0], golden: [7, 0], diamond: [11, 2], netherite: [19, 3] };
+const itemNm = id => (ITEMS[id] ? ITEMS[id].name : '');
+const heldOf = m => (m.inv && m.inv.slots[m.inv.selected]) || null;
+function dropOne(e, st) {
+  if (!st) return;
+  const H = e.m.hooks && e.m.hooks.hands, D = H && H.drops;
+  if (D && D.spawn) D.spawn(e.pos.x, e.pos.y + 0.5, e.pos.z, Object.assign({}, st, { count: st.count || 1 }));
+  else e.m.dropItemAt(e.pos.x, e.pos.y + 0.5, e.pos.z, itemNm(st.id), st.count || 1);
+}
 export class Nautilus extends Swimmer {
-  static W = 0.95; static H = 0.95; static HEALTH = 15; static SPEED = 0.3; static SWIM = 0.8; static SHADOW = 0.5;
+  static W = 0.875; static H = 0.95; static HEALTH = 15; static SPEED = 0.3; static SWIM = 0.8; static SHADOW = 0.5; static ATTACK = 3;
   static MODEL = 'nautilus'; static TEX = 'nautilus'; static WATER_BREATHER = 'only'; static CATEGORY = 'water_creature'; static NO_DESPAWN = true;
-  constructor(m, type) { super(m, type); this.saddled = false; this.dashCool = 0; }
+  static RIDE_WATER = 0.325; static RIDE_LAND = 0.044; static DASH = 1.2;
+  constructor(m, type) { super(m, type); this.saddled = false; this.tamed = false; this.body = null; this.dashCool = 0; this.charge = 0; }
   registerGoals() {
-    this.goals.add(0, new PanicGoal(this, 1.3));
-    this.goals.add(3, new TemptGoal(this, 1.1, ['pufferfish', 'cod', 'salmon']));
+    this.goals.add(1, new MeleeAttackGoal(this, 1.2, true));
+    this.goals.add(3, new TemptGoal(this, 1.1, Object.keys(FISH_HEAL)));
     this.goals.add(4, new SwimGoal(this, 1, 30));
     this.goals.add(5, new LookAtPlayerGoal(this, 6));
+    // neutral: whatever hurts it is what it goes for (never its owner once tamed, see hurt)
+    this.targets.add(1, new HurtByTargetGoal(this));
   }
-  interact(held) {
+  get armorKind() { return /_nautilus_armor$/; }
+  setBody(st) {
+    this.body = st || null;
+    const a = st && NAUTILUS_ARMOR[itemNm(st.id).replace(/_nautilus_armor$/, '')];
+    this.armor = a ? a[0] : 0; this.toughness = a ? a[1] : 0;
+  }
+  tame() {
+    this.tamed = true; this.persistent = true; this.target = null;
+    this.m.particles('heart', this.pos.x, this.pos.y + this.h * 0.8, this.pos.z, 7, this.w * 0.5);
+  }
+  // its screen (ui/containers.js MountScreen): the saddle, the armour
+  mountSlots() { return { kinds: ['saddle', 'armor'], box: [this.saddled ? { id: I.saddle, count: 1 } : null, this.body || null], cols: 0 }; }
+  mountChanged(i, st) { if (i === 0) this.saddled = !!st; else this.setBody(st || null); }
+  openInventory() {
+    const H = this.m.hooks && this.m.hooks.hands;
+    if (!this.tamed || !H || !H.open || !MountScreenRef) return false;
+    H.open(new MountScreenRef(H.inv, H.icons, this));
+    return true;
+  }
+  interact(held, player) {
+    if (this.tamed && player && player.sneaking && player.sneaking() && this.openInventory()) return 'swing';
+    const heal = FISH_HEAL[held];
+    if (heal !== undefined && !this.passengers.length) {
+      const bucket = /_bucket$/.test(held);
+      if (!this.tamed && /^pufferfish/.test(held)) {
+        if (RI(3) === 0) this.tame(); else this.m.particles('smoke', this.pos.x, this.pos.y + this.h * 0.8, this.pos.z, 7, this.w * 0.5);
+      } else if (this.tamed && this.health < this.maxHealth) this.heal(heal);
+      else return false;
+      // a bucket of fish leaves the bucket of water
+      if (bucket) { this.m.fillHeld('water_bucket'); return 'swing'; }
+      return 'consume';
+    }
+    if (!this.tamed) return false;
     if (held === 'saddle' && !this.saddled) { this.saddled = true; return 'consume'; }
+    if (/_nautilus_armor$/.test(held || '') && !this.body) { const st = heldOf(this.m); this.setBody(st ? Object.assign({}, st, { count: 1 }) : null); return 'consume'; }
+    // shears take off the armour, then the saddle
+    if (held === 'shears' && (this.body || this.saddled)) {
+      if (this.body) { dropOne(this, this.body); this.setBody(null); } else { this.saddled = false; dropOne(this, { id: I.saddle, count: 1 }); }
+      return 'damage';
+    }
     if (this.saddled) { this.m.mount(this); return 'swing'; }
     return false;
   }
+  // a tamed one never turns on the player
+  hurt(amount, src) {
+    const r = super.hurt(amount, src);
+    if (this.tamed && this.lastHurtBy && this.lastHurtBy.isPlayer) this.lastHurtBy = null;
+    if (this.tamed && this.target && this.target.isPlayer) this.target = null;
+    return r;
+  }
   ridingOffset() { return 0.75; }
   rideControl(keys, rider) {
-    if (!this.inWater) return false;
+    if (!this.tamed || !this.saddled) return false;
     this.yaw = rider.yaw; this.bodyYaw = this.headYaw = this.yaw;
-    const f = (keys.w ? 1 : 0) - (keys.s ? 0.5 : 0), pitch = rider.pitch || 0, sp = 0.12;
+    const C = this.constructor;
+    // the rider keeps their breath (Breath of the Nautilus), topped up while riding
+    if (this.age % 10 === 0) this.m.effectPlayer('breath_of_the_nautilus', 40, 1);
+    const f = (keys.w ? 1 : 0) - (keys.s ? 0.5 : 0), pitch = rider.pitch || 0;
     const s = Math.sin(this.yaw), c = Math.cos(this.yaw), v = this.vel;
-    v.x += (-s * f * sp * Math.cos(pitch) - v.x) * 0.2; v.z += (-c * f * sp * Math.cos(pitch) - v.z) * 0.2; v.y += (f * Math.sin(pitch) * sp - v.y) * 0.2;
+    if (this.inWater) {
+      const sp = C.RIDE_WATER;
+      v.x += (-s * f * sp * Math.cos(pitch) - v.x) * 0.2; v.z += (-c * f * sp * Math.cos(pitch) - v.z) * 0.2; v.y += (f * Math.sin(pitch) * sp - v.y) * 0.2;
+    } else {
+      const sp = C.RIDE_LAND;
+      v.x += (-s * f * sp - v.x) * 0.5; v.z += (-c * f * sp - v.z) * 0.5;
+    }
+    // the dash: Space held charges it (full in ten ticks), let go and it launches the way you look
     if (this.dashCool > 0) this.dashCool--;
-    if (keys[' '] && this.dashCool <= 0 && f > 0) { v.x += -s * 0.8; v.z += -c * 0.8; v.y += Math.sin(pitch) * 0.8; this.dashCool = 40; }
+    if (keys[' '] && this.dashCool <= 0) this.charge = Math.min(10, this.charge + 1);
+    else if (this.charge > 0) {
+      const k = this.charge / 10 * C.DASH * (this.inWater ? 1 : 0.3);
+      v.x += -s * Math.cos(pitch) * k; v.z += -c * Math.cos(pitch) * k; v.y += Math.sin(pitch) * k;
+      this.charge = 0; this.dashCool = 40;
+    }
+    this.jumpBar = this.charge / 10;
     this.zza = 0;
     return true;
   }
-  loot(drop) { drop('nautilus_shell', RI(4) === 0 ? 1 : 0); if (this.saddled) drop('saddle', 1); }
+  loot(drop) {
+    if (R() < 0.05) drop('nautilus_shell', 1);
+    if (this.saddled) drop('saddle', 1);
+    if (this.body) { dropOne(this, this.body); this.body = null; }
+  }
   get xp() { return 1 + RI(3); }
-  layers(out) { if (this.saddled) out.push(['nautilus', 'nautilus_saddle', null]); }
+  layers(out) {
+    if (this.body) out.push(['nautilus', 'nautilus_armor_' + itemNm(this.body.id).replace(/_nautilus_armor$/, ''), null, !!this.body.ench]);
+    if (this.saddled) out.push(['nautilus', 'nautilus_saddle', null]);
+  }
   rootPose(root, t, a, A) { if (!this.inWater) root.multiply(t.makeRotationZ(0.3 * Math.sin(A.age * 0.5))); }
-  toJSON() { const o = super.toJSON(); if (this.saddled) o.sad = 1; return o; }
-  fromJSON(o) { super.fromJSON(o); this.saddled = !!o.sad; }
+  toJSON() {
+    const o = super.toJSON();
+    if (this.saddled) o.sad = 1; if (this.tamed) o.tm = 1;
+    if (this.body) o.body = itemNm(this.body.id);
+    return o;
+  }
+  fromJSON(o) {
+    super.fromJSON(o); this.saddled = !!o.sad; this.tamed = !!o.tm;
+    if (typeof o.body === 'string' && I[o.body] !== undefined) this.setBody({ id: I[o.body], count: 1 });
+  }
 }
 register('nautilus', Nautilus);
 export class ZombieNautilus extends Nautilus {
-  static TEX = 'zombie_nautilus'; static UNDEAD = true; static HEALTH = 15;
-  loot(drop) { drop('rotten_flesh', RI(3)); if (this.saddled) drop('saddle', 1); }
+  static TEX = 'zombie_nautilus'; static UNDEAD = true; static HEALTH = 15; static WATER_BREATHER = true;
+  static RIDE_WATER = 0.3575; static RIDE_LAND = 0.0485; static DASH = 1.3; static FOLLOW = 24;
+  registerGoals() {
+    super.registerGoals();
+    // a drowned riding it (a jockey) takes it after the player
+    this.targets.add(2, new NearestPlayerTargetGoal(this, true, () => !this.tamed && this.passengers.some(p => p.type === 'drowned')));
+  }
+  aiStep() {
+    // undead: it burns in daylight out of the water
+    if (this.age % 20 === 0 && !this.inWater && this.m.isDay() && this.m.seesSky(Math.floor(this.pos.x), Math.floor(this.pos.y + this.h), Math.floor(this.pos.z))) this.fire = Math.max(this.fire || 0, 160);
+    super.aiStep();
+  }
+  loot(drop) { drop('rotten_flesh', RI(4)); if (this.saddled) drop('saddle', 1); if (this.body) { dropOne(this, this.body); this.body = null; } }
 }
 register('zombie_nautilus', ZombieNautilus);
+// the mount screen, fetched once (ui/containers.js leads back to the entities, so not imported at the top)
+let MountScreenRef = null;
+import('../ui/containers.js?v=26').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
+// nautilus armour: bands of the metal round the shell and a plate over its back
+const NAUT_ARMOR_ART = { copper: [0xc8764a, 0x8a4a2a], iron: [0xd8d8d8, 0x9a9a9a], golden: [0xf8d84a, 0xc89a20], diamond: [0x5ae8e0, 0x2aa8a0], netherite: [0x4a4248, 0x2a2428] };
+for (const k in NAUT_ARMOR_ART) addArt('nautilus_armor_' + k, [64, 64], p => {
+  const [c, d] = NAUT_ARMOR_ART[k];
+  p.clear(0, 0, 64, 64);
+  for (let y = 12; y < 26; y += 4) p.fill(0, y, 40, 2, c, 0.06);
+  p.fill(0, 12, 40, 1, d); p.fill(12, 0, 8, 12, c, 0.08); p.fill(14, 2, 4, 8, d, 0.05);
+});
 model('nautilus', [
   // the coiled shell behind, the soft body and its tentacles in front
   { name: 'shell', pivot: [0, 16, 2], boxes: [[-4, -8, -4, 8, 14, 12, 0, 0], [-3, -10, 2, 6, 4, 6, 0, 26]] },
