@@ -23,19 +23,31 @@ const horizOf = n => (n[2] === -1 ? 0 : n[0] === 1 ? 1 : n[2] === 1 ? 2 : 3);
 
 /* The game's face support (isFaceSturdy / canSupportCenter): whether the
    block at (x, y, z) holds things up on its face f (0 +x, 1 -x, 2 +y, 3 -y,
-   4 +z, 5 -z), from its collision boxes, at these points of the face: its
-   middle (a torch on top), or all of it (a torch on a wall). */
+   4 +z, 5 -z), from its support shape (its collision boxes, but for the
+   few below), at these points of the face: its middle (a torch on top), or
+   the middle of every pixel of it (a torch on a wall: the whole face). */
 const MIDDLE = [[7.5 / 16, 7.5 / 16], [8.5 / 16, 8.5 / 16], [7.5 / 16, 8.5 / 16], [8.5 / 16, 7.5 / 16]];
 const WHOLE = [];
-for (const u of [1, 3, 5, 7]) for (const v of [1, 3, 5, 7]) WHOLE.push([u / 8, v / 8]);
+for (let u = 0; u < 16; u++) for (let v = 0; v < 16; v++) WHOLE.push([(u + 0.5) / 16, (v + 0.5) / 16]);
+/* Support shapes that are not the collision boxes here (the wiki's "Block
+   support shape"): leaves hold nothing up; farmland and a dirt path are
+   15/16 tall and a honey block a sixteenth in all round as well (all three
+   are whole blocks to walk on here), so nothing stands on their tops or
+   hangs from their sides; snow by its layers (eight are a whole block). */
+const FLAT15 = [[0, 0, 0, 1, 15 / 16, 1]], HONEY = [[1 / 16, 0, 1 / 16, 15 / 16, 15 / 16, 15 / 16]];
+function supportShape(d, m) {
+  if (d.leaves) return null;
+  if (d.name === 'farmland' || d.name === 'dirt_path') return FLAT15;
+  if (d.name === 'honey_block') return HONEY;
+  if (d.shape === 'snow') return [[0, 0, 0, 1, ((m & 7) + 1) / 8, 1]];
+  return undefined;
+}
 function holds(world, x, y, z, f, pts) {
   const b = world.get(x, y, z);
   if (!b) return false;
   const nb = (dx, dy, dz) => { const k = world.get(x + dx, y + dy, z + dz); return k ? { d: BLOCKS[k], m: world.meta(x + dx, y + dy, z + dz) } : null; };
-  let boxes;
-  // (snow holds things by its layers, not by what you stand on: eight layers are a whole block)
-  if (BLOCKS[b].shape === 'snow') boxes = [[0, 0, 0, 1, ((world.meta(x, y, z) & 7) + 1) / 8, 1]];
-  else try { boxes = collisionBoxes(BLOCKS[b], world.meta(x, y, z), nb); } catch (e) { return !!BLOCKS[b].solid; }
+  let boxes = supportShape(BLOCKS[b], world.meta(x, y, z));
+  if (boxes === undefined) try { boxes = collisionBoxes(BLOCKS[b], world.meta(x, y, z), nb); } catch (e) { return !!BLOCKS[b].solid; }
   if (!boxes) return false;
   const axis = f >> 1, plus = (f & 1) === 0, a = axis === 0 ? 1 : 0, c = axis === 2 ? 1 : 2;
   return pts.every(([u, v]) => boxes.some(bx => (plus ? bx[axis + 3] >= 1 - 1e-6 : bx[axis] <= 1e-6) && bx[a] <= u && bx[a + 3] >= u && bx[c] <= v && bx[c + 3] >= v));
@@ -140,9 +152,10 @@ export function placement(world, hit, id, player) {
         if (d.shape === 'torch' && !holds(world, x - n[0], y, z - n[2], faceOf(n), WHOLE)) return out;
         return [[x, y, z, wv, support]];
       }
-      // a torch stands on the middle of a face (a fence post or a wall holds one; a bottom slab, farmland or a path does not)
-      if (d.shape === 'torch' && !holds(world, x, y - 1, z, 2, MIDDLE)) return out;
-      if (!solidBelow && !(d.shape === 'sign' && d.hanging)) return out;
+      // a torch stands on the middle of a face (a fence post, a wall or eight layers of snow hold one; a bottom slab,
+      // leaves, farmland or a path do not): that alone says, whatever the block is made of
+      if (d.shape === 'torch') { if (!holds(world, x, y - 1, z, 2, MIDDLE)) return out; }
+      else if (!solidBelow && !(d.shape === 'sign' && d.hanging)) return out;
       // a hanging sign needs something above to hang from
       if (d.shape === 'sign' && d.hanging) { const ab = world.get(x, y + 1, z); if (!ab || !BLOCKS[ab].solid) return out; }
       m = d.shape === 'torch' ? 0 : (look + 2) & 3;
