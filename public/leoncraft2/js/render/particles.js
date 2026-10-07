@@ -17,9 +17,9 @@
    each frame from the live ones (at most MAX), lit by the light where the
    player stands.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, SOLID } from '../blocks.js?v=22';
-import { VANILLA } from './vanilla.js?v=22';
-import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=22';
+import { BLOCKS, B, SOLID } from '../blocks.js?v=23';
+import { VANILLA } from './vanilla.js?v=23';
+import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=23';
 const THREE = window.THREE;
 
 const MAX = 1500;

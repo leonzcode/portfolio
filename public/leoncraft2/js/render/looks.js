@@ -27,16 +27,16 @@
    make(opts) builds the material for a look, and is called again for each
    new one. renderer.onLook(fn) hears of every change.
 --------------------------------------------------------------------------- */
-import { Sky, FullScreen } from './sky.js?v=22';
-import { Post } from './post.js?v=22';
-import { makeMaterials, layerMatMaterial } from './materials.js?v=22';
-import { makeWaterMaterial } from './water.js?v=22';
-import { makeNoise3DAsync, makeNoise3DGPU } from './noisetex.js?v=22';
-import { makeLdrSky } from './ldrsky.js?v=22';
-import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=22';
-import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=22';
-import { ShadowMaps } from './shadows.js?v=22';
-import { makeToneLut } from './glsl.js?v=22';
+import { Sky, FullScreen } from './sky.js?v=23';
+import { Post } from './post.js?v=23';
+import { makeMaterials, layerMatMaterial } from './materials.js?v=23';
+import { makeWaterMaterial } from './water.js?v=23';
+import { makeNoise3DAsync, makeNoise3DGPU } from './noisetex.js?v=23';
+import { makeLdrSky } from './ldrsky.js?v=23';
+import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=23';
+import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=23';
+import { ShadowMaps } from './shadows.js?v=23';
+import { makeToneLut } from './glsl.js?v=23';
 const THREE = window.THREE;
 
 /* ---- the shader's settings ----
@@ -98,6 +98,9 @@ const SHADOW_RES = { low: 1024, medium: 2048, high: 3072, ultra: 4096 };
 const SHADOW_SLICES = { low: 8, medium: 6, high: 3, ultra: 1 };
 const SHADOW_TAPS = { low: 4, medium: 4, high: 8, ultra: 16 };
 const WAVE = { off: 0, low: 0.5, high: 1 };
+// how many new shader programs are built at once while a look is coming (applyLook)
+// (each takes a core or two in the browser while it is built; the game's own workers want theirs)
+const COMPILE_AT_ONCE = (n => n >= 16 ? 3 : n >= 8 ? 2 : 1)(navigator.hardwareConcurrency || 4);
 const SUN_TINT = { warm: [1.12, 0.97, 0.78], natural: [1.06, 1.0, 0.88], cool: [0.98, 1.0, 1.04] };
 
 // Shaders OFF: the game's own look
@@ -198,37 +201,47 @@ export function applyLook(R, look, first) {
     R.lookPending = null;
     finishLook(R, pending.look, false, prep);
   };
-  /* Handed to the graphics card a few at a time, a frame's share each: putting
-     a program together (its source, then the calls that start it compiling)
-     takes a few milliseconds in this thread, and the full chain's forty in one
-     go cost the frame the setting was changed in a tenth of a second or more. */
-  /* Each frame after that, the programs handed over are asked whether they
-     are built yet, oldest first, stopping at the first that is not: every
-     such question waits for the graphics process to catch up, so they are
-     kept to a few a frame (three.js's own compileAsync asked all of them every
-     ten milliseconds). One that is built is asked for its uniforms and
-     attributes there and then, questions three.js would otherwise ask at its
-     first draw, all of them in the frame the new look first shows. */
+  /* Handed to the graphics card one or two at a time (COMPILE_AT_ONCE, by
+     the machine's cores), the next only when one of those is built. The
+     browser compiles each new program on a core of its own, and the first
+     time a look is chosen on a machine none of them are in its cache yet:
+     the forty-odd of a look handed over at once (three a frame) took every
+     core for half a second and more, the browser's own drawing starved with
+     them, and the game stopped for that long, from a third of a second to
+     two and a half with the machine busy. A few at a time the new look takes
+     a little longer to come the first time (one to two seconds; the old one
+     is drawn meanwhile) and the frames keep coming. A program that is in the
+     cache already (an earlier look's, or the browser's own copy from another
+     day) is ready at once and holds no place in the line. */
+  /* Each frame, the programs being built are asked whether they are done:
+     every such question waits for the graphics process to catch up, which is
+     why there are only ever one or two to ask (three.js's own compileAsync
+     asked all of them every ten milliseconds). One that is done is asked for
+     its uniforms and attributes there and then, questions three.js would
+     otherwise ask at its first draw, all of them in the frame the new look
+     first shows. */
   const compiled = new Promise(res => {
-    const list = prep.compile, building = [];
+    const list = prep.compile, building = [], most = R.compileAtOnce || COMPILE_AT_ONCE, programs = R.r.info.programs;
     let i = 0;
     const step = () => {
       if (R.lookToken !== token) return res();
       const t0 = performance.now();
-      while (i < list.length && performance.now() - t0 < 5) {
-        const scene = new THREE.Scene(), batch = list.slice(i, i + 3);
-        for (const m of batch) scene.add(new THREE.Mesh(R.standGeo, m));
-        i += 3;
-        try { R.r.compile(scene, R.camera); for (const m of batch) building.push(m); } catch (e) { /* built when first drawn */ }
-      }
-      while (building.length && performance.now() - t0 < 8) {
-        // (a material's program as it is now: one let go meanwhile is not asked about)
-        const p = R.r.properties.get(building[0]).currentProgram;
-        if (p && p.program) {
-          if (!p.isReady()) break;
+      for (let j = 0; j < building.length;) {
+        // (one let go meanwhile, its look given up, is not asked about)
+        const [p, at] = building[j];
+        if (p.program && !p.isReady()) { j++; continue; }
+        if (p.program) {
           try { p.getUniforms(); p.getAttributes(); } catch (e) { /* (three.js reports a shader that failed) */ }
+          if (R.lookStats) R.lookStats.push([p, performance.now() - at]);
         }
-        building.shift();
+        building.splice(j, 1);
+      }
+      while (i < list.length && building.length < most && performance.now() - t0 < 5) {
+        const scene = new THREE.Scene(), had = programs ? programs.length : 0;
+        scene.add(new THREE.Mesh(R.standGeo, list[i++]));
+        try { R.r.compile(scene, R.camera); } catch (e) { /* built when first drawn */ }
+        // (the programs this one made: none when it shares one already built)
+        if (programs) for (let k = had; k < programs.length; k++) building.push([programs[k], performance.now()]);
       }
       if (i < list.length || building.length) requestAnimationFrame(step); else res();
     };
@@ -328,6 +341,8 @@ function prepare(R, o) {
   // (the atmosphere's tables drawn only once their shaders are built: finishLook)
   if (!o.vanilla && !R.sky) R.sky = new Sky(r, true);
   if (!o.vanilla && !R.sky.ready) compile.push(...R.sky.materials);
+  // (the ripples and trampled grass, stepped every frame with shaders on: built in its first frame, a tenth of a second)
+  if (!o.vanilla && R.inter && R.inter.m) compile.push(R.inter.m);
   // (and the light pipeline's table of what each texture is made of, worked out at its first frame: renderer.js)
   if (!o.vanilla && o.ldr && !R.layerMatDone && !R.layerMatMat) { R.layerMatMat = layerMatMaterial(U.uSpecMap.value, U.uLayerInfo.value); compile.push(R.layerMatMat); }
   if (o.vanilla && !R._vanilla) R._vanilla = new Vanilla(R, R.textures);
@@ -491,52 +506,110 @@ export function looked(R, make) {
 export async function loadNormalMaps(R, url, layersOfBlocks) {
   if (R.normalsLoaded || R.normalsLoading) return R.normalsLoading;
   R.normalsLoading = (async () => {
-    const blob = await (await fetch(url)).blob();
-    const RAW = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
-    const full = await createImageBitmap(blob, RAW);
-    const layers = R.U.uAlbedo.value.image.depth, blockLayers = Math.min(layersOfBlocks, full.height / 16);
-    /* Cut into pieces of 128 layers (no one upload over 2048 pixels tall) as
-       bitmaps, decoded with nothing premultiplied, and handed to the graphics
-       card as they are. (They went through a 2D canvas before, which keeps
-       colour premultiplied by alpha: the height kept in alpha wiped out the
-       normal of every low pixel, which then faced away from all light, black
-       specks over stone and sand.) */
-    const pieces = [];
-    for (let z = 0; z < blockLayers; z += 128) {
-      const n = Math.min(128, blockLayers - z);
-      pieces.push([z, n, await createImageBitmap(full, 0, z * 16, 16, n * 16, RAW)]);
-    }
-    full.close && full.close();
+    const buf = await (await fetch(url)).arrayBuffer();
+    const layers = R.U.uAlbedo.value.image.depth;
+    // every size of every layer, worked out in a worker (normalSizes), then handed over a size a frame
+    const sizes = await inWorker(buf, layers, layersOfBlocks, R.skipNormalLayers ? Array.from(R.skipNormalLayers) : null);
     const t = new THREE.DataArrayTexture(null, 16, 16, layers);
     t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
     t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
-    t.generateMipmaps = true; t.anisotropy = 8;
+    // (room for the five sizes, none of them made by three.js: it would make them from the empty texture)
+    t.generateMipmaps = false; t.mipmaps = sizes.map(() => ({})); t.anisotropy = 8;
     t.source.dataReady = false;
     t.needsUpdate = true;
-    r_upload(R.r, t, pieces, layers, R.skipNormalLayers);
+    const r = R.r, gl = r.getContext();
+    r.initTexture(t);
+    const glTex = r.properties.get(t).__webglTexture;
+    for (let lv = 0, s = 16; lv < sizes.length; lv++, s >>= 1) {
+      await new Promise(res => requestAnimationFrame(res));
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, glTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+      gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, lv, 0, 0, 0, s, s, layers, gl.RGBA, gl.UNSIGNED_BYTE, sizes[lv]);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+      r.resetState();
+    }
     R.U.uNormalMap.value = t;
     R.normalsLoaded = true;
   })().catch(e => { console.warn('normal maps', e); R.normalsLoading = null; });
   return R.normalsLoading;
 }
-function r_upload(r, t, pieces, layers, skip) {
-  r.initTexture(t);
-  const gl = r.getContext(), glTex = r.properties.get(t).__webglTexture;
-  gl.bindTexture(gl.TEXTURE_2D_ARRAY, glTex);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
-  const N = 128, flat = new Uint8Array(16 * 16 * N * 4);
-  for (let i = 0; i < flat.length; i += 4) { flat[i] = 128; flat[i + 1] = 128; flat[i + 2] = 255; flat[i + 3] = 255; }
-  // every layer flat first (items, the other dimensions' art), then the blocks' own maps
-  for (let z = 0; z < layers; z += N) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, z, 16, 16, Math.min(N, layers - z), gl.RGBA, gl.UNSIGNED_BYTE, flat);
-  for (const [z, n, bmp] of pieces) { gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, z, 16, 16, n, gl.RGBA, gl.UNSIGNED_BYTE, bmp); bmp.close && bmp.close(); }
-  // and flat again where a resource pack replaced the block's picture (its bumps were made for ours)
-  if (skip) for (const l of skip) if (l < layers) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, l, 16, 16, 1, gl.RGBA, gl.UNSIGNED_BYTE, flat, 0);
-  gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
-  gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
-  r.resetState();
+// normalSizes in a worker of its own (here in this thread if there are no workers to be had)
+function inWorker(buf, layers, layersOfBlocks, skip) {
+  return new Promise((resolve, reject) => {
+    let w;
+    try {
+      const src = normalSizes.toString() + '\nonmessage = e => normalSizes(...e.data).then(s => postMessage(s, s.map(a => a.buffer)), err => postMessage(String(err)));';
+      const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+      w = new Worker(url);
+      URL.revokeObjectURL(url);
+    } catch (e) { normalSizes(buf, layers, layersOfBlocks, skip).then(resolve, reject); return; }
+    w.onmessage = e => { w.terminate(); if (Array.isArray(e.data)) resolve(e.data); else reject(new Error(e.data)); };
+    w.onerror = () => { w.terminate(); normalSizes(buf, layers, layersOfBlocks, skip).then(resolve, reject); };
+    w.postMessage([buf, layers, layersOfBlocks, skip]);
+  });
+}
+
+/* The PNG decoded here rather than by the browser, and every size of every
+   layer worked out from it (16 down to 1 texel a side). The height is kept
+   in alpha, which a 2D canvas premultiplies away (the normal of every low
+   pixel wiped out: black specks over stone and sand), and an ImageBitmap,
+   which keeps it, has no way to read its pixels back; so the smaller sizes
+   were made by the graphics card, generateMipmap over nineteen hundred
+   layers after it had cleared the lot, a tenth to a sixth of a second of its
+   time in one frame. Only what build_textures.py writes: 8 bits a channel,
+   RGBA, not interlaced. Each texel of a smaller size is the average of four
+   of the size above it, rounded, as generateMipmap makes them; layers past
+   the blocks' (and any a resource pack replaced: its pictures' bumps were
+   made for ours) are flat. (Self-contained: it is run in a worker from its
+   own source.) */
+async function normalSizes(buf, layers, layersOfBlocks, skip) {
+  const d = new Uint8Array(buf), dv = new DataView(buf), idat = [];
+  let i = 8, w = 0, h = 0;
+  while (i + 8 <= d.length) {
+    const n = dv.getUint32(i), type = String.fromCharCode(d[i + 4], d[i + 5], d[i + 6], d[i + 7]);
+    if (type === 'IHDR') {
+      w = dv.getUint32(i + 8); h = dv.getUint32(i + 12);
+      if (w !== 16 || d[i + 16] !== 8 || d[i + 17] !== 6 || d[i + 20] !== 0) throw new Error('normal maps: not a 16 wide 8-bit RGBA PNG');
+    } else if (type === 'IDAT') idat.push(d.subarray(i + 8, i + 8 + n));
+    else if (type === 'IEND') break;
+    i += 12 + n;
+  }
+  const raw = new Uint8Array(await new Response(new Blob(idat).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
+  const stride = w * 4;
+  if (raw.length < (stride + 1) * h) throw new Error('normal maps: PNG cut short');
+  const blockLayers = Math.min(layersOfBlocks, h / 16 | 0, layers);
+  // the blocks' rows unfiltered straight into the first size; the rest of it flat
+  const top = new Uint8Array(16 * 16 * 4 * layers);
+  new Uint32Array(top.buffer, blockLayers * 1024).fill(new Uint32Array(new Uint8Array([128, 128, 255, 255]).buffer)[0]);
+  for (let y = 0; y < blockLayers * 16; y++) {
+    const f = raw[y * (stride + 1)], src = y * (stride + 1) + 1, o = y * stride, up = o - stride;
+    for (let x = 0; x < stride; x++) {
+      const a = x >= 4 ? top[o + x - 4] : 0, b = y > 0 ? top[up + x] : 0, c = x >= 4 && y > 0 ? top[up + x - 4] : 0;
+      let v = raw[src + x];
+      if (f === 1) v += a;
+      else if (f === 2) v += b;
+      else if (f === 3) v += (a + b) >> 1;
+      else if (f === 4) { const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c); v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c; }
+      top[o + x] = v;      // (kept to a byte by the array, as the filters want)
+    }
+  }
+  if (skip) for (const l of skip) if (l < blockLayers) for (let k = l * 1024; k < (l + 1) * 1024; k += 4) { top[k] = 128; top[k + 1] = 128; top[k + 2] = 255; top[k + 3] = 255; }
+  const sizes = [top];
+  for (let s = 8; s >= 1; s >>= 1) {
+    const up = sizes[sizes.length - 1], u = s * 2, a = new Uint8Array(s * s * 4 * layers);
+    for (let z = 0; z < layers; z++) {
+      const ub = z * u * u * 4, ab = z * s * s * 4;
+      for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) for (let c = 0; c < 4; c++) {
+        const p = ub + ((2 * y) * u + 2 * x) * 4 + c;
+        a[ab + (y * s + x) * 4 + c] = (up[p] + up[p + 4] + up[p + u * 4] + up[p + u * 4 + 4] + 2) >> 2;
+      }
+    }
+    sizes.push(a);
+  }
+  return sizes;
 }
 
 /* ---- texture filtering and mipmaps (Video Settings) ----
