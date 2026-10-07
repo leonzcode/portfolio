@@ -1250,7 +1250,7 @@ async function boot() {
         menuAcc += dt;
         if (menu && menuAcc >= 1 / 31 && !cardBusy(performance.now())) { menuFrame(menuAcc); menuAcc = 0; drawn(); }
       }
-      soundFrame(game && game.ready && !travelling ? game : null, renderer.camera, now);
+      soundFrame(game, renderer.camera, now);
     } catch (e) {
       if (!loop.warned) { loop.warned = true; console.error(e); }
     }

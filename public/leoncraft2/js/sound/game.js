@@ -56,8 +56,8 @@ export function soundFrame(g, camera, now) {
   if (camera) Sound.setListener(camera);
   const dt = lastNow ? Math.min(250, now - lastNow) : 16;
   lastNow = now;
-  // in a world the music keeps game time (soundTick); on the title screen, real time
-  if (!g || !g.ready) {
+  // in a world the music keeps game time (soundTick); on the title screen, real time (and none while a world loads)
+  if (!g) {
     menuAcc += dt;
     while (menuAcc >= 50) { menuAcc -= 50; Music.tick(situation(null)); }
   } else menuAcc = 0;
