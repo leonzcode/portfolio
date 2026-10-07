@@ -470,6 +470,8 @@ export class Piglin extends Monster {
   get eyeH() { return this.baby ? 0.97 : 1.74; }
   registerGoals() {
     this.goals.add(0, new FloatGoal(this));
+    // (gold seen comes first, before a fight or running off, as the game's admire-item activity does)
+    this.goals.add(1, new GoToGoldGoal(this));
     this.goals.add(1, new AvoidGoal(this, e => (e.type === 'zombified_piglin' || e.type === 'zoglin') && !e.dead, 6, 1, 1.2));
     this.goals.add(2, new AdmireGoal(this));
     this.goals.add(3, new CrossbowGoal(this));
@@ -509,21 +511,21 @@ export class Piglin extends Monster {
     this.nav.stop();
     return 'consume';
   }
-  /* Gold lying about (what it loves, the game's piglin_loved): one not busy admiring or fighting goes
-     to the nearest within 9 blocks and picks one up, then admires it as if given. */
-  seekGold() {
+  /* Gold lying about (what it loves, the game's piglin_loved): the nearest within 9 blocks, for
+     GoToGoldGoal, which walks there and picks one up; it is then admired as if given. */
+  goldNear() {
     const D = activeDrops();
-    if (!D) return;
+    if (!D) return null;
     let best = null, bd = 81;
     for (const e of D.items) {
       if (e.gone || !e.stack || e.delay > 0 || !LOVED.has(ITEMS[e.stack.id] && ITEMS[e.stack.id].name)) continue;
       const d = this.dist2(e.pos.x, e.pos.y, e.pos.z);
       if (d < bd) { bd = d; best = e; }
     }
-    if (!best) return;
-    if (Math.abs(best.pos.x - this.pos.x) < this.hw + 1.2 && Math.abs(best.pos.z - this.pos.z) < this.hw + 1.2 && best.pos.y > this.pos.y - 0.6 && best.pos.y < this.pos.y + this.h + 0.5) this.pickUp(best);
-    else if (this.age % 10 === 0 || this.nav.isDone()) this.nav.moveTo(best.pos.x, best.pos.y, best.pos.z, 1, 0);
+    return best;
   }
+  // near enough to take it: its box within a block of the piglin's across, and level with it
+  reaches(e) { return Math.abs(e.pos.x - this.pos.x) < this.hw + 1.2 && Math.abs(e.pos.z - this.pos.z) < this.hw + 1.2 && e.pos.y > this.pos.y - 0.6 && e.pos.y < this.pos.y + this.h + 0.5; }
   // one taken off the stack in reach; true when it took it
   pickUp(e) {
     const D = activeDrops(), name = ITEMS[e.stack.id] && ITEMS[e.stack.id].name;
@@ -546,7 +548,6 @@ export class Piglin extends Monster {
       }
       this.gold = 0; this.admiring = null;
     } else if (this.noAdmireT > 0) this.noAdmireT--;
-    else if (!this.admireT && this.age % 4 === 0) this.seekGold();
     // out of the Nether: 15 seconds of shaking and it is a zombified piglin
     if (!inNether(this.m) && !this.immune) {
       if (++this.zombifyT >= 300) this.m.convertMob(this, 'zombified_piglin', n => { n.equip = Object.assign({}, this.equip); n.attackDamage = n.holding('golden_sword') ? 8 : 5; });
@@ -581,6 +582,27 @@ export class Piglin extends Monster {
 // melee for one holding a sword (or nothing)
 class PiglinMelee extends MeleeAttackGoal {
   canUse() { return !this.mob.holding('crossbow') && !this.mob.baby && super.canUse(); }
+}
+/* Walking to gold lying about and taking one (the game's go-to-wanted-item, within 9 blocks): ahead
+   of a fight and of strolling, so neither leads it off half way; not while it admires, nor for 20
+   seconds after it was hurt. Looked for every fourth tick. */
+class GoToGoldGoal extends Goal {
+  constructor(mob) { super(mob, MOVE); this.item = null; }
+  canUse() {
+    const m = this.mob;
+    if (m.admireT > 0 || m.noAdmireT > 0 || m.age % 4) return false;
+    this.item = m.goldNear();
+    return !!this.item;
+  }
+  canContinue() { const m = this.mob, e = this.item; return !!e && !e.gone && !(m.admireT > 0) && m.dist2(e.pos.x, e.pos.y, e.pos.z) < 81; }
+  start() { this.go(); }
+  tick() {
+    const m = this.mob, e = this.item;
+    if (m.reaches(e)) { m.pickUp(e); this.item = null; return; }
+    if (m.age % 10 === 0 || m.nav.isDone()) this.go();
+  }
+  go() { const e = this.item; this.mob.nav.moveTo(e.pos.x, e.pos.y, e.pos.z, 1, 0); }
+  stop() { this.item = null; }
 }
 // standing still, looking at the gold
 class AdmireGoal extends Goal {
