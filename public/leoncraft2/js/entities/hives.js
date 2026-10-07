@@ -2,8 +2,9 @@
    Leoncraft 2 - bee nests and beehives at work (the Minecraft Wiki's Beehive
    and Bee pages), ticked with the spawners (struct/spawners.js).
 
-   A nest the trees grew holds its two or three bees until you first come
-   near (meta bits 5-6: how many are still inside); then out they come. A
+   A nest the trees grew holds its two or three bees (meta bits 5-6, until
+   you first come near and they join the bees kept inside); they come out
+   within the 600 ticks a bee without nectar stays, not at night. A
    bee that has taken nectar from a flower, or is out at night or in the
    rain, flies home to its hive (or the nearest one within 22 blocks with
    room for three) and goes in. It stays 2400 ticks (600 without nectar, and
@@ -66,11 +67,16 @@ export class Hives {
     }
     for (const [x, y, z] of hives) {
       const m = world.meta(x, y, z), k = x + ',' + y + ',' + z;
-      // a grown nest's own bees, the first time you come near
+      // a grown nest's own bees, the first time you come near: they are in it like any other bees without
+      // nectar, each with up to its 600 ticks left, so by day they come out over the next half minute
+      // (and at night or in the rain they stay in until it is over)
       const waiting = (m >> 5) & 3;
       if (waiting) {
         world.set(x, y, z, world.get(x, y, z), m & ~96);
-        for (let i = 0; i < waiting; i++) this.release(world, E, x, y, z, m, null);
+        const list = this.inside.get(k) || [];
+        for (let i = 0; i < waiting && list.length < 3; i++) list.push({ json: null, left: 1 + RI(600), nectar: false });
+        this.inside.set(k, list);
+        this.dirty(g);
       }
       // bees inside whose time is up come out (not at night, nor in the rain)
       const list = this.inside.get(k);
