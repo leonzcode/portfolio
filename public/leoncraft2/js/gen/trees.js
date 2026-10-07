@@ -737,10 +737,10 @@ const DECORATORS = {
     shuffle(list, r);
     const spot = list.find(([x, y, z]) => ctxAir(t, x, y, z) && ctxAir(t, x, y, z + 1));
     if (!spot) return;
-    setDeco(t, spot[0], spot[1], spot[2], { id: B.bee_nest, meta: 2 });
-    // the bees the nest gets (only their random draws matter here)
+    // the bees the nest gets (their random draws; how many waits in meta bits 5-6, entities/hives.js lets them out)
     const n = 2 + r.nextInt(2);
     for (let k = 0; k < n; k++) r.nextInt(599);
+    setDeco(t, spot[0], spot[1], spot[2], { id: B.bee_nest, meta: 2 | (n << 5) });
   },
   alter_ground(t, d, ctx) {
     const P = prov(d.provider);
