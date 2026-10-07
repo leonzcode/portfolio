@@ -16,15 +16,15 @@
    more than half of a worker's code, so they are loaded only when a world
    first needs them: the title screen's world (the first generator) starts
    without waiting for them. */
-import { Gen } from './worldgen.js?v=22';
-import { meshColumn, setColours } from './mesher.js?v=22';
-import { resolveTextures } from './blocks.js?v=22';
-import { worldStructures, structureMessage } from './struct/hook.js?v=22';
-import { keepChunk, readChunks, sweepChunks, keptCount } from './chunkcache.js?v=22';
+import { Gen } from './worldgen.js?v=23';
+import { meshColumn, setColours } from './mesher.js?v=23';
+import { resolveTextures } from './blocks.js?v=23';
+import { worldStructures, structureMessage } from './struct/hook.js?v=23';
+import { keepChunk, readChunks, sweepChunks, keptCount } from './chunkcache.js?v=23';
 
 let G = null;                 // { VanillaGen, NetherGen, EndGen } once loaded
 let loadingG = null;
-const loadGens = () => loadingG || (loadingG = Promise.all([import('./gen/vanillagen.js?v=22'), import('./gen/nether.js?v=22'), import('./gen/end.js?v=22')])
+const loadGens = () => loadingG || (loadingG = Promise.all([import('./gen/vanillagen.js?v=23'), import('./gen/nether.js?v=23'), import('./gen/end.js?v=23')])
   .then(([v, n, e]) => { G = { VanillaGen: v.VanillaGen, NetherGen: n.NetherGen, EndGen: e.EndGen }; }));
 // whether a world (init or practice) needs one of Minecraft's generators
 const needsG = m => m.dim === 'the_nether' || m.dim === 'the_end' || m.generator === 'vanilla';
