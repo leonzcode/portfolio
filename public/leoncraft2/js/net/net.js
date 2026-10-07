@@ -48,10 +48,13 @@
                   /difficulty, /gamerule) are answered by it; one aimed at
                   another player is run by their game (ranAs)
 
-   Not shared yet: the mobs, the orbs of experience and what you ride (a
-   boat, a minecart: each player sees their own; others see you sitting).
-   What a mob does to the world (a creeper's hole, a farmer's crops, what it
-   drops) is shared like anything else.
+     vehicles     boats and minecarts are everyone's: numbered by the server,
+                  moved by the machine of whoever steers, ridden two to a
+                  boat, broken by anyone (vehicles.js)
+
+   Not shared yet: the mobs and the orbs of experience. What a mob does to
+   the world (a creeper's hole, a farmer's crops, what it drops) is shared
+   like anything else.
 --------------------------------------------------------------------------- */
 import { B, BLOCKS } from '../blocks.js?v=21';
 import { idx, H } from '../world-const.js?v=21';
@@ -65,6 +68,7 @@ import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=21';
 import { register, commandDef, execute, gameRule } from '../commands.js?v=21';
 import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=21';
 import { Projectile } from '../entities/projectiles.js?v=21';
+import { Vehicles } from './vehicles.js?v=21';
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {
@@ -402,6 +406,7 @@ export class Net {
     this.op = 0;                     // what you may do here: 4 an operator, 2 commands allowed, 0 neither
     this.shots = [];                 // what you shot or threw this tick, for the others to see fly
     this.pvpHit = null;              // the last hit another player gave you: { name, k, item, age }
+    this.veh = new Vehicles(this);   // the boats and minecarts everyone shares (vehicles.js)
   }
   // whether you may use the commands that change the world (an operator, or Allow Commands)
   canCheat() { return this.op >= 2; }
@@ -431,6 +436,7 @@ export class Net {
       this.edits.push(edits); this.ct.push(ct); this.dt.push(dt);
     }
     this.initPlayers = m.players || [];
+    this.veh.init(m);
     // your own record on this server (MpSave.readState), or null the first time you come
     this.pdata = m.pdata && typeof m.pdata === 'object' ? m.pdata : null;
     for (const o of m.items || []) this.keepItem(o);
@@ -459,6 +465,8 @@ export class Net {
     // the puff of smoke a player leaves when they die
     this.players.onPoof = (x, y, z) => { const E = this.game && this.game.entities; if (E && E.particles) E.particles('poof', x, y + 0.9, z, 20, 0.4); };
     for (const p of this.initPlayers) this.players.add(p);
+    // someone sitting in a boat or minecart is drawn in its seat in this machine's copy of it
+    this.players.seatOf = r => this.veh.seatOf(r);
     this.initPlayers = null;
     // the server's game rules and difficulty, for everyone
     if (this.rules) this.applyRules(this.rules);
@@ -552,7 +560,8 @@ export class Net {
       case 'prot': this.prot = m.r | 0; return;
       case 'out': if (this.ctx) for (const l of m.lines || []) if (Array.isArray(l)) this.ctx.chat.add(String(l[0]), l[1] === undefined ? 0xFFFFFF : l[1]); return;
       case 'join': if (this.players) { this.players.add(m.p); } else this.initPlayers.push(m.p); return;
-      case 'leave': this.bases.delete(m.id); if (this.players) this.players.remove(m.id); else this.initPlayers = this.initPlayers.filter(p => p.id !== m.id); return;
+      case 'v=': case 'v+': case 'vs': case 'vc': case 'vr': case 'vj': case 'v-': this.veh.receive(m); return;
+      case 'leave': this.veh.left(m.id); this.bases.delete(m.id); if (this.players) this.players.remove(m.id); else this.initPlayers = this.initPlayers.filter(p => p.id !== m.id); return;
       case 'skin': if (this.players) this.players.setSkin(m.id, m.skin, m.slim); else this.early(m); return;
       case 'eq': if (this.players) this.players.setEquip(m.id, m.eq); else this.early(m); return;
       case 'sw': if (this.players) this.players.swing(m.id, m.h); return;
@@ -592,6 +601,7 @@ export class Net {
     for (let n = 0; this.inbox.length && n < 2000; n++) this.handle(this.inbox.shift());
     this.timeExpect = g.time + 1;
     this.pushTick();
+    this.veh.tick(dimCode(g.dim));
     this.shareShots();
     this.sendState(stamp);
     if (++this.eqTick % 5 === 0 || this.eqTick === 1 || g.inv.heldId() !== this.lastHeld) this.sendEquip();
@@ -686,6 +696,7 @@ export class Net {
     const E = g.entities;
     if (E && E !== this.he) {
       this.he = E;
+      this.veh.hook(E);
       // the crosshair finds the other players too, in front of any mob or block (for hitting them)
       const pickFor = E.pickFor;
       E.pickFor = function (eye, blockT) { return net.pickPlayer(this, eye, blockT, pickFor.call(this, eye, blockT)); };
@@ -737,6 +748,7 @@ export class Net {
     W.clearTime = 0; W.rainTime = 1; W.thunderTime = 1;
   }
   ownsAt(x, z) { return this.owns({ cx: Math.floor(x / 16), cz: Math.floor(z / 16) }); }
+  dimNow() { return this.game ? dimCode(this.game.dim) : 0; }
   // within the server's spawn protection (the Overworld only, as the game has it)
   protectedAt(x, z) {
     const s = this.spawn;

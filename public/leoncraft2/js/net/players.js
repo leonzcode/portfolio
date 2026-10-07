@@ -38,7 +38,7 @@ const idOf = name => !name ? 0 : (I[name] !== undefined ? I[name] : B[name] !== 
 export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024, SPEC: 2048, INVIS: 4096 };
 // what the use button can be doing with a hand (render/avatar.js useNow kinds), by number in a position
 export const USE_KINDS = ['eat', 'drink', 'horn', 'bow', 'aim', 'crossbow', 'block', 'trident', 'spear', 'spyglass'];
-// sitting on something: the legs sit (the mount itself is on its rider's machine only, for now)
+// sitting on something this machine does not have (a horse): the legs sit
 const SEAT = { yaw: 0 };
 // a bed's facing bits (sim/beds.js): north, east, south, west, the way from its foot to its head
 const BED_DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
@@ -208,6 +208,9 @@ export class RemotePlayers {
       if (!show) { if (r.av) this.hide(r); continue; }
       const p = this.sample(r, now, dt);
       if (!p) { if (r.av) this.hide(r); continue; }
+      // sitting in a boat or minecart this machine has too: in its seat there, moving with it (net/vehicles.js)
+      const seat = p.f & F.RIDE && this.seatOf ? this.seatOf(r) : null;
+      if (seat) { p.x = seat.x; p.y = seat.y; p.z = seat.z; }
       /* Dying, as the game shows it: tipped over onto its side over the first
          two thirds of a second, red, and gone in a puff at one second (20 ticks). */
       if (p.f & F.DEAD) {
@@ -227,7 +230,7 @@ export class RemotePlayers {
       P.dying = r.dying || 0;
       r.invis = !!(p.f & F.INVIS);
       P.sneaking = !!(p.f & F.SNEAK); P.flying = !!(p.f & F.FLY); P.gliding = !!(p.f & F.GLIDE);
-      P.riding = p.f & F.RIDE ? SEAT : null;
+      P.riding = p.f & F.RIDE ? (seat ? seat.v : SEAT) : null;
       P.bed = null;
       if (p.f & F.SLEEP) {
         const bx = Math.floor(p.x), by = Math.floor(p.y), bz = Math.floor(p.z), b = world && world.get(bx, by, bz);
