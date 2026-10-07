@@ -54,7 +54,7 @@ export class Stats {
     const s = saved || {};
     this.custom = Object.assign({}, s.custom);
     for (const k of ['mined', 'crafted', 'used', 'broken', 'picked_up', 'dropped', 'killed', 'killed_by']) this[k] = Object.assign({}, s[k]);
-    this.t = { last: null, ground: true, landed: undefined, dead: false, sleeping: false };
+    this.t = { last: null, landed: undefined, dead: false, sleeping: false };
   }
   toJSON() {
     const o = { custom: this.custom };
@@ -102,10 +102,7 @@ export class Stats {
       else if (P.onGround) this.add(P.sprinting ? 'sprint_one_cm' : P.sneaking ? 'crouch_one_cm' : 'walk_one_cm', h);
       else if (P.gliding) this.add('aviate_one_cm', d3);
       else if (h > 25) this.add('fly_one_cm', h);
-      // a jump: off the ground and going up, under your own steam
-      if (t.ground && !P.onGround && dy > 0 && !P.flying && !P.inWater && !P.inLava && !P.climbing && !rv) this.add('jump');
     }
-    t.ground = P.onGround;
     // a landing after a fall of 2 blocks or more (not where you could fly)
     if (P.landed !== t.landed) {
       if (t.landed !== undefined && P.landed && P.landed.dist >= 2 && !P.canFly) this.add('fall_one_cm', Math.round(P.landed.dist * 100));
@@ -131,7 +128,13 @@ const damageable = name => { const id = name ? itemId(name) : 0; return !!(id &&
 let using = null;      // the block (or mob) a right click is on, while it is being handled
 
 function hook(g, S) {
-  const E = g.entities, H = g.hands, I = g.inter, D = g.drops, sv = g.survival, gui = lc2() && lc2().gui;
+  const E = g.entities, H = g.hands, I = g.inter, D = g.drops, sv = g.survival, gui = lc2() && lc2().gui, P = g.player;
+  // a jump: the player marks its own (player.js `jumped`, which survival.js reads for the exhaustion and clears)
+  if (P && !P.__statsJump) {
+    P.__statsJump = true;
+    let j = !!P.jumped;
+    Object.defineProperty(P, 'jumped', { configurable: true, get: () => j, set: v => { if (v && !j && ONE) ONE.add('jump'); j = !!v; } });
+  }
   if (E) {
     // a kill: mob kills (or player kills) and the mob's own count
     wrap(E, 'onDeath', (orig, [e, src]) => {
