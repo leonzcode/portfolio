@@ -458,7 +458,7 @@ export function buildAtlas() {
    0-7 the smoke puff, big to small; 8 crit; 9 magic crit; 10 heart;
    11 angry cloud; 12 flame; 13 bubble; 14 splash drop; 15 the explosion
    puff; 16-19 the explosion frames; 20 note; 21 sparkle; 22 dust;
-   24-25 runes (an enchanting table's); 26 soul flame. */
+   24-25 runes (an enchanting table's); 26 soul flame; 27 a falling leaf. */
 export function buildSheet() {
   const S = 16, c = document.createElement('canvas');
   c.width = c.height = S * 8;
@@ -500,6 +500,9 @@ export function buildSheet() {
     const w = (y / S) * 6 + 0.5, dx = Math.abs(x - 7.5);
     if (dx < w && y > 1 && R() > 0.08) put(12, x, y, y > 11 ? [255, 250, 200] : dx < w * 0.5 ? [255, 210, 60] : [240, 110, 20]);
   }
+  // a falling leaf (tinted where it is used): a small leaf on a short stalk, a darker middle vein
+  const leaf = ['....XX..', '...XXXX.', '..XXVXXX', '..XXVXX.', '.XXVXXX.', '.XVXXX..', '..XXX...', '.S......'];
+  leaf.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== '.') put(27, x + 4, y + 4, ch === 'X' ? [236, 236, 236] : ch === 'V' ? [190, 190, 190] : [150, 150, 150]); }));
   // soul flame: the same flame in a soul torch's blues
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
     const w = (y / S) * 6 + 0.5, dx = Math.abs(x - 7.5);
