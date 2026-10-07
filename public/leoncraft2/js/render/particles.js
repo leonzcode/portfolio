@@ -14,12 +14,15 @@
    square, or a block-textured piece): smoke, crits, splashes and the rest.
 
    All of them are drawn as one mesh of quads facing the camera, rebuilt
-   each frame from the live ones (at most MAX), lit by the light where the
-   player stands.
+   each frame from the live ones (at most MAX), each lit as the game lights
+   a particle: by the sky and block light where it is (looked up as it is
+   made and every tick after), so a piece falling into a dark hole darkens
+   and dust kicked up by a torch is lit by it.
 --------------------------------------------------------------------------- */
 import { BLOCKS, B, SOLID } from '../blocks.js?v=26';
 import { VANILLA } from './vanilla.js?v=26';
 import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=26';
+import { Terrain } from '../entities/terrain.js?v=26';
 const THREE = window.THREE;
 
 const MAX = 1500;
@@ -28,21 +31,21 @@ const HEAD = `precision highp float; precision highp int; precision highp sample
 const VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
 in vec3 position; in vec3 aUv; in vec3 aCol;
-out vec3 vUv; out vec3 vCol; out vec3 vWorld;
+in vec2 aLv;                    // the sky and block light where the particle is (0..1)
+out vec3 vUv; out vec3 vCol; out vec3 vWorld; out vec2 vLv;
 #ifdef LIT
-// Shaders ON: the light where you stand and (one pass) the fog, per corner (a piece is a few pixels across)
+// Shaders ON: the light where it is and (one pass) the fog, per corner (a piece is a few pixels across)
 uniform sampler2D uAmbient, uNoise, uView;
 uniform vec3 cameraPosition;
-uniform vec2 uLightLv;
 uniform float uEyeInWater;
 out vec3 vLight; out vec3 vKeep; out vec3 vAdd;
 #endif
 LIGHTS_HERE
 void main() {
-  vUv = aUv; vCol = aCol; vWorld = position;
+  vUv = aUv; vCol = aCol; vWorld = position; vLv = aLv;
   gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
 #ifdef LIT
-  float sky = uLightLv.x, block = uLightLv.y;
+  float sky = aLv.x, block = aLv.y;
   vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
   vLight = sunC * smoothstep(0.8, 0.95, sky) * 0.5 + amb * sky * sky * 0.8 / PI + (block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) / PI : vec3(0.0)) + vec3(0.002);
   if (aCol.r < 0.0) vLight = vec3(1.5);   // flames glow: as bright as a surface right by a torch
@@ -58,20 +61,19 @@ void main() {
 const FS_VANILLA = VANILLA + /* glsl */`
 uniform sampler2DArray uAlbedo;
 uniform vec3 cameraPosition;
-uniform vec2 uLightLv;
-in vec3 vUv; in vec3 vCol; in vec3 vWorld;
+in vec3 vUv; in vec3 vCol; in vec3 vWorld; in vec2 vLv;
 out vec4 o;
 void main() {
   vec4 t = vUv.z >= 0.0 ? textureLod(uAlbedo, vUv, 0.0) : vec4(1.0);
   if (t.a < 0.1) discard;
   // a colour below zero marks a quad drawn at full brightness (the flames on something burning)
-  vec3 c = t.rgb * abs(vCol) * (vCol.r < 0.0 ? vec3(1.0) : lightmapAt(uLightLv.x, uLightLv.y));
+  vec3 c = t.rgb * abs(vCol) * (vCol.r < 0.0 ? vec3(1.0) : lightmapAt(vLv.x, vLv.y));
   o = vec4(linearFog(c, fogDistance(vWorld - cameraPosition)), 1.0);
 }`;
 // Detailed graphics: lit like the player model (sky, sun, block light), then fogged and tone mapped like the blocks
 const FS_DETAILED = COMMON + TONEMAP + /* glsl */`
 uniform sampler2DArray uAlbedo;
-in vec3 vUv; in vec3 vCol; in vec3 vWorld;
+in vec3 vUv; in vec3 vCol; in vec3 vWorld; in vec2 vLv;
 in vec3 vLight; in vec3 vKeep; in vec3 vAdd;
 out vec4 o;
 void main() {
@@ -98,8 +100,9 @@ export class Particles {
     this.R = renderer; this.world = world;
     this.list = [];
     const g = this.geo = new THREE.BufferGeometry();
-    this.pos = new Float32Array(MAX * 12); this.uv = new Float32Array(MAX * 12); this.col = new Float32Array(MAX * 12);
+    this.pos = new Float32Array(MAX * 12); this.uv = new Float32Array(MAX * 12); this.col = new Float32Array(MAX * 12); this.lv = new Float32Array(MAX * 8);
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aLv', new THREE.BufferAttribute(this.lv, 2).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('aUv', new THREE.BufferAttribute(this.uv, 3).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('aCol', new THREE.BufferAttribute(this.col, 3).setUsage(THREE.DynamicDrawUsage));
     const idx = new Uint16Array(MAX * 6);
@@ -107,7 +110,7 @@ export class Particles {
     g.setIndex(new THREE.BufferAttribute(idx, 1));
     g.setDrawRange(0, 0);
     const U = renderer.U;
-    const uni = Object.assign({}, U, { uLightLv: renderer.avatar.uLight });
+    const uni = Object.assign({}, U);
     // made again for each look, Shaders ON or OFF (render/looks.js)
     this.mesh = new THREE.Mesh(g, renderer.looked(o => new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3, vertexShader: HEAD + (o.vanilla ? VS.replace('LIGHTS_HERE', '') : COMMON + TONEMAP + 'uniform float uTime;\n' + VS.replace('LIGHTS_HERE', LDR + LIGHTS)), fragmentShader: HEAD + (o.vanilla ? FS_VANILLA : FS_DETAILED),
@@ -118,8 +121,16 @@ export class Particles {
     renderer.scene.add(this.mesh);
     this.right = new THREE.Vector3(); this.up = new THREE.Vector3();
     this.burning = [];              // x, y, z, width, height of each thing on fire this frame (burn())
+    this.T = world ? new Terrain(world) : null;   // the light where each one is
   }
-  setWorld(world) { this.world = world; this.list.length = 0; }
+  setWorld(world) { this.world = world; this.list.length = 0; this.T = world ? new Terrain(world) : null; }
+  // the sky and block light (0..1) at a particle, as the game lights one
+  lightAt(p) {
+    const T = this.T;
+    if (!T) { p.sky = 1; p.blk = 0; return; }
+    const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+    p.sky = T.sky(x, y, z) / 15; p.blk = T.block(x, y, z) / 15;
+  }
 
   /* Something burning (render each frame, from entities/manager.js): the
      game's flames round it, not particles. Its fire picture on quads facing
@@ -191,11 +202,12 @@ export class Particles {
     const s = (Math.random() + Math.random() + 1) * 0.15, l = Math.hypot(xd, yd, zd) || 1;
     xd = xd / l * s * 0.4; yd = yd / l * s * 0.4 + 0.1; zd = zd / l * s * 0.4;
     const p = { x, y, z, ox: x, oy: y, oz: z, xd, yd, zd, age: 0, life: Math.floor(4 / (Math.random() * 0.9 + 0.1)), size: 0.1 * (Math.random() * 0.5 + 0.5) * 2,
-      gravity: 1, friction: 0.98, layer: -1, uo: 0, vo: 0, r: 1, g: 1, b: 1, ground: false, physics: true };
+      gravity: 1, friction: 0.98, layer: -1, uo: 0, vo: 0, r: 1, g: 1, b: 1, ground: false, physics: true, sky: 1, blk: 0 };
     // (one the Particles setting leaves out is made all the same, for whoever asked for it, but never shown)
     if (!keep) return p;
     if (this.list.length >= MAX) this.list.shift();
     this.list.push(p);
+    this.lightAt(p);
     return p;
   }
   // a broken block: pieces from a grid across each of its boxes
@@ -253,6 +265,7 @@ export class Particles {
       this.move(p, w);
       p.xd *= p.friction; p.yd *= p.friction; p.zd *= p.friction;
       if (p.ground) { p.xd *= 0.7; p.zd *= 0.7; }
+      this.lightAt(p);
       L[n++] = p;
     }
     L.length = n;
@@ -274,7 +287,7 @@ export class Particles {
   render(cam, alpha) {
     const L = this.list;
     let n = Math.min(L.length, MAX);
-    const P = this.pos, UV = this.uv, C = this.col;
+    const P = this.pos, UV = this.uv, C = this.col, LV = this.lv;
     const R = this.right.setFromMatrixColumn(cam.matrixWorld, 0), Up = this.up.setFromMatrixColumn(cam.matrixWorld, 1);
     for (let i = 0; i < n; i++) {
       const p = L[i];
@@ -293,13 +306,15 @@ export class Particles {
       UV[o + 6] = u1; UV[o + 7] = v0; UV[o + 8] = p.layer;
       UV[o + 9] = u0; UV[o + 10] = v0; UV[o + 11] = p.layer;
       for (let k = 0; k < 4; k++) { C[o + k * 3] = p.r; C[o + k * 3 + 1] = p.g; C[o + k * 3 + 2] = p.b; }
+      const l = i * 8;
+      for (let k = 0; k < 8; k += 2) { LV[l + k] = p.sky; LV[l + k + 1] = p.blk; }
     }
     // the flames on anything burning go on after them
     n = this.flames(n, cam);
     const g = this.geo;
     g.setDrawRange(0, n * 6);
     if (n) {
-      for (const nm of ['position', 'aUv', 'aCol']) { const a = g.attributes[nm]; a.clearUpdateRanges(); a.addUpdateRange(0, n * 12); a.needsUpdate = true; }
+      for (const nm of ['position', 'aUv', 'aCol', 'aLv']) { const a = g.attributes[nm]; a.clearUpdateRanges(); a.addUpdateRange(0, n * (nm === 'aLv' ? 8 : 12)); a.needsUpdate = true; }
     }
     this.mesh.visible = n > 0;
   }
