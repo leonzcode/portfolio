@@ -10,6 +10,8 @@
      lava           with air over it, one time in a hundred a spark that
                     jumps up and falls back
      nether portal  four swirling purple specks
+     water          with your eyes under it, still or falling water one time
+                    in ten a dark speck hanging in it
      campfires      once seen, every tick as the game's campfire does: 11 in
                     a hundred ticks two or three puffs of its tall smoke,
                     rising 0.07 a tick for 280 to 330 ticks (a signal fire,
@@ -27,6 +29,7 @@
 --------------------------------------------------------------------------- */
 import { BLOCKS, B } from '../blocks.js?v=24';
 import { BIOMES } from '../biomes.js?v=24';
+import { LEVEL, FALLING } from '../world-const.js?v=24';
 
 const R = Math.random;
 const KIND = new Uint8Array(BLOCKS.length + 1);
@@ -36,6 +39,8 @@ set('torch', TORCH); set('wall_torch', WALL_TORCH); set('soul_torch', SOUL_TORCH
 set('copper_torch', TORCH); set('copper_wall_torch', WALL_TORCH);
 set('redstone_torch', RS_TORCH); set('redstone_wall_torch', RS_WALL_TORCH);
 set('fire', FIRE); set('soul_fire', FIRE); set('lava', LAVA); set('nether_portal', PORTAL);
+const WATER = 12;
+set('water', WATER);
 for (const d of BLOCKS) if (d && d.shape === 'campfire') KIND[d.id] = CAMPFIRE;
 /* leaves (26.x): each time one is picked, a chance it lets a leaf fall if nothing solid is under it,
    one in a hundred (cherry one in ten, its pink petals falling faster; pale oak one in fifty) */
@@ -199,6 +204,14 @@ export class Ambient {
         const Q = this.m.particlesP, i = Q.n;
         this.puff('leaf', x + R(), y - 0.05, z + R(), (R() - 0.5) * 0.01, -L.v, (R() - 0.5) * 0.01, col, OUTDOORS);
         if (Q.n > i) { Q.life[i * 2 + 1] = Math.min(300, Math.max(1, Math.round(t))); Q.info[i * 6 + 3] = L.g; Q.spin[i] = R() * 6.28; }
+        break;
+      }
+      case WATER: {
+        // the specks hanging in still or falling water, one time in ten; only seen from under the water
+        if (!this.m.P.eyeInWater || R() >= 0.1) break;
+        const m = T.meta(x, y, z);
+        if ((m & LEVEL) && !(m & FALLING)) break;
+        this.puff('underwater', x + R(), y + R(), z + R(), 0, 0, 0, undefined, OUTDOORS);
         break;
       }
       case CAMPFIRE: {
