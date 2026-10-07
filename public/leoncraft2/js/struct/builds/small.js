@@ -203,16 +203,18 @@ function drawJungle(g, o) {
   g.air(1, b - 3, 1, 2, b - 1, 13);
   g.air(3, b - 3, 12, 8, b - 1, 13);
   g.air(3, b - 3, 2, 4, b - 1, 3);
-  // the corridor trap: a tripwire across the way, the dispenser at the far end firing back up it
+  // the corridor trap: a string across the way between two hooks in the walls, and in the wall over the
+  // west hook's block a dispenser that fires across at head height when the string is tripped (sim/tripwire.js)
   g.set(1, b - 3, 10, 'tripwire_hook', { f: EAST });
   g.set(2, b - 3, 10, 'tripwire');
-  g.set(1, b - 2, 10, cob());
-  container(g, 1, b - 3, 1, 'dispenser', { f: SOUTH }, 'jungle_temple_dispenser');
+  g.set(3, b - 3, 10, 'tripwire_hook', { f: WEST });
+  container(g, 0, b - 2, 10, 'dispenser', { f: EAST }, 'jungle_temple_dispenser');
   g.set(2, b - 3, 2, 'vine');
-  // the second trap at the foot of the stair
+  // the second trap at the foot of the stair, the same way round
   g.set(8, b - 3, 9, 'tripwire_hook', { f: EAST });
-  g.set(9, b - 3, 9, 'tripwire'); g.set(10, b - 3, 9, 'tripwire');
-  container(g, 10, b - 2, 2, 'dispenser', { f: SOUTH }, 'jungle_temple_dispenser');
+  g.set(9, b - 3, 9, 'tripwire');
+  g.set(10, b - 3, 9, 'tripwire_hook', { f: WEST });
+  container(g, 7, b - 2, 9, 'dispenser', { f: EAST }, 'jungle_temple_dispenser');
   // the lever puzzle on the back wall: three levers, a sticky piston and its wire
   g.fill(3, b - 3, 14, 8, b - 1, 14, 'cobblestone');
   for (const lx of [4, 5, 6]) g.set(lx, b - 2, 13, 'lever', { f: NORTH });
