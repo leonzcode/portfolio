@@ -28,6 +28,7 @@
 import { COMMON, FILTER } from './glsl.js?v=33';
 import { FullScreen, VS_FULL } from './sky.js?v=33';
 import { BlockClouds } from './clouds.js?v=33';
+import { END_FLASH_GLSL, END_FLASH_COLOUR } from './endflash.js?v=33';
 const THREE = window.THREE;
 
 // the game's rain and thunder colour shift: towards a grey of the colour's own brightness times k
@@ -231,7 +232,7 @@ void main() {
 }`;
 
 /* ---- the sky: one pass over the whole screen, before the world ---- */
-const SKY_FS = COMMON + /* glsl */`
+const SKY_FS = COMMON + END_FLASH_GLSL + /* glsl */`
 uniform mat4 uInvViewProj;
 uniform vec3 uCamPos, uSkyColor, uFogColor, uVSun;
 uniform vec4 uSunrise;          // colour and strength of the sunrise fan
@@ -248,7 +249,8 @@ void main() {
     // the End: a box of our own dark speckled sky, sixteen tiles to a side, at 40/255 (js/dim/art.js)
     vec3 a = abs(rd);
     vec2 q = a.x > a.y && a.x > a.z ? rd.zy / a.x : a.y > a.z ? rd.xz / a.y : rd.xy / a.z;
-    o = vec4(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * (40.0 / 255.0), 1.0);
+    // and a flash's source when there is one (render/endflash.js)
+    o = vec4(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * (40.0 / 255.0) + endFlashSky(rd), 1.0);
     return;
   }
   // the sky plane 16 blocks up, fogged at its corners (the game fogs it per corner of a 512 block fan,
@@ -454,6 +456,8 @@ export function shutFog(state, dt, R, out) {
   return out.set(bl > 0 ? f * 0.25 : f * 0.75, f, Math.max(bl, dk));
 }
 const ZERO4 = [0, 0, 0, 0];
+// the End's sky light in a flash: its colour, and how strong at the flash's height
+const END_SKY = [1, ...END_FLASH_COLOUR], END_FLASH_LIGHT = 0.6;
 const skyOut = [0, 0, 0, 0];
 function skyLightAt(dayTime) {
   let t = ((dayTime % 24000) + 24000) % 24000;
@@ -527,7 +531,9 @@ export class Vanilla {
     const sl = other ? null : skyLightAt(dayTime);
     const bl = blindness(state), dk = darkness(state, dt);
     const dkPulse = dk > 0 ? Math.max(0, Math.cos(state.time * 20 * Math.PI * 0.025) * 0.45 * dk) : 0;
-    this.makeLightmap(sl ? (wx.flash > 0 ? 1 : sl[0] * (1 - rain * 5 / 16) * (1 - thunder * 5 / 16)) : 0, sl || ZERO4, AMBIENT_LIGHT[D ? D.id : 'overworld'] || AMBIENT_LIGHT.overworld,
+    // (the End's sky light is off but for its flashes, when it comes up in its purple: render/endflash.js)
+    const ef = D && D.sky === 'end' ? U.uEndFlash.value.w : 0;
+    this.makeLightmap(sl ? (wx.flash > 0 ? 1 : sl[0] * (1 - rain * 5 / 16) * (1 - thunder * 5 / 16)) : ef * END_FLASH_LIGHT, sl || (ef > 0 ? END_SKY : ZERO4), AMBIENT_LIGHT[D ? D.id : 'overworld'] || AMBIENT_LIGHT.overworld,
       Math.max(0, (opts.brightness === undefined ? 0.5 : opts.brightness) - dk), nightVision(state), dkPulse);
     // the sky and fog colours of the biome you are in, eased so a border does not snap
     const b = state.biome;

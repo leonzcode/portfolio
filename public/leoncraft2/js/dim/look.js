@@ -22,7 +22,11 @@ export function dimLook(R, state, dt) {
   // (the eye there keeps the renderer's one level for each, as Low and Medium do: post.js FS_EXPO)
   U.uDim.value = D.code;
   if (D.id === 'the_nether') U.uDimAmb.value.set(0.34, 0.22, 0.18);
-  else U.uDimAmb.value.set(0.62, 0.56, 0.72);
+  else {
+    // the End's dim sky light, and in a flash its sky light coming up in purple (render/endflash.js)
+    const k = U.uEndFlash ? U.uEndFlash.value.w * 1.4 : 0;
+    U.uDimAmb.value.set(0.62 + 0.42 * k, 0.56 + 0.12 * k, 0.72 + 0.62 * k);
+  }
   const b = state.biome, c = b && b.fog !== undefined ? b.fog : 0x330808;
   target.set(lin(c >> 16), lin((c >> 8) & 255), lin(c & 255));
   if (D.id === 'the_end') target.multiplyScalar(0.15 * 0.15);

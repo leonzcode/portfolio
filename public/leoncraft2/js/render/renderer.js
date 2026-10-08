@@ -26,6 +26,7 @@ import { dimLook } from '../dim/look.js?v=33';
 import { blockGeometry, intAttribute } from './blockmesh.js?v=33';
 import { applyLook, looked, passMaterials } from './looks.js?v=33';
 import { screenFx } from './screenfx.js?v=33';
+import { endFlash } from './endflash.js?v=33';
 const THREE = window.THREE;
 // a column's distance from (ex, ez), squared, in whole blocks; and nearest first
 const distTo = (col, ex, ez) => { const dx = col.cx * 16 + 8 - ex, dz = col.cz * 16 + 8 - ez; return (dx * dx + dz * dz) | 0; };
@@ -96,6 +97,8 @@ export class Renderer {
       // the dimension being drawn (js/dims.js; js/dim/look.js sets these each frame)
       uDim: { value: 0 }, uDimAmb: { value: new THREE.Vector3() }, uDimFog: { value: new THREE.Vector3() }, uDimFogRange: { value: new THREE.Vector2(0, 1) },
       uEndSky: { value: textures.endSky || null },
+      // the End's flashes (render/endflash.js): where the source is in the sky, and how strong its light is
+      uEndFlash: { value: new THREE.Vector4() },
       // the void's dark (glsl.js VOID): under the horizon below sea level, and all of it near the world's floor
       uVoid: { value: new THREE.Vector3(0, 0, 160) },
       // Detailed's per-vertex light, from the light table each frame (sky.js setUniforms), and the fog's colours
@@ -721,6 +724,7 @@ export class Renderer {
     const vd = state.dim, vf = (state.eye.y - 64 - (vd ? vd.minY : -64)) / (state.horizon === 0 ? 1 : 32);
     U.uVoid.value.set(vd && vd.sky !== 'normal' ? 0 : Math.max(0, Math.min(1, (state.horizon !== undefined ? state.horizon : 127) - state.eye.y)),
       vd && vd.sky === 'end' ? 0 : 1 - (Math.max(0, Math.min(1, vf)) ** 2) ** 3, Math.max(32, this.opts.renderDist * 16));
+    if (vd && vd.sky === 'end') endFlash(U.uClock.value, !!state.bossFog, U.uEndFlash.value); else U.uEndFlash.value.set(0, 0, 0, 0);
     U.uMoonPhase.value = state.moonPhase;
     U.uRender.value = this.opts.renderDist * 16;
     if (state.waterTint) U.uWaterTint.value.copy(state.waterTint);
