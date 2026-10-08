@@ -28,7 +28,7 @@ import { model } from './mobs2.js?v=33';
 import { addArt } from './mobart.js?v=33';
 import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=33';
 import { use as useBlock } from '../place.js?v=33';
-import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf } from '../items.js?v=33';
+import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf, STEW_EFFECTS } from '../items.js?v=33';
 import { MountScreen } from '../ui/containers.js?v=33';
 
 // the stack in the player's hand (a mob's interact is told only the item's name), and a stack dropped where a mob is
@@ -1729,23 +1729,27 @@ for (const k of RABBIT_COATS) addArt('rabbit_' + k, [64, 32], p => paintRabbit(p
 --------------------------------------------------------------------------- */
 /* Mooshroom: red, or brown (Minecraft Wiki, Mooshroom). Lightning turns a red one brown and a brown one
    red (and does not hurt it); a calf takes a parent's colour, the other colour one time in 1024 when both
-   parents are the same; shearing a brown one gives brown mushrooms. */
+   parents are the same; shearing a brown one gives brown mushrooms. A brown one fed a small flower
+   gives suspicious stew with that flower's effect the next time it is milked with a bowl. */
 export class Mooshroom extends Cow {
   static TEX = 'mooshroom';
-  constructor(m, type) { super(m, type); this.variant = 'red'; }
+  constructor(m, type) { super(m, type); this.variant = 'red'; this.stew = null; }
   texName() { return this.variant === 'brown' ? 'mooshroom_brown' : 'mooshroom'; }
+  sound(ev) {
+    const S = typeof window !== 'undefined' && window.__lc2sound && window.__lc2sound.Sound;
+    if (S) try { S.play(ev, this.pos.x, this.pos.y + this.h * 0.5, this.pos.z, 2, 1, 'neutral'); } catch (e) { /* no sound */ }
+  }
   thunderHit() {
     this.variant = this.variant === 'brown' ? 'red' : 'brown';
-    const S = typeof window !== 'undefined' && window.__lc2sound && window.__lc2sound.Sound;
-    if (S) try { S.play('entity.mooshroom.convert', this.pos.x, this.pos.y + this.h * 0.5, this.pos.z, 2, 1, 'neutral'); } catch (e) { /* no sound */ }
+    this.sound('entity.mooshroom.convert');
     return false;
   }
   inherit(a, b) {
     const va = a.variant || 'red', vb = b.variant || 'red';
     this.variant = va === vb && RI(1024) === 0 ? (va === 'brown' ? 'red' : 'brown') : RI(2) ? va : vb;
   }
-  toJSON() { const o = super.toJSON(); if (this.variant === 'brown') o.vr = 'brown'; return o; }
-  fromJSON(o) { super.fromJSON(o); this.variant = o.vr === 'brown' ? 'brown' : 'red'; }
+  toJSON() { const o = super.toJSON(); if (this.variant === 'brown') o.vr = 'brown'; if (this.stew) o.se = this.stew; return o; }
+  fromJSON(o) { super.fromJSON(o); this.variant = o.vr === 'brown' ? 'brown' : 'red'; this.stew = Array.isArray(o.se) ? o.se.slice(0, 2) : null; }
   static checkSpawn(S, x, y, z) { return S.m.t.get(x, y - 1, z) === B.mycelium && S.brightEnough(x, y, z) && S.onGround(Mooshroom, x, y, z); }
   walkValue(x, y, z) { return this.m.t.get(x, y - 1, z) === B.mycelium ? 10 : this.m.brightness(x, y, z) - 0.5; }
   interact(held, player) {
@@ -1758,8 +1762,20 @@ export class Mooshroom extends Cow {
       return 'damage';
     }
     if (held === 'bowl' && this.ageT >= 0) {
-      const P = this.m.P;
-      this.m.dropItemAt(P.pos.x, P.pos.y + 0.5, P.pos.z, 'mushroom_stew', 1, false, true);
+      const P = this.m.P, H = this.m.hooks.hands, D = H && H.drops, id = itemIdOf('suspicious_stew');
+      if (this.stew && D && D.spawn && id) {
+        D.spawn(P.pos.x, P.pos.y + 0.5, P.pos.z, { id, count: 1, stew: this.stew.slice() });
+        this.stew = null;
+        this.sound('entity.mooshroom.suspicious_milk');
+      } else { this.m.dropItemAt(P.pos.x, P.pos.y + 0.5, P.pos.z, 'mushroom_stew', 1, false, true); this.sound('entity.mooshroom.milk'); }
+      return 'consume';
+    }
+    // a small flower to a brown one: its effect, kept for the next bowl (smoke if it already has one)
+    if (this.variant === 'brown' && held && STEW_EFFECTS[held]) {
+      if (this.stew) { this.m.particles('smoke', this.pos.x, this.pos.y + this.h * 0.5, this.pos.z, 2, 0.3); return 'swing'; }
+      this.stew = STEW_EFFECTS[held].slice();
+      this.m.particles('magic', this.pos.x, this.pos.y + this.h * 0.5, this.pos.z, 4, 0.3);
+      this.sound('entity.mooshroom.eat');
       return 'consume';
     }
     return super.interact(held, player);
