@@ -30,9 +30,9 @@
    walks out of everyone's reach is put away on the server, as the game
    keeps the mobs of unloaded chunks, and comes back with its ground.
 --------------------------------------------------------------------------- */
-import { Living, wrap } from '../entities/entity.js?v=34';
-import { TYPES } from '../entities/mobs.js?v=34';
-import { F } from './players.js?v=34';
+import { Living, wrap } from '../entities/entity.js?v=35';
+import { TYPES } from '../entities/mobs.js?v=35';
+import { F } from './players.js?v=35';
 
 const THREE = window.THREE;
 // besides the living (animals, monsters, villagers, golems, armour stands): paintings, the knots of leads, sand and gravel falling, fireworks,
@@ -234,6 +234,8 @@ export class Mobs {
     if (!rec.buf.length) rec.buf.push({ ts: performance.now() - DELAY, x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw, body: e.bodyYaw || e.yaw, head: e.headYaw || e.yaw, pitch: e.pitch, f: e.onGround ? F_GROUND : 0 });
     e.tick = function () { M.puppetTick(rec, this); };
     e.hurt = function () { M.claim(this); return this.puppet ? false : this.hurt.apply(this, arguments); };
+    // (and so does a potion of yours reaching it, splashed or a cloud: its effect is had where it is run)
+    if (typeof e.addEffect === 'function') e.addEffect = function () { if (!M.applying && !M.net.applying) M.claim(this); return this.puppet ? false : this.addEffect.apply(this, arguments); };
     e.anim = function (A) { const s = rec.a; if (s) for (const k in s) A[k] = s[k]; };
   }
   // this machine runs it now (it is yours to move, or you just did something to it)
@@ -242,7 +244,7 @@ export class Mobs {
     if (!e) return;
     if (e.puppet) {
       e.puppet = false;
-      delete e.tick; delete e.hurt; delete e.anim;
+      delete e.tick; delete e.hurt; delete e.anim; delete e.addEffect;
       this.unlead(e);
       // (a lead tied to a fence goes on being its own; one in someone else's hand stays theirs)
       if (rec.j && Array.isArray(rec.j.lsh)) e.leash = { knot: rec.j.lsh.slice() };
@@ -382,8 +384,11 @@ export class Mobs {
       if ((e.hurtTime | 0) > (rec.ht | 0)) rec.hurtNow = true;
       rec.ht = e.hurtTime | 0;
       if (e.swinging && e.swingT === 0) rec.swingNow = true;
-      // riding it or leading it keeps it yours (asked again before the server's hold runs out)
-      if ((E.riding === e || (e.leash && e.leash.player)) && now - (rec.claimAt || 0) > 5000) { rec.claimAt = now; net.send({ t: 'mc', id: rec.id }); }
+      // riding it, leading it or trading with it keeps it yours (asked again before the server's hold runs out), and so does a mob
+      // fighting back at you for your hit, a monster or an angry wolf or golem (the game's keeps after whoever hurt it; otherwise a
+      // monster goes to the machine of the player nearest it)
+      if ((E.riding === e || (e.leash && e.leash.player) || e.customer || (e.target && e.target === E.player && e.hurtBy === E.player)) &&
+        now - (rec.claimAt || 0) > 5000) { rec.claimAt = now; net.send({ t: 'mc', id: rec.id }); }
       // every third tick near another player, every sixth further off, every third second where nobody else is
       const dn = nearest(e.pos.x, e.pos.z), seen = dn < SEEN;
       if (moveTick && (dn < CLOSE || (seen && farTick) || slowTick)) {
@@ -611,6 +616,14 @@ export class Orbs {
     D.tick = function (player, collector) {
       // never taken here directly: the server is asked (take)
       this.takeXpDelay = Math.max(this.takeXpDelay, 2);
+      // the others in this dimension, where you see them, alive and not spectating: an orb goes to the nearest of you all
+      const others = this.others || (this.others = []), d = net.dimNow();
+      others.length = 0;
+      if (net.players && this.orbs.length) for (const r of net.players.list.values()) {
+        const s = r.st;
+        if (!s || s.d !== d || (s.f & (F.DEAD | F.SPEC))) continue;
+        others.push(r.feet && r.av && r.av.mesh.visible ? r.feet : s);
+      }
       const r = tick.call(this, player, collector);
       O.take(this, player, collector);
       return r;

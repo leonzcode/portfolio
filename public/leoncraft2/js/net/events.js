@@ -37,21 +37,24 @@
                    machine runs and your hits make, at most 40 a second
      players       others sprinting (the dust of the ground at their feet),
                    eating (the bits of food), on fire (the game's flames
-                   over them, as over a burning mob),
+                   over them, as over a burning mob), under a potion's
+                   effects (its colours swirling about them, fainter for a
+                   beacon's), saved by a totem (its green and gold burst),
                    fishing (their line, from the rod in their hand to the
                    bobber where it floats)
 --------------------------------------------------------------------------- */
-import { Sound } from '../sound/sound.js?v=34';
-import { MobSounds } from '../sound/mobsounds.js?v=34';
-import { Ambience } from '../sound/ambient.js?v=34';
-import { B, BLOCKS } from '../blocks.js?v=34';
-import { selectionBoxes } from '../models.js?v=34';
-import { exposure } from '../explosion.js?v=34';
-import { Overlay } from '../render/overlay.js?v=34';
-import { F } from './players.js?v=34';
-import { Potion } from '../entities/projectiles.js?v=34';
-import { splashPotion } from '../entities/mobfx.js?v=34';
-import { POTIONS } from '../brewing.js?v=34';
+import { Sound } from '../sound/sound.js?v=35';
+import { MobSounds } from '../sound/mobsounds.js?v=35';
+import { Ambience } from '../sound/ambient.js?v=35';
+import { B, BLOCKS } from '../blocks.js?v=35';
+import { selectionBoxes } from '../models.js?v=35';
+import { exposure } from '../explosion.js?v=35';
+import { Overlay } from '../render/overlay.js?v=35';
+import { F } from './players.js?v=35';
+import { Potion } from '../entities/projectiles.js?v=35';
+import { splashPotion, lingeringPotion } from '../entities/mobfx.js?v=35';
+import { POTIONS } from '../brewing.js?v=35';
+import { EFFECTS } from '../effects.js?v=35';
 const THREE = window.THREE;
 
 let active = null, quiet = 0;
@@ -94,6 +97,15 @@ const rgb = c => (Array.isArray(c) ? ((Math.round(c[0] * 255) & 255) << 16) | ((
 const NOT_SENT = /^block\..*\.(break|hit)$|(door|trapdoor|fence_gate)\.(open|close)$|^block\.(sponge\.absorb|wet_sponge\.dries|composter\.ready|respawn_anchor\.(charge|deplete)|candle\.extinguish|end_gateway\.spawn)$/;
 const SENT_CATS = { block: 1, player: 1, neutral: 1, hostile: 1, record: 1 };
 const LIDS = { chest: 1, shulker: 1, bell: 1, pot: 1 };
+// a totem of undying going off: a burst of green and gold about the player it saved (as life.js draws yours)
+function totemBurst(parts, x, y, z) {
+  for (let i = 0; i < 90; i++) {
+    const a = Math.random() * Math.PI * 2, s = 0.15 + Math.random() * 0.35, up = 0.2 + Math.random() * 0.45;
+    const c = Math.random() < 0.6 ? (Math.random() < 0.5 ? 0x9FE34F : 0x5FC93A) : (Math.random() < 0.5 ? 0xF2D64B : 0xE8B83A);
+    parts.spawn(x, y + 1 + Math.random() * 0.6, z, Math.cos(a) * s, up, Math.sin(a) * s,
+      { colour: c, size: 0.12 + Math.random() * 0.06, life: 40 + Math.floor(Math.random() * 30), gravity: 0.35, friction: 0.92, physics: false });
+  }
+}
 
 export class Events {
   constructor(net) {
@@ -105,6 +117,8 @@ export class Events {
     this.mine = null;
     this.bobs = new Map();        // another player's number -> their bobber: { x, y, z, line, mesh }
     this.slides = [];             // another machine's blocks in motion, drawn sliding here (sim/pistons.js view)
+    this.fx = new Map();          // another player's number -> the colour of their effects' swirl: { col, amb, at }
+    this.fxSent = 0; this.totemT = 0;
     this.fxLeft = 0;              // particles that may still be passed on this tick
     this.t = 0;
   }
@@ -217,6 +231,24 @@ export class Events {
       const b = [r2(bob.pos.x), r2(bob.pos.y), r2(bob.pos.z)], s0 = this.bobSent;
       if (this.t % 2 === 0 && (!s0 || b[0] !== s0[0] || b[1] !== s0[1] || b[2] !== s0[2])) { this.bobSent = b; this.send(['bob', b[0], b[1], b[2], 1]); }
     } else if (this.bobSent) { const b = this.bobSent; this.bobSent = null; this.send(['bob', b[0], b[1], b[2], 0]); }
+    // your effects' colours (the game's swirl about a player under a potion), every two seconds while there are any, and once when they go
+    const sv = g.survival, P = g.player;
+    if (sv && P) {
+      const fx = !sv.dead && sv.effects;
+      let r = 0, gr = 0, b = 0, n = 0, amb = 1;
+      if (fx && !fx.invisibility) for (const k in fx) {
+        const d = EFFECTS[k], e = fx[k];
+        if (!d || (e && e.particles === false)) continue;
+        const c = d.colour;
+        r += (c >> 16) & 255; gr += (c >> 8) & 255; b += c & 255; n++;
+        if (!(e && e.ambient)) amb = 0;
+      }
+      const col = n ? ((Math.round(r / n) << 16) | (Math.round(gr / n) << 8) | Math.round(b / n)) || 1 : 0;
+      if (col !== this.fxSent || (col && this.t % 40 === 0)) { this.fxSent = col; this.send(['eff', r2(P.pos.x), r2(P.pos.y), r2(P.pos.z), col, col ? amb : 0]); }
+      // a totem just saved you: its burst about you on their screens
+      if ((sv.totemT | 0) > this.totemT) this.send(['totem', r2(P.pos.x), r2(P.pos.y), r2(P.pos.z)]);
+      this.totemT = sv.totemT | 0;
+    }
     // blocks your pistons set moving this tick: sliding on the others' screens too
     const rs = g.sim && g.sim.redstone;
     if (rs && rs.moving && rs.moving.size) for (const e of rs.moving.values()) {
@@ -284,9 +316,18 @@ export class Events {
         E.particles('magic', x, y, z, 24, 0.5, [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255]);
         E.particles('poof', x, y, z, 6, 0.2, [0.9, 0.9, 0.95]);
         // its colour, and what it does to you (not to the mobs here: their machines had it already; not to the blocks either)
-        const harm = HARMFUL.test(name) && !(this.net.server && this.net.server.pvp);
+        const harm = HARMFUL.test(name) && !(this.net.server && this.net.server.pvp), you = !harm && g.mode !== 'creative' && g.mode !== 'spectator';
         const m = Object.create(E, { forNear: { value: () => {} }, world: { value: null } });
-        if (!e[5] && !harm && g.mode !== 'creative' && g.mode !== 'spectator') { try { splashPotion(m, x, y, z, name, null, null); } catch (err) { console.warn(err); } }
+        if (!e[5] && you) { try { splashPotion(m, x, y, z, name, null, null); } catch (err) { console.warn(err); } }
+        // a lingering one leaves its cloud here too, for as long as it lasts there: seen, and taken by you if you walk into it
+        // (the mobs in it are the thrower's machine's to dose, as with a splash)
+        if (e[5] && name !== 'water') {
+          try {
+            const c = lingeringPotion(E, x, y, z, name, null);
+            // (and never kept with the ground, as a mob of this machine's would be)
+            if (c) { c.ghost = true; c.toJSON = undefined; c.m = Object.create(E, { forNear: { value: () => {} }, player: { value: you ? E.player : null } }); }
+          } catch (err) { console.warn(err); }
+        }
         return;
       }
       case 'tnt': {
@@ -303,6 +344,12 @@ export class Events {
         const s = { x, y, z, b, m: e[5] | 0, facing: e[6] | 0, ext: !!e[7], src: !!e[8], p: 0, po: 0, ghost: true };
         V.add(s);
         this.slides.push(s);
+        return;
+      }
+      case 'eff': if (e[4]) this.fx.set(pid, { col: e[4] | 0, amb: !!e[5], at: performance.now() }); else this.fx.delete(pid); return;
+      case 'totem': {
+        const r = this.net.players && this.net.players.list.get(pid), f = r && r.feet, P = this.net.ctx.renderer.particles;
+        if (P && P.spawn) totemBurst(P, f ? f.x : x, f ? f.y : y, f ? f.z : z);
         return;
       }
       case 'bob': {
@@ -383,6 +430,7 @@ export class Events {
     if (c) { this.dropCrack(c); this.cracks.delete(pid); }
     const b = this.bobs.get(pid);
     if (b) { this.dropBob(b); this.bobs.delete(pid); }
+    this.fx.delete(pid);
   }
   dropBob(b) {
     for (const m of [b.line, b.mesh]) if (m) { if (m.parent) m.parent.remove(m); m.geometry.dispose(); m.material.dispose(); }
@@ -436,10 +484,19 @@ export class Events {
     if (this.acc < 0.05) return;
     this.acc = 0;
     this.pt = (this.pt || 0) + 1;
-    const D = g.drops, E = g.entities, Pa = net.ctx.renderer.particles;
+    const D = g.drops, E = g.entities, Pa = net.ctx.renderer.particles, now = performance.now();
     for (const r of list.values()) {
       const s = r.st, f = r.feet;
       if (!s || !f || !r.av || !r.av.mesh.visible) continue;
+      // under a potion's effects: a speck of their colours about them, one tick in four (one in twenty for a beacon's), as the game draws it
+      const ef = this.fx.get(r.id);
+      if (ef && now - ef.at > 5000) this.fx.delete(r.id);
+      else if (ef && E && !(s.f & F.INVIS) && Math.random() * (ef.amb ? 20 : 4) < 1) {
+        const h = s.f & F.SNEAK ? 1.5 : s.f & F.SWIM ? 0.6 : 1.8, c = ef.col, a0 = net.applying;
+        // (drawn here only: not passed on again as this machine's own)
+        net.applying = true;
+        try { E.particles('magic', f.x + (Math.random() - 0.5) * 0.6, f.y + Math.random() * h, f.z + (Math.random() - 0.5) * 0.6, 1, 0, [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255]); } finally { net.applying = a0; }
+      }
       const U = r.useNow;
       // the bits of food from their mouth, every fourth tick after the first seven (the game's)
       if (U && U.kind === 'eat' && (U.t || 0) > 7 && this.pt % 4 === 0 && D && D.crumbs) {
