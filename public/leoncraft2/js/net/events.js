@@ -18,6 +18,9 @@
                    a state of the block, shared already). A bell's swing and a
                    decorated pot's wobble too.
      notes         a note block's note over it
+     pistons       the blocks a piston pushes or pulls slide across on every
+                   screen, as they do on the machine that moved them (the
+                   blocks themselves come as changes like any other)
      TNT           lit: the lit block on every screen, flashing and swelling
                    on the same fuse, gone at the moment the one who lit it
                    sees it go off (the explosion itself is theirs)
@@ -92,6 +95,7 @@ export class Events {
     this.cracks = new Map();      // another player's number -> { ov, x, y, z, s, at }
     this.mine = null;
     this.bobs = new Map();        // another player's number -> their bobber: { x, y, z, line, mesh }
+    this.slides = [];             // another machine's blocks in motion, drawn sliding here (sim/pistons.js view)
     this.t = 0;
   }
   init(m) { this.on = !!m.mobs; }
@@ -185,6 +189,23 @@ export class Events {
       const b = [r2(bob.pos.x), r2(bob.pos.y), r2(bob.pos.z)], s0 = this.bobSent;
       if (this.t % 2 === 0 && (!s0 || b[0] !== s0[0] || b[1] !== s0[1] || b[2] !== s0[2])) { this.bobSent = b; this.send(['bob', b[0], b[1], b[2], 1]); }
     } else if (this.bobSent) { const b = this.bobSent; this.bobSent = null; this.send(['bob', b[0], b[1], b[2], 0]); }
+    // blocks your pistons set moving this tick: sliding on the others' screens too
+    const rs = g.sim && g.sim.redstone;
+    if (rs && rs.moving && rs.moving.size) for (const e of rs.moving.values()) {
+      if (e.netSent || e.ghost || !BLOCKS[e.b]) continue;
+      e.netSent = true;
+      this.send(['slide', e.x, e.y, e.z, BLOCKS[e.b].name, e.m | 0, e.facing | 0, e.ext ? 1 : 0, e.src ? 1 : 0]);
+    }
+    // and the others' slide on here, half a block a tick, as the game moves them
+    if (this.slides.length) {
+      const V = rs && rs.pistonView;
+      this.slides = this.slides.filter(e => {
+        e.po = e.p;
+        if (e.po >= 1) { if (V) V.done(e); return false; }
+        e.p = Math.min(1, e.p + 0.5);
+        return true;
+      });
+    }
     if (this.out.length) { this.net.send({ t: 'ev', d: dim, e: this.out }); this.out = []; }
     // a crack nobody has said anything of for 20 seconds goes, as the game's do
     if (this.t % 20 === 0) { const now = performance.now(); for (const [pid, c] of this.cracks) if (now - c.at > 20000) { this.dropCrack(c); this.cracks.delete(pid); } }
@@ -241,6 +262,14 @@ export class Events {
         return;
       }
       case 'mine': this.crack(pid, x, y, z, e[4] | 0); return;
+      case 'slide': {
+        const V = g.sim && g.sim.redstone && g.sim.redstone.pistonView, b = B[e[4]];
+        if (!V || b === undefined || this.slides.length > 256) return;
+        const s = { x, y, z, b, m: e[5] | 0, facing: e[6] | 0, ext: !!e[7], src: !!e[8], p: 0, po: 0, ghost: true };
+        V.add(s);
+        this.slides.push(s);
+        return;
+      }
       case 'bob': {
         let b = this.bobs.get(pid);
         if (!e[4]) { if (b) { this.dropBob(b); this.bobs.delete(pid); } return; }
