@@ -436,6 +436,23 @@ function blindness(state) {
   if (!e || e.ticks === 0) return 0;
   return e.ticks === -1 ? 1 : Math.min(1, e.ticks / 20);
 }
+// Darkness's strength (0..1): it comes in over 22 ticks and goes over its last 22, as the game blends it
+// (eased once a frame by whichever look is drawing: this file's update or dim/look.js)
+let darkB = 0;
+function darkness(state, dt) {
+  const e = state && state.effects && state.effects.darkness;
+  const want = !e || e.ticks === 0 ? 0 : e.ticks === -1 ? 1 : Math.min(1, e.ticks / 22);
+  darkB = want > darkB ? Math.min(want, darkB + Math.min(0.25, dt) * 20 / 22) : want;
+  return darkB;
+}
+/* The black fog of Blindness and Darkness for the shader looks (glsl.js uShut): where it starts, where it is
+   whole, and how strong (0 none), out of a render distance of R blocks; as the Off look's fog above. */
+export function shutFog(state, dt, R, out) {
+  const bl = blindness(state), dk = darkness(state, dt);
+  if (bl <= 0 && dk <= 0) return out.set(0, 1, 0);
+  const f = bl > 0 ? R + (5 - R) * bl : R + (15 - R) * dk;
+  return out.set(bl > 0 ? f * 0.25 : f * 0.75, f, Math.max(bl, dk));
+}
 const ZERO4 = [0, 0, 0, 0];
 const skyOut = [0, 0, 0, 0];
 function skyLightAt(dayTime) {
@@ -508,7 +525,7 @@ export class Vanilla {
     // (a lightning flash lights the sky light to its full strength for its two ticks, as the game's does)
     // (Darkness: the game's pulse, the light taken down by up to 0.45 every four seconds, and Brightness lowered by its strength)
     const sl = other ? null : skyLightAt(dayTime);
-    const bl = blindness(state), dk = this.darkness(state, dt);
+    const bl = blindness(state), dk = darkness(state, dt);
     const dkPulse = dk > 0 ? Math.max(0, Math.cos(state.time * 20 * Math.PI * 0.025) * 0.45 * dk) : 0;
     this.makeLightmap(sl ? (wx.flash > 0 ? 1 : sl[0] * (1 - rain * 5 / 16) * (1 - thunder * 5 / 16)) : 0, sl || ZERO4, AMBIENT_LIGHT[D ? D.id : 'overworld'] || AMBIENT_LIGHT.overworld,
       Math.max(0, (opts.brightness === undefined ? 0.5 : opts.brightness) - dk), nightVision(state), dkPulse);
@@ -610,15 +627,6 @@ export class Vanilla {
     // (in lava or powder snow the fog closes in within a block or two: no clouds through it)
     this.clouds = (D && !D.clouds) || state.eyeInLava || state.eyeInSnow || shut > 0.5 ? 'off' : opts.clouds || 'fancy';
   }
-  /* Darkness's strength (0..1): it comes in over 22 ticks and goes over its last 22, as the game blends it */
-  darkness(state, dt) {
-    const e = state && state.effects && state.effects.darkness;
-    const want = !e || e.ticks === 0 ? 0 : e.ticks === -1 ? 1 : Math.min(1, e.ticks / 22);
-    const now = this.darkB || 0;
-    this.darkB = want > now ? Math.min(want, now + Math.min(0.25, dt) * 20 / 22) : want;
-    return this.darkB;
-  }
-
   /* The game's lightmap as 26.x makes it (its lightmap shader, with the
      numbers from its dimension types and day timeline): the dimension's
      ambient colour (Night Vision's grey if that is brighter), plus the sky

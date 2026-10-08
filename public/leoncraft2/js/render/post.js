@@ -204,7 +204,9 @@ uniform vec3 uDimFog;
 uniform vec2 uDimFogRange;
 uniform sampler2D uEndSky;
 uniform float uFogMul;          // the fog's thickness (Shader Options: Fog)
+uniform vec3 uShut;             // Blindness and Darkness: a black fog from x to y blocks, z its strength (vanilla.js shutFog)
 in vec2 vUv; out vec4 o;
+float shutAt(float dist, float d) { return uShut.z > 0.0 ? uShut.z * (d >= 1.0 ? 1.0 : smoothstep(uShut.x, uShut.y, dist)) : 0.0; }
 vec3 stars(vec3 d) {
   vec3 p = d * 220.0;
   vec3 i = floor(p), f = fract(p);
@@ -232,7 +234,9 @@ void main() {
         col = toLinear(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * 0.16);
       } else col = uDimFog;
     } else col = mix(col, uDimFog, sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x)));
-    o = vec4(col, base.a > 1.5 ? 0.0 : 1.0);
+    float sh = shutAt(dist, d);
+    col *= 1.0 - sh;
+    o = vec4(col, base.a > 1.5 || sh > 0.5 ? 0.0 : 1.0);
     return;
   }
   vec3 sunC = texelFetch(uAmbient, ivec2(4, 0), 0).rgb;
@@ -289,8 +293,10 @@ void main() {
     col = mix(col, skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))) * (1.0 - uVoid.y), edge);
   }
   col += texture(uVL, vUv).rgb;
-  // (lava, marked 2 by water.js, marked 0 here: the eye does not adapt to it)
-  o = vec4(col, base.a > 1.5 ? 0.0 : 1.0);
+  float sh = shutAt(dist, d);
+  col *= 1.0 - sh;
+  // (lava, marked 2 by water.js, marked 0 here: the eye does not adapt to it; nor to the black of Blindness and Darkness)
+  o = vec4(col, base.a > 1.5 || sh > 0.5 ? 0.0 : 1.0);
 }`;
 
 /* ---- bloom ---- */

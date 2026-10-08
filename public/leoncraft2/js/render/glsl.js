@@ -548,6 +548,8 @@ uniform float uDim;
 #endif
 uniform vec3 uDimFog;           // the Nether's and the End's fog colour and range (js/dim/look.js)
 uniform vec2 uDimFogRange;
+uniform vec3 uShut;             // Blindness and Darkness: a black fog from x to y blocks, z its strength (vanilla.js shutFog)
+float shutAt(float dist) { return uShut.z > 0.0 ? uShut.z * smoothstep(uShut.x, uShut.y, dist) : 0.0; }
 ` + EXPOSURE + /* glsl */`
 vec3 skyDir(vec3 d) {
   float elev = asin(clamp(d.y, -1.0, 1.0));
@@ -575,6 +577,7 @@ vec3 finishLDR(vec3 col, vec3 world) {
     float hd = length((world - cameraPosition).xz);
     col = mix(col, skyDir(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))) * (1.0 - uVoid.y), smoothstep(uRender * 0.72, uRender, hd));
   }
+  col *= 1.0 - shutAt(dist);
   return toSRGB(agx(col * exposureNow()));
 }
 /* The same fog worked out once per vertex (as the game does its fog), for
@@ -611,5 +614,7 @@ void fogTerms(vec3 world, out vec3 keep, out vec3 add) {
     keep = vec3(T * (1.0 - fade) * E);
     add = fogColour(rd) * ((1.0 - T) * uSkyAtEye * (1.0 - fade) + fade) * (1.0 - uVoid.y) * E;
   }
+  float shut = 1.0 - shutAt(dist);
+  keep *= shut; add *= shut;
 }
 `;
