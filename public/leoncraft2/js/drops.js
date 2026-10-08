@@ -31,15 +31,15 @@
      dropItem(world, x, y, z, 'diamond', 2)     from anywhere (mob loot...)
      giveXp(x, y, z, 7)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=34';
-import { collisionBoxes } from './models.js?v=34';
-import { LEVEL, FALLING } from './world-const.js?v=34';
-import { lightNear } from './lightlevel.js?v=34';
-import { glints } from './render/armor.js?v=34';
-import { setGlint } from './render/glint.js?v=34';
-import { DIMS } from './dims.js?v=34';
-import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=34';
-import { blockGeometry, intAttribute } from './render/blockmesh.js?v=34';
+import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=35';
+import { collisionBoxes } from './models.js?v=35';
+import { LEVEL, FALLING } from './world-const.js?v=35';
+import { lightNear } from './lightlevel.js?v=35';
+import { glints } from './render/armor.js?v=35';
+import { setGlint } from './render/glint.js?v=35';
+import { DIMS } from './dims.js?v=35';
+import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=35';
+import { blockGeometry, intAttribute } from './render/blockmesh.js?v=35';
 const THREE = window.THREE;
 
 const ITEM_W = 0.125, ITEM_H = 0.25;           // half width, height
@@ -122,6 +122,7 @@ export class Drops {
     this.takeXpDelay = 0;
     this.onPickup = null;            // (stack) the pickup sound
     this.onXp = null;                // (points) the orb sound
+    this.others = null;              // on a server: where the other players near you stand, for the orbs to go to (net/mobs.js Orbs sets it each tick)
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._p = new THREE.Vector3();
     this._lift = new THREE.Matrix4().makeTranslation(0, -1, 0);
     this._lift2 = new THREE.Matrix4().makeTranslation(0, -2, 0);      // for the copies' geometry, a block higher
@@ -366,7 +367,26 @@ export class Drops {
       else o.vel.y -= 0.03;
       if (fl === 2) { o.vel.set((Math.random() - Math.random()) * 0.2, 0.2, (Math.random() - Math.random()) * 0.2); }
       this._unstick(o);
-      if (P && (o.age % 20 === 1 || o.follow)) {
+      if (this.others && (o.age % 20 === 1 || o.follow)) {
+        /* On a server it goes to the player it already follows while they are
+           within 8 blocks, or else the nearest one within 8 (the game's
+           followingPlayer), you or another: every machine sends it the same
+           way, so it flies to whoever is to get it on every screen. */
+        let T = o.follow && o.follow !== true ? o.follow : null, best = Infinity;
+        const d2 = q => (q.x - o.pos.x) ** 2 + (q.y + 0.81 - o.pos.y) ** 2 + (q.z - o.pos.z) ** 2;
+        if (T && (T === P ? !(collector && collector.alive) : !this.others.includes(T))) T = null;
+        if (!T || d2(T) >= 64) {
+          T = null;
+          if (P && collector && collector.alive) { const d = d2(P); if (d < 64) { T = P; best = d; } }
+          for (const q of this.others) { const d = d2(q); if (d < best) { T = q; best = d; } }
+        }
+        o.follow = T;
+        if (T) {
+          const dx = T.x - o.pos.x, dy = T.y + 0.81 - o.pos.y, dz = T.z - o.pos.z;
+          const l = Math.sqrt(dx * dx + dy * dy + dz * dz) / 8, f = 1 - l;
+          if (f > 0 && l > 0) { const k = f * f * 0.1 / (l * 8); o.vel.x += dx * k; o.vel.y += dy * k; o.vel.z += dz * k; }
+        }
+      } else if (P && (o.age % 20 === 1 || o.follow)) {
         const dx = P.x - o.pos.x, dy = P.y + 0.81 - o.pos.y, dz = P.z - o.pos.z;
         o.follow = dx * dx + dy * dy + dz * dz < 64 && collector && collector.alive;
         if (o.follow) {

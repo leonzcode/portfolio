@@ -27,16 +27,16 @@
    useExtra(manager, itemName, target, take, build) is the manager's last
    try at a right click (entities/manager.js useHeld).
 --------------------------------------------------------------------------- */
-import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=34';
-import { Projectile } from './projectiles.js?v=34';
-import { register, TYPES } from './mobs.js?v=34';
-import { model } from './mobs2.js?v=34';
-import { addArt } from './mobart.js?v=34';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=34';
-import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS } from '../items.js?v=34';
-import { fireworkColour } from '../crafting.js?v=34';
-import { rayBox } from './terrain.js?v=34';
-import { lootStack } from '../containers.js?v=34';
+import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=35';
+import { Projectile } from './projectiles.js?v=35';
+import { register, TYPES } from './mobs.js?v=35';
+import { model } from './mobs2.js?v=35';
+import { addArt } from './mobart.js?v=35';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=35';
+import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS } from '../items.js?v=35';
+import { fireworkColour } from '../crafting.js?v=35';
+import { rayBox } from './terrain.js?v=35';
+import { lootStack } from '../containers.js?v=35';
 const THREE = window.THREE;
 
 const PI = Math.PI;
