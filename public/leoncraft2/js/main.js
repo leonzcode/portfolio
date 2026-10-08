@@ -218,7 +218,7 @@ function applyPackTextures(r, textures, manifest, packTex, alb) {
   for (const d of BLOCKS) {
     if (!d || !d.faces) continue;
     if (d.light) for (const l of d.faces.concat(d.front !== undefined ? [d.front] : [])) glow.add(l);
-    if (d.leaves || d.shape === 'cross') for (const l of d.faces) soft.add(l);
+    if (d.leaves || d.shape === 'cross' || d.shape === 'fire') for (const l of d.faces) soft.add(l);
   }
   const strip = document.createElement('canvas');
   strip.width = 16; strip.height = alb.height;

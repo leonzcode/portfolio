@@ -46,7 +46,7 @@ const BREAKS = new Set(['pumpkin', 'carved_pumpkin', 'jack_o_lantern', 'melon', 
   'lily_pad', 'azalea', 'flowering_azalea', 'mangrove_propagule', 'snow', 'redstone_wire', 'lever', 'cake', 'resin_clump', 'pale_hanging_moss',
   'leaf_litter', 'pink_petals', 'wildflowers', 'firefly_bush', 'bush', 'nether_wart', 'sweet_berry_bush', 'cave_vines', 'cave_vines_plant',
   'twisting_vines', 'twisting_vines_plant', 'weeping_vines', 'weeping_vines_plant', 'vine', 'end_rod_x']);
-const BREAK_SHAPES = new Set(['cross', 'crop', 'torch', 'wall_torch', 'button', 'plate', 'wire', 'ladder', 'door', 'bed', 'head', 'sign', 'wall_sign',
+const BREAK_SHAPES = new Set(['cross', 'fire', 'crop', 'torch', 'wall_torch', 'button', 'plate', 'wire', 'ladder', 'door', 'bed', 'head', 'sign', 'wall_sign',
   'hanging_sign', 'candle', 'lantern', 'pot', 'cake', 'snow', 'vine', 'pad', 'fluid', 'layer']);
 for (const d of BLOCKS) {
   if (!d) continue;
