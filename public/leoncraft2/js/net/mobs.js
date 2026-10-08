@@ -234,6 +234,8 @@ export class Mobs {
     if (!rec.buf.length) rec.buf.push({ ts: performance.now() - DELAY, x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw, body: e.bodyYaw || e.yaw, head: e.headYaw || e.yaw, pitch: e.pitch, f: e.onGround ? F_GROUND : 0 });
     e.tick = function () { M.puppetTick(rec, this); };
     e.hurt = function () { M.claim(this); return this.puppet ? false : this.hurt.apply(this, arguments); };
+    // (and so does a potion of yours reaching it, splashed or a cloud: its effect is had where it is run)
+    if (typeof e.addEffect === 'function') e.addEffect = function () { if (!M.applying && !M.net.applying) M.claim(this); return this.puppet ? false : this.addEffect.apply(this, arguments); };
     e.anim = function (A) { const s = rec.a; if (s) for (const k in s) A[k] = s[k]; };
   }
   // this machine runs it now (it is yours to move, or you just did something to it)
@@ -242,7 +244,7 @@ export class Mobs {
     if (!e) return;
     if (e.puppet) {
       e.puppet = false;
-      delete e.tick; delete e.hurt; delete e.anim;
+      delete e.tick; delete e.hurt; delete e.anim; delete e.addEffect;
       this.unlead(e);
       // (a lead tied to a fence goes on being its own; one in someone else's hand stays theirs)
       if (rec.j && Array.isArray(rec.j.lsh)) e.leash = { knot: rec.j.lsh.slice() };
