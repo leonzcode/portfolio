@@ -10,6 +10,7 @@
 import { CH, H, idx } from './world-const.js?v=33';
 import { BLOCKS, FLUID } from './blocks.js?v=33';
 import { searchSpawn } from './spawn.js?v=33';
+import { settleEdges } from './edgevines.js?v=33';
 
 /* ---- the workers, kept for the whole visit ----
    A new worker is slow for its first seconds: its code is fetched, compiled
@@ -401,6 +402,8 @@ export class World {
       if (ed) for (const [cell, v] of ed) { c.blocks[cell] = v >> 8; c.meta[cell] = v & 255; if (v >> 8 && (cell >> 8) > c.top) c.top = cell >> 8; }
       this.chunks.set(k, c); this.byNum.set(((m.cx & 0x7fff) << 15) | (m.cz & 0x7fff), c); this.cgen = (this.cgen || 0) + 1;
       this.stats.gen++;
+      // vines and lichen along its edges, held by what the chunks beside it really have (edgevines.js)
+      settleEdges(this, c);
       // this chunk, and every neighbour it completes, can now be meshed
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) this.queueMesh(m.cx + dx, m.cz + dz);
       return;
