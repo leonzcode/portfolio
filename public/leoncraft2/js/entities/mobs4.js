@@ -20,16 +20,16 @@
 
    The player is the only owner there can be, so "tamed" means "yours".
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=35';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=36';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=35';
-import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=35';
-import { model } from './mobs2.js?v=35';
-import { addArt } from './mobart.js?v=35';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=35';
-import { use as useBlock } from '../place.js?v=35';
-import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf, STEW_EFFECTS } from '../items.js?v=35';
-import { MountScreen } from '../ui/containers.js?v=35';
+  MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=36';
+import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=36';
+import { model } from './mobs2.js?v=36';
+import { addArt } from './mobart.js?v=36';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=36';
+import { use as useBlock } from '../place.js?v=36';
+import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf, STEW_EFFECTS } from '../items.js?v=36';
+import { MountScreen } from '../ui/containers.js?v=36';
 
 // the stack in the player's hand (a mob's interact is told only the item's name), and a stack dropped where a mob is
 const heldStack = m => (m.inv && m.inv.slots[m.inv.selected]) || null;
@@ -1630,7 +1630,12 @@ export class Rabbit extends Animal {
   /* hopping: the move control turns it and says how fast; on the ground it
      stands until the next hop, which carries it */
   moveControl() {
+    // in the air it keeps the way it took off (it turns to the next point on the ground,
+    // before it hops, as the game's faces its next path point), so a hop never flies on
+    // sideways while it has already turned to whatever comes after
+    const y0 = this.yaw;
     super.moveControl();
+    if (!this.onGround && !this.inWater) this.yaw = y0;
     const want = this.zza > 0 || this.mcOp === 3;
     if (this.onGround) {
       if (this.hopT > 0 && this.hopT >= this.hopDur) { this.hopT = 0; }

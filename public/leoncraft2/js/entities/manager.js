@@ -19,45 +19,45 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=35';
-import { PathFinder, Navigation } from './path.js?v=35';
-import { Particles } from './particles.js?v=35';
-import { Ambient } from './ambient.js?v=35';
-import { Living, Mob, wrap, DEG } from './entity.js?v=35';
-import { TYPES } from './mobs.js?v=35';
-import './projectiles.js?v=35';
-import { placeBoat } from './boat.js?v=35';
-import './mobs2.js?v=35';
-import './mobs3.js?v=35';
-import './mobs4.js?v=35';
-import { wandererTick } from './merchant.js?v=35';
-import { tableBooks } from './tablebook.js?v=35';
-import { explode } from './explosion.js?v=35';
-import { splitXp } from './xporb.js?v=35';
-import { placeMinecart, isRail, Minecart } from './minecart.js?v=35';
-import { CART_ITEMS } from './carts.js?v=35';
-import { fallFrom, FALLS, free } from './fallingblock.js?v=35';
-import { Spawner, DESPAWN } from './spawner.js?v=35';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=35';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=35';
-import { EntityMeshes } from '../render/entitymesh.js?v=35';
-import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=35';
-import { lightNear } from '../lightlevel.js?v=35';
-import { activeDrops } from '../drops.js?v=35';
-import { breakAt } from '../place.js?v=35';
-import { dropOf } from '../survival.js?v=35';
-import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=35';
-import { Combat } from '../combat/combat.js?v=35';
-import './nether.js?v=35';
+import { Terrain } from './terrain.js?v=36';
+import { PathFinder, Navigation } from './path.js?v=36';
+import { Particles } from './particles.js?v=36';
+import { Ambient } from './ambient.js?v=36';
+import { Living, Mob, wrap, DEG } from './entity.js?v=36';
+import { TYPES } from './mobs.js?v=36';
+import './projectiles.js?v=36';
+import { placeBoat } from './boat.js?v=36';
+import './mobs2.js?v=36';
+import './mobs3.js?v=36';
+import './mobs4.js?v=36';
+import { wandererTick } from './merchant.js?v=36';
+import { tableBooks } from './tablebook.js?v=36';
+import { explode } from './explosion.js?v=36';
+import { splitXp } from './xporb.js?v=36';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=36';
+import { CART_ITEMS } from './carts.js?v=36';
+import { fallFrom, FALLS, free } from './fallingblock.js?v=36';
+import { Spawner, DESPAWN } from './spawner.js?v=36';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=36';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=36';
+import { EntityMeshes } from '../render/entitymesh.js?v=36';
+import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=36';
+import { lightNear } from '../lightlevel.js?v=36';
+import { activeDrops } from '../drops.js?v=36';
+import { breakAt } from '../place.js?v=36';
+import { dropOf } from '../survival.js?v=36';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=36';
+import { Combat } from '../combat/combat.js?v=36';
+import './nether.js?v=36';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
-import './mobs5.js?v=35';
-import './mobs6.js?v=35';
-import './mobs7.js?v=35';
-import { DIMS } from '../dims.js?v=35';
-import { armorLayers } from './armorlayer.js?v=35';
-import { MobHeld } from '../render/mobheld.js?v=35';
-import { setSpawnerMob } from '../struct/spawners.js?v=35';
-import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=35';
+import './mobs5.js?v=36';
+import './mobs6.js?v=36';
+import './mobs7.js?v=36';
+import { DIMS } from '../dims.js?v=36';
+import { armorLayers } from './armorlayer.js?v=36';
+import { MobHeld } from '../render/mobheld.js?v=36';
+import { setSpawnerMob } from '../struct/spawners.js?v=36';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=36';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -524,7 +524,19 @@ export class Entities {
     if (!v || v.removed) { e.vehicle = null; return; }
     e.baseTick();
     e.vel.set(0, 0, 0);
-    if (e instanceof Mob) { e.serverAi(); if (e.bodyDue) { e.bodyDue = false; e.bodyControl(); } e.animTick && e.animTick(); }
+    if (e instanceof Mob) {
+      e.serverAi(); if (e.bodyDue) { e.bodyDue = false; e.bodyControl(); }
+      /* on a mob's back (a jockey: a skeleton on a spider, a pillager on a ravager) its
+         body sits the way the mount's does, as the game's rider takes its mount's body
+         turn; the head looks about within its own limit. (It sat any way round: backwards
+         on a walking horse.) */
+      if (v instanceof Mob) {
+        e.bodyYaw = v.bodyYaw;
+        const max = e.headMax(), off = Math.atan2(Math.sin(e.headYaw - e.bodyYaw), Math.cos(e.headYaw - e.bodyYaw));
+        if (Math.abs(off) > max) e.headYaw = e.bodyYaw + Math.sign(off) * max;
+      }
+      e.animTick && e.animTick();
+    }
     e.fallDist = 0;
     // after its own mind has had its say, the seat decides which way it faces (a boat: its way, or sideways)
     if (v.riderPlaced) v.riderPlaced(e, v.passengers.indexOf(e));
@@ -1132,4 +1144,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=35';
+import { rayBox } from './terrain.js?v=36';

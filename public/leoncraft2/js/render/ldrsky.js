@@ -8,9 +8,9 @@
    End a dark speckled box. Exposure and tone mapping happen here too, so
    nothing runs after it.
 --------------------------------------------------------------------------- */
-import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=35';
-import { rawMat } from './sky.js?v=35';
-import { END_FLASH_GLSL } from './endflash.js?v=35';
+import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=36';
+import { rawMat } from './sky.js?v=36';
+import { END_FLASH_GLSL } from './endflash.js?v=36';
 const THREE = window.THREE;
 
 const FS = COMMON + TONEMAP + /* glsl */`
