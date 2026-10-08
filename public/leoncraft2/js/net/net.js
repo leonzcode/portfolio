@@ -362,7 +362,7 @@ export class Net {
        30 seconds      Timed out, as the game says it */
   static connect(server, password, name) {
     return new Promise((resolve, reject) => {
-      const url = wsBase() + '?mode=lc2&pv=3&server=' + encodeURIComponent(server) + '&pw=' + encodeURIComponent(password || '') +
+      const url = wsBase() + '?mode=lc2&pv=4&server=' + encodeURIComponent(server) + '&pw=' + encodeURIComponent(password || '') +
         '&name=' + encodeURIComponent(name) + '&device=' + encodeURIComponent(deviceId());
       let ws;
       try { ws = new WebSocket(url); } catch (e) { reject({ reason: FAIL_TEXT.down[1], kind: SERVER_DOWN }); return; }
@@ -477,7 +477,7 @@ export class Net {
     this.players.onPoof = (x, y, z) => { const E = this.game && this.game.entities; if (E && E.particles) E.particles('poof', x, y + 0.9, z, 20, 0.4); };
     for (const p of this.initPlayers) this.players.add(p);
     // someone sitting in a boat or minecart is drawn in its seat in this machine's copy of it
-    this.players.seatOf = r => this.veh.seatOf(r);
+    this.players.seatOf = r => this.veh.seatOf(r) || this.mobs.seatOf(r, this.veh.alpha);
     this.initPlayers = null;
     // the server's game rules and difficulty, for everyone
     if (this.rules) this.applyRules(this.rules);
@@ -555,7 +555,7 @@ export class Net {
        ms, millimetres and thousandths of a radian, a number left off the end unchanged (lc2.js moveFor) */
     if (Array.isArray(m)) {
       // the mobs others run: where they are (mobs.js)
-      if (m[0] === 3) { this.mobs.receive(m); return; }
+      if (m[0] === 3 || m[0] === 4) { this.mobs.receive(m); return; }
       let b = this.bases.get(m[1]);
       if (m[0] === 0) {
         b = { ts: m[2], X: Math.round(m[3] * 1000), Y: Math.round(m[4] * 1000), Z: Math.round(m[5] * 1000), YAW: Math.round(m[6] * 1000), PITCH: Math.round(m[7] * 1000), f: m[8] | 0, d: m[9] | 0 };
@@ -592,6 +592,8 @@ export class Net {
       case 'kicked': this.kickReason = m.reason; return;
       case 'fx': if (this.game && this.game.ready) this.effects(m); return;
       case 'ev': this.events.receive(m); return;
+      // the mobs' news in the order it came, with their positions (which go straight to the puppets)
+      case 'm=': case 'm+': case 'mo': case 'mj': case 'ma': case 'm-': case 'pop': this.mobs.receive(m); return;
       // blocks, chests and signs go in the moment they arrive, not at the next tick: they show a frame sooner
       case 'b': case 'ct': case 'dt': if (this.game && this.game.ready && !this.inbox.length) { this.handle(m); return; } this.inbox.push(m); return;
       default: this.inbox.push(m);
@@ -947,12 +949,16 @@ export class Net {
      Each machine flies its own: yours is sent as it leaves your hand (where
      it is and how fast), and the others fly a copy of it that touches
      nothing (it vanishes on whatever it meets, and an arrow or trident sticks
-     where it lands). Whether it hit someone is your machine's to say. */
+     where it lands). Whether it hit someone is your machine's to say. So are
+     the shots of the mobs your machine runs (a skeleton's arrows, a blaze's
+     or a ghast's fireballs). A fishing line is not a shot: events.js draws
+     another player's. */
   shareShots() {
     if (!this.shots.length) return;
     const g = this.game, P = g.entities && g.entities.player, r3 = v => Math.round(v * 1000) / 1000, out = [];
     for (const e of this.shots) {
-      if (!P || e.owner !== P || e.ghost || out.length >= 16) continue;
+      const ow = e.owner;
+      if (!P || !(ow === P || (ow && ow.nm && !ow.puppet)) || e.ghost || e.type === 'fishing_bobber' || out.length >= 16) continue;
       const o = { ty: e.type, p: [r3(e.pos.x), r3(e.pos.y), r3(e.pos.z)], v: [r3(e.vel.x), r3(e.vel.y), r3(e.vel.z)] };
       if (e.item) o.it = e.item;
       if (e.crit) o.c = 1;
@@ -1191,7 +1197,6 @@ export class Net {
       case 'it=': this.numbered(m.e || []); return;
       case 'it-': case 'itno': this.itemGone(m.id); return;
       case 'itok': this.granted(m.id, m.s); return;
-      case 'm=': case 'm+': case 'mo': case 'mj': case 'ma': case 'm-': case 'pop': this.mobs.receive(m); return;
       case 'o=': case 'o+': case 'o-': case 'ono': case 'ook': this.orbs.receive(m); return;
       case 'pm':
         if (m.err) this.ctx.chat.add(m.err, 0xFF5555);

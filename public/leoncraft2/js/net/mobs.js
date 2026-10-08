@@ -44,10 +44,15 @@ const jsonOf = e => Object.getPrototypeOf(e).toJSON.call(e);
 const VOLATILE = new Set(['p', 'v', 'y', 'f', 'age', 'l', 'air']);
 const sigOf = j => { let s = ''; for (const k in j) if (!VOLATILE.has(k)) s += k + ':' + JSON.stringify(j[k]) + ';'; return s; };
 // the flags in a position
-const F_GROUND = 1, F_HURT = 2, F_DEAD = 4, F_FIRE = 8, F_SWING = 16;
-const DELAY = 130;            // ms behind the newest position a puppet is drawn
-const SEEN = 160;             // blocks: a mob another player is within this of is sent every other tick
+const F_GROUND = 1, F_HURT = 2, F_DEAD = 4, F_FIRE = 8, F_SWING = 16, F_RIDDEN = 32;
+const DELAY = 220;            // ms behind the newest position a puppet is drawn (they come every third tick, with time to spare for a late one)
+const SEEN = 160;             // blocks: a mob another player is within this of is sent every third tick
+const KEY = 20;               // every twentieth position of a mob is the whole of it, not a change
 const q100 = v => Math.round(v * 100);
+// an angle in 256ths of a turn, as the game sends them, and back
+const TURN = 2 * Math.PI;
+const q256 = a => ((Math.round(a / TURN * 256) % 256) + 256) % 256;
+const wrap256 = v => ((v + 128) & 255) - 128;
 // how its parts move (the per-kind animation a mob's anim() sets up for drawing), without what the drawing works out itself
 const MOTION = { walk: 1, amt: 1, age: 1, yaw: 1, pitch: 1, attack: 1, riding: 1 };
 function animOf(e) {
@@ -60,7 +65,7 @@ function animOf(e) {
     if (MOTION[k] || !/^[A-Za-z]{1,16}$/.test(k)) continue;
     const v = A[k];
     if (v === true) (out || (out = {}))[k] = true;
-    else if (typeof v === 'number' && Number.isFinite(v) && v !== 0) (out || (out = {}))[k] = Math.round(v * 100) / 100;
+    else if (typeof v === 'number' && Number.isFinite(v) && Math.round(v * 10) !== 0) (out || (out = {}))[k] = Math.round(v * 10) / 10;
   }
   return out;
 }
@@ -75,6 +80,7 @@ export class Mobs {
     this.gone = []; this.kept = [];
     this.clocks = new Map();     // another machine's clock against ours: { win, prev, at, est }
     this.popAsk = []; this.popWait = new Map();
+    this.riders = new Map();     // another player's number -> the mob they ride (one their machine runs)
     this.applying = false; this.unloading = false;
     this.t = 0;
     this.on = false;             // a server that shares mobs (an older one leaves them on each machine)
@@ -146,8 +152,10 @@ export class Mobs {
     if (!o || !(o.id > 0) || !o.j || typeof o.j.t !== 'string') return null;
     let rec = this.recs.get(o.id);
     const p = Array.isArray(o.p) ? o.p : o.j.p || [0, 0, 0];
-    if (!rec) { rec = { id: o.id, d: o.d | 0, j: o.j, o: o.o | 0, x: +p[0], y: +p[1], z: +p[2], a: o.a || null, e: null, buf: [], hold: 0 }; this.recs.set(o.id, rec); }
+    if (!rec) { rec = { id: o.id, d: o.d | 0, j: o.j, o: o.o | 0, x: +p[0], y: +p[1], z: +p[2], a: o.a || null, e: null, buf: [], hold: 0, q: null, n: 0 }; this.recs.set(o.id, rec); }
     else { rec.j = o.j; rec.o = o.o | 0; rec.x = +p[0]; rec.y = +p[1]; rec.z = +p[2]; if (o.a !== undefined) rec.a = o.a || null; }
+    // (the last of where it is as the server has it: the changes that follow go on top of it)
+    if (Array.isArray(o.q) && o.q.length === 7) { rec.q = o.q.slice(); if (rec.e && rec.e.puppet) this.addPos(rec, performance.now() - DELAY, o.f | 0); }
     return rec;
   }
   // a record made into an entity here: run here, or a puppet of another machine's
@@ -194,7 +202,7 @@ export class Mobs {
     e.puppet = true;
     // (a lead held by the player on its machine would be drawn to you: theirs to draw)
     if (e.leash && e.leash.player) e.leash = null;
-    if (!rec.buf.length) rec.buf.push({ ts: performance.now() - 1000, x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw, body: e.bodyYaw || e.yaw, head: e.headYaw || e.yaw, pitch: e.pitch, f: e.onGround ? F_GROUND : 0 });
+    if (!rec.buf.length) rec.buf.push({ ts: performance.now() - DELAY, x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw, body: e.bodyYaw || e.yaw, head: e.headYaw || e.yaw, pitch: e.pitch, f: e.onGround ? F_GROUND : 0 });
     e.tick = function () { M.puppetTick(rec, this); };
     e.hurt = function () { M.claim(this); return this.hurt.apply(this, arguments); };
     e.anim = function (A) { const s = rec.a; if (s) for (const k in s) A[k] = s[k]; };
@@ -290,8 +298,8 @@ export class Mobs {
     const near = [];
     if (net.players) for (const r of net.players.list.values()) { const s = r.st; if (s && s.d === dim) near.push(s); }
     const watched = (x, z) => { for (const s of near) if (Math.abs(s.x - x) < SEEN && Math.abs(s.z - z) < SEEN) return true; return false; };
-    const moveTick = this.t % 2 === 0, slowTick = this.t % 40 === 0, look = this.t % 20 === 0, jsonTick = this.t % 10 === 0;
-    const now = performance.now(), moves = [], recs = [], anims = [], far = Math.max(64, (net.ctx.renderer.opts.renderDist || 8) * 16);
+    const moveTick = this.t % 3 === 0, slowTick = this.t % 60 === 0, look = this.t % 20 === 0, jsonTick = this.t % 10 === 0;
+    const now = performance.now(), whole = [], moves = [], recs = [], anims = [], far = Math.max(64, (net.ctx.renderer.opts.renderDist || 8) * 16);
     for (const rec of this.recs.values()) {
       if (rec.d !== dim) continue;
       const e = rec.e;
@@ -308,15 +316,21 @@ export class Mobs {
       if ((E.riding === e || (e.leash && e.leash.player)) && now - (rec.claimAt || 0) > 5000) { rec.claimAt = now; net.send({ t: 'mc', id: rec.id }); }
       const seen = watched(e.pos.x, e.pos.z);
       if (moveTick && (seen || slowTick)) {
-        const f = (e.onGround ? F_GROUND : 0) | (rec.hurtNow ? F_HURT : 0) | (e.dead ? F_DEAD : 0) | (e.fire > 0 ? F_FIRE : 0) | (rec.swingNow ? F_SWING : 0);
+        const f = (e.onGround ? F_GROUND : 0) | (rec.hurtNow ? F_HURT : 0) | (e.dead ? F_DEAD : 0) | (e.fire > 0 ? F_FIRE : 0) | (rec.swingNow ? F_SWING : 0) |
+          (e.passengers.indexOf(E.player) >= 0 ? F_RIDDEN : 0);
         const body = e.bodyYaw !== undefined ? e.bodyYaw : e.yaw, head = e.headYaw !== undefined ? e.headYaw : e.yaw;
-        const q = [q100(e.pos.x), q100(e.pos.y), q100(e.pos.z), q100(wrap(e.yaw)), q100(wrap(body)), q100(wrap(head)), q100(e.pitch || 0), f];
+        const q = [q100(e.pos.x), q100(e.pos.y), q100(e.pos.z), q256(e.yaw), q256(body), q256(head), q256(e.pitch || 0)];
         const s = rec.sent;
-        if (!s || f & (F_HURT | F_SWING) || q.some((v, i) => v !== s[i])) {
-          moves.push(rec.id, ...q);
+        // the whole of it the first time and now and then; between, what changed (lc2.js mobMoves)
+        if (!s || ++rec.n >= KEY || Math.abs(q[0] - s[0]) > 3000 || Math.abs(q[1] - s[1]) > 3000 || Math.abs(q[2] - s[2]) > 3000) {
+          whole.push(rec.id, ...q, f); rec.n = 0;
           rec.sent = q; rec.hurtNow = false; rec.swingNow = false;
-          rec.x = e.pos.x; rec.y = e.pos.y; rec.z = e.pos.z;
-        }
+        } else if (f !== rec.sf || q.some((v, i) => v !== s[i])) {
+          moves.push(rec.id, q[0] - s[0], q[1] - s[1], q[2] - s[2], wrap256(q[3] - s[3]), wrap256(q[4] - s[4]), wrap256(q[5] - s[5]), wrap256(q[6] - s[6]), f);
+          rec.sent = q; rec.hurtNow = false; rec.swingNow = false;
+        } else rec.n--;
+        rec.sf = f & ~(F_HURT | F_SWING);
+        rec.x = e.pos.x; rec.y = e.pos.y; rec.z = e.pos.z;
         // how its parts move, when that changed
         if (seen) {
           const a = animOf(e), sig = a ? JSON.stringify(a) : '';
@@ -334,7 +348,8 @@ export class Mobs {
         }
       }
     }
-    if (moves.length) net.send([3, dim, Math.round(stamp), ...moves]);
+    if (whole.length) net.send([3, dim, Math.round(stamp), ...whole]);
+    if (moves.length) net.send([4, dim, Math.round(stamp), ...moves]);
     if (anims.length) net.send({ t: 'ma', e: anims });
     if (recs.length) net.send({ t: 'mj', e: recs });
     // your sight, for which mobs the server tells you of
@@ -393,6 +408,31 @@ export class Mobs {
       case 'pop': this.popped(m); return;
     }
   }
+  /* Another player riding a mob their machine runs: drawn in its saddle as
+     this machine draws the mob (the two are sent apart, and drawn a little
+     behind each by its own delay), by where they sat on it in the newest of each */
+  seatOf(r, alpha) {
+    const rec = this.riders.get(r.id), e = rec && rec.e, s = r.st, b = rec && rec.buf[rec.buf.length - 1];
+    if (!e || e.removed || !e.puppet || !s || !b || rec.rider !== r.id) return null;
+    const dx = s.x - b.x, dy = s.y - b.y, dz = s.z - b.z;
+    if (dx * dx + dy * dy + dz * dz > 16) return null;
+    const a = alpha === undefined ? 1 : alpha, out = this.seatOut || (this.seatOut = { x: 0, y: 0, z: 0, v: null });
+    out.x = e.prev.x + (e.pos.x - e.prev.x) * a + dx; out.y = e.prev.y + (e.pos.y - e.prev.y) * a + dy; out.z = e.prev.z + (e.pos.z - e.prev.z) * a + dz;
+    out.v = e;
+    return out;
+  }
+  // where rec.q says it is, at time t (this page's clock), into its puppet's list of positions
+  addPos(rec, t, f) {
+    const q = rec.q, x = q[0] / 100, y = q[1] / 100, z = q[2] / 100;
+    rec.x = x; rec.y = y; rec.z = z;
+    const b = rec.buf, last = b[b.length - 1];
+    if (last && t <= last.ts) { if (t < last.ts - 3000) b.length = 0; else return false; }
+    // standing still sends nothing: it stood where it was until a tick before this
+    if (last && t - last.ts > 200) b.push(Object.assign({}, last, { ts: t - 150 }));
+    b.push({ ts: t, x, y, z, yaw: q[3] / 256 * TURN, body: q[4] / 256 * TURN, head: q[5] / 256 * TURN, pitch: wrap256(q[6]) / 256 * TURN, f });
+    if (b.length > 40) b.splice(0, b.length - 40);
+    return true;
+  }
   // its record or its owner changed: run here or drawn as a puppet, as it should be now
   retake(rec) {
     const e = rec.e, net = this.net;
@@ -417,10 +457,11 @@ export class Mobs {
     if (b !== undefined) { e.bodyYaw = b; e.headYaw = hy; e.prevBodyYaw = pb; e.prevHeadYaw = ph; }
     if (e.puppet && e.leash && e.leash.player) e.leash = null;
   }
-  /* [3, d, ts, owner, id, x, y, z, yaw, body, head, pitch, flags, id, ...]: positions from the machine
-     running them, on its clock; put on this page's clock by the quickest any of its messages took */
+  /* [3, d, ts, owner, id, x, y, z, yaw, body, head, pitch, flags, id, ...]: where the mobs another
+     machine runs are ([4, ...]: what changed since the last), on its clock, put on this page's
+     clock by the quickest any of its messages took */
   moves(m) {
-    const d = m[1], ts = m[2], oid = m[3], now = performance.now();
+    const d = m[1], ts = m[2], oid = m[3], now = performance.now(), delta = m[0] === 4;
     let c = this.clocks.get(oid);
     if (!c) this.clocks.set(oid, c = { win: Infinity, prev: Infinity, at: now, est: null });
     const off = now - ts;
@@ -433,15 +474,16 @@ export class Mobs {
     for (let i = 4; i + 8 < m.length; i += 9) {
       const rec = this.recs.get(m[i]);
       if (!rec || rec.d !== d || rec.o === this.net.id) continue;
-      const x = m[i + 1] / 100, y = m[i + 2] / 100, z = m[i + 3] / 100, f = m[i + 8] | 0;
-      rec.x = x; rec.y = y; rec.z = z;
-      const b = rec.buf, last = b[b.length - 1];
-      const s = { ts: t, x, y, z, yaw: m[i + 4] / 100, body: m[i + 5] / 100, head: m[i + 6] / 100, pitch: m[i + 7] / 100, f };
-      if (last && t <= last.ts) { if (t < last.ts - 3000) b.length = 0; else continue; }
-      // standing still sends nothing: it stood where it was until a tick before this
-      if (last && t - last.ts > 150) b.push(Object.assign({}, last, { ts: t - 100 }));
-      b.push(s);
-      if (b.length > 40) b.splice(0, b.length - 40);
+      const f = m[i + 8] | 0;
+      if (delta) {
+        const q = rec.q;
+        if (!q) continue;
+        q[0] += m[i + 1]; q[1] += m[i + 2]; q[2] += m[i + 3];
+        for (let k = 3; k < 7; k++) q[k] = (q[k] + m[i + 1 + k]) & 255;
+      } else rec.q = [m[i + 1], m[i + 2], m[i + 3], m[i + 4], m[i + 5], m[i + 6], m[i + 7]];
+      if (!this.addPos(rec, t, f)) continue;
+      // ridden by the player whose machine runs it: they are drawn in its saddle (seatOf)
+      if (f & F_RIDDEN) { rec.rider = oid; this.riders.set(oid, rec); } else if (rec.rider) { if (this.riders.get(rec.rider) === rec) this.riders.delete(rec.rider); rec.rider = 0; }
       const e = rec.e;
       if (!e || !e.puppet) continue;
       // a hit and a swing show at once; dying starts it falling over

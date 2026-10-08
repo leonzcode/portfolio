@@ -23,7 +23,9 @@
                    changes like any other)
      mining        the cracks on the block another player is mining, stage
                    by stage, as the game shows them (block destruction)
-     players       others eating (the bits of food), on fire (flames on them)
+     players       others eating (the bits of food), on fire (flames on them),
+                   fishing (their line, from the rod in their hand to the
+                   bobber where it floats)
 --------------------------------------------------------------------------- */
 import { Sound } from '../sound/sound.js?v=32';
 import { MobSounds } from '../sound/mobsounds.js?v=32';
@@ -33,6 +35,7 @@ import { selectionBoxes } from '../models.js?v=32';
 import { exposure } from '../explosion.js?v=32';
 import { Overlay } from '../render/overlay.js?v=32';
 import { F } from './players.js?v=32';
+const THREE = window.THREE;
 
 let active = null, quiet = 0;
 /* The sounds each machine makes by itself are not passed on: everything the
@@ -68,6 +71,7 @@ export class Events {
     this.opened = new Map();      // another player's number -> the lids they have open ("x,y,z")
     this.cracks = new Map();      // another player's number -> { ov, x, y, z, s, at }
     this.mine = null;
+    this.bobs = new Map();        // another player's number -> their bobber: { x, y, z, line, mesh }
     this.t = 0;
   }
   init(m) { this.on = !!m.mobs; }
@@ -76,6 +80,8 @@ export class Events {
     if (active === this) active = null;
     for (const c of this.cracks.values()) this.dropCrack(c);
     this.cracks.clear();
+    for (const b of this.bobs.values()) this.dropBob(b);
+    this.bobs.clear();
   }
   get busy() { const n = this.net; return n.applying || n.closed || (n.mobs && n.mobs.applying) || (n.orbs && n.orbs.applying) || (n.veh && n.veh.applying); }
   send(e) { if (this.out.length < 48) this.out.push(e); }
@@ -132,6 +138,12 @@ export class Events {
     const was = this.mine;
     if (st >= 0 && (!was || was.x !== m.x || was.y !== m.y || was.z !== m.z || was.s !== st)) { this.mine = { x: m.x, y: m.y, z: m.z, s: st }; this.send(['mine', m.x, m.y, m.z, st]); }
     else if (st < 0 && was) { this.mine = null; this.send(['mine', was.x, was.y, was.z, -1]); }
+    // your bobber, where it is every other tick it moves (and when it is reeled in)
+    const bob = g.entities && g.entities.bobber, r2 = v => Math.round(v * 100) / 100;
+    if (bob && !bob.removed) {
+      const b = [r2(bob.pos.x), r2(bob.pos.y), r2(bob.pos.z)], s0 = this.bobSent;
+      if (this.t % 2 === 0 && (!s0 || b[0] !== s0[0] || b[1] !== s0[1] || b[2] !== s0[2])) { this.bobSent = b; this.send(['bob', b[0], b[1], b[2], 1]); }
+    } else if (this.bobSent) { const b = this.bobSent; this.bobSent = null; this.send(['bob', b[0], b[1], b[2], 0]); }
     if (this.out.length) { this.net.send({ t: 'ev', d: dim, e: this.out }); this.out = []; }
     // a crack nobody has said anything of for 20 seconds goes, as the game's do
     if (this.t % 20 === 0) { const now = performance.now(); for (const [pid, c] of this.cracks) if (now - c.at > 20000) { this.dropCrack(c); this.cracks.delete(pid); } }
@@ -171,6 +183,13 @@ export class Events {
       }
       case 'boom': this.boom(x, y, z, +e[4] || 4); return;
       case 'mine': this.crack(pid, x, y, z, e[4] | 0); return;
+      case 'bob': {
+        let b = this.bobs.get(pid);
+        if (!e[4]) { if (b) { this.dropBob(b); this.bobs.delete(pid); } return; }
+        if (!b) this.bobs.set(pid, b = { x, y, z, px: x, py: y, pz: z, line: null, mesh: null });
+        b.px = b.x; b.py = b.y; b.pz = b.z; b.x = x; b.y = y; b.z = z; b.at = performance.now();
+        return;
+      }
     }
   }
   /* Someone else's explosion: its flash and smoke, and your share of it, by
@@ -240,12 +259,51 @@ export class Events {
     this.opened.delete(pid);
     const c = this.cracks.get(pid);
     if (c) { this.dropCrack(c); this.cracks.delete(pid); }
+    const b = this.bobs.get(pid);
+    if (b) { this.dropBob(b); this.bobs.delete(pid); }
+  }
+  dropBob(b) {
+    for (const m of [b.line, b.mesh]) if (m) { if (m.parent) m.parent.remove(m); m.geometry.dispose(); m.material.dispose(); }
+    b.line = b.mesh = null;
+  }
+  /* Another player's fishing line: a dark line from the tip of the rod in
+     their hand, sagging a little, to their bobber (red over white, as the
+     game's), eased between the positions they send */
+  fishing(r, b, s) {
+    const R = this.net.ctx.renderer;
+    if (!b.line) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(3 * 9), 3));
+      b.line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x1a1a1a }));
+      b.line.frustumCulled = false;
+      const mg = new THREE.BoxGeometry(0.16, 0.16, 0.16), col = new Float32Array(24 * 3);
+      for (let i = 0; i < 24; i++) { const top = mg.attributes.position.getY(i) > 0; col.set(top ? [0.8, 0.1, 0.1] : [0.95, 0.95, 0.95], i * 3); }
+      mg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      b.mesh = new THREE.Mesh(mg, new THREE.MeshBasicMaterial({ vertexColors: true }));
+      R.scene.add(b.line, b.mesh);
+    }
+    const k = Math.min(1, (performance.now() - (b.at || 0)) / 100), bx = b.px + (b.x - b.px) * k, by = b.py + (b.y - b.py) * k, bz = b.pz + (b.z - b.pz) * k;
+    b.mesh.position.set(bx, by + 0.08, bz);
+    const f = r.feet, yaw = s.yaw, sn = Math.sin(yaw), cs = Math.cos(yaw), side = r.offId && !r.heldId ? -1 : 1;
+    const tx = f.x - sn * 0.8 + cs * 0.35 * side, ty = f.y + (s.f & F.SNEAK ? 1.25 : 1.55), tz = f.z - cs * 0.8 - sn * 0.35 * side;
+    const P = b.line.geometry.attributes.position;
+    for (let i = 0; i <= 8; i++) {
+      const u = i / 8;
+      P.setXYZ(i, tx + (bx - tx) * u, ty + (by - ty) * u - Math.sin(u * Math.PI) * 0.25, tz + (bz - tz) * u);
+    }
+    P.needsUpdate = true;
   }
 
   /* ---- every frame: the others eating and burning ---- */
   players(dt) {
     const net = this.net, g = net.game, list = net.players && net.players.list;
     if (!list || !g) return;
+    // their fishing lines, every frame (a line seen while its player is not drawn is hidden)
+    for (const [pid, b] of this.bobs) {
+      const r = list.get(pid), on = !!(r && r.st && r.feet && r.av && r.av.mesh.visible);
+      if (on) this.fishing(r, b, r.st);
+      if (b.line) b.line.visible = b.mesh.visible = on;
+    }
     this.acc = (this.acc || 0) + dt;
     if (this.acc < 0.05) return;
     this.acc = 0;
