@@ -210,6 +210,10 @@ if (B.end_portal_frame !== undefined) Object.assign(BLOCKS[B.end_portal_frame], 
   shapeOf('hopper', 'hopper', d => { delete d.orient; });
   shapeOf('campfire', 'campfire', d => { delete d.orient; });
   shapeOf('soul_campfire', 'campfire', d => { delete d.orient; });
+  // fire on the floor or against the sides that burn (models.js)
+  shapeOf('fire', 'fire'); shapeOf('soul_fire', 'fire');
+  // on any face of their cell, as the game's multiface blocks (models.js)
+  for (const n of ['glow_lichen', 'sculk_vein', 'resin_clump']) shapeOf(n, 'multiface');
   shapeOf('bell', 'bell', d => addTex(d, { post: 'stone', bar: 'dark_oak_planks' }));
   shapeOf('enchanting_table', 'table');
   shapeOf('lectern', 'lectern', d => { delete d.orient; addTex(d, { base: 'lectern_base' }); });

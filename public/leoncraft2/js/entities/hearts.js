@@ -126,8 +126,8 @@ export class Hearts {
       const [lx, ly, lz] = logs[Math.floor(R() * logs.length)];
       const f = Math.floor(R() * 4), d = DIRS[f], cx = lx + d[0], cz = lz + d[2];
       if (world.get(cx, ly, cz) !== 0) continue;
-      // facing away from the log it grows on
-      world.set(cx, ly, cz, B.resin_clump, f);
+      // on its face towards the log it grows on (meta bits as models.js draws them: 8 south, 16 west, 4 north, 32 east)
+      world.set(cx, ly, cz, B.resin_clump, [8, 16, 4, 32][f]);
       want--;
     }
   }

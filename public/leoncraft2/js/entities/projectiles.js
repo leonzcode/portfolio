@@ -45,7 +45,7 @@ export class Projectile extends Entity {
       // and the first mob (or the player), its box grown by 0.3
       let hit = null, te = tb;
       this.m.forNear(p.x, p.z, sp + 3, e => {
-        if (e === this || e === this.owner && this.age < 5 || e.removed || e.dead || e instanceof Projectile || !e.hurt || e.vehicle === this.owner || (this.skip && this.skip(e))) return;
+        if (e === this || e === this.owner && this.age < 5 || e.removed || e.dead || e instanceof Projectile || !e.hurt || (this.owner && e.vehicle === this.owner) || (this.skip && this.skip(e))) return;
         const t = rayBox(p.x, p.y, p.z, dx, dy, dz, e.pos.x - e.hw - 0.3, e.pos.y - 0.3, e.pos.z - e.hw - 0.3, e.pos.x + e.hw + 0.3, e.pos.y + e.h + 0.3, e.pos.z + e.hw + 0.3);
         if (t < te) { te = t; hit = e; }
       });

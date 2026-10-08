@@ -11,10 +11,12 @@
                fuel a click pushes it away from you, and it then drives
                itself at up to 4 blocks a second (0.8 of its speed kept a
                tick, the push added), lit and smoking while the fuel lasts
-     tnt       a powered activator rail lights it (80 ticks, then it goes),
-               so does breaking it while it moves or with fire; running into
-               a wall at speed, falling 3 blocks or more, or a burning arrow
-               blows it at once: power 4 + up to 1.5 x its speed (at most 5)
+     tnt       a powered activator rail lights it (80 ticks, then it goes);
+               broken while it moves, or by fire, lava or a blast (lava does
+               it in two ticks, a fire block in five), it is lit with 0-38
+               ticks left instead of dropping; running into a wall at speed,
+               falling 3 blocks or more, or a burning arrow blows it at once:
+               power 4 + up to 1.5 x its speed (at most 5)
      hopper    5 slots; every tick, one item from a container above the rail
                or what lies on it, as much of a stack as fits; a powered
                activator rail turns it off; a hopper under the rail empties
@@ -200,10 +202,11 @@ class HopperCart extends ChestCart {
 /* ---- with a furnace ---- */
 const FUEL = new Set(['coal', 'charcoal']);
 class FurnaceCart extends BlockCart {
-  static ITEM = 'furnace_minecart'; static LAYER_TEX = 'cart_furnace';
+  static ITEM = 'furnace_minecart'; static LAYER_TEX = 'cart_furnace'; static FURNACE = true;
   constructor(m, type) { super(m, type); this.fuel = 0; this.px = 0; this.pz = 0; }
   layerTex() { return this.fuel > 0 ? 'cart_furnace_lit' : 'cart_furnace'; }
-  get speedScale() { return 0.5; }
+  // 4 blocks a second, 3 in water
+  maxSpeed(inWater) { return inWater ? 0.15 : 0.2; }
   interact(held, player) {
     if (!player || !player.isPlayer) return false;
     if (FUEL.has(held) && this.fuel + 3600 <= 32000) {
@@ -238,13 +241,14 @@ class TntCart extends BlockCart {
   constructor(m, type) { super(m, type); this.fuse = -1; }
   // white every other quarter second for the last half second, as the game flashes it
   layerTex() { return this.fuse > -1 && this.fuse < 10 && Math.floor(this.fuse / 5) % 2 === 0 ? 'cart_tnt_flash' : 'cart_tnt'; }
-  prime(t) { if (this.fuse < 0) this.fuse = t === undefined ? 80 : t; }
+  prime(t) { if (this.fuse < 0) { this.fuse = t === undefined ? 80 : t; if (this.m.primedSound) this.m.primedSound(this); } }
   tick() {
     const sp = this.vel.x * this.vel.x + this.vel.z * this.vel.z;
     super.tick();
     if (this.removed) return;
     if (activator(this)) this.prime();
-    if (this.hitEnd && sp >= 0.01) { this.blow(sp); return; }
+    // into a block at speed: the end of its rail, or a wall it runs into off the rails
+    if ((this.hitEnd || (!this.onRail && this.hCollide)) && sp >= 0.01) { this.blow(sp); return; }
     if (this.fuse > 0) {
       this.fuse--;
       this.m.particles('smoke', this.pos.x, this.pos.y + 1, this.pos.z, 1, 0.05);
@@ -261,11 +265,14 @@ class TntCart extends BlockCart {
     if (this.removed) return false;
     // a burning arrow sets it off at once
     if (src && src.direct && src.direct.fire > 0) { this.blow(src.direct.vel ? src.direct.vel.lengthSq() : 0); return true; }
-    // fire or a blast, or a hit while it moves: lit, a second or two from going (not broken)
+    return super.hurt(amount, src);
+  }
+  // broken by fire, lava or a blast, or while it moves: lit, a second or two from going, rather than dropped
+  destroyed(src) {
     const fiery = src && /fire|lava|explosion/.test(src.type || '');
     const moving = this.vel.x * this.vel.x + this.vel.z * this.vel.z >= 0.01;
-    if (fiery || (moving && this.damage + amount * 10 > 40)) { if (this.fuse < 0) this.fuse = RI(20) + RI(20); return true; }
-    return super.hurt(amount, src);
+    if (!fiery && !moving) { super.destroyed(src); return; }
+    if (this.fuse < 0) this.prime(RI(20) + RI(20));
   }
   toJSON() { const o = super.toJSON(); if (this.fuse >= 0) o.fuse = this.fuse; return o; }
   fromJSON(o) { super.fromJSON(o); if (o.fuse >= 0) this.fuse = o.fuse; }
