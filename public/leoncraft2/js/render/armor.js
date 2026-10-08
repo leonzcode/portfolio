@@ -363,4 +363,15 @@ vec3 glintAt(vec2 p, float t) {
   float u = texture(uNoise, vec2(b.x * 0.004 + 0.61, b.y * 0.018 + t * 0.037)).a;
   float g = smoothstep(0.5, 0.95, s) * 0.9 + smoothstep(0.55, 0.95, u) * 0.7;
   return vec3(0.5, 0.25, 0.95) * g * (uGlint.y / 0.75);
-}`;
+}
+#ifdef GLINT_TONE
+/* High and RIP: the shimmer put on the screen's own colour, as the game adds it (needs glsl.js TONEMAP).
+   col is light still to be exposed by E and tone mapped; what comes back is the light that comes out
+   on the screen as col does there with the shimmer added. Added as light it was lost in the tone
+   curve's top in the sun (a faint shimmer on dull teal diamond) and glared in the dark */
+vec3 glintOver(vec3 col, vec3 g, float E) {
+  vec3 d = toSRGB(agx(col * E));
+  return agxInverse(toLinear(min(d + g, vec3(0.97)))) / E;
+}
+#endif
+`;
