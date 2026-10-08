@@ -55,9 +55,9 @@ vec3 linearFog(vec3 c, float d) {
 }
 // the face shades the game gives each side of a block (0 +x, 1 -x, 2 +y, 3 -y, 4 +z, 5 -z)
 float faceShade(int f) { return f == 2 ? mix(1.0, 0.9, uConstAmb) : f == 3 ? mix(0.5, 0.9, uConstAmb) : f >= 4 ? 0.8 : 0.6; }
-// how the game lights a mob or an item: two fixed lights and 0.4 everywhere
+// how the game lights a mob or an item: two fixed lights and 0.4 everywhere (in the Nether the second from below)
 float entityShade(vec3 n) {
-  vec3 l0 = normalize(vec3(0.2, 1.0, -0.7)), l1 = normalize(vec3(-0.2, 1.0, 0.7));
+  vec3 l0 = normalize(vec3(0.2, 1.0, -0.7)), l1 = normalize(vec3(-0.2, uConstAmb > 0.5 ? -1.0 : 1.0, 0.7));
   return min(1.0, (max(0.0, dot(l0, n)) + max(0.0, dot(l1, n))) * 0.6 + 0.4);
 }
 `;
