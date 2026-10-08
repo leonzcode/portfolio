@@ -40,7 +40,7 @@ import { B, BLOCKS, FLUID } from '../blocks.js?v=32';
 import { Gen } from '../worldgen.js?v=32';
 import { rng } from '../noise.js?v=32';
 import { LEVEL, FALLING } from '../world-const.js?v=32';
-import { vineFaces, vineHolds, VINE_SIDES, VINE_UP } from '../models.js?v=32';
+import { vineFaces, vineHolds, VINE_SIDES, VINE_UP, multiFaces, MULTI_DIRS } from '../models.js?v=32';
 
 const HORIZ = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const R = sim => sim.rng();
@@ -400,6 +400,27 @@ export function installPlants(sim) {
         let k = cur;
         for (const [, , bit] of VINE_SIDES) if (R(s) < 0.5 && (f & bit)) k |= bit;
         if (k !== cur && (k & 15)) s.set(x, y - 1, z, V, k);
+      },
+    });
+  }
+
+  /* ---- glow lichen, sculk veins, resin clumps: each face holds while the block that way is whole; with none
+     left the block goes (models.js multiFaces) ---- */
+  for (const n of ['glow_lichen', 'sculk_vein', 'resin_clump']) {
+    const id = B[n];
+    if (id === undefined) continue;
+    sim.on(id, {
+      neighbor(s, x, y, z, m) {
+        const nb = (dx, dy, dz) => { const b = s.get(x + dx, y + dy, z + dz); return b ? { d: BLOCKS[b], m: 0 } : null; };
+        const f = multiFaces(m, nb);
+        let k = 0;
+        for (let i = 0; i < 6; i++) {
+          if (!(f & (1 << i))) continue;
+          const [dx, dy, dz] = MULTI_DIRS[i];
+          if (!s.w.loaded(x + dx, z + dz) || vineHolds(nb(dx, dy, dz))) k |= 1 << i;
+        }
+        if (!k) { s.destroy(x, y, z, false); return; }
+        if (k !== (m & 63)) s.set(x, y, z, id, k);
       },
     });
   }

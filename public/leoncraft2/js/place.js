@@ -9,7 +9,7 @@
    the way js/models.js reads it.
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID } from './blocks.js?v=32';
-import { collisionBoxes, vineFaces, vineHolds, VINE_UP } from './models.js?v=32';
+import { collisionBoxes, vineFaces, vineHolds, VINE_UP, multiFaces, MULTI_DIRS } from './models.js?v=32';
 
 const DIRS = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]];     // north, east, south, west
 // the horizontal way you look: 0 north, 1 east, 2 south, 3 west
@@ -136,6 +136,15 @@ function placeDry(world, hit, id, player) {
       if (have & bit) continue;
       if (vineHolds(nb(dx, dy, dz)) || (bit !== VINE_UP && (hangs & bit))) return [[x, y, z, id, have | bit]];
     }
+    return out;
+  }
+  // glow lichen, sculk veins, resin clumps: the same, on any of the six faces (the game's multiface placement)
+  if (d.shape === 'multiface') {
+    const nb = (dx, dy, dz) => { const b = world.get(x + dx, y + dy, z + dz); return b ? { d: BLOCKS[b], m: world.meta(x + dx, y + dy, z + dz) } : null; };
+    const have = cur === id ? multiFaces(cm, nb) : 0;
+    const cp = Math.cos(player.pitch), lv = [-Math.sin(player.yaw) * cp, Math.sin(player.pitch), -Math.cos(player.yaw) * cp];
+    const ways = MULTI_DIRS.map((v, i) => [v, 1 << i]).sort((a, b2) => (b2[0][0] * lv[0] + b2[0][1] * lv[1] + b2[0][2] * lv[2]) - (a[0][0] * lv[0] + a[0][1] * lv[1] + a[0][2] * lv[2]));
+    for (const [[dx, dy, dz], bit] of ways) if (!(have & bit) && vineHolds(nb(dx, dy, dz))) return [[x, y, z, id, have | bit]];
     return out;
   }
   // cocoa: on the side of a jungle log only, facing it (as the trees grow it, gen/trees.js)

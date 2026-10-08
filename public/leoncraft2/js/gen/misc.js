@@ -328,10 +328,11 @@ FEATURES.multiface_growth = (D, c, r, ox, oy, oz) => {
   const airOrWater = b => isAir(b) || b === B.water;
   const hasFace = (x, y, z, d) => R.get(x, y, z) === block.id && ((F_.get(fkey(x, y, z)) || 0) & (1 << d)) !== 0;
   const canAttach = (x, y, z) => { const b = R.get(x, y, z); return b !== 0 && (sturdy(b) || BLOCKS[b].leaves); };
+  // (the faces go into the meta as well, in the same bits: models.js draws them)
   const placeFace = (x, y, z, d) => {
     const k = fkey(x, y, z);
     const cur = R.get(x, y, z) === block.id ? (F_.get(k) || 0) : 0;
-    R.set(x, y, z, block.id, 0);
+    R.set(x, y, z, block.id, cur | (1 << d));
     F_.set(k, cur | (1 << d));
   };
   // the game's spreader: to the same block, along the wall, or round a corner
@@ -673,7 +674,12 @@ FEATURES.sculk_patch = (D, c, r, ox, oy, oz) => {
       if (!isAir(R.get(nx, ny, nz)) || !R.inside(nx, nz)) continue;
       let rock = false;
       for (const [ex, ey, ez] of DIRS) { const m = R.get(nx + ex, ny + ey, nz + ez); if (rep[m] && m !== B.sculk && sturdy(m)) { rock = true; break; } }
-      if (rock && r.nextFloat() < 0.65) R.set(nx, ny, nz, B.sculk_vein, 0);
+      // (on every sturdy face round it: meta bits in DIRS order, as models.js draws a multiface block)
+      if (rock && r.nextFloat() < 0.65) {
+        let f = 0;
+        for (let k = 0; k < 6; k++) { const [ex, ey, ez] = DIRS[k]; if (sturdy(R.get(nx + ex, ny + ey, nz + ez))) f |= 1 << k; }
+        R.set(nx, ny, nz, B.sculk_vein, f);
+      }
     }
   }
   return laid.length > 0;
