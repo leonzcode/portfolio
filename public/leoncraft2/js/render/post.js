@@ -20,6 +20,9 @@ import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS, TONE_CURVES, VOID } from './gls
 import { FullScreen, rawMat, floatTarget } from './sky.js?v=33';
 import { END_FLASH_GLSL } from './endflash.js?v=33';
 const THREE = window.THREE;
+/* How much brighter the day sky is drawn than the eye has it (on top of 1): at noon our sky, exposed for
+   the land, was a grey blue about half as bright on the screen as the game's light blue (FS_FINAL) */
+const SKY_GAIN = 1.5;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
 const mat = (fs, u, extra) => {
   const m = rawMat(fs, u, extra);
@@ -256,6 +259,9 @@ void main() {
   // block clouds (renderer.js): their colour already weighed by how much of them there is, and what
   // shows through them in the alpha; the sky is put behind them here, and they melt by themselves
   bool cloud = base.a < 0.999 && d < 1.0;
+  // how much of this pixel is the sky's own colour (the sky, and the fog and the haze at the world's
+  // edge that are the sky's colour), for the day sky's brightening in FS_FINAL
+  float skyW = d >= 1.0 || cloud ? 1.0 : 0.0;
   if (d >= 1.0 || cloud) {
     // below the horizon there is only what has not loaded yet: the haze at the horizon
     col = skyRadiance(vec3(rd.x, max(rd.y, 0.0), rd.z));
@@ -277,6 +283,8 @@ void main() {
     float night = 1.0 - smoothstep(-0.12, 0.02, uSunDir.y);
     col += stars(rd) * night * sat(rd.y * 4.0);
     col = voidSky(col, rd);
+    // (the dark under the horizon below the horizon height is not the sky's colour: not brightened)
+    if (rd.y < 0.0 && 4.0 / max(-rd.y, 1e-4) * length(rd.xz) < 512.0) skyW = 1.0 - uVoid.x * (1.0 - voidFog(rd, 4.0));
     if (cloud) col = col * base.a + base.rgb;
   }
   // clouds, in front of the sky and anything beyond them
@@ -302,6 +310,7 @@ void main() {
     // the edge of the loaded world melts into the horizon
     float hd = length((wp - uCamPos).xz);
     float edge = smoothstep(uRender * 0.72, uRender, hd);
+    skyW = mix((1.0 - T) * uSkyAtEye, 1.0, edge);
     col = mix(col, skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))) * (1.0 - uVoid.y), edge);
   }
   // the light shafts' haze: none in the void's black fog near the bottom of the world, nor over the
@@ -312,8 +321,9 @@ void main() {
   col += vl;
   float sh = shutAt(dist, d);
   col *= 1.0 - sh;
-  // (lava, marked 2 by water.js, marked 0 here: the eye does not adapt to it; nor to the black of Blindness and Darkness)
-  o = vec4(col, base.a > 1.5 || sh > 0.5 ? 0.0 : 1.0);
+  // (lava, marked 2 by water.js, marked 0 here: the eye does not adapt to it; nor to the black of Blindness and Darkness;
+  // what the eye measures has 1 and the sky's share over it, FS_LUM counting it all the same)
+  o = vec4(col, base.a > 1.5 || sh > 0.5 ? 0.0 : 1.0 + (water ? 0.0 : skyW));
 }`;
 
 /* ---- bloom ---- */
@@ -407,15 +417,21 @@ uniform sampler2D uColor, uBloom, uExpo;
 uniform float uEyeInWater, uTime, uBloomMix;
 uniform float uSat, uContrast;  // Shader Options: Saturation and Contrast
 uniform float uCurve;           // and Tone Mapping: 0 AgX, 1 ACES, 2 Reinhard (glsl.js toneCurve)
+uniform float uSkyGain;         // the day sky brightened by this much more (Post.frame)
 in vec2 vUv; out vec4 o;
 void main() {
   vec2 uv = vUv;
   if (uEyeInWater > 0.5) uv += vec2(sin(uv.y * 24.0 + uTime * 2.1), cos(uv.x * 19.0 + uTime * 1.7)) * 0.0018;
-  vec3 c = texture(uColor, uv).rgb;
+  vec4 cc = texture(uColor, uv);
+  vec3 c = cc.rgb;
   vec3 b = texture(uBloom, uv).rgb;
   float e = texture(uExpo, vec2(0.5)).r;
   c = mix(c, b / 6.0, uBloomMix);
-  c *= e;
+  /* the day sky (and the fog and haze that are its colour) brighter than the eye has it, towards the
+     game's light blue: by the eye set for the land the sky came out a dull grey blue, half as bright
+     as the game's at noon. Left out of what the eye measures, so the land stays as it was */
+  float skyK = uSkyGain * sat(cc.a - 1.0);
+  c *= e * (1.0 + skyK);
   // a soft vignette, kinder to bright pixels
   vec2 q = uv - 0.5;
   c *= 1.0 - dot(q, q) * 0.38 * (1.0 - sat(lum(c)));
@@ -423,7 +439,8 @@ void main() {
   else if (uCurve < 1.5) { c *= 0.78; c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0); }
   else { c *= 1.35; c = min(vec3(1.0), c * (1.0 + c / 64.0) / (1.0 + c)); }
   float l = lum(c);
-  c = max(vec3(0.0), l + (c - l) * uSat);
+  // (and the sky itself a little bluer, as the game's is: the tone curve greys a bright blue; not the land in the fog)
+  c = max(vec3(0.0), l + (c - l) * uSat * (1.0 + uSkyGain * smoothstep(1.9, 2.0, cc.a) * 0.25));
   c = toSRGB(c);
   c = clamp((c - 0.5) * uContrast + 0.5, 0.0, 1.0);
   o = vec4(c, lum(c));
@@ -486,7 +503,7 @@ export class Post {
       uColor: { value: null }, uDepth: { value: null }, uVL: { value: null }, uClouds: { value: null }, uBloom: { value: null },
       uExpo: { value: null }, uLum: { value: null }, uPrev: { value: null }, uHistory: { value: null },
       uInvViewProj: { value: new THREE.Matrix4() }, uPrevViewProj: { value: new THREE.Matrix4() },
-      uDt: { value: 0.016 }, uBias: { value: 1 }, uBloomMix: { value: 0.045 },
+      uDt: { value: 0.016 }, uBias: { value: 1 }, uBloomMix: { value: 0.045 }, uSkyGain: { value: 0 },
       // the Shader Options' exposure (in stops, as a factor), saturation and contrast
       uEV: { value: 1 }, uSat: { value: 1 }, uContrast: { value: 1 }, uCurve: { value: 0 },
       // Light Shafts: Low or High (render/looks.js)
@@ -652,6 +669,9 @@ export class Post {
     }
     // tone map, then smooth the edges onto the screen
     u.uColor.value = this.comp.texture; u.uBloom.value = upSrc; u.uExpo.value = this.expo[this.expoI].texture;
+    // the day sky's brightening (FS_FINAL): full with the sun well up, none from late afternoon on, at night or in the other dimensions
+    const sd = this.shared.uSunDir && this.shared.uSunDir.value, sy = sd ? sd.y : 0, k = Math.max(0, Math.min(1, (sy - 0.15) / 0.35));
+    u.uSkyGain.value = other ? 0 : SKY_GAIN * k * k * (3 - 2 * k);
     // (and for the next frame's lava: water.js)
     if (this.shared.uExpoTex) this.shared.uExpoTex.value = this.expo[this.expoI].texture;
     this.run(this.mFinal, this.fxaa ? this.ldr : null);
