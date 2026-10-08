@@ -332,6 +332,7 @@ export class World {
   near(cx, cz) { return Math.abs(cx - this.pcx) <= 1 && Math.abs(cz - this.pcz) <= 1; }
 
   onMessage(i, m, initRes) {
+    if (m.type === 'up') return;         // a worker's code loaded (index.html waits for it on a first visit)
     // practice finishing for this very world (it was opened while the workers were still at it)
     if (m.type === 'practised') { if (m.name === this.dim + '|' + this.generator + '|' + this.seed) this.takePractice(m); else keepAhead(m, this.dead ? null : this.workers[i]); return; }
     // columns of the title's world read back by a worker after it had answered its init (worker.js lateMeshes)

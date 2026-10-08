@@ -504,3 +504,5 @@ function writesOf(g, x, z) {
   g.writeCache.delete(ck(x, z));
   return [...w];
 }
+// this worker's code is all in: on a first visit the page waits for this before asking for its own (index.html)
+self.postMessage({ type: 'up' });
