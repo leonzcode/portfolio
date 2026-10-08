@@ -1107,8 +1107,9 @@ const FIRE_FLOOR = [
   turnPlane([[8.8, 0, 0], [8.8, 0, 16], [8.8, FH, 16], [8.8, FH, 0]], 'z', -22.5, FO),
   turnPlane([[7.2, 0, 16], [7.2, 0, 0], [7.2, FH, 0], [7.2, FH, 16]], 'z', 22.5, FO),
 ];
-// a sheet against each side: north, east, south, west (the game's side model turned 0, 90, 180, 270)
-const FIRE_SIDE = [0, 1, 2, 3].map(r => [[0, 0, 0.01], [16, 0, 0.01], [16, FH, 0.01], [0, FH, 0.01]].map(([x, y, z]) => {
+// a sheet against each side: north, east, south, west (the game's side model turned 0, 90, 180, 270); the game's sits
+// 0.01 of a pixel off the face, here half a pixel, the finest step the mesher keeps, so it never lies in the face itself
+const FIRE_SIDE = [0, 1, 2, 3].map(r => [[0, 0, 0.5], [16, 0, 0.5], [16, FH, 0.5], [0, FH, 0.5]].map(([x, y, z]) => {
   for (let i = 0; i < r; i++) [x, z] = [16 - z, x];
   return [x, y, z];
 }));
