@@ -61,6 +61,11 @@ export function applyModeRules(g, m, hud) {
   const p = g.player;
   // the fall counts from here: flying left none behind (the game resets it every tick in flight)
   if (p) { p.fallDistance = 0; p.landed = null; p.usingItem = false; if (m !== 'spectator') p.flySpeed = 0.05; }
+  /* (and into spectator from the ground you stay where you stood: the pull of gravity a body standing
+     still always carries took it 0.2 down into the ground with nothing to stop it, and back out of
+     spectator it fell the rest of the way into that block, a block deeper every time, until after a
+     few changes of mode your eyes were in the ground and your skin went pitch black) */
+  if (p && m === 'spectator' && p.onGround && p.vel.y < 0) p.vel.y = 0;
   if (hud) { hud.spectator = m === 'spectator'; hud.markDirty(); }
 }
 
