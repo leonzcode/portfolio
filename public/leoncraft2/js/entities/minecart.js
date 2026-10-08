@@ -16,6 +16,16 @@
    and never goes over 0.4 blocks a tick (8 a second). Off the rails it falls
    0.04 a tick and slows to half on the ground. Mobs bumped by a moving empty
    cart get in; hits break it as they break a boat.
+
+   Pushing, as in the game (it is not solid: you walk into it, not onto it):
+   the player or a mob whose box overlaps the cart's pushes it 0.05 a tick
+   straight away from them and is pushed back a quarter of that, so a cart
+   you walk into rolls off along its rail. Two carts that meet end to end
+   (within about 37 degrees of the cart's length) each keep a fifth of their
+   own speed, take on the average of the two and part by 0.05; a furnace cart
+   instead hands its own speed to the cart it meets and keeps 95% of it.
+   Lava hurts a cart 4 a tick and sets it alight, a fire block 1 (soul fire
+   2); alight it takes 1 a second; water puts it out. 40 damage breaks it.
 --------------------------------------------------------------------------- */
 import { Entity, Living, DEG, wrap } from './entity.js?v=32';
 import { register } from './mobs.js?v=32';
@@ -32,6 +42,10 @@ for (const d of BLOCKS) {
   if (d.name === 'powered_rail') POWERED[d.id] = 1;
   if (/^(redstone_torch|redstone_wall_torch|redstone_block|lever)$/.test(d.name)) SOURCE[d.id] = 1;
 }
+// what a fire block does to a cart in it a tick (the game's fire 1, soul fire 2)
+const FIRE = new Uint8Array(4096);
+if (B.fire !== undefined) FIRE[B.fire] = 1;
+if (B.soul_fire !== undefined) FIRE[B.soul_fire] = 2;
 
 /* ---- the minecart's shape: a tub on four sides ---- */
 const cartModel = {
@@ -89,6 +103,13 @@ export class Minecart extends Entity {
   powered(x, y, z) { return (this.m.t.meta(x, y, z) & 8) !== 0; }
 
   tick() {
+    this.roll();
+    if (this.removed) return;
+    this.hot();
+    if (!this.removed) this.touching();
+  }
+  // along the rails (or off them), one tick
+  roll() {
     this.prev.copy(this.pos); this.prevYaw = this.yaw; this.prevPitch = this.pitch;
     this.age++;
     if (this.hurtTime > 0) this.hurtTime--;
@@ -111,7 +132,6 @@ export class Minecart extends Entity {
       this.move(v.x, v.y, v.z);
       if (!this.onGround) { v.x *= 0.95; v.y *= 0.95; v.z *= 0.95; }
       this.pitch *= 0.8;
-      this.pickUp();
       return;
     }
     this.onRail = true;
@@ -176,32 +196,111 @@ export class Minecart extends Entity {
     this.yaw = this.yaw + wrap(yaw - this.yaw) * 0.5;
     const fwd = Math.cos(this.yaw - Math.atan2(-hx, -hz)) > 0 ? 1 : -1;
     this.pitch = y1 !== y0 ? Math.atan2((y1 - y0) * fwd, 1) * 0.999 : 0;
-    this.pickUp();
   }
-  // a mob bumped by a moving, empty cart gets in
-  pickUp() {
-    if (this.constructor.NO_RIDE || this.passengers.length || this.vel.x * this.vel.x + this.vel.z * this.vel.z < 0.01) return;
-    this.m.forNear(this.pos.x, this.pos.z, 2, e => {
-      if (this.passengers.length || e === this || e.removed || e.dead || !(e instanceof Living) || e.vehicle || e.type === 'iron_golem' || e.w > 1) return;
-      if (Math.abs(e.pos.x - this.pos.x) < this.hw + e.hw && Math.abs(e.pos.z - this.pos.z) < this.hw + e.hw && Math.abs(e.pos.y - this.pos.y) < 1) {
+  /* What touches it. Another cart within 0.2 of its box: the two meet (bump).
+     A mob in that reach while it moves (a plain cart, empty) gets in, as the
+     game's carts pick up mobs; otherwise a mob or the player whose box is in
+     the cart's pushes it away and is pushed back a quarter as much. */
+  touching() {
+    const p = this.pos, hw = this.hw, y0 = p.y, y1 = p.y + this.h;
+    const moving = this.vel.x * this.vel.x + this.vel.z * this.vel.z > 0.01;
+    const picks = moving && !this.constructor.NO_RIDE;
+    this.m.forNear(p.x, p.z, 3, e => {
+      if (e === this || e.removed || e.dead || e.vehicle || e.noPhysics || e.pos.y >= y1 || e.pos.y + e.h <= y0) return;
+      const ox = Math.abs(e.pos.x - p.x), oz = Math.abs(e.pos.z - p.z), reach = hw + e.hw + 0.2;
+      if (ox >= reach || oz >= reach) return;
+      if (e instanceof Minecart) { this.bump(e); return; }
+      if (!(e instanceof Living) || e.constructor.NO_PUSH) return;
+      if (picks && !this.passengers.length && e.type !== 'iron_golem' && e.w <= 1 && !e.passengers.length) {
         e.vehicle = this; this.passengers.push(e); if (e.nav) e.nav.stop();
+        return;
       }
+      if (ox < hw + e.hw && oz < hw + e.hw) this.shove(e.pos, e.vel, true);
     });
+    // the player (not one riding anything, nor a spectator); a creative player pushes but is not pushed back
+    const P = this.m.P, pl = this.m.player;
+    if (P && !this.m.riding && pl && pl.alive() && this.m.mode !== 'spectator' && !P.noclip
+      && Math.abs(P.pos.x - p.x) < hw + 0.3 && Math.abs(P.pos.z - p.z) < hw + 0.3 && P.pos.y < y1 && P.pos.y + (P.h || 1.8) > y0)
+      this.shove(P.pos, P.vel, this.m.mode !== 'creative');
+  }
+  // pushed by something at `at`: 0.05 a tick away from it (less once they are more than a block apart), it a quarter of that back
+  shove(at, ev, back) {
+    let dx = at.x - this.pos.x, dz = at.z - this.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.01) return;
+    const k = Math.min(1, 1 / d) * 0.05 / d;
+    dx *= k; dz *= k;
+    this.vel.x -= dx; this.vel.z -= dz;
+    if (back) { ev.x += dx / 4; ev.z += dz / 4; }
+  }
+  // two carts meeting (each cart's turn does this once, as the game's does)
+  bump(o) {
+    let dx = o.pos.x - this.pos.x, dz = o.pos.z - this.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.01) return;
+    dx /= d; dz /= d;
+    // only end to end along this cart's length
+    if (Math.abs(dx * Math.sin(this.yaw) + dz * Math.cos(this.yaw)) < 0.8) return;
+    const k = Math.min(1, 1 / d) * 0.05;
+    const px = dx * k, pz = dz * k, a = this.vel, b = o.vel;
+    const fa = !!this.constructor.FURNACE, fb = !!o.constructor.FURNACE;
+    if (fb && !fa) {
+      // the furnace cart drives this one on at its speed
+      a.x = a.x * 0.2 + b.x - px; a.z = a.z * 0.2 + b.z - pz;
+      b.x *= 0.95; b.z *= 0.95;
+    } else if (fa && !fb) {
+      b.x = b.x * 0.2 + a.x + px; b.z = b.z * 0.2 + a.z + pz;
+      a.x *= 0.95; a.z *= 0.95;
+    } else {
+      const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+      a.x = a.x * 0.2 + mx - px; a.z = a.z * 0.2 + mz - pz;
+      b.x = b.x * 0.2 + mx + px; b.z = b.z * 0.2 + mz + pz;
+    }
+  }
+  /* Lava, fire and water, as the game has them for any entity that is not
+     immune: in lava 4 damage a tick and alight for 15 seconds; in a fire block
+     1 a tick (soul fire 2) and alight for 8 (a tick more each tick already
+     alight); alight, 1 damage a second; water puts it out. */
+  hot() {
+    const T = this.m.t, p = this.pos, e = 0.001, hw = this.hw - e;
+    const x0 = p.x - hw, y0 = p.y + e, z0 = p.z - hw, x1 = p.x + hw, y1 = p.y + this.h - e, z1 = p.z + hw;
+    if (T.boxFluid(x0, y0, z0, x1, y1, z1, 1)) { this.fire = 0; return; }
+    const lava = T.boxFluid(x0, y0, z0, x1, y1, z1, 2);
+    if (lava) { this.fire = Math.max(this.fire, 300); this.hurt(4, { type: 'lava' }); if (this.removed) return; }
+    let flame = 0;
+    for (let y = Math.floor(y0); y <= Math.floor(y1); y++) for (let z = Math.floor(z0); z <= Math.floor(z1); z++) for (let x = Math.floor(x0); x <= Math.floor(x1); x++) {
+      const b = T.get(x, y, z);
+      if (b && FIRE[b]) flame = Math.max(flame, FIRE[b]);
+    }
+    if (flame) {
+      this.fire = this.fire > 0 ? this.fire + 1 : 160;
+      this.hurt(flame, { type: 'in_fire' });
+      if (this.removed) return;
+    }
+    if (this.fire > 0) {
+      if (this.fire % 20 === 0 && !lava) this.hurt(1, { type: 'on_fire' });
+      this.fire--;
+    }
   }
   hurt(amount, src) {
     if (this.removed) return false;
     this.hurtDir = -this.hurtDir; this.hurtTime = 10;
     this.damage += amount * 10;
-    const creative = src && src.player && this.m.mode === 'creative';
-    if (creative || this.damage > 40) {
-      // its own item (a cart with a block drops as one since 1.19), and what a chest or hopper cart held
-      if (!creative) this.m.dropItemAt(this.pos.x, this.pos.y + 0.3, this.pos.z, this.constructor.ITEM || 'minecart', 1);
-      if (this.broken) this.broken(creative);
-      for (const p of this.passengers.slice()) { if (p.isPlayer) this.m.dismount(); else p.vehicle = null; }
-      this.passengers.length = 0;
-      this.remove();
-    }
+    // a creative player's hit takes it away (nothing dropped); more than 40 damage breaks it
+    if (src && src.player && this.m.mode === 'creative') this.gone(true);
+    else if (this.damage > 40) this.destroyed(src);
     return true;
+  }
+  // broken: its own item (a cart with a block drops as one since 1.19), and what a chest or hopper cart held
+  destroyed() {
+    this.m.dropItemAt(this.pos.x, this.pos.y + 0.3, this.pos.z, this.constructor.ITEM || 'minecart', 1);
+    this.gone(false);
+  }
+  gone(creative) {
+    if (this.broken) this.broken(creative);
+    for (const p of this.passengers.slice()) { if (p.isPlayer) this.m.dismount(); else p.vehicle = null; }
+    this.passengers.length = 0;
+    this.remove();
   }
   interact(held, player) {
     if (player && player.isPlayer && !player.sneaking() && !this.passengers.length) return this.m.mount(this) ? 'swing' : false;
