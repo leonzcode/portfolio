@@ -20,8 +20,13 @@
    sugar cane, cactus  up to three tall, a block every 16 ticks of age
    bamboo           1 in 3, light 9, up to 16 tall (the top may stop from 11)
    kelp             14% a tick, up to age 25, into water sources
-   vines            1 in 4, to a free side with something to hold, at most
-                    five in a 9x3x9
+   vines            hold on by their faces (models.js vineFaces): a face goes
+                    when what held it goes, and the vine with its last face
+                    (and then whatever hung from that); 1 in 4 a random tick,
+                    a random way: sideways onto a block, round a corner or
+                    along a wall, up a wall or under the block above, down
+                    with some of its sides; at most four in a 9x3x9 to
+                    spread sideways or up
    cocoa 1 in 5, sweet berries 1 in 5 (light 9), nether wart 1 in 10
    farmland         wet (7) with water within 4 across and 1 up, or rain on
                     it; otherwise dries a step, and with nothing planted on
@@ -35,6 +40,7 @@ import { B, BLOCKS, FLUID } from '../blocks.js?v=33';
 import { Gen } from '../worldgen.js?v=33';
 import { rng } from '../noise.js?v=33';
 import { LEVEL, FALLING } from '../world-const.js?v=33';
+import { vineFaces, vineHolds, VINE_SIDES, VINE_UP, multiFaces, MULTI_DIRS } from '../models.js?v=33';
 
 const HORIZ = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const R = sim => sim.rng();
@@ -328,19 +334,129 @@ export function installPlants(sim) {
   });
 
   /* ---- vines ---- */
-  const solidSide = (x, y, z) => { for (const [dx, dz] of HORIZ) if (opaqueCube(sim.get(x + dx, y, z + dz))) return true; return false; };
-  if (B.vine !== undefined) sim.on('vine', {
-    random(s, x, y, z) {
-      if (RI(s, 4) !== 0) return;
+  if (B.vine !== undefined) {
+    const V = B.vine;
+    const at = (x, y, z) => (dx, dy, dz) => { const b = sim.get(x + dx, y + dy, z + dz); return b ? { d: BLOCKS[b], m: sim.meta(x + dx, y + dy, z + dz) } : null; };
+    // (a column not loaded is taken to hold: the vine on the edge of the loaded world is left as it is)
+    const holds = (x, y, z) => { if (!sim.w.loaded(x, z)) return true; const b = sim.get(x, y, z); return !!b && vineHolds({ d: BLOCKS[b] }); };
+    const facesAt = (x, y, z) => vineFaces(sim.meta(x, y, z), at(x, y, z));
+    // the faces that still hold: a side by its block or the same side of the vine above, the top by the block above
+    const holding = (x, y, z, f) => {
+      const above = sim.get(x, y + 1, z) === V ? facesAt(x, y + 1, z) : 0;
+      let k = 0;
+      for (const [dx, dz, bit] of VINE_SIDES) if ((f & bit) && (holds(x + dx, y, z + dz) || (above & bit))) k |= bit;
+      if ((f & VINE_UP) && holds(x, y + 1, z)) k |= VINE_UP;
+      return k;
+    };
+    // room to spread: fewer than five vines in the 9x3x9 round it (itself counted)
+    const room = (x, y, z) => {
       let n = 0;
-      for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) for (let dy = -1; dy <= 1; dy++) if (s.get(x + dx, y + dy, z + dz) === B.vine && ++n > 4) return;
-      const dir = RI(s, 6);
-      let tx = x, ty = y, tz = z;
-      if (dir < 4) { tx += HORIZ[dir][0]; tz += HORIZ[dir][1]; } else if (dir === 4) ty++; else ty--;
-      if (!isAir(s, tx, ty, tz) || !solidSide(tx, ty, tz)) return;
-      s.set(tx, ty, tz, B.vine, 0);
-    },
-  });
+      for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) for (let dy = -1; dy <= 1; dy++) if (sim.get(x + dx, y + dy, z + dz) === V && ++n >= 5) return false;
+      return true;
+    };
+    const air = (x, y, z) => isAir(sim, x, y, z);
+    sim.on('vine', {
+      neighbor(s, x, y, z, m) {
+        const f = facesAt(x, y, z), k = holding(x, y, z, f);
+        if (!k) { s.destroy(x, y, z, false); return; }
+        if (k !== (m & 31)) s.set(x, y, z, V, k);
+      },
+      random(s, x, y, z) {
+        // (one the world was made with that holds on to nothing, its block over a chunk's edge, goes when it is next
+        // looked at: the game would leave it until something changed beside it)
+        if (!holding(x, y, z, facesAt(x, y, z))) { s.destroy(x, y, z, false); return; }
+        if (RI(s, 4) !== 0) return;
+        const f = facesAt(x, y, z), dir = RI(s, 6);        // 0-3 north, east, south, west; 4 up; 5 down
+        if (dir < 4) {
+          const [dx, dz, bit] = VINE_SIDES[dir];
+          if ((f & bit) || !room(x, y, z)) return;
+          const sx = x + dx, sz = z + dz;
+          if (air(sx, y, sz)) {
+            // into the air beside it: along the wall it is on, round the corner of it, or (rarely) under a block above
+            const cw = VINE_SIDES[(dir + 1) & 3], ccw = VINE_SIDES[(dir + 3) & 3], back = VINE_SIDES[(dir + 2) & 3][2];
+            if ((f & cw[2]) && holds(sx + cw[0], y, sz + cw[1])) s.set(sx, y, sz, V, cw[2]);
+            else if ((f & ccw[2]) && holds(sx + ccw[0], y, sz + ccw[1])) s.set(sx, y, sz, V, ccw[2]);
+            else if ((f & cw[2]) && air(sx + cw[0], y, sz + cw[1]) && holds(x + cw[0], y, z + cw[1])) s.set(sx + cw[0], y, sz + cw[1], V, back);
+            else if ((f & ccw[2]) && air(sx + ccw[0], y, sz + ccw[1]) && holds(x + ccw[0], y, z + ccw[1])) s.set(sx + ccw[0], y, sz + ccw[1], V, back);
+            else if (R(s) < 0.05 && holds(sx, y + 1, sz)) s.set(sx, y, sz, V, VINE_UP);
+          } else if (holds(sx, y, sz)) s.set(x, y, z, V, f | bit);
+          return;
+        }
+        if (dir === 4) {
+          // up: under the block above if it holds, or a vine above with the sides that have a wall there
+          if (holds(x, y + 1, z)) { if (!(f & VINE_UP)) s.set(x, y, z, V, f | VINE_UP); return; }
+          if (air(x, y + 1, z)) {
+            if (!room(x, y, z)) return;
+            let k = f & 15;
+            for (const [dx, dz, bit] of VINE_SIDES) if (R(s) < 0.5 || !holds(x + dx, y + 1, z + dz)) k &= ~bit;
+            if (k) s.set(x, y + 1, z, V, k);
+            return;
+          }
+        }
+        // down (or up with no way up): some of its sides into the air or the vine below
+        const b = s.get(x, y - 1, z);
+        if (!(b === V || air(x, y - 1, z))) return;
+        const cur = b === V ? facesAt(x, y - 1, z) : 0;
+        let k = cur;
+        for (const [, , bit] of VINE_SIDES) if (R(s) < 0.5 && (f & bit)) k |= bit;
+        if (k !== cur && (k & 15)) s.set(x, y - 1, z, V, k);
+      },
+    });
+  }
+
+  /* ---- glow lichen, sculk veins, resin clumps: each face holds while the block that way is whole; with none
+     left the block goes (models.js multiFaces) ---- */
+  for (const n of ['glow_lichen', 'sculk_vein', 'resin_clump']) {
+    const id = B[n];
+    if (id === undefined) continue;
+    sim.on(id, {
+      neighbor(s, x, y, z, m) {
+        const nb = (dx, dy, dz) => { const b = s.get(x + dx, y + dy, z + dz); return b ? { d: BLOCKS[b], m: 0 } : null; };
+        const f = multiFaces(m, nb);
+        let k = 0;
+        for (let i = 0; i < 6; i++) {
+          if (!(f & (1 << i))) continue;
+          const [dx, dy, dz] = MULTI_DIRS[i];
+          if (!s.w.loaded(x + dx, z + dz) || vineHolds(nb(dx, dy, dz))) k |= 1 << i;
+        }
+        if (!k) { s.destroy(x, y, z, false); return; }
+        if (k !== (m & 63)) s.set(x, y, z, id, k);
+      },
+    });
+  }
+
+  /* ---- what hangs from the block above (cave vines, weeping vines, hanging roots, spore blossoms, pale hanging
+     moss) or grows up from the one below (twisting vines): left with nothing to hold, it goes a tick later as if
+     broken, and so the next one along a tick after that; a stem left at the end of its vine becomes the vine's
+     tip (the game's growing plants) ---- */
+  {
+    const whole = b => !!b && BLOCKS[b].solid && BLOCKS[b].shape === 'cube';
+    // (drops: cave vines give glow berries only with berries on them, which these never have, so they drop nothing)
+    const gone = (holds, drops) => ({
+      neighbor(s, x, y, z) { if (!holds(s, x, y, z)) s.schedule(x, y, z, 1); },
+      tick(s, x, y, z) { if (!holds(s, x, y, z)) s.destroy(x, y, z, drops); },
+    });
+    for (const [head, body, dir] of [['cave_vines', 'cave_vines_plant', 1], ['weeping_vines', 'weeping_vines_plant', 1], ['twisting_vines', 'twisting_vines_plant', -1]]) {
+      const Hd = B[head], Bd = B[body];
+      if (Hd === undefined || Bd === undefined) continue;
+      const holds = (s, x, y, z) => { const a = s.get(x, y + dir, z); return a === Hd || a === Bd || whole(a); };
+      const h = gone(holds, head === 'cave_vines' ? false : undefined);
+      sim.on(Hd, h);
+      sim.on(Bd, {
+        neighbor(s, x, y, z) {
+          if (!holds(s, x, y, z)) { s.schedule(x, y, z, 1); return; }
+          const n = s.get(x, y - dir, z);
+          if (n !== Hd && n !== Bd) s.set(x, y, z, Hd, 0);
+        },
+        tick: h.tick,
+      });
+    }
+    for (const n of ['hanging_roots', 'spore_blossom', 'pale_hanging_moss']) {
+      const id = B[n];
+      if (id === undefined) continue;
+      sim.on(id, gone((s, x, y, z) => { const a = s.get(x, y + 1, z); return whole(a) || (n === 'pale_hanging_moss' && a === id); }));
+    }
+  }
 
   /* ---- ice and snow in the light ---- */
   sim.on('ice', {

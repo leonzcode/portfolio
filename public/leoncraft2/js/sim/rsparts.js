@@ -919,6 +919,8 @@ export function installParts(sim) {
 
   // a projectile hitting a block (entities/projectiles.js): targets light up
   const onProjectile = (e, x, y, z) => {
+    // a burning arrow or a fireball lights TNT, a campfire or a candle it hits (sim/fire.js)
+    if ((e.fire > 0 || /fireball$/.test(e.type)) && S.projectileFire) S.projectileFire(x, y, z);
     if (S.get(x, y, z) !== B.target || !rs.targetHit) return;
     const p = e.pos, d = [1 - (p.x - x), p.x - x, 1 - (p.y - y), p.y - y, 1 - (p.z - z), p.z - z];
     let f = 0; for (let i = 1; i < 6; i++) if (d[i] < d[f]) f = i;

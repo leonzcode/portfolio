@@ -318,6 +318,8 @@ export function soundParts(g) {
     // creepers: the hiss as they swell
     hook(E, 'fuseSound', e => Sound.play('entity.creeper.primed', e.pos.x, e.pos.y + 1, e.pos.z, 1, 0.5, 'hostile'));
     hook(E, 'onExplode', (x, y, z) => explodeSound(x, y, z));
+    // a TNT cart lit (entities/carts.js): TNT's own fizz
+    hook(E, 'primedSound', e => Sound.play('entity.tnt.primed', e.pos.x, e.pos.y + 0.5, e.pos.z, 1, 1, 'block'));
     if (E.interact) {
       const ia = E.interact.bind(E);
       E.interact = e => {
@@ -395,6 +397,8 @@ function interactSound(e, type, held) {
   else if (held === 'bucket' && (type === 'cow' || type === 'mooshroom' || type === 'goat')) at(type === 'goat' ? 'entity.goat.milk' : 'entity.cow.milk');
   else if (held === 'water_bucket' && /^(cod|salmon|tropical_fish|pufferfish|axolotl|tadpole)$/.test(type)) at(type === 'axolotl' ? 'item.bucket.fill_axolotl' : type === 'tadpole' ? 'item.bucket.fill_tadpole' : 'item.bucket.fill_fish');
   else if (/_dye$/.test(held) && type === 'sheep') at('item.dye.use');
+  else if (type === 'creeper' && held === 'flint_and_steel') at('item.flintandsteel.use');
+  else if (type === 'creeper' && held === 'fire_charge') at('item.firecharge.use');
 }
 
 // the player's swings, bows, crossbows, tridents and shield (combat/combat.js)

@@ -29,6 +29,7 @@
    Fences, walls, panes, rails and redstone work out their shape from their
    neighbours, as Minecraft does when it draws them.
 --------------------------------------------------------------------------- */
+import { burnable } from './flame.js?v=33';
 
 const box = (x0, y0, z0, x1, y1, z1, extra) => {
   const b = { f: [x0, y0, z0], t: [x1, y1, z1] };
@@ -815,15 +816,67 @@ SHAPES.wire = function (d, m, nb) {
   });
   return r;
 };
+/* ---- vines: the faces a vine hangs on, in its meta ----
+   bit 0 north, 1 east, 2 south, 3 west, 4 under the block above (the game's
+   north/east/south/west/up). A side holds while the block that way has a
+   whole face towards it, or while the vine above has that same side: so a
+   vine hangs down a wall and on below its foot, a sheet in the air where the
+   wall was, as the game's do. A vine whose meta has no faces (one kept
+   before the faces were, or a structure's) takes them from what is round
+   it, and below another vine, that vine's sides. */
+export const VINE_UP = 16;
+export const VINE_SIDES = [[0, -1, 1], [1, 0, 2], [0, 1, 4], [-1, 0, 8]];      // dx, dz, bit
+// a whole face towards the vine (the game's isFaceFull of its collision; leaves count)
+export const vineHolds = n => !!n && !!n.d && n.d.solid && n.d.shape === 'cube';
+// the faces of a vine at nb(0, 0, 0) with meta m: its own, or worked out when it has none
+export function vineFaces(m, nb) {
+  if (m & 31) return m & 31;
+  let f = 0;
+  for (const [dx, dz, bit] of VINE_SIDES) if (vineHolds(nb(dx, 0, dz))) f |= bit;
+  if (vineHolds(nb(0, 1, 0))) f |= VINE_UP;
+  if (f) return f;
+  // nothing to hold: below a vine, the sides of that one
+  const a = nb(0, 1, 0);
+  if (a && a.d.name === 'vine') {
+    if (a.m & 15) return a.m & 15;
+    for (const [dx, dz, bit] of VINE_SIDES) if (vineHolds(nb(dx, 1, dz))) f |= bit;
+  }
+  if (f) return f;
+  // (a structure's vine beside stairs or a slab: against that, rather than flat in the air)
+  for (const [dx, dz, bit] of VINE_SIDES) { const n = nb(dx, 0, dz); if (n && n.d.solid) f |= bit; }
+  return f || VINE_UP;
+}
 SHAPES.vine = function (d, m, nb) {
-  // on every side with something solid to hold on to, and under a solid block
-  const r = [], L = d.faces[2], e = 0.8;
-  const solid = n => n && n.d.solid && n.d.shape === 'cube';
-  if (solid(nb(0, 0, -1))) r.push({ q: [[16, 0, e], [0, 0, e], [0, 16, e], [16, 16, e]], uv: FLAT_UV, layer: L });
-  if (solid(nb(0, 0, 1))) r.push({ q: [[0, 0, 16 - e], [16, 0, 16 - e], [16, 16, 16 - e], [0, 16, 16 - e]], uv: FLAT_UV, layer: L });
-  if (solid(nb(1, 0, 0))) r.push({ q: [[16 - e, 0, 16], [16 - e, 0, 0], [16 - e, 16, 0], [16 - e, 16, 16]], uv: FLAT_UV, layer: L });
-  if (solid(nb(-1, 0, 0))) r.push({ q: [[e, 0, 0], [e, 0, 16], [e, 16, 16], [e, 16, 0]], uv: FLAT_UV, layer: L });
-  if (!r.length || solid(nb(0, 1, 0))) r.push({ q: [[0, 16 - e, 16], [16, 16 - e, 16], [16, 16 - e, 0], [0, 16 - e, 0]], uv: FLAT_UV, layer: L });
+  // the game's vine model: one plane 0.8 pixels in from each face it hangs on
+  const r = [], L = d.faces[2], e = 0.8, f = vineFaces(m, nb);
+  if (f & 1) r.push({ q: [[16, 0, e], [0, 0, e], [0, 16, e], [16, 16, e]], uv: FLAT_UV, layer: L });
+  if (f & 4) r.push({ q: [[0, 0, 16 - e], [16, 0, 16 - e], [16, 16, 16 - e], [0, 16, 16 - e]], uv: FLAT_UV, layer: L });
+  if (f & 2) r.push({ q: [[16 - e, 0, 16], [16 - e, 0, 0], [16 - e, 16, 0], [16 - e, 16, 16]], uv: FLAT_UV, layer: L });
+  if (f & 8) r.push({ q: [[e, 0, 0], [e, 0, 16], [e, 16, 16], [e, 16, 0]], uv: FLAT_UV, layer: L });
+  if (f & VINE_UP) r.push({ q: [[0, 16 - e, 16], [16, 16 - e, 16], [16, 16 - e, 0], [0, 16 - e, 0]], uv: FLAT_UV, layer: L });
+  return r;
+};
+
+/* ---- glow lichen, sculk veins, resin clumps: a sheet on any of the six faces of their cell (the game's
+   multiface blocks) ----
+   meta bits 0 down, 1 up, 2 north, 3 south, 4 west, 5 east (the order gen/misc.js keeps faces in). One with none
+   kept (an older save, a structure's vein) is on its floor when that is whole, else on the first whole face round
+   it. A face holds while the block that way is whole (sim/plants.js). Each sheet sits half a pixel off its face
+   (the game's 0.1 of a pixel is finer than the mesher keeps). */
+export const MULTI_DIRS = [[0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1], [-1, 0, 0], [1, 0, 0]];
+export function multiFaces(m, nb) {
+  if (m & 63) return m & 63;
+  for (let i = 0; i < 6; i++) { const [dx, dy, dz] = MULTI_DIRS[i]; if (vineHolds(nb(dx, dy, dz))) return 1 << i; }
+  return 1;
+}
+SHAPES.multiface = function (d, m, nb) {
+  const r = [], L = d.faces[2], e = 0.5, f = multiFaces(m, nb);
+  if (f & 1) r.push({ q: [[0, e, 0], [16, e, 0], [16, e, 16], [0, e, 16]], uv: FLAT_UV, layer: L });
+  if (f & 2) r.push({ q: [[0, 16 - e, 16], [16, 16 - e, 16], [16, 16 - e, 0], [0, 16 - e, 0]], uv: FLAT_UV, layer: L });
+  if (f & 4) r.push({ q: [[16, 0, e], [0, 0, e], [0, 16, e], [16, 16, e]], uv: FLAT_UV, layer: L });
+  if (f & 8) r.push({ q: [[0, 0, 16 - e], [16, 0, 16 - e], [16, 16, 16 - e], [0, 16, 16 - e]], uv: FLAT_UV, layer: L });
+  if (f & 16) r.push({ q: [[e, 0, 0], [e, 0, 16], [e, 16, 16], [e, 16, 0]], uv: FLAT_UV, layer: L });
+  if (f & 32) r.push({ q: [[16 - e, 0, 16], [16 - e, 0, 0], [16 - e, 16, 0], [16 - e, 16, 16]], uv: FLAT_UV, layer: L });
   return r;
 };
 
@@ -1049,6 +1102,62 @@ SHAPES.brewing = function (d, m) {
   return r;
 };
 
+/* ---- fire, as the game's fire model draws it ----
+   Its planes are a block and two fifths tall, the picture stretched up them.
+   On something it stands on (a top face that holds, or a block that burns)
+   it is four planes leaning across the middle, two each way, and one sheet
+   against each side; with nothing under it, a sheet against each side that
+   burns and two planes leaning down from a block above that burns (the
+   game's north/east/south/west/up states, worked out from the neighbours as
+   the game works them out). The planes were measured from the game's fire
+   models: each turned 22.5 degrees about its own line and stretched by
+   1 / cos 22.5, as the game's model "rescale" does (of the game's picks of
+   each, by the block's place, the first is drawn: a model has no place
+   here). Soul fire is always the floor kind. */
+const turnPlane = (pts, axis, deg, o) => {
+  const a = deg * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a), k = 1 / Math.cos(Math.PI / 8);
+  return pts.map(([x, y, z]) => {
+    let px = x - o[0], py = y - o[1], pz = z - o[2];
+    if (axis === 'x') { const ny = py * c - pz * sn, nz = py * sn + pz * c; py = ny * k; pz = nz * k; }
+    else { const nx = px * c - py * sn, ny = px * sn + py * c; px = nx * k; py = ny * k; }
+    return [px + o[0], py + o[1], pz + o[2]];
+  });
+};
+const FH = 22.4, FO = [8, 8, 8];
+const FIRE_FLOOR = [
+  turnPlane([[0, 0, 8.8], [16, 0, 8.8], [16, FH, 8.8], [0, FH, 8.8]], 'x', -22.5, FO),
+  turnPlane([[16, 0, 7.2], [0, 0, 7.2], [0, FH, 7.2], [16, FH, 7.2]], 'x', 22.5, FO),
+  turnPlane([[8.8, 0, 0], [8.8, 0, 16], [8.8, FH, 16], [8.8, FH, 0]], 'z', -22.5, FO),
+  turnPlane([[7.2, 0, 16], [7.2, 0, 0], [7.2, FH, 0], [7.2, FH, 16]], 'z', 22.5, FO),
+];
+// a sheet against each side: north, east, south, west (the game's side model turned 0, 90, 180, 270); the game's sits
+// 0.01 of a pixel off the face, here half a pixel, the finest step the mesher keeps, so it never lies in the face itself
+const FIRE_SIDE = [0, 1, 2, 3].map(r => [[0, 0, 0.5], [16, 0, 0.5], [16, FH, 0.5], [0, FH, 0.5]].map(([x, y, z]) => {
+  for (let i = 0; i < r; i++) [x, z] = [16 - z, x];
+  return [x, y, z];
+}));
+// hanging under a block that burns: leaning down from its east and west top edges (the game's fire_up)
+const FIRE_UP = [
+  turnPlane([[0, 16, 16], [16, 16, 16], [16, 16, 0], [0, 16, 0]], 'z', 22.5, [16, 16, 8]),
+  turnPlane([[0, 16, 16], [16, 16, 16], [16, 16, 0], [0, 16, 0]], 'z', -22.5, [0, 16, 8]),
+];
+const FIRE_UV = [0, 0, 16, 16];
+// what a fire stands on: a top face that holds (full blocks, top and double slabs, upside-down stairs)
+const fireFloor = n => !!n && n.d.solid && (n.d.shape === 'cube' || (n.d.shape === 'slab' && (n.m & 3) >= 1) || (n.d.shape === 'stairs' && (n.m & 4) !== 0));
+SHAPES.fire = function (d, m, nb) {
+  const L = d.faces[2], r = [];
+  const burns = n => !!n && burnable(n.d);
+  const below = nb(0, -1, 0);
+  let floor = d.name === 'soul_fire' || fireFloor(below) || burns(below);
+  const side = floor ? [false, false, false, false] : [burns(nb(0, 0, -1)), burns(nb(1, 0, 0)), burns(nb(0, 0, 1)), burns(nb(-1, 0, 0))];
+  const up = !floor && burns(nb(0, 1, 0));
+  if (!up && !side.some(Boolean)) floor = true;
+  if (floor) for (const q of FIRE_FLOOR) r.push({ q, uv: FIRE_UV, layer: L });
+  for (let k = 0; k < 4; k++) if (floor || side[k]) r.push({ q: FIRE_SIDE[k], uv: FIRE_UV, layer: L });
+  if (up) for (const q of FIRE_UP) r.push({ q, uv: FIRE_UV, layer: L });
+  return r;
+};
+
 export const MODEL_SHAPES = new Set(Object.keys(SHAPES));
 
 /* ---- full blocks that turn: which picture on which face, and which way up ----
@@ -1226,6 +1335,8 @@ export function selectionBoxes(d, m, nb) {
   if (s === 'snow') return [[0, 0, 0, 1, ((m & 7) + 1) / 8, 1]];
   if (s === 'rail' || s === 'wire') return [[0, 0, 0, 1, 2 / 16, 1]];
   if (s === 'crop') return [[0, 0, 0, 1, 0.5, 1]];
+  // fire is picked by a sixteenth at its foot, as the game's outline is
+  if (s === 'fire') return [[0, 0, 0, 1, 1 / 16, 1]];
   if (!SHAPES[s]) return FULL;
   const list = SHAPES[s](d, m | 0, nb || (() => null));
   const b = toBlocks(list);
