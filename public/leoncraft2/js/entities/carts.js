@@ -241,7 +241,7 @@ class TntCart extends BlockCart {
   constructor(m, type) { super(m, type); this.fuse = -1; }
   // white every other quarter second for the last half second, as the game flashes it
   layerTex() { return this.fuse > -1 && this.fuse < 10 && Math.floor(this.fuse / 5) % 2 === 0 ? 'cart_tnt_flash' : 'cart_tnt'; }
-  prime(t) { if (this.fuse < 0) this.fuse = t === undefined ? 80 : t; }
+  prime(t) { if (this.fuse < 0) { this.fuse = t === undefined ? 80 : t; if (this.m.primedSound) this.m.primedSound(this); } }
   tick() {
     const sp = this.vel.x * this.vel.x + this.vel.z * this.vel.z;
     super.tick();
@@ -272,7 +272,7 @@ class TntCart extends BlockCart {
     const fiery = src && /fire|lava|explosion/.test(src.type || '');
     const moving = this.vel.x * this.vel.x + this.vel.z * this.vel.z >= 0.01;
     if (!fiery && !moving) { super.destroyed(src); return; }
-    if (this.fuse < 0) this.fuse = RI(20) + RI(20);
+    if (this.fuse < 0) this.prime(RI(20) + RI(20));
   }
   toJSON() { const o = super.toJSON(); if (this.fuse >= 0) o.fuse = this.fuse; return o; }
   fromJSON(o) { super.fromJSON(o); if (o.fuse >= 0) this.fuse = o.fuse; }
