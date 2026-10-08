@@ -35,7 +35,8 @@
    the same light and fog as the world.
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID } from '../blocks.js?v=32';
-import { blockGeometry } from '../render/blockmesh.js?v=32';
+import { blockGeometry, intAttribute } from '../render/blockmesh.js?v=32';
+import { lightNear } from '../lightlevel.js?v=32';
 import { FALLS, free as fallsInto, touchesWater, concreteOf } from '../entities/fallingblock.js?v=32';
 import { H } from '../world-const.js?v=32';
 const THREE = window.THREE;
@@ -208,9 +209,10 @@ export class Bodies {
       try { g = blockGeometry(BLOCKS[e.b], e.m); } catch (err) { return; }
       this.geo.set(e.b * 256 + e.m, g);
     }
-    const m = new THREE.Mesh(g.geometry, this.material(r, g.cutout));
+    const m = this.litMesh(r, g, e.x, e.y + 0.5, e.z);
     m.frustumCulled = false;
     m.scale.setScalar(1);
+    e.lit = m;
     e.obj = new THREE.Group();
     e.obj.add(m);
     if (e.kind === 'tnt') {
@@ -223,18 +225,32 @@ export class Bodies {
     m.position.set(0, -0.5, 0);
     this.group.add(e.obj);
   }
-  // the held-block material, but tested against the world's depth like any block
-  material(r, cutout) {
-    const k = cutout ? 'c' : 'o';
-    this.mats = this.mats || {};
-    if (this.mats[k]) return this.mats[k];
-    const src = cutout ? r.mats.handCutout : r.mats.handOpaque;
-    const m = new src.constructor({ uniforms: src.uniforms, vertexShader: src.vertexShader, fragmentShader: src.fragmentShader,
-      defines: Object.assign({}, src.defines), glslVersion: src.glslVersion, side: src.side, transparent: src.transparent });
-    m.depthFunc = THREE.LessEqualDepth; m.depthTest = true; m.depthWrite = true;
-    return (this.mats[k] = m);
+  /* The world's own block material (it takes each look's code in place: render/looks.js), each body
+     lit by the light where it is, in its own copy of the shape's light. (A copy of the held block's
+     material was made once and kept: a change of Shaders left primed TNT and pushed blocks in the old
+     look's code, black or glaring, and on the Off look they took the player's light, not their own.) */
+  material(r, cutout) { return cutout ? r.mats.cutout : r.mats.opaque; }
+  litMesh(r, g, x, y, z) {
+    const src = g.geometry, geo = new THREE.BufferGeometry();
+    for (const n of ['aPos', 'aA', 'aC']) geo.setAttribute(n, src.attributes[n]);
+    geo.setIndex(src.index);
+    geo.setAttribute('aL', intAttribute(new Uint8Array(src.attributes.aL.count * 4)));
+    geo.boundingSphere = src.boundingSphere;
+    const m = new THREE.Mesh(geo, this.material(r, g.cutout));
+    m.userData.light = -1;
+    this.light(m, x, y, z);
+    return m;
   }
-  drop(e) { if (e.obj && e.obj.parent) e.obj.parent.remove(e.obj); e.obj = null; }
+  // the light in the block at (x, y, z) into a body's mesh, when it changes
+  light(m, x, y, z) {
+    const w = this.sim.w, v = lightNear(w, Math.floor(x), Math.floor(y), Math.floor(z), !!w.noSky);
+    if (v === m.userData.light) return;
+    m.userData.light = v;
+    const L = m.geometry.attributes.aL, sky = (v >> 4) * 17, bl = (v & 15) * 17;
+    for (let i = 0; i < L.count; i++) { L.array[i * 4] = sky; L.array[i * 4 + 1] = bl; }
+    L.needsUpdate = true;
+  }
+  drop(e) { if (e.obj && e.obj.parent) e.obj.parent.remove(e.obj); if (e.lit) { e.lit.geometry.dispose(); e.lit = null; } e.obj = null; }
 
   /* ---- each tick ---- */
   tick() {
@@ -298,6 +314,7 @@ export class Bodies {
     for (const e of this.list) {
       if (!e.obj) continue;
       e.obj.position.set(e.px + (e.x - e.px) * alpha, e.py + (e.y - e.py) * alpha, e.pz + (e.z - e.pz) * alpha);
+      if (e.lit) this.light(e.lit, e.x, e.y + 0.5, e.z);
       if (e.kind === 'tnt') {
         const f = e.fuse - alpha + 1;
         let s = 1;

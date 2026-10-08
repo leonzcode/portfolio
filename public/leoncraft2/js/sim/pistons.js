@@ -357,7 +357,8 @@ export function installPistons(sim) {
       const mk = (b, m) => {
         let g = this.geo.get(b * 256 + m);
         if (!g) { try { g = blockGeometry(BLOCKS[b], m); } catch (err) { return null; } this.geo.set(b * 256 + m, g); }
-        const mesh = new THREE.Mesh(g.geometry, S.bodies.material(r, g.cutout));
+        // (the world's block material, lit by the light where the block starts: sim/bodies.js)
+        const mesh = S.bodies.litMesh(r, g, e.x + 0.5, e.y + 0.5, e.z + 0.5);
         mesh.frustumCulled = false;
         const o = new THREE.Group(); o.add(mesh); mesh.position.set(0, -0.5, 0);
         this.group.add(o);
@@ -376,7 +377,7 @@ export function installPistons(sim) {
       // kept a moment, until the chunk is drawn again with the block in place
       e.doneAt = performance.now();
     },
-    drop(e) { for (const p of e.view || []) if (p.o.parent) p.o.parent.remove(p.o); e.view = null; this.list.delete(e); },
+    drop(e) { for (const p of e.view || []) { if (p.o.parent) p.o.parent.remove(p.o); for (const c of p.o.children) if (c.geometry) c.geometry.dispose(); } e.view = null; this.list.delete(e); },
     frame() {
       const loop = () => {
         if (this.dead) return;
