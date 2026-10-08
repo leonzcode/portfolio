@@ -93,6 +93,8 @@ export class Inventory {
     this.drawPlayer = null;
     this._on = { change: [], held: [], drop: [], broke: [] };
     this._heldId = 0;
+    // when each slot (36: the off hand) last had something put in it: the hotbar's pop (ui/hud.js)
+    this.popAt = new Float64Array(37);
   }
 
   /* ---- events ---- */
@@ -134,13 +136,15 @@ export class Inventory {
     if (!st || !st.id || st.count <= 0) return 0;
     const max = maxStack(st.id), count = st.count;
     let left = count;
-    const fill = s => { const n = Math.min(max - s.count, left); s.count += n; left -= n; };
+    // (each slot that takes some pops, as the game's does: popTime 5)
+    const now = performance.now();
+    const fill = (s, i) => { const n = Math.min(max - s.count, left); s.count += n; left -= n; if (n > 0) this.popAt[i] = now; };
     const sel = this.slots[this.selected];
-    if (same(sel, st) && sel.count < max) fill(sel);
-    if (left && same(this.offhand, st) && this.offhand.count < max) fill(this.offhand);
-    for (let i = 0; i < 36 && left; i++) { const s = this.slots[i]; if (same(s, st) && s.count < max) fill(s); }
+    if (same(sel, st) && sel.count < max) fill(sel, this.selected);
+    if (left && same(this.offhand, st) && this.offhand.count < max) fill(this.offhand, 36);
+    for (let i = 0; i < 36 && left; i++) { const s = this.slots[i]; if (same(s, st) && s.count < max) fill(s, i); }
     for (let i = 0; i < 36 && left; i++) {
-      if (!this.slots[i]) { const n = Math.min(max, left); this.slots[i] = withCount(st, n); left -= n; }
+      if (!this.slots[i]) { const n = Math.min(max, left); this.slots[i] = withCount(st, n); left -= n; this.popAt[i] = now; }
     }
     if (left !== count) this.changed();
     return left;
