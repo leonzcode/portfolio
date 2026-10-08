@@ -101,6 +101,14 @@ function dispense(sim, C, c, i, st, x, y, z, f, fx, fy, fz) {
   if (n === 'arrow' || n === 'tipped_arrow' || n === 'spectral_arrow') return shoot('arrow', 1.1, 6, a => { a.pickup = 1; a.item = n; if (st.potion) a.potion = st.potion; });
   if (n === 'snowball' || n === 'egg') return shoot(n, 1.1, 6);
   if (n === 'splash_potion' || n === 'lingering_potion') return shoot('potion', 1.375, 3, p => { p.potion = st.potion || 'water'; p.lingering = n === 'lingering_potion'; });
+  // a fire charge: a blaze's small fireball out of the front, a little off line (the game's triangle of 0.11485 each way)
+  if (n === 'fire_charge' && E && typeof E.spawn === 'function') {
+    const e = E.spawn('small_fireball', x + 0.5 + dx * 0.7, y + 0.5 + dy * 0.7 - (dy === 0 ? 0.15 : 0), z + 0.5 + dz * 0.7, { natural: false });
+    if (!e) return throwOne();
+    const off = () => (Math.random() - Math.random()) * 0.11485;
+    e.aim(dx + off(), dy + off(), dz + off());
+    return one();
+  }
   // buckets
   const replaceable = !front || (fd && fd.replaceable);
   if (n === 'water_bucket' || n === 'lava_bucket') {
