@@ -9,7 +9,7 @@
    the way js/models.js reads it.
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID } from './blocks.js?v=32';
-import { collisionBoxes } from './models.js?v=32';
+import { collisionBoxes, vineFaces, vineHolds, VINE_UP } from './models.js?v=32';
 
 const DIRS = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]];     // north, east, south, west
 // the horizontal way you look: 0 north, 1 east, 2 south, 3 west
@@ -123,6 +123,21 @@ function placeDry(world, hit, id, player) {
   const solidBelow = below && BLOCKS[below].solid;
   const support = faceOf([-n[0], -n[1], -n[2]]);       // the face of the new cell that touches what was clicked
   let m = 0;
+  // a vine: on the first face, in the order you look along them (not down), that can hold it; clicked onto a vine,
+  // that vine takes the face as well (the game's getStateForPlacement with the nearest looking directions)
+  if (d.shape === 'vine') {
+    const nb = (dx, dy, dz) => { const b = world.get(x + dx, y + dy, z + dz); return b ? { d: BLOCKS[b], m: world.meta(x + dx, y + dy, z + dz) } : null; };
+    const have = cur === id ? vineFaces(cm, nb) : 0;
+    const above = nb(0, 1, 0), hangs = above && above.d.name === 'vine' ? vineFaces(above.m, (dx, dy, dz) => nb(dx, dy + 1, dz)) : 0;
+    const cp = Math.cos(player.pitch), lv = [-Math.sin(player.yaw) * cp, Math.sin(player.pitch), -Math.cos(player.yaw) * cp];
+    const ways = [[0, 0, -1, 1], [1, 0, 0, 2], [0, 0, 1, 4], [-1, 0, 0, 8], [0, 1, 0, VINE_UP]]
+      .sort((a, b2) => (b2[0] * lv[0] + b2[1] * lv[1] + b2[2] * lv[2]) - (a[0] * lv[0] + a[1] * lv[1] + a[2] * lv[2]));
+    for (const [dx, dy, dz, bit] of ways) {
+      if (have & bit) continue;
+      if (vineHolds(nb(dx, dy, dz)) || (bit !== VINE_UP && (hangs & bit))) return [[x, y, z, id, have | bit]];
+    }
+    return out;
+  }
   // cocoa: on the side of a jungle log only, facing it (as the trees grow it, gen/trees.js)
   if (d.name === 'cocoa') {
     if (n[1] !== 0 || !/^(stripped_)?jungle_(log|wood)$/.test(hd.name)) return out;

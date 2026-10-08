@@ -669,7 +669,8 @@ function placeRootsMangrove(t, rp, x, y, z, ox, oy, oz) {
 
 /* ---- decorators ---- */
 const ctxAir = (t, x, y, z) => isAir(t.R.get(x, y, z));
-function placeVine(t, x, y, z) { setDeco(t, x, y, z, { id: B.vine, meta: 0 }); }
+// a vine on the face of the block beside it (meta: 1 north, 2 east, 4 south, 8 west, as models.js keeps them)
+function placeVine(t, x, y, z, face) { setDeco(t, x, y, z, { id: B.vine, meta: face }); }
 function lowestTrunkOrRoot(t, logs, roots) {
   if (roots.length === 0) return logs.slice();
   if (logs.length && roots[0][1] === logs[0][1]) return logs.concat(roots);
@@ -686,24 +687,26 @@ const DECORATORS = {
   trunk_vine(t, d, ctx) {
     const r = t.r;
     for (const [x, y, z] of ctx.logs) {
-      if (r.nextInt(3) > 0 && ctxAir(t, x - 1, y, z)) placeVine(t, x - 1, y, z);
-      if (r.nextInt(3) > 0 && ctxAir(t, x + 1, y, z)) placeVine(t, x + 1, y, z);
-      if (r.nextInt(3) > 0 && ctxAir(t, x, y, z - 1)) placeVine(t, x, y, z - 1);
-      if (r.nextInt(3) > 0 && ctxAir(t, x, y, z + 1)) placeVine(t, x, y, z + 1);
+      // (each on the log's side: the one west of the log hangs on its east face, and so on)
+      if (r.nextInt(3) > 0 && ctxAir(t, x - 1, y, z)) placeVine(t, x - 1, y, z, 2);
+      if (r.nextInt(3) > 0 && ctxAir(t, x + 1, y, z)) placeVine(t, x + 1, y, z, 8);
+      if (r.nextInt(3) > 0 && ctxAir(t, x, y, z - 1)) placeVine(t, x, y, z - 1, 4);
+      if (r.nextInt(3) > 0 && ctxAir(t, x, y, z + 1)) placeVine(t, x, y, z + 1, 1);
     }
   },
   leave_vine(t, d, ctx) {
     const r = t.r, p = F(d.probability);
-    const hang = (x, y, z) => {
-      placeVine(t, x, y, z);
+    // on the leaf's side, and up to four more below it on the same face (hanging where the leaf's side was)
+    const hang = (x, y, z, face) => {
+      placeVine(t, x, y, z, face);
       let i = 4, yy = y - 1;
-      while (ctxAir(t, x, yy, z) && i > 0) { placeVine(t, x, yy, z); yy--; i--; }
+      while (ctxAir(t, x, yy, z) && i > 0) { placeVine(t, x, yy, z, face); yy--; i--; }
     };
     for (const [x, y, z] of ctx.leaves) {
-      if (r.nextFloat() < p && ctxAir(t, x - 1, y, z)) hang(x - 1, y, z);
-      if (r.nextFloat() < p && ctxAir(t, x + 1, y, z)) hang(x + 1, y, z);
-      if (r.nextFloat() < p && ctxAir(t, x, y, z - 1)) hang(x, y, z - 1);
-      if (r.nextFloat() < p && ctxAir(t, x, y, z + 1)) hang(x, y, z + 1);
+      if (r.nextFloat() < p && ctxAir(t, x - 1, y, z)) hang(x - 1, y, z, 2);
+      if (r.nextFloat() < p && ctxAir(t, x + 1, y, z)) hang(x + 1, y, z, 8);
+      if (r.nextFloat() < p && ctxAir(t, x, y, z - 1)) hang(x, y, z - 1, 4);
+      if (r.nextFloat() < p && ctxAir(t, x, y, z + 1)) hang(x, y, z + 1, 1);
     }
   },
   cocoa(t, d, ctx) {

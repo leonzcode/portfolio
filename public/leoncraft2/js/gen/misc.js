@@ -391,7 +391,8 @@ FEATURES.vines = (D, c, r, x, y, z) => {
     const [dx, dy, dz] = DIRS[d];
     const b = R.get(x + dx, y + dy, z + dz);
     if (!(b !== 0 && (sturdy(b) || BLOCKS[b].leaves))) continue;
-    R.set(x, y, z, B.vine, 0);
+    // on that face of the vine (meta: 16 under the block above, 1 north, 4 south, 8 west, 2 east: models.js)
+    R.set(x, y, z, B.vine, [0, 16, 1, 4, 8, 2][d]);
     return true;
   }
   return false;

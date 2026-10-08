@@ -20,8 +20,13 @@
    sugar cane, cactus  up to three tall, a block every 16 ticks of age
    bamboo           1 in 3, light 9, up to 16 tall (the top may stop from 11)
    kelp             14% a tick, up to age 25, into water sources
-   vines            1 in 4, to a free side with something to hold, at most
-                    five in a 9x3x9
+   vines            hold on by their faces (models.js vineFaces): a face goes
+                    when what held it goes, and the vine with its last face
+                    (and then whatever hung from that); 1 in 4 a random tick,
+                    a random way: sideways onto a block, round a corner or
+                    along a wall, up a wall or under the block above, down
+                    with some of its sides; at most four in a 9x3x9 to
+                    spread sideways or up
    cocoa 1 in 5, sweet berries 1 in 5 (light 9), nether wart 1 in 10
    farmland         wet (7) with water within 4 across and 1 up, or rain on
                     it; otherwise dries a step, and with nothing planted on
@@ -35,6 +40,7 @@ import { B, BLOCKS, FLUID } from '../blocks.js?v=32';
 import { Gen } from '../worldgen.js?v=32';
 import { rng } from '../noise.js?v=32';
 import { LEVEL, FALLING } from '../world-const.js?v=32';
+import { vineFaces, vineHolds, VINE_SIDES, VINE_UP } from '../models.js?v=32';
 
 const HORIZ = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const R = sim => sim.rng();
@@ -328,19 +334,71 @@ export function installPlants(sim) {
   });
 
   /* ---- vines ---- */
-  const solidSide = (x, y, z) => { for (const [dx, dz] of HORIZ) if (opaqueCube(sim.get(x + dx, y, z + dz))) return true; return false; };
-  if (B.vine !== undefined) sim.on('vine', {
-    random(s, x, y, z) {
-      if (RI(s, 4) !== 0) return;
+  if (B.vine !== undefined) {
+    const V = B.vine;
+    const at = (x, y, z) => (dx, dy, dz) => { const b = sim.get(x + dx, y + dy, z + dz); return b ? { d: BLOCKS[b], m: sim.meta(x + dx, y + dy, z + dz) } : null; };
+    const holds = (x, y, z) => { const b = sim.get(x, y, z); return !!b && vineHolds({ d: BLOCKS[b] }); };
+    const facesAt = (x, y, z) => vineFaces(sim.meta(x, y, z), at(x, y, z));
+    // the faces that still hold: a side by its block or the same side of the vine above, the top by the block above
+    const holding = (x, y, z, f) => {
+      const above = sim.get(x, y + 1, z) === V ? facesAt(x, y + 1, z) : 0;
+      let k = 0;
+      for (const [dx, dz, bit] of VINE_SIDES) if ((f & bit) && (holds(x + dx, y, z + dz) || (above & bit))) k |= bit;
+      if ((f & VINE_UP) && holds(x, y + 1, z)) k |= VINE_UP;
+      return k;
+    };
+    // room to spread: fewer than five vines in the 9x3x9 round it (itself counted)
+    const room = (x, y, z) => {
       let n = 0;
-      for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) for (let dy = -1; dy <= 1; dy++) if (s.get(x + dx, y + dy, z + dz) === B.vine && ++n > 4) return;
-      const dir = RI(s, 6);
-      let tx = x, ty = y, tz = z;
-      if (dir < 4) { tx += HORIZ[dir][0]; tz += HORIZ[dir][1]; } else if (dir === 4) ty++; else ty--;
-      if (!isAir(s, tx, ty, tz) || !solidSide(tx, ty, tz)) return;
-      s.set(tx, ty, tz, B.vine, 0);
-    },
-  });
+      for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) for (let dy = -1; dy <= 1; dy++) if (sim.get(x + dx, y + dy, z + dz) === V && ++n >= 5) return false;
+      return true;
+    };
+    const air = (x, y, z) => isAir(sim, x, y, z);
+    sim.on('vine', {
+      neighbor(s, x, y, z, m) {
+        const f = facesAt(x, y, z), k = holding(x, y, z, f);
+        if (!k) { s.destroy(x, y, z, false); return; }
+        if (k !== (m & 31)) s.set(x, y, z, V, k);
+      },
+      random(s, x, y, z) {
+        if (RI(s, 4) !== 0) return;
+        const f = facesAt(x, y, z), dir = RI(s, 6);        // 0-3 north, east, south, west; 4 up; 5 down
+        if (dir < 4) {
+          const [dx, dz, bit] = VINE_SIDES[dir];
+          if ((f & bit) || !room(x, y, z)) return;
+          const sx = x + dx, sz = z + dz;
+          if (air(sx, y, sz)) {
+            // into the air beside it: along the wall it is on, round the corner of it, or (rarely) under a block above
+            const cw = VINE_SIDES[(dir + 1) & 3], ccw = VINE_SIDES[(dir + 3) & 3], back = VINE_SIDES[(dir + 2) & 3][2];
+            if ((f & cw[2]) && holds(sx + cw[0], y, sz + cw[1])) s.set(sx, y, sz, V, cw[2]);
+            else if ((f & ccw[2]) && holds(sx + ccw[0], y, sz + ccw[1])) s.set(sx, y, sz, V, ccw[2]);
+            else if ((f & cw[2]) && air(sx + cw[0], y, sz + cw[1]) && holds(x + cw[0], y, z + cw[1])) s.set(sx + cw[0], y, sz + cw[1], V, back);
+            else if ((f & ccw[2]) && air(sx + ccw[0], y, sz + ccw[1]) && holds(x + ccw[0], y, z + ccw[1])) s.set(sx + ccw[0], y, sz + ccw[1], V, back);
+            else if (R(s) < 0.05 && holds(sx, y + 1, sz)) s.set(sx, y, sz, V, VINE_UP);
+          } else if (holds(sx, y, sz)) s.set(x, y, z, V, f | bit);
+          return;
+        }
+        if (dir === 4) {
+          // up: under the block above if it holds, or a vine above with the sides that have a wall there
+          if (holds(x, y + 1, z)) { if (!(f & VINE_UP)) s.set(x, y, z, V, f | VINE_UP); return; }
+          if (air(x, y + 1, z)) {
+            if (!room(x, y, z)) return;
+            let k = f & 15;
+            for (const [dx, dz, bit] of VINE_SIDES) if (R(s) < 0.5 || !holds(x + dx, y + 1, z + dz)) k &= ~bit;
+            if (k) s.set(x, y + 1, z, V, k);
+            return;
+          }
+        }
+        // down (or up with no way up): some of its sides into the air or the vine below
+        const b = s.get(x, y - 1, z);
+        if (!(b === V || air(x, y - 1, z))) return;
+        const cur = b === V ? facesAt(x, y - 1, z) : 0;
+        let k = cur;
+        for (const [, , bit] of VINE_SIDES) if (R(s) < 0.5 && (f & bit)) k |= bit;
+        if (k !== cur && (k & 15)) s.set(x, y - 1, z, V, k);
+      },
+    });
+  }
 
   /* ---- ice and snow in the light ---- */
   sim.on('ice', {

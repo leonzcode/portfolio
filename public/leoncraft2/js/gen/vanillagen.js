@@ -222,6 +222,28 @@ function makeBands(r) {
    set, height, biome), for what is done once a chunk is put together: the
    plants' check and the snow. Blocks beyond the chunk are read from the
    neighbours' terrain (water beside sugar cane, a block beside a cactus). */
+/* The faces of a feature's vine that still hold once every chunk's features
+   are in (meta bits as models.js keeps them: 1 north, 2 east, 4 south,
+   8 west, 16 the block above): a side by a whole block that way or the vine
+   above having that side, the top by a whole block above. What lies over the
+   chunk's edge is not known here, so a face towards it is kept. */
+const vineWhole = b => !!b && BLOCKS[b].solid && BLOCKS[b].shape === 'cube';
+const VINE_WAYS = [[0, -1, 1], [1, 0, 2], [0, 1, 4], [-1, 0, 8]];
+function vineKept(blocks, meta, i) {
+  const m = meta[i] & 31;
+  if (!m) return meta[i];
+  const lx = i & 15, lz = (i >> 4) & 15, up = i + 256 < VOL ? i + 256 : -1;
+  const above = up >= 0 && blocks[up] === blocks[i] ? meta[up] & 15 : 0;
+  let k = 0;
+  for (const [dx, dz, bit] of VINE_WAYS) {
+    if (!(m & bit)) continue;
+    const nx = lx + dx, nz = lz + dz;
+    if (nx < 0 || nx > 15 || nz < 0 || nz > 15 || vineWhole(blocks[i + dx + dz * 16]) || (above & bit)) k |= bit;
+  }
+  if ((m & 16) && up >= 0 && vineWhole(blocks[up])) k |= 16;
+  return k;
+}
+
 class ChunkView {
   constructor(gen, blocks, meta, cx, cz, grid) {
     this.gen = gen; this.blocks = blocks; this.m = meta; this.cx = cx; this.cz = cz; this.grid = grid;
@@ -542,6 +564,14 @@ export class VanillaGen {
     }
     for (let k = 0; k < q.length; k++) {
       const i = q[k], b = blocks[i], kind = isGroundPlant(b);
+      // a vine keeps the faces that still have something to hold (or the vine above on that side); with none it goes
+      if (b === B.vine) {
+        const m = vineKept(blocks, meta, i);
+        if (m === meta[i]) continue;
+        if (m) meta[i] = m; else { blocks[i] = 0; meta[i] = 0; }
+        if (i >= 256) q.push(i - 256);
+        continue;
+      }
       if (!kind) continue;
       const x = view.x0 + (i & 15), z = view.z0 + ((i >> 4) & 15), y = (i >> 8) + MIN_Y;
       if (plantHolds(view, b, meta[i], x, y, z)) continue;
