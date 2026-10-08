@@ -162,6 +162,14 @@ void main() {
     Ng = vec3(0.0, 1.0, 0.0);
     N = normalize(vec3(nxy.x * 0.3, 1.0, nxy.y * 0.3));
   } else if (!gl_FrontFacing) { N = -N; Ng = -Ng; }
+#ifdef HAND
+  /* what you hold is lit as the game lights it: by the light where you stand, as the top of a block
+     there is, times its face's own shade (handShade), never by the sun's angle to it or the shadow
+     map. A flat item faces you, side on to a noon sun: it came out half as bright as with the shaders
+     off, lit by the sky's blue alone (a golden apple's pale gold went a grey green) */
+  float hShade = handShade(vNormal);
+  N = Ng = vec3(0.0, 1.0, 0.0);
+#endif
 
   float sky = vLight.x, block = vLight.y, ao = mix(1.0, 0.35 + 0.65 * vLight.z, uAO);
   float wd = vLight.w;
@@ -173,7 +181,7 @@ void main() {
   // the sun, through the shadow map; none at all deep under cover
   float gate = smoothstep(0.03, 0.2, sky);
   float shadow = 0.0;
-#if SHADOWS > 0
+#if SHADOWS > 0 && !defined(HAND)
   if (gate > 0.0 && (NoLg > 0.0 || plant || sp.b > 0.3)) {
     vec3 sc = shadowCoord(vWorld, Ng, plant ? 1.0 : NoLg, dist);
 #if SHADOWS > 1
@@ -239,6 +247,10 @@ void main() {
   }
   vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : skyAmt * sat(lum(sunC) * 0.3)) * ao : vec3(0.0);
   vec3 minimum = lightFloor() * ao;
+#ifdef HAND
+  // (and no shine: the game's held things have none, so a gold or iron block is as bright as its picture)
+  vec3 col = albedo / PI * (diffuse * PI + amb + blockL + minimum) * hShade;
+#else
   vec3 col = albedo / PI * (diffuse * PI * (metal ? 0.25 : 1.0) + amb + blockL + minimum);
 
   // specular from the sun
@@ -256,6 +268,7 @@ void main() {
     vec3 F = F0 + (1.0 - F0) * pow(1.0 - NoV, 5.0);
     col += ambientAt(reflect(-V, N)) / PI * F * skyAmt * smoothness * 0.6;
   }
+#endif
   // light of its own
   col += albedo * emit * 6.0;
 #ifdef LDR
@@ -268,6 +281,14 @@ void main() {
   outColor = vec4(col, 1.0);
 #endif
 }`;
+
+/* a held thing's face shade, the game's for each side of a block (as Fast's faceShade, render/vanilla.js):
+   the top full, the bottom half, north and south 0.8, east and west 0.6, by the face in the item's own space */
+const HAND_SHADE = /* glsl */`
+#ifdef HAND
+float handShade(int f) { return f == 2 ? 1.0 : f == 3 ? 0.5 : f >= 4 ? 0.8 : 0.6; }
+#endif
+`;
 
 /* ---- Detailed's terrain: the light worked out per vertex ----
    Everything that is the same across a block face (or changes smoothly over
@@ -299,7 +320,7 @@ layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA; layout(loc
 #define aL vec4(aL)
 #define aC vec4(aC)
 uniform vec3 uChunk;
-` + LDR + LIGHTS + /* glsl */`
+` + LDR + LIGHTS + HAND_SHADE + /* glsl */`
 out vec2 vUv; out vec3 vTint;
 out vec3 vAmb;       // sky, torch and held light (exposure and fog in)
 out vec3 vSun;       // the sun or moon on the face, its angle and the glow through leaves in (a two-sided face: before its side's share)
@@ -613,7 +634,7 @@ export function makeMaterials(shared, q) {
   Object.assign(base, lightDefines(q));
   // Detailed (one pass to the screen) lights per vertex; the full chain per pixel
   const vs = q.ldr ? HEAD + COMMON + WIND + TONEMAP + LEAN_VS : HEAD + COMMON + WIND + TERRAIN_VS;
-  const fs = q.ldr ? HEAD + COMMON + SHADOW + TONEMAP + FILTER + LEAN_FS : HEAD + COMMON + SHADOW + WIND + TONEMAP + TERRAIN_FS.replace('void main() {', LDR_FN + LIGHTS + '\nvoid main() {');
+  const fs = q.ldr ? HEAD + COMMON + SHADOW + TONEMAP + FILTER + LEAN_FS : HEAD + COMMON + SHADOW + WIND + TONEMAP + TERRAIN_FS.replace('void main() {', LDR_FN + LIGHTS + HAND_SHADE + '\nvoid main() {');
   const mk = (defines, transparent, extra) => new THREE.RawShaderMaterial(Object.assign({
     glslVersion: THREE.GLSL3,
     vertexShader: vs,
