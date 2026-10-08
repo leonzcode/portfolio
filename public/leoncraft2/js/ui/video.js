@@ -258,17 +258,22 @@ export class VideoSettingsScreen extends OptionsListScreen {
     list.entries[16].children[0].wide = false;
   }
   footer() {
-    const W = this.width, H = this.height, o = this.options;
-    const now = SHADER_LEVELS.includes(o.get('shaderLevel')) ? o.get('shaderLevel') : 'off';
-    this.add(new CycleButton(W / 2 - 155, H - 27, 150, 20, 'Shaders', {
-      values: SHADER_LEVELS, value: now, format: v => SHADER_NAMES[v], tooltip: v => SHADER_TIPS[v],
-      onChange: v => o.set('shaderLevel', v),
-    }));
+    const W = this.width, H = this.height;
+    this.add(shadersButton(W / 2 - 155, H - 27, 150, this.options));
     this.add(new Button(W / 2 + 5, H - 27, 150, 20, 'Done', () => this.gui.back()));
   }
 }
 
 /* ------------------------------ Shaders ------------------------------ */
+
+// the Shaders cycle button, here and in the game menu (Esc): each click puts the level on at once
+export function shadersButton(x, y, w, o) {
+  const now = SHADER_LEVELS.includes(o.get('shaderLevel')) ? o.get('shaderLevel') : 'off';
+  return new CycleButton(x, y, w, 20, 'Shaders', {
+    values: SHADER_LEVELS, value: now, format: v => SHADER_NAMES[v], tooltip: v => SHADER_TIPS[v],
+    onChange: v => o.set('shaderLevel', v),
+  });
+}
 
 const SHADER_NAMES = { off: 'Off', low: 'Low', medium: 'Medium', high: 'High', rip: 'RIP Computer' };
 const SHADER_TIPS = {

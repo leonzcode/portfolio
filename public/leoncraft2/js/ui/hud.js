@@ -128,8 +128,9 @@ export class Hud {
       else g.blit('widgets', 60, 22, 22, 24, cx + 91 + 7, H - 23);
     }
     GLINT.seen = false; COOLING.seen = false;
-    for (let i = 0; i < 9; i++) drawStack(g, this.icons, inv.slots[i], cx - 90 + i * 20 + 2, H - 16 - 3);
-    if (off) drawStack(g, this.icons, off, leftHanded ? cx + 91 + 10 : cx - 91 - 26, H - 16 - 3);
+    const pop = inv.popAt;
+    for (let i = 0; i < 9; i++) this._slot(g, inv.slots[i], cx - 90 + i * 20 + 2, H - 16 - 3, pop ? pop[i] : 0, now);
+    if (off) this._slot(g, off, leftHanded ? cx + 91 + 10 : cx - 91 - 26, H - 16 - 3, pop ? pop[36] : 0, now);
     // Attack Indicator: Hotbar (Video Settings): a sword beside the hotbar on the main hand's side, filling as the hit charges
     if (this.attackMode === 'hotbar' && this.attack !== null && this.attack !== undefined && this.attack < 1) this._hotbarAttack(g, leftHanded ? cx - 91 - 22 : cx + 91 + 6, H - 20, this.attack);
     // an enchanted item in the hotbar shines: redrawn twenty times a second while it is there
@@ -157,6 +158,21 @@ export class Hud {
   }
 
   _wakeAt(t) { if (t < this._wake) this._wake = t; }
+  /* A hotbar slot. A stack that has just had something put in it (picked up) pops as the
+     game's does: for 5 ticks its picture is drawn narrower and taller about the slot's bottom
+     middle, 1 / k across and (k + 1) / 2 up, k easing from 2 back to 1; the count stays as it is. */
+  _slot(g, st, x, y, at, now) {
+    const f = st && at > 0 ? 5 - (now - at) / TICK : 0;
+    if (!(f > 0)) { drawStack(g, this.icons, st, x, y); return; }
+    const k = 1 + Math.min(5, f) / 5, ctx = g.ctx;
+    ctx.save();
+    ctx.translate(x + 8, y + 12); ctx.scale(1 / k, (k + 1) / 2); ctx.translate(-(x + 8), -(y + 12));
+    drawStack(g, this.icons, st, x, y, '');
+    ctx.restore();
+    if (st.count > 1) { const t = String(st.count); g.text(t, x + 19 - 2 - g.textWidth(t), y + 6 + 3, 0xFFFFFF, true); }
+    // drawn again every frame until it has settled
+    this._wakeAt(now + 1);
+  }
 
   /* ---- survival bars ---- */
   _bars(g, cx, H, now) {

@@ -524,7 +524,7 @@ export class Entities {
     if (!v || v.removed) { e.vehicle = null; return; }
     e.baseTick();
     e.vel.set(0, 0, 0);
-    if (e instanceof Mob) { e.serverAi(); e.animTick && e.animTick(); }
+    if (e instanceof Mob) { e.serverAi(); if (e.bodyDue) { e.bodyDue = false; e.bodyControl(); } e.animTick && e.animTick(); }
     e.fallDist = 0;
     // after its own mind has had its say, the seat decides which way it faces (a boat: its way, or sideways)
     if (v.riderPlaced) v.riderPlaced(e, v.passengers.indexOf(e));
@@ -990,7 +990,7 @@ export class Entities {
         this.shadowOf(it, e.prev.x + (e.pos.x - e.prev.x) * alpha, e.prev.y + (e.pos.y - e.prev.y) * alpha, e.prev.z + (e.pos.z - e.prev.z) * alpha, 0.15, 0.75);
       }
       if (D && D.world === this.world) for (const o of D.orbs) {
-        if (!o.mesh || !(o.light >= 0)) continue;
+        if (!o.mesh || o.fly > 0 || !(o.light >= 0)) continue;
         it.lS = (o.light >> 8) / 255; it.lB = Math.max(0, (o.light & 255) / 255 - 7 / 15);
         this.shadowOf(it, o.prev.x + (o.pos.x - o.prev.x) * alpha, o.prev.y + (o.pos.y - o.prev.y) * alpha, o.prev.z + (o.pos.z - o.prev.z) * alpha, 0.15, 0.75);
       }

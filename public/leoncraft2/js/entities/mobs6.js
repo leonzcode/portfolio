@@ -54,7 +54,11 @@ export class Flyer extends Mob {
     if (l < 0.4) { this.dest = null; return; }
     const sp = d[3] * this.constructor.FLY_SPEED, k = this.constructor.STEER || 0.15;
     v.x += (dx / l * sp - v.x) * k; v.y += (dy / l * sp - v.y) * k; v.z += (dz / l * sp - v.z) * k;
-    if (Math.abs(dx) + Math.abs(dz) > 0.05) this.yaw = rotTowards(this.yaw, yawTo(dx, dz), 20 * DEG);
+    /* it faces the way it is flying, as the game's flyers do (they go where they face); turned to
+       the spot instead, a phantom going round flew a quarter sideways, and anything curving with it.
+       Barely moving, it turns to the spot. */
+    if (v.x * v.x + v.z * v.z > 4e-4) this.yaw = rotTowards(this.yaw, yawTo(v.x, v.z), (this.constructor.TURN || 20) * DEG);
+    else if (Math.abs(dx) + Math.abs(dz) > 0.05) this.yaw = rotTowards(this.yaw, yawTo(dx, dz), 20 * DEG);
     this.zza = 0;
     // blocked: give up on that spot
     if (this.hCollide && R() < 0.1) this.dest = null;
@@ -573,6 +577,7 @@ class VexChargeGoal extends Goal {
 export class Vex extends Flyer {
   static W = 0.4; static H = 0.8; static HEALTH = 14; static FLY_SPEED = 0.35; static ATTACK = 9; static SHADOW = 0.25; static BRIGHT = true;
   static MODEL = 'vex'; static TEX = 'vex'; static HOSTILE = true; static CATEGORY = 'monster'; static XP = 3;
+  static TURN = 180;          // (it faces its flight at once, as the game's vex does)
   constructor(m, type) { super(m, type); this.noPhysics = true; this.life = -1; this.charging = false; this.equip.mainhand = 'iron_sword'; this.dropChance = { mainhand: 0 }; }
   get eyeH() { return 0.5; }
   registerGoals() {

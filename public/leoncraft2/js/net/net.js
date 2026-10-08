@@ -1201,7 +1201,7 @@ export class Net {
       case 'as': this.ranAs(m); return;
       case 'it+': for (const o of m.e || []) { const rec = this.keepItem(o); if (rec && rec.d === dimCode(g.dim)) this.showItem(rec); } return;
       case 'it=': this.numbered(m.e || []); return;
-      case 'it-': case 'itno': this.itemGone(m.id); return;
+      case 'it-': case 'itno': this.itemGone(m.id, m.by); return;
       case 'itok': this.granted(m.id, m.s); return;
       case 'o=': case 'o+': case 'o-': case 'ono': case 'ook': this.orbs.receive(m); return;
       case 'pm':
@@ -1296,13 +1296,24 @@ export class Net {
       if (e.gone) { this.items[d].delete(id); this.send({ t: 'it-', id }); }
     }
   }
-  itemGone(id) {
+  itemGone(id, by) {
     for (const M of this.items) {
       const rec = M.get(id);
       if (!rec) continue;
       M.delete(id);
       const e = rec.e, D = this.game && this.game.drops;
-      if (e && !e.gone && D && !e.taken) { this.applying = true; try { D._remove(e, -1); } finally { this.applying = false; } }
+      if (!e || e.gone || !D || e.taken) continue;
+      // picked up by someone you can see: it flies to them, halfway up, as the game shows it
+      const r = by && this.players && this.players.list.get(by);
+      if (r && D.flyIn) {
+        e.taken = true;
+        D.flyIn(e, out => {
+          const pl = this.players, q = pl && r.rt !== undefined && pl.list.get(by) === r ? pl.at(r, r.rt) : null;
+          return q ? out.set(q.x, q.y + 0.81, q.z) : null;
+        });
+        continue;
+      }
+      this.applying = true; try { D._remove(e, -1); } finally { this.applying = false; }
     }
   }
   // each tick: shared items counted down, and the ones you walk into asked for; where they came to rest, now and then

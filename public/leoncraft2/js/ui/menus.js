@@ -689,7 +689,7 @@ export class OptionsScreen extends Screen {
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
 export { VideoSettingsScreen } from './video.js?v=34';
-import { VideoSettingsScreen } from './video.js?v=34';
+import { VideoSettingsScreen, shadersButton } from './video.js?v=34';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -1187,15 +1187,18 @@ export class ResourcePacksScreen extends Screen {
 
 /* ------------------------------ in game ------------------------------ */
 
-/* The pause menu: a 212-wide grid a quarter of the way down, Back to Game
-   and Save and Quit across both columns, 98-wide pairs between. */
+/* The pause menu: a 212-wide grid a quarter of the way down, Save and Quit
+   across both columns, 98-wide pairs above it. The top pair is Back to Game
+   and our one extra, the Shaders button from Video Settings (it takes effect
+   at once, behind the menu). */
 export class PauseScreen extends Screen {
   constructor() { super('Game Menu'); this.background = 'world'; this.openedAt = performance.now(); }
   init() {
     const W = this.width, H = this.height, g = this.gui;
     const top = Math.floor((H - 166) * 0.25);
     const xl = Math.floor(W / 2 - 102), xr = Math.floor(W / 2 + 4);
-    this.add(new Button(xl, top + 50, 204, 20, 'Back to Game', () => this.resume()));
+    this.add(new Button(xl, top + 50, 98, 20, 'Back to Game', () => this.resume()));
+    this.add(shadersButton(xr, top + 50, 98, this.options));
     const row = (y, a, b) => {
       for (const [x, [label, fn]] of [[xl, a], [xr, b]]) {
         const btn = this.add(new Button(x, y, 98, 20, label, fn));
