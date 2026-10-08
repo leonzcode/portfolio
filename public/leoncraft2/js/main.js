@@ -795,8 +795,8 @@ async function boot() {
           itemName: id => itemName(id), damageHeld: (n, kind) => hands.wearHeld(n, kind), fillBucket: name => hands.fillHeld(name), trade: v => hands.trade(v),
           // screens and spilled stacks (a chest boat's chest)
           hands,
-          // the dragon from a spawn egg flies with the End's own (dim/realms.js)
-          realms: () => game && game.realms } });
+          // the dragon from a spawn egg flies with the End's own (dim/realms.js); commands, for a command block minecart
+          realms: () => game && game.realms, commandCtx: () => (game ? chatCtx() : null) } });
       entities.fromJSON(isNew && !g.partsDim ? null : await EntityStore.load(entityKey(g.entry, d)));
       renderer.scene.add(entities.group);
       const sim = new Sim({ world: w, fluids: fl, player, inv, renderer, gui, game: g });
