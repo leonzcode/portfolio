@@ -362,6 +362,11 @@ void main() {
 
   bool plant = (flags & 32) != 0;
   vec3 Ng = plant ? vec3(0.0, 1.0, 0.0) : uFaceRot * faceN(nw & 7);
+#ifdef HAND
+  // what you hold: lit as the top of a block where you stand, times its face's own shade (as TERRAIN_FS)
+  float hShade = handShade(nw & 7);
+  Ng = vec3(0.0, 1.0, 0.0);
+#endif
   float sky = L.x, block = L.y, ao = mix(1.0, 0.35 + 0.65 * float(flags & 3) / 3.0, uAO), wd = L.z * 15.0;
   vec3 toEye = cameraPosition - world.xyz;
   float dist = length(toEye);
@@ -414,6 +419,9 @@ void main() {
 #endif
 #ifdef TRANSLUCENT
   vFres = pow(1.0 - abs(dot(Ng, V)), 5.0);
+#endif
+#ifdef HAND
+  vAmb *= hShade; vSun *= hShade;
 #endif
 }`;
 const LEAN_FS = /* glsl */`
@@ -491,7 +499,10 @@ void main() {
     bool wet = vShadowP.w > 1.5;
     float guess = wet ? vShadowP.w - 2.0 : vShadowP.w;
     float reach = shadowReach(raw.xy);
-#if SHADOWS > 1
+#ifdef HAND
+    // (what you hold goes by the light level: it is in neither the world's shadow map nor your body's)
+    float shadow = guess;
+#elif SHADOWS > 1
     // the soft taps within a quarter of the shadow distance of you, where a shadow's edge is big
     // enough to see how soft it is; one further out (it blends four texels by itself)
     float shadow = reach < 0.25 ? shadowSoft(sc, 0.0, uShadowSoft) : shadowHard(sc);
@@ -500,6 +511,7 @@ void main() {
 #else
     float shadow = guess;
 #endif
+#ifndef HAND
     // past the shadows' reach, the light level's guess
     shadow = mix(shadow, guess, linstep(0.82, 1.0, reach));
     // your own body, from its small map round where you stand (render/shadows.js)
@@ -507,6 +519,7 @@ void main() {
       vec2 b = raw.xy * uBody.x + uBody.yz;
       if (abs(b.x) < 1.0 && abs(b.y) < 1.0) shadow = min(shadow, textureLod(uBodyShadow, vec3(b * 0.5 + 0.5, raw.z * 0.1 + 0.5), 0.0));
     }
+#endif
     if (wet && shadow > 0.0) shadow *= caustics((uShadowInv * vec4(raw, 1.0)).xyz);
     light += sun * shadow;
   }
@@ -652,7 +665,7 @@ export function makeMaterials(shared, q) {
   return {
     opaque: mk({}), cutout: mk({ CUTOUT: 1 }), translucent: mk({ TRANSLUCENT: 1 }, true),
     // the held block: drawn over whatever it is pushed into, keeping its own depth
-    handOpaque: mk({}, false, { depthFunc: THREE.AlwaysDepth }), handCutout: mk({ CUTOUT: 1 }, false, { depthFunc: THREE.AlwaysDepth }),
+    handOpaque: mk({ HAND: 1 }, false, { depthFunc: THREE.AlwaysDepth }), handCutout: mk({ HAND: 1, CUTOUT: 1 }, false, { depthFunc: THREE.AlwaysDepth }),
     shadowOpaque: sh({}), shadowCutout: sh({ CUTOUT: 1 }),
     // Detailed: cut-out blocks near you, their depth drawn first and then lit where in front (see cutoutDepthPass)
     cutoutDepth: q.ldr ? cutoutDepthPass(mk) : null,
