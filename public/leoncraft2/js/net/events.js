@@ -296,7 +296,7 @@ export class Events {
       }
       case 'mine': this.crack(pid, x, y, z, e[4] | 0); return;
       // the fight in the End (endfight.js)
-      case 'drg': case 'dhit': case 'xhit': case 'xtal': case 'xput': case 'xboom': if (this.net.end) this.net.end.one(e); return;
+      case 'drg': case 'dhit': case 'xhit': case 'xtal': case 'xput': case 'xboom': case 'dfb': case 'dbr': if (this.net.end) this.net.end.one(e); return;
       case 'slide': {
         const V = g.sim && g.sim.redstone && g.sim.redstone.pistonView, b = B[e[4]];
         if (!V || b === undefined || this.slides.length > 256) return;

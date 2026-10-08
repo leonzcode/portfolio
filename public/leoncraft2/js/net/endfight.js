@@ -13,7 +13,8 @@
 
    Everyone else draws that dragon: eased to each position over three
    ticks, red when hit, rising and bursting as it dies; its wings and head
-   still knock and hurt your player. A hit on it, an arrow, an explosion
+   still knock and hurt your player, and its fireballs fly and its breath
+   lies on every screen (the breath hurts whoever stands in it). A hit on it, an arrow, an explosion
    or a crystal you break is passed to the machine running the fight, which
    takes it as its own; a crystal going off there goes off on every screen,
    with its blast. The exit portal, the egg and the gateway the death opens
@@ -27,7 +28,7 @@
    on the portal, whoever put them there.
 --------------------------------------------------------------------------- */
 import { F } from './players.js?v=32';
-import { EndCrystal } from '../dim/entities.js?v=32';
+import { EndCrystal, DragonFireball, BreathCloud } from '../dim/entities.js?v=32';
 
 const PHASES = ['holding', 'strafe', 'approach', 'landing', 'scanning', 'roar', 'flame', 'takeoff', 'charge', 'dying'];
 const KEY = '0,0,0';
@@ -65,6 +66,10 @@ export class EndSync {
     RL.add = function (e) {
       const r = add.apply(this, arguments);
       if (e instanceof EndCrystal && e.pillar < 0 && !me.applying) me.send(['xput', e.pos.x, e.pos.y, e.pos.z]);
+      // the dragon's fireballs and its breath, from the machine running the fight
+      const r2 = v => Math.round(v * 100) / 100;
+      if (e instanceof DragonFireball && !me.applying) me.send(['dfb', r2(e.pos.x), r2(e.pos.y), r2(e.pos.z), r2(e.dir.x), r2(e.dir.y), r2(e.dir.z)]);
+      if (e instanceof BreathCloud && !me.applying) me.send(['dbr', r2(e.pos.x), r2(e.pos.y), r2(e.pos.z), r2(e.radius), Math.round(e.grow * 1e5), e.life | 0, e.damage | 0]);
       return r;
     };
     // one broken here (not a pillar's: whoever runs the fight has those): set off here, and gone with its blast for the others
@@ -221,6 +226,16 @@ export class EndSync {
       this.applying = true;
       try { RL.add(c); } finally { this.applying = false; }
       if (F && this.running) F.tryRespawn();
+      return;
+    }
+    if ((k === 'dfb' || k === 'dbr') && RL && this.net.game.dim === 'the_end') {
+      // the dragon's fireball (it flies here, but bursts into nothing: the breath it leaves comes from the machine running the fight) and its breath
+      let x;
+      if (k === 'dfb') { x = new DragonFireball(RL, new window.THREE.Vector3(+e[4] || 0, +e[5] || 0, +e[6] || 0)); x.burst = function () { this.dead = true; }; }
+      else x = new BreathCloud(RL, { radius: +e[4] || 3, grow: (+e[5] || 0) / 1e5, life: e[6] | 0, damage: e[7] | 0 });
+      x.at(e[1], e[2], e[3]);
+      this.applying = true;
+      try { RL.add(x); } finally { this.applying = false; }
       return;
     }
     if (k === 'xboom' && RL) {
