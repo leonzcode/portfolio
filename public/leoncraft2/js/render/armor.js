@@ -371,7 +371,7 @@ vec3 glintAt(vec2 p, float t) {
    curve's top in the sun (a faint shimmer on dull teal diamond) and glared in the dark */
 vec3 glintOver(vec3 col, vec3 g, float E) {
   vec3 d = toSRGB(agx(col * E));
-  return agxInverse(toLinear(min(d + g, vec3(0.97)))) / E;
+  return agxInverse(fromSRGB(min(d + g, vec3(0.97)))) / E;
 }
 #endif
 `;
