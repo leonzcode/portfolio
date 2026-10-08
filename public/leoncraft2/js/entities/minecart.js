@@ -260,8 +260,8 @@ export class Minecart extends Entity {
   }
   /* Lava, fire and water, as the game has them for any entity that is not
      immune: in lava 4 damage a tick and alight for 15 seconds; in a fire block
-     1 a tick (soul fire 2) and alight for 8 (a tick more each tick already
-     alight); alight, 1 damage a second; water puts it out. */
+     1 a tick (soul fire 2) and alight for at least 8; alight, 1 damage a
+     second; water puts it out. */
   hot() {
     const T = this.m.t, p = this.pos, e = 0.001, hw = this.hw - e;
     const x0 = p.x - hw, y0 = p.y + e, z0 = p.z - hw, x1 = p.x + hw, y1 = p.y + this.h - e, z1 = p.z + hw;
@@ -274,7 +274,7 @@ export class Minecart extends Entity {
       if (b && FIRE[b]) flame = Math.max(flame, FIRE[b]);
     }
     if (flame) {
-      this.fire = this.fire > 0 ? this.fire + 1 : 160;
+      this.fire = Math.max(this.fire, 160);
       this.hurt(flame, { type: 'in_fire' });
       if (this.removed) return;
     }
