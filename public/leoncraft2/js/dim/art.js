@@ -128,14 +128,24 @@ function endCrystal() {
   return a;
 }
 
-/* The End's sky: dark grey speckle, a little violet, wrapping. Drawn at 40/255. */
+/* The End's sky: a fine violet grain, every pixel its own (no blotches),
+   wrapping, 128 to a side; drawn at 40/255, sixteen to a side of the sky's
+   box, as the game draws its own. Our own noise, made to the look of the
+   game's sky: a mean of about (115, 88, 156), the lightness spread so a
+   twentieth of the pixels are under two thirds of it and a twentieth over a
+   third more, a little more red in the light ones and blue in the dark. It
+   was a grey speckle in soft patches, which read as fog, not the End. */
 export function endSkyTexture() {
-  const N = 32, d = new Uint8Array(N * N * 4);
+  const N = 128, d = new Uint8Array(N * N * 4);
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const n = h2(x, y, 11) * 0.6 + h2(x >> 1, y >> 1, 12) * 0.3 + h2(x >> 2, y >> 2, 13) * 0.1;
-    const v = 70 + Math.round(n * 120);
+    // three draws averaged: a bell round 1, most of it from 0.65 to 1.35
+    const v = 1 + ((h2(x, y, 11) + h2(x, y, 12) + h2(x, y, 13)) / 3 - 0.5) * 1.15;
+    const tint = (h2(x, y, 14) - 0.5) * 0.12;
     const o = (y * N + x) * 4;
-    d[o] = v; d[o + 1] = Math.round(v * 0.94); d[o + 2] = Math.min(255, Math.round(v * 1.08)); d[o + 3] = 255;
+    d[o] = clamp(Math.round(115 * v * (1 + tint)), 0, 255);
+    d[o + 1] = clamp(Math.round(88 * v), 0, 255);
+    d[o + 2] = clamp(Math.round(156 * v * (1 - tint * 0.5)), 0, 255);
+    d[o + 3] = 255;
   }
   const t = new THREE.DataTexture(d, N, N, THREE.RGBAFormat, THREE.UnsignedByteType);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
