@@ -1085,8 +1085,9 @@ SHAPES.brewing = function (d, m) {
    game's north/east/south/west/up states, worked out from the neighbours as
    the game works them out). The planes were measured from the game's fire
    models: each turned 22.5 degrees about its own line and stretched by
-   1 / cos 22.5, as the game's model "rescale" does. Soul fire is always the
-   floor kind. */
+   1 / cos 22.5, as the game's model "rescale" does (of the game's picks of
+   each, by the block's place, the first is drawn: a model has no place
+   here). Soul fire is always the floor kind. */
 const turnPlane = (pts, axis, deg, o) => {
   const a = deg * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a), k = 1 / Math.cos(Math.PI / 8);
   return pts.map(([x, y, z]) => {
@@ -1108,29 +1109,25 @@ const FIRE_SIDE = [0, 1, 2, 3].map(r => [[0, 0, 0.01], [16, 0, 0.01], [16, FH, 0
   for (let i = 0; i < r; i++) [x, z] = [16 - z, x];
   return [x, y, z];
 }));
-// hanging under a block that burns: leaning down from the east and west top edges, or (the other pick) the south and north
+// hanging under a block that burns: leaning down from its east and west top edges (the game's fire_up)
 const FIRE_UP = [
-  [turnPlane([[0, 16, 16], [16, 16, 16], [16, 16, 0], [0, 16, 0]], 'z', 22.5, [16, 16, 8]),
-    turnPlane([[0, 16, 16], [16, 16, 16], [16, 16, 0], [0, 16, 0]], 'z', -22.5, [0, 16, 8])],
-  [turnPlane([[0, 16, 16], [16, 16, 16], [16, 16, 0], [0, 16, 0]], 'x', -22.5, [8, 16, 16]),
-    turnPlane([[0, 16, 16], [16, 16, 16], [16, 16, 0], [0, 16, 0]], 'x', 22.5, [8, 16, 0])],
+  turnPlane([[0, 16, 16], [16, 16, 16], [16, 16, 0], [0, 16, 0]], 'z', 22.5, [16, 16, 8]),
+  turnPlane([[0, 16, 16], [16, 16, 16], [16, 16, 0], [0, 16, 0]], 'z', -22.5, [0, 16, 8]),
 ];
-const FIRE_UV = [0, 0, 16, 16], FIRE_UV_FLIP = [16, 0, 0, 16];
+const FIRE_UV = [0, 0, 16, 16];
 // what a fire stands on: a top face that holds (full blocks, top and double slabs, upside-down stairs)
 const fireFloor = n => !!n && n.d.solid && (n.d.shape === 'cube' || (n.d.shape === 'slab' && (n.m & 3) >= 1) || (n.d.shape === 'stairs' && (n.m & 4) !== 0));
 SHAPES.fire = function (d, m, nb) {
   const L = d.faces[2], r = [];
   const burns = n => !!n && burnable(n.d);
-  // (no position here to pick the game's random variant by: the age picks which way the side sheets face)
-  const uv = (m & 1) ? FIRE_UV_FLIP : FIRE_UV;
   const below = nb(0, -1, 0);
   let floor = d.name === 'soul_fire' || fireFloor(below) || burns(below);
   const side = floor ? [false, false, false, false] : [burns(nb(0, 0, -1)), burns(nb(1, 0, 0)), burns(nb(0, 0, 1)), burns(nb(-1, 0, 0))];
   const up = !floor && burns(nb(0, 1, 0));
   if (!up && !side.some(Boolean)) floor = true;
   if (floor) for (const q of FIRE_FLOOR) r.push({ q, uv: FIRE_UV, layer: L });
-  for (let k = 0; k < 4; k++) if (floor || side[k]) r.push({ q: FIRE_SIDE[k], uv, layer: L });
-  if (up) for (const q of FIRE_UP[(m >> 1) & 1]) r.push({ q, uv: FIRE_UV, layer: L });
+  for (let k = 0; k < 4; k++) if (floor || side[k]) r.push({ q: FIRE_SIDE[k], uv: FIRE_UV, layer: L });
+  if (up) for (const q of FIRE_UP) r.push({ q, uv: FIRE_UV, layer: L });
   return r;
 };
 
