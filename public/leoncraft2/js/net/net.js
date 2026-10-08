@@ -958,7 +958,8 @@ export class Net {
     const g = this.game, P = g.entities && g.entities.player, r3 = v => Math.round(v * 1000) / 1000, out = [];
     for (const e of this.shots) {
       const ow = e.owner;
-      if (!P || !(ow === P || (ow && ow.nm && !ow.puppet)) || e.ghost || e.type === 'fishing_bobber' || out.length >= 16) continue;
+      // (yours, a mob's your machine runs, or nobody's: a dispenser's arrow or fire charge here)
+      if (!P || !(!ow || ow === P || (ow.nm && !ow.puppet)) || e.ghost || e.type === 'fishing_bobber' || out.length >= 16) continue;
       const o = { ty: e.type, p: [r3(e.pos.x), r3(e.pos.y), r3(e.pos.z)], v: [r3(e.vel.x), r3(e.vel.y), r3(e.vel.z)] };
       if (e.item) o.it = e.item;
       if (e.crit) o.c = 1;
