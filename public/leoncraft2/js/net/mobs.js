@@ -382,8 +382,10 @@ export class Mobs {
       if ((e.hurtTime | 0) > (rec.ht | 0)) rec.hurtNow = true;
       rec.ht = e.hurtTime | 0;
       if (e.swinging && e.swingT === 0) rec.swingNow = true;
-      // riding it, leading it or trading with it keeps it yours (asked again before the server's hold runs out)
-      if ((E.riding === e || (e.leash && e.leash.player) || e.customer) && now - (rec.claimAt || 0) > 5000) { rec.claimAt = now; net.send({ t: 'mc', id: rec.id }); }
+      // riding it, leading it or trading with it keeps it yours (asked again before the server's hold runs out), and so does a monster
+      // fighting back at you for your hit (the game's keeps after whoever hurt it; otherwise one goes to the machine of the player nearest it)
+      if ((E.riding === e || (e.leash && e.leash.player) || e.customer || (e.target && e.target === E.player && e.hurtBy === E.player && e.constructor.HOSTILE)) &&
+        now - (rec.claimAt || 0) > 5000) { rec.claimAt = now; net.send({ t: 'mc', id: rec.id }); }
       // every third tick near another player, every sixth further off, every third second where nobody else is
       const dn = nearest(e.pos.x, e.pos.z), seen = dn < SEEN;
       if (moveTick && (dn < CLOSE || (seen && farTick) || slowTick)) {
