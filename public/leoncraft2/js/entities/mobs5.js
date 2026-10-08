@@ -893,15 +893,99 @@ class FrogBreedGoal extends BreedGoal {
     if (++this.t >= 60 && m.dist2(o.pos.x, o.pos.y, o.pos.z) < 9) breedInto(m, o, 'tadpole', 2 + RI(5));
   }
 }
+/* the frog's long jump (the game's LongJumpToPreferredBlock): every 100 to 140
+   ticks on land, with nothing better to do, it picks a spot up to 4 blocks off and
+   2 up or down, turns to it, and jumps there on an arc at the first of 65, 70, 75
+   and 80 degrees that is clear and needs no more than 1.5 blocks a tick. Half the
+   time it would rather land on a lily pad if one is in reach. */
+const FROG_ANGLES = [65, 70, 75, 80];
+class FrogLongJumpGoal extends Goal {
+  constructor(mob) { super(mob, MOVE | LOOK | JUMP); this.to = null; this.v = null; this.t = 0; this.up = false; }
+  canUse() {
+    const m = this.mob;
+    if (m.jumpCool > 0 || !m.onGround || m.inWater || m.inLava || m.target || m.inLove > 0 || m.isBaby) return false;
+    if (!this.pick()) { m.jumpCool = 20; return false; }
+    return true;
+  }
+  canContinue() {
+    const m = this.mob;
+    if (this.t >= 80 || m.dead) return false;
+    if (!this.up) return !m.inWater;
+    // up: until it lands (in water or on the ground)
+    return this.t <= this.prep + 1 || !(m.onGround || m.inWater);
+  }
+  pick() {
+    const m = this.mob, T = m.m.t, x0 = Math.floor(m.pos.x), y0 = Math.floor(m.pos.y), z0 = Math.floor(m.pos.z);
+    const spots = [], pads = [];
+    for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) {
+      if (!dx && !dz) continue;
+      for (let dy = -2; dy <= 2; dy++) {
+        const x = x0 + dx, y = y0 + dy, z = z0 + dz;
+        const b = T.get(x, y, z), under = T.get(x, y - 1, z);
+        if (b === B.lily_pad && !T.solid(x, y + 1, z)) { pads.push([x, y + 1 / 64, z]); continue; }
+        if (T.solid(x, y, z) || T.solid(x, y + 1, z) || FLUID[b] || !T.solid(x, y - 1, z) || under === B.magma_block) continue;
+        spots.push([x, y, z]);
+      }
+    }
+    const tryList = list => {
+      for (let n = 0; n < 12 && list.length; n++) {
+        const s = list.splice(RI(list.length), 1)[0];
+        const v = this.arc(s[0] + 0.5, s[1], s[2] + 0.5);
+        if (v) { this.to = s; this.v = v; return true; }
+      }
+      return false;
+    };
+    return (pads.length && R() < 0.5 && tryList(pads)) || tryList(spots);
+  }
+  // the launch for a spot: horizontal speed and lift at the first angle that reaches it clear
+  arc(tx, ty, tz) {
+    const m = this.mob, g = m.gravity || 0.08, dx = tx - m.pos.x, dz = tz - m.pos.z, dy = ty - m.pos.y, d = Math.hypot(dx, dz);
+    if (d < 0.5) return null;
+    for (const a of FROG_ANGLES) {
+      const tn = Math.tan(a * DEG), den = 2 * (d * tn - dy);
+      if (den <= 0) continue;
+      const h = Math.sqrt(g * d * d / den), vy = h * tn;
+      if (Math.hypot(h, vy) > 1.5) continue;
+      if (!this.clear(dx / d, dz / d, h, vy, d)) continue;
+      return [dx / d * h, vy, dz / d * h];
+    }
+    return null;
+  }
+  // nothing solid along the arc (sampled every half block of the way, the box's middle)
+  clear(ux, uz, h, vy, d) {
+    const m = this.mob, T = m.m.t, g = m.gravity || 0.08;
+    for (let s = 0.5; s < d; s += 0.5) {
+      const t = s / h, y = m.pos.y + vy * t - g * t * t / 2 + m.h / 2;
+      if (T.solid(Math.floor(m.pos.x + ux * s), Math.floor(y), Math.floor(m.pos.z + uz * s))) return false;
+    }
+    return true;
+  }
+  start() { this.t = 0; this.up = false; this.prep = 10; this.mob.nav.stop(); }
+  stop() { this.mob.jumpCool = 100 + RI(41); this.up = false; this.to = null; }
+  tick() {
+    const m = this.mob, v = this.v;
+    this.t++;
+    if (!this.up) {
+      // a moment to turn to the spot, then off
+      const want = yawTo(v[0], v[2]);
+      m.yaw = rotTowards(m.yaw, want, 30 * DEG); m.headYaw = m.bodyYaw = m.yaw;
+      if (this.t >= this.prep || Math.abs(wrap(m.yaw - want)) < 1e-3 && this.t > 3) {
+        m.yaw = m.bodyYaw = m.headYaw = want;
+        m.vel.set(v[0], v[1], v[2]); m.onGround = false; this.up = true; this.prep = this.t;
+      }
+    }
+  }
+}
 export class Frog extends Animal {
   static W = 0.5; static H = 0.5; static HEALTH = 10; static SPEED = 1; static SHADOW = 0.35; static WATER_SPEED = 0.06;
   static MODEL = 'frog'; static TEX = 'frog_temperate'; static FOOD = ['slime_ball'];
-  constructor(m, type) { super(m, type); this.kind = 'temperate'; this.tongueT = 0; this.hopT = 0; this.croakT = 0; }
+  constructor(m, type) { super(m, type); this.kind = 'temperate'; this.tongueT = 0; this.croakT = 0; this.jumpCool = 100 + RI(41); }
   registerGoals() {
     this.goals.add(0, new FloatGoal(this));
     this.goals.add(1, new FrogEatGoal(this));
     this.goals.add(2, new FrogBreedGoal(this, 1));
     this.goals.add(3, new TemptGoal(this, 1.25, ['slime_ball']));
+    this.goals.add(4, new FrogLongJumpGoal(this));
     this.goals.add(5, new StrollGoal(this, 1, 60, false));
     this.goals.add(6, new LookAtPlayerGoal(this, 6));
     this.targets.add(1, new NearestMobTargetGoal(this, e => (e.type === 'slime' || e.type === 'magma_cube') && (e.size || 1) <= 1, true));
@@ -912,12 +996,22 @@ export class Frog extends Animal {
     void T;
   }
   texName() { return 'frog_' + this.kind; }
-  // a frog moves in long hops: a jump whenever it walks
+  /* the game's frog steers as a swimmer does (its smooth swimming move control): it
+     turns at most 10 degrees a tick, and out of the water goes at a tenth of its
+     speed, a slow waddle between long jumps. (At its whole speed of 1 on land it
+     shot a block or two a tick past where it was going and spun round to come back.) */
+  moveControl() {
+    const y0 = this.yaw;
+    super.moveControl();
+    this.yaw = rotTowards(y0, this.yaw, 10 * DEG);
+    if (!this.inWater && this.zza) this.zza = this.moveSpeedNow * 0.1;
+  }
+  zzaScale() { return (this.moveSpeedNow || this.speed) * (this.inWater ? 1 : 0.1); }
   aiStep() {
     if (this.tongueT > 0) this.tongueT--;
     if (this.croakT > 0) this.croakT--; else if (RI(800) === 0) this.croakT = 60;
+    if (this.jumpCool > 0 && this.onGround && !this.inWater) this.jumpCool--;
     super.aiStep();
-    if (this.onGround && !this.inWater && Math.abs(this.zza) > 0.01 && --this.hopT <= 0) { this.vel.y = 0.42; this.hopT = 8; }
   }
   loot() {}
   anim(A) { A.tongue = this.tongueT > 0; A.croak = this.croakT > 0 ? Math.sin(this.croakT * 0.5) : 0; A.swim = this.inWater; A.air = !this.onGround && !this.inWater; }
