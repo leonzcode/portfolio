@@ -324,6 +324,8 @@ function work(m) {
     preMeshes = meshesOk && ahead.meshes.size ? ahead.meshes : null;
     const coords = map => (map ? [...map.keys()].map(k => k.split(',').map(Number)) : null);
     self.postMessage({ type: 'ready', staged: staged(gen), features: staged(gen) && !!gen.decorator.features, pre: coords(preMade), preMesh: coords(preMeshes) });
+    // (Minecraft's generators' code fetched and compiled now, behind the title's world, not when the next world is asked for)
+    if (!G && !loadingG) setTimeout(() => { loadGens().catch(() => { loadingG = null; }); }, 0);
     return;
   }
   if (m.type === 'idle') {
