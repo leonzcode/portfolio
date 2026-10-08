@@ -31,6 +31,9 @@ functions), with everything else on each sheet our own pixels too:
   cartography_table 176 x 166; the red cross at 176,0, and the marks for
                     what the table does (a copy, zoomed out, locked: 28 x 28
                     at 176,24 / 204,24 / 176,52)
+  beacon            230 x 219; the power buttons (22 x 22 at 0,219 / 22,219 /
+                    44,219 / 66,219: as it is, under the mouse, chosen, not
+                    open yet), the tick and cross (18 x 18 at 88,219 / 106,219)
 
 Slot positions are where the game's screens put them. Run with build_gui.py
 (which calls this), or on its own:  python tools/leoncraft2/build_stations.py
@@ -349,6 +352,44 @@ def cartography_table():
     save(img, 'cartography_table')
 
 
+def pyramid(img, x, y, tiers):
+    """A little beacon on its pyramid, tiers layers of 3 x 3 pixel blocks, the beacon on top (our own)."""
+    block, edge, glass, core = (214, 214, 222, 255), (120, 120, 132, 255), (150, 232, 236, 255), (255, 255, 255, 255)
+    w = (2 * tiers + 1) * 3
+    for t in range(tiers):
+        n = 2 * (t + 1) + 1
+        for k in range(n):
+            bx, by = x + (w - n * 3) // 2 + k * 3, y + 3 + t * 3
+            rect(img, bx, by, 3, 3, edge); rect(img, bx, by, 2, 2, block)
+    bx = x + (w - 3) // 2
+    rect(img, bx, y, 3, 3, glass); rect(img, bx + 1, y + 1, 1, 1, core)
+
+
+def beacon():
+    """The beacon: 230 x 219 (the game's size); the power buttons (22 x 22 at 0,219: as it is, 22,219 under
+    the mouse, 44,219 chosen, 66,219 not yet open), the tick and the cross on them (18 x 18 at 88,219 and 106,219)."""
+    img = Image.new('RGBA', (256, 256), CLEAR)
+    panel(img, 230, 219)
+    # the pyramid each row of powers needs, and the whole one the second power needs
+    for i in range(3):
+        pyramid(img, 12 + (3 - i) * 3, 26 + 25 * i, i + 1)
+    pyramid(img, 154, 76, 4)
+    # where the payment goes, and the inventory
+    slot(img, 136, 110)
+    inventory(img, 36, 137)
+    bevel(img, 0, 219, 22, 22, (112, 112, 112, 255), (176, 176, 176, 255), (58, 58, 58, 255), (0, 0, 0, 255))
+    bevel(img, 22, 219, 22, 22, (128, 128, 168, 255), (200, 200, 240, 255), (72, 72, 112, 255), (255, 255, 255, 255))
+    bevel(img, 44, 219, 22, 22, (64, 112, 64, 255), (40, 80, 40, 255), (104, 160, 104, 255), (0, 0, 0, 255))
+    bevel(img, 66, 219, 22, 22, (58, 58, 58, 255), (72, 72, 72, 255), (42, 42, 42, 255), (28, 28, 28, 255))
+    green, dark = (110, 220, 60, 255), (30, 70, 20, 255)
+    tick = ['', '', '', '', '............##', '...........###', '..........###', '.........###', '..##....###', '..###..###', '...#####', '....###', '.....#']
+    shape(img, 89, 220, tick, dark); shape(img, 88, 219, tick, green)
+    red, deep = (230, 40, 40, 255), (80, 10, 10, 255)
+    x_ = ['', '', '', '...##....##', '...###..###', '....######', '.....####', '.....####', '....######', '...###..###', '...##....##']
+    shape(img, 108, 221, x_, deep); shape(img, 107, 220, x_, red)
+    save(img, 'beacon')
+
+
 def save(img, name):
     path = os.path.join(OUT, 'container', name + '.png')
     img.save(path, optimize=True)
@@ -356,7 +397,7 @@ def save(img, name):
 
 
 def stations():
-    enchanting_table(); anvil(); grindstone(); smithing(); stonecutter(); brewing_stand(); villager(); loom(); cartography_table()
+    enchanting_table(); anvil(); grindstone(); smithing(); stonecutter(); brewing_stand(); villager(); loom(); cartography_table(); beacon()
 
 
 if __name__ == '__main__':

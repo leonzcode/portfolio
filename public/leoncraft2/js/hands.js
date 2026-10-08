@@ -37,6 +37,8 @@ import { containerKind, spill } from './containers.js?v=33';
 import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=33';
 import { isPotion, drinkPotion } from './brewing.js?v=33';
 import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=33';
+import { BeaconScreen } from './ui/beacon.js?v=33';
+import { STORE as BEACON_POWERS } from './sim/beacon.js?v=33';
 import { MerchantScreen } from './ui/merchant.js?v=33';
 import { hives } from './entities/hives.js?v=33';
 import { LoomScreen } from './ui/loom.js?v=33';
@@ -112,7 +114,7 @@ export class Hands {
     if (this.player) this.player.hasElytra = () => { const c = this.inv.armor[1], it = c && ITEMS[c.id]; return !!(it && it.name === 'elytra' && (c.dmg | 0) < (it.dur || 432) - 1); };
     this.glideT = 0;
     // the screens' sheets, fetched now so a chest never opens on an empty frame
-    if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'shulker_box', 'dispenser', 'crafter', 'hopper', 'brewing_stand', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter', 'villager', 'loom', 'cartography_table'])
+    if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'shulker_box', 'dispenser', 'crafter', 'hopper', 'brewing_stand', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter', 'villager', 'loom', 'cartography_table', 'beacon'])
       this.gui.loadSheet('container/' + n).catch(() => {});
   }
   get creative() { return this.mode === 'creative'; }
@@ -370,6 +372,18 @@ export class Hands {
     if (n === 'stonecutter') { this.open(new StonecutterScreen(this.inv, this.icons)); return true; }
     if (n === 'loom') { this.open(new LoomScreen(this.inv, this.icons)); return true; }
     if (n === 'cartography_table') { this.open(new CartographyScreen(this.inv, this.icons)); return true; }
+    // a beacon: its powers, paid for (sim/beacon.js does the rest)
+    if (n === 'beacon') {
+      const x = hit.x, y = hit.y, z = hit.z, sim = this.inter && this.inter.sim, cur = BEACON_POWERS.get(x, y, z);
+      this.open(new BeaconScreen(this.inv, this.icons, {
+        level: () => (sim && sim.beacons ? sim.beacons.levelAt(x, y, z) : 0), primary: cur.p, secondary: cur.s,
+        confirm: (p, s) => {
+          BEACON_POWERS.set(x, y, z, p, s, this.details);
+          if (sim && sim.onSound && sim.beacons && sim.beacons.levelAt(x, y, z)) sim.onSound('block.beacon.power_select', x, y, z);
+        },
+      }));
+      return true;
+    }
     return false;
   }
 
