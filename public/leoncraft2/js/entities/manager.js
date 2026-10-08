@@ -41,7 +41,8 @@ import { Spawner, DESPAWN } from './spawner.js?v=32';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=32';
 import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=32';
 import { EntityMeshes } from '../render/entitymesh.js?v=32';
-import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=32';
+import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=32';
+import { lightNear } from '../lightlevel.js?v=32';
 import { breakAt } from '../place.js?v=32';
 import { dropOf } from '../survival.js?v=32';
 import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=32';
@@ -336,6 +337,8 @@ export class Entities {
   sampleLight(e, now) {
     const x = Math.floor(e.pos.x), y = Math.floor(e.pos.y + Math.min(e.h, 1.6) * 0.85), z = Math.floor(e.pos.z);
     e.lightS = this.t.sky(x, y, z); e.lightB = e.constructor.BRIGHT ? 15 : this.t.block(x, y, z);
+    // eyes in a full block (squeezed under a ceiling, pushed into a wall) hold no light: the brightest open block beside them, not black
+    if (OPAQUE[this.t.get(x, y, z)]) { const v = lightNear(this.t.w, x, y, z, !!this.t.w.noSky); e.lightS = v >> 4; if (!e.constructor.BRIGHT) e.lightB = v & 15; }
     if (now) { e.lS = e.lightS / 15; e.lB = e.lightB / 15; }
   }
   // Peaceful: monsters vanish (the healing is survival.js's)
