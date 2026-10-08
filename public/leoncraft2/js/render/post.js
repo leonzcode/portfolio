@@ -237,11 +237,12 @@ void main() {
       if (uDim > 1.5) {
         vec3 a = abs(rd);
         vec2 q = a.x > a.y && a.x > a.z ? rd.zy / a.x : a.y > a.z ? rd.xz / a.y : rd.xy / a.z;
-        col = agxInverse(toLinear(min(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * (40.0 / 255.0) + endFlashSky(rd), 1.0))) / E;
-      } else col = agxInverse(uDimFog) / E;
+        col = agxInverse(fromSRGB(min(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * (40.0 / 255.0) + endFlashSky(rd), 1.0))) / E;
+      } else col = agxInverse(fromSRGB(pow(uDimFog, vec3(1.0 / 2.2)))) / E;
     } else {
+      // (uDimFog is the screen colour to the power 2.2: dim/look.js)
       float f = sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x));
-      if (f > 0.0) col = mix(col, agxInverse(uDimFog) / E, f);
+      if (f > 0.0) col = mix(col, agxInverse(fromSRGB(pow(uDimFog, vec3(1.0 / 2.2)))) / E, f);
     }
     float sh = shutAt(dist, d);
     col *= 1.0 - sh;
