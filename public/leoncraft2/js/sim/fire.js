@@ -16,7 +16,7 @@
    Flint and steel (or a fire charge) lights a fire on the face you click,
    lights TNT, campfires and candles.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=31';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=32';
 
 const RI = (s, n) => Math.floor(s.rng() * n);
 const NB6 = [[1, 0, 0], [-1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1]];

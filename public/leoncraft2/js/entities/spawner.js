@@ -37,11 +37,11 @@
    animals in it. A structure's own mobs (villagers, shulkers, guardians...)
    come with it too, once, the first time its chunk is seen.
 --------------------------------------------------------------------------- */
-import { TYPES } from './mobs.js?v=31';
-import { BIOMES } from '../biomes.js?v=31';
-import { B, BLOCKS, SOLID, FLUID, OPAQUE } from '../blocks.js?v=31';
-import { SEA, Y0 } from '../world-const.js?v=31';
-import { DIMS } from '../dims.js?v=31';
+import { TYPES } from './mobs.js?v=32';
+import { BIOMES } from '../biomes.js?v=32';
+import { B, BLOCKS, SOLID, FLUID, OPAQUE } from '../blocks.js?v=32';
+import { SEA, Y0 } from '../world-const.js?v=32';
+import { DIMS } from '../dims.js?v=32';
 
 const R = () => Math.random();
 const RI = n => Math.floor(Math.random() * n);
