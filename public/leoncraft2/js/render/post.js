@@ -18,6 +18,7 @@
 --------------------------------------------------------------------------- */
 import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS, TONE_CURVES, VOID } from './glsl.js?v=33';
 import { FullScreen, rawMat, floatTarget } from './sky.js?v=33';
+import { END_FLASH_GLSL } from './endflash.js?v=33';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
 const mat = (fs, u, extra) => {
@@ -193,7 +194,7 @@ void main() {
 }`;
 
 /* ---- composite ---- */
-const FS_COMP = COMMON + RECON + SKYFN + VOID + TONEMAP + /* glsl */`
+const FS_COMP = COMMON + RECON + SKYFN + VOID + TONEMAP + END_FLASH_GLSL + /* glsl */`
 uniform sampler2D uColor, uDepth, uVL, uClouds, uAmbient, uMoon, uExpoTex;
 uniform vec3 uSunDir, uMoonDir;
 uniform float uTime, uEyeInWater, uRender, uMoonPhase, uSkyAtEye;
@@ -236,7 +237,7 @@ void main() {
       if (uDim > 1.5) {
         vec3 a = abs(rd);
         vec2 q = a.x > a.y && a.x > a.z ? rd.zy / a.x : a.y > a.z ? rd.xz / a.y : rd.xy / a.z;
-        col = agxInverse(toLinear(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * (40.0 / 255.0))) / E;
+        col = agxInverse(toLinear(min(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * (40.0 / 255.0) + endFlashSky(rd), 1.0))) / E;
       } else col = fogC;
     } else col = mix(col, fogC, sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x)));
     float sh = shutAt(dist, d);
