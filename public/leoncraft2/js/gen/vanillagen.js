@@ -19,19 +19,19 @@
    extensions, carvers, features) is written from the game's observable
    behaviour and checked against chunks the real 26.3 server made.
 --------------------------------------------------------------------------- */
-import { VDATA } from './vdata.js?v=29';
-import { DensityState, Compiler, tri, children } from './density.js?v=29';
-import { BiomeTable, Zoom, quantize } from './biomesrc.js?v=29';
-import { Xoroshiro } from './random.js?v=29';
-import { B, BLOCKS } from '../blocks.js?v=29';
-import { BIO, BIOMES } from '../biomes.js?v=29';
-import { H, Y0, VOL } from '../world-const.js?v=29';
-import { Decorator, FEATURES, writeRank, isGroundPlant, plantHolds, fluidOf, NOTE_TABLES, NOTE_MOBS, NOTE_SPAWNER } from './features.js?v=29';
-import { Carvers } from './carvers.js?v=29';
-import { stateOf } from './states.js?v=29';
-import './trees.js?v=29';
-import './misc.js?v=29';
-import './shapes.js?v=29';
+import { VDATA } from './vdata.js?v=30';
+import { DensityState, Compiler, tri, children } from './density.js?v=30';
+import { BiomeTable, Zoom, quantize } from './biomesrc.js?v=30';
+import { Xoroshiro } from './random.js?v=30';
+import { B, BLOCKS } from '../blocks.js?v=30';
+import { BIO, BIOMES } from '../biomes.js?v=30';
+import { H, Y0, VOL } from '../world-const.js?v=30';
+import { Decorator, FEATURES, writeRank, isGroundPlant, plantHolds, fluidOf, NOTE_TABLES, NOTE_MOBS, NOTE_SPAWNER } from './features.js?v=30';
+import { Carvers } from './carvers.js?v=30';
+import { stateOf } from './states.js?v=30';
+import './trees.js?v=30';
+import './misc.js?v=30';
+import './shapes.js?v=30';
 
 const MIN_Y = -64, SEA_LEVEL = 63;
 const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);

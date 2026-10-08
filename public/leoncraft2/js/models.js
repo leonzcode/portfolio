@@ -1160,6 +1160,8 @@ export function cubeLook(d, m) {
   return v;
 }
 export function hasCubeLook(d) { return !!lookOf(d); }
+// the looks kept above let go, for when the blocks' textures are worked out again (a worker given the page's own list: worker.js prepare)
+export function forgetLooks() { LOOK_CACHE.clear(); }
 
 /* ---- blocks with a part that moves ----
    While sim/lids.js draws the moving part (a chest's lid, a shulker box's

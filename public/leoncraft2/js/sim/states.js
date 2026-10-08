@@ -48,8 +48,8 @@
                                    it may unlock it), unlocking, throwing out its reward (details.js)
      comparator output             kept in the simulation's state, not the meta
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from '../blocks.js?v=29';
-import { SHAPES, MODEL_SHAPES, turn, rotate, faceUV, sheet, buttonModel, element } from '../models.js?v=29';
+import { B, BLOCKS, MAX_ID } from '../blocks.js?v=30';
+import { SHAPES, MODEL_SHAPES, turn, rotate, faceUV, sheet, buttonModel, element } from '../models.js?v=30';
 
 export const STATEFUL = new Uint8Array(MAX_ID);    // its look depends on its meta
 export const SLIGHT = new Uint8Array(MAX_ID);      // so does its light
@@ -157,6 +157,8 @@ export function stateDef(d, m) {
   cache.set(key, v);
   return v;
 }
+// the states kept above let go, for when the blocks' textures are worked out again (worker.js prepare)
+export function forgetStates() { cache.clear(); }
 function variant(d, o) { return Object.assign(Object.create(d), o); }
 function make(d, m) {
   const L = d.L || {};

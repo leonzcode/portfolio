@@ -27,16 +27,16 @@
    make(opts) builds the material for a look, and is called again for each
    new one. renderer.onLook(fn) hears of every change.
 --------------------------------------------------------------------------- */
-import { Sky, FullScreen } from './sky.js?v=29';
-import { Post } from './post.js?v=29';
-import { makeMaterials, layerMatMaterial } from './materials.js?v=29';
-import { makeWaterMaterial } from './water.js?v=29';
-import { makeNoise3DAsync, makeNoise3DGPU } from './noisetex.js?v=29';
-import { makeLdrSky } from './ldrsky.js?v=29';
-import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=29';
-import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=29';
-import { ShadowMaps } from './shadows.js?v=29';
-import { makeToneLut } from './glsl.js?v=29';
+import { Sky, FullScreen } from './sky.js?v=30';
+import { Post } from './post.js?v=30';
+import { makeMaterials, layerMatMaterial } from './materials.js?v=30';
+import { makeWaterMaterial } from './water.js?v=30';
+import { makeNoise3DAsync, makeNoise3DGPU } from './noisetex.js?v=30';
+import { makeLdrSky } from './ldrsky.js?v=30';
+import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=30';
+import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=30';
+import { ShadowMaps } from './shadows.js?v=30';
+import { makeToneLut } from './glsl.js?v=30';
 const THREE = window.THREE;
 
 /* ---- the shader's settings ----
@@ -490,6 +490,23 @@ function finishLook(R, look, first, prep) {
   }
   if (R.lookFns) for (const fn of R.lookFns) { try { fn(o, rebuild); } catch (e) { console.error(e); } }
   return rebuild;
+}
+
+/* The full-screen passes the look on screen draws with (the atmosphere's
+   tables, its sky, the ripples, the table of what each texture is made of,
+   the full chain's passes), for the renderer to build ahead with everything
+   else (renderer.js warmUp): built where they were first drawn, each held
+   one of the title's first frames, a tenth of a second and more. */
+export function passMaterials(R) {
+  const o = R.opts || {}, U = R.U, out = [];
+  if (o.vanilla) return out;
+  if (R.sky) out.push(...R.sky.materials);
+  if (R.inter && R.inter.m) out.push(R.inter.m);
+  if (o.ldr && !R.layerMatDone && !R.layerMatMat) R.layerMatMat = layerMatMaterial(U.uSpecMap.value, U.uLayerInfo.value);
+  if (R.layerMatMat) out.push(R.layerMatMat);
+  if (o.ldr && R.skyFS) out.push(R.skyFS.mesh.material);
+  if (!o.ldr && R._post) { const P = R._post; out.push(P.mCopy, P.mLin, P.mVL, P.mClouds, P.mComp, P.mDown, P.mUp, P.mLum, P.mExpo, P.mFinal, P.mFxaa); }
+  return out.filter(m => m && m.isMaterial);
 }
 
 // a material made for each look (see the top): built now for this one, and again for each new one
