@@ -430,6 +430,12 @@ export function nightVision(state) {
   if (e.ticks === -1 || e.ticks > 200) return 1;
   return 0.7 + Math.sin((e.ticks - (state.alpha || 0)) * Math.PI * 0.2) * 0.3;
 }
+// Blindness's strength (0..1): full but for its last second, as the game fades it
+function blindness(state) {
+  const e = state && state.effects && state.effects.blindness;
+  if (!e || e.ticks === 0) return 0;
+  return e.ticks === -1 ? 1 : Math.min(1, e.ticks / 20);
+}
 const ZERO4 = [0, 0, 0, 0];
 const skyOut = [0, 0, 0, 0];
 function skyLightAt(dayTime) {
@@ -500,9 +506,12 @@ export class Vanilla {
     // the lightmap: the sky light's colour and strength by the time of day (none in the Nether and the End), rain and storms
     // taking it down as above, the dimension's ambient light, and Night Vision
     // (a lightning flash lights the sky light to its full strength for its two ticks, as the game's does)
+    // (Darkness: the game's pulse, the light taken down by up to 0.45 every four seconds, and Brightness lowered by its strength)
     const sl = other ? null : skyLightAt(dayTime);
+    const bl = blindness(state), dk = this.darkness(state, dt);
+    const dkPulse = dk > 0 ? Math.max(0, Math.cos(state.time * 20 * Math.PI * 0.025) * 0.45 * dk) : 0;
     this.makeLightmap(sl ? (wx.flash > 0 ? 1 : sl[0] * (1 - rain * 5 / 16) * (1 - thunder * 5 / 16)) : 0, sl || ZERO4, AMBIENT_LIGHT[D ? D.id : 'overworld'] || AMBIENT_LIGHT.overworld,
-      opts.brightness === undefined ? 0.5 : opts.brightness, nightVision(state));
+      Math.max(0, (opts.brightness === undefined ? 0.5 : opts.brightness) - dk), nightVision(state), dkPulse);
     // the sky and fog colours of the biome you are in, eased so a border does not snap
     const b = state.biome;
     if (b && b.sky !== undefined) rgb(b.sky, this.tmp); else skyColour(b ? b.temp : 0.8, this.tmp);
@@ -580,6 +589,16 @@ export class Vanilla {
        does (its clear colour scale is 1 there, 1/32 elsewhere). */
     const above = (state.eye.y - 64 - (D ? D.minY : -64)) / (state.horizon === 0 ? 1 : 32);
     if (above < 1 && !(D && D.sky === 'end')) fog.multiplyScalar(Math.max(0, above) * Math.max(0, above));
+    /* Blindness and Darkness close the fog in, black, as the game's do: Blindness to 5 blocks (from the
+       render distance over its last second), Darkness to 15 as it fades in and out (a second or so each
+       way); the sky and the clouds go into the fog with them. */
+    const shut = Math.max(bl, dk);
+    if (shut > 0) {
+      const f = bl > 0 ? R + (5 - R) * bl : R + (15 - R) * dk, f0 = bl > 0 ? f * 0.25 : f * 0.75;
+      if (f < U.uFog.value.y) U.uFog.value.set(Math.min(f0, U.uFog.value.x), f, 0);
+      fog.multiplyScalar(1 - shut);
+      if (shut > 0.5) U.uSky.value.z = 1;
+    }
     // the eye below sea level (y 63): the dark disc under the horizon (SKY_FS)
     U.uVoidDisc.value = U.uSkyMode.value === 0 && state.eye.y < (state.horizon !== undefined ? state.horizon : 127) ? 1 : 0;
     // clouds: white by day, grey at night
@@ -589,8 +608,17 @@ export class Vanilla {
     const reach = (opts.cloudDist || rdc * 2) * 16;
     U.uCloudFog.value.set(Math.min(R, reach * 0.5), reach);
     // (in lava or powder snow the fog closes in within a block or two: no clouds through it)
-    this.clouds = (D && !D.clouds) || state.eyeInLava || state.eyeInSnow ? 'off' : opts.clouds || 'fancy';
+    this.clouds = (D && !D.clouds) || state.eyeInLava || state.eyeInSnow || shut > 0.5 ? 'off' : opts.clouds || 'fancy';
   }
+  /* Darkness's strength (0..1): it comes in over 22 ticks and goes over its last 22, as the game blends it */
+  darkness(state, dt) {
+    const e = state && state.effects && state.effects.darkness;
+    const want = !e || e.ticks === 0 ? 0 : e.ticks === -1 ? 1 : Math.min(1, e.ticks / 22);
+    const now = this.darkB || 0;
+    this.darkB = want > now ? Math.min(want, now + Math.min(0.25, dt) * 20 / 22) : want;
+    return this.darkB;
+  }
+
   /* The game's lightmap as 26.x makes it (its lightmap shader, with the
      numbers from its dimension types and day timeline): the dimension's
      ambient colour (Night Vision's grey if that is brighter), plus the sky
@@ -600,7 +628,7 @@ export class Vanilla {
      notGamma, which keeps each colour's hue. (The old lightmap mixed a grey in
      twice and added the sky in the End, where the game adds none: the End was
      twice as bright as the game's.) */
-  makeLightmap(skyF, skyC, amb, gamma, nv) {
+  makeLightmap(skyF, skyC, amb, gamma, nv, dark = 0) {
     const d = this.lmData;
     const bf = this.flicker + 1.5;
     const bright = L => { const f = L / 15; return f / (4 - 3 * f); };
@@ -612,7 +640,7 @@ export class Vanilla {
         let r = a0 + skyC[1] * s + (BLOCK_TINT[0] + (1 - BLOCK_TINT[0]) * m) * b;
         let g = a1 + skyC[2] * s + (BLOCK_TINT[1] + (1 - BLOCK_TINT[1]) * m) * b;
         let bl = a2 + skyC[3] * s + (BLOCK_TINT[2] + (1 - BLOCK_TINT[2]) * m) * b;
-        r = clamp01(r); g = clamp01(g); bl = clamp01(bl);
+        r = clamp01(r - dark); g = clamp01(g - dark); bl = clamp01(bl - dark);
         const mx = Math.max(r, g, bl);
         if (mx > 0 && gamma > 0) {
           const inv = 1 - mx, k = gamma * ((1 - inv * inv * inv * inv) / mx - 1);
