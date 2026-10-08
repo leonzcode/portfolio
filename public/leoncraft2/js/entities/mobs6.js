@@ -321,7 +321,7 @@ addArt('bee_angry_nectar', [64, 64], p => paintBee(p, true, true));
    block played within 16 blocks of it is liked for 30 seconds: it stays
    by it and leaves what it fetches on top of it instead. ---- */
 export class Allay extends Flyer {
-  static W = 0.35; static H = 0.6; static HEALTH = 20; static SPEED = 0.1; static FLY_SPEED = 0.25; static SHADOW = 0.2;
+  static W = 0.35; static H = 0.6; static HEALTH = 20; static SPEED = 0.1; static FLY_SPEED = 0.25; static SHADOW = 0.2; static BRIGHT = true;
   static MODEL = 'allay'; static TEX = 'allay'; static CATEGORY = 'creature'; static NO_DESPAWN = true; static GLOW = true;
   constructor(m, type) { super(m, type); this.carry = 0; this.want = null; this.dropCool = 0; this.note = null; this.noteT = 0; this.heard = null; this.gaveAt = null; }
   get eyeH() { return 0.36; }
@@ -571,7 +571,7 @@ class VexChargeGoal extends Goal {
   }
 }
 export class Vex extends Flyer {
-  static W = 0.4; static H = 0.8; static HEALTH = 14; static FLY_SPEED = 0.35; static ATTACK = 9; static SHADOW = 0.25;
+  static W = 0.4; static H = 0.8; static HEALTH = 14; static FLY_SPEED = 0.35; static ATTACK = 9; static SHADOW = 0.25; static BRIGHT = true;
   static MODEL = 'vex'; static TEX = 'vex'; static HOSTILE = true; static CATEGORY = 'monster'; static XP = 3;
   constructor(m, type) { super(m, type); this.noPhysics = true; this.life = -1; this.charging = false; this.equip.mainhand = 'iron_sword'; this.dropChance = { mainhand: 0 }; }
   get eyeH() { return 0.5; }

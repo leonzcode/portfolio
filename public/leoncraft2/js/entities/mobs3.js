@@ -989,7 +989,7 @@ export class Squid extends Mob {
 }
 register('squid', Squid);
 export class GlowSquid extends Squid {
-  static TEX = 'glow_squid'; static CATEGORY = 'underground_water_creature'; static GLOWS = true;
+  static TEX = 'glow_squid'; static CATEGORY = 'underground_water_creature'; static GLOWS = true; static BRIGHT = true;
   constructor(m, type) { super(m, type); this.darkT = 0; if (this.realB === undefined) this.realB = 0; }
   /* drawn fully lit: the block light the manager samples is replaced by 15,
      except for the 5 seconds after a hit (fading back over the last half second) */
