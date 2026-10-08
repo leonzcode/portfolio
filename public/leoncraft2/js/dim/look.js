@@ -18,10 +18,9 @@ export function dimLook(R, state, dt) {
   // Night Vision lifts the light floor (glsl.js lightFloor), Blindness and Darkness close a black fog in (glsl.js uShut), in every dimension
   if (U.uNightVision) U.uNightVision.value = nightVision(state);
   if (U.uShut) shutFog(state, dt, (R.opts.renderDist || 8) * 16, U.uShut.value);
-  if (!D || D.id === 'overworld') { U.uDim.value = 0; if (R.post && R.post.u.uBias) R.post.u.uBias.value = 1; return; }
+  if (!D || D.id === 'overworld') { U.uDim.value = 0; return; }
+  // (the eye there keeps the renderer's one level for each, as Low and Medium do: post.js FS_EXPO)
   U.uDim.value = D.code;
-  // the eye adjusts less far in the dark there, so the Nether stays dim and the End's sky stays black
-  if (R.post && R.post.u.uBias) R.post.u.uBias.value = D.id === 'the_nether' ? 0.4 : 0.7;
   if (D.id === 'the_nether') U.uDimAmb.value.set(0.34, 0.22, 0.18);
   else U.uDimAmb.value.set(0.62, 0.56, 0.72);
   const b = state.biome, c = b && b.fog !== undefined ? b.fog : 0x330808;

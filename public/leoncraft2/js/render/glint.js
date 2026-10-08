@@ -49,7 +49,13 @@ void main() {
   if (textureLod(uAlbedo, vec3(uv, vLayer), 0.0).a < 0.5) discard;
   vec3 g = glintAt(vUv * 16.0 * 6.0, uClock) * 1.3;
 #ifdef HDR
-  g /= max(texture(uExpo, vec2(0.5)).r, 0.02);
+  /* High and RIP: the picture is still light to go through the eye and the
+     tone curve, which turned the shimmer at full strength into pale lilac
+     blotches glaring over the item. So it goes in as the light that comes out
+     about as bright as the shimmer the game adds on screen (its blend squares
+     the colour, as here), and the exposure is taken off it. */
+  g = min(g, vec3(1.0));
+  g = g * g * 0.5 / max(texture(uExpo, vec2(0.5)).r, 0.02);
 #endif
   outColor = vec4(g, 1.0);
 }`;

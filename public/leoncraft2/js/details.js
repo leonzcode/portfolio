@@ -63,6 +63,8 @@
 --------------------------------------------------------------------------- */
 import { B, BLOCKS } from './blocks.js?v=33';
 import { lightNear } from './lightlevel.js?v=33';
+import { glints } from './render/armor.js?v=33';
+import { setGlint } from './render/glint.js?v=33';
 import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=33';
 import { potWobbled } from './sim/lids.js?v=33';
 import { BookScreen } from './ui/book.js?v=33';
@@ -755,6 +757,9 @@ export class Details {
     if (e.item) {
       const g = D._base(e.item.id);
       if (g) put(e.item.id, g.flat ? -0.5 + 1.5 / 16 : -0.5 + 1 / 16 + 0.125, g.flat ? 0.5 : 0.25, e.rot);
+      // an enchanted one shimmers in its frame too, as the game draws it (render/glint.js)
+      const m = e.meshes[e.meshes.length - 1];
+      if (g && m && D.R && glints(e.item)) { setGlint(m, true, D.R); m.matrixWorldNeedsUpdate = true; }
     }
   }
   // the frame's own light, sky and block (js/lightlevel.js); it counted only the blocks straight over it, so a frame
