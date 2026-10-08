@@ -357,8 +357,12 @@ function work(m) {
     const t = tag;
     readChunks(cacheKey, m.list, (cx, cz, c, s) => {
       self.postMessage({ type: 'gen', cached: true, tag: t, cx, cz, blocks: c.blocks, meta: c.meta, biome: c.biome, top: c.top, structs: s }, [c.blocks.buffer, c.meta.buffer, c.biome.buffer]);
-    }, missing => self.postMessage({ type: 'looked', tag: t, missing }))
-      .then(failed => { if (failed.length) self.postMessage({ type: 'looked', tag: t, missing: failed, cached: true }); });
+    }, missing => self.postMessage({ type: 'looked', tag: t, missing, more: true }))
+      .then(failed => {
+        if (failed.length) self.postMessage({ type: 'looked', tag: t, missing: failed, cached: true });
+        // every chunk of the list sent: only now is this worker free again (world.js idlest)
+        self.postMessage({ type: 'looked', tag: t, missing: [] });
+      });
     return;
   }
   if (m.type === 'sweep') { sweepChunks(m.prefix, m.limit); return; }
