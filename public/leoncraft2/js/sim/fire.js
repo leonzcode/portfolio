@@ -11,63 +11,52 @@
    that air: (encouragement + 40 + 7 x difficulty) / (age + 30) out of 100.
    Netherrack and magma burn for ever. Soul fire sits on soul sand and soul
    soil and never spreads. Lava lights flammable blocks round it on its own
-   random ticks.
+   random ticks. With doFireTick off a fire neither spreads, burns nor goes
+   out by itself.
 
-   Flint and steel (or a fire charge) lights a fire on the face you click,
-   lights TNT, campfires and candles.
+   Flint and steel (or a fire charge) lights a fire in the air beside the
+   face you click, where a fire can stand: on a top face that holds it, or
+   against a block that burns (so on the side of planks or a log, with
+   nothing under it, drawn against that side: models.js). Anywhere else
+   it does nothing, as in the game. It lights TNT; campfires and candles
+   are details.js's, portals dim/realms.js's.
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID } from '../blocks.js?v=32';
+import { catchOf, burnOf } from '../flame.js?v=32';
 
 const RI = (s, n) => Math.floor(s.rng() * n);
 const NB6 = [[1, 0, 0], [-1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1]];
 const HUMID = /jungle|swamp|mushroom/;
 
-/* [encouragement (catches), flammability (burns away)] from the wiki's table. Made the first time it is
-   wanted, or when the page is next idle (not while the game's parts load behind the title: main.js loadParts). */
-export const FLAME = new Map();
-let flameMade = false;
-function makeFlame() {
-  flameMade = true;
-  const flame = (test, e, f) => { for (const d of BLOCKS) if (d && test(d.name, d)) FLAME.set(d.id, [e, f]); };
-  flame(n => /_planks$/.test(n) && !/crimson|warped/.test(n), 5, 20);
-  flame(n => /_(slab|stairs|fence|fence_gate)$/.test(n) && /^(oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak|bamboo)/.test(n), 5, 20);
-  flame(n => /_(log|wood)$/.test(n) && !/crimson|warped/.test(n) || /^stripped_.*_(log|wood)$/.test(n) && !/crimson|warped/.test(n), 5, 5);
-  flame(n => /^bamboo_(block|mosaic|mosaic_slab|mosaic_stairs)$/.test(n), 5, 20);
-  flame((n, d) => d.leaves, 30, 60);
-  flame(n => n === 'bookshelf' || n === 'chiseled_bookshelf' || n === 'lectern', 30, 20);
-  flame(n => n === 'tnt', 15, 100);
-  flame(n => /^(short_grass|tall_grass|tall_grass_top_block|fern|large_fern|large_fern_top_block|dead_bush|sweet_berry_bush|small_dripleaf|pink_petals|spore_blossom|wildflowers|leaf_litter|bush|firefly_bush|short_dry_grass|tall_dry_grass)$/.test(n), 60, 100);
-  flame(n => /^(dandelion|poppy|blue_orchid|allium|azure_bluet|red_tulip|orange_tulip|white_tulip|pink_tulip|oxeye_daisy|cornflower|lily_of_the_valley|wither_rose|torchflower|sunflower|lilac|rose_bush|peony|pitcher_plant)(_top_block)?$/.test(n), 60, 100);
-  flame(n => /_wool$/.test(n), 30, 60);
-  flame(n => /_carpet$/.test(n) && n !== 'moss_carpet', 60, 20);
-  flame(n => n === 'vine' || n === 'glow_lichen' || n === 'big_dripleaf' || n === 'big_dripleaf_stem', 15, 100);
-  flame(n => n === 'cave_vines' || n === 'cave_vines_plant', 15, 60);
-  flame(n => n === 'coal_block', 5, 5);
-  flame(n => n === 'hay_block', 60, 20);
-  flame(n => n === 'target', 15, 20);
-  flame(n => n === 'dried_kelp_block', 30, 60);
-  flame(n => n === 'scaffolding' || n === 'bamboo', 60, 60);
-  flame(n => n === 'composter' || n === 'beehive' || n === 'bee_nest' || n === 'mangrove_roots', 5, 20);
-  flame(n => n === 'azalea' || n === 'flowering_azalea' || n === 'hanging_roots', 30, 60);
-  flame(n => n === 'moss_block' || n === 'moss_carpet' || n === 'pale_moss_block' || n === 'pale_moss_carpet', 5, 100);
-  flame(n => /_bed$/.test(n), 0, 0);
-}
-if (typeof requestIdleCallback === 'function') requestIdleCallback(() => { if (!flameMade) makeFlame(); }, { timeout: 5000 });
-
-const flames = b => (flameMade || makeFlame(), FLAME.get(b));
-export const burns = b => (flames(b) || [0, 0])[1];
-export const catches = b => (flames(b) || [0, 0])[0];
-export const flammable = b => { const f = flames(b); return !!f && f[0] > 0; };
+// what burns and how readily (the wiki's table in flame.js, shared with the fire's model in models.js)
+export const burns = b => burnOf(BLOCKS[b]);
+export const catches = b => catchOf(BLOCKS[b]);
+export const flammable = b => catchOf(BLOCKS[b]) > 0;
 
 export function installFire(sim) {
   const fire = B.fire, soul = B.soul_fire;
-  const isAir = b => !b || BLOCKS[b].name === 'cave_air';
-  const sturdyTop = b => b && BLOCKS[b].solid && (BLOCKS[b].shape === 'cube' || BLOCKS[b].shape === 'slab' || BLOCKS[b].shape === 'stairs');
+  const isAir = b => !b || BLOCKS[b].name === 'cave_air' || BLOCKS[b].name === 'void_air';
+  // a top face that holds a fire up: a full block, a top or double slab, upside-down stairs (the game's isFaceSturdy up)
+  const sturdyTopAt = (x, y, z) => {
+    const b = sim.get(x, y, z), d = b && BLOCKS[b];
+    if (!d || !d.solid) return false;
+    if (d.shape === 'cube') return true;
+    if (d.shape === 'slab') return (sim.meta(x, y, z) & 3) >= 1;
+    if (d.shape === 'stairs') return (sim.meta(x, y, z) & 4) !== 0;
+    return false;
+  };
   const nextToFuel = (x, y, z) => { for (const [dx, dy, dz] of NB6) if (flammable(sim.get(x + dx, y + dy, z + dz))) return true; return false; };
+  // the game's difficulty as a number (0 peaceful .. 3 hard), for the spread
+  const difficulty = s => {
+    if (typeof s.difficulty === 'number') return s.difficulty;
+    const E = s.game && s.game.entities, n = E && E.difficulty;
+    return n === 'peaceful' ? 0 : n === 'easy' ? 1 : n === 'hard' ? 3 : 2;
+  };
+  const fireTicks = s => { const r = s.game && s.game.rules; return !(r && r.doFireTick === false); };
   const infiniburn = b => b === B.netherrack || b === B.magma_block || (/end$/.test(sim.dimension()) && b === B.bedrock);
   const soulBase = b => b === B.soul_sand || b === B.soul_soil;
   // can a fire stand here?
-  sim.fireCanStay = (x, y, z) => sturdyTop(sim.get(x, y - 1, z)) || nextToFuel(x, y, z);
+  sim.fireCanStay = (x, y, z) => sturdyTopAt(x, y - 1, z) || nextToFuel(x, y, z);
   // the odds a fire jumps into this air: the best encouragement of what is round it
   const igniteOdds = (x, y, z) => {
     if (!isAir(sim.get(x, y, z))) return 0;
@@ -99,6 +88,7 @@ export function installFire(sim) {
     // a fire that appears (lit, spread, or placed) starts ticking
     onPlace(s, x, y, z) { s.schedule(x, y, z, 30 + RI(s, 10)); },
     tick(s, x, y, z, m) {
+      if (!fireTicks(s)) { s.schedule(x, y, z, 30 + RI(s, 10)); return; }
       if (!s.fireCanStay(x, y, z)) { s.set(x, y, z, 0, 0); return; }
       const below = s.get(x, y - 1, z), inf = infiniburn(below);
       const age = m & 15;
@@ -107,7 +97,7 @@ export function installFire(sim) {
       if (na !== age) { s.quietSet(x, y, z, fire, na); }
       if (!inf) {
         if (!nextToFuel(x, y, z)) {
-          if (!sturdyTop(below) || age > 3) s.set(x, y, z, 0, 0);
+          if (!sturdyTopAt(x, y - 1, z) || age > 3) s.set(x, y, z, 0, 0);
           else s.schedule(x, y, z, 30 + RI(s, 10));
           return;
         }
@@ -117,7 +107,7 @@ export function installFire(sim) {
       burnOut(x + 1, y, z, 300 + k, age); burnOut(x - 1, y, z, 300 + k, age);
       burnOut(x, y - 1, z, 250 + k, age); burnOut(x, y + 1, z, 250 + k, age);
       burnOut(x, y, z - 1, 300 + k, age); burnOut(x, y, z + 1, 300 + k, age);
-      const diff = s.difficulty === undefined ? 2 : s.difficulty;
+      const diff = difficulty(s);
       for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 4; dy++) {
         if (!dx && !dy && !dz) continue;
         let l = 100;
@@ -143,6 +133,7 @@ export function installFire(sim) {
   /* ---- lava lights what is round it ---- */
   sim.on('lava', {
     random(s, x, y, z) {
+      if (!fireTicks(s)) return;
       const i = RI(s, 3);
       if (i > 0) {
         let px = x, py = y, pz = z;

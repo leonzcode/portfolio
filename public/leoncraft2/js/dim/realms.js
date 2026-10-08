@@ -365,11 +365,15 @@ export class Realms {
       let x = hit.x, y = hit.y, z = hit.z;
       if (!hb.replaceable || hit.b === B.fire) { x += n[0]; y += n[1]; z += n[2]; }
       const cur = w.get(x, y, z);
-      if (cur !== 0 && !(BLOCKS[cur] && BLOCKS[cur].replaceable && !BLOCKS[cur].fluid)) return true;
-      if (this.dim !== 'the_end') {
+      const open = cur === 0 || !!(BLOCKS[cur] && BLOCKS[cur].replaceable && !BLOCKS[cur].fluid);
+      if (open && this.dim !== 'the_end') {
         const s = tryLight(w, x, y, z);
         if (s) { this.poi[this.dim].push(s); this.usedItem(id); return true; }
       }
+      // not a portal: the fire goes where the game puts it, by the simulation's rules (sim/fire.js): on a top
+      // that holds it, or against the side of a block that burns, with nothing under it
+      if (g.sim && g.sim.lightFire) return false;
+      if (!open) return true;
       const below = w.get(x, y - 1, z);
       if (below && BLOCKS[below].solid) {
         w.set(x, y, z, below === B.soul_sand || below === B.soul_soil ? B.soul_fire : B.fire, 0);
