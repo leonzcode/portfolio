@@ -884,7 +884,7 @@ register('ghast', Ghast);
    MAGMA CUBE
 =========================================================================== */
 export class MagmaCube extends Slime {
-  static TEX = 'magma_cube'; static FIRE_IMMUNE = true; static NO_FALL = true;
+  static TEX = 'magma_cube'; static FIRE_IMMUNE = true; static NO_FALL = true; static BRIGHT = true;
   setSize(n, heal) {
     super.setSize(n, heal);
     this.armor = 3 * n;

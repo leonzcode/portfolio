@@ -1024,7 +1024,7 @@ addArt('warden_glow', [128, 128], p => {
    bar shows at the top of the screen. Drops a nether star.
 =========================================================================== */
 export class WitherSkull extends Projectile {
-  static MODEL = 'wither_skull'; static TEX = 'wither_skull'; static W = 0.3125; static H = 0.3125; static SCALE = 1;
+  static MODEL = 'wither_skull'; static TEX = 'wither_skull'; static W = 0.3125; static H = 0.3125; static SCALE = 1; static BRIGHT = true;
   constructor(m, type) { super(m, type); this.gravity = 0; this.drag = 1; this.blue = false; }
   texName() { return this.blue ? 'wither_skull_blue' : 'wither_skull'; }
   hitEntity(e) {
