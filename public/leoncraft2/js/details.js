@@ -820,6 +820,8 @@ export class Details {
     for (const x of EXTRA.values()) for (const o of x.save(this) || []) out.push(o);
     return out;
   }
+  // one entry another module keeps (a beacon's powers), come from a server (net/net.js): true if it was one
+  loadExtra(o) { const x = o && EXTRA.get(o.k); if (x) x.load(this, o); return !!x; }
   fromJSON(list) {
     for (const e of this.map.values()) this._unshow(e);
     this.map.clear();

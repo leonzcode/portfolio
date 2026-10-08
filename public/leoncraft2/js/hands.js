@@ -379,6 +379,9 @@ export class Hands {
         level: () => (sim && sim.beacons ? sim.beacons.levelAt(x, y, z) : 0), primary: cur.p, secondary: cur.s,
         confirm: (p, s) => {
           BEACON_POWERS.set(x, y, z, p, s, this.details);
+          // on a server, everyone's copy (net/net.js)
+          const net = window.__lc2 && window.__lc2.game && window.__lc2.game.net;
+          if (net && net.queueT) net.queueT(x, y, z, { k: 'bc', x, y, z, a: p || 0, b: s || 0 });
           if (sim && sim.onSound && sim.beacons && sim.beacons.levelAt(x, y, z)) sim.onSound('block.beacon.power_select', x, y, z);
         },
       }));
