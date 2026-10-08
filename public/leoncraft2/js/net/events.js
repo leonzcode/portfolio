@@ -57,7 +57,7 @@ let active = null, quiet = 0;
    mobs' voices (sound/mobsounds.js) and the world's own noises (fire, lava,
    water, the furnaces: sound/ambient.js) play is kept here. */
 const keepQuiet = (proto, name) => {
-  const fn = proto[name];
+  const d = Object.getOwnPropertyDescriptor(proto, name), fn = d && d.value;
   if (typeof fn !== 'function' || fn.__quiet) return;
   const q = function () { quiet++; try { return fn.apply(this, arguments); } finally { quiet--; } };
   q.__quiet = true;
