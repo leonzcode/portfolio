@@ -137,7 +137,8 @@ export function installFarming(sim) {
   sim.useItem = (held, hit, heldId, sneaking) => {
     if (prev && prev(held, hit, heldId, sneaking)) return true;
     if (/_hoe$/.test(held)) return till(sim, hit);
-    if (held === 'bone_meal') return boneMeal(sim, hit.x, hit.y, hit.z);
+    // bone meal that took is used up (interact.js hands it to the hand, which keeps it in creative) and makes its sound
+    if (held === 'bone_meal') { if (!boneMeal(sim, hit.x, hit.y, hit.z)) return false; sim.usedHeld = true; return true; }
     return false;
   };
   sim.boneMeal = (x, y, z) => boneMeal(sim, x, y, z);
