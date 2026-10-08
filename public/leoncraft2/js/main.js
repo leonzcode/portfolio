@@ -318,6 +318,29 @@ async function boot() {
   const entityArtP = loadEntityArt(base, TEX_V, packs).catch(e => console.warn('entity art', e));
   let colours = null;
   if (!packs.length) { colours = biomeColours(pixels(grass), pixels(foliage)); if (!resumeTo) menuStart = makeMenu(MENU_SEED); }
+  /* The renderer is made now (once the title's world is started), with stand-ins for the three texture arrays, so
+     that its shaders are built (warmUp) while the big textures come down and
+     are decoded: three.js builds a program from the material alone. The
+     arrays take the stand-ins' places below, before anything is drawn. On a
+     first visit the shaders took the best part of a second to build, started
+     only once every texture was in, and the title waited for them. */
+  const [moon, sunImg] = await imgsP;
+  const moonTex = new THREE.Texture(moon);
+  moonTex.magFilter = THREE.NearestFilter; moonTex.minFilter = THREE.NearestFilter; moonTex.needsUpdate = true;
+  const sunTex = new THREE.Texture(sunImg);
+  sunTex.magFilter = THREE.NearestFilter; sunTex.minFilter = THREE.NearestFilter; sunTex.generateMipmaps = false; sunTex.needsUpdate = true;
+  const textures = { albedo: flatNormals(), normal: flatNormals(), spec: flatNormals(), manifest, moon: moonTex, sun: sunTex, endSky: endSkyTexture() };
+  MK('preRenderer');
+  status('Starting the renderer…', 0.2);
+  const canvas = $('#c');
+  const rs = options.get('renderScale');
+  const renderer = new Renderer(canvas, textures, Object.assign({}, LOOK, { renderDist: RD, scale: +(params.get('scale') || (rs !== 'auto' ? rs : 1)),
+    brightness: options.get('brightness'), clouds: options.get('clouds') }));
+  const overlay = new Overlay(renderer.U, manifest);
+  renderer.overlay = overlay;
+  // every shader set compiling now, in the background, so the title's first frame does not stop to build them
+  const shadersBuilt = renderer.warmUp();
+  MK('renderer');
   const [albP, nrmP, spcP] = await stripsP;
   MK('strips');
   const itemStrip = await itemStripP;
@@ -341,35 +364,21 @@ async function boot() {
   } catch (e) { console.warn('resource packs', e); find = null; packTex = null; }
   await entityArtP;
   if (!colours) colours = biomeColours(pixels(grass), pixels(foliage));
-  const [moon, sunImg] = await imgsP;
   let alb = albP.full;
-  const moonTex = new THREE.Texture(moon);
-  moonTex.magFilter = THREE.NearestFilter; moonTex.minFilter = THREE.NearestFilter; moonTex.needsUpdate = true;
-  const sunTex = new THREE.Texture(sunImg);
-  sunTex.magFilter = THREE.NearestFilter; sunTex.minFilter = THREE.NearestFilter; sunTex.generateMipmaps = false; sunTex.needsUpdate = true;
-  const textures = {
-    albedo: arrayTex(albP, LAYERS, THREE.LinearMipmapLinearFilter),
-    normal: nrmP ? arrayTex(nrmP, LAYERS, THREE.LinearMipmapLinearFilter) : flatNormals(),
-    spec: spcP ? arrayTex(spcP, LAYERS, THREE.LinearMipmapLinearFilter) : flatNormals(),
-    manifest, moon: moonTex, sun: sunTex, endSky: endSkyTexture(),
-  };
-
-  MK('preRenderer');
-  status('Starting the renderer…', 0.5);
-  const canvas = $('#c');
-  const rs = options.get('renderScale');
-  const renderer = new Renderer(canvas, textures, Object.assign({}, LOOK, { renderDist: RD, scale: +(params.get('scale') || (rs !== 'auto' ? rs : 1)),
-    brightness: options.get('brightness'), clouds: options.get('clouds') }));
+  // the arrays, in the stand-ins' places
+  textures.albedo = arrayTex(albP, LAYERS, THREE.LinearMipmapLinearFilter);
+  textures.normal = nrmP ? arrayTex(nrmP, LAYERS, THREE.LinearMipmapLinearFilter) : flatNormals();
+  textures.spec = spcP ? arrayTex(spcP, LAYERS, THREE.LinearMipmapLinearFilter) : flatNormals();
   for (const t of [textures.albedo, textures.normal, textures.spec]) if (t.pieces) uploadArray(renderer.r, t);
+  renderer.U.uAlbedo.value = textures.albedo; renderer.U.uNormalMap.value = textures.normal; renderer.U.uSpecMap.value = textures.spec;
+  // (the shaders' table of what each texture is made of reads the material map: render/materials.js layerMatMaterial)
+  const lm = renderer.layerMatMat;
+  if (lm) { lm.uniforms.uSpecMap.value = textures.spec; lm.uniforms.uLayers.value = textures.spec.image ? textures.spec.image.depth : 0; }
   dimArt.upload(renderer.r, textures, alb);
   if (packTex && packTex.size) alb = applyPackTextures(renderer.r, textures, manifest, packTex, alb);
   renderer.colours = colours;
   alb = dimArt.extendStrip(alb);
-  const overlay = new Overlay(renderer.U, manifest);
-  renderer.overlay = overlay;
-  // every shader set compiling now, in the background, so the title's first frame does not stop to build them
-  const shadersBuilt = renderer.warmUp();
-  MK('renderer');
+  MK('textures');
   const fit = () => { renderer.resize(window.innerWidth, window.innerHeight); gui.resize(); };
 
   /* ---- the menus, and everything they ask of the game ---- */
