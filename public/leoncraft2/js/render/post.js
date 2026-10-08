@@ -231,15 +231,18 @@ void main() {
     // Both come out on the screen the colour the game shows them (as lava does: water.js), worked back
     // through the eye and the tone curve: put in as they were, the eye opened for the dark there made the
     // Nether's sky a glaring scarlet nearly three times as bright as the game's dark red
+    // (worked out only where it shows: the fog's colour is the same over the whole frame)
     float E = max(texture(uExpoTex, vec2(0.5)).r, 1e-3);
-    vec3 fogC = agxInverse(uDimFog) / E;
     if (d >= 1.0) {
       if (uDim > 1.5) {
         vec3 a = abs(rd);
         vec2 q = a.x > a.y && a.x > a.z ? rd.zy / a.x : a.y > a.z ? rd.xz / a.y : rd.xy / a.z;
         col = agxInverse(toLinear(min(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * (40.0 / 255.0) + endFlashSky(rd), 1.0))) / E;
-      } else col = fogC;
-    } else col = mix(col, fogC, sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x)));
+      } else col = agxInverse(uDimFog) / E;
+    } else {
+      float f = sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x));
+      if (f > 0.0) col = mix(col, agxInverse(uDimFog) / E, f);
+    }
     float sh = shutAt(dist, d);
     col *= 1.0 - sh;
     // (the sky is left out of the eye's measure too: set by the exposure, it would only chase it)
