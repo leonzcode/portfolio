@@ -671,8 +671,10 @@ export class Post {
     // tone map, then smooth the edges onto the screen
     u.uColor.value = this.comp.texture; u.uBloom.value = upSrc; u.uExpo.value = this.expo[this.expoI].texture;
     // the day sky's brightening (FS_FINAL): full with the sun well up, none from late afternoon on, at night or in the other dimensions
+    // (and none in rain or a storm, whose sky the game greys: sim/weather.js sets the renderer's weatherState)
     const sd = this.shared.uSunDir && this.shared.uSunDir.value, sy = sd ? sd.y : 0, k = Math.max(0, Math.min(1, (sy - 0.15) / 0.35));
-    u.uSkyGain.value = other ? 0 : SKY_GAIN * k * k * (3 - 2 * k);
+    const wx = (this.owner && this.owner.weatherState) || {}, wet = Math.min(1, (wx.rain || 0) + (wx.thunder || 0));
+    u.uSkyGain.value = other ? 0 : SKY_GAIN * k * k * (3 - 2 * k) * (1 - wet);
     // (and for the next frame's lava: water.js)
     if (this.shared.uExpoTex) this.shared.uExpoTex.value = this.expo[this.expoI].texture;
     this.run(this.mFinal, this.fxaa ? this.ldr : null);

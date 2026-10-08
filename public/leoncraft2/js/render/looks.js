@@ -359,7 +359,7 @@ function prepare(R, o) {
   const variants = [];
   if (!o.ldr) {
     if (!U.uNoise3.value) noise = noise3D(R);
-    if (!R._post) R._post = new Post(r, U, o);
+    if (!R._post) { R._post = new Post(r, U, o); R._post.owner = R; }
     if (!R.blockCloudsHDR) R.blockCloudsHDR = new BlockClouds(detailedCloudMaterial(U, true));
     const P = R._post;
     compile.push(P.mCopy, P.mLin, P.mVL, P.mClouds, P.mComp, P.mDown, P.mUp, P.mLum, P.mExpo, P.mFinal, P.mFxaa, R.blockCloudsHDR.depth.material, R.blockCloudsHDR.colour.material);
@@ -488,7 +488,7 @@ function finishLook(R, look, first, prep) {
 
   // the full chain
   if (!o.ldr) {
-    if (!R._post) R._post = new Post(r, U, o);
+    if (!R._post) { R._post = new Post(r, U, o); R._post.owner = R; }
     // coming into the full chain from another look: its eye starts from this picture
     else if (wasLdr) R._post.resetExposure();
     R.post = R._post;
