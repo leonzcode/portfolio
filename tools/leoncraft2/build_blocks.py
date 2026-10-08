@@ -634,7 +634,8 @@ def special(name, gr, c, D, p):
     if gr == 'sea_pickle':
         return 'cross', 'sea_pickle', 'cutout', {'icon': 'item_sea_pickle'}
     if gr == 'wall_mushroom':
-        return 'button', 'shelf_mushroom_stage0', 'cutout', {'orient': 'wall', 'icon': 'shelf_mushroom_stage0'}
+        # (its item is the small model, js/ui/icons.js, not a flat picture)
+        return 'button', 'shelf_mushroom_stage0', 'cutout', {'orient': 'wall'}
     issues.append('special fallback ' + name + ' ' + gr)
     fb = c.get('fallback') or 'cube'
     return {'carpet': 'thin', 'none': 'none'}.get(fb, fb), p, 'cutout', {}
