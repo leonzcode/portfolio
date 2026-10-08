@@ -38,6 +38,7 @@ out vec3 vUv; out vec3 vCol; out vec3 vWorld; out vec2 vLv;
 uniform sampler2D uAmbient, uNoise, uView;
 uniform vec3 cameraPosition;
 uniform float uEyeInWater;
+uniform vec3 uDimAmb;           // the Nether's and the End's own light (js/dim/look.js)
 out vec3 vLight; out vec3 vKeep; out vec3 vAdd;
 #endif
 LIGHTS_HERE
@@ -48,6 +49,8 @@ void main() {
   float sky = aLv.x, block = aLv.y;
   vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
   vLight = sunC * smoothstep(0.8, 0.95, sky) * 0.5 + amb * sky * sky * 0.8 / PI + (block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) / PI : vec3(0.0)) + vec3(0.002);
+  // no sun or sky table in the Nether and the End: their own even light, as the blocks have it (materials.js)
+  if (uDim > 0.5) vLight = uDimAmb * (uDim < 1.5 ? 1.0 : 0.3 + 0.7 * sky * sky) / PI + (block > 0.0 ? blockLight(block, 0.0) / PI : vec3(0.0)) + vec3(0.002);
   if (aCol.r < 0.0) vLight = vec3(1.5);   // flames glow: as bright as a surface right by a torch
 #ifdef LDR
   fogTerms(position, vKeep, vAdd);
