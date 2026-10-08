@@ -21,7 +21,7 @@
      Burst          a puff of explosion smoke
    Models are boxes with flat colours, our own design.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=33';
+import { B, BLOCKS } from '../blocks.js?v=34';
 const THREE = window.THREE;
 const V = (x, y, z) => new THREE.Vector3(x || 0, y || 0, z || 0);
 

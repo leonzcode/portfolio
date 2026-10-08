@@ -2,8 +2,8 @@
    Leoncraft 2 - more mobs, and the shapes of things that are not mobs
    (arrows, thrown balls).
 --------------------------------------------------------------------------- */
-import { MODELS } from './mobmodels.js?v=33';
-import { addArt } from './mobart.js?v=33';
+import { MODELS } from './mobmodels.js?v=34';
+import { addArt } from './mobart.js?v=34';
 
 export function model(name, parts, animate) {
   const m = { name, parts: parts.map(p => Object.assign({ pivot: [0, 0, 0], rot: [0, 0, 0], boxes: [], parent: -1 }, p)), animate };
