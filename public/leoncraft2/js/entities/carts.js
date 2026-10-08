@@ -21,7 +21,10 @@
                or what lies on it, as much of a stack as fits; a powered
                activator rail turns it off; a hopper under the rail empties
                it (containers.js finds it as it finds a chest boat)
-     command   the block only (the game's command block is for operators)
+     command   a powered activator rail runs its command, at most once
+               every 4 ticks, from where the cart is (~ ~ ~ is the cart);
+               an operator in creative sets the command with a click
+               (ui/commandcart.js); it keeps what the command said last
 --------------------------------------------------------------------------- */
 import { Minecart } from './minecart.js?v=33';
 import { register } from './mobs.js?v=33';
@@ -31,6 +34,7 @@ import { B } from '../blocks.js?v=33';
 import { stackToJSON, stackFromJSON } from '../items.js?v=33';
 import { spill, lootStack } from '../containers.js?v=33';
 import { ChestScreen, HopperScreen } from '../ui/containers.js?v=33';
+import { CommandCartScreen } from '../ui/commandcart.js?v=33';
 
 const R = () => Math.random(), RI = n => Math.floor(Math.random() * n);
 
@@ -279,7 +283,55 @@ class TntCart extends BlockCart {
 }
 
 /* ---- with a command block ---- */
-class CommandCart extends BlockCart { static ITEM = 'command_block_minecart'; static LAYER_TEX = 'cart_command'; }
+class CommandCart extends BlockCart {
+  static ITEM = 'command_block_minecart'; static LAYER_TEX = 'cart_command';
+  constructor(m, type) { super(m, type); this.command = ''; this.lastOut = ''; this.track = true; this.t = 0; this.lastRun = -4; }
+  title() { return 'Minecart with Command Block'; }
+  interact(held, player) {
+    if (!player || !player.isPlayer) return false;
+    const H = this.m.hooks.hands, ctx = this.m.hooks.commandCtx ? this.m.hooks.commandCtx() : null;
+    if (!H || !H.open || !ctx) return false;
+    // (the game's rule: an operator, that is a player who may use commands, in creative)
+    if (H.mode !== 'creative' || !ctx.cheats) { ctx.say('Must be an opped player in creative mode', 0xFFFFFF); return 'swing'; }
+    H.open(new CommandCartScreen(this, ctx.say));
+    return 'swing';
+  }
+  tick() {
+    super.tick();
+    if (this.removed) return;
+    this.t++;
+    if (this.command && activator(this) && this.t - this.lastRun >= 4) { this.lastRun = this.t; this.run(); }
+  }
+  /* its command, as the game runs it: with every permission, from the cart (so ~ and ^ are its place),
+     what it says kept as its Previous Output and, when it worked, shown to the player in grey */
+  run() {
+    const ctx = this.m.hooks.commandCtx ? this.m.hooks.commandCtx() : null, P = ctx && ctx.game && ctx.game.player;
+    if (!ctx || !P) return;
+    const said = [];
+    ctx.cheats = true;
+    ctx.say = (t, c) => said.push([String(t), c]);
+    ctx.playerName = '@';
+    import('../commands.js?v=33').then(mod => {
+      if (this.removed) return;
+      // the player stands where the cart is for the command, and back after (unless it moved them)
+      const was = P.pos.clone(), at = this.pos.clone();
+      P.pos.copy(at);
+      let ok = false;
+      try { ok = mod.execute(this.command, ctx); } finally { if (P.pos.equals(at)) P.pos.copy(was); }
+      if (this.track) this.lastOut = said.length ? said[said.length - 1][0] : '';
+      const chat = this.m.hooks.commandCtx();
+      if (ok) for (const [t, c] of said) if (c !== 0xFF5555) chat.say('[' + this.title() + ': ' + t + ']', 0xAAAAAA);
+    }, () => {});
+  }
+  toJSON() {
+    const o = super.toJSON();
+    if (this.command) o.cmd = this.command;
+    if (this.lastOut) o.out = this.lastOut;
+    if (!this.track) o.trk = 0;
+    return o;
+  }
+  fromJSON(o) { super.fromJSON(o); this.command = o.cmd || ''; this.lastOut = o.out || ''; this.track = o.trk !== 0; }
+}
 
 register('chest_minecart', ChestCart);
 register('hopper_minecart', HopperCart);
