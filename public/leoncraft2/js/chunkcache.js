@@ -111,9 +111,24 @@ export function readChunks(world, list, found, absent) {
    again. Put as they are, at once, before their buffers go to the page. */
 let opened = null;
 db().then(d => { opened = d; });
+/* The meshes depend on Video Settings (Fast leaves, Smooth Lighting, Biome
+   Blend: the last part of the key), and only the latest are kept: the
+   first one kept with new settings throws out those made with any other
+   (about 6 MB a set, and they were left to pile up, one set for each mix
+   of settings ever tried). */
+let meshesOf = null;               // the settings the last mesh kept was made with
 export function keepMesh(key, rec) {
   if (!opened) return;              // (the store not open yet: kept another time)
-  try { opened.transaction(STORE, 'readwrite').objectStore(STORE).put(rec, key); } catch (e) { /* not kept */ }
+  try {
+    const st = opened.transaction(STORE, 'readwrite').objectStore(STORE);
+    st.put(rec, key);
+    const cut = key.indexOf('|title|'), last = key.lastIndexOf('|');
+    if (cut > 0 && key.slice(last) !== meshesOf) {
+      meshesOf = key.slice(last);
+      const from = key.slice(0, cut + 7), r = st.openCursor(IDBKeyRange.bound(from, from + '￿'));
+      r.onsuccess = () => { const c = r.result; if (!c) return; if (!String(c.key).endsWith(meshesOf)) c.delete(); c.continue(); };
+    }
+  } catch (e) { /* not kept */ }
 }
 // those of a list of keys that are kept, in its order (null for one that is not)
 export async function readMeshes(keys) {

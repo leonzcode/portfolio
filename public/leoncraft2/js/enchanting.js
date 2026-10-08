@@ -38,10 +38,10 @@
    the total of each enchantment's lowest cost (rounded up), plus up to as
    much again less one. What comes out keeps a prior work of 2^curses - 1.
 --------------------------------------------------------------------------- */
-import { ENCHANTS } from './itemdata.js?v=30';
-import { ITEMS, I, maxDamage, withCount } from './items.js?v=30';
-import { LegacyRandom } from './gen/random.js?v=30';
-import { BLOCKS } from './blocks.js?v=30';
+import { ENCHANTS } from './itemdata.js?v=31';
+import { ITEMS, I, maxDamage, withCount } from './items.js?v=31';
+import { LegacyRandom } from './gen/random.js?v=31';
+import { BLOCKS } from './blocks.js?v=31';
 
 /* min and max cost: [base, per level above the first] for each */
 const COST = {

@@ -20,8 +20,8 @@
      ruined_portal_ocean     on the sea floor, flooded, magma instead of lava
      ruined_portal_nether    of blackstone, on a blackstone footing
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=30';
-import { footprint, rng } from './util.js?v=30';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=31';
+import { footprint, rng } from './util.js?v=31';
 
 export const PLANS = {};
 
