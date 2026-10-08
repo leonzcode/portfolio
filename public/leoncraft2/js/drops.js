@@ -551,7 +551,19 @@ export class Drops {
         const mesh = new THREE.Mesh(g, this.R.mats.cutout);
         mesh.matrixAutoUpdate = false; mesh.frustumCulled = false;
         this.group.add(mesh);
-        o.mesh = mesh;
+        o.mesh = mesh; o.lightT = 0; o.light = -1;
+      }
+      // its light, now and then: the light where it is, its block light 7 brighter, as the game lights an orb
+      if ((o.lightT -= dt) <= 0) {
+        o.lightT = 0.5;
+        const w = this.world, v = lightNear(w, Math.floor(o.pos.x), Math.floor(o.pos.y + 0.2), Math.floor(o.pos.z), !!w.noSky);
+        const lv = ((v >> 4) * 17 << 8) | (Math.min(15, (v & 15) + 7) * 17);
+        if (lv !== o.light) {
+          o.light = lv;
+          const Lr = o.mesh.geometry.attributes.aL;
+          for (let k = 0; k < 4; k++) { Lr.array[k * 4] = lv >> 8; Lr.array[k * 4 + 1] = lv & 255; }
+          Lr.needsUpdate = true;
+        }
       }
       const t = o.age + alpha + o.phase;
       // the game's pulse: red swings 0-255, green full, blue a little
