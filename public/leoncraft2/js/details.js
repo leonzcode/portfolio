@@ -61,13 +61,13 @@
    What it remembers (sign text, food on campfires, framed items, discs, vaults, what pots, shelves and lecterns
    hold) is kept per dimension (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, OPACITY } from './blocks.js?v=31';
-import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=31';
-import { potWobbled } from './sim/lids.js?v=31';
-import { BookScreen } from './ui/book.js?v=31';
-import { wantBook } from './entities/tablebook.js?v=31';
-import { cookingRecipe } from './crafting.js?v=31';
-import { hiveUse } from './entities/hives.js?v=31';
+import { B, BLOCKS, OPACITY } from './blocks.js?v=32';
+import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=32';
+import { potWobbled } from './sim/lids.js?v=32';
+import { BookScreen } from './ui/book.js?v=32';
+import { wantBook } from './entities/tablebook.js?v=32';
+import { cookingRecipe } from './crafting.js?v=32';
+import { hiveUse } from './entities/hives.js?v=32';
 
 /* Other modules keep state of their own with a dimension's block entities (struct/trials.js: a trial
    spawner's cooldown): registerExtra(k, { save(details) -> entries with that k, load(details, entry), reset(details) }). */
@@ -251,7 +251,7 @@ export class Details {
     if (e.rewarded || e.queue.length) return false;
     e.rewarded = true; e.at = this.ticks + 14; e.unlockUntil = e.at;
     if (!h.creative) h.inv.takeSelected(1);
-    import('./struct/loot.js?v=31').then(L => import('./containers.js?v=31').then(C => {
+    import('./struct/loot.js?v=32').then(L => import('./containers.js?v=32').then(C => {
       const table = 'trial_chambers/' + (ominous ? 'reward_ominous' : 'reward');
       // (the game's getRandomItems: the stacks as drawn, one thrown out at a time, never shuffled or split as a chest's are)
       for (const r of L.rollItems(table, (Math.random() * 2147483647) | 0)) { const st = C.lootStack(r); if (st) e.queue.push(st); }
