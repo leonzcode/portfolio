@@ -236,6 +236,7 @@ in vec3 vTint; in vec3 vG; in vec2 vUv2;
 uniform float uClock;
 #ifndef LDR
 uniform sampler2D uExpoTex;     // the eye's exposure, the last frame's (render/post.js)
+#define GLINT_TONE
 #endif
 ` + GLINT + `
 ` + ARMOR_OVERLAY + `
@@ -299,20 +300,19 @@ void main() {
   vec3 light = (diffuse * PI + amb + blockL + lightFloor()) / PI;
   vec3 col = albedo * light;
 #ifdef ARMOR
-  /* the glint added unlit, as the game draws it and as on what you hold (render/glint.js): as bright on
-     the screen in a cave as in the sun. It went by the light the piece was in, a dazzle in the sun
-     (the sun is a dozen times the sky) and next to nothing in the shade or at night */
-  if (vG.z > 0.5) {
-    vec3 g = min(glintAt(vG.xy, uClock), vec3(1.0));
-#ifdef LDR
-    col += g * g * 0.5 / max(exposureNow(), 0.02);
-#else
-    col += g * g * 0.5 / max(texture(uExpoTex, vec2(0.5)).r, 0.02);
+  /* the glint added unlit on the screen's own colour, as the game draws it (Fast: AVATAR_FS below), so
+     it is as bright in a cave as in the sun. It went by the light the piece was in (a dazzle in the sun
+     and next to nothing at night), then in as light, which the tone curve flattened in the sun */
+  vec3 g = vG.z > 0.5 ? glintAt(vG.xy, uClock) : vec3(0.0);
+#ifndef LDR
+  if (vG.z > 0.5) col = glintOver(col, g, max(texture(uExpoTex, vec2(0.5)).r, 0.02));
 #endif
-  }
 #endif
 #ifdef LDR
   col = finishLDR(col, vWorld);
+#ifdef ARMOR
+  col = min(col + g, vec3(1.0));
+#endif
 #endif
   outColor = vec4(col, 1.0);
 }`;
