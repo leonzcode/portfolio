@@ -131,7 +131,7 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
   }
   // weeping and twisting vines: themselves with shears, otherwise a 33% chance (more with Fortune), as when they fall
   if (NETHER_VINES.test(n)) { if (shears || silk || table(fortune, NETHER_VINE)) add(out, n.replace(/_plant$/, ''), 1); return out; }
-  if (SHEARS_ONLY.test(n)) { if (shears) add(out, itemOfBlock(d), 1); return out; }
+  if (SHEARS_ONLY.test(n)) { if (shears) add(out, itemOfBlock(d), slabCount(d, meta)); return out; }
 
   // leaves: themselves with shears (or Silk Touch), else a sapling, sticks and apples by chance
   if (d.leaves || /_leaves$/.test(n)) {
@@ -210,5 +210,7 @@ function slabCount(d, meta) {
   if (d.shape === 'slab') return /_slab$/.test(d.name) && (meta & 3) === 2 ? 2 : 1;
   if (d.shape === 'candle' || /sea_pickle|^.*_candle$|^candle$/.test(d.name)) return (meta & 7) + 1;
   if (d.name === 'pink_petals' || d.name === 'wildflowers' || d.name === 'leaf_litter' || d.name === 'turtle_egg') return (meta & 3) + 1;
+  // glow lichen, sculk veins and resin clumps: one for each face
+  if (d.shape === 'multiface') { let k = 0; for (let i = 0; i < 6; i++) if (meta & (1 << i)) k++; return k || 1; }
   return 1;
 }
