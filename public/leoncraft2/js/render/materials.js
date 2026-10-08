@@ -365,7 +365,8 @@ void main() {
   vec3 keep, add;
   fogTerms(world.xyz, keep, add);
   // Chunk Fade: a column just come into the world fades in from the fog's colour
-  if (uChunkFade < 1.0) { keep *= uChunkFade; add = mix(fogColour(normalize(world.xyz - cameraPosition)) * uExpo, add, uChunkFade); }
+  // (in the Nether and the End from their own fog colour: the sky's fog table is left as the Overworld had it)
+  if (uChunkFade < 1.0) { keep *= uChunkFade; add = mix((uDim > 0.5 ? uDimFog : fogColour(normalize(world.xyz - cameraPosition))) * uExpo, add, uChunkFade); }
   vAmb = (amb + blockL + lightFloor() * ao) / PI * keep;
   vFog = vec4(add, mat.g > 0.0 ? 6.0 * dot(keep, vec3(1.0 / 3.0)) : 0.0);
   // how much of the sun the face takes: its angle to the light (a plant's from straight up, softened,
