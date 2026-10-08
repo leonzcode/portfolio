@@ -25,7 +25,7 @@
    Fire (beds, respawn anchors, fireballs): each destroyed cell that is air
    afterwards, with a solid block under it, catches fire one time in three.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=33';
+import { B, BLOCKS, FLUID } from './blocks.js?v=34';
 
 /* Blast resistance from the wiki where it is not the block's hardness. Worked out the first time it
    is wanted, or when the page is next idle: its 34 passes over every block took 11-15 ms here, and

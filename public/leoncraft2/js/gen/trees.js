@@ -18,8 +18,8 @@
    Written from the game's behaviour (no Mojang code), checked against
    chunks the 26.3 server made.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=33';
-import { FEATURES, provider, stateFrom, stateOf, sampleInt, predicate, tag, isAir, fluidOf, msin, mcos, strip, placeConfigured } from './features.js?v=33';
+import { B, BLOCKS } from '../blocks.js?v=34';
+import { FEATURES, provider, stateFrom, stateOf, sampleInt, predicate, tag, isAir, fluidOf, msin, mcos, strip, placeConfigured } from './features.js?v=34';
 
 const F = Math.fround;
 const MIN_Y = -64, MAX_BUILD = 320;

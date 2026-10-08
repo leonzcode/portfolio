@@ -27,16 +27,16 @@
    make(opts) builds the material for a look, and is called again for each
    new one. renderer.onLook(fn) hears of every change.
 --------------------------------------------------------------------------- */
-import { Sky, FullScreen } from './sky.js?v=33';
-import { Post } from './post.js?v=33';
-import { makeMaterials, layerMatMaterial } from './materials.js?v=33';
-import { makeWaterMaterial } from './water.js?v=33';
-import { makeNoise3DAsync, makeNoise3DGPU } from './noisetex.js?v=33';
-import { makeLdrSky } from './ldrsky.js?v=33';
-import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=33';
-import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=33';
-import { ShadowMaps } from './shadows.js?v=33';
-import { makeToneLut } from './glsl.js?v=33';
+import { Sky, FullScreen } from './sky.js?v=34';
+import { Post } from './post.js?v=34';
+import { makeMaterials, layerMatMaterial } from './materials.js?v=34';
+import { makeWaterMaterial } from './water.js?v=34';
+import { makeNoise3DAsync, makeNoise3DGPU } from './noisetex.js?v=34';
+import { makeLdrSky } from './ldrsky.js?v=34';
+import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=34';
+import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=34';
+import { ShadowMaps } from './shadows.js?v=34';
+import { makeToneLut } from './glsl.js?v=34';
 const THREE = window.THREE;
 
 /* ---- the shader's settings ----
@@ -459,8 +459,15 @@ function finishLook(R, look, first, prep) {
     R.stands = [];
     R.makeStandIns();
     // and every material handed in by the rest of the game
-    if (prep) for (const [m, n] of prep.pairs) morph(m, n);
-    else if (R.lookList && !first) R.lookList = R.lookList.filter(e => { const m = e.ref.deref(); if (m) morph(m, e.make(o)); return !!m; });
+    if (prep) {
+      const done = new Set();
+      for (const [m, n] of prep.pairs) { morph(m, n); done.add(m); }
+      /* and one handed in while the new code was being built (a player joining, a world or a
+         dimension's mobs, a first glint): made for the last look, since R.opts only changes here,
+         so it kept the last look's code until the next change, the Off look's lightmap in the
+         full chain and the like, which drew it black or glaring. It gets its new form now. */
+      if (R.lookList) R.lookList = R.lookList.filter(e => { const m = e.ref.deref(); if (m && !done.has(m)) morph(m, e.make(o)); return !!m; });
+    } else if (R.lookList && !first) R.lookList = R.lookList.filter(e => { const m = e.ref.deref(); if (m) morph(m, e.make(o)); return !!m; });
     /* The new materials the shaders were compiled for are kept until the next
        change of look: while they are, their programs stay in three.js's cache
        for the materials that took their code, however long until those are

@@ -34,11 +34,11 @@
    Drawn with the block's own model and the held-block material, so they take
    the same light and fog as the world.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=33';
-import { blockGeometry, intAttribute } from '../render/blockmesh.js?v=33';
-import { lightNear } from '../lightlevel.js?v=33';
-import { FALLS, free as fallsInto, touchesWater, concreteOf } from '../entities/fallingblock.js?v=33';
-import { H } from '../world-const.js?v=33';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=34';
+import { blockGeometry, intAttribute } from '../render/blockmesh.js?v=34';
+import { lightNear } from '../lightlevel.js?v=34';
+import { FALLS, free as fallsInto, touchesWater, concreteOf } from '../entities/fallingblock.js?v=34';
+import { H } from '../world-const.js?v=34';
 const THREE = window.THREE;
 
 /* ---- when blocks fall (the game's FallingBlock, PointedDripstoneBlock, ScaffoldingBlock, DragonEggBlock) ---- */
@@ -216,8 +216,15 @@ export class Bodies {
     e.obj = new THREE.Group();
     e.obj.add(m);
     if (e.kind === 'tnt') {
-      const w = new THREE.Mesh(new THREE.BoxGeometry(1.002, 1.002, 1.002), this.white);
-      w.position.y = 0.5; w.visible = false;
+      /* the flash: the game lays its white over the TNT before the light, so it is only as bright as
+         the block's light makes it; here a white block lit the same way, shown in the TNT's place.
+         (It was an unlit white box, which glowed in a dark cave at night and glared with the shaders on.) */
+      const wk = B.white_concrete * 256;
+      let wg = this.geo.get(wk);
+      if (!wg && B.white_concrete !== undefined) { try { wg = blockGeometry(BLOCKS[B.white_concrete], 0); this.geo.set(wk, wg); } catch (err) { wg = null; } }
+      const w = wg ? this.litMesh(r, wg, e.x, e.y + 0.5, e.z) : new THREE.Mesh(new THREE.BoxGeometry(1.002, 1.002, 1.002), this.white);
+      if (wg) { w.frustumCulled = false; w.position.set(0, -0.5, 0); e.flashLit = w; } else w.position.y = 0.5;
+      w.visible = false;
       e.flash = w;
       e.obj.add(w);
     }
@@ -250,7 +257,12 @@ export class Bodies {
     for (let i = 0; i < L.count; i++) { L.array[i * 4] = sky; L.array[i * 4 + 1] = bl; }
     L.needsUpdate = true;
   }
-  drop(e) { if (e.obj && e.obj.parent) e.obj.parent.remove(e.obj); if (e.lit) { e.lit.geometry.dispose(); e.lit = null; } e.obj = null; }
+  drop(e) {
+    if (e.obj && e.obj.parent) e.obj.parent.remove(e.obj);
+    if (e.lit) { e.lit.geometry.dispose(); e.lit = null; }
+    if (e.flashLit) { e.flashLit.geometry.dispose(); e.flashLit = null; }
+    e.obj = null;
+  }
 
   /* ---- each tick ---- */
   tick() {
@@ -320,7 +332,12 @@ export class Bodies {
         let s = 1;
         if (f < 10) { const k = 1 - f / 10; s = 1 + k * k * k * k * 0.3; }
         e.obj.scale.setScalar(s);
-        if (e.flash) e.flash.visible = Math.floor(e.fuse / 5) % 2 === 0;
+        if (e.flash) {
+          const on = Math.floor(e.fuse / 5) % 2 === 0;
+          e.flash.visible = on;
+          // (the lit white block stands in for the TNT while it flashes, in the same light)
+          if (e.flashLit) { if (e.lit) e.lit.visible = !on; if (on) this.light(e.flashLit, e.x, e.y + 0.5, e.z); }
+        }
       }
     }
   }
