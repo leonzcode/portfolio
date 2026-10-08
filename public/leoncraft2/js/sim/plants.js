@@ -431,15 +431,16 @@ export function installPlants(sim) {
      tip (the game's growing plants) ---- */
   {
     const whole = b => !!b && BLOCKS[b].solid && BLOCKS[b].shape === 'cube';
-    const gone = (holds) => ({
+    // (drops: cave vines give glow berries only with berries on them, which these never have, so they drop nothing)
+    const gone = (holds, drops) => ({
       neighbor(s, x, y, z) { if (!holds(s, x, y, z)) s.schedule(x, y, z, 1); },
-      tick(s, x, y, z) { if (!holds(s, x, y, z)) s.destroy(x, y, z); },
+      tick(s, x, y, z) { if (!holds(s, x, y, z)) s.destroy(x, y, z, drops); },
     });
     for (const [head, body, dir] of [['cave_vines', 'cave_vines_plant', 1], ['weeping_vines', 'weeping_vines_plant', 1], ['twisting_vines', 'twisting_vines_plant', -1]]) {
       const Hd = B[head], Bd = B[body];
       if (Hd === undefined || Bd === undefined) continue;
       const holds = (s, x, y, z) => { const a = s.get(x, y + dir, z); return a === Hd || a === Bd || whole(a); };
-      const h = gone(holds);
+      const h = gone(holds, head === 'cave_vines' ? false : undefined);
       sim.on(Hd, h);
       sim.on(Bd, {
         neighbor(s, x, y, z) {
