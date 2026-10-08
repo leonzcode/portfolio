@@ -201,6 +201,12 @@ export class Mobs {
     };
     if (rec.o === net.id) this.live(rec, false); else this.puppet(rec);
   }
+  // one just told of, made at once where its ground is here (a firework lives a second and a half: the next look would be too late)
+  soon(rec) {
+    const E = this.E, g = this.net.game;
+    if (!E || E.gone || !g || !g.ready || rec.d !== this.net.dimNow() || performance.now() < rec.hold || !g.world.loaded(Math.floor(rec.x), Math.floor(rec.z))) return;
+    this.make(rec);
+  }
   make(rec) {
     const E = this.E, j = rec.j, C = TYPES[j.t];
     if (!C) return;
@@ -440,7 +446,7 @@ export class Mobs {
         }
         return;
       }
-      case 'm+': for (const o of m.e || []) { const rec = this.keep(o); if (rec && rec.e && !rec.e.removed) this.retake(rec); } return;
+      case 'm+': for (const o of m.e || []) { const rec = this.keep(o); if (rec && rec.e && !rec.e.removed) this.retake(rec); else if (rec) this.soon(rec); } return;
       case 'mo': {
         let rec = this.recs.get(m.id);
         if (m.m) {
@@ -450,7 +456,7 @@ export class Mobs {
         }
         if (!rec) return;
         rec.o = m.o | 0;
-        this.retake(rec);
+        if (rec.e && !rec.e.removed) this.retake(rec); else this.soon(rec);
         return;
       }
       case 'mj': for (const a of m.e || []) { const rec = this.recs.get(a[0]); if (rec && a[1] && a[1].t === rec.j.t) { rec.j = a[1]; if (rec.e && rec.e.puppet) this.apply(rec); } } return;
@@ -468,7 +474,8 @@ export class Mobs {
           if (e.type === 'firework_rocket' && !m.far && e.burst) {
             const real = e.m;
             e.m = Object.create(real, { forNear: { value: () => {} }, player: { value: { alive: () => false, dist2: () => 1e9 } } });
-            try { e.burst(); } catch (err) { /* only sparks */ } finally { e.m = real; }
+            this.applying = true;
+            try { e.burst(); } catch (err) { /* only sparks */ } finally { e.m = real; this.applying = false; }
           }
           this.applying = true;
           try { if (this.E && this.E.riding === e) this.E.dismount(); e.remove(); } finally { this.applying = false; }
