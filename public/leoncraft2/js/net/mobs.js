@@ -46,7 +46,8 @@ const sigOf = j => { let s = ''; for (const k in j) if (!VOLATILE.has(k)) s += k
 // the flags in a position
 const F_GROUND = 1, F_HURT = 2, F_DEAD = 4, F_FIRE = 8, F_SWING = 16, F_RIDDEN = 32;
 const DELAY = 220;            // ms behind the newest position a puppet is drawn (they come every third tick, with time to spare for a late one)
-const SEEN = 160;             // blocks: a mob another player is within this of is sent every third tick
+const SEEN = 160;             // blocks: a mob another player is within this of is sent every sixth tick
+const CLOSE = 48;             // and within this, every third
 const KEY = 20;               // every twentieth position of a mob is the whole of it, not a change
 const q100 = v => Math.round(v * 100);
 // an angle in 256ths of a turn, as the game sends them, and back
@@ -230,7 +231,8 @@ export class Mobs {
     e.age++;
     if (e.hurtTime > 0) e.hurtTime--;
     if (e.invul > 0) e.invul--;
-    const s = this.sample(rec, performance.now() - DELAY);
+    // (one sent less often is drawn a little further behind, so it never waits for the next)
+    const s = this.sample(rec, performance.now() - Math.max(DELAY, (rec.gap || 0) + 90));
     if (s) {
       e.pos.set(s.x, s.y, s.z);
       e.yaw = s.yaw; e.pitch = s.pitch;
@@ -297,8 +299,9 @@ export class Mobs {
     const P = net.game.player.pos, W = net.game.world;
     const near = [];
     if (net.players) for (const r of net.players.list.values()) { const s = r.st; if (s && s.d === dim) near.push(s); }
-    const watched = (x, z) => { for (const s of near) if (Math.abs(s.x - x) < SEEN && Math.abs(s.z - z) < SEEN) return true; return false; };
-    const moveTick = this.t % 3 === 0, slowTick = this.t % 60 === 0, look = this.t % 20 === 0, jsonTick = this.t % 10 === 0;
+    // how near the nearest other player is to a spot (blocks, the larger of the two distances across)
+    const nearest = (x, z) => { let d = Infinity; for (const s of near) d = Math.min(d, Math.max(Math.abs(s.x - x), Math.abs(s.z - z))); return d; };
+    const moveTick = this.t % 3 === 0, farTick = this.t % 6 === 0, slowTick = this.t % 60 === 0, look = this.t % 20 === 0, jsonTick = this.t % 10 === 0;
     const now = performance.now(), whole = [], moves = [], recs = [], anims = [], far = Math.max(64, (net.ctx.renderer.opts.renderDist || 8) * 16);
     for (const rec of this.recs.values()) {
       if (rec.d !== dim) continue;
@@ -314,8 +317,9 @@ export class Mobs {
       if (e.swinging && e.swingT === 0) rec.swingNow = true;
       // riding it or leading it keeps it yours (asked again before the server's hold runs out)
       if ((E.riding === e || (e.leash && e.leash.player)) && now - (rec.claimAt || 0) > 5000) { rec.claimAt = now; net.send({ t: 'mc', id: rec.id }); }
-      const seen = watched(e.pos.x, e.pos.z);
-      if (moveTick && (seen || slowTick)) {
+      // every third tick near another player, every sixth further off, every third second where nobody else is
+      const dn = nearest(e.pos.x, e.pos.z), seen = dn < SEEN;
+      if (moveTick && (dn < CLOSE || (seen && farTick) || slowTick)) {
         const f = (e.onGround ? F_GROUND : 0) | (rec.hurtNow ? F_HURT : 0) | (e.dead ? F_DEAD : 0) | (e.fire > 0 ? F_FIRE : 0) | (rec.swingNow ? F_SWING : 0) |
           (e.passengers.indexOf(E.player) >= 0 ? F_RIDDEN : 0);
         const body = e.bodyYaw !== undefined ? e.bodyYaw : e.yaw, head = e.headYaw !== undefined ? e.headYaw : e.yaw;
@@ -429,6 +433,8 @@ export class Mobs {
     if (last && t <= last.ts) { if (t < last.ts - 3000) b.length = 0; else return false; }
     // standing still sends nothing: it stood where it was until a tick before this
     if (last && t - last.ts > 200) b.push(Object.assign({}, last, { ts: t - 150 }));
+    // (how far apart they come, smoothed: a mob sent every sixth tick is drawn further behind)
+    if (last && t - last.ts < 400) rec.gap = rec.gap === undefined ? t - last.ts : rec.gap + (t - last.ts - rec.gap) * 0.2;
     b.push({ ts: t, x, y, z, yaw: q[3] / 256 * TURN, body: q[4] / 256 * TURN, head: q[5] / 256 * TURN, pitch: wrap256(q[6]) / 256 * TURN, f });
     if (b.length > 40) b.splice(0, b.length - 40);
     return true;
