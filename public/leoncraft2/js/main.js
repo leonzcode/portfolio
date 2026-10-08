@@ -1380,8 +1380,11 @@ async function boot() {
   let firstFrames = null;          // a world's first frames, played behind its loading screen (startGame): { left, res }
   const sunDir = new THREE.Vector3(), moonDir = new THREE.Vector3(), eyeV = new THREE.Vector3();
   const tilt = 0.42;              // the sun's path leans south, so shadows are never straight down
+  /* where the sun is at tick t: the game's own curve (vanilla.js timeOfDay), so it rises at 23215 and sets at 12785 with
+     the shaders on too (it went round at an even pace, setting at 12000: dusk came half a minute early and its shade was black) */
   const sunAt = t => {
-    const a = ((t % 24000) / 24000) * Math.PI * 2;
+    const d0 = (((t / 24000 - 0.25) % 1) + 1) % 1, c = (d0 * 2 + 0.5 - Math.cos(d0 * Math.PI) / 2) / 3;
+    const a = Math.PI / 2 + c * Math.PI * 2;
     sunDir.set(Math.cos(a), Math.sin(a) * Math.cos(tilt), Math.sin(a) * Math.sin(tilt)).normalize();
     moonDir.copy(sunDir).negate();
   };
