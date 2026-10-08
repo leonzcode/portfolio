@@ -487,7 +487,7 @@ function work(m) {
     return;
   }
   if (m.type === 'structures') {
-    self.postMessage(Object.assign({ type: 'structures', id: m.id }, structureMessage(structs, m)));
+    self.postMessage(Object.assign({ type: 'structures', id: m.id }, structureMessage(structs, m, gen, serving ? serving.split('|')[0] : 'overworld')));
     return;
   }
   if (m.type === 'biomes') {
