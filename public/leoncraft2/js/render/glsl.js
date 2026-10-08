@@ -527,7 +527,10 @@ float voidFog(vec3 rd, float h) {
 vec3 voidSky(vec3 col, vec3 rd) {
   float disc = rd.y < 0.0 && 4.0 / max(-rd.y, 1e-4) * length(rd.xz) < 512.0 ? 1.0 - voidFog(rd, 4.0) : 0.0;
   float fog = rd.y > 0.0313 ? voidFog(rd, 16.0) : 1.0;
-  return col * (1.0 - uVoid.x * disc) * (1.0 - uVoid.y * fog);
+  // (the game fades from the fog's colour to black on the screen; the same share taken off as light came
+  // out about twice as bright once tone mapped, so the dark under the horizon was a grey haze: the power
+  // brings it back to the game's share on the screen through AgX's toe, measured against Fast)
+  return col * pow((1.0 - uVoid.x * disc) * (1.0 - uVoid.y * fog), 1.5);
 }
 `;
 export const EXPOSURE = VOID + /* glsl */`
