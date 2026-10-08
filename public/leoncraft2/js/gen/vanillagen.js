@@ -217,11 +217,6 @@ function makeBands(r) {
   return bands;
 }
 
-/* ======================================================== a chunk view ==
-   One finished chunk seen as the features see their region (get, meta,
-   set, height, biome), for what is done once a chunk is put together: the
-   plants' check and the snow. Blocks beyond the chunk are read from the
-   neighbours' terrain (water beside sugar cane, a block beside a cactus). */
 /* The faces of a feature's vine that still hold once every chunk's features
    are in (meta bits as models.js keeps them: 1 north, 2 east, 4 south,
    8 west, 16 the block above): a side by a whole block that way or the vine
@@ -244,6 +239,11 @@ function vineKept(blocks, meta, i) {
   return k;
 }
 
+/* ======================================================== a chunk view ==
+   One finished chunk seen as the features see their region (get, meta,
+   set, height, biome), for what is done once a chunk is put together: the
+   plants' check and the snow. Blocks beyond the chunk are read from the
+   neighbours' terrain (water beside sugar cane, a block beside a cactus). */
 class ChunkView {
   constructor(gen, blocks, meta, cx, cz, grid) {
     this.gen = gen; this.blocks = blocks; this.m = meta; this.cx = cx; this.cz = cz; this.grid = grid;
