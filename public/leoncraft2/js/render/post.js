@@ -193,8 +193,8 @@ void main() {
 }`;
 
 /* ---- composite ---- */
-const FS_COMP = COMMON + RECON + SKYFN + VOID + /* glsl */`
-uniform sampler2D uColor, uDepth, uVL, uClouds, uAmbient, uMoon;
+const FS_COMP = COMMON + RECON + SKYFN + VOID + TONEMAP + /* glsl */`
+uniform sampler2D uColor, uDepth, uVL, uClouds, uAmbient, uMoon, uExpoTex;
 uniform vec3 uSunDir, uMoonDir;
 uniform float uTime, uEyeInWater, uRender, uMoonPhase, uSkyAtEye;
 uniform vec3 uWaterTint;
@@ -226,17 +226,23 @@ void main() {
   float dist = length(wp - uCamPos);
   vec3 col = base.rgb;
   if (uDim > 0.5) {
-    // no atmosphere: the Nether's sky is its fog, the End's a dark speckled box; fog closes in linearly
+    // no atmosphere: the Nether's sky is its fog, the End's a dark violet grain on a box; fog closes in linearly.
+    // Both come out on the screen the colour the game shows them (as lava does: water.js), worked back
+    // through the eye and the tone curve: put in as they were, the eye opened for the dark there made the
+    // Nether's sky a glaring scarlet nearly three times as bright as the game's dark red
+    float E = max(texture(uExpoTex, vec2(0.5)).r, 1e-3);
+    vec3 fogC = agxInverse(uDimFog) / E;
     if (d >= 1.0) {
       if (uDim > 1.5) {
         vec3 a = abs(rd);
         vec2 q = a.x > a.y && a.x > a.z ? rd.zy / a.x : a.y > a.z ? rd.xz / a.y : rd.xy / a.z;
-        col = toLinear(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * 0.16);
-      } else col = uDimFog;
-    } else col = mix(col, uDimFog, sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x)));
+        col = agxInverse(toLinear(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * (40.0 / 255.0))) / E;
+      } else col = fogC;
+    } else col = mix(col, fogC, sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x)));
     float sh = shutAt(dist, d);
     col *= 1.0 - sh;
-    o = vec4(col, base.a > 1.5 || sh > 0.5 ? 0.0 : 1.0);
+    // (the sky is left out of the eye's measure too: set by the exposure, it would only chase it)
+    o = vec4(col, base.a > 1.5 || sh > 0.5 || d >= 1.0 ? 0.0 : 1.0);
     return;
   }
   vec3 sunC = texelFetch(uAmbient, ivec2(4, 0), 0).rgb;
@@ -270,7 +276,8 @@ void main() {
   }
   // clouds, in front of the sky and anything beyond them
   vec4 cl = texture(uClouds, vUv);
-  if (!water) col = col * cl.a + cl.rgb;
+  // (near the bottom of the world they go into the void's black fog with the sky, as the game fogs its clouds)
+  if (!water) col = col * cl.a + cl.rgb * (1.0 - uVoid.y * (rd.y > 0.0313 ? voidFog(rd, 16.0) : 1.0));
   if (water) {
     // under water: the water closes in, losing red first
     vec3 absorb = -0.15 * log(max(uWaterTint, vec3(0.02))) + 0.03;
@@ -377,7 +384,10 @@ void main() {
   float sky = texelFetch(uAmbient, ivec2(6, 0), 0).r;
   float base = uDim > 0.5 ? uExposure : uCave > 0.0 ? exp(mix(log(max(sky, 1e-4)), log(uExposure), uCave)) : sky;
   float seen = 0.115 / max(avg, 1e-5);
-  float target = base * clamp(pow(seen / base, 0.4), 0.5, 1.9);
+  // (less in the Nether and the End, whose light is one level everywhere; and never opening past where
+  // the sky table stops at night, so night stays night and a dark cave stays dark)
+  float target = base * clamp(pow(seen / base, 0.4), uDim > 0.5 ? 0.75 : 0.5, uDim > 0.5 ? 1.3 : 1.9);
+  target = min(target, max(base, 4.5));
   float prev = texture(uPrev, vec2(0.5)).r;
   if (prev <= 0.0) prev = target;
   // brighter quickly, darker slowly, the way eyes go
