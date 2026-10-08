@@ -119,6 +119,8 @@ export class Renderer {
       uGlint: { value: new THREE.Vector2(0.5, 0.75) },
       // Brightness (Video Settings) less its default, for the shader look (glsl.js lightFloor)
       uBrightD: { value: (this.opts.brightness === undefined ? 0.5 : this.opts.brightness) - 0.5 },
+      // Night Vision's strength, 0..1 (glsl.js lightFloor; Off's lightmap takes it itself: vanilla.js)
+      uNightVision: { value: 0 },
       // the still and flowing water textures (the Shader Options' vanilla water, and Shaders OFF)
       uFlowLayers: { value: new THREE.Vector2(textures.manifest.textures.water_flow ? textures.manifest.textures.water_flow.layer : 0, textures.manifest.textures.lava_flow ? textures.manifest.textures.lava_flow.layer : 0) },
     };
