@@ -90,7 +90,7 @@ export class Renderer {
       uWaterTint: { value: new THREE.Vector3(0.05, 0.18, 0.78) }, uCover: { value: 0.42 }, uCamPos: { value: new THREE.Vector3() },
       uClock: { value: 0 }, uFaceRot: { value: new THREE.Matrix3() }, uExposure: { value: 1 }, uCave: { value: 0 }, uInvViewProj: { value: new THREE.Matrix4() },
       // the light in your hand (level, faded in and out) and where it is; torches' flicker; how dark cloud shadows are
-      uHeldLight: { value: 0 }, uHeldPos: { value: new THREE.Vector3() }, uFlicker: { value: 1 }, uCloudShadow: { value: this.opts.cloudShadow > 0 ? 0.8 : 0 },
+      uHeldLight: { value: 0 }, uHeldPos: { value: new THREE.Vector3() }, uFlicker: { value: 1 }, uCloudShadow: { value: this.opts.cloudShadow > 0 ? 0.33 : 0 },
       // where a chunk mesh sits (set per draw by drawParts; 0 for everything three.js draws itself)
       uChunk: { value: new THREE.Vector3() },
       // the dimension being drawn (js/dims.js; js/dim/look.js sets these each frame)

@@ -138,6 +138,10 @@ void main() {
   albedo = toLinear(albedo);
 #ifdef NORMALMAP
   vec4 nm = tex(uNormalMap, uv, vLayer, info);
+  // the biome's grass, leaves and plants: their bumps kept soft and their hollows not shaded (their
+  // normal maps are mostly the texture's noise: at full strength they speckled every lawn a dark olive
+  // that matched neither the plants on it nor the grass of Low and Medium)
+  if (tinted || overlay || plant) nm = mix(nm, vec4(0.5, 0.5, 1.0, nm.a), 0.75);
 #else
   vec4 nm = vec4(0.5, 0.5, 1.0, 0.5);
 #endif

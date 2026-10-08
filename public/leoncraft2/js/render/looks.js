@@ -102,6 +102,7 @@ const WAVE = { off: 0, low: 0.5, high: 1 };
 // (each takes a core or two in the browser while it is built; the game's own workers want theirs)
 const COMPILE_AT_ONCE = (n => n >= 16 ? 3 : n >= 8 ? 2 : 1)(navigator.hardwareConcurrency || 4);
 const SUN_TINT = { warm: [1.12, 0.97, 0.78], natural: [1.06, 1.0, 0.88], cool: [0.98, 1.0, 1.04] };
+export const CLOUD_SHADE = 0.33;
 
 // Shaders OFF: the game's own look
 const VANILLA_LOOK = {
@@ -399,7 +400,10 @@ function finishLook(R, look, first, prep) {
   } else if (R.shadowDistWas !== o.shadowDist) R.shadows.S.dirty = true;     // reaching further or less far: drawn again
   R.shadowDistWas = o.shadowDist;
   U.uShadowSoft.value = o.shadowSoft || 1.6;
-  U.uCloudShadow.value = o.cloudShadow > 0 ? 0.8 : 0;
+  /* how much of the sun a cloud overhead takes away (High and RIP): a third. It took four fifths, and
+     with the sun a dozen times the sky's light, every field under a cloud went a murky dark olive
+     beside fields in full sun, the land patched very dark and very bright at once */
+  U.uCloudShadow.value = o.cloudShadow > 0 ? CLOUD_SHADE : 0;
 
   if (!o.vanilla) {
     // the atmosphere and what is worked out from it
