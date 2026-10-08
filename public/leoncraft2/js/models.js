@@ -857,6 +857,29 @@ SHAPES.vine = function (d, m, nb) {
   return r;
 };
 
+/* ---- glow lichen, sculk veins, resin clumps: a sheet on any of the six faces of their cell (the game's
+   multiface blocks) ----
+   meta bits 0 down, 1 up, 2 north, 3 south, 4 west, 5 east (the order gen/misc.js keeps faces in). One with none
+   kept (an older save, a structure's vein) is on its floor when that is whole, else on the first whole face round
+   it. A face holds while the block that way is whole (sim/plants.js). Each sheet sits half a pixel off its face
+   (the game's 0.1 of a pixel is finer than the mesher keeps). */
+export const MULTI_DIRS = [[0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1], [-1, 0, 0], [1, 0, 0]];
+export function multiFaces(m, nb) {
+  if (m & 63) return m & 63;
+  for (let i = 0; i < 6; i++) { const [dx, dy, dz] = MULTI_DIRS[i]; if (vineHolds(nb(dx, dy, dz))) return 1 << i; }
+  return 1;
+}
+SHAPES.multiface = function (d, m, nb) {
+  const r = [], L = d.faces[2], e = 0.5, f = multiFaces(m, nb);
+  if (f & 1) r.push({ q: [[0, e, 0], [16, e, 0], [16, e, 16], [0, e, 16]], uv: FLAT_UV, layer: L });
+  if (f & 2) r.push({ q: [[0, 16 - e, 16], [16, 16 - e, 16], [16, 16 - e, 0], [0, 16 - e, 0]], uv: FLAT_UV, layer: L });
+  if (f & 4) r.push({ q: [[16, 0, e], [0, 0, e], [0, 16, e], [16, 16, e]], uv: FLAT_UV, layer: L });
+  if (f & 8) r.push({ q: [[0, 0, 16 - e], [16, 0, 16 - e], [16, 16, 16 - e], [0, 16, 16 - e]], uv: FLAT_UV, layer: L });
+  if (f & 16) r.push({ q: [[e, 0, 0], [e, 0, 16], [e, 16, 16], [e, 16, 0]], uv: FLAT_UV, layer: L });
+  if (f & 32) r.push({ q: [[16 - e, 0, 16], [16 - e, 0, 0], [16 - e, 16, 0], [16 - e, 16, 16]], uv: FLAT_UV, layer: L });
+  return r;
+};
+
 // the end portal frame: 13/16 tall, and the eye on top once one is in (bit 2 of the meta)
 SHAPES.portal_frame = function (d, m) {
   // the game's frame model (it faces south as built), its top turning with it; the eye from our own art (js/dim/art.js)

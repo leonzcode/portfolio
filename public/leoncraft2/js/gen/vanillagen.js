@@ -239,6 +239,24 @@ function vineKept(blocks, meta, i) {
   return k;
 }
 
+// glow lichen, sculk veins, resin clumps: faces in bits 0 down, 1 up, 2 north, 3 south, 4 west, 5 east
+const MULTI = new Uint8Array(4096);
+for (const n of ['glow_lichen', 'sculk_vein', 'resin_clump']) if (B[n] !== undefined) MULTI[B[n]] = 1;
+const MULTI_STEP = [[0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1], [-1, 0, 0], [1, 0, 0]];
+function multiKept(blocks, meta, i) {
+  const m = meta[i] & 63;
+  if (!m) return meta[i];
+  const lx = i & 15, lz = (i >> 4) & 15, ly = i >> 8;
+  let k = 0;
+  for (let d = 0; d < 6; d++) {
+    if (!(m & (1 << d))) continue;
+    const [dx, dy, dz] = MULTI_STEP[d], nx = lx + dx, nz = lz + dz, ny = ly + dy;
+    if (ny < 0 || ny * 256 >= VOL) continue;
+    if (nx < 0 || nx > 15 || nz < 0 || nz > 15 || vineWhole(blocks[i + dx + dz * 16 + dy * 256])) k |= 1 << d;
+  }
+  return k;
+}
+
 /* ======================================================== a chunk view ==
    One finished chunk seen as the features see their region (get, meta,
    set, height, biome), for what is done once a chunk is put together: the
@@ -564,6 +582,12 @@ export class VanillaGen {
     }
     for (let k = 0; k < q.length; k++) {
       const i = q[k], b = blocks[i], kind = isGroundPlant(b);
+      // glow lichen and sculk veins the same, by whole blocks on their faces
+      if (MULTI[b]) {
+        const m = multiKept(blocks, meta, i);
+        if (m !== meta[i]) { if (m) meta[i] = m; else { blocks[i] = 0; meta[i] = 0; } }
+        continue;
+      }
       // a vine keeps the faces that still have something to hold (or the vine above on that side); with none it goes
       if (b === B.vine) {
         const m = vineKept(blocks, meta, i);
