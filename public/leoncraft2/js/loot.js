@@ -59,7 +59,10 @@ const TURNS_INTO = {
 // only with Silk Touch (glass, ice...): nothing otherwise
 const SILK_ONLY = /^(glass|glass_pane|tinted_glass|.*_stained_glass|.*_stained_glass_pane|ice|packed_ice|blue_ice|turtle_egg|sculk_vein|.*_coral|.*_coral_fan|.*_coral_wall_fan|infested_.*|bee_nest|chiseled_bookshelf|small_amethyst_bud|medium_amethyst_bud|large_amethyst_bud)$/;
 // only with shears (or Silk Touch where the game allows it): nothing otherwise
-const SHEARS_ONLY = /^(vine|glow_lichen|seagrass|tall_seagrass|hanging_roots|nether_sprouts|twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines_x|pale_hanging_moss|small_dripleaf|tripwire)$/;
+const SHEARS_ONLY = /^(vine|glow_lichen|seagrass|tall_seagrass|hanging_roots|nether_sprouts|cave_vines_x|pale_hanging_moss|small_dripleaf)$/;
+// with shears (or Silk Touch), or by the table bonus without them
+const NETHER_VINES = /^(twisting|weeping)_vines(_plant)?$/;
+const NETHER_VINE = [0.33, 0.55, 0.77, 1];
 // nothing at all, Silk Touch or not
 const NEVER = new Set(['fire', 'soul_fire', 'nether_portal', 'end_portal', 'end_gateway', 'moving_piston', 'piston_head', 'bubble_column',
   'frosted_ice', 'cake', 'candle_cake', 'water', 'lava', 'powder_snow', 'air', 'cave_air', 'void_air', 'barrier', 'light', 'structure_void',
@@ -120,13 +123,18 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
     if (n === 'snow') { if ((meta & 7) === 7) add(out, 'snow_block', 1); else add(out, 'snow', (meta & 7) + 1); return out; }
     if (/^infested_/.test(n)) { add(out, n.replace(/^infested_/, ''), 1); return out; }
   }
-  if (silk && !/^(.*_leaves|short_grass|fern|tall_grass|large_fern)$/.test(n) && ITEMS[d.id]) { add(out, d.id, slabCount(d, meta)); return out; }
+  // a tripwire's string, whatever breaks it
+  if (n === 'tripwire') { add(out, 'string', 1); return out; }
+  // (what needs shears gives nothing to Silk Touch, pale hanging moss apart)
+  if (silk && !/^(.*_leaves|short_grass|fern|tall_grass|large_fern)$/.test(n) && !(SHEARS_ONLY.test(n) && n !== 'pale_hanging_moss') && ITEMS[d.id]) { add(out, d.id, slabCount(d, meta)); return out; }
   if (TURNS_INTO[n] !== undefined) { if (TURNS_INTO[n]) add(out, TURNS_INTO[n], 1); return out; }
   if (SILK_ONLY.test(n)) {
     if (EXPERIENCE[n]) out.xp = between(EXPERIENCE[n][0], EXPERIENCE[n][1]);
     return out;
   }
-  if (SHEARS_ONLY.test(n)) { if (shears) add(out, itemOfBlock(d), 1); return out; }
+  // weeping and twisting vines: themselves with shears, otherwise a 33% chance (more with Fortune), as when they fall
+  if (NETHER_VINES.test(n)) { if (shears || silk || table(fortune, NETHER_VINE)) add(out, n.replace(/_plant$/, ''), 1); return out; }
+  if (SHEARS_ONLY.test(n)) { if (shears) add(out, itemOfBlock(d), slabCount(d, meta)); return out; }
 
   // leaves: themselves with shears (or Silk Touch), else a sapling, sticks and apples by chance
   if (d.leaves || /_leaves$/.test(n)) {
@@ -205,5 +213,7 @@ function slabCount(d, meta) {
   if (d.shape === 'slab') return /_slab$/.test(d.name) && (meta & 3) === 2 ? 2 : 1;
   if (d.shape === 'candle' || /sea_pickle|^.*_candle$|^candle$/.test(d.name)) return (meta & 7) + 1;
   if (d.name === 'pink_petals' || d.name === 'wildflowers' || d.name === 'leaf_litter' || d.name === 'turtle_egg') return (meta & 3) + 1;
+  // glow lichen, sculk veins and resin clumps: one for each face
+  if (d.shape === 'multiface') { let k = 0; for (let i = 0; i < 6; i++) if (meta & (1 << i)) k++; return k || 1; }
   return 1;
 }

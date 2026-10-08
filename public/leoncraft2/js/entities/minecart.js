@@ -7,15 +7,24 @@
    shape is a line between the middles of its two open edges, and a cart on
    it is held to that line; its speed keeps its size round curves and
    changes only by:
-     slopes        0.0078125 a tick pulling it down hill
-     friction      x0.997 a tick with someone in it, x0.96 empty
+     slopes        0.0078125 a tick pulling it down hill (a fifth in water),
+                   and 0.05 gained for each block it goes down, lost for
+                   each block up
+     friction      x0.997 a tick with someone in it, x0.96 empty; a chest or
+                   hopper cart x0.98 plus 0.001 for each step a comparator
+                   would read below 15 (entities/carts.js)
      powered rail  +0.06 a tick the way it is going when powered (a redstone
                    torch, block or lever next to it), and on one with no
                    power it brakes to a stop
      a rider       W gives a push the way you look, from (nearly) still
-   and never goes over 0.4 blocks a tick (8 a second). Off the rails it falls
-   0.04 a tick and slows to half on the ground. Mobs bumped by a moving empty
-   cart get in; hits break it as they break a boat.
+   As in the game, the speed it keeps can be up to 2 blocks a tick, but it
+   goes at most 0.4 a tick (8 a second) along each axis, and only three
+   quarters of its speed with someone in it: a cart ridden off a long run of
+   powered rails stays at full speed for 176 blocks and stops after 309, as
+   the wiki's tutorial measures. Off the rails its speed is held to 0.4, it
+   falls 0.04 a tick and slows to half on the ground. Mobs bumped by a moving
+   empty cart get in (not bats, iron golems, wardens, withers or the dragon);
+   hits break it as they break a boat.
 
    Pushing, as in the game (it is not solid: you walk into it, not onto it):
    the player or a mob whose box overlaps the cart's pushes it 0.05 a tick
@@ -42,6 +51,8 @@ for (const d of BLOCKS) {
   if (d.name === 'powered_rail') POWERED[d.id] = 1;
   if (/^(redstone_torch|redstone_wall_torch|redstone_block|lever)$/.test(d.name)) SOURCE[d.id] = 1;
 }
+// the mobs a cart never picks up (the wiki's Minecart, Java Edition); any other, a ghast or a spider too, gets in
+const NO_CART = new Set(['bat', 'iron_golem', 'warden', 'wither', 'ender_dragon']);
 // what a fire block does to a cart in it a tick (the game's fire 1, soul fire 2)
 const FIRE = new Uint8Array(4096);
 if (B.fire !== undefined) FIRE[B.fire] = 1;
@@ -101,6 +112,8 @@ export class Minecart extends Entity {
   }
   // the most it goes a tick: 8 blocks a second, 4 in water (a furnace cart's own: entities/carts.js)
   maxSpeed(inWater) { return inWater ? 0.2 : 0.4; }
+  // what is left of its speed after a tick's friction: 0.997 with someone in it, 0.96 empty
+  drag(rider) { return rider ? 0.997 : 0.96; }
   // a powered rail's power is its own (meta bit 3, set by the redstone in sim/rsparts.js)
   powered(x, y, z) { return (this.m.t.meta(x, y, z) & 8) !== 0; }
 
@@ -142,38 +155,29 @@ export class Minecart extends Entity {
     const x1 = bx + 0.5 + e[0] * 0.5, z1 = bz + 0.5 + e[1] * 0.5, y1 = by + e[2];
     let hx = x1 - x0, hz = z1 - z0;
     const len = Math.hypot(hx, hz); hx /= len; hz /= len;
-    // the speed it has, now along the rail
+    // down hill (a fifth of that in water), then the speed it has, now along the rail: the game keeps up to
+    // 2 blocks a tick of it, far more than it lets the cart go, which is what carries a cart on so far
     const hs = Math.hypot(v.x, v.z), dot = v.x * hx + v.z * hz;
     let s = dot === 0 ? 0 : hs * Math.sign(dot);
-    // down hill
-    if (y1 > y0) s -= 0.0078125; else if (y0 > y1) s += 0.0078125;
+    const hill = inWater ? 0.0015625 : 0.0078125;
+    if (y1 > y0) s -= hill; else if (y0 > y1) s += hill;
+    s = Math.max(-2, Math.min(2, s));
     // the rider's push, from nearly still
     const rider = this.passengers[0];
-    if (rider && rider.isPlayer && this.m.P.keys.w && hs * hs < 0.01) {
+    if (rider && rider.isPlayer && this.m.P.keys.w && s * s < 0.01) {
       const P = this.m.P, lx = -Math.sin(P.yaw), lz = -Math.cos(P.yaw);
       s += (lx * hx + lz * hz) * 0.1;
     }
-    // powered rails
-    if (POWERED[id]) {
-      if (this.powered(bx, by, bz)) {
-        if (Math.abs(s) > 0.01) s += Math.sign(s) * 0.06;
-        else {
-          // starting from still: away from a solid block at one end
-          if (T.solid(Math.floor(x0 - hx * 0.6), by, Math.floor(z0 - hz * 0.6))) s = 0.02;
-          else if (T.solid(Math.floor(x1 + hx * 0.6), by, Math.floor(z1 + hz * 0.6))) s = -0.02;
-        }
-      } else if (Math.abs(s) < 0.03) s = 0; else s *= 0.5;
-    }
-    // a furnace cart's push (entities/carts.js); friction, and the speed limit
-    if (this.drive) s = this.drive(s, hx, hz);
-    s *= rider ? 0.997 : 0.96;
-    if (inWater) s *= 0.95;
-    s = Math.max(-max, Math.min(max, s));
-    // held to the line, then moved along it
+    // a powered rail with no power brakes it to a stop
+    const boost = POWERED[id] && this.powered(bx, by, bz);
+    if (POWERED[id] && !boost) { if (Math.abs(s) < 0.03) s = 0; else s *= 0.5; }
+    // held to the line, then moved along it: by its speed, three quarters of it with someone in it, and never
+    // more than `max` along either axis (so up to 1.41 times that on the diagonal of a curve)
     let t = ((p.x - x0) * hx + (p.z - z0) * hz) / len;
     t = Math.max(0, Math.min(1, t));
+    const lim = max / Math.max(Math.abs(hx), Math.abs(hz)), go = Math.max(-lim, Math.min(lim, s * (rider ? 0.75 : 1)));
     let nx = x0 + hx * t * len, nz = z0 + hz * t * len;
-    nx += hx * s; nz += hz * s;
+    nx += hx * go; nz += hz * go;
     // at a dead end with a block beyond, it stops
     const tt = ((nx - x0) * hx + (nz - z0) * hz) / len;
     if (tt > 1 || tt < 0) {
@@ -188,7 +192,20 @@ export class Minecart extends Entity {
     }
     const t2 = ((nx - x0) * hx + (nz - z0) * hz) / len;
     p.x = nx; p.z = nz;
-    p.y = y0 + (y1 - y0) * Math.max(0, Math.min(1, t2)) + 0.0625;
+    const yWas = y0 + (y1 - y0) * t, yNow = y0 + (y1 - y0) * Math.max(0, Math.min(1, t2));
+    p.y = yNow + 0.0625;
+    // friction (a furnace cart's push first: entities/carts.js; a chest or hopper cart its own: lighter when fuller)
+    if (this.drive) s = this.drive(s, hx, hz);
+    s *= this.drag(rider);
+    if (inWater) s *= 0.95;
+    // a twentieth of a block a tick gained for every block it went down, lost for every one up (it can roll back)
+    if (s) s += Math.sign(s) * (yWas - yNow) * 0.05;
+    // a powered rail with power: 0.06 a tick more the way it goes, or from still away from a block at one end
+    if (boost) {
+      if (Math.abs(s) > 0.01) s += Math.sign(s) * 0.06;
+      else if (T.solid(Math.floor(x0 - hx * 0.6), by, Math.floor(z0 - hz * 0.6))) s = 0.02;
+      else if (T.solid(Math.floor(x1 + hx * 0.6), by, Math.floor(z1 + hz * 0.6))) s = -0.02;
+    }
     v.set(hx * s, 0, hz * s);
     this.onGround = true; this.fallDist = 0;
     // facing along the rail (the way it was facing, of the two), tipped on a slope
@@ -212,7 +229,7 @@ export class Minecart extends Entity {
       if (ox >= reach || oz >= reach) return;
       if (e instanceof Minecart) { this.bump(e); return; }
       if (!(e instanceof Living) || e.constructor.NO_PUSH) return;
-      if (picks && !this.passengers.length && e.type !== 'iron_golem' && e.w <= 1 && !e.passengers.length) {
+      if (picks && !this.passengers.length && !NO_CART.has(e.type) && !e.passengers.length) {
         e.vehicle = this; this.passengers.push(e); if (e.nav) e.nav.stop();
         return;
       }

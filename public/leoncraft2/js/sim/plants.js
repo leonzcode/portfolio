@@ -451,10 +451,14 @@ export function installPlants(sim) {
         tick: h.tick,
       });
     }
+    // (roots and a spore blossom go in the same tick, as the game turns them to air when the block above changes;
+    // pale moss waits its tick as the vines do)
     for (const n of ['hanging_roots', 'spore_blossom', 'pale_hanging_moss']) {
       const id = B[n];
       if (id === undefined) continue;
-      sim.on(id, gone((s, x, y, z) => { const a = s.get(x, y + 1, z); return whole(a) || (n === 'pale_hanging_moss' && a === id); }));
+      const holds = (s, x, y, z) => { const a = s.get(x, y + 1, z); return whole(a) || (n === 'pale_hanging_moss' && a === id); };
+      if (n === 'pale_hanging_moss') sim.on(id, gone(holds));
+      else sim.on(id, { neighbor(s, x, y, z) { if (!holds(s, x, y, z)) s.destroy(x, y, z); } });
     }
   }
 
