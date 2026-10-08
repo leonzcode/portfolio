@@ -478,7 +478,8 @@ export class CreateWorldScreen extends Screen {
       this.seedField.x = x + 1; this.seedField.y = y + 13; this.seedField.w = 306;
       this.add(this.seedField);
       y += 13 + 20 + 8;
-      this.switchRow(x, y, 'Generate Structures', true, 'Villages, ruins and other buildings: not in Leoncraft 2 yet');
+      const gs = this.switchRow(x, y, 'Generate Structures', this.structures !== false, 'Villages, Shipwrecks, etc.');
+      gs.active = true; gs.o.onChange = v => { this.structures = v; };
       y += 28;
       const bonus = this.switchRow(x, y, 'Bonus Chest', !!this.bonusChest, 'A chest of things to start with near where you begin');
       bonus.active = true; bonus.o.onChange = v => { this.bonusChest = v; };
@@ -535,6 +536,7 @@ export class CreateWorldScreen extends Screen {
       cheats: this.mode === 'hardcore' ? false : this.cheats, created: now, lastPlayed: now,
     };
     if (this.bonusChest) world.bonusChest = true;
+    if (this.structures === false) world.structures = false;
     if (this.mode === 'hardcore') world.hardcore = true;
     Worlds.add(world);
     if (this.hooks.play) this.hooks.play(world, { isNew: true });
