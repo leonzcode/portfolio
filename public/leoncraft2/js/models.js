@@ -841,6 +841,9 @@ export function vineFaces(m, nb) {
     if (a.m & 15) return a.m & 15;
     for (const [dx, dz, bit] of VINE_SIDES) if (vineHolds(nb(dx, 1, dz))) f |= bit;
   }
+  if (f) return f;
+  // (a structure's vine beside stairs or a slab: against that, rather than flat in the air)
+  for (const [dx, dz, bit] of VINE_SIDES) { const n = nb(dx, 0, dz); if (n && n.d.solid) f |= bit; }
   return f || VINE_UP;
 }
 SHAPES.vine = function (d, m, nb) {
