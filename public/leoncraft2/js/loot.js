@@ -59,7 +59,7 @@ const TURNS_INTO = {
 // only with Silk Touch (glass, ice...): nothing otherwise
 const SILK_ONLY = /^(glass|glass_pane|tinted_glass|.*_stained_glass|.*_stained_glass_pane|ice|packed_ice|blue_ice|turtle_egg|sculk_vein|.*_coral|.*_coral_fan|.*_coral_wall_fan|infested_.*|bee_nest|chiseled_bookshelf|small_amethyst_bud|medium_amethyst_bud|large_amethyst_bud)$/;
 // only with shears (or Silk Touch where the game allows it): nothing otherwise
-const SHEARS_ONLY = /^(vine|glow_lichen|seagrass|tall_seagrass|hanging_roots|nether_sprouts|cave_vines_x|pale_hanging_moss|small_dripleaf|tripwire)$/;
+const SHEARS_ONLY = /^(vine|glow_lichen|seagrass|tall_seagrass|hanging_roots|nether_sprouts|cave_vines_x|pale_hanging_moss|small_dripleaf)$/;
 // with shears (or Silk Touch), or by the table bonus without them
 const NETHER_VINES = /^(twisting|weeping)_vines(_plant)?$/;
 const NETHER_VINE = [0.33, 0.55, 0.77, 1];
@@ -123,7 +123,10 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
     if (n === 'snow') { if ((meta & 7) === 7) add(out, 'snow_block', 1); else add(out, 'snow', (meta & 7) + 1); return out; }
     if (/^infested_/.test(n)) { add(out, n.replace(/^infested_/, ''), 1); return out; }
   }
-  if (silk && !/^(.*_leaves|short_grass|fern|tall_grass|large_fern)$/.test(n) && ITEMS[d.id]) { add(out, d.id, slabCount(d, meta)); return out; }
+  // a tripwire's string, whatever breaks it
+  if (n === 'tripwire') { add(out, 'string', 1); return out; }
+  // (what needs shears gives nothing to Silk Touch, pale hanging moss apart)
+  if (silk && !/^(.*_leaves|short_grass|fern|tall_grass|large_fern)$/.test(n) && !(SHEARS_ONLY.test(n) && n !== 'pale_hanging_moss') && ITEMS[d.id]) { add(out, d.id, slabCount(d, meta)); return out; }
   if (TURNS_INTO[n] !== undefined) { if (TURNS_INTO[n]) add(out, TURNS_INTO[n], 1); return out; }
   if (SILK_ONLY.test(n)) {
     if (EXPERIENCE[n]) out.xp = between(EXPERIENCE[n][0], EXPERIENCE[n][1]);
