@@ -344,6 +344,12 @@ export class Creeper extends Monster {
   }
   // a creeper's "attack" is to light its fuse
   doHurtTarget() { this.swellDir = 1; return true; }
+  // flint and steel (worn by 1) or a fire charge (used up) lights it for good, as the game's creeper igniters do
+  interact(held) {
+    if ((held !== 'flint_and_steel' && held !== 'fire_charge') || this.ignited || this.dead) return false;
+    this.ignited = true;
+    return held === 'fire_charge' ? 'consume' : 'damage';
+  }
   tick() {
     this.oSwell = this.swell;
     if (!this.dead && !this.removed) {
@@ -363,8 +369,8 @@ export class Creeper extends Monster {
   }
   loot(drop) { drop('gunpowder', RI(3)); }
   anim(A, a) { A.swell = (this.oSwell + (this.swell - this.oSwell) * a) / (this.fuse - 2); }
-  toJSON() { const o = super.toJSON(); if (this.charged) o.ch = 1; return o; }
-  fromJSON(o) { super.fromJSON(o); this.charged = !!o.ch; }
+  toJSON() { const o = super.toJSON(); if (this.charged) o.ch = 1; if (this.ignited) o.ig = 1; return o; }
+  fromJSON(o) { super.fromJSON(o); this.charged = !!o.ch; this.ignited = !!o.ig; }
 }
 register('creeper', Creeper);
 
