@@ -10,6 +10,7 @@
 --------------------------------------------------------------------------- */
 import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=35';
 import { rawMat } from './sky.js?v=35';
+import { END_FLASH_GLSL } from './endflash.js?v=35';
 const THREE = window.THREE;
 
 const FS = COMMON + TONEMAP + /* glsl */`
@@ -21,7 +22,7 @@ uniform vec3 uWaterTint;
 uniform float uDim;
 uniform vec3 uDimFog;
 uniform vec3 uShut;
-` + EXPOSURE + /* glsl */`
+` + EXPOSURE + END_FLASH_GLSL + /* glsl */`
 in vec2 vUv; out vec4 o;
 vec3 skyRadiance(vec3 d) {
   float elev = asin(clamp(d.y, -1.0, 1.0));
@@ -46,7 +47,7 @@ void main() {
     if (uDim > 1.5) {
       vec3 a = abs(rd);
       vec2 q = a.x > a.y && a.x > a.z ? rd.zy / a.x : a.y > a.z ? rd.xz / a.y : rd.xy / a.z;
-      col = toLinear(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * 0.16);
+      col = toLinear(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * 0.16 + endFlashSky(rd) * 0.5);
     } else col = uDimFog;
   } else if (uEyeInWater > 0.5) {
     vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb / PI;

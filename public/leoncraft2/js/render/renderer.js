@@ -26,6 +26,7 @@ import { dimLook } from '../dim/look.js?v=35';
 import { blockGeometry, intAttribute } from './blockmesh.js?v=35';
 import { applyLook, looked, passMaterials } from './looks.js?v=35';
 import { screenFx } from './screenfx.js?v=35';
+import { endFlash } from './endflash.js?v=35';
 const THREE = window.THREE;
 // a column's distance from (ex, ez), squared, in whole blocks; and nearest first
 const distTo = (col, ex, ez) => { const dx = col.cx * 16 + 8 - ex, dz = col.cz * 16 + 8 - ez; return (dx * dx + dz * dz) | 0; };
@@ -90,12 +91,14 @@ export class Renderer {
       uWaterTint: { value: new THREE.Vector3(0.05, 0.18, 0.78) }, uCover: { value: 0.42 }, uCamPos: { value: new THREE.Vector3() },
       uClock: { value: 0 }, uFaceRot: { value: new THREE.Matrix3() }, uExposure: { value: 1 }, uCave: { value: 0 }, uInvViewProj: { value: new THREE.Matrix4() },
       // the light in your hand (level, faded in and out) and where it is; torches' flicker; how dark cloud shadows are
-      uHeldLight: { value: 0 }, uHeldPos: { value: new THREE.Vector3() }, uFlicker: { value: 1 }, uCloudShadow: { value: this.opts.cloudShadow > 0 ? 0.8 : 0 },
+      uHeldLight: { value: 0 }, uHeldPos: { value: new THREE.Vector3() }, uFlicker: { value: 1 }, uCloudShadow: { value: this.opts.cloudShadow > 0 ? 0.33 : 0 },
       // where a chunk mesh sits (set per draw by drawParts; 0 for everything three.js draws itself)
       uChunk: { value: new THREE.Vector3() },
       // the dimension being drawn (js/dims.js; js/dim/look.js sets these each frame)
       uDim: { value: 0 }, uDimAmb: { value: new THREE.Vector3() }, uDimFog: { value: new THREE.Vector3() }, uDimFogRange: { value: new THREE.Vector2(0, 1) },
       uEndSky: { value: textures.endSky || null },
+      // the End's flashes (render/endflash.js): where the source is in the sky, and how strong its light is
+      uEndFlash: { value: new THREE.Vector4() },
       // the void's dark (glsl.js VOID): under the horizon below sea level, and all of it near the world's floor
       uVoid: { value: new THREE.Vector3(0, 0, 160) },
       // Detailed's per-vertex light, from the light table each frame (sky.js setUniforms), and the fog's colours
@@ -721,6 +724,7 @@ export class Renderer {
     const vd = state.dim, vf = (state.eye.y - 64 - (vd ? vd.minY : -64)) / (state.horizon === 0 ? 1 : 32);
     U.uVoid.value.set(vd && vd.sky !== 'normal' ? 0 : Math.max(0, Math.min(1, (state.horizon !== undefined ? state.horizon : 127) - state.eye.y)),
       vd && vd.sky === 'end' ? 0 : 1 - (Math.max(0, Math.min(1, vf)) ** 2) ** 3, Math.max(32, this.opts.renderDist * 16));
+    if (vd && vd.sky === 'end') endFlash(U.uClock.value, !!state.bossFog, U.uEndFlash.value); else U.uEndFlash.value.set(0, 0, 0, 0);
     U.uMoonPhase.value = state.moonPhase;
     U.uRender.value = this.opts.renderDist * 16;
     if (state.waterTint) U.uWaterTint.value.copy(state.waterTint);
@@ -796,14 +800,15 @@ export class Renderer {
       this.drawHand(state, cam, dt);
       return;
     }
+    // the exposure: under the sky the sky table works it out from the light there is (glsl.js EXPOSURE);
+    // in a cave or under a roof the eye eases over to one level, whatever the time of day;
+    // the Nether and the End have no sky and keep one level each (about where the eye used to settle there)
+    // (the full chain starts from the same and lets what is on the screen nudge it: post.js FS_EXPO)
+    const cave = !sunless && state.skyAtEye < 1 ? 1 : 0;
+    this.caveNow = this.caveNow === undefined ? cave : this.caveNow + (cave - this.caveNow) * Math.min(1, dt * 1.5);
+    U.uCave.value = this.caveNow < 0.002 ? 0 : this.caveNow;
+    U.uExposure.value = (sunless ? (state.dim.id === 'the_end' ? 2.0 : 4.2) : 2.4) * Math.pow(2, this.opts.exposure || 0);
     if (this.ldr) {
-      // the exposure: under the sky the sky table works it out from the light there is (glsl.js EXPOSURE);
-      // in a cave or under a roof the eye eases over to one level, whatever the time of day;
-      // the Nether and the End have no sky and keep one level each (about where the eye used to settle there)
-      const cave = !sunless && state.skyAtEye < 1 ? 1 : 0;
-      this.caveNow = this.caveNow === undefined ? cave : this.caveNow + (cave - this.caveNow) * Math.min(1, dt * 1.5);
-      U.uCave.value = this.caveNow < 0.002 ? 0 : this.caveNow;
-      U.uExposure.value = (sunless ? (state.dim.id === 'the_end' ? 2.0 : 4.2) : 2.4) * Math.pow(2, this.opts.exposure || 0);
       this.sky.setUniforms(U, cam.position.y);
       U.uFogK.value *= this.opts.fog === undefined ? 1 : this.opts.fog;
       r.setRenderTarget(null);
