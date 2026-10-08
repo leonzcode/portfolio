@@ -348,7 +348,10 @@ export class VanillaGen {
     for (const v of this.veins) { collect(v.density); collect(v.richness); collect(v.gap); }
     this.latCols = latNodes.map(n => C.column(n.a));
     this.finalBlock = C.block([this.finalNode], this.lattice);
-    for (const v of this.veins) v.fn = C.block([v.density, v.richness, v.gap], this.lattice);
+    /* a vein's density alone, and its richness and gap only for a block the density and the first roll
+       let through (as the game's veinifier asks them): the gap is a full noise, and asking all three of
+       every stone block was a quarter of a chunk's terrain */
+    for (const v of this.veins) { v.fn = C.block([v.density], this.lattice); v.fn2 = C.block([v.richness, v.gap], this.lattice); }
     this.lats = latNodes.map(() => new Float64Array(5 * 5 * 49));
     this.ctx.L = this.lats;
     this.data = D;
@@ -868,7 +871,8 @@ export class VanillaGen {
             if (!(d > 0)) return null;
             const rr = gen.oreRandom.atInto(r, M.x, M.y, M.z);
             if (rr.nextFloat() > d) return null;
-            if (rr.nextFloat() < ctx.out[1] && !(ctx.out[2] > 0)) return rr.nextFloat() < v.rawChance ? v.raw : v.ore;
+            v.fn2(M.x, M.y, M.z, ctx);
+            if (rr.nextFloat() < ctx.out[0] && !(ctx.out[1] > 0)) return rr.nextFloat() < v.rawChance ? v.raw : v.ore;
             return v.filler;
           };
         }
