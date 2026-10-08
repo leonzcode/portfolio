@@ -24,6 +24,8 @@
      explosions    the flash and smoke, and the hurt and the push for your
                    player by the game's numbers (the blocks it broke come as
                    changes like any other)
+     potions       a splash potion breaking: its colour, and what it does to
+                   your player (a harmful one only where PvP is on)
      mining        the cracks on the block another player is mining, stage
                    by stage, as the game shows them (block destruction)
      players       others eating (the bits of food), on fire (flames on them),
@@ -38,6 +40,9 @@ import { selectionBoxes } from '../models.js?v=32';
 import { exposure } from '../explosion.js?v=32';
 import { Overlay } from '../render/overlay.js?v=32';
 import { F } from './players.js?v=32';
+import { Potion } from '../entities/projectiles.js?v=32';
+import { splashPotion } from '../entities/mobfx.js?v=32';
+import { POTIONS } from '../brewing.js?v=32';
 const THREE = window.THREE;
 
 let active = null, quiet = 0;
@@ -61,6 +66,18 @@ if (!Sound.play.__net) {
   };
   Sound.play.__net = true;
 }
+// a splash potion that breaks here (thrown by you, or by a witch your machine runs): for the players near it
+if (!Potion.prototype.splat.__net) {
+  const splat = Potion.prototype.splat;
+  Potion.prototype.splat = function () {
+    const r = splat.apply(this, arguments);
+    if (active && !this.ghost && !active.busy) { const p = this.pos, r2 = v => Math.round(v * 100) / 100; active.send(['splash', r2(p.x), r2(p.y), r2(p.z), String(this.potion || 'water'), this.lingering ? 1 : 0]); }
+    return r;
+  };
+  Potion.prototype.splat.__net = true;
+}
+// what a splash potion may do to another player where PvP is off (the game's harmful ones do nothing to them)
+const HARMFUL = /harming|poison|weakness|slowness|wither|infested|oozing|weaving|wind_charged|turtle_master/;
 // heard by every machine anyway, or only by the one making it
 const NOT_SENT = /^block\..*\.(break|hit)$|(door|trapdoor|fence_gate)\.(open|close)$|^block\.(sponge\.absorb|wet_sponge\.dries|composter\.ready|respawn_anchor\.(charge|deplete)|candle\.extinguish|end_gateway\.spawn)$/;
 const SENT_CATS = { block: 1, player: 1, neutral: 1, hostile: 1, record: 1 };
@@ -206,6 +223,18 @@ export class Events {
         return;
       }
       case 'boom': this.boom(x, y, z, +e[4] || 4); return;
+      case 'splash': {
+        const E = g.entities, name = String(e[4] || 'water');
+        if (!E) return;
+        const c = (POTIONS[name] || POTIONS.water || { colour: 0x385dc6 }).colour;
+        E.particles('magic', x, y, z, 24, 0.5, [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255]);
+        E.particles('poof', x, y, z, 6, 0.2, [0.9, 0.9, 0.95]);
+        // its colour, and what it does to you (not to the mobs here: their machines had it already; not to the blocks either)
+        const harm = HARMFUL.test(name) && !(this.net.server && this.net.server.pvp);
+        const m = Object.create(E, { forNear: { value: () => {} }, world: { value: null } });
+        if (!e[5] && !harm && g.mode !== 'creative' && g.mode !== 'spectator') { try { splashPotion(m, x, y, z, name, null, null); } catch (err) { console.warn(err); } }
+        return;
+      }
       case 'tnt': {
         const BD = g.sim && g.sim.bodies, a = +e[5] || 0;
         if (BD && B.tnt !== undefined) BD.add({ kind: 'tnt', b: B.tnt, m: 0, x: x + 0.5, y, z: z + 0.5, vx: -Math.sin(a) * 0.02, vy: 0.2, vz: -Math.cos(a) * 0.02, fuse: Math.max(1, e[4] | 0), ghost: true });
