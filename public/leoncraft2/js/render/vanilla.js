@@ -411,6 +411,38 @@ function skyColour(temp, out) {
   return out.set(r, g, b);
 }
 
+/* ---- the lightmap's numbers, from the game's own data ----
+   The light everything gets at light level 0 in each dimension
+   (minecraft:visual/ambient_light_color in its dimension types), the block
+   light's tint (block_light_tint's default), and the Overworld's day timeline
+   for the sky light: [tick, strength, r, g, b] (sky_light_factor and
+   sky_light_color), straight lines between, round the day. */
+const hex3 = c => [(c >> 16) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255];
+const AMBIENT_LIGHT = { overworld: hex3(0x0a0a0a), the_nether: hex3(0x302821), the_end: hex3(0x3f473f) };
+const BLOCK_TINT = hex3(0xffd88c);
+const SKY_KEYS = [[730, 1, 0xffffff], [11270, 1, 0xffffff], [13140, 0.24, 0x7a7aff], [22860, 0.24, 0x7a7aff]].map(([t, f, c]) => [t, f, ...hex3(c)]);
+/* Night Vision's strength (0..1) from the render state's effects, as the
+   game has it: full, flickering for its last ten seconds (0.7 + 0.3 sin of
+   the ticks left times 0.2 pi) */
+export function nightVision(state) {
+  const e = state && state.effects && state.effects.night_vision;
+  if (!e || e.ticks === 0) return 0;
+  if (e.ticks === -1 || e.ticks > 200) return 1;
+  return 0.7 + Math.sin((e.ticks - (state.alpha || 0)) * Math.PI * 0.2) * 0.3;
+}
+const ZERO4 = [0, 0, 0, 0];
+const skyOut = [0, 0, 0, 0];
+function skyLightAt(dayTime) {
+  let t = ((dayTime % 24000) + 24000) % 24000;
+  if (t < SKY_KEYS[0][0]) t += 24000;
+  let k = SKY_KEYS.length - 1;
+  while (k > 0 && SKY_KEYS[k][0] > t) k--;
+  const a = SKY_KEYS[k], b = k + 1 < SKY_KEYS.length ? SKY_KEYS[k + 1] : SKY_KEYS[0], tb = k + 1 < SKY_KEYS.length ? b[0] : b[0] + 24000;
+  const f = (t - a[0]) / (tb - a[0]);
+  for (let n = 0; n < 4; n++) skyOut[n] = a[n + 1] + (b[n + 1] - a[n + 1]) * f;
+  return skyOut;
+}
+
 export class Vanilla {
   constructor(renderer, textures) {
     this.R = renderer;
@@ -460,15 +492,16 @@ export class Vanilla {
     const cosA = Math.cos(ang);
     // the sun's way across the sky: up from the east (+x), over the top, down in the west
     U.uVSun.value.set(-Math.sin(ang), cosA, 0);
-    // how bright the sky is, for the lightmap (0.2 at night, 1 by day)
-    let dark = 1 - clamp01(cosA * 2 + 0.2);
     // rain and storms dim the sky and its light by the game's own factors (sim/weather.js sets weatherState)
     const wx = this.R.weatherState || {}, rain = wx.rain || 0, thunder = wx.thunder || 0;
-    const skyDarken = (1 - dark) * (1 - rain * 5 / 16) * (1 - thunder * 5 / 16) * 0.8 + 0.2;
     const daylight = clamp01(cosA * 2 + 0.5);
     this.flicker += (Math.random() - Math.random()) * Math.random() * Math.random() * 0.1 * Math.min(3, dt * 20);
     this.flicker *= Math.pow(0.9, Math.min(3, dt * 20));
-    this.makeLightmap(skyDarken, opts.brightness === undefined ? 0.5 : opts.brightness, D ? D.ambient : 0, !!(D && D.brightLightmap));
+    // the lightmap: the sky light's colour and strength by the time of day (none in the Nether and the End), rain and storms
+    // taking it down as above, the dimension's ambient light, and Night Vision
+    const sl = other ? null : skyLightAt(dayTime);
+    this.makeLightmap(sl ? sl[0] * (1 - rain * 5 / 16) * (1 - thunder * 5 / 16) : 0, sl || ZERO4, AMBIENT_LIGHT[D ? D.id : 'overworld'] || AMBIENT_LIGHT.overworld,
+      opts.brightness === undefined ? 0.5 : opts.brightness, nightVision(state));
     // the sky and fog colours of the biome you are in, eased so a border does not snap
     const b = state.biome;
     if (b && b.sky !== undefined) rgb(b.sky, this.tmp); else skyColour(b ? b.temp : 0.8, this.tmp);
@@ -557,26 +590,33 @@ export class Vanilla {
     // (in lava or powder snow the fog closes in within a block or two: no clouds through it)
     this.clouds = (D && !D.clouds) || state.eyeInLava || state.eyeInSnow ? 'off' : opts.clouds || 'fancy';
   }
-  makeLightmap(skyDarken, gamma, ambient, endBright) {
+  /* The game's lightmap as 26.x makes it (its lightmap shader, with the
+     numbers from its dimension types and day timeline): the dimension's
+     ambient colour (Night Vision's grey if that is brighter), plus the sky
+     light's colour times its brightness, plus the block light, dark grey low
+     down, tinted the warm #FFD88C in the middle levels and white at the top,
+     with the torches' flicker; then the Brightness setting lifts it towards
+     notGamma, which keeps each colour's hue. (The old lightmap mixed a grey in
+     twice and added the sky in the End, where the game adds none: the End was
+     twice as bright as the game's.) */
+  makeLightmap(skyF, skyC, amb, gamma, nv) {
     const d = this.lmData;
-    const f1 = skyDarken * 0.95 + 0.05;
-    // sky light leans blue as it dims
-    const tr = skyDarken + (1 - skyDarken) * 0.35, tb = 1;
-    const f7 = this.flicker + 1.5;
-    const bright = L => { const f = L / 15, g = f / (4 - 3 * f); return g + (1 - g) * ambient; };
-    const notGamma = x => { const y = 1 - x; return 1 - y * y * y * y; };
+    const bf = this.flicker + 1.5;
+    const bright = L => { const f = L / 15; return f / (4 - 3 * f); };
+    const a0 = Math.max(amb[0], nv * 0.6), a1 = Math.max(amb[1], nv * 0.6), a2 = Math.max(amb[2], nv * 0.6);
     for (let i = 0; i < 16; i++) {          // sky
-      const s = bright(i) * f1;
+      const s = bright(i) * skyF;
       for (let j = 0; j < 16; j++) {        // block
-        const f9 = bright(j) * f7;
-        let r = f9, g = f9 * ((f9 * 0.6 + 0.4) * 0.6 + 0.4), bl = f9 * (f9 * f9 * 0.6 + 0.4);
-        r += tr * s; g += tr * s; bl += tb * s;
-        r += (0.75 - r) * 0.04; g += (0.75 - g) * 0.04; bl += (0.75 - bl) * 0.04;
-        // the End: pulled a quarter of the way to (0.99, 1.12, 1.0)
-        if (endBright) { r += (0.99 - r) * 0.25; g += (1.12 - g) * 0.25; bl += (1.0 - bl) * 0.25; }
+        const b = bright(j) * bf, m = 0.9 * (2 * j / 15 - 1) ** 2;
+        let r = a0 + skyC[1] * s + (BLOCK_TINT[0] + (1 - BLOCK_TINT[0]) * m) * b;
+        let g = a1 + skyC[2] * s + (BLOCK_TINT[1] + (1 - BLOCK_TINT[1]) * m) * b;
+        let bl = a2 + skyC[3] * s + (BLOCK_TINT[2] + (1 - BLOCK_TINT[2]) * m) * b;
         r = clamp01(r); g = clamp01(g); bl = clamp01(bl);
-        r += (notGamma(r) - r) * gamma; g += (notGamma(g) - g) * gamma; bl += (notGamma(bl) - bl) * gamma;
-        r += (0.75 - r) * 0.04; g += (0.75 - g) * 0.04; bl += (0.75 - bl) * 0.04;
+        const mx = Math.max(r, g, bl);
+        if (mx > 0 && gamma > 0) {
+          const inv = 1 - mx, k = gamma * ((1 - inv * inv * inv * inv) / mx - 1);
+          r += r * k; g += g * k; bl += bl * k;
+        }
         const o = (i * 16 + j) * 4;
         d[o] = clamp01(r) * 255; d[o + 1] = clamp01(g) * 255; d[o + 2] = clamp01(bl) * 255; d[o + 3] = 255;
       }
