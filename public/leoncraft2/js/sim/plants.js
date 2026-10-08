@@ -362,6 +362,9 @@ export function installPlants(sim) {
         if (k !== (m & 31)) s.set(x, y, z, V, k);
       },
       random(s, x, y, z) {
+        // (one the world was made with that holds on to nothing, its block over a chunk's edge, goes when it is next
+        // looked at: the game would leave it until something changed beside it)
+        if (!holding(x, y, z, facesAt(x, y, z))) { s.destroy(x, y, z, false); return; }
         if (RI(s, 4) !== 0) return;
         const f = facesAt(x, y, z), dir = RI(s, 6);        // 0-3 north, east, south, west; 4 up; 5 down
         if (dir < 4) {
