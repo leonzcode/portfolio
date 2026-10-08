@@ -336,7 +336,12 @@ export class World {
     if (m.type === 'practised') { if (m.name === this.dim + '|' + this.generator + '|' + this.seed) this.takePractice(m); else keepAhead(m, this.dead ? null : this.workers[i]); return; }
     // columns of the title's world read back by a worker after it had answered its init (worker.js lateMeshes)
     if (m.type === 'premesh') {
-      if (this.live[i]) for (const [x, z] of m.list) { const k = this.key(x, z), c = this.chunks.get(k); if (!(c && c.meshed) && !this.inFlight.has('m' + k)) (this.preMeshAt || (this.preMeshAt = new Map())).set(k, i); }
+      if (this.live[i]) for (const [x, z] of m.list) {
+        const k = this.key(x, z), c = this.chunks.get(k);
+        if (c && c.meshed || this.inFlight.has('m' + k)) continue;
+        if (!this.preMeshAt || !this.preMeshAt.size) { this.preMeshAt = this.preMeshAt || new Map(); this.preMeshSince = performance.now(); }
+        this.preMeshAt.set(k, i);
+      }
       return;
     }
     // anything else from before the init (a job of the world this worker served last) is not ours
@@ -345,7 +350,7 @@ export class World {
         this.live[i] = true; if (i < this.genN && m.staged) { this.staged = true; this.features = !!m.features; }
         // chunks this worker made ahead (the title's world: worker.js startPre), and columns it meshed, asked of it and of no other
         if (m.pre) for (const [x, z] of m.pre) (this.preAt || (this.preAt = new Map())).set(this.key(x, z), i);
-        if (m.preMesh) for (const [x, z] of m.preMesh) (this.preMeshAt || (this.preMeshAt = new Map())).set(this.key(x, z), i);
+        if (m.preMesh) { if (!this.preMeshAt) this.preMeshSince = performance.now(); for (const [x, z] of m.preMesh) (this.preMeshAt || (this.preMeshAt = new Map())).set(this.key(x, z), i); }
         initRes();
       }
       return;
@@ -521,10 +526,13 @@ export class World {
        update can come round seldom, two at a time left the workers waiting) */
     let sends = 0;
     const most = this.focus >= 0 ? 8 : 2;
+    /* (columns a worker meshed ahead go first, for a second at most: they come back at once, but sent
+       after another column's mesh they waited in that worker's line behind it) */
+    const preFirst = this.preMeshAt && this.preMeshAt.size && now - this.preMeshSince < 1000;
     while (this.meshQueue.size && sends < most && this.inFlightCount() < cap) {
       let best = null, bd = Infinity, bx = 0, bz = 0;
       for (const k of this.meshQueue) {
-        if (this.inFlight.has('m' + k)) continue;
+        if (this.inFlight.has('m' + k) || (preFirst && !this.preMeshAt.has(k))) continue;
         const c = this.chunks.get(k);
         if (!c) { this.meshQueue.delete(k); continue; }
         const d = (c.cx - pcx) * (c.cx - pcx) + (c.cz - pcz) * (c.cz - pcz);
