@@ -6,6 +6,8 @@
    advancements, statistics, recipes and the server code (91 modules, about
    600 KB). main.js loads it (loadParts) as soon as the title is shown, and
    a world opened before it is in waits for it only once its ground is made.
+   main.js imports the modules below one at a time first, in this order
+   (PART_STEPS, with a frame between): a line added here goes there too.
 --------------------------------------------------------------------------- */
 export { enchantDebug } from './enchanting.js?v=31';
 export { Survival } from './survival.js?v=31';

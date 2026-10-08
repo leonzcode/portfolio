@@ -65,8 +65,42 @@ let enchantDebug, Survival, survivalHooks, respawnPlayer, Drops, dropItem, giveX
   structuresApi, Details, isSign, SignEditScreen, tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint,
   MultiplayerScreen, DisconnectedScreen, rejoin, advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements,
   statsWorld, statsTick, statsState, statsQuit, statsLeave, openStatistics, recipesWorld, recipesTick, recipesState, recipesLeave;
+/* They come down all at once, as one import of parts.js would bring them, but run one line of parts.js
+   at a time, in its order, with a frame drawn after any line that took a while: in one import the 91
+   modules ran as a single long task while the title screen turned. (Each line imported in turn, the
+   download became a chain of round trips, seconds long on a slow line.) Run in parts.js's order, every
+   module runs in just the order one import of parts.js would run it. PART_STEPS is parts.js's own
+   list; a line added there goes here too, in the same place (one only added there still loads, with
+   parts.js at the end). */
+const PART_STEPS = ['./enchanting.js?v=31', './survival.js?v=31', './life.js?v=31', './drops.js?v=31', './containers.js?v=31',
+  './hands.js?v=31', './entities/manager.js?v=31', './sim/sim.js?v=31', './dim/realms.js?v=31', './struct/spawners.js?v=31',
+  './details.js?v=31', './ui/sign.js?v=31', './dials.js?v=31', './ui/multiplayer.js?v=31', './adv/game.js?v=31',
+  './stats.js?v=31', './recipes.js?v=31'];
+// the next frame drawn (a page in the background draws none, and waits for nothing)
+const breath = () => document.hidden ? Promise.resolve() : new Promise(res => {
+  let done = false;
+  const go = () => { if (!done) { done = true; setTimeout(res, 0); } };
+  requestAnimationFrame(go); setTimeout(go, 50);
+});
+const FETCHED = 'lc2: fetched, not run';
+const script = src => URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+async function importParts() {
+  const last = './parts.js?v=31';
+  /* Everything down and linked first, nothing run: a module that imports them all, after one that
+     throws. A module graph stops running at its first error, so the rest are left linked and waiting
+     for the imports below. (Any other error is a real one: a module that could not be had.) */
+  const stop = script('throw ' + JSON.stringify(FETCHED) + ';');
+  const all = script([stop, ...PART_STEPS, last].map(s => 'import ' + JSON.stringify(new URL(s, import.meta.url).href) + ';').join('\n'));
+  try { await import(all); } catch (e) { if (e !== FETCHED) throw e; } finally { URL.revokeObjectURL(stop); URL.revokeObjectURL(all); }
+  let t = performance.now();
+  for (const s of PART_STEPS) {
+    await import(s);
+    if (performance.now() - t > 4) { await breath(); t = performance.now(); }
+  }
+  return import(last);
+}
 let partsP = null;
-const loadParts = () => partsP || (partsP = import('./parts.js?v=31').then(m => {
+const loadParts = () => partsP || (partsP = importParts().then(m => {
   ({ enchantDebug, Survival, survivalHooks, respawnPlayer, Drops, dropItem, giveXp, Containers, Hands, Entities, Sim, Realms,
     structuresApi, Details, isSign, SignEditScreen, tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint,
     MultiplayerScreen, DisconnectedScreen, rejoin, advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements,

@@ -22,34 +22,42 @@ const RI = (s, n) => Math.floor(s.rng() * n);
 const NB6 = [[1, 0, 0], [-1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1]];
 const HUMID = /jungle|swamp|mushroom/;
 
-// [encouragement (catches), flammability (burns away)] from the wiki's table
+/* [encouragement (catches), flammability (burns away)] from the wiki's table. Made the first time it is
+   wanted, or when the page is next idle (not while the game's parts load behind the title: main.js loadParts). */
 export const FLAME = new Map();
-function flame(test, e, f) { for (const d of BLOCKS) if (d && test(d.name, d)) FLAME.set(d.id, [e, f]); }
-flame(n => /_planks$/.test(n) && !/crimson|warped/.test(n), 5, 20);
-flame(n => /_(slab|stairs|fence|fence_gate)$/.test(n) && /^(oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak|bamboo)/.test(n), 5, 20);
-flame(n => /_(log|wood)$/.test(n) && !/crimson|warped/.test(n) || /^stripped_.*_(log|wood)$/.test(n) && !/crimson|warped/.test(n), 5, 5);
-flame(n => /^bamboo_(block|mosaic|mosaic_slab|mosaic_stairs)$/.test(n), 5, 20);
-flame((n, d) => d.leaves, 30, 60);
-flame(n => n === 'bookshelf' || n === 'chiseled_bookshelf' || n === 'lectern', 30, 20);
-flame(n => n === 'tnt', 15, 100);
-flame(n => /^(short_grass|tall_grass|tall_grass_top_block|fern|large_fern|large_fern_top_block|dead_bush|sweet_berry_bush|small_dripleaf|pink_petals|spore_blossom|wildflowers|leaf_litter|bush|firefly_bush|short_dry_grass|tall_dry_grass)$/.test(n), 60, 100);
-flame(n => /^(dandelion|poppy|blue_orchid|allium|azure_bluet|red_tulip|orange_tulip|white_tulip|pink_tulip|oxeye_daisy|cornflower|lily_of_the_valley|wither_rose|torchflower|sunflower|lilac|rose_bush|peony|pitcher_plant)(_top_block)?$/.test(n), 60, 100);
-flame(n => /_wool$/.test(n), 30, 60);
-flame(n => /_carpet$/.test(n) && n !== 'moss_carpet', 60, 20);
-flame(n => n === 'vine' || n === 'glow_lichen' || n === 'big_dripleaf' || n === 'big_dripleaf_stem', 15, 100);
-flame(n => n === 'cave_vines' || n === 'cave_vines_plant', 15, 60);
-flame(n => n === 'coal_block', 5, 5);
-flame(n => n === 'hay_block', 60, 20);
-flame(n => n === 'target', 15, 20);
-flame(n => n === 'dried_kelp_block', 30, 60);
-flame(n => n === 'scaffolding' || n === 'bamboo', 60, 60);
-flame(n => n === 'composter' || n === 'beehive' || n === 'bee_nest' || n === 'mangrove_roots', 5, 20);
-flame(n => n === 'azalea' || n === 'flowering_azalea' || n === 'hanging_roots', 30, 60);
-flame(n => n === 'moss_block' || n === 'moss_carpet' || n === 'pale_moss_block' || n === 'pale_moss_carpet', 5, 100);
-flame(n => /_bed$/.test(n), 0, 0);
-export const burns = b => (FLAME.get(b) || [0, 0])[1];
-export const catches = b => (FLAME.get(b) || [0, 0])[0];
-export const flammable = b => FLAME.has(b) && FLAME.get(b)[0] > 0;
+let flameMade = false;
+function makeFlame() {
+  flameMade = true;
+  const flame = (test, e, f) => { for (const d of BLOCKS) if (d && test(d.name, d)) FLAME.set(d.id, [e, f]); };
+  flame(n => /_planks$/.test(n) && !/crimson|warped/.test(n), 5, 20);
+  flame(n => /_(slab|stairs|fence|fence_gate)$/.test(n) && /^(oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak|bamboo)/.test(n), 5, 20);
+  flame(n => /_(log|wood)$/.test(n) && !/crimson|warped/.test(n) || /^stripped_.*_(log|wood)$/.test(n) && !/crimson|warped/.test(n), 5, 5);
+  flame(n => /^bamboo_(block|mosaic|mosaic_slab|mosaic_stairs)$/.test(n), 5, 20);
+  flame((n, d) => d.leaves, 30, 60);
+  flame(n => n === 'bookshelf' || n === 'chiseled_bookshelf' || n === 'lectern', 30, 20);
+  flame(n => n === 'tnt', 15, 100);
+  flame(n => /^(short_grass|tall_grass|tall_grass_top_block|fern|large_fern|large_fern_top_block|dead_bush|sweet_berry_bush|small_dripleaf|pink_petals|spore_blossom|wildflowers|leaf_litter|bush|firefly_bush|short_dry_grass|tall_dry_grass)$/.test(n), 60, 100);
+  flame(n => /^(dandelion|poppy|blue_orchid|allium|azure_bluet|red_tulip|orange_tulip|white_tulip|pink_tulip|oxeye_daisy|cornflower|lily_of_the_valley|wither_rose|torchflower|sunflower|lilac|rose_bush|peony|pitcher_plant)(_top_block)?$/.test(n), 60, 100);
+  flame(n => /_wool$/.test(n), 30, 60);
+  flame(n => /_carpet$/.test(n) && n !== 'moss_carpet', 60, 20);
+  flame(n => n === 'vine' || n === 'glow_lichen' || n === 'big_dripleaf' || n === 'big_dripleaf_stem', 15, 100);
+  flame(n => n === 'cave_vines' || n === 'cave_vines_plant', 15, 60);
+  flame(n => n === 'coal_block', 5, 5);
+  flame(n => n === 'hay_block', 60, 20);
+  flame(n => n === 'target', 15, 20);
+  flame(n => n === 'dried_kelp_block', 30, 60);
+  flame(n => n === 'scaffolding' || n === 'bamboo', 60, 60);
+  flame(n => n === 'composter' || n === 'beehive' || n === 'bee_nest' || n === 'mangrove_roots', 5, 20);
+  flame(n => n === 'azalea' || n === 'flowering_azalea' || n === 'hanging_roots', 30, 60);
+  flame(n => n === 'moss_block' || n === 'moss_carpet' || n === 'pale_moss_block' || n === 'pale_moss_carpet', 5, 100);
+  flame(n => /_bed$/.test(n), 0, 0);
+}
+if (typeof requestIdleCallback === 'function') requestIdleCallback(() => { if (!flameMade) makeFlame(); }, { timeout: 5000 });
+
+const flames = b => (flameMade || makeFlame(), FLAME.get(b));
+export const burns = b => (flames(b) || [0, 0])[1];
+export const catches = b => (flames(b) || [0, 0])[0];
+export const flammable = b => { const f = flames(b); return !!f && f[0] > 0; };
 
 export function installFire(sim) {
   const fire = B.fire, soul = B.soul_fire;
