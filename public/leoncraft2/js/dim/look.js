@@ -8,15 +8,16 @@
    distances Fast uses: the Nether's thick sphere (a twentieth of the view to
    half of it), the End's last tenth, a boss fight's thick fog.
 --------------------------------------------------------------------------- */
-import { nightVision } from '../render/vanilla.js?v=32';
+import { nightVision, shutFog } from '../render/vanilla.js?v=32';
 const THREE = window.THREE;
 const lin = v => Math.pow(v / 255, 2.2);
 const target = new THREE.Vector3();
 
 export function dimLook(R, state, dt) {
   const U = R.U, D = state.dim;
-  // Night Vision lifts the light floor (glsl.js lightFloor), in every dimension
+  // Night Vision lifts the light floor (glsl.js lightFloor), Blindness and Darkness close a black fog in (glsl.js uShut), in every dimension
   if (U.uNightVision) U.uNightVision.value = nightVision(state);
+  if (U.uShut) shutFog(state, dt, (R.opts.renderDist || 8) * 16, U.uShut.value);
   if (!D || D.id === 'overworld') { U.uDim.value = 0; if (R.post && R.post.u.uBias) R.post.u.uBias.value = 1; return; }
   U.uDim.value = D.code;
   // the eye adjusts less far in the dark there, so the Nether stays dim and the End's sky stays black
