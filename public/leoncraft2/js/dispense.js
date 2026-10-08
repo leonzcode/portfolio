@@ -135,8 +135,12 @@ function dispense(sim, C, c, i, st, x, y, z, f, fx, fy, fz) {
     return st;
   }
   if (n === 'flint_and_steel') {
-    if (front === B.tnt && sim.primeTnt) { w.set(fx, fy, fz, 0, 0); sim.primeTnt(fx, fy, fz, null, 80); }
-    else if (!front && B.fire !== undefined) w.set(fx, fy, fz, B.fire, 0);
+    // the game's order: fire in the air in front where a fire can stand, else a campfire or candle lit, else TNT lit
+    const fm = w.meta(fx, fy, fz), fname = fd ? fd.name : '';
+    if ((!front || fname === 'cave_air') && sim.lightFire && sim.lightFire(fx, fy, fz, 0)) {}
+    else if (fd && fd.shape === 'campfire' && (fm & 4)) w.set(fx, fy, fz, front, fm & ~4);
+    else if (fd && /candle$|candle_cake$/.test(fname) && !(fm & 4)) w.set(fx, fy, fz, front, fm | 4);
+    else if (front === B.tnt && sim.primeTnt) { w.set(fx, fy, fz, 0, 0); sim.primeTnt(fx, fy, fz, null, 80); }
     else { sound(sim, 'click_fail', x, y, z); return st; }
     st.dmg = (st.dmg | 0) + 1;
     return st.dmg >= maxDamage(st.id) ? null : st;

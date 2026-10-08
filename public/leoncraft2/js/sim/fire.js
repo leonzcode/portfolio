@@ -85,8 +85,13 @@ export function installFire(sim) {
     if (wasTnt && sim.primeTnt) sim.primeTnt(x, y, z, null, 80);
   };
   sim.on('fire', {
-    // a fire that appears (lit, spread, or placed) starts ticking
-    onPlace(s, x, y, z) { s.schedule(x, y, z, 30 + RI(s, 10)); },
+    // a fire that appears (lit, spread, or placed) starts ticking; one put where it cannot stand goes at once, and one
+    // on soul sand or soul soil is soul fire (the game's onPlace and getState, so a fireball or a dispenser's is right too)
+    onPlace(s, x, y, z) {
+      if (!s.fireCanStay(x, y, z)) { s.set(x, y, z, 0, 0); return; }
+      if (soul !== undefined && soulBase(s.get(x, y - 1, z))) { s.set(x, y, z, soul, 0); return; }
+      s.schedule(x, y, z, 30 + RI(s, 10));
+    },
     tick(s, x, y, z, m) {
       if (!fireTicks(s)) { s.schedule(x, y, z, 30 + RI(s, 10)); return; }
       if (!s.fireCanStay(x, y, z)) { s.set(x, y, z, 0, 0); return; }
