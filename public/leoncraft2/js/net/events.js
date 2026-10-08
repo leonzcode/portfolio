@@ -18,6 +18,9 @@
                    a state of the block, shared already). A bell's swing and a
                    decorated pot's wobble too.
      notes         a note block's note over it
+     TNT           lit: the lit block on every screen, flashing and swelling
+                   on the same fuse, gone at the moment the one who lit it
+                   sees it go off (the explosion itself is theirs)
      explosions    the flash and smoke, and the hurt and the push for your
                    player by the game's numbers (the blocks it broke come as
                    changes like any other)
@@ -30,7 +33,7 @@
 import { Sound } from '../sound/sound.js?v=32';
 import { MobSounds } from '../sound/mobsounds.js?v=32';
 import { Ambience } from '../sound/ambient.js?v=32';
-import { BLOCKS } from '../blocks.js?v=32';
+import { B, BLOCKS } from '../blocks.js?v=32';
 import { selectionBoxes } from '../models.js?v=32';
 import { exposure } from '../explosion.js?v=32';
 import { Overlay } from '../render/overlay.js?v=32';
@@ -112,6 +115,27 @@ export class Events {
     // a note block's note (its sound goes with the others)
     const note = S.onNote;
     S.onNote = function (x, y, z, inst, n) { const r = note ? note.apply(this, arguments) : undefined; if (!ev.busy) ev.send(['note', x, y, z, n | 0]); return r; };
+    // TNT lit here: lit on the others' screens too, the same way (sim/bodies.js prime)
+    const BD = S.bodies;
+    if (BD && BD.prime) {
+      const prime = BD.prime;
+      BD.prime = function (x, y, z, by, fuse) {
+        const e = prime.apply(this, arguments);
+        if (e && !ev.busy) ev.send(['tnt', x, y, z, e.fuse | 0, Math.round(Math.atan2(-e.vx, -e.vz) * 1000) / 1000]);
+        return e;
+      };
+      // another player's lit TNT is only a picture here: it goes when its fuse runs out, and their machine makes the explosion
+      const tick = BD.tick;
+      BD.tick = function () {
+        let gone = false;
+        for (const e of this.list) if (e.ghost && e.fuse <= 1) { e.dead = true; this.drop(e); gone = true; }
+        if (gone) this.list = this.list.filter(e => !e.dead);
+        return tick.apply(this, arguments);
+      };
+      // (nor is it kept with the simulation when you change dimension)
+      const toJSON = BD.toJSON;
+      BD.toJSON = function () { const all = this.list; this.list = all.filter(e => !e.ghost); try { return toJSON.apply(this, arguments); } finally { this.list = all; } };
+    }
     // an explosion from the world's own blocks (TNT, a bed, an anchor: explosion.js)
     const boom = S.onExplosion;
     S.onExplosion = function (x, y, z, power) { const r = boom ? boom.apply(this, arguments) : undefined; if (!ev.busy) ev.boomOut(x, y, z, power); return r; };
@@ -182,6 +206,11 @@ export class Events {
         return;
       }
       case 'boom': this.boom(x, y, z, +e[4] || 4); return;
+      case 'tnt': {
+        const BD = g.sim && g.sim.bodies, a = +e[5] || 0;
+        if (BD && B.tnt !== undefined) BD.add({ kind: 'tnt', b: B.tnt, m: 0, x: x + 0.5, y, z: z + 0.5, vx: -Math.sin(a) * 0.02, vy: 0.2, vz: -Math.cos(a) * 0.02, fuse: Math.max(1, e[4] | 0), ghost: true });
+        return;
+      }
       case 'mine': this.crack(pid, x, y, z, e[4] | 0); return;
       case 'bob': {
         let b = this.bobs.get(pid);

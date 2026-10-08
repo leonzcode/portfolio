@@ -32,8 +32,10 @@
 --------------------------------------------------------------------------- */
 import { Living, wrap } from '../entities/entity.js?v=32';
 import { TYPES } from '../entities/mobs.js?v=32';
-// besides the living (animals, monsters, villagers, golems, armour stands): paintings and the knots of leads
-const EXTRA = new Set(['painting', 'leash_knot']);
+
+const THREE = window.THREE;
+// besides the living (animals, monsters, villagers, golems, armour stands): paintings, the knots of leads, sand and gravel falling, fireworks
+const EXTRA = new Set(['painting', 'leash_knot', 'falling_block', 'firework_rocket']);
 // (the dragon belongs to the End's fight, dim/realms.js, on each machine)
 const NOT = new Set(['ender_dragon']);
 export const shareable = e => !!e && !e.isPlayer && !NOT.has(e.type) && (e instanceof Living || EXTRA.has(e.type));
@@ -167,13 +169,14 @@ export class Mobs {
     rec.ht = e.hurtTime | 0;
     e.remove = function () {
       Object.getPrototypeOf(this).remove.call(this);
+      M.unlead(this);
       if (rec.e !== this) return;
       rec.e = null;
       if (M.applying || !M.E || M.E.gone || net.closed) return;
       // someone else's, gone from here only (out of reach, or Peaceful): made again later if it is still about
       if (this.puppet || rec.o !== net.id) { rec.hold = performance.now() + 4000; return; }
-      // left behind as its ground unloads: the server keeps it till someone is near
-      if (M.unloading) { rec.j = jsonOf(this); rec.o = 0; M.kept.push(rec.id, rec.j); return; }
+      // left behind as its ground unloads: the server keeps it till someone is near (a monster that would despawn anyway just goes, as the game has it)
+      if (M.unloading && !(this.constructor.HOSTILE && !this.persistent)) { rec.j = jsonOf(this); rec.o = 0; M.kept.push(rec.id, rec.j); return; }
       // gone for good: killed, despawned, turned into another kind, scooped into a bucket
       M.recs.delete(rec.id);
       M.gone.push(rec.id);
@@ -201,8 +204,8 @@ export class Mobs {
     const e = rec.e, M = this;
     if (!e) return;
     e.puppet = true;
-    // (a lead held by the player on its machine would be drawn to you: theirs to draw)
-    if (e.leash && e.leash.player) e.leash = null;
+    // (its lead is drawn here, to whoever holds it: lead(); as its own, it would be drawn to you, and snap and drop a lead here)
+    e.leash = null;
     if (!rec.buf.length) rec.buf.push({ ts: performance.now() - DELAY, x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw, body: e.bodyYaw || e.yaw, head: e.headYaw || e.yaw, pitch: e.pitch, f: e.onGround ? F_GROUND : 0 });
     e.tick = function () { M.puppetTick(rec, this); };
     e.hurt = function () { M.claim(this); return this.hurt.apply(this, arguments); };
@@ -215,6 +218,9 @@ export class Mobs {
     if (e.puppet) {
       e.puppet = false;
       delete e.tick; delete e.hurt; delete e.anim;
+      this.unlead(e);
+      // (a lead tied to a fence goes on being its own; one in someone else's hand stays theirs)
+      if (rec.j && Array.isArray(rec.j.lsh)) e.leash = { knot: rec.j.lsh.slice() };
       // carries on the way it was going
       e.vel.set(e.pos.x - e.prev.x, 0, e.pos.z - e.prev.z);
       if (e.dead) { e.deathTime = Math.min(e.deathTime | 0, 19); }
@@ -243,6 +249,42 @@ export class Mobs {
     e.vel.subVectors(e.pos, e.prev);
     if (e.dead) e.deathTime = Math.min(19, (e.deathTime | 0) + 1);
     if (e.animTick) e.animTick();
+    this.lead(rec, e);
+  }
+  /* A puppet's lead, as the game draws one: from its neck to the hand of the
+     player holding it (the one whose machine runs it), or to the knot on a
+     fence, sagging less the tighter it is */
+  lead(rec, e) {
+    const L = rec.j && rec.j.lsh;
+    let hx, hy, hz;
+    if (L === 1) {
+      const r = this.net.players && this.net.players.list.get(rec.o), f = r && r.feet;
+      if (!f || !r.st || !r.av || !r.av.mesh.visible) { this.unlead(e); return; }
+      const sn = Math.sin(r.st.yaw), cs = Math.cos(r.st.yaw);
+      hx = f.x - cs * 0.35 - sn * 0.5; hy = f.y + 1.1; hz = f.z + sn * 0.35 - cs * 0.5;
+    } else if (Array.isArray(L)) { hx = L[0] + 0.5; hy = L[1] + 0.5; hz = L[2] + 0.5; }
+    else { this.unlead(e); return; }
+    if (!e.netLead) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(3 * 12), 3));
+      e.netLead = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x6a4a2a }));
+      e.netLead.frustumCulled = false;
+      if (this.E && this.E.group) this.E.group.add(e.netLead);
+    }
+    const a = e.netLead.geometry.attributes.position.array, sx = e.pos.x, sy = e.pos.y + e.h * 0.8, sz = e.pos.z;
+    const d = Math.hypot(hx - sx, hy - sy, hz - sz);
+    for (let i = 0; i < 12; i++) {
+      const t = i / 11, sag = Math.sin(t * Math.PI) * Math.max(0, 0.6 - d * 0.05);
+      a[i * 3] = sx + (hx - sx) * t; a[i * 3 + 1] = sy + (hy - sy) * t - sag; a[i * 3 + 2] = sz + (hz - sz) * t;
+    }
+    e.netLead.geometry.attributes.position.needsUpdate = true;
+  }
+  unlead(e) {
+    const l = e.netLead;
+    if (!l) return;
+    if (l.parent) l.parent.remove(l);
+    l.geometry.dispose(); l.material.dispose();
+    e.netLead = null;
   }
   // where it was at time t (this page's clock), between the two positions either side
   sample(rec, t) {
@@ -404,6 +446,12 @@ export class Mobs {
           if (!e || e.removed) continue;
           // killed: the puff of smoke as it goes (a despawn, or one gone out of sight, just goes)
           if (e.dead && !m.far && this.E) this.E.poof(e);
+          // a firework gone off: its sparks here too (what it hurt is the business of the machine it flew on)
+          if (e.type === 'firework_rocket' && !m.far && e.burst) {
+            const real = e.m;
+            e.m = Object.create(real, { forNear: { value: () => {} }, player: { value: { alive: () => false, dist2: () => 1e9 } } });
+            try { e.burst(); } catch (err) { /* only sparks */ } finally { e.m = real; }
+          }
           this.applying = true;
           try { if (this.E && this.E.riding === e) this.E.dismount(); e.remove(); } finally { this.applying = false; }
         }
@@ -461,7 +509,7 @@ export class Mobs {
     try { e.fromJSON(rec.j); } catch (err) { console.warn(err); } finally { this.applying = false; }
     e.pos.copy(p); e.prev.copy(pv); e.yaw = y; e.prevYaw = py; e.pitch = pt;
     if (b !== undefined) { e.bodyYaw = b; e.headYaw = hy; e.prevBodyYaw = pb; e.prevHeadYaw = ph; }
-    if (e.puppet && e.leash && e.leash.player) e.leash = null;
+    if (e.puppet) e.leash = null;
   }
   /* [3, d, ts, owner, id, x, y, z, yaw, body, head, pitch, flags, id, ...]: where the mobs another
      machine runs are ([4, ...]: what changed since the last), on its clock, put on this page's
