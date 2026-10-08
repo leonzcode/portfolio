@@ -9,8 +9,9 @@
    pixels go in once the arrays are on the GPU (upload), and the icon strip
    gets the same layers (extendStrip).
 --------------------------------------------------------------------------- */
-import { litFronts } from '../render/litfront.js?v=36';
-import { litBerries } from '../render/litberries.js?v=36';
+import { litFronts } from '../render/litfront.js?v=37';
+import { litBerries } from '../render/litberries.js?v=37';
+import { shelfLayers } from '../render/shelfmushroom.js?v=37';
 const THREE = window.THREE;
 
 // a small seeded hash for the art (the same picture every time)
@@ -178,6 +179,8 @@ export function addDimArt(manifest) {
   const lit = litFronts(add);
   // cave vines with glow berries (render/litberries.js), the same way
   const berries = litBerries(add);
+  // a shelf mushroom's faces, small and large (render/shelfmushroom.js), filled at once
+  shelfLayers(add);
   manifest.layers = next;
   return {
     layers,

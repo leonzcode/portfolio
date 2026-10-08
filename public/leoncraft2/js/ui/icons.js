@@ -26,9 +26,9 @@
      const icons = new ItemIcons(albedoImage, { grassMap, foliageMap });
      icons.draw(gui, blockId, x, y);      // GUI pixels, top-left of the slot
 --------------------------------------------------------------------------- */
-import { DRAW, textureLayer } from '../items.js?v=36';
-import { potionColour } from '../brewing.js?v=36';
-import { trimPiece, applyTrim } from '../trims.js?v=36';
+import { DRAW, textureLayer } from '../items.js?v=37';
+import { potionColour } from '../brewing.js?v=37';
+import { trimPiece, applyTrim } from '../trims.js?v=37';
 
 /* pictures coloured per stack: [the layer under, the layer over, which of the two takes the colour (0 the one
    under, 1 the one over)]. A potion's liquid goes under its bottle; dyed leather is its grey picture times the dye
@@ -43,7 +43,7 @@ const TINTED_PARTS = {
   leather_horse_armor: ['layer_leather_horse_armor', 'layer_leather_horse_armor_overlay', 0],
   wolf_armor: ['wolf_armor', 'layer_wolf_armor_overlay', 1],
 };
-import { boxesOf } from '../models.js?v=36';
+import { boxesOf } from '../models.js?v=37';
 
 // face order and texture axes, exactly as the mesher lays textures on faces
 const FACES = [
@@ -66,6 +66,8 @@ const D_BLOCK = { ry: 225, s: 0.625, tx: 0, ty: 0 };
 const D_135 = { ry: 135, s: 0.625, tx: 0, ty: 0 };
 const D_BED = { ry: 160, s: 0.5325, tx: 0, ty: 1 };
 const D_HEAD = { ry: 45, s: 1, tx: 0, ty: 3 };
+// a shelf mushroom: the small model facing north, at the game's own gui display for it
+const D_SHELF = { ry: 225, s: 1, tx: 3.25, ty: -3 };
 // a candle: the game draws its picture full size; the little candle, drawn twice as big and lifted to the middle, comes close
 const D_CANDLE = { ry: 225, s: 1.25, tx: 0, ty: 6 };
 // rods (end rods, lightning rods) stand upright in the slot and in the hand, as the game's models have them
@@ -114,7 +116,9 @@ function modelFor(d) {
     // the game's own inventory models for these: two posts and two rails, a post and a side
     case 'fence': boxes = [box(6, 0, 0, 10, 16, 4), box(6, 0, 12, 10, 16, 16), box(7, 13, 0, 9, 15, 16), box(7, 5, 0, 9, 7, 16)]; disp = D_135; break;
     case 'wall': boxes = [box(4, 0, 4, 12, 16, 12), box(5, 0, 0, 11, 14, 16)]; disp = D_135; break;
-    case 'button': boxes = [box(5, 6, 6, 11, 10, 10)]; break;
+    case 'button':
+      if (d.name === 'shelf_mushroom' && d.L && d.L.sm00up > 0) { boxes = boxesOf(d, 4); disp = D_SHELF; break; }
+      boxes = [box(5, 6, 6, 11, 10, 10)]; break;
     case 'chest': boxes = boxesOf(d, 1); break;           // the latch on the left face
     case 'bed': boxes = bedBoxes(d); disp = D_BED; break;
     case 'head': {

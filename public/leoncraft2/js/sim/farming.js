@@ -14,9 +14,9 @@
    it is there: names are looked up through window.__lc2.itemName / itemId if
    they exist, else as block names, so this works on its own too.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=36';
-import { isDirt } from './plants.js?v=36';
-import { I, itemName as itemNameOf } from '../items.js?v=36';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=37';
+import { isDirt } from './plants.js?v=37';
+import { I, itemName as itemNameOf } from '../items.js?v=37';
 
 const RI = (sim, n) => Math.floor(sim.rng() * n);
 const binom = (sim, n, p) => { let k = 0; for (let i = 0; i < n; i++) if (sim.rng() < p) k++; return k; };
@@ -137,7 +137,8 @@ export function installFarming(sim) {
   sim.useItem = (held, hit, heldId, sneaking) => {
     if (prev && prev(held, hit, heldId, sneaking)) return true;
     if (/_hoe$/.test(held)) return till(sim, hit);
-    if (held === 'bone_meal') return boneMeal(sim, hit.x, hit.y, hit.z);
+    // bone meal that took is used up (interact.js hands it to the hand, which keeps it in creative) and makes its sound
+    if (held === 'bone_meal') { if (!boneMeal(sim, hit.x, hit.y, hit.z)) return false; sim.usedHeld = true; return true; }
     return false;
   };
   sim.boneMeal = (x, y, z) => boneMeal(sim, x, y, z);
@@ -175,6 +176,8 @@ function boneMeal(sim, x, y, z) {
   if (n === 'sweet_berry_bush') { if ((m & 7) >= 3) return false; sim.set(x, y, z, b, (m & 7) + 1); return true; }
   // a cave vine without glow berries grows them
   if (n === 'cave_vines' || n === 'cave_vines_plant') { if (m & 1) return false; sim.set(x, y, z, b, m | 1); return true; }
+  // a small shelf mushroom grows large (meta bit 3); it never grows on its own
+  if (n === 'shelf_mushroom') { if (m & 8) return false; sim.set(x, y, z, b, m | 8); return true; }
   if (n === 'cocoa') { const age = (m >> 3) & 3; if (age >= 2) return false; sim.set(x, y, z, b, (m & 7) | ((age + 1) << 3)); return true; }
   if (n === 'bamboo' || n === 'bamboo_sapling') {
     let top = y; while (sim.get(x, top + 1, z) === B.bamboo) top++;
