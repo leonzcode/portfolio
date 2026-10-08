@@ -35,7 +35,7 @@ const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
 const idOf = name => !name ? 0 : (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
 
 // the flags each position carries (net/net.js sends them)
-export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024, SPEC: 2048, INVIS: 4096 };
+export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024, SPEC: 2048, INVIS: 4096, FIRE: 8192 };
 // what the use button can be doing with a hand (render/avatar.js useNow kinds), by number in a position
 export const USE_KINDS = ['eat', 'drink', 'horn', 'bow', 'aim', 'crossbow', 'block', 'trident', 'spear', 'spyglass'];
 // sitting on something this machine does not have (a horse): the legs sit
