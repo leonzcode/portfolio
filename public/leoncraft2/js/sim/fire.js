@@ -26,7 +26,9 @@ import { catchOf, burnOf } from '../flame.js?v=33';
 
 const RI = (s, n) => Math.floor(s.rng() * n);
 const NB6 = [[1, 0, 0], [-1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1]];
-const HUMID = /jungle|swamp|mushroom/;
+// the biomes where fire burns out sooner and spreads half as well (26.x: the biomes with the
+// increased_fire_burnout attribute; sparse jungle is not one of them, the snowy peaks are)
+const HUMID = new Set(['jungle', 'bamboo_jungle', 'swamp', 'mangrove_swamp', 'mushroom_fields', 'snowy_slopes', 'frozen_peaks', 'jagged_peaks']);
 
 // what burns and how readily (the wiki's table in flame.js, shared with the fire's model in models.js)
 export const burns = b => burnOf(BLOCKS[b]);
@@ -111,7 +113,7 @@ export function installFire(sim) {
         }
         if (age === 15 && RI(s, 4) === 0 && !flammable(below)) { s.set(x, y, z, 0, 0); return; }
       }
-      const humid = HUMID.test(s.biomeAt(x, z).name), k = humid ? -50 : 0;
+      const humid = HUMID.has(s.biomeAt(x, z).name), k = humid ? -50 : 0;
       burnOut(x + 1, y, z, 300 + k, age); burnOut(x - 1, y, z, 300 + k, age);
       burnOut(x, y - 1, z, 250 + k, age); burnOut(x, y + 1, z, 250 + k, age);
       burnOut(x, y, z - 1, 300 + k, age); burnOut(x, y, z + 1, 300 + k, age);

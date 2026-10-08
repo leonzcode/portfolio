@@ -28,7 +28,7 @@ import { register } from './mobs.js?v=33';
 import { MODELS } from './mobmodels.js?v=33';
 import { addArt } from './mobart.js?v=33';
 import { B } from '../blocks.js?v=33';
-import { stackToJSON, stackFromJSON } from '../items.js?v=33';
+import { stackToJSON, stackFromJSON, maxStack } from '../items.js?v=33';
 import { spill, lootStack } from '../containers.js?v=33';
 import { ChestScreen, HopperScreen } from '../ui/containers.js?v=33';
 
@@ -115,6 +115,15 @@ class ChestCart extends BlockCart {
   // (the seed a long, kept as text; carts saved before kept a number, which rolls the same way)
   spawnData(o) { if (o && o.loot) this.loot = { table: o.loot, seed: o.seed === undefined ? 0 : o.seed }; }
   title() { return 'Minecart with Chest'; }
+  // friction: 0.98 a tick, and a thousandth more for each step a comparator would read below 15, so a full cart
+  // slows soonest (one with its loot not yet rolled, 0.98)
+  drag() {
+    if (this.loot) return 0.98;
+    let f = 0;
+    for (const st of this.slots) if (st) f += st.count / maxStack(st.id);
+    f /= this.slots.length;
+    return 0.98 + (15 - (f > 0 ? Math.floor(f * 14) + 1 : 0)) * 0.001;
+  }
   interact(held, player) {
     if (!player || !player.isPlayer) return false;
     this.fill().then(() => this.open());
