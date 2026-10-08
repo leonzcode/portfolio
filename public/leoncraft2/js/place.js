@@ -226,7 +226,8 @@ function placeDry(world, hit, id, player) {
     case 'chain': m = n[0] ? 1 : n[2] ? 2 : 0; break;
     case 'cross': case 'crop': case 'rail': case 'wire': case 'plate': case 'pot': case 'candle': case 'cake':
       // (what hangs, from a block above: sim/farming.js says what may hold it)
-      if (HANGS.test(d.name)) { if (n[1] === 1) return out; break; }
+      // (glow berries make a cave vine tip of a random age, 0 to 24, as the game's do: how much more it may grow)
+      if (HANGS.test(d.name)) { if (n[1] === 1) return out; if (d.name === 'cave_vines') m = Math.floor(Math.random() * 25) << 1; break; }
       if (!solidBelow) return out;
       // (a tall crop, the pitcher pod's, starts a single block: its top half grows later)
       if (d.tall && d.shape !== 'crop') {
