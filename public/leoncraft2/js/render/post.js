@@ -400,8 +400,9 @@ void main() {
   float base = uDim > 0.5 ? uExposure : uCave > 0.0 ? exp(mix(log(max(sky, 1e-4)), log(uExposure), uCave)) : sky;
   float seen = 0.115 / max(avg, 1e-5);
   // (less in the Nether and the End, whose light is one level everywhere; and never opening past where
-  // the sky table stops at night, so night stays night and a dark cave stays dark)
-  float target = base * clamp(pow(seen / base, 0.4), uDim > 0.5 ? 0.75 : 0.5, uDim > 0.5 ? 1.3 : 1.9);
+  // the sky table stops at night, so night stays night and a dark cave stays dark; closing a fifth at
+  // most, so a snowfield or a desert in the sun stays as bright as the game's, not a grey two thirds)
+  float target = base * clamp(pow(seen / base, 0.4), uDim > 0.5 ? 0.75 : 0.8, uDim > 0.5 ? 1.3 : 1.9);
   target = min(target, max(base, 4.5));
   float prev = texture(uPrev, vec2(0.5)).r;
   if (prev <= 0.0) prev = target;
