@@ -177,7 +177,8 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
       if ((meta & 7) >= 7 && Math.random() < 0.02) add(out, 'poisonous_potato', 1);
       return out;
     case 'nether_wart': add(out, 'nether_wart', (meta & 3) >= 3 ? uniformBonus(between(2, 4), fortune, 1) : 1); return out;
-    case 'cocoa': add(out, 'cocoa_beans', (meta >> 2 & 3) >= 2 ? 3 : 1); return out;
+    // (cocoa's age is meta bits 3-4, sim/states.js: three beans when it is full grown, age 2)
+    case 'cocoa': add(out, 'cocoa_beans', (meta >> 3 & 3) >= 2 ? 3 : 1); return out;
     // a large shelf mushroom (meta bit 3) gives two
     case 'shelf_mushroom': add(out, 'shelf_mushroom', meta & 8 ? 2 : 1); return out;
     case 'sweet_berry_bush': { const age = meta & 3; if (age >= 2) add(out, 'sweet_berries', uniformBonus(age === 3 ? between(2, 3) : between(1, 2), fortune, 1)); return out; }
