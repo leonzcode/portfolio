@@ -408,6 +408,14 @@ export class Realms {
     }
     return false;
   }
+  /* A fire that appears in a frame (spread there, lit by lava, a fireball, a dispenser) lights it, as flint and steel
+     does: the game's fire onPlace in the Overworld and the Nether (sim/fire.js asks). True when it did. */
+  fireAt(x, y, z) {
+    if (this.dim === 'the_end') return false;
+    const s = tryLight(this.world, x, y, z);
+    if (s) this.poi[this.dim].push(s);
+    return !!s;
+  }
   usedItem(id) {
     const g = this.game;
     if (g.mode === 'creative') return;

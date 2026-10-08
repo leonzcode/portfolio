@@ -88,6 +88,9 @@ export function installFire(sim) {
     // a fire that appears (lit, spread, or placed) starts ticking; one put where it cannot stand goes at once, and one
     // on soul sand or soul soil is soul fire (the game's onPlace and getState, so a fireball or a dispenser's is right too)
     onPlace(s, x, y, z) {
+      // (in an obsidian frame it lights the portal instead: dim/realms.js)
+      const R = s.game && s.game.realms;
+      if (R && R.fireAt && R.fireAt(x, y, z)) return;
       if (!s.fireCanStay(x, y, z)) { s.set(x, y, z, 0, 0); return; }
       if (soul !== undefined && soulBase(s.get(x, y - 1, z))) { s.set(x, y, z, soul, 0); return; }
       s.schedule(x, y, z, 30 + RI(s, 10));
