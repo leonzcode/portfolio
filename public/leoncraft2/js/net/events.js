@@ -31,6 +31,10 @@
                    your player (a harmful one only where PvP is on)
      mining        the cracks on the block another player is mining, stage
                    by stage, as the game shows them (block destruction)
+     particles     the hearts of animals fed or in love, a tamed wolf's or a
+                   refused cat's, a villager's green sparks, the stars of a
+                   critical hit, a firework's sparks: what the mobs your
+                   machine runs and your hits make, at most 40 a second
      players       others eating (the bits of food), on fire (flames on them),
                    fishing (their line, from the rod in their hand to the
                    bobber where it floats)
@@ -81,6 +85,9 @@ if (!Potion.prototype.splat.__net) {
 }
 // what a splash potion may do to another player where PvP is off (the game's harmful ones do nothing to them)
 const HARMFUL = /harming|poison|weakness|slowness|wither|infested|oozing|weaving|wind_charged|turtle_master/;
+// the particles passed on (the rest each machine makes by itself, or come with what is shared already)
+const FX = { heart: 1, angry: 1, smoke: 1, sparkle: 1, magic: 1, crit: 1 };
+const rgb = c => (Array.isArray(c) ? ((Math.round(c[0] * 255) & 255) << 16) | ((Math.round(c[1] * 255) & 255) << 8) | (Math.round(c[2] * 255) & 255) : null);
 // heard by every machine anyway, or only by the one making it
 const NOT_SENT = /^block\..*\.(break|hit)$|(door|trapdoor|fence_gate)\.(open|close)$|^block\.(sponge\.absorb|wet_sponge\.dries|composter\.ready|respawn_anchor\.(charge|deplete)|candle\.extinguish|end_gateway\.spawn)$/;
 const SENT_CATS = { block: 1, player: 1, neutral: 1, hostile: 1, record: 1 };
@@ -96,6 +103,7 @@ export class Events {
     this.mine = null;
     this.bobs = new Map();        // another player's number -> their bobber: { x, y, z, line, mesh }
     this.slides = [];             // another machine's blocks in motion, drawn sliding here (sim/pistons.js view)
+    this.fxLeft = 0;              // particles that may still be passed on this tick
     this.t = 0;
   }
   init(m) { this.on = !!m.mobs; }
@@ -165,6 +173,23 @@ export class Events {
     const ev = this;
     if (!E || E.__netEv) return;
     E.__netEv = true;
+    // the particles of what this machine runs, and of your hits
+    const r2 = v => Math.round(v * 100) / 100;
+    const particles = E.particles;
+    E.particles = function (kind, x, y, z, n, spread, col) {
+      const r = particles.apply(this, arguments);
+      if (FX[kind] && ev.fxLeft > 0 && !ev.busy) { ev.fxLeft--; ev.send(['px', r2(x), r2(y), r2(z), kind, Math.min(64, n | 0) || 1, r2(spread || 0), rgb(col)]); }
+      return r;
+    };
+    const PP = E.particlesP;
+    if (PP && PP.emit) {
+      const emit = PP.emit;
+      PP.emit = function (kind, e) {
+        const r = emit.apply(this, arguments);
+        if (FX[kind] && e && e.pos && ev.fxLeft > 0 && !ev.busy) { ev.fxLeft--; ev.send(['px', r2(e.pos.x), r2(e.pos.y + (e.h || 1) * 0.5), r2(e.pos.z), kind, 12, r2((e.w || 0.6) * 0.5), null]); }
+        return r;
+      };
+    }
     // an explosion of a mob's (a creeper, a ghast's fireball: entities/explosion.js)
     const boom = E.onExplode;
     E.onExplode = function (x, y, z, power) { const r = boom ? boom.apply(this, arguments) : undefined; if (!ev.busy) ev.boomOut(x, y, z, power); return r; };
@@ -176,6 +201,7 @@ export class Events {
     if (!this.on) return;
     const g = this.net.game, I = g.inter;
     this.t++;
+    this.fxLeft = 2;
     // the cracks: the stage of the block you are mining, when it changes (the game's 0 to 9)
     const m = I && I.mining;
     let st = -1;
@@ -244,6 +270,11 @@ export class Events {
         return;
       }
       case 'boom': this.boom(x, y, z, +e[4] || 4); return;
+      case 'px': {
+        const E = g.entities, c = e[7];
+        if (E && FX[e[4]]) E.particles(e[4], x, y, z, Math.min(64, e[5] | 0) || 1, +e[6] || 0, typeof c === 'number' ? [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255] : undefined);
+        return;
+      }
       case 'splash': {
         const E = g.entities, name = String(e[4] || 'water');
         if (!E) return;
