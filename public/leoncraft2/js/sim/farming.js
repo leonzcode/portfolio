@@ -114,7 +114,7 @@ export function installFarming(sim) {
       if ((n === 'chorus_plant' || n === 'chorus_flower') && !(below === B.end_stone || below === B.chorus_plant)) return [];
       // a vine holds on to a full block beside it or above it; cocoa grows only on the side of a jungle log
       const sides = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, c]) => sim.get(x + a, y, z + c));
-      if (n === 'vine' && !(sides.some(sturdy) || sturdy(above))) return [];
+      if (n === 'vine' && !(sides.some(sturdy) || sturdy(above) || above === id)) return [];
       if (n === 'cocoa' && !sides.some(b => /^(stripped_)?jungle_(log|wood)$/.test(nm(b)))) return [];
       // flowers, grass and the rest of the ground plants want soil under them, as the game's mayPlaceOn says
       const soil = SOIL(d.name);

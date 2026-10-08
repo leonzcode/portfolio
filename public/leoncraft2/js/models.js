@@ -816,15 +816,41 @@ SHAPES.wire = function (d, m, nb) {
   });
   return r;
 };
+/* ---- vines: the faces a vine hangs on, in its meta ----
+   bit 0 north, 1 east, 2 south, 3 west, 4 under the block above (the game's
+   north/east/south/west/up). A side holds while the block that way has a
+   whole face towards it, or while the vine above has that same side: so a
+   vine hangs down a wall and on below its foot, a sheet in the air where the
+   wall was, as the game's do. A vine whose meta has no faces (one kept
+   before the faces were, or a structure's) takes them from what is round
+   it, and below another vine, that vine's sides. */
+export const VINE_UP = 16;
+export const VINE_SIDES = [[0, -1, 1], [1, 0, 2], [0, 1, 4], [-1, 0, 8]];      // dx, dz, bit
+// a whole face towards the vine (the game's isFaceFull of its collision; leaves count)
+export const vineHolds = n => !!n && !!n.d && n.d.solid && n.d.shape === 'cube';
+// the faces of a vine at nb(0, 0, 0) with meta m: its own, or worked out when it has none
+export function vineFaces(m, nb) {
+  if (m & 31) return m & 31;
+  let f = 0;
+  for (const [dx, dz, bit] of VINE_SIDES) if (vineHolds(nb(dx, 0, dz))) f |= bit;
+  if (vineHolds(nb(0, 1, 0))) f |= VINE_UP;
+  if (f) return f;
+  // nothing to hold: below a vine, the sides of that one
+  const a = nb(0, 1, 0);
+  if (a && a.d.name === 'vine') {
+    if (a.m & 15) return a.m & 15;
+    for (const [dx, dz, bit] of VINE_SIDES) if (vineHolds(nb(dx, 1, dz))) f |= bit;
+  }
+  return f || VINE_UP;
+}
 SHAPES.vine = function (d, m, nb) {
-  // on every side with something solid to hold on to, and under a solid block
-  const r = [], L = d.faces[2], e = 0.8;
-  const solid = n => n && n.d.solid && n.d.shape === 'cube';
-  if (solid(nb(0, 0, -1))) r.push({ q: [[16, 0, e], [0, 0, e], [0, 16, e], [16, 16, e]], uv: FLAT_UV, layer: L });
-  if (solid(nb(0, 0, 1))) r.push({ q: [[0, 0, 16 - e], [16, 0, 16 - e], [16, 16, 16 - e], [0, 16, 16 - e]], uv: FLAT_UV, layer: L });
-  if (solid(nb(1, 0, 0))) r.push({ q: [[16 - e, 0, 16], [16 - e, 0, 0], [16 - e, 16, 0], [16 - e, 16, 16]], uv: FLAT_UV, layer: L });
-  if (solid(nb(-1, 0, 0))) r.push({ q: [[e, 0, 0], [e, 0, 16], [e, 16, 16], [e, 16, 0]], uv: FLAT_UV, layer: L });
-  if (!r.length || solid(nb(0, 1, 0))) r.push({ q: [[0, 16 - e, 16], [16, 16 - e, 16], [16, 16 - e, 0], [0, 16 - e, 0]], uv: FLAT_UV, layer: L });
+  // the game's vine model: one plane 0.8 pixels in from each face it hangs on
+  const r = [], L = d.faces[2], e = 0.8, f = vineFaces(m, nb);
+  if (f & 1) r.push({ q: [[16, 0, e], [0, 0, e], [0, 16, e], [16, 16, e]], uv: FLAT_UV, layer: L });
+  if (f & 4) r.push({ q: [[0, 0, 16 - e], [16, 0, 16 - e], [16, 16, 16 - e], [0, 16, 16 - e]], uv: FLAT_UV, layer: L });
+  if (f & 2) r.push({ q: [[16 - e, 0, 16], [16 - e, 0, 0], [16 - e, 16, 0], [16 - e, 16, 16]], uv: FLAT_UV, layer: L });
+  if (f & 8) r.push({ q: [[e, 0, 0], [e, 0, 16], [e, 16, 16], [e, 16, 0]], uv: FLAT_UV, layer: L });
+  if (f & VINE_UP) r.push({ q: [[0, 16 - e, 16], [16, 16 - e, 16], [16, 16 - e, 0], [0, 16 - e, 0]], uv: FLAT_UV, layer: L });
   return r;
 };
 
