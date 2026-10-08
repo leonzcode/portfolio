@@ -173,6 +173,8 @@ function boneMeal(sim, x, y, z) {
     return true;
   }
   if (n === 'sweet_berry_bush') { if ((m & 7) >= 3) return false; sim.set(x, y, z, b, (m & 7) + 1); return true; }
+  // a cave vine without glow berries grows them
+  if (n === 'cave_vines' || n === 'cave_vines_plant') { if (m & 1) return false; sim.set(x, y, z, b, m | 1); return true; }
   if (n === 'cocoa') { const age = (m >> 3) & 3; if (age >= 2) return false; sim.set(x, y, z, b, (m & 7) | ((age + 1) << 3)); return true; }
   if (n === 'bamboo' || n === 'bamboo_sapling') {
     let top = y; while (sim.get(x, top + 1, z) === B.bamboo) top++;
