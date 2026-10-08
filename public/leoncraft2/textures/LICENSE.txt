@@ -51,6 +51,11 @@ Changes made for Leoncraft 2:
   against the game's (October 2026): none of its pixels. (Pixel Perfection
   CE's conduit pictures are copies of the game's and are not used.) The
   conduit's current is drawn by Leoncraft's own code;
+- the shelf mushroom's two pictures, small and large, are Pixel Perfection
+  Legacy's (shelf_mushroom_stage0 and stage1, 32 x 32), kept in
+  js/render/shelfmushroom.js and cut there into one layer per face of the
+  game's models; checked pixel by pixel against the game's two pictures
+  (October 2026), they share none of its pixels;
 - the chiseled bookshelf's front, empty and full, is Pixel Perfection
   Legacy's chiseled bookshelf side with its six panels opened (empty) or
   filled with the books of Pixel Perfection CE's bookshelf (the packs' own

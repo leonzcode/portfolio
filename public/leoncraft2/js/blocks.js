@@ -15,9 +15,10 @@
      light   block light it gives off (0-15)
      opacity how much sky light it takes away (15 = all, leaves and water 1)
 --------------------------------------------------------------------------- */
-import { DATA } from './blockdata.js?v=36';
-import { MODEL_SHAPES } from './models.js?v=36';
-import { dimBlocks } from './dim/blocks.js?v=36';
+import { DATA } from './blockdata.js?v=37';
+import { MODEL_SHAPES } from './models.js?v=37';
+import { SHELF_TEX } from './shelfmushroom.js?v=37';
+import { dimBlocks } from './dim/blocks.js?v=37';
 
 export const AIR = 0;
 export const MAX_ID = 4096;   // block ids are 16-bit in the world; this many fit the lookup tables
@@ -161,6 +162,12 @@ for (const e of DATA) {
   if (model && o.shape !== 'cube') o.opacity = Math.min(o.opacity, o.leaves ? 1 : 0);
   if (o.shape === 'none') { o.solid = false; o.pass = 'none'; if (!o.tex) o.tex = null; }
   def(e.name, o);
+}
+// a shelf mushroom's faces, small and large, each its own piece of the picture (shelfmushroom.js; the layers are
+// made at start-up by render/shelfmushroom.js)
+if (B.shelf_mushroom !== undefined) {
+  const d = BLOCKS[B.shelf_mushroom];
+  d.tex = Object.assign(typeof d.tex === 'string' ? { all: d.tex } : Object.assign({}, d.tex), SHELF_TEX);
 }
 // the Nether's and the End's own blocks and items (portals, frames, flint and steel, eyes of ender)
 dimBlocks(def, B, BLOCKS);

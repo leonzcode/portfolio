@@ -12,8 +12,8 @@
    itself inside that chunk (the clip box): a structure crossing chunk
    borders comes out whole once all its chunks are made.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=36';
-import { CH, H, Y0, idx } from '../world-const.js?v=36';
+import { B, BLOCKS } from '../blocks.js?v=37';
+import { CH, H, Y0, idx } from '../world-const.js?v=37';
 
 export const NORTH = 0, EAST = 1, SOUTH = 2, WEST = 3;
 export const HORIZONTAL = [NORTH, EAST, SOUTH, WEST];        // Direction.Plane.HORIZONTAL, in the game's order

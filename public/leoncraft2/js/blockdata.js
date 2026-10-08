@@ -1270,7 +1270,7 @@ export const DATA = [
 {"name":"red_shrub","display":"Red Shrub","shape":"cross","pass":"cutout","tex":"red_shrub","icon":"red_shrub","opacity":0,"solid":false,"hardness":0.0,"tab":"natural","order":106,"wave":1},
 {"name":"red_wool_slab","display":"Red Wool Slab","shape":"slab","tex":"red_wool","iconMeta":0,"opacity":0,"hardness":0.8,"tab":"colored","order":41},
 {"name":"red_wool_stairs","display":"Red Wool Stairs","shape":"stairs","tex":"red_wool","iconMeta":1,"opacity":0,"hardness":0.8,"tab":"colored","order":25},
-{"name":"shelf_mushroom","display":"Shelf Mushroom","shape":"button","pass":"cutout","tex":"shelf_mushroom_stage0","icon":"shelf_mushroom_stage0","opacity":0,"solid":false,"hardness":0.0,"tab":"natural","order":170,"orient":"wall"},
+{"name":"shelf_mushroom","display":"Shelf Mushroom","shape":"button","pass":"cutout","tex":"shelf_mushroom_stage0","opacity":0,"solid":false,"hardness":0.0,"tab":"natural","order":170,"orient":"wall"},
 {"name":"straw_bed","display":"Straw Bed","shape":"bed","pass":"cutout","tex":{"top":"straw_bed","side":"straw_bed","end":"straw_bed"},"opacity":0,"hardness":0.2,"tab":"colored","order":229,"stack":1,"orient":"horizontal"},
 {"name":"stripped_poplar_log","display":"Stripped Poplar Log","shape":"cube","tex":{"end":"stripped_poplar_log_top","side":"stripped_poplar_log"},"hardness":2.0,"tab":"building","order":119,"orient":"axis"},
 {"name":"stripped_poplar_wood","display":"Stripped Poplar Wood","shape":"cube","tex":"stripped_poplar_log","hardness":2.0,"tab":"building","order":120},

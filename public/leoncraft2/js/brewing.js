@@ -27,8 +27,8 @@
    where it breaks, less the further off; a lingering one leaves a cloud
    (entities/mobfx.js). A tipped arrow gives an eighth of each effect.
 --------------------------------------------------------------------------- */
-import { I, ITEMS } from './items.js?v=36';
-import { EFFECTS, effectName } from './effects.js?v=36';
+import { I, ITEMS } from './items.js?v=37';
+import { EFFECTS, effectName } from './effects.js?v=37';
 
 const S = s => Math.round(s * 20);
 // name -> { effects: [[effect, level, ticks]], colour (0xRRGGBB) }
