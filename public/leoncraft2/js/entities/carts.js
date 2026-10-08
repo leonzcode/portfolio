@@ -205,7 +205,8 @@ class FurnaceCart extends BlockCart {
   static ITEM = 'furnace_minecart'; static LAYER_TEX = 'cart_furnace'; static FURNACE = true;
   constructor(m, type) { super(m, type); this.fuel = 0; this.px = 0; this.pz = 0; }
   layerTex() { return this.fuel > 0 ? 'cart_furnace_lit' : 'cart_furnace'; }
-  get speedScale() { return 0.5; }
+  // 4 blocks a second, 3 in water
+  maxSpeed(inWater) { return inWater ? 0.15 : 0.2; }
   interact(held, player) {
     if (!player || !player.isPlayer) return false;
     if (FUEL.has(held) && this.fuel + 3600 <= 32000) {
@@ -246,7 +247,8 @@ class TntCart extends BlockCart {
     super.tick();
     if (this.removed) return;
     if (activator(this)) this.prime();
-    if (this.hitEnd && sp >= 0.01) { this.blow(sp); return; }
+    // into a block at speed: the end of its rail, or a wall it runs into off the rails
+    if ((this.hitEnd || (!this.onRail && this.hCollide)) && sp >= 0.01) { this.blow(sp); return; }
     if (this.fuse > 0) {
       this.fuse--;
       this.m.particles('smoke', this.pos.x, this.pos.y + 1, this.pos.z, 1, 0.05);

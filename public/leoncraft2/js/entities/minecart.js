@@ -99,6 +99,8 @@ export class Minecart extends Entity {
     for (let k = 0; k < 4; k++) if (up[k] && (ew ? (k & 1) : !(k & 1))) return [[DIRS[k][0], DIRS[k][1], 1], [DIRS[(k + 2) & 3][0], DIRS[(k + 2) & 3][1], 0], b];
     return ew ? [[1, 0, 0], [-1, 0, 0], b] : [[0, -1, 0], [0, 1, 0], b];
   }
+  // the most it goes a tick: 8 blocks a second, 4 in water (a furnace cart's own: entities/carts.js)
+  maxSpeed(inWater) { return inWater ? 0.2 : 0.4; }
   // a powered rail's power is its own (meta bit 3, set by the redstone in sim/rsparts.js)
   powered(x, y, z) { return (this.m.t.meta(x, y, z) & 8) !== 0; }
 
@@ -120,8 +122,7 @@ export class Minecart extends Entity {
     if (RAIL[T.get(bx, by - 1, bz)]) by--;
     const r = this.rail(bx, by, bz);
     const inWater = T.fluid(bx, Math.floor(p.y + 0.2), bz) === 1;
-    // (a furnace cart goes at half: entities/carts.js)
-    const max = (inWater ? 0.2 : 0.4) * (this.speedScale || 1);
+    const max = this.maxSpeed(inWater);
     this.hitEnd = false;
     if (!r) {
       // off the rails: fall, slow on the ground
