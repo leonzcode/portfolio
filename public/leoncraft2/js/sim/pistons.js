@@ -400,6 +400,8 @@ export function installPistons(sim) {
       requestAnimationFrame(loop);
     },
   };
+  // (on a server, another player's pistons are drawn moving with this: net/events.js)
+  rs.pistonView = view;
   rs.disposers = rs.disposers || [];
   rs.disposers.push(() => { view.dead = true; for (const e of [...view.list]) view.drop(e); if (view.group && view.group.parent) view.group.parent.remove(view.group); });
 
