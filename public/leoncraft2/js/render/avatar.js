@@ -234,6 +234,9 @@ in vec3 vWorld; in vec3 vN; in vec2 vUv; flat in int vLayer;
 #ifdef ARMOR
 in vec3 vTint; in vec3 vG; in vec2 vUv2;
 uniform float uClock;
+#ifndef LDR
+uniform sampler2D uExpoTex;     // the eye's exposure, the last frame's (render/post.js)
+#endif
 ` + GLINT + `
 ` + ARMOR_OVERLAY + `
 #endif
@@ -296,8 +299,17 @@ void main() {
   vec3 light = (diffuse * PI + amb + blockL + lightFloor()) / PI;
   vec3 col = albedo * light;
 #ifdef ARMOR
-  // the glint shimmers by the light the piece is in, so the eye's adjusting keeps it about as bright by day as by night
-  if (vG.z > 0.5) col += glintAt(vG.xy, uClock) * (light + 0.02) * 1.5;
+  /* the glint added unlit, as the game draws it and as on what you hold (render/glint.js): as bright on
+     the screen in a cave as in the sun. It went by the light the piece was in, a dazzle in the sun
+     (the sun is a dozen times the sky) and next to nothing in the shade or at night */
+  if (vG.z > 0.5) {
+    vec3 g = min(glintAt(vG.xy, uClock), vec3(1.0));
+#ifdef LDR
+    col += g * g * 0.5 / max(exposureNow(), 0.02);
+#else
+    col += g * g * 0.5 / max(texture(uExpoTex, vec2(0.5)).r, 0.02);
+#endif
+  }
 #endif
 #ifdef LDR
   col = finishLDR(col, vWorld);

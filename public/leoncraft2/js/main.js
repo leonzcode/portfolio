@@ -713,9 +713,9 @@ async function boot() {
     player.canFly = mode === 'creative' || mode === 'spectator';
     player.noclip = mode === 'spectator';
     if (mode === 'spectator') player.flying = true;
-    const fluids = new Fluids(world, (x, y, z, kind) => {
-      if (kind === 1 && Math.random() < 0.3) renderer.inter.splash(x + 0.5, z + 0.5, 0.35, 1.5);
-    });
+    // (water settling or spreading sends out no rings: the game has none, and in a lake or the sea they
+    // came up as circles out of nowhere wherever the water evened itself out; splashes come from things falling in)
+    const fluids = new Fluids(world);
     const inv = new Inventory({ mode: mode === 'creative' ? 'creative' : 'survival' });
     if (st && st.inventory) inv.fromJSON(st.inventory);
     else if (mode === 'creative') {
@@ -996,7 +996,7 @@ async function boot() {
         world.allHands = true; world.focus = 2; world.update(near.x, near.z); world.flush();
         g.world = world; g.dim = dim;
         g.player.w = world; g.inter.world = world;
-        g.fluids = new Fluids(world, (x, y, z, kind) => { if (kind === 1 && Math.random() < 0.3) renderer.inter.splash(x + 0.5, z + 0.5, 0.35, 1.5); });
+        g.fluids = new Fluids(world);
         g.inter.fluids = g.fluids;
         g.player.voidY = DIMS[dim].minY;
         // the items, chests, mobs and simulation of the new dimension

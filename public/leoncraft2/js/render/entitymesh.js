@@ -78,6 +78,9 @@ uniform float uEyeInWater;
 #endif
 ` + LIGHTS + `
 uniform float uClock;
+#ifndef LDR
+uniform sampler2D uExpoTex;     // the eye's exposure, the last frame's (render/post.js)
+#endif
 ` + GLINT + `
 in vec3 vWorld; in vec3 vN; in vec2 vUv; in vec4 vL; in vec3 vTint; in vec3 vG;
 #ifdef LDR
@@ -129,8 +132,15 @@ void main() {
   vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
   vec3 light = (diffuse * PI + amb + blockL + lightFloor()) / PI;
   vec3 col = albedo * light;
-  // enchanted armour: the glint, by the light it is in (as on the player, render/avatar.js)
-  if (vG.z > 0.5) col += glintAt(vG.xy, uClock) * (light + 0.02) * 1.5;
+  // enchanted armour: the glint added unlit, as bright on the screen in any light (as on the player, render/avatar.js)
+  if (vG.z > 0.5) {
+    vec3 g = min(glintAt(vG.xy, uClock), vec3(1.0));
+#ifdef LDR
+    col += g * g * 0.5 / max(uExpo, 0.02);
+#else
+    col += g * g * 0.5 / max(texture(uExpoTex, vec2(0.5)).r, 0.02);
+#endif
+  }
 #ifdef LDR
   col = toneLDR(col * vKeep + vAdd);
 #endif

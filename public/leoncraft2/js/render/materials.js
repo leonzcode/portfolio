@@ -138,6 +138,10 @@ void main() {
   albedo = toLinear(albedo);
 #ifdef NORMALMAP
   vec4 nm = tex(uNormalMap, uv, vLayer, info);
+  // the biome's grass, leaves and plants: their bumps kept soft and their hollows not shaded (their
+  // normal maps are mostly the texture's noise: at full strength they speckled every lawn a dark olive
+  // that matched neither the plants on it nor the grass of Low and Medium)
+  if (tinted || overlay || plant) nm = mix(nm, vec4(0.5, 0.5, 1.0, nm.a), 0.75);
 #else
   vec4 nm = vec4(0.5, 0.5, 1.0, 0.5);
 #endif
@@ -245,8 +249,9 @@ void main() {
     float spec = ggx(NoH, rough * rough) * smithV(NoV, NoL, rough * rough);
     col += direct * F * min(spec, 8.0) * NoL;
   }
-  // a hint of the sky in shiny things
-  if (smoothness > 0.6) {
+  // a hint of the sky in shiny things (not in the Nether or the End: the table is the Overworld's sky, and
+  // the End's obsidian pillars came out sky blue, then ruled with bright lines down their edges)
+  if (smoothness > 0.6 && uDim < 0.5) {
     float NoV = sat(dot(N, V));
     vec3 F = F0 + (1.0 - F0) * pow(1.0 - NoV, 5.0);
     col += ambientAt(reflect(-V, N)) / PI * F * skyAmt * smoothness * 0.6;

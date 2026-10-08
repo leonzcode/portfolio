@@ -310,9 +310,12 @@ float heldLight(vec3 p, vec3 n) {
 }
 // block light at level s (0..1): dim and deep orange far out, pale yellow at the
 // source, a slow flicker, and washed out by full daylight on open ground
+// (falling off as the game's lightmap does at the default Brightness, near enough the cube of the level
+// in light: it went as the fifth power, so past a few blocks from a torch a cave was black where the game
+// shows the stone; and the tail a warm amber like the game's, not a deep orange)
 vec3 blockLight(float s, float day) {
-  vec3 c = mix(mix(vec3(1.0, 0.27, 0.035), vec3(1.0, 0.6, 0.32), s), vec3(1.0, 0.7, 0.46), max(0.0, s * 8.0 - 7.0));
-  float b = pow(s, 5.0) * 2.0 + s * s * 0.1;
+  vec3 c = mix(mix(vec3(1.0, 0.4, 0.14), vec3(1.0, 0.6, 0.3), s), vec3(1.0, 0.72, 0.48), max(0.0, s * 8.0 - 7.0));
+  float b = pow(s, 3.0) * 2.0 + s * s * 0.1;
   return c * b * 2.2 * uFlicker * (1.0 - 0.6 * day);
 }
 // how much of the sun gets through the clouds overhead: the same coverage the
