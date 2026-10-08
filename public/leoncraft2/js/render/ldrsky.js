@@ -8,8 +8,8 @@
    End a dark speckled box. Exposure and tone mapping happen here too, so
    nothing runs after it.
 --------------------------------------------------------------------------- */
-import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=32';
-import { rawMat } from './sky.js?v=32';
+import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=33';
+import { rawMat } from './sky.js?v=33';
 const THREE = window.THREE;
 
 const FS = COMMON + TONEMAP + /* glsl */`
@@ -20,6 +20,7 @@ uniform float uTime, uMoonPhase, uExposure, uEyeInWater;
 uniform vec3 uWaterTint;
 uniform float uDim;
 uniform vec3 uDimFog;
+uniform vec3 uShut;
 ` + EXPOSURE + /* glsl */`
 in vec2 vUv; out vec4 o;
 vec3 skyRadiance(vec3 d) {
@@ -69,7 +70,8 @@ void main() {
     col += stars(rd) * (1.0 - smoothstep(-0.12, 0.02, uSunDir.y)) * sat(rd.y * 4.0);
     col = voidSky(col, rd);
   }
-  o = vec4(toneLDR(col * exposureNow()), 1.0);
+  // (Blindness and Darkness: the sky goes into their black fog)
+  o = vec4(toneLDR(col * exposureNow() * (1.0 - uShut.z)), 1.0);
 }`;
 
 /* Drawn after the blocks, at the far plane and depth tested, so only the

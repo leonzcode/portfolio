@@ -19,43 +19,45 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=32';
-import { PathFinder, Navigation } from './path.js?v=32';
-import { Particles } from './particles.js?v=32';
-import { Ambient } from './ambient.js?v=32';
-import { Living, Mob, wrap, DEG } from './entity.js?v=32';
-import { TYPES } from './mobs.js?v=32';
-import './projectiles.js?v=32';
-import { placeBoat } from './boat.js?v=32';
-import './mobs2.js?v=32';
-import './mobs3.js?v=32';
-import './mobs4.js?v=32';
-import { wandererTick } from './merchant.js?v=32';
-import { tableBooks } from './tablebook.js?v=32';
-import { explode } from './explosion.js?v=32';
-import { splitXp } from './xporb.js?v=32';
-import { placeMinecart, isRail, Minecart } from './minecart.js?v=32';
-import { CART_ITEMS } from './carts.js?v=32';
-import { fallFrom, FALLS, free } from './fallingblock.js?v=32';
-import { Spawner, DESPAWN } from './spawner.js?v=32';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=32';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=32';
-import { EntityMeshes } from '../render/entitymesh.js?v=32';
-import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=32';
-import { breakAt } from '../place.js?v=32';
-import { dropOf } from '../survival.js?v=32';
-import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=32';
-import { Combat } from '../combat/combat.js?v=32';
-import './nether.js?v=32';
+import { Terrain } from './terrain.js?v=33';
+import { PathFinder, Navigation } from './path.js?v=33';
+import { Particles } from './particles.js?v=33';
+import { Ambient } from './ambient.js?v=33';
+import { Living, Mob, wrap, DEG } from './entity.js?v=33';
+import { TYPES } from './mobs.js?v=33';
+import './projectiles.js?v=33';
+import { placeBoat } from './boat.js?v=33';
+import './mobs2.js?v=33';
+import './mobs3.js?v=33';
+import './mobs4.js?v=33';
+import { wandererTick } from './merchant.js?v=33';
+import { tableBooks } from './tablebook.js?v=33';
+import { explode } from './explosion.js?v=33';
+import { splitXp } from './xporb.js?v=33';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=33';
+import { CART_ITEMS } from './carts.js?v=33';
+import { fallFrom, FALLS, free } from './fallingblock.js?v=33';
+import { Spawner, DESPAWN } from './spawner.js?v=33';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=33';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=33';
+import { EntityMeshes } from '../render/entitymesh.js?v=33';
+import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=33';
+import { lightNear } from '../lightlevel.js?v=33';
+import { activeDrops } from '../drops.js?v=33';
+import { breakAt } from '../place.js?v=33';
+import { dropOf } from '../survival.js?v=33';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=33';
+import { Combat } from '../combat/combat.js?v=33';
+import './nether.js?v=33';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
-import './mobs5.js?v=32';
-import './mobs6.js?v=32';
-import './mobs7.js?v=32';
-import { DIMS } from '../dims.js?v=32';
-import { armorLayers } from './armorlayer.js?v=32';
-import { MobHeld } from '../render/mobheld.js?v=32';
-import { setSpawnerMob } from '../struct/spawners.js?v=32';
-import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=32';
+import './mobs5.js?v=33';
+import './mobs6.js?v=33';
+import './mobs7.js?v=33';
+import { DIMS } from '../dims.js?v=33';
+import { armorLayers } from './armorlayer.js?v=33';
+import { MobHeld } from '../render/mobheld.js?v=33';
+import { setSpawnerMob } from '../struct/spawners.js?v=33';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=33';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -336,6 +338,8 @@ export class Entities {
   sampleLight(e, now) {
     const x = Math.floor(e.pos.x), y = Math.floor(e.pos.y + Math.min(e.h, 1.6) * 0.85), z = Math.floor(e.pos.z);
     e.lightS = this.t.sky(x, y, z); e.lightB = e.constructor.BRIGHT ? 15 : this.t.block(x, y, z);
+    // eyes in a full block (squeezed under a ceiling, pushed into a wall) hold no light: the brightest open block beside them, not black
+    if (OPAQUE[this.t.get(x, y, z)]) { const v = lightNear(this.t.w, x, y, z, !!this.t.w.noSky); e.lightS = v >> 4; if (!e.constructor.BRIGHT) e.lightB = v & 15; }
     if (now) { e.lS = e.lightS / 15; e.lB = e.lightB / 15; }
   }
   // Peaceful: monsters vanish (the healing is survival.js's)
@@ -955,8 +959,8 @@ export class Entities {
       if (dx * dx + dz * dz > far2) continue;
       const reach = ed * ((e.w || 0.6) * 2 + (e.h || 0.6)) / 3, dy = y - P.pos.y;
       if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
-      // the light, eased so it never pops
-      e.lS += (e.lightS / 15 - e.lS) * k; e.lB += (e.lightB / 15 - e.lB) * k;
+      // the light, eased so it never pops (anything on fire is lit as by a torch at its brightest, as in the game)
+      e.lS += (e.lightS / 15 - e.lS) * k; e.lB += ((e.fire > 0 ? 15 : e.lightB) / 15 - e.lB) * k;
       this.sphere.center.set(x, y + e.h / 2, z); this.sphere.radius = Math.max(e.w, e.h) + 1.5;
       // under Invisibility a mob is not drawn, nor its shadow
       const seen = this.frustum.intersectsSphere(this.sphere) && !(e.effects && e.effects.invisibility);
@@ -969,6 +973,30 @@ export class Entities {
       // its round shadow on the ground
       if (seen && blobs && c.SHADOW && !e.vehicle) this.shadowOf(e, x, y, z, c.SHADOW * (e.baby || e.ageT < 0 ? 0.5 : 1) * (c.SCALE || 1));
     }
+    if (blobs) {
+      /* your own round shadow in third person (F5), as the game draws it under the player (0.5 across the
+         middle); only on the Off look, since the shader looks cast your real shadow. And every dropped
+         item's and experience orb's, 0.15 and three quarters as dark, as the game draws theirs. */
+      const av = this.R.avatar;
+      if (av && av.view && this.R.vanilla && this.mode !== 'spectator' && !this.riding) {
+        const pp = P.prev || P.pos, sh = this.youShadow || (this.youShadow = { lS: 1, lB: 0 });
+        sh.lS = av.sky; sh.lB = av.block;
+        this.shadowOf(sh, pp.x + (P.pos.x - pp.x) * alpha, pp.y + (P.pos.y - pp.y) * alpha, pp.z + (P.pos.z - pp.z) * alpha, 0.5);
+      }
+      const D = activeDrops(), it = this.itemShadow || (this.itemShadow = { lS: 1, lB: 0 });
+      if (D && D.world === this.world) for (const e of D.items) {
+        if (!e.mesh || e.fly > 0 || e.light < 0) continue;
+        it.lS = (e.light >> 8) / 255; it.lB = (e.light & 255) / 255;
+        this.shadowOf(it, e.prev.x + (e.pos.x - e.prev.x) * alpha, e.prev.y + (e.pos.y - e.prev.y) * alpha, e.prev.z + (e.pos.z - e.prev.z) * alpha, 0.15, 0.75);
+      }
+      if (D && D.world === this.world) for (const o of D.orbs) {
+        if (!o.mesh || !(o.light >= 0)) continue;
+        it.lS = (o.light >> 8) / 255; it.lB = Math.max(0, (o.light & 255) / 255 - 7 / 15);
+        this.shadowOf(it, o.prev.x + (o.pos.x - o.prev.x) * alpha, o.prev.y + (o.pos.y - o.prev.y) * alpha, o.prev.z + (o.pos.z - o.prev.z) * alpha, 0.15, 0.75);
+      }
+    }
+    // (your own model is lit as by a torch at its brightest while you burn, as the game does: render/avatar.js)
+    if (this.R.avatar) this.R.avatar.burning = !!(this.survival && this.survival.onFire);
     // you, burning, seen from behind or in front (F5)
     if (this.survival && this.survival.onFire && this.R.avatar && this.R.avatar.view && this.R.particles && this.mode !== 'spectator') {
       const pp = P.prev || P.pos;
@@ -980,7 +1008,7 @@ export class Entities {
     M.end();
     held.end();
   }
-  shadowOf(e, x, y, z, r) {
+  shadowOf(e, x, y, z, r, k = 1) {
     const T = this.t;
     const bx = Math.floor(x), bz = Math.floor(z);
     for (let yy = Math.floor(y + 0.01); yy > y - 3; yy--) {
@@ -989,7 +1017,7 @@ export class Entities {
         const top = yy;
         const dy = y - top;
         if (dy < -0.05) break;
-        const a = 0.55 * Math.max(0, 1 - dy / 3) * Math.min(1, (e.lS * e.lS + e.lB) * 1.2 + 0.3);
+        const a = 0.55 * k * Math.max(0, 1 - dy / 3) * Math.min(1, (e.lS * e.lS + e.lB) * 1.2 + 0.3);
         if (a > 0.02) this.meshes.blobAt(x, top + 0.003, z, r, a);
         break;
       }
@@ -1104,4 +1132,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=32';
+import { rayBox } from './terrain.js?v=33';

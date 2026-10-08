@@ -11,16 +11,16 @@
    the fish's way (mobs3.js). Numbers from the Minecraft Wiki (Java Edition);
    the shapes are boxes in the game's units, the textures our own.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=32';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=33';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=32';
-import { Animal, Monster, register, TYPES } from './mobs.js?v=32';
-import { model } from './mobs2.js?v=32';
-import { addArt } from './mobart.js?v=32';
-import { MODELS } from './mobmodels.js?v=32';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=32';
-import { activeDrops } from '../drops.js?v=32';
-import { ITEMS, I } from '../items.js?v=32';
+  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=33';
+import { Animal, Monster, register, TYPES } from './mobs.js?v=33';
+import { model } from './mobs2.js?v=33';
+import { addArt } from './mobart.js?v=33';
+import { MODELS } from './mobmodels.js?v=33';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=33';
+import { activeDrops } from '../drops.js?v=33';
+import { ITEMS, I } from '../items.js?v=33';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -321,7 +321,7 @@ addArt('bee_angry_nectar', [64, 64], p => paintBee(p, true, true));
    block played within 16 blocks of it is liked for 30 seconds: it stays
    by it and leaves what it fetches on top of it instead. ---- */
 export class Allay extends Flyer {
-  static W = 0.35; static H = 0.6; static HEALTH = 20; static SPEED = 0.1; static FLY_SPEED = 0.25; static SHADOW = 0.2;
+  static W = 0.35; static H = 0.6; static HEALTH = 20; static SPEED = 0.1; static FLY_SPEED = 0.25; static SHADOW = 0.2; static BRIGHT = true;
   static MODEL = 'allay'; static TEX = 'allay'; static CATEGORY = 'creature'; static NO_DESPAWN = true; static GLOW = true;
   constructor(m, type) { super(m, type); this.carry = 0; this.want = null; this.dropCool = 0; this.note = null; this.noteT = 0; this.heard = null; this.gaveAt = null; }
   get eyeH() { return 0.36; }
@@ -571,7 +571,7 @@ class VexChargeGoal extends Goal {
   }
 }
 export class Vex extends Flyer {
-  static W = 0.4; static H = 0.8; static HEALTH = 14; static FLY_SPEED = 0.35; static ATTACK = 9; static SHADOW = 0.25;
+  static W = 0.4; static H = 0.8; static HEALTH = 14; static FLY_SPEED = 0.35; static ATTACK = 9; static SHADOW = 0.25; static BRIGHT = true;
   static MODEL = 'vex'; static TEX = 'vex'; static HOSTILE = true; static CATEGORY = 'monster'; static XP = 3;
   constructor(m, type) { super(m, type); this.noPhysics = true; this.life = -1; this.charging = false; this.equip.mainhand = 'iron_sword'; this.dropChance = { mainhand: 0 }; }
   get eyeH() { return 0.5; }
@@ -1062,7 +1062,7 @@ export class ZombieNautilus extends Nautilus {
 register('zombie_nautilus', ZombieNautilus);
 // the mount screen, fetched once (ui/containers.js leads back to the entities, so not imported at the top)
 let MountScreenRef = null;
-import('../ui/containers.js?v=32').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
+import('../ui/containers.js?v=33').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
 // nautilus armour: bands of the metal round the shell and a plate over its back
 const NAUT_ARMOR_ART = { copper: [0xc8764a, 0x8a4a2a], iron: [0xd8d8d8, 0x9a9a9a], golden: [0xf8d84a, 0xc89a20], diamond: [0x5ae8e0, 0x2aa8a0], netherite: [0x4a4248, 0x2a2428] };
 for (const k in NAUT_ARMOR_ART) addArt('nautilus_armor_' + k, [64, 64], p => {

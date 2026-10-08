@@ -17,10 +17,10 @@
    and the particles (smoke puffs, crits, hearts, flames, explosions), each
    one instanced draw.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=32';
-import { VANILLA } from './vanilla.js?v=32';
-import { lightDefines } from './materials.js?v=32';
-import { GLINT } from './armor.js?v=32';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=33';
+import { VANILLA } from './vanilla.js?v=33';
+import { lightDefines } from './materials.js?v=33';
+import { GLINT } from './armor.js?v=33';
 const THREE = window.THREE;
 
 export const ATLAS = 2048;           // the mob texture atlas, in pixels a side (2048: room for every mob of the game)
@@ -68,6 +68,9 @@ uniform vec3 cameraPosition, uLightDir;
 uniform float uFrame;
 uniform float uTime;
 uniform sampler2D uNoise;
+uniform float uDim;      // 0 the Overworld, 1 the Nether, 2 the End (js/dims.js)
+uniform vec3 uDimAmb;    // the light everything gets there instead of the sky's (js/dim/look.js)
+#define HAS_DIM
 #ifdef LDR
 uniform sampler2D uView;
 uniform float uEyeInWater;
@@ -99,7 +102,8 @@ void main() {
   float sky = vL.x, block = vL.y;
   vec3 L = uLightDir;
   float NoL = dot(N, L);
-  float gate = smoothstep(0.03, 0.2, sky);
+  // (no sun or moon in the other dimensions, and no shadow map drawn there)
+  float gate = uDim > 0.5 ? 0.0 : smoothstep(0.03, 0.2, sky);
   float shadow = 0.0;
 #if SHADOWS > 0
   if (gate > 0.0 && NoL > 0.0) {
@@ -117,9 +121,12 @@ void main() {
   vec3 amb = ambientAt(N);
   amb = mix(amb, vec3(lum(amb)), 0.22);
   amb += sunC * 0.03;
-  amb *= sky * sky * 0.8;
+  // (the sky's light as the block it stands in gets it, no less: materials.js)
+  amb *= sky * sky;
+  // the Nether's even light and the End's dim sky light, as the blocks round them have it (materials.js)
+  if (uDim > 0.5) amb = uDimAmb * (uDim < 1.5 ? 1.0 : 0.3 + 0.7 * sky * sky);
   block = max(block, heldLight(vWorld, N));
-  vec3 blockL = block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
+  vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
   vec3 light = (diffuse * PI + amb + blockL + lightFloor()) / PI;
   vec3 col = albedo * light;
   // enchanted armour: the glint, by the light it is in (as on the player, render/avatar.js)
@@ -222,17 +229,22 @@ void main() {
 }`;
 const PART_FS = /* glsl */`
 uniform sampler2D uSheet, uAmbient;
+uniform float uDim;      // 0 the Overworld, 1 the Nether, 2 the End (js/dims.js)
+uniform vec3 uDimAmb;    // the light everything gets there instead of the sky's (js/dim/look.js)
 in vec2 vUv; in vec4 vC; in float vLight; in float vBlock;
 layout(location = 0) out vec4 outColor;
 void main() {
   vec4 t = texture(uSheet, vUv);
   if (t.a * vC.a < 0.1) discard;
   vec3 c = pow(t.rgb * vC.rgb, vec3(2.2));
-  // lit by the sky's light where it is (glowing ones carry a light of 1), and the warm light of torches and fires there
+  // lit by the sky's light where it is (glowing ones carry a light of 1), and the warm light of torches and fires there;
+  // in the Nether and the End by their own even light, as the blocks are (the sky table is left at midnight there)
   vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb + texelFetch(uAmbient, ivec2(3, 0), 0).rgb * 0.6;
-  vec3 lit = mix(amb / 3.14159 * 1.4, vec3(1.0), vLight > 0.99 ? 1.0 : 0.0);
+  vec3 lit = vLight > 0.99 ? vec3(1.0)
+    : uDim > 0.5 ? uDimAmb / 3.14159 * 1.4 * (uDim < 1.5 ? 1.0 : 0.3 + 0.7 * vLight * vLight)
+    : amb / 3.14159 * 1.4 * max(vLight, 0.06);
   vec3 warm = vLight > 0.99 ? vec3(0.0) : vec3(1.0, 0.8, 0.58) * pow(vBlock, 2.4) * 1.1;
-  c *= max(lit * max(vLight, 0.06) + warm, vec3(0.004));
+  c *= max(lit + warm, vec3(0.004));
 #ifdef LDR
   c = pow(c, vec3(1.0 / 2.2));
 #endif
@@ -356,7 +368,7 @@ export class EntityMeshes {
     const uSheet = { value: sheet };
     this.parts = new THREE.Mesh(pg, R.looked(o => new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3, vertexShader: HEAD + PART_VS, fragmentShader: HEAD + (o.vanilla ? PART_FS_VANILLA : PART_FS), defines: o.ldr ? { LDR: 1 } : {},
-      uniforms: { uSheet, uAmbient: U.uAmbient, uLightmap: U.uLightmap || { value: null }, uFogColor: U.uFogColor || { value: null }, uFog: U.uFog || { value: null } },
+      uniforms: { uSheet, uAmbient: U.uAmbient, uDim: U.uDim, uDimAmb: U.uDimAmb, uLightmap: U.uLightmap || { value: null }, uFogColor: U.uFogColor || { value: null }, uFog: U.uFog || { value: null }, uConstAmb: U.uConstAmb || { value: 0 } },
       transparent: true, depthWrite: false, side: THREE.DoubleSide,
     })));
     this.parts.frustumCulled = false; this.parts.renderOrder = 6;

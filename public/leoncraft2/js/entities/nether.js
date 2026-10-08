@@ -31,18 +31,18 @@
      blaze             hovers, three fireballs 6 ticks apart then 5 seconds
                        off, burns you; water and snowballs hurt it
 --------------------------------------------------------------------------- */
-import { Mob, Living, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=32';
+import { Mob, Living, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=33';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal, posAway, randomLandPos } from './ai.js?v=32';
-import { register, Monster, Zombie, Skeleton, Animal, TYPES } from './mobs.js?v=32';
-import { Slime } from './mobs3.js?v=32';
-import { Projectile } from './projectiles.js?v=32';
-import { model } from './mobs2.js?v=32';
-import { addArt } from './mobart.js?v=32';
-import { POSE } from './mobmodels.js?v=32';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=32';
-import { I, ITEMS } from '../items.js?v=32';
-import { dropStack, activeDrops } from '../drops.js?v=32';
+  MeleeAttackGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal, posAway, randomLandPos } from './ai.js?v=33';
+import { register, Monster, Zombie, Skeleton, Animal, TYPES } from './mobs.js?v=33';
+import { Slime } from './mobs3.js?v=33';
+import { Projectile } from './projectiles.js?v=33';
+import { model } from './mobs2.js?v=33';
+import { addArt } from './mobart.js?v=33';
+import { POSE } from './mobmodels.js?v=33';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=33';
+import { I, ITEMS } from '../items.js?v=33';
+import { dropStack, activeDrops } from '../drops.js?v=33';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -884,7 +884,7 @@ register('ghast', Ghast);
    MAGMA CUBE
 =========================================================================== */
 export class MagmaCube extends Slime {
-  static TEX = 'magma_cube'; static FIRE_IMMUNE = true; static NO_FALL = true;
+  static TEX = 'magma_cube'; static FIRE_IMMUNE = true; static NO_FALL = true; static BRIGHT = true;
   setSize(n, heal) {
     super.setSize(n, heal);
     this.armor = 3 * n;
