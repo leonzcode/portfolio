@@ -427,7 +427,8 @@ export class World {
       // what this mesh already has needs no remembering
       const log = this.rowLog.get(k);
       if (log) { let j = 0; for (const e of log) if (e[0] >= m.version) log[j++] = e; log.length = j; if (!j) this.rowLog.delete(k); }
-      if (!this.warmed && m.cx === this.pcx && m.cz === this.pcz && this.meshCache.has(k)) this.warmEditWorker(m.cx, m.cz);
+      // (not while a loading screen waits: the edit worker is making the ground then, and the ground waited behind these)
+      if (!this.warmed && !this.allHands && m.cx === this.pcx && m.cz === this.pcz && this.meshCache.has(k)) this.warmEditWorker(m.cx, m.cz);
       return;
     }
     if (m.type === 'warmed') return;
@@ -493,6 +494,8 @@ export class World {
   update(px, pz) {
     if (this.dead) return;            // left behind (the title's world while the next one loads)
     const pcx = Math.floor(px / CH), pcz = Math.floor(pz / CH);
+    // the edit worker's practice, once the loading screen has let it go (see the mesh answer)
+    if (!this.warmed && !this.allHands && pcx === this.pcx && pcz === this.pcz && this.meshCache.has(this.key(pcx, pcz))) this.warmEditWorker(pcx, pcz);
     /* what to load is planned again when you cross into another chunk, when the
        render distance changes (a longer one asked for nothing new until you
        walked on; a shorter one let go of nothing), and when the check below
