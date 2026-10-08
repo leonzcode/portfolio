@@ -46,8 +46,13 @@ vec3 faceB(int i) {
 }
 // Brightness (Video Settings) less its default, 0.5: the least light anything gets, lowered towards
 // none (Moody) or raised so the darkest caves can be made out (Bright), as the game's own setting does
+#ifndef NV_LIGHT
+#define NV_LIGHT 0.6
+#endif
 uniform float uBrightD;
-vec3 lightFloor() { return vec3(0.0035, 0.004, 0.006) * (1.0 + 2.0 * min(uBrightD, 0.0)) + vec3(0.03, 0.032, 0.036) * 2.0 * max(uBrightD, 0.0); }
+// Night Vision (0..1, flickering at its end): everything lit at least as a dull day lights it (Off's lightmap takes #999999)
+uniform float uNightVision;
+vec3 lightFloor() { return vec3(0.0035, 0.004, 0.006) * (1.0 + 2.0 * min(uBrightD, 0.0)) + vec3(0.03, 0.032, 0.036) * 2.0 * max(uBrightD, 0.0) + vec3(NV_LIGHT) * uNightVision; }
 `;
 
 /* ---- Texture Filtering (Video Settings) ----------------------------------
