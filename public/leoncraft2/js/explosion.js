@@ -27,46 +27,54 @@
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID } from './blocks.js?v=31';
 
-/* Blast resistance from the wiki where it is not the block's hardness. */
+/* Blast resistance from the wiki where it is not the block's hardness. Worked out the first time it
+   is wanted, or when the page is next idle: its 34 passes over every block took 11-15 ms here, and
+   they ran with the rest of the game's parts as those load behind the title screen (main.js loadParts). */
 const RES = new Map();
-const res = (test, v) => { for (const d of BLOCKS) if (d && test(d.name, d)) RES.set(d.id, v); };
-res(n => /^(stone|granite|diorite|andesite|polished_(granite|diorite|andesite)|deepslate|cobbled_deepslate|polished_deepslate|tuff|.*cobblestone.*|.*bricks?|.*_bricks_.*|.*_tiles?|smooth_stone|.*blackstone.*|prismarine.*|purpur.*|smooth_(sandstone|red_sandstone|quartz))$/.test(n), 6);
-res(n => /(_slab|_stairs|_wall)$/.test(n) && /(stone|cobble|brick|deepslate|tuff|blackstone|prismarine|purpur|granite|diorite|andesite|tile)/.test(n), 6);
-res(n => /^(dirt|coarse_dirt|podzol|rooted_dirt|mud|sand|red_sand|soul_sand|soul_soil|suspicious_sand|concrete_powder|hay_block|magma_block)$/.test(n) || /_concrete_powder$/.test(n), 0.5);
-res(n => /^(grass_block|mycelium|farmland|clay|gravel|suspicious_gravel|sponge|wet_sponge)$/.test(n), 0.6);
-res(n => n === 'dirt_path', 0.65);
-res(n => /(sandstone)$/.test(n) && !/^smooth/.test(n), 0.8);
-res(n => /_(log|wood|stem|hyphae)$/.test(n) && !/^(melon|pumpkin|attached)/.test(n), 2);
-res(n => /_planks$|_(fence|fence_gate|door|trapdoor)$/.test(n) && !/^iron/.test(n), 3);
-res(n => /_(slab|stairs)$/.test(n) && /^(oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak|bamboo|crimson|warped)/.test(n), 3);
-res((n, d) => d.leaves, 0.2);
-res(n => /glass/.test(n), 0.3);
-res(n => /^(ice|packed_ice|frosted_ice)$/.test(n), 0.5);
-res(n => n === 'blue_ice', 2.8);
-res(n => /_ore$/.test(n), 3);
-res(n => /^(iron|gold|diamond|emerald|redstone|coal)_block$|copper/.test(n) && !/_ore$/.test(n), 6);
-res(n => n === 'lapis_block', 3);
-res(n => /^(obsidian|crying_obsidian|ancient_debris|netherite_block|anvil|chipped_anvil|damaged_anvil|enchanting_table|respawn_anchor|reinforced_deepslate)$/.test(n), 1200);
-res(n => n === 'ender_chest', 600);
-res(n => /^(bedrock|barrier|end_portal_frame|end_portal|end_gateway|command_block|chain_command_block|repeating_command_block|structure_block|jigsaw|light)$/.test(n), 3600000);
-res(n => n === 'end_stone' || /^end_stone_brick/.test(n), 9);
-res(n => /_terracotta$|^terracotta$/.test(n) && !/glazed/.test(n), 4.2);
-res(n => /glazed_terracotta$/.test(n), 1.4);
-res(n => /_concrete$/.test(n), 1.8);
-res(n => /_wool$/.test(n), 0.8);
-res(n => n === 'netherrack' || /nylium$/.test(n), 0.4);
-res(n => n === 'basalt' || n === 'polished_basalt', 4.2);
-res(n => n === 'iron_bars' || n === 'chain', 6);
-res(n => /^iron_(door|trapdoor)$/.test(n), 5);
-res(n => n === 'hopper', 4.8);
-res(n => /^(furnace|blast_furnace|smoker|dispenser|dropper)$/.test(n), 3.5);
-res(n => n === 'observer', 3);
-res(n => /^(piston|sticky_piston|piston_head)$/.test(n), 1.5);
-res(n => /^(tnt|slime_block|honey_block)$/.test(n), 0);
-res(n => n === 'water' || n === 'lava', 100);
+let resMade = false;
+function makeRes() {
+  resMade = true;
+  const res = (test, v) => { for (const d of BLOCKS) if (d && test(d.name, d)) RES.set(d.id, v); };
+  res(n => /^(stone|granite|diorite|andesite|polished_(granite|diorite|andesite)|deepslate|cobbled_deepslate|polished_deepslate|tuff|.*cobblestone.*|.*bricks?|.*_bricks_.*|.*_tiles?|smooth_stone|.*blackstone.*|prismarine.*|purpur.*|smooth_(sandstone|red_sandstone|quartz))$/.test(n), 6);
+  res(n => /(_slab|_stairs|_wall)$/.test(n) && /(stone|cobble|brick|deepslate|tuff|blackstone|prismarine|purpur|granite|diorite|andesite|tile)/.test(n), 6);
+  res(n => /^(dirt|coarse_dirt|podzol|rooted_dirt|mud|sand|red_sand|soul_sand|soul_soil|suspicious_sand|concrete_powder|hay_block|magma_block)$/.test(n) || /_concrete_powder$/.test(n), 0.5);
+  res(n => /^(grass_block|mycelium|farmland|clay|gravel|suspicious_gravel|sponge|wet_sponge)$/.test(n), 0.6);
+  res(n => n === 'dirt_path', 0.65);
+  res(n => /(sandstone)$/.test(n) && !/^smooth/.test(n), 0.8);
+  res(n => /_(log|wood|stem|hyphae)$/.test(n) && !/^(melon|pumpkin|attached)/.test(n), 2);
+  res(n => /_planks$|_(fence|fence_gate|door|trapdoor)$/.test(n) && !/^iron/.test(n), 3);
+  res(n => /_(slab|stairs)$/.test(n) && /^(oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak|bamboo|crimson|warped)/.test(n), 3);
+  res((n, d) => d.leaves, 0.2);
+  res(n => /glass/.test(n), 0.3);
+  res(n => /^(ice|packed_ice|frosted_ice)$/.test(n), 0.5);
+  res(n => n === 'blue_ice', 2.8);
+  res(n => /_ore$/.test(n), 3);
+  res(n => /^(iron|gold|diamond|emerald|redstone|coal)_block$|copper/.test(n) && !/_ore$/.test(n), 6);
+  res(n => n === 'lapis_block', 3);
+  res(n => /^(obsidian|crying_obsidian|ancient_debris|netherite_block|anvil|chipped_anvil|damaged_anvil|enchanting_table|respawn_anchor|reinforced_deepslate)$/.test(n), 1200);
+  res(n => n === 'ender_chest', 600);
+  res(n => /^(bedrock|barrier|end_portal_frame|end_portal|end_gateway|command_block|chain_command_block|repeating_command_block|structure_block|jigsaw|light)$/.test(n), 3600000);
+  res(n => n === 'end_stone' || /^end_stone_brick/.test(n), 9);
+  res(n => /_terracotta$|^terracotta$/.test(n) && !/glazed/.test(n), 4.2);
+  res(n => /glazed_terracotta$/.test(n), 1.4);
+  res(n => /_concrete$/.test(n), 1.8);
+  res(n => /_wool$/.test(n), 0.8);
+  res(n => n === 'netherrack' || /nylium$/.test(n), 0.4);
+  res(n => n === 'basalt' || n === 'polished_basalt', 4.2);
+  res(n => n === 'iron_bars' || n === 'chain', 6);
+  res(n => /^iron_(door|trapdoor)$/.test(n), 5);
+  res(n => n === 'hopper', 4.8);
+  res(n => /^(furnace|blast_furnace|smoker|dispenser|dropper)$/.test(n), 3.5);
+  res(n => n === 'observer', 3);
+  res(n => /^(piston|sticky_piston|piston_head)$/.test(n), 1.5);
+  res(n => /^(tnt|slime_block|honey_block)$/.test(n), 0);
+  res(n => n === 'water' || n === 'lava', 100);
+}
+if (typeof requestIdleCallback === 'function') requestIdleCallback(() => { if (!resMade) makeRes(); }, { timeout: 5000 });
 
 export function resistance(b) {
   if (!b) return 0;
+  if (!resMade) makeRes();
   const r = RES.get(b);
   if (r !== undefined) return r;
   const d = BLOCKS[b];
