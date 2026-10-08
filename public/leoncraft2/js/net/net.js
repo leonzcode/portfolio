@@ -51,10 +51,15 @@
      vehicles     boats and minecarts are everyone's: numbered by the server,
                   moved by the machine of whoever steers, ridden two to a
                   boat, broken by anyone (vehicles.js)
-
-   Not shared yet: the mobs and the orbs of experience. What a mob does to
-   the world (a creeper's hole, a farmer's crops, what it drops) is shared
-   like anything else.
+     mobs         everyone's too: each run by the machine of the player
+                  nearest it (or of whoever last hit, fed or rode it) and
+                  drawn from what that machine sends everywhere else; the
+                  orbs of experience go to whoever reaches them first
+                  (mobs.js); the dragon and its crystals are one fight run
+                  by one machine (endfight.js)
+     the rest     what is seen and heard near another player: the sounds
+                  they and their part of the world make, chest lids, bells,
+                  explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
 import { B, BLOCKS } from '../blocks.js?v=33';
 import { idx, H } from '../world-const.js?v=33';
@@ -69,6 +74,9 @@ import { register, commandDef, execute, gameRule } from '../commands.js?v=33';
 import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=33';
 import { Projectile } from '../entities/projectiles.js?v=33';
 import { Vehicles } from './vehicles.js?v=33';
+import { Mobs, Orbs } from './mobs.js?v=33';
+import { Events } from './events.js?v=33';
+import { EndSync } from './endfight.js?v=33';
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {
@@ -356,7 +364,7 @@ export class Net {
        30 seconds      Timed out, as the game says it */
   static connect(server, password, name) {
     return new Promise((resolve, reject) => {
-      const url = wsBase() + '?mode=lc2&pv=3&server=' + encodeURIComponent(server) + '&pw=' + encodeURIComponent(password || '') +
+      const url = wsBase() + '?mode=lc2&pv=4&server=' + encodeURIComponent(server) + '&pw=' + encodeURIComponent(password || '') +
         '&name=' + encodeURIComponent(name) + '&device=' + encodeURIComponent(deviceId());
       let ws;
       try { ws = new WebSocket(url); } catch (e) { reject({ reason: FAIL_TEXT.down[1], kind: SERVER_DOWN }); return; }
@@ -408,6 +416,9 @@ export class Net {
     this.shots = [];                 // what you shot or threw this tick, for the others to see fly
     this.pvpHit = null;              // the last hit another player gave you: { name, k, item, age }
     this.veh = new Vehicles(this);   // the boats and minecarts everyone shares (vehicles.js)
+    this.mobs = new Mobs(this); this.orbs = new Orbs(this);   // the mobs and orbs everyone shares (mobs.js)
+    this.events = new Events(this);  // the sounds, lids, explosions and cracks seen near the others (events.js)
+    this.end = new EndSync(this);    // one fight in the End for everyone (endfight.js)
     this.qsT = 0; this.wasDead = false; this.invSig = '';
   }
   // whether you may use the commands that change the world (an operator, or Allow Commands)
@@ -439,6 +450,7 @@ export class Net {
     }
     this.initPlayers = m.players || [];
     this.veh.init(m);
+    this.mobs.init(m); this.orbs.init(m); this.events.init(m);
     // your own record on this server (MpSave.readState), or null the first time you come
     this.pdata = m.pdata && typeof m.pdata === 'object' ? m.pdata : null;
     for (const o of m.items || []) this.keepItem(o);
@@ -468,7 +480,7 @@ export class Net {
     this.players.onPoof = (x, y, z) => { const E = this.game && this.game.entities; if (E && E.particles) E.particles('poof', x, y + 0.9, z, 20, 0.4); };
     for (const p of this.initPlayers) this.players.add(p);
     // someone sitting in a boat or minecart is drawn in its seat in this machine's copy of it
-    this.players.seatOf = r => this.veh.seatOf(r);
+    this.players.seatOf = r => this.veh.seatOf(r) || this.mobs.seatOf(r, this.veh.alpha);
     this.initPlayers = null;
     // the server's game rules and difficulty, for everyone
     if (this.rules) this.applyRules(this.rules);
@@ -499,6 +511,7 @@ export class Net {
     document.addEventListener('keydown', this.onKey);
     document.addEventListener('keyup', this.onKey);
     this.sendSkin();
+    this.events.attach();
     // the world's spawn, found by the first player to arrive
     if (!this.spawn && game.spawn) this.send({ t: 'spawn', x: game.spawn.x, z: game.spawn.z });
     game.time = this.serverTime();
@@ -525,6 +538,7 @@ export class Net {
     if (this.list) { const o = this.ctx.gui.overlays, i = o.indexOf(this.list); if (i >= 0) o.splice(i, 1); this.list = null; }
     if (this.onKey) { document.removeEventListener('keydown', this.onKey); document.removeEventListener('keyup', this.onKey); this.onKey = null; }
     if (this.unswing) { this.unswing(); this.unswing = null; }
+    this.events.detach();
     this.game = null;
   }
   // the connection went (the server stopped, the network, kicked): back to the title with the reason
@@ -543,6 +557,8 @@ export class Net {
        or what changed since the last: [1, id, dts, dx, dy, dz, dyaw, dpitch, flags, dim, use...] in
        ms, millimetres and thousandths of a radian, a number left off the end unchanged (lc2.js moveFor) */
     if (Array.isArray(m)) {
+      // the mobs others run: where they are (mobs.js)
+      if (m[0] === 3 || m[0] === 4) { this.mobs.receive(m); return; }
       let b = this.bases.get(m[1]);
       if (m[0] === 0) {
         b = { ts: m[2], X: Math.round(m[3] * 1000), Y: Math.round(m[4] * 1000), Z: Math.round(m[5] * 1000), YAW: Math.round(m[6] * 1000), PITCH: Math.round(m[7] * 1000), f: m[8] | 0, d: m[9] | 0 };
@@ -563,7 +579,7 @@ export class Net {
       case 'out': if (this.ctx) for (const l of m.lines || []) if (Array.isArray(l)) this.ctx.chat.add(String(l[0]), l[1] === undefined ? 0xFFFFFF : l[1]); return;
       case 'join': if (this.players) { this.players.add(m.p); } else this.initPlayers.push(m.p); return;
       case 'v=': case 'v+': case 'vs': case 'vc': case 'vr': case 'vj': case 'v-': this.veh.receive(m); return;
-      case 'leave': this.veh.left(m.id); this.bases.delete(m.id); if (this.players) this.players.remove(m.id); else this.initPlayers = this.initPlayers.filter(p => p.id !== m.id); return;
+      case 'leave': this.veh.left(m.id); this.events.left(m.id); this.bases.delete(m.id); if (this.players) this.players.remove(m.id); else this.initPlayers = this.initPlayers.filter(p => p.id !== m.id); return;
       case 'skin': if (this.players) this.players.setSkin(m.id, m.skin, m.slim); else this.early(m); return;
       case 'eq': if (this.players) this.players.setEquip(m.id, m.eq); else this.early(m); return;
       case 'sw': if (this.players) this.players.swing(m.id, m.h); return;
@@ -578,6 +594,9 @@ export class Net {
       }
       case 'kicked': this.kickReason = m.reason; return;
       case 'fx': if (this.game && this.game.ready) this.effects(m); return;
+      case 'ev': this.events.receive(m); return;
+      // the mobs' news in the order it came, with their positions (which go straight to the puppets)
+      case 'm=': case 'm+': case 'mo': case 'mj': case 'ma': case 'm-': case 'pop': this.mobs.receive(m); return;
       // blocks, chests and signs go in the moment they arrive, not at the next tick: they show a frame sooner
       case 'b': case 'ct': case 'dt': if (this.game && this.game.ready && !this.inbox.length) { this.handle(m); return; } this.inbox.push(m); return;
       default: this.inbox.push(m);
@@ -604,6 +623,9 @@ export class Net {
     this.timeExpect = g.time + 1;
     this.pushTick();
     this.veh.tick(dimCode(g.dim));
+    this.mobs.tick(dimCode(g.dim), stamp);
+    this.end.tick();
+    this.events.tick(dimCode(g.dim));
     this.shareShots();
     this.sendState(stamp);
     if (++this.eqTick % 5 === 0 || this.eqTick === 1 || g.inv.heldId() !== this.lastHeld) this.sendEquip();
@@ -621,6 +643,7 @@ export class Net {
       const R = this.ctx.renderer;
       this.players.frame(now, dt, g.world, dimCode(g.dim), eye, Math.max(48, (R.opts.renderDist || 8) * 16), g.mode === 'spectator');
     }
+    this.events.players(dt);
     // a new skin chosen while playing goes to everyone
     if ((this.skinCheck = (this.skinCheck || 0) + dt) > 2) { this.skinCheck = 0; this.sendSkin(); }
   }
@@ -696,10 +719,13 @@ export class Net {
       };
     }
     if (g.drops && g.drops !== this.hdr) this.hookDrops(g.drops);
+    if (g.realms && g.realms !== this.hrl && this.events.on) { this.hrl = g.realms; this.end.hook(g.realms); }
     const E = g.entities;
     if (E && E !== this.he) {
       this.he = E;
       this.veh.hook(E);
+      if (this.mobs.on) this.mobs.hook(E);
+      this.events.hookEntities(E);
       // the crosshair finds the other players too, in front of any mob or block (for hitting them)
       const pickFor = E.pickFor;
       E.pickFor = function (eye, blockT) { return net.pickPlayer(this, eye, blockT, pickFor.call(this, eye, blockT)); };
@@ -714,6 +740,7 @@ export class Net {
     const S = g.sim;
     if (S && S !== this.hs) {
       this.hs = S;
+      this.events.hookSim(S);
       // random ticks only in the chunks you are the nearest player to
       S.skip = c => !this.owns(c);
       // the weather is the server's: the rain eases in and out here
@@ -927,12 +954,17 @@ export class Net {
      Each machine flies its own: yours is sent as it leaves your hand (where
      it is and how fast), and the others fly a copy of it that touches
      nothing (it vanishes on whatever it meets, and an arrow or trident sticks
-     where it lands). Whether it hit someone is your machine's to say. */
+     where it lands). Whether it hit someone is your machine's to say. So are
+     the shots of the mobs your machine runs (a skeleton's arrows, a blaze's
+     or a ghast's fireballs). A fishing line is not a shot: events.js draws
+     another player's. */
   shareShots() {
     if (!this.shots.length) return;
     const g = this.game, P = g.entities && g.entities.player, r3 = v => Math.round(v * 1000) / 1000, out = [];
     for (const e of this.shots) {
-      if (!P || e.owner !== P || e.ghost || out.length >= 16) continue;
+      const ow = e.owner;
+      // (yours, a mob's your machine runs, or nobody's: a dispenser's arrow or fire charge here)
+      if (!P || !(!ow || ow === P || (ow.nm && !ow.puppet)) || e.ghost || e.type === 'fishing_bobber' || out.length >= 16) continue;
       const o = { ty: e.type, p: [r3(e.pos.x), r3(e.pos.y), r3(e.pos.z)], v: [r3(e.vel.x), r3(e.vel.y), r3(e.vel.z)] };
       if (e.item) o.it = e.item;
       if (e.crit) o.c = 1;
@@ -1067,7 +1099,7 @@ export class Net {
     const fx = sv && sv.effects;
     const f = (P.sneaking ? F.SNEAK : 0) | (P.sprinting ? F.SPRINT : 0) | (P.flying ? F.FLY : 0) | (P.pose === 'swim' ? F.SWIM : 0) |
       (P.onGround ? F.GROUND : 0) | (g.sim && g.sim.sleeping ? F.SLEEP | (g.sim.sleeping.t >= 100 ? F.SLEPT : 0) : 0) | (dead ? F.DEAD : 0) | (P.gliding ? F.GLIDE : 0) | (P.riding ? F.RIDE : 0) |
-      (g.mode === 'spectator' ? F.SPEC : 0) | (fx && fx.invisibility ? F.INVIS : 0);
+      (g.mode === 'spectator' ? F.SPEC : 0) | (fx && fx.invisibility ? F.INVIS : 0) | (g.entities && g.entities.pFire > 0 && !dead ? F.FIRE : 0);
     const d = dimCode(g.dim);
     // (a millimetre and a twentieth of a degree: finer than any screen shows, in fewer characters)
     const r3 = v => Math.round(v * 1000) / 1000;
@@ -1171,6 +1203,7 @@ export class Net {
       case 'it=': this.numbered(m.e || []); return;
       case 'it-': case 'itno': this.itemGone(m.id); return;
       case 'itok': this.granted(m.id, m.s); return;
+      case 'o=': case 'o+': case 'o-': case 'ono': case 'ook': this.orbs.receive(m); return;
       case 'pm':
         if (m.err) this.ctx.chat.add(m.err, 0xFF5555);
         else if (m.to) this.ctx.chat.add(`You whisper to ${m.to}: ${m.text}`, 0xAAAAAA);
@@ -1216,6 +1249,8 @@ export class Net {
       if (!net.closed) net.pickups(this, player, collector);
     };
     for (const rec of this.items[dimCode(this.game.dim)].values()) { rec.e = null; this.showItem(rec); }
+    // and the orbs of experience (mobs.js)
+    this.orbs.hook(D);
   }
   keepItem(o) {
     if (!o || !(o.id > 0) || !(o.d >= 0 && o.d < 3) || !Array.isArray(o.p)) return null;
