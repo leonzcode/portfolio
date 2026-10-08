@@ -24,7 +24,7 @@ import { PumpkinView } from './pumpkin.js?v=28';
 import { glints, pieceLook } from './armor.js?v=28';
 import { dimLook } from '../dim/look.js?v=28';
 import { blockGeometry, intAttribute } from './blockmesh.js?v=28';
-import { applyLook, looked } from './looks.js?v=28';
+import { applyLook, looked, passMaterials } from './looks.js?v=28';
 import { screenFx } from './screenfx.js?v=28';
 const THREE = window.THREE;
 // a column's distance from (ex, ez), squared, in whole blocks; and nearest first
@@ -58,6 +58,9 @@ export class Renderer {
     r.outputColorSpace = THREE.LinearSRGBColorSpace;
     if (!r.capabilities.isWebGL2) throw new Error('WebGL2 is needed');
     r.getContext().getExtension('EXT_color_buffer_float');
+    // asked now, while the card has nothing to do (three.js keeps it): asked first after the shaders were sent to be built,
+    // it waited for all of them, a fifth of a second at every page open (Video Settings' filtering, render/looks.js)
+    r.capabilities.getMaxAnisotropy();
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.05, 1000);
     this.scene = new THREE.Scene();          // opaque and cutout
     this.trans = new THREE.Scene();          // fluids and translucent
@@ -640,7 +643,8 @@ export class Renderer {
     // (kept, for when a new look needs them all built again: render/looks.js)
     if (extra) this.warmExtra = extra;
     const r = this.r, cam = this.camera, more = new THREE.Scene();
-    const mats = [this.mats.handOpaque, this.mats.handCutout].concat(extra || []);
+    // (with the look's full-screen passes: render/looks.js passMaterials)
+    const mats = [this.mats.handOpaque, this.mats.handCutout].concat(extra || [], passMaterials(this));
     for (const m of mats) if (m) more.add(new THREE.Mesh(this.standGeo, m));
     const scenes = [this.scene, this.trans, this.handScene, this.shadowTerrain, this.shadowScene, more,
       this.vanilla ? null : this.ldr ? this.blockClouds && this.blockClouds.scene : this.blockCloudsHDR && this.blockCloudsHDR.scene,
