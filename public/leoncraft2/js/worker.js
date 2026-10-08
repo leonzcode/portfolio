@@ -280,9 +280,27 @@ const ck = (x, z) => x + ',' + z;
 /* While a generator's code loads, what comes after the message that needs
    it waits, and then goes in the order it came. */
 let held = null;
+/* Messages are taken in turn, one each time round (a message to ourselves
+   between them), so the ones that came in while a job ran are all seen
+   before the next job starts: when a world is let go (idle, or the next
+   world's init), the jobs still waiting for it are not done. A worker was
+   kept on two of them (most of a fifth of a second) before it could start
+   on the next world: going through a portal, or out of the title. */
+const waiting = [];
+const turn = new MessageChannel();
+let turning = false;
+turn.port2.onmessage = () => {
+  turning = false;
+  const m = waiting.shift();
+  if (waiting.length) { turning = true; turn.port1.postMessage(0); }
+  if (!m) return;
+  if (held) held.push(m); else handle(m);
+};
 self.onmessage = e => {
-  if (held) { held.push(e.data); return; }
-  handle(e.data);
+  const m = e.data;
+  if (m && (m.type === 'idle' || m.type === 'init')) for (let i = waiting.length - 1; i >= 0; i--) if (JOBS[waiting[i].type]) waiting.splice(i, 1);
+  waiting.push(m);
+  if (!turning) { turning = true; turn.port1.postMessage(0); }
 };
 /* A job that goes wrong says so ('failed'), so the world asks again instead
    of waiting for ever on an answer that never comes: a chunk that never

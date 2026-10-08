@@ -903,7 +903,9 @@ async function boot() {
       for (const k in g.player.keys) g.player.keys[k] = false;
       loading = { text: 'Loading terrain...', progress: 0, chunks: [] };
       gui.open(new LoadingScreen());
+      MK('tvStart');
       await saveGame();
+      MK('tvSaved');
       let world = g.world;
       if (dim !== g.dim) {
         dropWorld(g.world);
@@ -917,6 +919,9 @@ async function boot() {
         });
         world.edits = await save.loadEdits();
         await world.ready;
+        MK('tvWorld');
+        // the ground round where you come out asked for now, while the dimension's parts are set up (attach)
+        world.allHands = true; world.focus = 2; world.update(near.x, near.z); world.flush();
         g.world = world; g.dim = dim;
         g.player.w = world; g.inter.world = world;
         g.fluids = new Fluids(world, (x, y, z, kind) => { if (kind === 1 && Math.random() < 0.3) renderer.inter.splash(x + 0.5, z + 0.5, 0.35, 1.5); });
@@ -925,9 +930,12 @@ async function boot() {
         // the items, chests, mobs and simulation of the new dimension
         await g.attach(world, g.fluids, dim);
         g.realms.entered();
+        MK('tvAttach');
       }
       await waitGround(world, near.x, near.z, true);
+      MK('tvGround');
       const pos = await resolve(world);
+      MK('tvResolved');
       if (pos) {
         if (Math.hypot(pos.x - near.x, pos.z - near.z) > 24) await waitGround(world, pos.x, pos.z);
         const P = g.player;
