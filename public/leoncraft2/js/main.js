@@ -36,10 +36,7 @@ import { ItemIcons } from './ui/icons.js?v=28';
 import { Inventory, inventoryScreen } from './ui/inventory.js?v=28';
 import { Hud } from './ui/hud.js?v=28';
 import { Interactor } from './interact.js?v=28';
-import { enchantDebug } from './enchanting.js?v=28';
 import { MAPS, isFilledMap } from './maps.js?v=28';
-import { Survival } from './survival.js?v=28';
-import { survivalHooks, respawnPlayer } from './life.js?v=28';
 import { Save } from './save.js?v=28';
 import { Chat, ChatScreen } from './ui/chat.js?v=28';
 import { displayName, setItemNames, register, gameRule, execute } from './commands.js?v=28';
@@ -47,33 +44,34 @@ import { applyModeRules, ModeKeys } from './modes.js?v=28';
 import { Particles } from './render/particles.js?v=28';
 import { DRAW, setItemLayers, ITEMS, itemId, displayName as itemDisplay, itemName } from './items.js?v=28';
 import { loadItemStrip, addItemPieces } from './itemtex.js?v=28';
-import { Drops, dropItem, giveXp } from './drops.js?v=28';
-import { Containers } from './containers.js?v=28';
-import { Hands } from './hands.js?v=28';
 import { setLayerPixels } from './render/blockmesh.js?v=28';
-import { Entities } from './entities/manager.js?v=28';
 import { EntityStore } from './entities/store.js?v=28';
 import { paintSome, primeAtlas } from './entities/mobart.js?v=28';
-import { Sim } from './sim/sim.js?v=28';
 import { DIMS } from './dims.js?v=28';
-import { Realms } from './dim/realms.js?v=28';
 import { addDimArt, endSkyTexture } from './dim/art.js?v=28';
-import { structuresApi } from './struct/spawners.js?v=28';
-import { Details, isSign } from './details.js?v=28';
-import { SignEditScreen } from './ui/sign.js?v=28';
-import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=28';
-import { MultiplayerScreen, DisconnectedScreen, rejoin } from './ui/multiplayer.js?v=28';
 import { VideoSettings } from './settings.js?v=28';
 import { pickBiome } from './worldgen.js?v=28';
 import { initSound, soundWorld, soundParts, soundTick, soundFrame, soundLeave } from './sound/game.js?v=28';
-import { advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements } from './adv/game.js?v=28';
-import { statsWorld, statsTick, statsState, statsQuit, statsLeave, openStatistics } from './stats.js?v=28';
-import { recipesWorld, recipesTick, recipesState, recipesLeave } from './recipes.js?v=28';
 import { loadEntityArt } from './entities/packart.js?v=28';
 import { ITEM_TEX } from './itemdata.js?v=28';
 import { debugLines, F3_HELP } from './ui/debug.js?v=28';
 import { Spin } from './render/screenfx.js?v=28';
 const THREE = window.THREE;
+/* The game's own parts (js/parts.js: mobs, the simulation, the dimensions, the hands, advancements,
+   statistics, the server code...) are not wanted by the title screen: they are loaded once it is up
+   (loadParts), so a first visit loads 91 modules (about 600 KB) less before it. Each name below is
+   the module's own, filled in when they come. */
+let enchantDebug, Survival, survivalHooks, respawnPlayer, Drops, dropItem, giveXp, Containers, Hands, Entities, Sim, Realms,
+  structuresApi, Details, isSign, SignEditScreen, tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint,
+  MultiplayerScreen, DisconnectedScreen, rejoin, advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements,
+  statsWorld, statsTick, statsState, statsQuit, statsLeave, openStatistics, recipesWorld, recipesTick, recipesState, recipesLeave;
+let partsP = null;
+const loadParts = () => partsP || (partsP = import('./parts.js?v=28').then(m => {
+  ({ enchantDebug, Survival, survivalHooks, respawnPlayer, Drops, dropItem, giveXp, Containers, Hands, Entities, Sim, Realms,
+    structuresApi, Details, isSign, SignEditScreen, tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint,
+    MultiplayerScreen, DisconnectedScreen, rejoin, advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements,
+    statsWorld, statsTick, statsState, statsQuit, statsLeave, openStatistics, recipesWorld, recipesTick, recipesState, recipesLeave } = m);
+}));
 
 const $ = s => document.querySelector(s);
 const status = (t, f) => { const el = $('#status'); if (el) el.textContent = t; const b = $('#bar'); if (b && f !== undefined) b.style.width = Math.round(f * 100) + '%'; };
@@ -404,7 +402,7 @@ async function boot() {
     applyGraphics: () => {},
     shadersOn: () => video.shadersOn(),
     // the server list (ui/multiplayer.js), and whether the world being played is on a server (the game menu's Disconnect)
-    multiplayer: () => gui.open(new MultiplayerScreen()),
+    multiplayer: () => parts().then(() => gui.open(new MultiplayerScreen())),
     online: () => !!(game && game.net),
     // the last screen closed in the game: take the mouse back
     closed: () => { if (game && !game.survival.dead) lock(); },
@@ -442,8 +440,18 @@ async function boot() {
   /* ---- item icons for the inventory and the hotbar (made a few at a time) ---- */
   const icons = new ItemIcons(alb, { grassMap: grass, foliageMap: foliage, extra: itemStrip.bmp });
   setLayerPixels(icons.px);          // flat items in the hand and on the ground get their thickness from these
-  // advancements: the toast, the screen, /advancement (js/adv)
-  advInit({ gui, chat, icons, options, name: () => (game && game.net ? game.net.name : 'Player') });
+  /* The game's parts (loadParts), and the setting up they need from here: the advancements' toast,
+     screen and /advancement (js/adv), and the structures' questions (struct/spawners.js). Asked for
+     as soon as the title is up; a world waits for them only once its ground is made. */
+  let partsUp = null, structures = null;
+  const parts = () => partsUp || (partsUp = loadParts().then(() => {
+    advInit({ gui, chat, icons, options, name: () => (game && game.net ? game.net.name : 'Player') });
+    // structures: /locate, strongholds for eyes of ender, chest loot, spawners (struct/spawners.js)
+    structures = structuresApi(() => (game ? game.world : menu && menu.world), () => game && game.player);
+    if (window.__lc2) window.__lc2.structures = structures;
+    // (the mobs' modules add pictures of their own as they load: painted in the title's idle time too)
+    paintIdle();
+  }));
 
   let hud = null;                   // the hotbar, hearts and F3, made per world (js/ui/hud.js)
 
@@ -550,6 +558,8 @@ async function boot() {
   }
   MK('title');
   $('#loading').hidden = true;
+  // the game's own parts, from now on (a world opened straight from a reload asks for them itself)
+  if (!resumeTo) parts();
   gui.panorama = !resumeTo;
   // straight back into a world (below): its loading screen, with no title world or practice in the way
   if (!resumeTo) { gui.setRoot(new TitleScreen()); paintIdle(); }
@@ -558,6 +568,7 @@ async function boot() {
   async function startGame(entry, isNew) {
     loading = { text: 'Loading terrain...', progress: 0, chunks: [] };
     gui.setRoot(new LoadingScreen());
+    const partsDone = parts();
     // the mobs' pictures painted (what is left of them) while the workers make the ground, not after
     paintIdle();
     // on a server its changes come from the server, and only your own record stays in this browser (net/net.js)
@@ -599,12 +610,14 @@ async function boot() {
     const spawn = st && st.spawn ? st.spawn : (entry.spawn || (dim === 'overworld' ? world.spawnAhead || await findSpawn(world) : { x: 0, z: 0 }));
     // where you last died in this world, for the recovery compass (js/dials.js)
     MK('sgSpawn');
-    setDeathPoint(st && st.lastDeath);
     const at = st && st.player ? st.player : null;
     const cx = at ? at.x : spawn.x, cz = at ? at.z : spawn.z;
     // wait for the ground round where you will stand
     await waitGround(world, cx, cz);
     MK('sgGround');
+    // (the game's parts: asked for when this began, and almost always in long before)
+    await partsDone;
+    setDeathPoint(st && st.lastDeath);
     const player = new Player(world);
     if (at) {
       player.pos.set(at.x, at.y, at.z); player.yaw = at.yaw || 0; player.pitch = at.pitch || 0; player.flying = !!at.flying;
@@ -1485,8 +1498,6 @@ async function boot() {
     tintCache.set(lin(c >> 16), lin((c >> 8) & 255), lin(c & 255));
     return tintCache;
   }
-  // structures: /locate, strongholds for eyes of ender, chest loot, spawners (struct/spawners.js)
-  const structures = structuresApi(() => (game ? game.world : menu && menu.world), () => game && game.player);
   // /locate structure <kind>: the game's search and its reply
   register('locate', {
     usage: 'structure <structure>',
@@ -1504,7 +1515,7 @@ async function boot() {
   });
   requestAnimationFrame(loop);
   window.__lc2 = {
-    structures,
+    structures,                     // (once the game's parts are in: parts())
     renderer, gui, options, B, BLOCKS, video,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud, chat, cheats: false,
@@ -1526,7 +1537,7 @@ async function boot() {
   // after a quality change, straight back into the world you were in
   if (resumeTo) startGame(resumeTo, false);
   // (a server's world comes back by joining it again: ui/multiplayer.js)
-  else if (resumeMp) rejoin(gui, resumeMp);
+  else if (resumeMp) parts().then(() => rejoin(gui, resumeMp));
 }
 
 boot().catch(e => { console.error(e); status('Something went wrong: ' + (e && e.message)); });
