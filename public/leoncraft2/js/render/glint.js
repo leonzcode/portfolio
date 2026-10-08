@@ -20,6 +20,7 @@ const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray;\n`;
 const VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
+uniform vec3 uChunk;
 layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA;
 #define aPos vec4(aPos)
 #define aA vec4(aA)
@@ -28,7 +29,10 @@ void main() {
   vUv = aA.xy / 16.0;
   vLayer = aPos.w;
   vFlags = int(aA.w + 0.5);
-  gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0), 1.0);
+  // (worked out in the same order as the terrain shader does it, materials.js: in another order the rounding
+  // put a framed item's shimmer behind the item itself, by more than the depth nudge, so it hardly showed)
+  vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0) + uChunk, 1.0);
+  gl_Position = projectionMatrix * viewMatrix * world;
 }`;
 const FS = /* glsl */`
 uniform sampler2DArray uAlbedo;
@@ -67,7 +71,7 @@ export function glintMaterial(R, gui) {
   const uExpo = { value: null };
   const make = o => new THREE.RawShaderMaterial({
     glslVersion: THREE.GLSL3, vertexShader: HEAD + VS, fragmentShader: HEAD + FS,
-    uniforms: { uAlbedo: R.U.uAlbedo, uNoise: R.U.uNoise, uClock: R.U.uClock, uGlint: R.U.uGlint, uExpo },
+    uniforms: { uAlbedo: R.U.uAlbedo, uNoise: R.U.uNoise, uClock: R.U.uClock, uGlint: R.U.uGlint, uChunk: R.U.uChunk, uExpo },
     defines: !gui && !o.vanilla && !o.ldr ? { HDR: 1 } : {},
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthFunc: THREE.LessEqualDepth,
     polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, side: THREE.DoubleSide,
