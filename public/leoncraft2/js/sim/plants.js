@@ -431,7 +431,7 @@ export function installPlants(sim) {
      tip (the game's growing plants) ---- */
   {
     const whole = b => !!b && BLOCKS[b].solid && BLOCKS[b].shape === 'cube';
-    // (drops: cave vines give glow berries only with berries on them, which these never have, so they drop nothing)
+    // (drops: their own, so a cave vine with glow berries on it lets one fall: loot.js)
     const gone = (holds, drops) => ({
       neighbor(s, x, y, z) { if (!holds(s, x, y, z)) s.schedule(x, y, z, 1); },
       tick(s, x, y, z) { if (!holds(s, x, y, z)) s.destroy(x, y, z, drops); },
@@ -440,16 +440,40 @@ export function installPlants(sim) {
       const Hd = B[head], Bd = B[body];
       if (Hd === undefined || Bd === undefined) continue;
       const holds = (s, x, y, z) => { const a = s.get(x, y + dir, z); return a === Hd || a === Bd || whole(a); };
-      const h = gone(holds, head === 'cave_vines' ? false : undefined);
+      const h = gone(holds);
       sim.on(Hd, h);
       sim.on(Bd, {
         neighbor(s, x, y, z) {
           if (!holds(s, x, y, z)) { s.schedule(x, y, z, 1); return; }
           const n = s.get(x, y - dir, z);
-          if (n !== Hd && n !== Bd) s.set(x, y, z, Hd, 0);
+          // (a cave vine keeps its berries)
+          if (n !== Hd && n !== Bd) s.set(x, y, z, Hd, head === 'cave_vines' ? s.meta(x, y, z) & 1 : 0);
         },
         tick: h.tick,
       });
+    }
+    /* cave vines (the game's CaveVinesBlock): glow berries picked by hand, one berry and the vine stays; the
+       tip grows a block down on one random tick in ten while its age is under 25, into air only, the new tip
+       with berries 11 times in 100 and the old one a stem that keeps its own */
+    const CV = B.cave_vines, CP = B.cave_vines_plant;
+    if (CV !== undefined && CP !== undefined) {
+      const pick = {
+        use(s, x, y, z, m) {
+          if (!(m & 1)) return false;
+          s.dropItem(x + 0.5, y + 0.5, z + 0.5, 'glow_berries', 1);
+          s.set(x, y, z, s.get(x, y, z), m & ~1);
+          return true;
+        },
+      };
+      sim.on(CP, pick);
+      sim.on(CV, Object.assign({
+        random(s, x, y, z, m) {
+          const age = (m >> 1) & 31;
+          if (age >= 25 || s.rng() >= 0.1 || y < 1 || s.get(x, y - 1, z)) return;
+          s.set(x, y - 1, z, CV, ((age + 1) << 1) | (s.rng() < 0.11 ? 1 : 0));
+          s.set(x, y, z, CP, m & 1);
+        },
+      }, pick));
     }
     for (const n of ['hanging_roots', 'spore_blossom', 'pale_hanging_moss']) {
       const id = B[n];

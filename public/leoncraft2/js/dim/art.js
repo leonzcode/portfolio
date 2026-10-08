@@ -10,6 +10,7 @@
    gets the same layers (extendStrip).
 --------------------------------------------------------------------------- */
 import { litFronts } from '../render/litfront.js?v=33';
+import { litBerries } from '../render/litberries.js?v=33';
 const THREE = window.THREE;
 
 // a small seeded hash for the art (the same picture every time)
@@ -165,6 +166,8 @@ export function addDimArt(manifest) {
   add('lc2_end_crystal', [endCrystal()], 1, false);
   // lit furnaces, smokers and blast furnaces (render/litfront.js), filled from the strip in upload
   const lit = litFronts(add);
+  // cave vines with glow berries (render/litberries.js), the same way
+  const berries = litBerries(add);
   manifest.layers = next;
   return {
     layers,
@@ -172,6 +175,7 @@ export function addDimArt(manifest) {
     // (strip: the albedo strip as loaded, for the pictures made from our own: the lit fronts)
     upload(r, textures, strip) {
       lit.fill(strip, T);
+      berries.fill(strip, T);
       const gl = r.getContext();
       const flat = new Uint8Array(16 * 16 * 4), spec = new Uint8Array(16 * 16 * 4), glow = new Uint8Array(16 * 16 * 4);
       for (let i = 0; i < 256; i++) { flat.set([128, 128, 255, 255], i * 4); spec.set([40, 10, 0, 0], i * 4); glow.set([40, 10, 0, 140], i * 4); }
