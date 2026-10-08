@@ -524,7 +524,19 @@ export class Entities {
     if (!v || v.removed) { e.vehicle = null; return; }
     e.baseTick();
     e.vel.set(0, 0, 0);
-    if (e instanceof Mob) { e.serverAi(); if (e.bodyDue) { e.bodyDue = false; e.bodyControl(); } e.animTick && e.animTick(); }
+    if (e instanceof Mob) {
+      e.serverAi(); if (e.bodyDue) { e.bodyDue = false; e.bodyControl(); }
+      /* on a mob's back (a jockey: a skeleton on a spider, a pillager on a ravager) its
+         body sits the way the mount's does, as the game's rider takes its mount's body
+         turn; the head looks about within its own limit. (It sat any way round: backwards
+         on a walking horse.) */
+      if (v instanceof Mob) {
+        e.bodyYaw = v.bodyYaw;
+        const max = e.headMax(), off = Math.atan2(Math.sin(e.headYaw - e.bodyYaw), Math.cos(e.headYaw - e.bodyYaw));
+        if (Math.abs(off) > max) e.headYaw = e.bodyYaw + Math.sign(off) * max;
+      }
+      e.animTick && e.animTick();
+    }
     e.fallDist = 0;
     // after its own mind has had its say, the seat decides which way it faces (a boat: its way, or sideways)
     if (v.riderPlaced) v.riderPlaced(e, v.passengers.indexOf(e));
