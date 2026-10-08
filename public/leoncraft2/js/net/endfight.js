@@ -19,8 +19,15 @@
    with its blast. The exit portal, the egg and the gateway the death opens
    are blocks, shared like any other; its experience falls as orbs anyone
    can pick up (mobs.js Orbs).
+
+   An end crystal a player puts down (in the End to bring the dragon back,
+   or anywhere as a blast) is put down on every screen; whoever breaks it
+   sets it off on their machine, and it goes off on the others' with its
+   blast. The machine running the fight starts a respawn when the four are
+   on the portal, whoever put them there.
 --------------------------------------------------------------------------- */
 import { F } from './players.js?v=32';
+import { EndCrystal } from '../dim/entities.js?v=32';
 
 const PHASES = ['holding', 'strafe', 'approach', 'landing', 'scanning', 'roar', 'flame', 'takeoff', 'charge', 'dying'];
 const KEY = '0,0,0';
@@ -53,6 +60,19 @@ export class EndSync {
       me.attach(this.fight);
       return r;
     };
+    // an end crystal put down here: on the others' screens too
+    const add = RL.add;
+    RL.add = function (e) {
+      const r = add.apply(this, arguments);
+      if (e instanceof EndCrystal && e.pillar < 0 && !me.applying) me.send(['xput', e.pos.x, e.pos.y, e.pos.z]);
+      return r;
+    };
+    // one broken here (not a pillar's: whoever runs the fight has those): set off here, and gone with its blast for the others
+    const destroyed = RL.crystalDestroyed;
+    RL.crystalDestroyed = function (c, source) {
+      if (c.pillar < 0) { if (me.applying) return; me.send(['xboom', c.pos.x, c.pos.y, c.pos.z]); }
+      return destroyed.apply(this, arguments);
+    };
     // (already in the End as you join: the fight made from this browser's record is put right)
     if (RL.fight) { me.attach(RL.fight); const s = me.state; if (s) { me.seen = null; me.take(s); } }
   }
@@ -72,8 +92,8 @@ export class EndSync {
     // a crystal broken here: by whoever runs the fight
     const destroyed = F.crystalDestroyed;
     F.crystalDestroyed = function (c, source) {
-      if (me.running === false && !me.applying) {
-        if (c.pillar >= 0) { this.s.crystals[c.pillar] = false; me.send(['xhit', c.pos.x, c.pos.y, c.pos.z, c.pillar]); }
+      if (me.running === false && !me.applying && c.pillar >= 0) {
+        this.s.crystals[c.pillar] = false; me.send(['xhit', c.pos.x, c.pos.y, c.pos.z, c.pillar]);
         return;
       }
       const r = destroyed.apply(this, arguments);
@@ -138,10 +158,14 @@ export class EndSync {
       Object.assign(F.s, JSON.parse(JSON.stringify(s)));
       if (keep) {
         F.crystals.forEach((c, i) => { if (c && !c.dead && !F.s.crystals[i]) c.dead = true; });
+        // (a respawn put the pillars' crystals back: one the record had gone and has again; not one only just broken here)
+        const was = this.lastCrystals;
+        F.s.crystals.forEach((on, i) => { const c = F.crystals[i]; if (on && was && was[i] === false && (!c || c.dead) && F.spikes[i]) F.spawnCrystal(i); });
         if (!F.s.alive && F.dragon) { F.dragon.dead = true; F.dragon = null; }
         else if (F.s.alive && !F.dragon && F.started) { F.spawnDragon(F.s.health); this.dragonMode(); }
       }
     } finally { this.applying = false; }
+    this.lastCrystals = Array.isArray(s.crystals) ? s.crystals.slice() : null;
   }
   // the dragon here: run by this machine, or drawn from the one that runs the fight
   dragonMode() {
@@ -188,7 +212,24 @@ export class EndSync {
 
   /* ---- what came from the others (events.js) ---- */
   one(e) {
-    const F = this.F, k = e[0];
+    const F = this.F, k = e[0], RL = this.net.game && this.net.game.realms;
+    if (k === 'xput' && RL) {
+      // another player's end crystal: here too (and with four on the portal, the machine running the fight brings the dragon back)
+      if (RL.entities.some(c => c instanceof EndCrystal && !c.dead && Math.abs(c.pos.x - e[1]) < 0.5 && Math.abs(c.pos.y - e[2]) < 0.5 && Math.abs(c.pos.z - e[3]) < 0.5)) return;
+      const c = new EndCrystal(RL, { base: false });
+      c.at(e[1], e[2], e[3]);
+      this.applying = true;
+      try { RL.add(c); } finally { this.applying = false; }
+      if (F && this.running) F.tryRespawn();
+      return;
+    }
+    if (k === 'xboom' && RL) {
+      const c = RL.entities.find(c => c instanceof EndCrystal && !c.dead && c.pillar < 0 && Math.abs(c.pos.x - e[1]) < 0.5 && Math.abs(c.pos.y - e[2]) < 0.5 && Math.abs(c.pos.z - e[3]) < 0.5);
+      if (c) c.dead = true;
+      if (this.net.events) this.net.events.boom(e[1], e[2] + 1, e[3], 6);
+      if (RL.burst) RL.burst(e[1], e[2] + 1, e[3], 4.8);
+      return;
+    }
     if (!F) return;
     if (k === 'drg') {
       if (this.running !== false) return;
