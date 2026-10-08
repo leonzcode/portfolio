@@ -10,7 +10,7 @@
    entities to make once mobs exist.
 
    structureMessage answers the main thread's questions (/locate, what
-   starts here, where the strongholds are).
+   starts here, where the strongholds are, the biome at a block).
 
    For the other dimensions: a Nether or End generator in a worker calls
    worldStructures(seed, netherGen, 'nether') (or 'end') once and
@@ -173,8 +173,29 @@ function settlePlants(blocks, meta, mask) {
   }
 }
 
-export function structureMessage(structs, m) {
-  if (!structs) return { error: 'no structures' };
+/* A world made with Generate Structures off has no Structures, but its
+   generator still knows its biomes (the advancements' biome checks ask, see
+   adv/game.js askBiome), and there is simply nothing to list: no strongholds
+   for an eye of ender, nothing starting in a chunk. */
+const bare = new WeakMap();
+function bareSource(gen, dim) {
+  let src = bare.get(gen);
+  if (!src) {
+    dim = dim === 'the_nether' ? 'nether' : dim === 'the_end' ? 'end' : dim === 'nether' || dim === 'end' ? dim : 'overworld';
+    src = makeSource(gen, BIOMES, dim === 'overworld' ? pickBiome : null, Y0, dim);
+    bare.set(gen, src);
+  }
+  return src;
+}
+
+export function structureMessage(structs, m, gen, dim) {
+  if (!structs) {
+    try {
+      if (m.op === 'biome' && gen) { const src = bareSource(gen, dim); return { biome: src.biome ? src.biome(m.x, m.y, m.z) || null : null }; }
+    } catch (e) { return { error: String(e && e.stack || e) }; }
+    if (m.op === 'strongholds' || m.op === 'in' || m.op === 'pieces') return { list: [] };
+    return { error: 'no structures' };
+  }
   const S = structs.S;
   try {
     switch (m.op) {
