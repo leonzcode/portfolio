@@ -32,6 +32,7 @@
 --------------------------------------------------------------------------- */
 import { Living, wrap } from '../entities/entity.js?v=32';
 import { TYPES } from '../entities/mobs.js?v=32';
+import { F } from './players.js?v=32';
 
 const THREE = window.THREE;
 // besides the living (animals, monsters, villagers, golems, armour stands): paintings, the knots of leads, sand and gravel falling, fireworks
@@ -114,6 +115,20 @@ export class Mobs {
     };
     const chunks = E.chunks;
     E.chunks = function () { M.unloading = true; try { return chunks.apply(this, arguments); } finally { M.unloading = false; } };
+    // a mob despawns by the nearest player, as the game has it, whoever's machine runs it
+    const despawnCheck = E.despawnCheck;
+    E.despawnCheck = function (e) {
+      const P = this.P.pos, d = net.dimNow();
+      let best = null, bd = (e.pos.x - P.x) ** 2 + (e.pos.y - P.y) ** 2 + (e.pos.z - P.z) ** 2;
+      if (net.players) for (const r of net.players.list.values()) {
+        const s = r.st;
+        if (!s || s.d !== d || (s.f & (F.DEAD | F.SPEC))) continue;
+        const d2 = (e.pos.x - s.x) ** 2 + (e.pos.y - s.y) ** 2 + (e.pos.z - s.z) ** 2;
+        if (d2 < bd) { bd = d2; best = s; }
+      }
+      if (!best) return despawnCheck.call(this, e);
+      return despawnCheck.call(Object.create(this, { P: { value: { pos: { x: best.x, y: best.y, z: best.z } } } }), e);
+    };
     // anything done to someone else's mob makes it yours first
     const interact = E.interact;
     E.interact = function (e) { if (e && e.puppet) M.claim(e); return interact.apply(this, arguments); };
