@@ -1630,7 +1630,12 @@ export class Rabbit extends Animal {
   /* hopping: the move control turns it and says how fast; on the ground it
      stands until the next hop, which carries it */
   moveControl() {
+    // in the air it keeps the way it took off (it turns to the next point on the ground,
+    // before it hops, as the game's faces its next path point), so a hop never flies on
+    // sideways while it has already turned to whatever comes after
+    const y0 = this.yaw;
     super.moveControl();
+    if (!this.onGround && !this.inWater) this.yaw = y0;
     const want = this.zza > 0 || this.mcOp === 3;
     if (this.onGround) {
       if (this.hopT > 0 && this.hopT >= this.hopDur) { this.hopT = 0; }
