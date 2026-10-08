@@ -393,10 +393,11 @@ export class Drops {
     }
   }
   /* Taken: an item or an orb flies into you over 3 ticks, then goes (the game's pickup
-     animation, drawn in update). Nothing else happens to it on the way. */
-  flyIn(e) {
+     animation, drawn in update). Nothing else happens to it on the way. to(out): for one
+     someone else took, where they are this frame (out filled, or null when not known). */
+  flyIn(e, to) {
     if (e.gone || e.fly > 0) return;
-    e.fly = 3; e.flyFrom = e.pos.clone(); e.delay = 1e9;
+    e.fly = 3; e.flyFrom = e.pos.clone(); e.delay = 1e9; e.flyTo = to || null;
     if (e.vel) e.vel.set(0, 0, 0);
   }
   // e takes in (or goes into) stacks of the same item close by; at: e's place in the list.
@@ -543,7 +544,8 @@ export class Drops {
       const t = e.fly > 0 ? e.age : e.age + alpha;
       p.lerpVectors(e.prev, e.pos, alpha);
       // flying into the player when picked up
-      if (e.fly > 0 && P) p.lerpVectors(e.flyFrom, T, flown(e));
+      // (one someone else took goes to them; if they cannot be placed it simply goes where it lies)
+      if (e.fly > 0 && P) p.lerpVectors(e.flyFrom, e.flyTo ? e.flyTo(this._flyO || (this._flyO = new THREE.Vector3())) || e.flyFrom : T, flown(e));
       const bob = Math.sin(t / 10 + e.spin) * 0.1 + 0.1;
       const sc = e.flat ? 0.5 : 0.25;
       q.setFromAxisAngle(this._y, t / 20 + e.spin);
