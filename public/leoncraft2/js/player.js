@@ -568,7 +568,10 @@ export class Player {
     let pose = this.swimming || this.gliding ? 'swim' : this.sneaking ? 'crouch' : 'stand';
     // (a spectator passes through blocks standing up: nothing makes it crouch or crawl)
     if (this.noclip) pose = 'stand';
-    else if (!this.fits(pose)) pose = this.fits('crouch') ? 'crouch' : 'swim';
+    /* (and buried, with not even room to crawl, the pose stays as it was, as the game only changes it when
+       crawling would fit: it used to lie down, which put the eyes, the camera and the light the model is
+       lit by 1.2 deeper in the ground, so out of spectator into the ground your skin went pitch black) */
+    else if (!this.fits(pose)) pose = this.fits('crouch') ? 'crouch' : this.fits('swim') ? 'swim' : this.pose || pose;
     this.pose = pose; this.h = POSE[pose][0];
     this.eyeH += (POSE[pose][1] - this.eyeH) * 0.5;
     const moved = Math.hypot(this.pos.x - was.x, this.pos.z - was.z);
