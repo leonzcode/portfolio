@@ -236,7 +236,9 @@ const atXZ = () => { const a = atParam(); return a ? { x: a[0], z: a[1] } : null
 async function findSpawn(world) {
   const want = atParam();
   if (want) return { x: want[0], z: want[1] };
-  return searchSpawn(m => world.ask(m));
+  // (the columns practice already asked about, while the world was being chosen, are not asked again: world.js practise)
+  const known = world.surfacesAhead;
+  return searchSpawn(m => { const r = known && known.get(m.x + ',' + m.z + ',' + (m.withBiome ? 1 : 0)); return r ? Promise.resolve(r) : world.ask(m); });
 }
 /* Where you stand at the world's spawn, as the game finds it (its
    getOverworldRespawnPos and fudgeSpawnLocation): down a column from its
@@ -612,9 +614,15 @@ async function boot() {
     MK('sgSpawn');
     const at = st && st.player ? st.player : null;
     const cx = at ? at.x : spawn.x, cz = at ? at.z : spawn.z;
-    // wait for the ground round where you will stand
-    await waitGround(world, cx, cz);
-    MK('sgGround');
+    /* Wait for the ground round where you will stand: the nine chunks round
+       you made (where you stand is found in them), and then the one you stand
+       in drawn. The world is put together and its first frames played (below)
+       while that last mesh is still being made, not after it. */
+    let made;
+    const madeP = new Promise(res => { made = res; });
+    const groundP = waitGround(world, cx, cz, false, made);
+    await madeP;
+    MK('sgMade');
     // (the game's parts: asked for when this began, and almost always in long before)
     await partsDone;
     setDeathPoint(st && st.lastDeath);
@@ -778,8 +786,7 @@ async function boot() {
     // a new world made with Bonus Chest on (bonus.js)
     if (isNew && entry.bonusChest && dim === 'overworld') import('./bonus.js?v=28').then(m => m.bonusChest(game, Math.floor(spawn.x), Math.floor(spawn.z))).catch(e => console.warn('bonus chest', e));
     Worlds.update(entry.id, { lastPlayed: Date.now(), spawn });
-    // (the loading screen stays up, full, over plain dirt, for the first frames: below)
-    if (loading) loading.progress = 1;
+    // (the loading screen stays up over plain dirt for the first frames: below)
     gui.panorama = false;
     // every shader compiled now, not in the first frame that needs it (the first F5, the first drop)
     MK('sgPrePrecompile');
@@ -803,9 +810,13 @@ async function boot() {
        them runs for the first time (the browser compiles each part of the game
        as it is first used, the clouds and the like are made), which took a
        tenth of a second a frame and was felt as a stutter the moment the world
-       appeared. Hidden here, the world opens on smooth frames. */
+       appeared. Hidden here, the world opens on smooth frames. They are
+       played while the chunk you stand in is still being drawn, so they
+       seldom keep the world waiting: it opens the moment that is done. */
     await new Promise(res => { firstFrames = { left: 2, res }; setTimeout(res, 1500); });
     firstFrames = null;
+    await groundP;
+    MK('sgGround');
     MK('sgShown');
     loading = null;
     gui.inGame = true;
@@ -841,7 +852,7 @@ async function boot() {
      nearest first, while you play. Checked every frame, so you are in the
      moment it is there. wide: the eight round it drawn too, so everything
      within two chunks is made (looking for somewhere to put a portal). */
-  function waitGround(world, cx, cz, wide) {
+  function waitGround(world, cx, cz, wide, made) {
     // nothing can be edited yet: the worker kept for edits helps make the ground, and only it is made
     world.allHands = true;
     world.focus = wide ? 2 : 1; world.sched = true;
@@ -861,6 +872,12 @@ async function boot() {
         }
         if (loading) { loading.progress = drawn ? 1 : world.readiness(pcx, pcz); loading.chunks = ch; }
         gui.markDirty();
+        // made: told once the chunk you stand in and the eight round it are all made (before it is drawn)
+        if (made) {
+          let all = true;
+          for (let dz = -1; dz <= 1 && all; dz++) for (let dx = -1; dx <= 1; dx++) if (!world.chunks.has((pcx + dx) + ',' + (pcz + dz))) { all = false; break; }
+          if (all || drawn || performance.now() - t0 > 60000) { made(); made = null; }
+        }
         if (drawn || performance.now() - t0 > 60000) { world.allHands = false; world.focus = -1; world.sched = true; res(); } else setTimeout(wait, 16);
       };
       wait();

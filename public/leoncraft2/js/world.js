@@ -87,7 +87,9 @@ export function practise(spec, world, then) {
     asked: new Set(),               // pieces being made (chunk number * 4 + 1 terrain, + 2 features)
     failed: new Set(),              // pieces that came back with nothing (not asked for again)
     idle: new Set(), meshed: new Set(), ws, plan: null,
-    searching: !spec.at, asks: new Map(), nextAsk: 1 };
+    searching: !spec.at, asks: new Map(), nextAsk: 1,
+    surfQ: [],                      // the spawn search's columns not yet given to a worker (feed)
+    surfaces: new Map() };          // and its answers, "x,z,biome?" -> { y, biome }: a World opened mid-search goes on from them
   /* A world played before: its chunks round you are most likely kept
      (chunkcache.js) and read back in a moment when it opens, so the first
      worker asks first, and the ground is made ahead only if they are not. */
@@ -100,10 +102,14 @@ export function practise(spec, world, then) {
     w.postMessage(Object.assign({ manifest: spec.manifest, colours: spec.colours }, a.base, i || !a.centre ? {} : { probe: nineAt(a.centre), cache: CACHE + '|' + name }));
   });
   if (a.searching) {
+    /* Each column goes to the next worker free for it (feed), not to each in turn: a ring of the search
+       waits for its last column, and a worker still busy with the title's world (or loading the
+       generator's code) held the whole search up, for most of a second at times. */
     searchSpawn(q => new Promise(res => {
-      const id = a.nextAsk++;
-      a.asks.set(id, res);
-      ws[id % ws.length].postMessage(Object.assign({ surface: [q.x, q.z, q.withBiome ? 1 : 0], id }, a.base));
+      const id = a.nextAsk++, key = q.x + ',' + q.z + ',' + (q.withBiome ? 1 : 0);
+      a.asks.set(id, r => { a.surfaces.set(key, r); res(r); });
+      a.surfQ.push(Object.assign({ surface: [q.x, q.z, q.withBiome ? 1 : 0], id }, a.base));
+      for (const x of [...a.idle]) { if (!a.surfQ.length) break; feed(a, x); }
     })).then(spawn => {
       // where the new world starts you: from here on, the ground round it
       a.searching = false; a.spawn = spawn; a.centre = [Math.floor(spawn.x / CH), Math.floor(spawn.z / CH)];
@@ -127,6 +133,8 @@ function planOf(a) {
 // a worker's next piece of practice, or nothing left for it (it waits)
 function feed(a, w) {
   if (a !== ahead) return;
+  // a column for the spawn search, first
+  if (a.surfQ.length) { a.idle.delete(w); w.postMessage(a.surfQ.shift()); return; }
   let msg = null;
   // (still looking for the spawn or asking what is kept)
   if (!a.centre || a.probing) { a.idle.add(w); return; }
@@ -186,7 +194,7 @@ function keepAhead(m, w) {
   const a = ahead;
   if (m.type !== 'practised' || !a || a.name !== m.name) return;
   // a column asked for by the spawn search
-  if (m.surface) { const r = a.asks.get(m.id); a.asks.delete(m.id); if (r) r(m.surface); return; }
+  if (m.surface) { const r = a.asks.get(m.id); a.asks.delete(m.id); if (r) r(m.surface); if (w) feed(a, w); return; }
   takeOut(a.protos, a.writes, m, a.asked);
   if (m.did && !m.out.length) a.failed.add(numKey(m.did[1], m.did[2]) * 4 + (m.did[0] === 't' ? 1 : 2));
   if (m.staged === false) a.staged = false;
@@ -261,6 +269,7 @@ export class World {
        again, they come in as practice (takePractice). */
     this.spawnAhead = null;
     const pre = ahead && ahead.name === name ? ahead : behind && behind.name === name ? behind : null;
+    this.surfacesAhead = pre ? pre.surfaces : null;
     if (pre) {
       this.protos = pre.protos; this.writesOf = pre.writes; this.spawnAhead = pre.spawn;
       for (const p of pre.asked) this.stageIn.add(p);
