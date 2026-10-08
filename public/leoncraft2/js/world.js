@@ -7,9 +7,9 @@
    out of range, and takes edits: a changed block remeshes its column, and
    the neighbouring one too when it sits on an edge.
 --------------------------------------------------------------------------- */
-import { CH, H, idx } from './world-const.js?v=30';
-import { BLOCKS, FLUID } from './blocks.js?v=30';
-import { searchSpawn } from './spawn.js?v=30';
+import { CH, H, idx } from './world-const.js?v=31';
+import { BLOCKS, FLUID } from './blocks.js?v=31';
+import { searchSpawn } from './spawn.js?v=31';
 
 /* ---- the workers, kept for the whole visit ----
    A new worker is slow for its first seconds: its code is fetched, compiled
@@ -20,7 +20,7 @@ import { searchSpawn } from './spawn.js?v=30';
 const GEN_N = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 const POOL = [];
 function newWorker() {
-  const w = new Worker(new URL('./worker.js?v=30', import.meta.url), { type: 'module' });
+  const w = new Worker(new URL('./worker.js?v=31', import.meta.url), { type: 'module' });
   w.onerror = e => console.error('worker', e.message || e);
   return w;
 }
@@ -87,7 +87,9 @@ export function practise(spec, world, then) {
     asked: new Set(),               // pieces being made (chunk number * 4 + 1 terrain, + 2 features)
     failed: new Set(),              // pieces that came back with nothing (not asked for again)
     idle: new Set(), meshed: new Set(), ws, plan: null,
-    searching: !spec.at, asks: new Map(), nextAsk: 1 };
+    searching: !spec.at, asks: new Map(), nextAsk: 1,
+    surfQ: [],                      // the spawn search's columns not yet given to a worker (feed)
+    surfaces: new Map() };          // and its answers, "x,z,biome?" -> { y, biome }: a World opened mid-search goes on from them
   /* A world played before: its chunks round you are most likely kept
      (chunkcache.js) and read back in a moment when it opens, so the first
      worker asks first, and the ground is made ahead only if they are not. */
@@ -100,10 +102,14 @@ export function practise(spec, world, then) {
     w.postMessage(Object.assign({ manifest: spec.manifest, colours: spec.colours }, a.base, i || !a.centre ? {} : { probe: nineAt(a.centre), cache: CACHE + '|' + name }));
   });
   if (a.searching) {
+    /* Each column goes to the next worker free for it (feed), not to each in turn: a ring of the search
+       waits for its last column, and a worker still busy with the title's world (or loading the
+       generator's code) held the whole search up, for most of a second at times. */
     searchSpawn(q => new Promise(res => {
-      const id = a.nextAsk++;
-      a.asks.set(id, res);
-      ws[id % ws.length].postMessage(Object.assign({ surface: [q.x, q.z, q.withBiome ? 1 : 0], id }, a.base));
+      const id = a.nextAsk++, key = q.x + ',' + q.z + ',' + (q.withBiome ? 1 : 0);
+      a.asks.set(id, r => { a.surfaces.set(key, r); res(r); });
+      a.surfQ.push(Object.assign({ surface: [q.x, q.z, q.withBiome ? 1 : 0], id }, a.base));
+      for (const x of [...a.idle]) { if (!a.surfQ.length) break; feed(a, x); }
     })).then(spawn => {
       // where the new world starts you: from here on, the ground round it
       a.searching = false; a.spawn = spawn; a.centre = [Math.floor(spawn.x / CH), Math.floor(spawn.z / CH)];
@@ -127,6 +133,8 @@ function planOf(a) {
 // a worker's next piece of practice, or nothing left for it (it waits)
 function feed(a, w) {
   if (a !== ahead) return;
+  // a column for the spawn search, first
+  if (a.surfQ.length) { a.idle.delete(w); w.postMessage(a.surfQ.shift()); return; }
   let msg = null;
   // (still looking for the spawn or asking what is kept)
   if (!a.centre || a.probing) { a.idle.add(w); return; }
@@ -186,7 +194,7 @@ function keepAhead(m, w) {
   const a = ahead;
   if (m.type !== 'practised' || !a || a.name !== m.name) return;
   // a column asked for by the spawn search
-  if (m.surface) { const r = a.asks.get(m.id); a.asks.delete(m.id); if (r) r(m.surface); return; }
+  if (m.surface) { const r = a.asks.get(m.id); a.asks.delete(m.id); if (r) r(m.surface); if (w) feed(a, w); return; }
   takeOut(a.protos, a.writes, m, a.asked);
   if (m.did && !m.out.length) a.failed.add(numKey(m.did[1], m.did[2]) * 4 + (m.did[0] === 't' ? 1 : 2));
   if (m.staged === false) a.staged = false;
@@ -261,6 +269,7 @@ export class World {
        again, they come in as practice (takePractice). */
     this.spawnAhead = null;
     const pre = ahead && ahead.name === name ? ahead : behind && behind.name === name ? behind : null;
+    this.surfacesAhead = pre ? pre.surfaces : null;
     if (pre) {
       this.protos = pre.protos; this.writesOf = pre.writes; this.spawnAhead = pre.spawn;
       for (const p of pre.asked) this.stageIn.add(p);
@@ -332,6 +341,7 @@ export class World {
   near(cx, cz) { return Math.abs(cx - this.pcx) <= 1 && Math.abs(cz - this.pcz) <= 1; }
 
   onMessage(i, m, initRes) {
+    if (m.type === 'up') return;         // a worker's code loaded (index.html waits for it on a first visit)
     // practice finishing for this very world (it was opened while the workers were still at it)
     if (m.type === 'practised') { if (m.name === this.dim + '|' + this.generator + '|' + this.seed) this.takePractice(m); else keepAhead(m, this.dead ? null : this.workers[i]); return; }
     // columns of the title's world read back by a worker after it had answered its init (worker.js lateMeshes)
@@ -359,7 +369,11 @@ export class World {
        can still be sending those of the world it served before: not ours. */
     if ((m.cached || m.type === 'looked') && m.tag !== this.tag) return;
     // (never below nothing: a job given up on as lost can still answer late)
-    if (!m.cached && this.busy[i] > 0) this.busy[i]--;
+    /* (a read of kept chunks says what is not kept at once, more: true, and
+       is done only once it has sent every chunk it found, all of them
+       unsqueezed on that worker meanwhile: a column meshed there waited on
+       them, the one you stand in among them) */
+    if (!m.cached && !m.more && this.busy[i] > 0) this.busy[i]--;
     if (m.back) this.giveBack(m.back);
     this.sched = true;                 // a worker is free: see what is next (schedule)
     if (m.type === 'failed') { this.onFailed(m); return; }
@@ -417,7 +431,8 @@ export class World {
       // what this mesh already has needs no remembering
       const log = this.rowLog.get(k);
       if (log) { let j = 0; for (const e of log) if (e[0] >= m.version) log[j++] = e; log.length = j; if (!j) this.rowLog.delete(k); }
-      if (!this.warmed && m.cx === this.pcx && m.cz === this.pcz && this.meshCache.has(k)) this.warmEditWorker(m.cx, m.cz);
+      // (not while a loading screen waits: the edit worker is making the ground then, and the ground waited behind these)
+      if (!this.warmed && !this.allHands && m.cx === this.pcx && m.cz === this.pcz && this.meshCache.has(k)) this.warmEditWorker(m.cx, m.cz);
       return;
     }
     if (m.type === 'warmed') return;
@@ -483,6 +498,8 @@ export class World {
   update(px, pz) {
     if (this.dead) return;            // left behind (the title's world while the next one loads)
     const pcx = Math.floor(px / CH), pcz = Math.floor(pz / CH);
+    // the edit worker's practice, once the loading screen has let it go (see the mesh answer)
+    if (!this.warmed && !this.allHands && pcx === this.pcx && pcz === this.pcz && this.meshCache.has(this.key(pcx, pcz))) this.warmEditWorker(pcx, pcz);
     /* what to load is planned again when you cross into another chunk, when the
        render distance changes (a longer one asked for nothing new until you
        walked on; a shorter one let go of nothing), and when the check below

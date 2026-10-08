@@ -67,11 +67,11 @@
    Experience: a level takes 2L + 7 points up to 15, 5L - 38 up to 30, and
    9L - 158 after that.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=30';
-import { I, ITEMS, armorOf } from './items.js?v=30';
-import { wear } from './ui/inventory.js?v=30';
-import { sourceOf, deathMessage } from './damage.js?v=30';
-import { effectId, EFFECTS } from './effects.js?v=30';
+import { B, BLOCKS, FLUID } from './blocks.js?v=31';
+import { I, ITEMS, armorOf } from './items.js?v=31';
+import { wear } from './ui/inventory.js?v=31';
+import { sourceOf, deathMessage } from './damage.js?v=31';
+import { effectId, EFFECTS } from './effects.js?v=31';
 
 const BYPASS_ARMOR = new Set(['fall', 'drown', 'starve', 'void', 'magic', 'poison', 'wither', 'suffocation', 'generic', 'freeze', 'kill']);
 const FIRE = new Set(['lava', 'fire', 'on_fire', 'hot_floor']);

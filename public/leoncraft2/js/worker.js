@@ -16,20 +16,20 @@
    more than half of a worker's code, so they are loaded only when a world
    first needs them: the title screen's world (the first generator) starts
    without waiting for them. */
-import { Gen, pickBiome } from './worldgen.js?v=30';
-import { FlatGen } from './gen/flat.js?v=30';
-import { meshColumn, setColours } from './mesher.js?v=30';
-import { resolveTextures, BLOCKS } from './blocks.js?v=30';
-import { forgetLooks } from './models.js?v=30';
-import { forgetStates } from './sim/states.js?v=30';
-import { biomeColours } from './biomes.js?v=30';
-import { CH } from './world-const.js?v=30';
-import { worldStructures, structureMessage } from './struct/hook.js?v=30';
-import { keepChunk, readChunks, sweepChunks, keptCount, keepMesh, readMeshes } from './chunkcache.js?v=30';
+import { Gen, pickBiome } from './worldgen.js?v=31';
+import { FlatGen } from './gen/flat.js?v=31';
+import { meshColumn, setColours } from './mesher.js?v=31';
+import { resolveTextures, BLOCKS } from './blocks.js?v=31';
+import { forgetLooks } from './models.js?v=31';
+import { forgetStates } from './sim/states.js?v=31';
+import { biomeColours } from './biomes.js?v=31';
+import { CH } from './world-const.js?v=31';
+import { worldStructures, structureMessage } from './struct/hook.js?v=31';
+import { keepChunk, readChunks, sweepChunks, keptCount, keepMesh, readMeshes } from './chunkcache.js?v=31';
 
 let G = null;                 // { VanillaGen, NetherGen, EndGen } once loaded
 let loadingG = null;
-const loadGens = () => loadingG || (loadingG = Promise.all([import('./gen/vanillagen.js?v=30'), import('./gen/nether.js?v=30'), import('./gen/end.js?v=30')])
+const loadGens = () => loadingG || (loadingG = Promise.all([import('./gen/vanillagen.js?v=31'), import('./gen/nether.js?v=31'), import('./gen/end.js?v=31')])
   .then(([v, n, e]) => { G = { VanillaGen: v.VanillaGen, NetherGen: n.NetherGen, EndGen: e.EndGen }; }));
 // whether a world (init or practice) needs one of Minecraft's generators
 const needsG = m => m.dim === 'the_nether' || m.dim === 'the_end' || m.generator === 'vanilla';
@@ -131,7 +131,7 @@ function startPre(m) {
     });
   }
   // the texture list and the biome colours, for the mesher (the page asked for all three already: they come from the browser's cache)
-  const tex = f => new URL('../textures/' + f + '?v=30', import.meta.url);
+  const tex = f => new URL('../textures/' + f + '?v=31', import.meta.url);
   const pixels = f => fetch(tex(f)).then(r => r.blob()).then(b => createImageBitmap(b)).then(img => {
     const c = new OffscreenCanvas(img.width, img.height), g = c.getContext('2d', { willReadFrequently: true });
     g.drawImage(img, 0, 0);
@@ -280,9 +280,27 @@ const ck = (x, z) => x + ',' + z;
 /* While a generator's code loads, what comes after the message that needs
    it waits, and then goes in the order it came. */
 let held = null;
+/* Messages are taken in turn, one each time round (a message to ourselves
+   between them), so the ones that came in while a job ran are all seen
+   before the next job starts: when a world is let go (idle, or the next
+   world's init), the jobs still waiting for it are not done. A worker was
+   kept on two of them (most of a fifth of a second) before it could start
+   on the next world: going through a portal, or out of the title. */
+const waiting = [];
+const turn = new MessageChannel();
+let turning = false;
+turn.port2.onmessage = () => {
+  turning = false;
+  const m = waiting.shift();
+  if (waiting.length) { turning = true; turn.port1.postMessage(0); }
+  if (!m) return;
+  if (held) held.push(m); else handle(m);
+};
 self.onmessage = e => {
-  if (held) { held.push(e.data); return; }
-  handle(e.data);
+  const m = e.data;
+  if (m && (m.type === 'idle' || m.type === 'init')) for (let i = waiting.length - 1; i >= 0; i--) if (JOBS[waiting[i].type]) waiting.splice(i, 1);
+  waiting.push(m);
+  if (!turning) { turning = true; turn.port1.postMessage(0); }
 };
 /* A job that goes wrong says so ('failed'), so the world asks again instead
    of waiting for ever on an answer that never comes: a chunk that never
@@ -339,8 +357,12 @@ function work(m) {
     const t = tag;
     readChunks(cacheKey, m.list, (cx, cz, c, s) => {
       self.postMessage({ type: 'gen', cached: true, tag: t, cx, cz, blocks: c.blocks, meta: c.meta, biome: c.biome, top: c.top, structs: s }, [c.blocks.buffer, c.meta.buffer, c.biome.buffer]);
-    }, missing => self.postMessage({ type: 'looked', tag: t, missing }))
-      .then(failed => { if (failed.length) self.postMessage({ type: 'looked', tag: t, missing: failed, cached: true }); });
+    }, missing => self.postMessage({ type: 'looked', tag: t, missing, more: true }))
+      .then(failed => {
+        if (failed.length) self.postMessage({ type: 'looked', tag: t, missing: failed, cached: true });
+        // every chunk of the list sent: only now is this worker free again (world.js idlest)
+        self.postMessage({ type: 'looked', tag: t, missing: [] });
+      });
     return;
   }
   if (m.type === 'sweep') { sweepChunks(m.prefix, m.limit); return; }
@@ -504,3 +526,5 @@ function writesOf(g, x, z) {
   g.writeCache.delete(ck(x, z));
   return [...w];
 }
+// this worker's code is all in: on a first visit the page waits for this before asking for its own (index.html)
+self.postMessage({ type: 'up' });

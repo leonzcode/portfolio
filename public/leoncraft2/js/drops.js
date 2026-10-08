@@ -31,12 +31,12 @@
      dropItem(world, x, y, z, 'diamond', 2)     from anywhere (mob loot...)
      giveXp(x, y, z, 7)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, SOLID, FLUID, OPACITY } from './blocks.js?v=30';
-import { collisionBoxes } from './models.js?v=30';
-import { LEVEL, FALLING } from './world-const.js?v=30';
-import { DIMS } from './dims.js?v=30';
-import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=30';
-import { blockGeometry, intAttribute } from './render/blockmesh.js?v=30';
+import { B, BLOCKS, SOLID, FLUID, OPACITY } from './blocks.js?v=31';
+import { collisionBoxes } from './models.js?v=31';
+import { LEVEL, FALLING } from './world-const.js?v=31';
+import { DIMS } from './dims.js?v=31';
+import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=31';
+import { blockGeometry, intAttribute } from './render/blockmesh.js?v=31';
 const THREE = window.THREE;
 
 const ITEM_W = 0.125, ITEM_H = 0.25;           // half width, height

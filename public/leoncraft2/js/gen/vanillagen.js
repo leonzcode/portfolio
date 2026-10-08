@@ -19,19 +19,19 @@
    extensions, carvers, features) is written from the game's observable
    behaviour and checked against chunks the real 26.3 server made.
 --------------------------------------------------------------------------- */
-import { VDATA } from './vdata.js?v=30';
-import { DensityState, Compiler, tri, children } from './density.js?v=30';
-import { BiomeTable, Zoom, quantize } from './biomesrc.js?v=30';
-import { Xoroshiro } from './random.js?v=30';
-import { B, BLOCKS } from '../blocks.js?v=30';
-import { BIO, BIOMES } from '../biomes.js?v=30';
-import { H, Y0, VOL } from '../world-const.js?v=30';
-import { Decorator, FEATURES, writeRank, isGroundPlant, plantHolds, fluidOf, NOTE_TABLES, NOTE_MOBS, NOTE_SPAWNER } from './features.js?v=30';
-import { Carvers } from './carvers.js?v=30';
-import { stateOf } from './states.js?v=30';
-import './trees.js?v=30';
-import './misc.js?v=30';
-import './shapes.js?v=30';
+import { VDATA } from './vdata.js?v=31';
+import { DensityState, Compiler, tri, children } from './density.js?v=31';
+import { BiomeTable, Zoom, quantize } from './biomesrc.js?v=31';
+import { Xoroshiro } from './random.js?v=31';
+import { B, BLOCKS } from '../blocks.js?v=31';
+import { BIO, BIOMES } from '../biomes.js?v=31';
+import { H, Y0, VOL } from '../world-const.js?v=31';
+import { Decorator, FEATURES, writeRank, isGroundPlant, plantHolds, fluidOf, NOTE_TABLES, NOTE_MOBS, NOTE_SPAWNER } from './features.js?v=31';
+import { Carvers } from './carvers.js?v=31';
+import { stateOf } from './states.js?v=31';
+import './trees.js?v=31';
+import './misc.js?v=31';
+import './shapes.js?v=31';
 
 const MIN_Y = -64, SEA_LEVEL = 63;
 const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);
@@ -348,7 +348,10 @@ export class VanillaGen {
     for (const v of this.veins) { collect(v.density); collect(v.richness); collect(v.gap); }
     this.latCols = latNodes.map(n => C.column(n.a));
     this.finalBlock = C.block([this.finalNode], this.lattice);
-    for (const v of this.veins) v.fn = C.block([v.density, v.richness, v.gap], this.lattice);
+    /* a vein's density alone, and its richness and gap only for a block the density and the first roll
+       let through (as the game's veinifier asks them): the gap is a full noise, and asking all three of
+       every stone block was a quarter of a chunk's terrain */
+    for (const v of this.veins) { v.fn = C.block([v.density], this.lattice); v.fn2 = C.block([v.richness, v.gap], this.lattice); }
     this.lats = latNodes.map(() => new Float64Array(5 * 5 * 49));
     this.ctx.L = this.lats;
     this.data = D;
@@ -868,7 +871,8 @@ export class VanillaGen {
             if (!(d > 0)) return null;
             const rr = gen.oreRandom.atInto(r, M.x, M.y, M.z);
             if (rr.nextFloat() > d) return null;
-            if (rr.nextFloat() < ctx.out[1] && !(ctx.out[2] > 0)) return rr.nextFloat() < v.rawChance ? v.raw : v.ore;
+            v.fn2(M.x, M.y, M.z, ctx);
+            if (rr.nextFloat() < ctx.out[0] && !(ctx.out[1] > 0)) return rr.nextFloat() < v.rawChance ? v.raw : v.ore;
             return v.filler;
           };
         }

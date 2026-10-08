@@ -24,10 +24,10 @@
      first click, unless they told it to always allow). Browsers without
      folder handles (Firefox, Safari) can pick the folder each visit instead.
 --------------------------------------------------------------------------- */
-import { Sound } from './sound.js?v=30';
-import { openZip } from '../ui/pack.js?v=30';
+import { Sound } from './sound.js?v=31';
+import { openZip } from '../ui/pack.js?v=31';
 
-const V = '?v=30';
+const V = '?v=31';
 
 /* ---- how an entry in sounds.json is read: "name" or { name, volume, pitch, weight, stream, attenuation_distance, type } ---- */
 function normalise(json) {
@@ -72,8 +72,22 @@ export class DefaultPack {
     });
     return b;
   }
-  // when a world starts: everything but the mobs, which come with the first one heard
-  warm(which) { for (const b of this.banks.values()) if (!which || which(b)) this.fetchBank(b); }
+  /* When a world starts: its banks, one after another, the ones heard
+     soonest first (3 MB asked for at once took a 10 Mbps line for most of
+     three seconds, and a bank wanted at once, load(), waited behind it all). */
+  warm(which) {
+    const SOON = ['player', 'world', 'items', 'mobs', 'notes', 'ambient'];
+    const rank = b => { const i = SOON.indexOf(b.name); return i < 0 ? SOON.length : i; };
+    const list = [...this.banks.values()].filter(b => (!which || which(b)) && !b.data).sort((a, c) => rank(a) - rank(c));
+    const next = () => {
+      const b = list.shift();
+      if (!b) return;
+      if (b.data) { next(); return; }       // (asked for meanwhile)
+      this.fetchBank(b);
+      b.data.then(next, next);
+    };
+    next();
+  }
   bankOf(name) { const i = name.indexOf('/'); return this.banks.get(name.slice(0, i)); }
   get(name) {
     const b = this.bankOf(name);

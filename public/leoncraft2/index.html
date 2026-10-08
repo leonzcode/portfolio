@@ -5,20 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Leoncraft 2</title>
-<!-- asked for at once rather than one after another: the game's code beside three.js, and the
-     textures while the code loads (main.js asks for the same addresses, stamps and all) -->
-<link rel="modulepreload" href="../legacy/vendor/three-0.163.0.module.js">
-<link rel="modulepreload" href="js/main.js?v=30">
-<link rel="preload" href="textures/manifest.json?v=30" as="fetch" crossorigin>
-<link rel="preload" href="textures/terrain_albedo.png?v=30" as="fetch" crossorigin>
-<link rel="preload" href="textures/items.png?v=30" as="fetch" crossorigin>
-<link rel="preload" href="textures/colormap_grass.png?v=30" as="fetch" crossorigin>
-<link rel="preload" href="textures/colormap_foliage.png?v=30" as="fetch" crossorigin>
+<!-- what the workers need for the title's world, asked for at once (the page's own code and big
+     textures are asked for below, by the first script; main.js asks for the same addresses, stamps and all) -->
+<link rel="preload" href="textures/manifest.json?v=31" as="fetch" crossorigin>
+<link rel="preload" href="textures/colormap_grass.png?v=31" as="fetch" crossorigin>
+<link rel="preload" href="textures/colormap_foliage.png?v=31" as="fetch" crossorigin>
 <script>
   // the workers that make the world, started at once so their code loads beside the page's (world.js startWorkers takes them)
   try {
     const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1)) + 1;
-    const src = 'js/worker.js?v=30';
+    const src = 'js/worker.js?v=31';
     window.__lc2Workers = Array.from({ length: n }, () => new Worker(src, { type: 'module' }));
     /* and they start on the title screen's world at once, each its share (worker.js startPre): its seed and where
        it stands are main.js's MENU_SEED and its spot. On a first visit to this version they make it; when its
@@ -30,20 +26,36 @@
     // (its columns meshed with Video Settings as settings.js worldOpts will give them)
     const o = JSON.parse(localStorage.getItem('lc2_options') || 'null') || {};
     const opts = { fast: o.cutoutLeaves === false, blend: typeof o.biomeBlend === 'number' ? o.biomeBlend : 2, flat: o.smoothLighting === false };
-    if ((warm || (navigator.hardwareConcurrency || 4) >= 4) && !sessionStorage.getItem('lc2_resume') && !new URLSearchParams(location.search).get('at'))
+    const making = !warm && (navigator.hardwareConcurrency || 4) >= 4;
+    if ((warm || making) && !sessionStorage.getItem('lc2_resume') && !new URLSearchParams(location.search).get('at')) {
       window.__lc2Workers.forEach((w, i) => w.postMessage({ type: 'pregen', seed: 20261002, generator: 'classic', dim: 'overworld', at: [1101, 771], r: 3, i, n, opts, warm }));
-  } catch (e) { /* world.js starts them */ }
-</script>
-<script>
-  // Detailed graphics also reads the material map: asked for now too, unless Fast is chosen
-  try {
-    const o = JSON.parse(localStorage.getItem('lc2_options') || 'null') || {}, q = new URLSearchParams(location.search).get('q') || o.quality;
-    if (q !== 'fast' && q !== 'potato') {
-      const l = document.createElement('link');
-      l.rel = 'preload'; l.as = 'fetch'; l.crossOrigin = 'anonymous'; l.href = 'textures/terrain_spec.png?v=30';
-      document.head.appendChild(l);
+      /* On a first visit (nothing kept to read back) the workers' code comes first: everything else the
+         page loads waits until the first worker has its own (worker.js says 'up'), at most a second and a
+         half. On a slow line it was the other way round: the workers' code, five imports deep, came in
+         last behind the page's 2 MB, and they began on the title's world only as the page itself was ready
+         (the title then waited on them, about a second at 10 Mbps). The page can do nothing before its
+         code is all in; the workers can make the ground meanwhile. */
+      if (making) window.__lc2Up = new Promise(res => {
+        const t = setTimeout(res, 1500);
+        for (const w of window.__lc2Workers) w.addEventListener('message', function up(e) {
+          if (e.data && e.data.type === 'up') { w.removeEventListener('message', up); clearTimeout(t); res(); }
+        });
+      });
     }
-  } catch (e) { /* main.js asks for it in any case */ }
+  } catch (e) { /* world.js starts them */ }
+  // the page's own code and big textures, asked for at once (when the workers' code is in, on a first visit)
+  window.__lc2Go = () => {
+    const add = (rel, href, as) => { const l = document.createElement('link'); l.rel = rel; l.href = href; if (as) { l.as = as; l.crossOrigin = 'anonymous'; } document.head.appendChild(l); };
+    add('modulepreload', '../legacy/vendor/three-0.163.0.module.js');
+    add('modulepreload', 'js/main.js?v=31');
+    add('preload', 'textures/terrain_albedo.png?v=31', 'fetch');
+    add('preload', 'textures/items.png?v=31', 'fetch');
+    // Detailed graphics also reads the material map: asked for now too, unless Fast is chosen
+    try {
+      const o = JSON.parse(localStorage.getItem('lc2_options') || 'null') || {}, q = new URLSearchParams(location.search).get('q') || o.quality;
+      if (q !== 'fast' && q !== 'potato') add('preload', 'textures/terrain_spec.png?v=31', 'fetch');
+    } catch (e) { /* main.js asks for it in any case */ }
+  };
 </script>
 <style>
   [hidden] { display: none !important; }
@@ -64,9 +76,10 @@
 <canvas id="gui"></canvas>
 <div id="loading"><div class="box"><div class="name">LEONCRAFT</div><div id="status">Loading…</div><div class="bar"><i id="bar"></i></div></div></div>
 <script type="module">
-  import * as THREE from '../legacy/vendor/three-0.163.0.module.js';
-  window.THREE = THREE;
-  await import('./js/main.js?v=30');
+  if (window.__lc2Up) await window.__lc2Up;
+  if (window.__lc2Go) window.__lc2Go();
+  window.THREE = await import('../legacy/vendor/three-0.163.0.module.js');
+  await import('./js/main.js?v=31');
 </script>
 </body>
 </html>
