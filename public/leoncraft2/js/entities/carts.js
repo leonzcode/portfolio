@@ -15,8 +15,11 @@
                broken while it moves, or by fire, lava or a blast (lava does
                it in two ticks, a fire block in five), it is lit with 0-38
                ticks left instead of dropping; running into a wall at speed,
-               falling 3 blocks or more, or a burning arrow blows it at once:
-               power 4 + up to 1.5 x its speed (at most 5)
+               going round a curve fast with a solid block in its inner
+               corner, falling 3 blocks or more (not onto a rail), or a
+               burning arrow blows it at once: power 4 + up to 1.5 x its
+               speed (at most 5); flint and steel and fire charges do
+               nothing to it in Java Edition (that is Bedrock's)
      hopper    5 slots; every tick, one item from a container above the rail
                or what lies on it, as much of a stack as fits; a powered
                activator rail turns it off; a hopper under the rail empties
@@ -258,11 +261,28 @@ class TntCart extends BlockCart {
     if (activator(this)) this.prime();
     // into a block at speed: the end of its rail, or a wall it runs into off the rails
     if ((this.hitEnd || (!this.onRail && this.hCollide)) && sp >= 0.01) { this.blow(sp); return; }
+    // round a curve with a solid block in its inner corner: the cart's box runs into that block, and the half of its
+    // speed that is not stopped sets it off from a tenth of a block a tick (the game's "turns on a curved track too fast")
+    if (sp >= 0.02 && this.cornered()) { this.blow(sp / 2); return; }
     if (this.fuse > 0) {
       this.fuse--;
       this.m.particles('smoke', this.pos.x, this.pos.y + 1, this.pos.z, 1, 0.05);
     } else if (this.fuse === 0) this.blow(this.vel.x * this.vel.x + this.vel.z * this.vel.z);
   }
+  // on a flat curve, past its ends (where the 0.98 wide box reaches over the corner), with a solid block in that corner
+  cornered() {
+    if (!this.onRail) return false;
+    const T = this.m.t, p = this.pos, bx = Math.floor(p.x), bz = Math.floor(p.z);
+    let by = Math.floor(p.y), r = this.rail(bx, by, bz);
+    if (!r) r = this.rail(bx, --by, bz);
+    if (!r) return false;
+    const [a, e] = r;
+    if (a[2] || e[2] || a[0] * e[0] + a[1] * e[1] !== 0) return false;
+    const dx = a[0] + e[0], dz = a[1] + e[1];
+    if ((p.x - bx - 0.5) * dx <= 0.01 || (p.z - bz - 0.5) * dz <= 0.01) return false;
+    return T.solid(bx + dx, by, bz + dz);
+  }
+  // (a fall onto a rail never sets it off: the rail takes the fall, "unless landing on any form of rail")
   landed(dist) { if (dist >= 3) this.blow((dist / 10) * (dist / 10)); }
   blow(sp) {
     if (this.removed) return;
