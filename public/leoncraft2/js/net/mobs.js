@@ -643,7 +643,7 @@ export class Orbs {
     const now = performance.now();
     if (this.wait > now) return;
     for (const o of D.orbs) {
-      if (o.gone || !o.nid || (o.asked && now - o.asked < 1500)) continue;
+      if (o.gone || o.fly > 0 || !o.nid || (o.asked && now - o.asked < 1500)) continue;
       if (Math.abs(o.pos.x - P.x) < 1.425 && Math.abs(o.pos.z - P.z) < 1.425 && o.pos.y + 0.25 > P.y - 0.5 && o.pos.y < P.y + 2.3) {
         o.asked = now; this.wait = now + 100;
         this.net.send({ t: 'o-', id: o.nid, take: 1 });
@@ -677,10 +677,10 @@ export class Orbs {
         return;
       }
       case 'ook': {
-        // yours: its points (mending first, as the game does), the ding, and it goes
+        // yours: its points (mending first, as the game does), the ding, and it flies into you
         const rec = this.list.get(m.id), g = net.game, c = g && g.collector;
         this.list.delete(m.id);
-        if (rec && rec.o && !rec.o.gone && D) D._removeOrb(rec.o, -1);
+        if (rec && rec.o && !rec.o.gone && D) { if (D.flyIn) D.flyIn(rec.o); else D._removeOrb(rec.o, -1); }
         if (!c || !(m.n > 0)) return;
         let pts = m.n;
         if (c.mendingRepair) pts = c.mendingRepair(pts);

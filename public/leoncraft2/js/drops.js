@@ -337,7 +337,7 @@ export class Drops {
           const left = collector.inv.addStack(e.stack);
           if (left < before) {
             if (this.onPickup) this.onPickup(e.stack);
-            if (left === 0) { e.fly = 3; e.flyFrom = e.pos.clone(); e.delay = 1e9; }
+            if (left === 0) this.flyIn(e);
             else e.stack.count = left;
           }
         }
@@ -354,6 +354,7 @@ export class Drops {
     for (let i = this.orbs.length - 1; i >= 0; i--) {
       const o = this.orbs[i];
       o.prev.copy(o.pos);
+      if (o.fly > 0) { if (--o.fly <= 0 || !P) this._removeOrb(o, i); continue; }
       o.age++;
       if (o.age >= 6000) { this._removeOrb(o, i); continue; }
       const fl = this._fluid(o, ORB_W / 2, ORB_H);
@@ -386,10 +387,17 @@ export class Drops {
           if (collector.mendingRepair) pts = collector.mendingRepair(pts);
           if (pts > 0) collector.addXp(pts);
           if (this.onXp) this.onXp(o.value);
-          this._removeOrb(o, i);
+          this.flyIn(o);
         }
       }
     }
+  }
+  /* Taken: an item or an orb flies into you over 3 ticks, then goes (the game's pickup
+     animation, drawn in update). Nothing else happens to it on the way. */
+  flyIn(e) {
+    if (e.gone || e.fly > 0) return;
+    e.fly = 3; e.flyFrom = e.pos.clone(); e.delay = 1e9;
+    if (e.vel) e.vel.set(0, 0, 0);
   }
   // e takes in (or goes into) stacks of the same item close by; at: e's place in the list.
   // Returns how many stacks before that place went, so a loop over the list can keep its place.
@@ -495,6 +503,17 @@ export class Drops {
   }
   update(dt, alpha, player, cam) {
     const P = player ? player.pos : null, m = this._m, q = this._q, s = this._s, p = this._p;
+    /* where taken things fly to: the player as drawn this frame, halfway between the feet and
+       the eyes, as the game aims its pickup animation. (It used to be kept from the first thing
+       ever picked up, a slip of precedence in "a || (a = v).set(...)", so everything after flew
+       off towards wherever you had stood then: up and away across the screen.) */
+    const T = this._flyT || (this._flyT = new THREE.Vector3());
+    if (P) {
+      const pp = player.prev || P, eye = player.eyeH === undefined ? 1.62 : player.prevEyeH === undefined ? player.eyeH : player.prevEyeH + (player.eyeH - player.prevEyeH) * alpha;
+      T.set(pp.x + (P.x - pp.x) * alpha, pp.y + (P.y - pp.y) * alpha + eye / 2, pp.z + (P.z - pp.z) * alpha);
+    }
+    // how far along its flight a taken thing is: the game's ((ticks + partial) / 3) squared, slow first
+    const flown = e => { const k = Math.min(1, (3 - e.fly + alpha) / 3); return k * k; };
     for (const e of this.items) {
       // a stack that grew or shrank past a step is drawn with more or fewer copies
       const n = copiesFor(e.stack.count);
@@ -520,10 +539,11 @@ export class Drops {
           Lr.needsUpdate = true;
         }
       }
-      const t = e.age + alpha;
+      // (flying, its bob and turn stay as they were when it was taken, as the game's copy of it does)
+      const t = e.fly > 0 ? e.age : e.age + alpha;
       p.lerpVectors(e.prev, e.pos, alpha);
       // flying into the player when picked up
-      if (e.fly > 0 && P) { const k = 1 - (e.fly - alpha) / 3; p.lerpVectors(e.flyFrom, this._p2 || (this._p2 = new THREE.Vector3()).set(P.x, P.y + 0.8, P.z), Math.max(0, Math.min(1, k))); }
+      if (e.fly > 0 && P) p.lerpVectors(e.flyFrom, T, flown(e));
       const bob = Math.sin(t / 10 + e.spin) * 0.1 + 0.1;
       const sc = e.flat ? 0.5 : 0.25;
       q.setFromAxisAngle(this._y, t / 20 + e.spin);
@@ -572,13 +592,15 @@ export class Drops {
           Lr.needsUpdate = true;
         }
       }
-      const t = o.age + alpha + o.phase;
+      const t = (o.fly > 0 ? o.age : o.age + alpha) + o.phase;
       // the game's pulse: red swings 0-255, green full, blue a little
       const r = Math.round((Math.sin(t / 2) + 1) * 0.5 * 255), b = Math.round((Math.sin(t / 2 + 4.1887903) + 1) * 0.1 * 255);
       const C = o.mesh.geometry.attributes.aC;
       for (let k = 0; k < 4; k++) { C.array[k * 4] = r; C.array[k * 4 + 1] = 255; C.array[k * 4 + 2] = b; }
       C.needsUpdate = true;
       p.lerpVectors(o.prev, o.pos, alpha);
+      // taken: into you as an item flies
+      if (o.fly > 0 && P) p.lerpVectors(o.flyFrom, T, flown(o));
       p.y += 0.1;
       // always facing the camera
       if (cam) q.copy(cam.quaternion); else q.identity();
@@ -593,7 +615,7 @@ export class Drops {
   toJSON() {
     return {
       items: this.items.filter(e => !e.fly).slice(-200).map(e => [stackToJSON(e.stack), +e.pos.x.toFixed(2), +e.pos.y.toFixed(2), +e.pos.z.toFixed(2), e.age, e.delay]),
-      orbs: this.orbs.slice(-200).map(o => [o.value, +o.pos.x.toFixed(2), +o.pos.y.toFixed(2), +o.pos.z.toFixed(2), o.age]),
+      orbs: this.orbs.filter(o => !o.fly).slice(-200).map(o => [o.value, +o.pos.x.toFixed(2), +o.pos.y.toFixed(2), +o.pos.z.toFixed(2), o.age]),
     };
   }
   fromJSON(o) {
