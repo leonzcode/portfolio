@@ -174,5 +174,16 @@ export function installFire(sim) {
     return true;
   };
 
+  /* a burning arrow or a fireball that hits TNT lights it; an unlit campfire or candle it hits is lit (rsparts.js
+     tells of the hit; the game's onProjectileHit for each) */
+  sim.projectileFire = (x, y, z) => {
+    const b = sim.get(x, y, z), d = b && BLOCKS[b];
+    if (!d) return;
+    const m = sim.meta(x, y, z);
+    if (b === B.tnt) { sim.set(x, y, z, 0, 0); if (sim.primeTnt) sim.primeTnt(x, y, z, null, 80); }
+    else if (d.shape === 'campfire' && (m & 4)) sim.set(x, y, z, b, m & ~4);
+    else if (/candle$|candle_cake$/.test(d.name) && !(m & 4)) sim.set(x, y, z, b, m | 4);
+  };
+
   /* standing in fire hurts the player, and sets them burning: survival.js (with every other block that hurts) */
 }
