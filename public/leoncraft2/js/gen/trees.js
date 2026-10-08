@@ -845,9 +845,10 @@ const DECORATORS = {
     // (meta 3: upright and natural, so it gives experience when broken: entities/hearts.js)
     if (spot) setDeco(t, spot[0], spot[1], spot[2], { id: B.creaking_heart, meta: 3 });
   },
-  /* 26.x shelf mushrooms on a fallen log's sides (our own: the game's decorator was not to hand): with the
-     decorator's probability, one to three of them on open sides of the log, each hanging on the log (meta: the
-     face of the block it hangs on, as a button's) */
+  /* 26.x shelf mushrooms on a poplar's sides, standing or fallen (our own: the game's decorator was not to hand):
+     with the decorator's probability, one to three of them on open sides of the log, each hanging on the log (meta:
+     the face of the block it hangs on, as a button's, and bit 3 large). The game makes both sizes; how many of each
+     is not known here, so it is half and half, picked from the spot (the trees' random numbers run as before). */
   shelf_mushroom(t, d, ctx) {
     const r = t.r, logs = ctx.logs;
     if (!logs.length || B.shelf_mushroom === undefined || r.nextFloat() >= F(d.probability)) return;
@@ -856,7 +857,8 @@ const DECORATORS = {
     for (let k = 0; k < 8 && n > 0; k++) {
       const [x, y, z] = logs[r.nextInt(logs.length)], [dx, dz, face] = sides[r.nextInt(4)];
       if (!ctxAir(t, x + dx, y, z + dz)) continue;
-      setDeco(t, x + dx, y, z + dz, { id: B.shelf_mushroom, meta: face });
+      const X = x + dx, Z = z + dz, big = (Math.imul(X, 73428767) ^ Math.imul(Z, 912931) ^ Math.imul(y, 42317861)) >>> 13 & 1;
+      setDeco(t, X, y, Z, { id: B.shelf_mushroom, meta: face | (big << 3) });
       n--;
     }
   },
