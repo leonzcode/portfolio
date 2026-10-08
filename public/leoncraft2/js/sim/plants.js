@@ -400,6 +400,38 @@ export function installPlants(sim) {
     });
   }
 
+  /* ---- what hangs from the block above (cave vines, weeping vines, hanging roots, spore blossoms, pale hanging
+     moss) or grows up from the one below (twisting vines): left with nothing to hold, it goes a tick later as if
+     broken, and so the next one along a tick after that; a stem left at the end of its vine becomes the vine's
+     tip (the game's growing plants) ---- */
+  {
+    const whole = b => !!b && BLOCKS[b].solid && BLOCKS[b].shape === 'cube';
+    const gone = (holds) => ({
+      neighbor(s, x, y, z) { if (!holds(s, x, y, z)) s.schedule(x, y, z, 1); },
+      tick(s, x, y, z) { if (!holds(s, x, y, z)) s.destroy(x, y, z); },
+    });
+    for (const [head, body, dir] of [['cave_vines', 'cave_vines_plant', 1], ['weeping_vines', 'weeping_vines_plant', 1], ['twisting_vines', 'twisting_vines_plant', -1]]) {
+      const Hd = B[head], Bd = B[body];
+      if (Hd === undefined || Bd === undefined) continue;
+      const holds = (s, x, y, z) => { const a = s.get(x, y + dir, z); return a === Hd || a === Bd || whole(a); };
+      const h = gone(holds);
+      sim.on(Hd, h);
+      sim.on(Bd, {
+        neighbor(s, x, y, z) {
+          if (!holds(s, x, y, z)) { s.schedule(x, y, z, 1); return; }
+          const n = s.get(x, y - dir, z);
+          if (n !== Hd && n !== Bd) s.set(x, y, z, Hd, 0);
+        },
+        tick: h.tick,
+      });
+    }
+    for (const n of ['hanging_roots', 'spore_blossom', 'pale_hanging_moss']) {
+      const id = B[n];
+      if (id === undefined) continue;
+      sim.on(id, gone((s, x, y, z) => { const a = s.get(x, y + 1, z); return whole(a) || (n === 'pale_hanging_moss' && a === id); }));
+    }
+  }
+
   /* ---- ice and snow in the light ---- */
   sim.on('ice', {
     random(s, x, y, z) {
