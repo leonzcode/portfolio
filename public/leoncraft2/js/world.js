@@ -369,7 +369,11 @@ export class World {
        can still be sending those of the world it served before: not ours. */
     if ((m.cached || m.type === 'looked') && m.tag !== this.tag) return;
     // (never below nothing: a job given up on as lost can still answer late)
-    if (!m.cached && this.busy[i] > 0) this.busy[i]--;
+    /* (a read of kept chunks says what is not kept at once, more: true, and
+       is done only once it has sent every chunk it found, all of them
+       unsqueezed on that worker meanwhile: a column meshed there waited on
+       them, the one you stand in among them) */
+    if (!m.cached && !m.more && this.busy[i] > 0) this.busy[i]--;
     if (m.back) this.giveBack(m.back);
     this.sched = true;                 // a worker is free: see what is next (schedule)
     if (m.type === 'failed') { this.onFailed(m); return; }
