@@ -178,6 +178,8 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
       return out;
     case 'nether_wart': add(out, 'nether_wart', (meta & 3) >= 3 ? uniformBonus(between(2, 4), fortune, 1) : 1); return out;
     case 'cocoa': add(out, 'cocoa_beans', (meta >> 2 & 3) >= 2 ? 3 : 1); return out;
+    // a large shelf mushroom (meta bit 3) gives two
+    case 'shelf_mushroom': add(out, 'shelf_mushroom', meta & 8 ? 2 : 1); return out;
     case 'sweet_berry_bush': { const age = meta & 3; if (age >= 2) add(out, 'sweet_berries', uniformBonus(age === 3 ? between(2, 3) : between(1, 2), fortune, 1)); return out; }
     case 'melon_stem': case 'pumpkin_stem': case 'attached_melon_stem': case 'attached_pumpkin_stem': add(out, n.indexOf('melon') >= 0 ? 'melon_seeds' : 'pumpkin_seeds', 0); return out;
     case 'sculk': out.xp = 1; break;
