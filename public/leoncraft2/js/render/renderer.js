@@ -14,18 +14,18 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Interaction } from './interaction.js?v=32';
-import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=32';
-import { makeNoise2D } from './noisetex.js?v=32';
-import { Avatar } from './avatar.js?v=32';
-import { Held } from './held.js?v=32';
-import { Figure } from './figure.js?v=32';
-import { PumpkinView } from './pumpkin.js?v=32';
-import { glints, pieceLook } from './armor.js?v=32';
-import { dimLook } from '../dim/look.js?v=32';
-import { blockGeometry, intAttribute } from './blockmesh.js?v=32';
-import { applyLook, looked, passMaterials } from './looks.js?v=32';
-import { screenFx } from './screenfx.js?v=32';
+import { Interaction } from './interaction.js?v=33';
+import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=33';
+import { makeNoise2D } from './noisetex.js?v=33';
+import { Avatar } from './avatar.js?v=33';
+import { Held } from './held.js?v=33';
+import { Figure } from './figure.js?v=33';
+import { PumpkinView } from './pumpkin.js?v=33';
+import { glints, pieceLook } from './armor.js?v=33';
+import { dimLook } from '../dim/look.js?v=33';
+import { blockGeometry, intAttribute } from './blockmesh.js?v=33';
+import { applyLook, looked, passMaterials } from './looks.js?v=33';
+import { screenFx } from './screenfx.js?v=33';
 const THREE = window.THREE;
 // a column's distance from (ex, ez), squared, in whole blocks; and nearest first
 const distTo = (col, ex, ez) => { const dx = col.cx * 16 + 8 - ex, dz = col.cz * 16 + 8 - ez; return (dx * dx + dz * dz) | 0; };
@@ -119,6 +119,10 @@ export class Renderer {
       uGlint: { value: new THREE.Vector2(0.5, 0.75) },
       // Brightness (Video Settings) less its default, for the shader look (glsl.js lightFloor)
       uBrightD: { value: (this.opts.brightness === undefined ? 0.5 : this.opts.brightness) - 0.5 },
+      // Night Vision's strength, 0..1 (glsl.js lightFloor; Off's lightmap takes it itself: vanilla.js)
+      uNightVision: { value: 0 },
+      // Blindness and Darkness's black fog: start, end, strength (glsl.js LDR, post.js; vanilla.js shutFog)
+      uShut: { value: new THREE.Vector3(0, 1, 0) },
       // the still and flowing water textures (the Shader Options' vanilla water, and Shaders OFF)
       uFlowLayers: { value: new THREE.Vector2(textures.manifest.textures.water_flow ? textures.manifest.textures.water_flow.layer : 0, textures.manifest.textures.lava_flow ? textures.manifest.textures.lava_flow.layer : 0) },
     };
@@ -811,7 +815,7 @@ export class Renderer {
       // the clouds, as Fast draws them (none where the dimension has none, or with Clouds off), before
       // water and glass with Improved Transparency (and the rain too), after them without
       const clouds = state.dim && !state.dim.clouds ? 'off' : this.opts.shaderClouds === 'off' ? 'off' : this.opts.clouds || 'fancy';
-      const drawClouds = this.blockClouds && clouds !== 'off' && !state.eyeInWater;
+      const drawClouds = this.blockClouds && clouds !== 'off' && !state.eyeInWater && U.uShut.value.z < 0.5;
       const it = !!this.opts.improvedTransparency;
       if (it) { if (drawClouds) this.blockClouds.draw(r, cam, state.time, clouds, cloudReach); this.drawFx(cam); }
       r.render(this.trans, cam);
@@ -829,8 +833,8 @@ export class Renderer {
     // block clouds (Shader Options), lit as the rest of the full chain and marked so the
     // edge of the world does not melt them (post.js); the marched ones are the post chain's
     const clouds = state.dim && !state.dim.clouds ? 'off' : this.opts.clouds || 'fancy';
-    this.post.cloudsOn = this.opts.volumetric && clouds !== 'off';
-    if (this.opts.shaderClouds === 'blocks' && clouds !== 'off' && !state.eyeInWater && this.blockCloudsHDR) {
+    this.post.cloudsOn = this.opts.volumetric && clouds !== 'off' && U.uShut.value.z < 0.5;
+    if (this.opts.shaderClouds === 'blocks' && clouds !== 'off' && !state.eyeInWater && this.blockCloudsHDR && U.uShut.value.z < 0.5) {
       r.setRenderTarget(this.main);
       this.blockCloudsHDR.draw(r, cam, state.time, clouds, cloudReach);
     }

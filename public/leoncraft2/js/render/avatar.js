@@ -44,15 +44,16 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { VANILLA, AVATAR_FS } from './vanilla.js?v=32';
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=32';
-import { lightDefines } from './materials.js?v=32';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=32';
-import { H, idx } from '../world-const.js?v=32';
-import { armorSheet, avatarArmorGeometry, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=32';
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=32';
-import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=32';
-import { setGlint } from './glint.js?v=32';
+import { VANILLA, AVATAR_FS } from './vanilla.js?v=33';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=33';
+import { lightDefines } from './materials.js?v=33';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=33';
+import { H, idx } from '../world-const.js?v=33';
+import { lightNear } from '../lightlevel.js?v=33';
+import { armorSheet, avatarArmorGeometry, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=33';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=33';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=33';
+import { setGlint } from './glint.js?v=33';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -63,7 +64,7 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=32', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=33', import.meta.url).href;
 // the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
 let defaultSkin = DEFAULT_SKIN;
 
@@ -220,6 +221,9 @@ uniform vec2 uLightLv;   // sky and block light where the player stands, 0..1
 uniform float uTime;
 uniform float uHurt;     // 1 while hurt: the game's red overlay
 uniform sampler2D uNoise;
+uniform float uDim;      // 0 the Overworld, 1 the Nether, 2 the End (js/dims.js)
+uniform vec3 uDimAmb;    // the light everything gets there instead of the sky's (js/dim/look.js)
+#define HAS_DIM
 #ifdef LDR
 uniform sampler2D uView;
 uniform float uEyeInWater;
@@ -258,7 +262,8 @@ void main() {
   float sky = uLightLv.x, block = uLightLv.y;
   vec3 L = uLightDir;
   float NoL = dot(N, L);
-  float gate = smoothstep(0.03, 0.2, sky);
+  // (no sun or moon in the other dimensions, and no shadow map drawn there)
+  float gate = uDim > 0.5 ? 0.0 : smoothstep(0.03, 0.2, sky);
   float shadow = 0.0;
 #if SHADOWS > 0
   if (gate > 0.0 && NoL > 0.0) {
@@ -281,9 +286,13 @@ void main() {
   vec3 amb = ambientAt(N);
   amb = mix(amb, vec3(lum(amb)), 0.22);
   amb += sunC * 0.03;
-  amb *= sky * sky * 0.8;
+  // (the sky's light as the block it stands in gets it, no less: materials.js)
+  amb *= sky * sky;
+  // the Nether's even light and the End's dim sky light, as the blocks round you have it (materials.js); the
+  // sky table is left at midnight there, so its light would have been none in the Nether and the Overworld's in the End
+  if (uDim > 0.5) amb = uDimAmb * (uDim < 1.5 ? 1.0 : 0.3 + 0.7 * sky * sky);
   block = max(block, heldLight(vWorld, N));
-  vec3 blockL = block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
+  vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
   vec3 light = (diffuse * PI + amb + blockL + lightFloor()) / PI;
   vec3 col = albedo * light;
 #ifdef ARMOR
@@ -655,7 +664,7 @@ export class Avatar {
     this.lightT -= dt;
     if (this.lightT <= 0) { this.lightT = 0.25; this.refreshCache(feet.x, feet.z); this.sampleLight(feet); }
     const k = Math.min(1, dt * 6);
-    this.sky += (this.skyLv / 15 - this.sky) * k; this.block += (this.blockLv / 15 - this.block) * k;
+    this.sky += (this.skyLv / 15 - this.sky) * k; this.block += ((this.burning ? 15 : this.blockLv) / 15 - this.block) * k;
     this.uLight.value.set(this.sky, this.block);
     this.posed(P, al, feet);
     const third = this.view !== 0 && this.ready;
@@ -949,11 +958,27 @@ export class Avatar {
     const c = this.chunkAt(x, z);
     return c ? c.blocks[idx(x - c.cx * 16, y, z - c.cz * 16)] : 0;
   }
-  /* Sky light: the best of the nearby columns open to the sky above the
-     player, less a level a block away. Block light: the brightest emitter
-     within 7 blocks, less a level a block. (Walls are not traced: a torch
-     behind one still reaches you a little.) */
+  /* The game lights a player by the sky and block light in the block its
+     eyes are in (1.62 up, 1.27 sneaking, 0.4 swimming or gliding): the
+     chunk's own light (js/lightlevel.js), which reaches under an overhang
+     and into a cave's mouth as the game spreads it. (This used to be a guess
+     from the columns open to the sky within three blocks, so three blocks
+     under a roof the model, the arm and what you hold went pitch black.) */
   sampleLight(feet) {
+    const w = this.world;
+    const c = w ? this.chunkAt(feet.x, feet.z) : null;
+    if (c && c.light) {
+      const eye = this.cur.sneak ? 1.27 : this.swim > 0.5 || this.glide > 0 ? 0.4 : 1.62;
+      const v = lightNear(this, Math.floor(feet.x), Math.floor(feet.y + eye), Math.floor(feet.z), !!w.noSky);
+      this.skyLv = v >> 4; this.blockLv = v & 15;
+      return;
+    }
+    this.guessLight(feet);
+  }
+  /* Where the chunk has no light yet: sky light from the best of the nearby
+     columns open to the sky, less a level a block away; block light from the
+     brightest emitter within 7 blocks, less a level a block. */
+  guessLight(feet) {
     const x0 = Math.floor(feet.x), y0 = Math.floor(feet.y + 0.9), z0 = Math.floor(feet.z);
     let sky = 0;
     for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
@@ -980,6 +1005,6 @@ export class Avatar {
         if (e) { const l = e - hd - Math.abs(dy); if (l > bl) bl = l; }
       }
     }
-    this.skyLv = Math.max(0, sky); this.blockLv = bl;
+    this.skyLv = this.world && this.world.noSky ? 0 : Math.max(0, sky); this.blockLv = bl;
   }
 }

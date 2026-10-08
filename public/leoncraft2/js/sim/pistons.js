@@ -23,11 +23,11 @@
    Blocks in motion are "moving_piston" in the world until they land; they
    are drawn here as meshes sliding between the two cells.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=32';
-import { H } from '../world-const.js?v=32';
-import { F6, FACE6, COND, WEAK } from './redstone.js?v=32';
-import { blockGeometry } from '../render/blockmesh.js?v=32';
-import { containerKind } from '../containers.js?v=32';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=33';
+import { H } from '../world-const.js?v=33';
+import { F6, FACE6, COND, WEAK } from './redstone.js?v=33';
+import { blockGeometry } from '../render/blockmesh.js?v=33';
+import { containerKind } from '../containers.js?v=33';
 const THREE = window.THREE;
 
 const LIMIT = 12;
@@ -357,7 +357,8 @@ export function installPistons(sim) {
       const mk = (b, m) => {
         let g = this.geo.get(b * 256 + m);
         if (!g) { try { g = blockGeometry(BLOCKS[b], m); } catch (err) { return null; } this.geo.set(b * 256 + m, g); }
-        const mesh = new THREE.Mesh(g.geometry, S.bodies.material(r, g.cutout));
+        // (the world's block material, lit by the light where the block starts: sim/bodies.js)
+        const mesh = S.bodies.litMesh(r, g, e.x + 0.5, e.y + 0.5, e.z + 0.5);
         mesh.frustumCulled = false;
         const o = new THREE.Group(); o.add(mesh); mesh.position.set(0, -0.5, 0);
         this.group.add(o);
@@ -376,7 +377,7 @@ export function installPistons(sim) {
       // kept a moment, until the chunk is drawn again with the block in place
       e.doneAt = performance.now();
     },
-    drop(e) { for (const p of e.view || []) if (p.o.parent) p.o.parent.remove(p.o); e.view = null; this.list.delete(e); },
+    drop(e) { for (const p of e.view || []) { if (p.o.parent) p.o.parent.remove(p.o); for (const c of p.o.children) if (c.geometry) c.geometry.dispose(); } e.view = null; this.list.delete(e); },
     frame() {
       const loop = () => {
         if (this.dead) return;
