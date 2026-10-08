@@ -102,6 +102,7 @@ export class Mobs {
       for (const [k, a] of E.stored) E.stored.set(k, a.filter(o => !shareableType(o.t)));
       // (which chunks have had their animals is the server's to say)
       E.populated.clear();
+      this.popWait.clear(); this.popAsk.length = 0;
     } finally { this.applying = false; }
     const spawn = E.spawn;
     E.spawn = function (type, x, y, z, o) {
@@ -210,7 +211,7 @@ export class Mobs {
     e.leash = null;
     if (!rec.buf.length) rec.buf.push({ ts: performance.now() - DELAY, x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw, body: e.bodyYaw || e.yaw, head: e.headYaw || e.yaw, pitch: e.pitch, f: e.onGround ? F_GROUND : 0 });
     e.tick = function () { M.puppetTick(rec, this); };
-    e.hurt = function () { M.claim(this); return this.hurt.apply(this, arguments); };
+    e.hurt = function () { M.claim(this); return this.puppet ? false : this.hurt.apply(this, arguments); };
     e.anim = function (A) { const s = rec.a; if (s) for (const k in s) A[k] = s[k]; };
   }
   // this machine runs it now (it is yours to move, or you just did something to it)
@@ -315,7 +316,7 @@ export class Mobs {
     if (!rec || !this.on) return;
     this.net.send({ t: 'mc', id: rec.id });
     rec.claimAt = performance.now();
-    if (rec.o !== this.net.id) { rec.o = this.net.id; this.live(rec, true); }
+    if (rec.o !== this.net.id || e.puppet) { rec.o = this.net.id; this.live(rec, true); }
   }
 
   /* ---- each tick, after the mobs' own ---- */
