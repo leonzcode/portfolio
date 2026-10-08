@@ -59,7 +59,10 @@ const TURNS_INTO = {
 // only with Silk Touch (glass, ice...): nothing otherwise
 const SILK_ONLY = /^(glass|glass_pane|tinted_glass|.*_stained_glass|.*_stained_glass_pane|ice|packed_ice|blue_ice|turtle_egg|sculk_vein|.*_coral|.*_coral_fan|.*_coral_wall_fan|infested_.*|bee_nest|chiseled_bookshelf|small_amethyst_bud|medium_amethyst_bud|large_amethyst_bud)$/;
 // only with shears (or Silk Touch where the game allows it): nothing otherwise
-const SHEARS_ONLY = /^(vine|glow_lichen|seagrass|tall_seagrass|hanging_roots|nether_sprouts|twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines_x|pale_hanging_moss|small_dripleaf|tripwire)$/;
+const SHEARS_ONLY = /^(vine|glow_lichen|seagrass|tall_seagrass|hanging_roots|nether_sprouts|cave_vines_x|pale_hanging_moss|small_dripleaf|tripwire)$/;
+// with shears (or Silk Touch), or by the table bonus without them
+const NETHER_VINES = /^(twisting|weeping)_vines(_plant)?$/;
+const NETHER_VINE = [0.33, 0.55, 0.77, 1];
 // nothing at all, Silk Touch or not
 const NEVER = new Set(['fire', 'soul_fire', 'nether_portal', 'end_portal', 'end_gateway', 'moving_piston', 'piston_head', 'bubble_column',
   'frosted_ice', 'cake', 'candle_cake', 'water', 'lava', 'powder_snow', 'air', 'cave_air', 'void_air', 'barrier', 'light', 'structure_void',
@@ -126,6 +129,8 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
     if (EXPERIENCE[n]) out.xp = between(EXPERIENCE[n][0], EXPERIENCE[n][1]);
     return out;
   }
+  // weeping and twisting vines: themselves with shears, otherwise a 33% chance (more with Fortune), as when they fall
+  if (NETHER_VINES.test(n)) { if (shears || silk || table(fortune, NETHER_VINE)) add(out, n.replace(/_plant$/, ''), 1); return out; }
   if (SHEARS_ONLY.test(n)) { if (shears) add(out, itemOfBlock(d), 1); return out; }
 
   // leaves: themselves with shears (or Silk Touch), else a sapling, sticks and apples by chance
