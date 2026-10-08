@@ -433,9 +433,22 @@ function finishLook(R, look, first, prep) {
     // every material, its new code into the same object
     const next = prep ? prep.next : o.vanilla ? makeVanillaMaterials(U, o) : Object.assign(makeMaterials(U, o), { fluid: makeWaterMaterial(U, o) });
     if (!R.mats) R.mats = next;
-    else for (const k in next) {
-      if (!next[k]) continue;
-      if (R.mats[k]) morph(R.mats[k], next[k]); else R.mats[k] = next[k];
+    else {
+      for (const k in next) {
+        if (!next[k]) continue;
+        if (R.mats[k]) morph(R.mats[k], next[k]);
+        else {
+          // one this look has and the last did not: taken as it is, so it is no longer a stand-in to let go at the next change
+          R.mats[k] = next[k];
+          if (prep) prep.temps = prep.temps.filter(m => m !== next[k]);
+        }
+      }
+      /* and one the last look had and this one does not goes: the near cut-out
+         band of Off, Low and Medium (leaves and plants within 40 blocks) was
+         left with the old look's code in High and RIP, so they were drawn
+         with Off's lightmap or the light pipeline's tone curve in the full
+         chain, and came out black at night or after a change of time */
+      for (const k in R.mats) if (R.mats[k] && !next[k]) { R.mats[k].dispose(); R.mats[k] = null; }
     }
     // Improved Transparency: water and glass keep their depth, so the rain drawn again after them only shows in front
     if (o.improvedTransparency) for (const k of ['fluid', 'translucent']) if (R.mats[k]) R.mats[k].depthWrite = true;

@@ -31,9 +31,10 @@
      dropItem(world, x, y, z, 'diamond', 2)     from anywhere (mob loot...)
      giveXp(x, y, z, 7)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, SOLID, FLUID, OPACITY } from './blocks.js?v=32';
+import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=32';
 import { collisionBoxes } from './models.js?v=32';
 import { LEVEL, FALLING } from './world-const.js?v=32';
+import { lightNear } from './lightlevel.js?v=32';
 import { DIMS } from './dims.js?v=32';
 import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=32';
 import { blockGeometry, intAttribute } from './render/blockmesh.js?v=32';
@@ -481,15 +482,14 @@ export class Drops {
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 2);
     return g;
   }
-  // the light where an item lies: open sky above it, and the player's own block light nearby
-  _lightAt(e, P) {
-    const w = this.world, x = Math.floor(e.pos.x), z = Math.floor(e.pos.z);
-    let sky = 15;
-    for (let y = Math.floor(e.pos.y + 0.2); y < Math.floor(e.pos.y) + 64 && sky > 0; y++) { const b = w.get(x, y, z); if (b) sky -= OPACITY[b]; }
-    let block = 0;
-    const av = this.R.avatar;
-    if (P && av && Math.abs(P.x - e.pos.x) + Math.abs(P.z - e.pos.z) < 10) block = Math.round((av.block || 0) * 15);
-    return (Math.max(0, sky) * 17 << 8) | (block * 17);
+  /* the light where an item lies, as the game takes it: the sky and block light in the block its
+     middle is in (0.2125 up), from the chunk's own light (js/lightlevel.js). (It used to count
+     only the blocks straight over it and borrow the player's torch light, so an item under an
+     overhang or in a cave's mouth went pitch black, and one by a torch stayed dark.) */
+  _lightAt(e) {
+    const w = this.world;
+    const v = lightNear(w, Math.floor(e.pos.x), Math.floor(e.pos.y + 0.2125), Math.floor(e.pos.z), !!w.noSky);
+    return ((v >> 4) * 17 << 8) | ((v & 15) * 17);
   }
   update(dt, alpha, player, cam) {
     const P = player ? player.pos : null, m = this._m, q = this._q, s = this._s, p = this._p;
@@ -507,7 +507,7 @@ export class Drops {
       // the light, now and then
       if ((e.lightT -= dt) <= 0) {
         e.lightT = 0.5;
-        const lv = this._lightAt(e, P);
+        const lv = this._lightAt(e);
         if (lv !== e.light) {
           e.light = lv;
           const Lr = e.mesh.geometry.attributes.aL;
@@ -533,7 +533,7 @@ export class Drops {
         const g = this._base(c.id);
         if (!g) continue;
         c.mesh = this._makeMesh(g.geometry, g.cutout);
-        const lv = this._lightAt(c, P), Lr = c.mesh.geometry.attributes.aL;
+        const lv = this._lightAt(c), Lr = c.mesh.geometry.attributes.aL;
         for (let k = 0; k < Lr.count; k++) { Lr.array[k * 4] = lv >> 8; Lr.array[k * 4 + 1] = lv & 255; }
         Lr.needsUpdate = true;
       }
