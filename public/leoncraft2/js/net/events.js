@@ -35,7 +35,8 @@
                    refused cat's, a villager's green sparks, the stars of a
                    critical hit, a firework's sparks: what the mobs your
                    machine runs and your hits make, at most 40 a second
-     players       others eating (the bits of food), on fire (flames on them),
+     players       others sprinting (the dust of the ground at their feet),
+                   eating (the bits of food), on fire (flames on them),
                    fishing (their line, from the rod in their hand to the
                    bobber where it floats)
 --------------------------------------------------------------------------- */
@@ -426,7 +427,7 @@ export class Events {
     if (this.acc < 0.05) return;
     this.acc = 0;
     this.pt = (this.pt || 0) + 1;
-    const D = g.drops, E = g.entities;
+    const D = g.drops, E = g.entities, Pa = net.ctx.renderer.particles;
     for (const r of list.values()) {
       const s = r.st, f = r.feet;
       if (!s || !f || !r.av || !r.av.mesh.visible) continue;
@@ -435,6 +436,11 @@ export class Events {
       if (U && U.kind === 'eat' && (U.t || 0) > 7 && this.pt % 4 === 0 && D && D.crumbs) {
         const id = U.side ? r.offId : r.heldId, yaw = s.yaw, dx = -Math.sin(yaw), dz = -Math.cos(yaw);
         if (id) D.crumbs(f.x + dx * 0.35, f.y + (s.f & F.SNEAK ? 1.15 : 1.45), f.z + dz * 0.35, id, 5, dx, dz);
+      }
+      // sprinting on the ground: a speck of what they run on, kicked back, each tick (the game's sprint particle)
+      if ((s.f & (F.SPRINT | F.GROUND)) === (F.SPRINT | F.GROUND) && !(s.f & (F.SNEAK | F.SWIM | F.FLY)) && r.P && Pa && Pa.spawn) {
+        const w = g.world, b = w && w.get(Math.floor(f.x), Math.floor(f.y - 0.2), Math.floor(f.z)), v = r.P.vel;
+        if (b && BLOCKS[b] && BLOCKS[b].solid && (v.x * v.x + v.z * v.z) > 0.01) Pa.spawn(f.x + (Math.random() - 0.5) * 0.6, f.y + 0.1, f.z + (Math.random() - 0.5) * 0.6, -v.x * 0.6, 0.15, -v.z * 0.6, { block: b });
       }
       // on fire: flames about them
       if (s.f & F.FIRE && E && E.particles) E.particles('flame', f.x + (Math.random() - 0.5) * 0.6, f.y + Math.random() * 1.8, f.z + (Math.random() - 0.5) * 0.6, 1, 0.05);
