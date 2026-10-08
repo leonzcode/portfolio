@@ -524,7 +524,7 @@ export class Entities {
     if (!v || v.removed) { e.vehicle = null; return; }
     e.baseTick();
     e.vel.set(0, 0, 0);
-    if (e instanceof Mob) { e.serverAi(); e.animTick && e.animTick(); }
+    if (e instanceof Mob) { e.serverAi(); if (e.bodyDue) { e.bodyDue = false; e.bodyControl(); } e.animTick && e.animTick(); }
     e.fallDist = 0;
     // after its own mind has had its say, the seat decides which way it faces (a boat: its way, or sideways)
     if (v.riderPlaced) v.riderPlaced(e, v.passengers.indexOf(e));

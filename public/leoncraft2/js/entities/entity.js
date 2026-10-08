@@ -276,6 +276,11 @@ export class Living extends Entity {
     if (this.removed) return;
     if (this.dead) { this.deadTick(); this.animTick(); return; }
     this.aiStep();
+    /* the body control comes after the move, as in the game: whether it is walking is
+       where it is now against where it was when the tick began. (Run inside serverAi,
+       before the move, it never saw a step, so a mob walked on with its body still facing
+       wherever it last stood: sideways, or backwards.) */
+    if (this.bodyDue) { this.bodyDue = false; this.bodyControl(); }
     this.animTick();
   }
   aiStep() {
@@ -445,7 +450,8 @@ export class Mob extends Living {
     if (this.nav) this.nav.tick();
     this.moveControl();
     this.lookControl();
-    this.bodyControl();
+    // (the body turns once the tick's move is made, Living.tick: it goes by how far it got this tick)
+    this.bodyDue = true;
   }
   /* ---- the move control: towards a wanted point, turning at most 90
      degrees a tick, jumping when the next step is too high ---- */
@@ -496,27 +502,29 @@ export class Mob extends Living {
       this.pitch = rotTowards(this.pitch, 0, 10 * DEG);
       this.headYaw = rotTowards(this.headYaw, this.bodyYaw, 10 * DEG);
     }
-    const max = (this.constructor.HEAD_MAX || 75) * DEG, off = wrap(this.headYaw - this.bodyYaw);
+    const max = this.headMax(), off = wrap(this.headYaw - this.bodyYaw);
     if (Math.abs(off) > max) this.headYaw = this.bodyYaw + Math.sign(off) * max;
   }
+  // how far the head may turn from the body (75 degrees, a ghast's HEAD_MAX 0 none at all)
+  headMax() { const h = this.constructor.HEAD_MAX; return (h === undefined ? 75 : h) * DEG; }
   /* ---- the body: follows the way it walks; standing, it keeps within 75
-     degrees of the head and, after a moment, turns to it ---- */
+     degrees of the head (its HEAD_MAX) and, after a moment, turns to it ---- */
   bodyControl() {
     const dx = this.pos.x - this.prev.x, dz = this.pos.z - this.prev.z;
     if (dx * dx + dz * dz > 2.5e-7) {
       this.bodyYaw = this.yaw;
-      const off = wrap(this.headYaw - this.bodyYaw), max = 75 * DEG;
+      const off = wrap(this.headYaw - this.bodyYaw), max = this.headMax();
       if (Math.abs(off) > max) this.headYaw = this.bodyYaw + Math.sign(off) * max;
       this.lastStableHead = this.headYaw; this.headStableT = 0;
       return;
     }
     if (Math.abs(wrap(this.headYaw - this.lastStableHead)) > 15 * DEG) {
       this.headStableT = 0; this.lastStableHead = this.headYaw;
-      const off = wrap(this.headYaw - this.bodyYaw), max = 75 * DEG;
+      const off = wrap(this.headYaw - this.bodyYaw), max = this.headMax();
       if (Math.abs(off) > max) this.bodyYaw = this.headYaw - Math.sign(off) * max;
     } else if (++this.headStableT > 10) {
       const k = Math.max(0, Math.min(1, (this.headStableT - 10) / 10));
-      const max = 75 * DEG * (1 - k);
+      const max = this.headMax() * (1 - k);
       const off = wrap(this.headYaw - this.bodyYaw);
       if (Math.abs(off) > max) this.bodyYaw = this.headYaw - Math.sign(off) * max;
     }
