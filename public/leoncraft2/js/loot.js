@@ -118,6 +118,8 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
   }
   // a spawner gives only experience, and none with Silk Touch
   if (n === 'spawner') { if (!silk) out.xp = between(15, 43); return out; }
+  // cave vines: a glow berry when they have berries on them (meta bit 0), whatever the tool, and nothing else
+  if (n === 'cave_vines' || n === 'cave_vines_plant') { if (meta & 1) add(out, 'glow_berries', 1); return out; }
   if (silk) {
     // snow keeps its layers (all eight: a snow block); an infested block gives the plain one
     if (n === 'snow') { if ((meta & 7) === 7) add(out, 'snow_block', 1); else add(out, 'snow', (meta & 7) + 1); return out; }

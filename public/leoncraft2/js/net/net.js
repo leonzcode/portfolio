@@ -349,6 +349,8 @@ function packDetail(e) {
   if (e.k === 'frame') return { k: 'f', p: [e.x, e.y, e.z], i: e.item ? stackToJSON(e.item) : null, r: e.rot, gl: e.glow ? 1 : 0 };
   if (e.k === 'jukebox') return { k: 'j', p: [e.x, e.y, e.z], i: e.disc ? stackToJSON(e.disc) : null, t: e.t | 0 };
   if (e.k === 'campfire') return { k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), t: e.t, n: e.total };
+  // a beacon's powers (sim/beacon.js), so everyone near it gets them
+  if (e.k === 'bc') return { k: 'bc', p: [e.x, e.y, e.z], a: e.a || 0, b: e.b || 0 };
   return undefined;
 }
 
@@ -1451,6 +1453,7 @@ export class Net {
     try {
       const old = D.map.get(k);
       if (!o) { if (old) { D.map.delete(k); D._unshow(old); } return; }
+      if (D.loadExtra && D.loadExtra(o)) return;
       if (o.k !== 's' && o.k !== 'f' && o.k !== 'j' && o.k !== 'c') return;
       const kind = o.k === 's' ? 'sign' : o.k === 'f' ? 'frame' : o.k === 'j' ? 'jukebox' : 'campfire';
       const e = D.entry(x, y, z, kind);

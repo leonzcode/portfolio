@@ -222,6 +222,7 @@ export class World {
     this.seed = opts.seed;
     this.generator = opts.generator || 'classic';    // 'vanilla' (Minecraft's own worlds) or 'classic' (the first generator)
     this.dim = opts.dim || 'overworld';        // js/dims.js: which generator the workers run
+    this.structures = opts.structures !== false;   // Generate Structures (Create World): off, the workers build none
     this.noSky = this.dim === 'the_nether';     // no sky light at all there
     this.renderDist = opts.renderDist;
     this.chunks = new Map();          // "cx,cz" -> chunk
@@ -254,7 +255,8 @@ export class World {
     this.writesOf = new Map();         // chunk number -> its features' writes { cx, cz, w: [[0..8, Int32Array], ...] }
     this.stageIn = new Set();          // chunk numbers * 4 + stage (1 terrain, 2 features) asked of a worker
     this.thrown = new Map();           // the same, -> times a piece came in too far away to keep since you last crossed a chunk (onStage)
-    const name = this.dim + '|' + this.generator + '|' + this.seed;
+    // (a world without structures is kept apart, and never takes chunks practised with them)
+    const name = this.genName = this.dim + '|' + this.generator + '|' + this.seed + (this.structures ? '' : '|ns');
     // where this world's chunks are kept (opts.cache false: never)
     this.cacheKey = opts.cache === false ? null : CACHE + '|' + name;
     /* A world just created (opts.fresh), or one with nothing kept, has nothing
@@ -282,7 +284,7 @@ export class World {
        job goes to one before it has (idlest). */
     let first;
     this.ready = new Promise(res => { first = res; });
-    this.initMsg = { type: 'init', seed: this.seed, generator: this.generator, dim: this.dim, manifest: opts.manifest, colours: opts.colours, cache: this.cacheKey, tag: this.tag };
+    this.initMsg = { type: 'init', seed: this.seed, generator: this.generator, dim: this.dim, structures: this.structures, manifest: opts.manifest, colours: opts.colours, cache: this.cacheKey, tag: this.tag };
     /* Every job out, with when it went and to which worker ('g' and 'm' + "cx,cz"
        for a chunk and a mesh, 't' and 'd' + its number for a terrain and its
        features): one never answered is asked again (audit). */
@@ -344,7 +346,7 @@ export class World {
   onMessage(i, m, initRes) {
     if (m.type === 'up') return;         // a worker's code loaded (index.html waits for it on a first visit)
     // practice finishing for this very world (it was opened while the workers were still at it)
-    if (m.type === 'practised') { if (m.name === this.dim + '|' + this.generator + '|' + this.seed) this.takePractice(m); else keepAhead(m, this.dead ? null : this.workers[i]); return; }
+    if (m.type === 'practised') { if (m.name === this.genName) this.takePractice(m); else keepAhead(m, this.dead ? null : this.workers[i]); return; }
     // columns of the title's world read back by a worker after it had answered its init (worker.js lateMeshes)
     if (m.type === 'premesh') {
       if (this.live[i]) for (const [x, z] of m.list) {

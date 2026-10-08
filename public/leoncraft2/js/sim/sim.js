@@ -35,6 +35,7 @@ import { installFire } from './fire.js?v=34';
 import { Bodies } from './bodies.js?v=34';
 import { Lids } from './lids.js?v=34';
 import { Beams } from './beams.js?v=34';
+import { Beacons } from './beacon.js?v=34';
 import { Sculk } from './sculk.js?v=34';
 import { Conduits } from './conduit.js?v=34';
 import { installBeds } from './beds.js?v=34';
@@ -90,6 +91,7 @@ export class Sim {
     // chest and shulker box lids, open barrels, ringing bells (sim/lids.js); beacon beams (sim/beams.js)
     this.lids = new Lids(this);
     this.beams = new Beams(this);
+    this.beacons = new Beacons(this);   // and the powers they give (sim/beacon.js)
     // sculk sensors hearing vibrations, shriekers shrieking (sim/sculk.js)
     this.sculk = new Sculk(this);
     // conduits waking in their frames (sim/conduit.js)
@@ -103,6 +105,7 @@ export class Sim {
     this.bodies.dispose();
     this.lids.dispose();
     this.beams.dispose();
+    this.beacons.dispose();
     this.sculk.dispose();
     this.conduits.dispose();
     this.weather.dispose();
