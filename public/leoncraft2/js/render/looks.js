@@ -459,8 +459,15 @@ function finishLook(R, look, first, prep) {
     R.stands = [];
     R.makeStandIns();
     // and every material handed in by the rest of the game
-    if (prep) for (const [m, n] of prep.pairs) morph(m, n);
-    else if (R.lookList && !first) R.lookList = R.lookList.filter(e => { const m = e.ref.deref(); if (m) morph(m, e.make(o)); return !!m; });
+    if (prep) {
+      const done = new Set();
+      for (const [m, n] of prep.pairs) { morph(m, n); done.add(m); }
+      /* and one handed in while the new code was being built (a player joining, a world or a
+         dimension's mobs, a first glint): made for the last look, since R.opts only changes here,
+         so it kept the last look's code until the next change, the Off look's lightmap in the
+         full chain and the like, which drew it black or glaring. It gets its new form now. */
+      if (R.lookList) R.lookList = R.lookList.filter(e => { const m = e.ref.deref(); if (m && !done.has(m)) morph(m, e.make(o)); return !!m; });
+    } else if (R.lookList && !first) R.lookList = R.lookList.filter(e => { const m = e.ref.deref(); if (m) morph(m, e.make(o)); return !!m; });
     /* The new materials the shaders were compiled for are kept until the next
        change of look: while they are, their programs stay in three.js's cache
        for the materials that took their code, however long until those are
