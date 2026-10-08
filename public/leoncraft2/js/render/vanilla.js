@@ -499,8 +499,9 @@ export class Vanilla {
     this.flicker *= Math.pow(0.9, Math.min(3, dt * 20));
     // the lightmap: the sky light's colour and strength by the time of day (none in the Nether and the End), rain and storms
     // taking it down as above, the dimension's ambient light, and Night Vision
+    // (a lightning flash lights the sky light to its full strength for its two ticks, as the game's does)
     const sl = other ? null : skyLightAt(dayTime);
-    this.makeLightmap(sl ? sl[0] * (1 - rain * 5 / 16) * (1 - thunder * 5 / 16) : 0, sl || ZERO4, AMBIENT_LIGHT[D ? D.id : 'overworld'] || AMBIENT_LIGHT.overworld,
+    this.makeLightmap(sl ? (wx.flash > 0 ? 1 : sl[0] * (1 - rain * 5 / 16) * (1 - thunder * 5 / 16)) : 0, sl || ZERO4, AMBIENT_LIGHT[D ? D.id : 'overworld'] || AMBIENT_LIGHT.overworld,
       opts.brightness === undefined ? 0.5 : opts.brightness, nightVision(state));
     // the sky and fog colours of the biome you are in, eased so a border does not snap
     const b = state.biome;
