@@ -8,7 +8,7 @@
    or a door: the albedo from the strip, a flat normal map and a plain
    material map. The terrain files themselves are never changed.
 
-     const items = await loadItemStrip(base, '?v=29');
+     const items = await loadItemStrip(base, '?v=30');
      addItemPieces(items, manifest.layers, albPieces, nrmPieces, spcPieces);
      setItemLayers(manifest.layers);        // js/items.js
 
@@ -19,7 +19,7 @@
    dimensions' art and every frame together would pass that, leaving the
    whole array unmade and the world black.
 --------------------------------------------------------------------------- */
-import { ITEM_TEX } from './itemdata.js?v=29';
+import { ITEM_TEX } from './itemdata.js?v=30';
 const RAW = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
 const PIECE = 128;
 // how many pictures of the strip go into the texture array: everything before the first frame
@@ -37,15 +37,15 @@ export async function loadItemStrip(base, ver) {
   }
 }
 
-// a canvas of n layers all one colour, for the normal and material maps
+/* n layers all one colour, for the normal and material maps, as bytes: a
+   canvas here (as it was) took the graphics card a fifth of a second to hand
+   over, every page open. A canvas keeps its colours multiplied by their
+   alpha, so a colour with none came through as nothing at all: the same
+   nothing here, so the item layers look as they always have. */
 function plain(n, rgba) {
-  const c = document.createElement('canvas');
-  c.width = 16; c.height = n * 16;
-  const g = c.getContext('2d');
-  const img = g.createImageData(16, n * 16);
-  for (let i = 0; i < img.data.length; i += 4) img.data.set(rgba, i);
-  g.putImageData(img, 0, 0);
-  return c;
+  const v = rgba[3] === 0 ? [0, 0, 0, 0] : rgba, a = new Uint8Array(16 * 16 * 4 * n);
+  for (let i = 0; i < a.length; i += 4) a.set(v, i);
+  return a;
 }
 
 /* Adds the strip's pieces (in the [layer, count, bitmap] form main.js

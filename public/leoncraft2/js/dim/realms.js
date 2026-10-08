@@ -24,15 +24,15 @@
    after travelling, kept topped up while you stand in a portal; end portals
    and gateways at once.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=29';
-import { Y0 } from '../world-const.js?v=29';
-import { DIMS } from '../dims.js?v=29';
-import { explode } from '../explosion.js?v=29';
-import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=29';
-import { EndFight, gatewayBlocks } from './endfight.js?v=29';
-import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=29';
-import { mix32, rng } from '../noise.js?v=29';
-import { portalSwirl } from './art.js?v=29';
+import { B, BLOCKS } from '../blocks.js?v=30';
+import { Y0 } from '../world-const.js?v=30';
+import { DIMS } from '../dims.js?v=30';
+import { explode } from '../explosion.js?v=30';
+import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=30';
+import { EndFight, gatewayBlocks } from './endfight.js?v=30';
+import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=30';
+import { mix32, rng } from '../noise.js?v=30';
+import { portalSwirl } from './art.js?v=30';
 const THREE = window.THREE;
 
 const E = y => y - Y0;                     // world y -> engine y
@@ -182,6 +182,8 @@ export class Realms {
       else {
         this.portalTime++;
         const wait = g.mode === 'creative' ? 1 : 80;
+        // (the other side made ahead while you stand here, so the loading screen after is short: main.js ahead)
+        if (this.portalTime === 2 && wait > 2 && this.o.ahead) { const t = this.portalTarget(nether); if (t) this.o.ahead(t.to, t.near); }
         if (this.portalTime >= wait) { this.portalTime = 0; this.netherTravel(nether); }
       }
     } else {
@@ -212,9 +214,10 @@ export class Realms {
     try { await this.o.travel(dim, resolve, near); }
     finally { this.busy = false; this.cooldown = 10; this.portalTime = 0; this.overlay.style.opacity = '0'; }
   }
-  netherTravel(at) {
+  // where a nether portal at `at` takes you from here: the dimension, the spot the coordinates give, and the ground to load
+  portalTarget(at) {
     const g = this.game, from = this.dim;
-    if (from === 'the_end') return;
+    if (from === 'the_end') return null;
     const to = from === 'the_nether' ? 'overworld' : 'the_nether';
     const k = to === 'the_nether' ? 1 / 8 : 8;
     const p = g.player.pos;
@@ -225,11 +228,17 @@ export class Realms {
     // a portal known there already (the one you came through, most often): the ground is made round it,
     // not round the point the coordinates give, which can be a hundred blocks from it
     const known = this.findPortal(null, to, tx, ty, tz);
+    return { to, tx, ty, tz, axis, yLo, yHi, near: known ? { x: known.x, z: known.z } : { x: tx, z: tz } };
+  }
+  netherTravel(at) {
+    const t = this.portalTarget(at);
+    if (!t) return;
+    const { to, tx, ty, tz, axis, yLo, yHi } = t;
     this.go(to, world => {
       const s = this.findPortal(world, to, tx, ty, tz) || this.makePortal(world, to, tx, ty, tz, axis, yLo, yHi);
       const along = s.w / 2;
       return { x: s.x + (s.axis === 'x' ? along : 0.5), y: s.y, z: s.z + (s.axis === 'z' ? along : 0.5) };
-    }, known ? { x: known.x, z: known.z } : { x: tx, z: tz });
+    }, t.near);
   }
   // the nearest known portal within 128 blocks (16 in the Nether), by straight-line distance to its nearest block
   findPortal(world, dim, tx, ty, tz) {

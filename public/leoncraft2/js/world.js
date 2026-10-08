@@ -7,9 +7,9 @@
    out of range, and takes edits: a changed block remeshes its column, and
    the neighbouring one too when it sits on an edge.
 --------------------------------------------------------------------------- */
-import { CH, H, idx } from './world-const.js?v=29';
-import { BLOCKS, FLUID } from './blocks.js?v=29';
-import { searchSpawn } from './spawn.js?v=29';
+import { CH, H, idx } from './world-const.js?v=30';
+import { BLOCKS, FLUID } from './blocks.js?v=30';
+import { searchSpawn } from './spawn.js?v=30';
 
 /* ---- the workers, kept for the whole visit ----
    A new worker is slow for its first seconds: its code is fetched, compiled
@@ -20,7 +20,7 @@ import { searchSpawn } from './spawn.js?v=29';
 const GEN_N = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 const POOL = [];
 function newWorker() {
-  const w = new Worker(new URL('./worker.js?v=29', import.meta.url), { type: 'module' });
+  const w = new Worker(new URL('./worker.js?v=30', import.meta.url), { type: 'module' });
   w.onerror = e => console.error('worker', e.message || e);
   return w;
 }
@@ -334,9 +334,25 @@ export class World {
   onMessage(i, m, initRes) {
     // practice finishing for this very world (it was opened while the workers were still at it)
     if (m.type === 'practised') { if (m.name === this.dim + '|' + this.generator + '|' + this.seed) this.takePractice(m); else keepAhead(m, this.dead ? null : this.workers[i]); return; }
+    // columns of the title's world read back by a worker after it had answered its init (worker.js lateMeshes)
+    if (m.type === 'premesh') {
+      if (this.live[i]) for (const [x, z] of m.list) {
+        const k = this.key(x, z), c = this.chunks.get(k);
+        if (c && c.meshed || this.inFlight.has('m' + k)) continue;
+        if (!this.preMeshAt || !this.preMeshAt.size) { this.preMeshAt = this.preMeshAt || new Map(); this.preMeshSince = performance.now(); }
+        this.preMeshAt.set(k, i);
+      }
+      return;
+    }
     // anything else from before the init (a job of the world this worker served last) is not ours
     if (!this.live[i]) {
-      if (m.type === 'ready') { this.live[i] = true; if (i < this.genN && m.staged) { this.staged = true; this.features = !!m.features; } initRes(); }
+      if (m.type === 'ready') {
+        this.live[i] = true; if (i < this.genN && m.staged) { this.staged = true; this.features = !!m.features; }
+        // chunks this worker made ahead (the title's world: worker.js startPre), and columns it meshed, asked of it and of no other
+        if (m.pre) for (const [x, z] of m.pre) (this.preAt || (this.preAt = new Map())).set(this.key(x, z), i);
+        if (m.preMesh) { if (!this.preMeshAt) this.preMeshSince = performance.now(); for (const [x, z] of m.preMesh) (this.preMeshAt || (this.preMeshAt = new Map())).set(this.key(x, z), i); }
+        initRes();
+      }
       return;
     }
     /* Chunks are read back from the kept ones in the background, so a worker
@@ -496,16 +512,27 @@ export class World {
     this.lookupStuck();
     const now = performance.now();
     if (moved || now - (this.auditAt || 0) > 1000) this.audit(now);
-    const cap = this.workers.length * 2;
+    /* (six deep while a loading screen or the title waits (focus) on a world made
+       a chunk at a time, so a worker stays busy while the page is; a world made in
+       stages stays at two, as its pieces wait on each other: deeper, the ones the
+       chunk you stand in needs waited behind others in the workers' lines) */
+    const deep = this.focus >= 0 && !this.staged ? 6 : 2, cap = this.workers.length * deep;
     // meshes first (they are what you see), nearest first; a few a frame, so packing them never stalls one
     /* (the nearest picked out of the line each time, rather than the whole line
        split into numbers and sorted every frame: with every worker busy that was
        all garbage, and nothing went out) */
+    /* (more while a loading screen or the title waits for the ground round you
+       (focus): no frame of play to keep smooth, and with the page busy loading,
+       update can come round seldom, two at a time left the workers waiting) */
     let sends = 0;
-    while (this.meshQueue.size && sends < 2 && this.inFlightCount() < cap) {
+    const most = this.focus >= 0 ? 8 : 2;
+    /* (columns a worker meshed ahead go first, for a second at most: they come back at once, but sent
+       after another column's mesh they waited in that worker's line behind it) */
+    const preFirst = this.preMeshAt && this.preMeshAt.size && now - this.preMeshSince < 1000;
+    while (this.meshQueue.size && sends < most && this.inFlightCount() < cap) {
       let best = null, bd = Infinity, bx = 0, bz = 0;
       for (const k of this.meshQueue) {
-        if (this.inFlight.has('m' + k)) continue;
+        if (this.inFlight.has('m' + k) || (preFirst && !this.preMeshAt.has(k))) continue;
         const c = this.chunks.get(k);
         if (!c) { this.meshQueue.delete(k); continue; }
         const d = (c.cx - pcx) * (c.cx - pcx) + (c.cz - pcz) * (c.cz - pcz);
@@ -536,15 +563,22 @@ export class World {
       return;
     }
     const L = this.genList;
-    if (!L || !L.length || this.inFlightCount() >= gcap) return;
+    const ahead = this.preAt && this.preAt.size;
+    if (!L || !L.length || (this.inFlightCount() >= gcap && !ahead)) return;
     let j = 0;
     for (let n = 0; n < L.length; n++) {
       const e = L[n], x = e[1], z = e[2], k = this.key(x, z);
       if (this.chunks.has(k) || this.inFlight.has('g' + k)) continue;
+      // one made ahead (the title's world: worker.js startPre) goes at once to the worker holding it, which answers at once
+      const o = ahead ? this.preAt.get(k) : undefined;
+      if (o !== undefined && this.live[o]) { this.preAt.delete(k); this.inFlight.add('g' + k); this.job(o, 'g' + k, { type: 'gen', cx: x, cz: z }); continue; }
       // still being read back from the kept chunks, no worker free, or a loading screen waiting on nearer ones (focus): later
       if (this.lookingUp.has(k) || this.inFlightCount() >= gcap || (this.focus >= 0 && Math.max(Math.abs(x - this.pcx), Math.abs(z - this.pcz)) > this.focus)) { L[j++] = e; continue; }
+      // (never deeper on one worker than its share: while the others were still saying they were ready, the first got them all)
+      const i = this.idlest();
+      if (this.busy[i] >= deep) { L[j++] = e; continue; }
       this.inFlight.add('g' + k);
-      this.job(this.idlest(), 'g' + k, { type: 'gen', cx: x, cz: z });
+      this.job(i, 'g' + k, { type: 'gen', cx: x, cz: z });
     }
     L.length = j;
   }
@@ -556,7 +590,7 @@ export class World {
     const list = [];
     for (const e of this.genList) {
       const k = this.key(e[1], e[2]);
-      if (this.chunks.has(k) || this.missing.has(k) || this.lookingUp.has(k) || this.inFlight.has('g' + k)) continue;
+      if (this.chunks.has(k) || this.missing.has(k) || this.lookingUp.has(k) || this.inFlight.has('g' + k) || (this.preAt && this.preAt.has(k))) continue;
       if (!this.lookingUp.size) this.lookOldest = performance.now();
       this.lookingUp.set(k, performance.now()); list.push([e[1], e[2]]);
     }
@@ -872,7 +906,10 @@ export class World {
        busy; but a small remesh next to you (the world changing by itself)
        goes to the edit worker too when it has nothing to do, so its code is
        always warm (cold, it took several times as long over your blocks). */
-    const i = urgent || (base && !this.busy[this.editW]) ? this.editW : this.idlest();
+    // (a column meshed ahead, the title's world's, goes to the worker holding it, which answers at once)
+    const o = this.preMeshAt && !urgent && !base ? this.preMeshAt.get(k) : undefined;
+    if (o !== undefined) this.preMeshAt.delete(k);
+    const i = o !== undefined && this.live[o] ? o : urgent || (base && !this.busy[this.editW]) ? this.editW : this.idlest();
     // the cells of this column whose moving part is drawn elsewhere (sim/lids.js), in the region's own numbering
     const moving = [];
     for (const key of this.moving) {

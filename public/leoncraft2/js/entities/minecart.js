@@ -17,12 +17,12 @@
    0.04 a tick and slows to half on the ground. Mobs bumped by a moving empty
    cart get in; hits break it as they break a boat.
 --------------------------------------------------------------------------- */
-import { Entity, Living, DEG, wrap } from './entity.js?v=29';
-import { register } from './mobs.js?v=29';
-import { MODELS } from './mobmodels.js?v=29';
-import { addArt } from './mobart.js?v=29';
-import { BLOCKS, B } from '../blocks.js?v=29';
-import { riderDrop } from './boat.js?v=29';
+import { Entity, Living, DEG, wrap } from './entity.js?v=30';
+import { register } from './mobs.js?v=30';
+import { MODELS } from './mobmodels.js?v=30';
+import { addArt } from './mobart.js?v=30';
+import { BLOCKS, B } from '../blocks.js?v=30';
+import { riderDrop } from './boat.js?v=30';
 
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];      // north, east, south, west (as models.js)
 const RAIL = new Uint8Array(4096), POWERED = new Uint8Array(4096), SOURCE = new Uint8Array(4096);
