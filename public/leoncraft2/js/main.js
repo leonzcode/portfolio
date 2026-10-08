@@ -542,6 +542,8 @@ async function boot() {
     status('Building the world…', 0.7);
     await startMenu(MENU_SEED);
     MK('menuGround');
+    // (the workers on the next world at once: the wait below is the graphics card's alone)
+    practiseNext();
     // and the shaders done, so the title does not freeze on its first frame (never more than a few seconds)
     await Promise.race([shadersBuilt, new Promise(r => setTimeout(r, 4000))]);
     status('Building the world…', 1);
@@ -550,7 +552,7 @@ async function boot() {
   $('#loading').hidden = true;
   gui.panorama = !resumeTo;
   // straight back into a world (below): its loading screen, with no title world or practice in the way
-  if (!resumeTo) { gui.setRoot(new TitleScreen()); practiseNext(); paintIdle(); }
+  if (!resumeTo) { gui.setRoot(new TitleScreen()); paintIdle(); }
 
   /* ---- playing a world ---- */
   async function startGame(entry, isNew) {
