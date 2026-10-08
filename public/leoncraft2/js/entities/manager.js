@@ -43,6 +43,7 @@ import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=32';
 import { EntityMeshes } from '../render/entitymesh.js?v=32';
 import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=32';
 import { lightNear } from '../lightlevel.js?v=32';
+import { activeDrops } from '../drops.js?v=32';
 import { breakAt } from '../place.js?v=32';
 import { dropOf } from '../survival.js?v=32';
 import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=32';
@@ -972,6 +973,23 @@ export class Entities {
       // its round shadow on the ground
       if (seen && blobs && c.SHADOW && !e.vehicle) this.shadowOf(e, x, y, z, c.SHADOW * (e.baby || e.ageT < 0 ? 0.5 : 1) * (c.SCALE || 1));
     }
+    if (blobs) {
+      /* your own round shadow in third person (F5), as the game draws it under the player (0.5 across the
+         middle); only on the Off look, since the shader looks cast your real shadow. And every dropped
+         item's, 0.15 and three quarters as dark, as the game's item entities have. */
+      const av = this.R.avatar;
+      if (av && av.view && this.R.vanilla && this.mode !== 'spectator' && !this.riding) {
+        const pp = P.prev || P.pos, sh = this.youShadow || (this.youShadow = { lS: 1, lB: 0 });
+        sh.lS = av.sky; sh.lB = av.block;
+        this.shadowOf(sh, pp.x + (P.pos.x - pp.x) * alpha, pp.y + (P.pos.y - pp.y) * alpha, pp.z + (P.pos.z - pp.z) * alpha, 0.5);
+      }
+      const D = activeDrops(), it = this.itemShadow || (this.itemShadow = { lS: 1, lB: 0 });
+      if (D && D.world === this.world) for (const e of D.items) {
+        if (!e.mesh || e.fly > 0 || e.light < 0) continue;
+        it.lS = (e.light >> 8) / 255; it.lB = (e.light & 255) / 255;
+        this.shadowOf(it, e.prev.x + (e.pos.x - e.prev.x) * alpha, e.prev.y + (e.pos.y - e.prev.y) * alpha, e.prev.z + (e.pos.z - e.prev.z) * alpha, 0.15, 0.75);
+      }
+    }
     // you, burning, seen from behind or in front (F5)
     if (this.survival && this.survival.onFire && this.R.avatar && this.R.avatar.view && this.R.particles && this.mode !== 'spectator') {
       const pp = P.prev || P.pos;
@@ -983,7 +1001,7 @@ export class Entities {
     M.end();
     held.end();
   }
-  shadowOf(e, x, y, z, r) {
+  shadowOf(e, x, y, z, r, k = 1) {
     const T = this.t;
     const bx = Math.floor(x), bz = Math.floor(z);
     for (let yy = Math.floor(y + 0.01); yy > y - 3; yy--) {
@@ -992,7 +1010,7 @@ export class Entities {
         const top = yy;
         const dy = y - top;
         if (dy < -0.05) break;
-        const a = 0.55 * Math.max(0, 1 - dy / 3) * Math.min(1, (e.lS * e.lS + e.lB) * 1.2 + 0.3);
+        const a = 0.55 * k * Math.max(0, 1 - dy / 3) * Math.min(1, (e.lS * e.lS + e.lB) * 1.2 + 0.3);
         if (a > 0.02) this.meshes.blobAt(x, top + 0.003, z, r, a);
         break;
       }
