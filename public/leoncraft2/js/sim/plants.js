@@ -337,7 +337,8 @@ export function installPlants(sim) {
   if (B.vine !== undefined) {
     const V = B.vine;
     const at = (x, y, z) => (dx, dy, dz) => { const b = sim.get(x + dx, y + dy, z + dz); return b ? { d: BLOCKS[b], m: sim.meta(x + dx, y + dy, z + dz) } : null; };
-    const holds = (x, y, z) => { const b = sim.get(x, y, z); return !!b && vineHolds({ d: BLOCKS[b] }); };
+    // (a column not loaded is taken to hold: the vine on the edge of the loaded world is left as it is)
+    const holds = (x, y, z) => { if (!sim.w.loaded(x, z)) return true; const b = sim.get(x, y, z); return !!b && vineHolds({ d: BLOCKS[b] }); };
     const facesAt = (x, y, z) => vineFaces(sim.meta(x, y, z), at(x, y, z));
     // the faces that still hold: a side by its block or the same side of the vine above, the top by the block above
     const holding = (x, y, z, f) => {
