@@ -763,9 +763,9 @@ async function boot() {
     // a new world made with Bonus Chest on (bonus.js)
     if (isNew && entry.bonusChest && dim === 'overworld') import('./bonus.js?v=28').then(m => m.bonusChest(game, Math.floor(spawn.x), Math.floor(spawn.z))).catch(e => console.warn('bonus chest', e));
     Worlds.update(entry.id, { lastPlayed: Date.now(), spawn });
-    loading = null;
-    gui.panorama = false; gui.inGame = true;
-    gui.closeAll();
+    // (the loading screen stays up, full, over plain dirt, for the first frames: below)
+    if (loading) loading.progress = 1;
+    gui.panorama = false;
     // every shader compiled now, not in the first frame that needs it (the first F5, the first drop)
     MK('sgPrePrecompile');
     renderer.precompile();
@@ -784,6 +784,17 @@ async function boot() {
         setDifficulty: d => { if (game) game.entry.difficulty = d; options.set('difficulty', d); },
         disconnected: reason => quitToTitle().then(() => gui.open(new DisconnectedScreen('Connection Lost', reason))) });
     }
+    /* The first two frames are played behind the loading screen: everything in
+       them runs for the first time (the browser compiles each part of the game
+       as it is first used, the clouds and the like are made), which took a
+       tenth of a second a frame and was felt as a stutter the moment the world
+       appeared. Hidden here, the world opens on smooth frames. */
+    await new Promise(res => { firstFrames = { left: 2, res }; setTimeout(res, 1500); });
+    firstFrames = null;
+    MK('sgShown');
+    loading = null;
+    gui.inGame = true;
+    gui.closeAll();
     lock();
     // no mouse yet (the click that started this is long gone): the game menu, as when the window loses focus
     setTimeout(() => { if (game && !locked() && !gui.isOpen()) gui.open(new PauseScreen()); }, 600);
@@ -1254,6 +1265,7 @@ async function boot() {
   let acc = 0, last = performance.now(), fps = 0, fpsT = 0, frames = 0, scaleTick = 0;
   const TILT = { roll: 0, tiltPitch: 0 }, NO_TILT = { roll: 0, tiltPitch: 0 };
   let startedAt = performance.now();
+  let firstFrames = null;          // a world's first frames, played behind its loading screen (startGame): { left, res }
   const sunDir = new THREE.Vector3(), moonDir = new THREE.Vector3(), eyeV = new THREE.Vector3();
   const tilt = 0.42;              // the sun's path leans south, so shadows are never straight down
   const sunAt = t => {
@@ -1293,7 +1305,7 @@ async function boot() {
     try {
       drawDt += dt;
       video.frame(game && game.ready ? game : null, dt);
-      if (game && game.ready && !travelling) playFrame(now, dt);
+      if (game && game.ready && !travelling) { playFrame(now, dt); if (firstFrames && --firstFrames.left <= 0) firstFrames.res(); }
       else {
         drawDt = 0;
         // the title world turns slowly: half the frames are plenty, and the menus stay quick
