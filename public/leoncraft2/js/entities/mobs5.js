@@ -581,13 +581,30 @@ export class Panda extends Animal {
     if (this.gene !== 'aggressive' && this.target) this.target = null;
     if (this.sitT > 0) { this.sitT--; this.stopMoving(); if (this.sitT % 20 === 0) this.m.particles('poof', this.pos.x - Math.sin(this.yaw) * 0.8, this.pos.y + 0.9, this.pos.z - Math.cos(this.yaw) * 0.8, 1, 0.1, [0.5, 0.75, 0.3]); }
     else if (!this.panicking && this.onGround && RI(this.gene === 'lazy' ? 600 : 3000) === 0) this.sitT = 100 + RI(200);
-    if (this.rollT > 0) { this.rollT--; this.rollA += PI / 10; const s = Math.sin(this.yaw), c = Math.cos(this.yaw); this.vel.x = -s * 0.1; this.vel.z = -c * 0.1; }
+    /* a roll, the game's: set off the way it faces (0.2 a tick, a cub 0.1) with a little
+       lift, a bounce on the 7th, 15th and 23rd ticks, 32 ticks in all; it steers no
+       more till it is done (its moveControl), so it rolls straight on, head first */
+    if (this.rollT > 0) {
+      const n = 33 - this.rollT--;
+      this.rollA += PI / 10;
+      this.stopMoving();      // (whatever walk it was on ends with the roll, as the game's roll goal takes the move)
+      if (n === 1) {
+        const sp = this.isBaby ? 0.1 : 0.2;
+        this.rollDX = -Math.sin(this.yaw) * sp; this.rollDZ = -Math.cos(this.yaw) * sp;
+        this.vel.set(this.vel.x + this.rollDX, 0.27, this.vel.z + this.rollDZ);
+      } else if (n === 7 || n === 15 || n === 23) this.vel.set(0, this.onGround ? 0.27 : this.vel.y, 0);
+      else { this.vel.x = this.rollDX || 0; this.vel.z = this.rollDZ || 0; }
+    }
     else if (this.onGround && !this.sitT && RI(this.gene === 'playful' ? 300 : 6000) === 0) { this.rollT = 32; this.rollA = 0; }
     super.aiStep();
     this.oSit = this.sit;
     this.sit += ((this.sitT > 0 ? 1 : 0) - this.sit) * 0.15;
     // a cub sneezes now and then, a slime ball one time in seven hundred
     if (this.ageT < 0 && RI(6000) === 0) { this.m.particles('poof', this.pos.x, this.pos.y + 0.5, this.pos.z, 4, 0.2, [0.9, 0.95, 0.9]); if (RI(700) === 0) this.m.dropAt(this, 'slime_ball', 1); }
+  }
+  moveControl() {
+    if (this.rollT > 0) { this.zza = 0; this.mcOp = 0; this.jumping = false; return; }
+    super.moveControl();
   }
   interact(held) {
     if (held === 'bamboo') { this.sitT = 120; return super.interact(held) || 'consume'; }
