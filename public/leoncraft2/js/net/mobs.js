@@ -105,6 +105,8 @@ export class Mobs {
     } finally { this.applying = false; }
     const spawn = E.spawn;
     E.spawn = function (type, x, y, z, o) {
+      // a spawner block's mobs, a patrol, a wandering trader: made only by the machine whose player is nearest, as one server would make them once
+      if (o && (o.spawner || o.patrol || o.wandering) && !M.applying && !net.applying && !net.ownsAt(x, z)) return null;
       const e = spawn.call(this, type, x, y, z, o);
       if (e && !M.applying && !net.applying && !net.closed && shareable(e)) M.made(e);
       return e;
