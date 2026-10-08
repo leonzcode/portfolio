@@ -61,7 +61,8 @@
    What it remembers (sign text, food on campfires, framed items, discs, vaults, what pots, shelves and lecterns
    hold) is kept per dimension (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, OPACITY } from './blocks.js?v=32';
+import { B, BLOCKS } from './blocks.js?v=32';
+import { lightNear } from './lightlevel.js?v=32';
 import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=32';
 import { potWobbled } from './sim/lids.js?v=32';
 import { BookScreen } from './ui/book.js?v=32';
@@ -651,6 +652,15 @@ export class Details {
     const day = this.daylight ? this.daylight() : 1;
     for (const e of this.map.values()) {
       if (!e.meshes) continue;
+      // a frame's item takes the light again when it changes (a torch put down or broken nearby)
+      if (e.k === 'frame' && !e.glow) {
+        const lv = this._lightPacked(e);
+        if (lv !== e.lv) {
+          e.lv = lv;
+          for (const mesh of e.meshes) { const L = mesh.geometry.attributes.aL; for (let k = 0; k < L.count; k++) { L.array[k * 4] = lv >> 8; L.array[k * 4 + 1] = lv & 255; } L.needsUpdate = true; }
+        }
+        continue;
+      }
       for (const mesh of e.meshes) {
         if (!mesh.userData.text) continue;
         const v = mesh.userData.glow ? 1 : this._bright(e, day);
@@ -659,12 +669,10 @@ export class Details {
     }
   }
   _bright(e, day) {
-    // sky light reaching the cell (a column test, as the items do) by the time of day, or the light of a nearby torch
-    const w = this.world;
-    let sky = 15;
-    for (let y = e.y + 1; y < e.y + 64 && sky > 0; y++) { const b = w.get(e.x, y, e.z); if (b) sky -= OPACITY[b]; }
-    const av = this.R && this.R.avatar, block = av ? (av.block || 0) * 15 : 0;
-    const l = Math.max(Math.max(0, sky) * day, block) / 15;
+    // the sign's own light (js/lightlevel.js: sky light by the time of day, or the block light there), as the game lights
+    // its text; it used to count only the blocks straight over the sign and borrow the player's torch light
+    const w = this.world, v = lightNear(w, e.x, e.y, e.z, !!w.noSky);
+    const l = Math.max((v >> 4) * day, v & 15) / 15;
     return 0.12 + 0.88 * l * l;
   }
 
@@ -726,7 +734,7 @@ export class Details {
     const right = new THREE.Vector3().crossVectors(up, n);
     const basis = new THREE.Matrix4().makeBasis(right, up, n);
     const c = new THREE.Vector3(e.x + 0.5, e.y + 0.5, e.z + 0.5);
-    const light = e.glow ? (15 * 17 << 8) | (15 * 17) : this._lightPacked(e);
+    const light = e.glow ? (15 * 17 << 8) | (15 * 17) : (e.lv = this._lightPacked(e));
     const put = (id, depth, scale, spin) => {
       const g = D._base(id);
       if (!g) return;
@@ -749,11 +757,11 @@ export class Details {
       if (g) put(e.item.id, g.flat ? -0.5 + 1.5 / 16 : -0.5 + 1 / 16 + 0.125, g.flat ? 0.5 : 0.25, e.rot);
     }
   }
+  // the frame's own light, sky and block (js/lightlevel.js); it counted only the blocks straight over it, so a frame
+  // under an overhang or by a torch in a cave showed its item black
   _lightPacked(e) {
-    const w = this.world;
-    let sky = 15;
-    for (let y = e.y + 1; y < e.y + 64 && sky > 0; y++) { const b = w.get(e.x, y, e.z); if (b) sky -= OPACITY[b]; }
-    return (Math.max(0, sky) * 17 << 8);
+    const w = this.world, v = lightNear(w, e.x, e.y, e.z, !!w.noSky);
+    return ((v >> 4) * 17 << 8) | ((v & 15) * 17);
   }
   _showText(e) {
     const font = this.gui && this.gui.font;
