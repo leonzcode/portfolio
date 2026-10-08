@@ -396,6 +396,9 @@ vec3 toSRGB(vec3 c) {
   c = max(c, 0.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
+// and back: the linear light toSRGB turns into the screen colour c (for agxInverse; a power of 2.2 in its
+// place halved a dark colour such as the End's sky, whose 18 of 255 came out 9)
+vec3 fromSRGB(vec3 c) { return mix(c / 12.92, pow((max(c, 0.0) + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
 // Detailed's whole tone curve, exposure already applied: linear light in, the screen's colour out.
 // With TONE_LUT, everything after AgX's log step comes from a small table (makeToneLut below):
 // one look-up instead of a dozen powers a pixel, never more than two steps of 255 from the curve itself
@@ -527,7 +530,10 @@ float voidFog(vec3 rd, float h) {
 vec3 voidSky(vec3 col, vec3 rd) {
   float disc = rd.y < 0.0 && 4.0 / max(-rd.y, 1e-4) * length(rd.xz) < 512.0 ? 1.0 - voidFog(rd, 4.0) : 0.0;
   float fog = rd.y > 0.0313 ? voidFog(rd, 16.0) : 1.0;
-  return col * (1.0 - uVoid.x * disc) * (1.0 - uVoid.y * fog);
+  // (the game fades the disc from the fog's colour to black on the screen; the same share taken off as
+  // light came out about twice as bright once tone mapped, so the dark under the horizon was a grey haze:
+  // the power brings it back to the game's share on the screen through AgX's toe, measured against Fast)
+  return col * pow(1.0 - uVoid.x * disc, 1.5) * (1.0 - uVoid.y * fog);
 }
 `;
 export const EXPOSURE = VOID + /* glsl */`

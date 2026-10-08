@@ -44,16 +44,16 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { VANILLA, AVATAR_FS } from './vanilla.js?v=37';
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=37';
-import { lightDefines } from './materials.js?v=37';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=37';
-import { H, idx } from '../world-const.js?v=37';
-import { lightNear } from '../lightlevel.js?v=37';
-import { armorSheet, avatarArmorGeometry, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=37';
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=37';
-import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=37';
-import { setGlint } from './glint.js?v=37';
+import { VANILLA, AVATAR_FS } from './vanilla.js?v=38';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=38';
+import { lightDefines } from './materials.js?v=38';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=38';
+import { H, idx } from '../world-const.js?v=38';
+import { lightNear } from '../lightlevel.js?v=38';
+import { armorSheet, avatarArmorGeometry, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=38';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=38';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=38';
+import { setGlint } from './glint.js?v=38';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -64,7 +64,7 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=37', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=38', import.meta.url).href;
 // the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
 let defaultSkin = DEFAULT_SKIN;
 
@@ -236,6 +236,7 @@ in vec3 vTint; in vec3 vG; in vec2 vUv2;
 uniform float uClock;
 #ifndef LDR
 uniform sampler2D uExpoTex;     // the eye's exposure, the last frame's (render/post.js)
+#define GLINT_TONE
 #endif
 ` + GLINT + `
 ` + ARMOR_OVERLAY + `
@@ -299,20 +300,19 @@ void main() {
   vec3 light = (diffuse * PI + amb + blockL + lightFloor()) / PI;
   vec3 col = albedo * light;
 #ifdef ARMOR
-  /* the glint added unlit, as the game draws it and as on what you hold (render/glint.js): as bright on
-     the screen in a cave as in the sun. It went by the light the piece was in, a dazzle in the sun
-     (the sun is a dozen times the sky) and next to nothing in the shade or at night */
-  if (vG.z > 0.5) {
-    vec3 g = min(glintAt(vG.xy, uClock), vec3(1.0));
-#ifdef LDR
-    col += g * g * 0.5 / max(exposureNow(), 0.02);
-#else
-    col += g * g * 0.5 / max(texture(uExpoTex, vec2(0.5)).r, 0.02);
+  /* the glint added unlit on the screen's own colour, as the game draws it (Fast: AVATAR_FS below), so
+     it is as bright in a cave as in the sun. It went by the light the piece was in (a dazzle in the sun
+     and next to nothing at night), then in as light, which the tone curve flattened in the sun */
+  vec3 g = vG.z > 0.5 ? glintAt(vG.xy, uClock) : vec3(0.0);
+#ifndef LDR
+  if (vG.z > 0.5) col = glintOver(col, g, max(texture(uExpoTex, vec2(0.5)).r, 0.02));
 #endif
-  }
 #endif
 #ifdef LDR
   col = finishLDR(col, vWorld);
+#ifdef ARMOR
+  col = min(col + g, vec3(1.0));
+#endif
 #endif
   outColor = vec4(col, 1.0);
 }`;

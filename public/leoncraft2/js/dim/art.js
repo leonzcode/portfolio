@@ -9,9 +9,9 @@
    pixels go in once the arrays are on the GPU (upload), and the icon strip
    gets the same layers (extendStrip).
 --------------------------------------------------------------------------- */
-import { litFronts } from '../render/litfront.js?v=37';
-import { litBerries } from '../render/litberries.js?v=37';
-import { shelfLayers } from '../render/shelfmushroom.js?v=37';
+import { litFronts } from '../render/litfront.js?v=38';
+import { litBerries } from '../render/litberries.js?v=38';
+import { shelfLayers } from '../render/shelfmushroom.js?v=38';
 const THREE = window.THREE;
 
 // a small seeded hash for the art (the same picture every time)
@@ -135,8 +135,11 @@ function endCrystal() {
    box, as the game draws its own. Our own noise, made to the look of the
    game's sky: a mean of about (115, 88, 156), the lightness spread so a
    twentieth of the pixels are under two thirds of it and a twentieth over a
-   third more, a little more red in the light ones and blue in the dark. It
-   was a grey speckle in soft patches, which read as fog, not the End. */
+   third more, a little more red in the light ones and blue in the dark, the
+   green spread wider than the others (the game's picture spreads its red,
+   green and blue by about 25, 24 and 28 of 255: measured from a local copy,
+   which is never shipped or copied). It was a grey speckle in soft patches,
+   which read as fog, not the End. */
 export function endSkyTexture() {
   const N = 128, d = new Uint8Array(N * N * 4);
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
@@ -145,7 +148,7 @@ export function endSkyTexture() {
     const tint = (h2(x, y, 14) - 0.5) * 0.12;
     const o = (y * N + x) * 4;
     d[o] = clamp(Math.round(115 * v * (1 + tint)), 0, 255);
-    d[o + 1] = clamp(Math.round(88 * v), 0, 255);
+    d[o + 1] = clamp(Math.round(88 * (1 + (v - 1) * 1.45)), 0, 255);
     d[o + 2] = clamp(Math.round(156 * v * (1 - tint * 0.5)), 0, 255);
     d[o + 3] = 255;
   }

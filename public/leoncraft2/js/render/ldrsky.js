@@ -8,9 +8,9 @@
    End a dark speckled box. Exposure and tone mapping happen here too, so
    nothing runs after it.
 --------------------------------------------------------------------------- */
-import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=37';
-import { rawMat } from './sky.js?v=37';
-import { END_FLASH_GLSL } from './endflash.js?v=37';
+import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=38';
+import { rawMat } from './sky.js?v=38';
+import { END_FLASH_GLSL } from './endflash.js?v=38';
 const THREE = window.THREE;
 
 const FS = COMMON + TONEMAP + /* glsl */`
@@ -47,7 +47,10 @@ void main() {
     if (uDim > 1.5) {
       vec3 a = abs(rd);
       vec2 q = a.x > a.y && a.x > a.z ? rd.zy / a.x : a.y > a.z ? rd.xz / a.y : rd.xy / a.z;
-      col = toLinear(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * 0.16 + endFlashSky(rd) * 0.5);
+      // straight to the screen in the game's colours (its picture times 40 of 255), as at High and RIP (post.js):
+      // through the eye and the tone curve it came out a third as bright as the game's, and bluer
+      o = vec4(min(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * (40.0 / 255.0) + endFlashSky(rd), 1.0) * (1.0 - uShut.z), 1.0);
+      return;
     } else col = uDimFog;
   } else if (uEyeInWater > 0.5) {
     vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb / PI;
