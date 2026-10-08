@@ -55,7 +55,8 @@
                   nearest it (or of whoever last hit, fed or rode it) and
                   drawn from what that machine sends everywhere else; the
                   orbs of experience go to whoever reaches them first
-                  (mobs.js)
+                  (mobs.js); the dragon and its crystals are one fight run
+                  by one machine (endfight.js)
      the rest     what is seen and heard near another player: the sounds
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
@@ -75,6 +76,7 @@ import { Projectile } from '../entities/projectiles.js?v=32';
 import { Vehicles } from './vehicles.js?v=32';
 import { Mobs, Orbs } from './mobs.js?v=32';
 import { Events } from './events.js?v=32';
+import { EndSync } from './endfight.js?v=32';
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {
@@ -416,6 +418,7 @@ export class Net {
     this.veh = new Vehicles(this);   // the boats and minecarts everyone shares (vehicles.js)
     this.mobs = new Mobs(this); this.orbs = new Orbs(this);   // the mobs and orbs everyone shares (mobs.js)
     this.events = new Events(this);  // the sounds, lids, explosions and cracks seen near the others (events.js)
+    this.end = new EndSync(this);    // one fight in the End for everyone (endfight.js)
     this.qsT = 0; this.wasDead = false; this.invSig = '';
   }
   // whether you may use the commands that change the world (an operator, or Allow Commands)
@@ -621,6 +624,7 @@ export class Net {
     this.pushTick();
     this.veh.tick(dimCode(g.dim));
     this.mobs.tick(dimCode(g.dim), stamp);
+    this.end.tick();
     this.events.tick(dimCode(g.dim));
     this.shareShots();
     this.sendState(stamp);
@@ -715,6 +719,7 @@ export class Net {
       };
     }
     if (g.drops && g.drops !== this.hdr) this.hookDrops(g.drops);
+    if (g.realms && g.realms !== this.hrl && this.events.on) { this.hrl = g.realms; this.end.hook(g.realms); }
     const E = g.entities;
     if (E && E !== this.he) {
       this.he = E;
