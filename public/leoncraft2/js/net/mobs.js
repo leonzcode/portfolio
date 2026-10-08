@@ -35,8 +35,9 @@ import { TYPES } from '../entities/mobs.js?v=32';
 import { F } from './players.js?v=32';
 
 const THREE = window.THREE;
-// besides the living (animals, monsters, villagers, golems, armour stands): paintings, the knots of leads, sand and gravel falling, fireworks
-const EXTRA = new Set(['painting', 'leash_knot', 'falling_block', 'firework_rocket']);
+// besides the living (animals, monsters, villagers, golems, armour stands): paintings, the knots of leads, sand and gravel falling, fireworks,
+// and the minecarts with a chest, a hopper, a furnace or TNT (a plain one is a seat: vehicles.js)
+const EXTRA = new Set(['painting', 'leash_knot', 'falling_block', 'firework_rocket', 'chest_minecart', 'hopper_minecart', 'furnace_minecart', 'tnt_minecart']);
 // (the dragon belongs to the End's fight, dim/realms.js: shared by endfight.js)
 const NOT = new Set(['ender_dragon']);
 export const shareable = e => !!e && !e.isPlayer && !NOT.has(e.type) && (e instanceof Living || EXTRA.has(e.type));
