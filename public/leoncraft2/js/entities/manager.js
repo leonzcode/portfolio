@@ -976,7 +976,7 @@ export class Entities {
     if (blobs) {
       /* your own round shadow in third person (F5), as the game draws it under the player (0.5 across the
          middle); only on the Off look, since the shader looks cast your real shadow. And every dropped
-         item's, 0.15 and three quarters as dark, as the game's item entities have. */
+         item's and experience orb's, 0.15 and three quarters as dark, as the game draws theirs. */
       const av = this.R.avatar;
       if (av && av.view && this.R.vanilla && this.mode !== 'spectator' && !this.riding) {
         const pp = P.prev || P.pos, sh = this.youShadow || (this.youShadow = { lS: 1, lB: 0 });
@@ -988,6 +988,11 @@ export class Entities {
         if (!e.mesh || e.fly > 0 || e.light < 0) continue;
         it.lS = (e.light >> 8) / 255; it.lB = (e.light & 255) / 255;
         this.shadowOf(it, e.prev.x + (e.pos.x - e.prev.x) * alpha, e.prev.y + (e.pos.y - e.prev.y) * alpha, e.prev.z + (e.pos.z - e.prev.z) * alpha, 0.15, 0.75);
+      }
+      if (D && D.world === this.world) for (const o of D.orbs) {
+        if (!o.mesh || !(o.light >= 0)) continue;
+        it.lS = (o.light >> 8) / 255; it.lB = Math.max(0, (o.light & 255) / 255 - 7 / 15);
+        this.shadowOf(it, o.prev.x + (o.pos.x - o.prev.x) * alpha, o.prev.y + (o.pos.y - o.prev.y) * alpha, o.prev.z + (o.pos.z - o.prev.z) * alpha, 0.15, 0.75);
       }
     }
     // (your own model is lit as by a torch at its brightest while you burn, as the game does: render/avatar.js)
