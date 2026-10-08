@@ -17,10 +17,10 @@
    and the particles (smoke puffs, crits, hearts, flames, explosions), each
    one instanced draw.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=37';
-import { VANILLA } from './vanilla.js?v=37';
-import { lightDefines } from './materials.js?v=37';
-import { GLINT } from './armor.js?v=37';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=38';
+import { VANILLA } from './vanilla.js?v=38';
+import { lightDefines } from './materials.js?v=38';
+import { GLINT } from './armor.js?v=38';
 const THREE = window.THREE;
 
 export const ATLAS = 2048;           // the mob texture atlas, in pixels a side (2048: room for every mob of the game)
@@ -80,6 +80,7 @@ uniform float uEyeInWater;
 uniform float uClock;
 #ifndef LDR
 uniform sampler2D uExpoTex;     // the eye's exposure, the last frame's (render/post.js)
+#define GLINT_TONE
 #endif
 ` + GLINT + `
 in vec3 vWorld; in vec3 vN; in vec2 vUv; in vec4 vL; in vec3 vTint; in vec3 vG;
@@ -132,17 +133,13 @@ void main() {
   vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
   vec3 light = (diffuse * PI + amb + blockL + lightFloor()) / PI;
   vec3 col = albedo * light;
-  // enchanted armour: the glint added unlit, as bright on the screen in any light (as on the player, render/avatar.js)
-  if (vG.z > 0.5) {
-    vec3 g = min(glintAt(vG.xy, uClock), vec3(1.0));
+  // enchanted armour: the glint added unlit on the screen's own colour, as bright in any light (as on the player, render/avatar.js)
+  vec3 g = vG.z > 0.5 ? glintAt(vG.xy, uClock) : vec3(0.0);
 #ifdef LDR
-    col += g * g * 0.5 / max(uExpo, 0.02);
+  // (fading into the fog with what it is on)
+  col = min(toneLDR(col * vKeep + vAdd) + g * dot(vKeep, vec3(1.0 / 3.0)), vec3(1.0));
 #else
-    col += g * g * 0.5 / max(texture(uExpoTex, vec2(0.5)).r, 0.02);
-#endif
-  }
-#ifdef LDR
-  col = toneLDR(col * vKeep + vAdd);
+  if (vG.z > 0.5) col = glintOver(col, g, max(texture(uExpoTex, vec2(0.5)).r, 0.02));
 #endif
   outColor = vec4(col, 1.0);
 }`;
