@@ -31,7 +31,7 @@ import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=31';
 import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps, composedTextures, itemStripFrom } from './ui/pack.js?v=31';
 import { SEA, Y0 } from './world-const.js?v=31';
 import { Gui, Options } from './ui/gui.js?v=31';
-import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt, seedFrom } from './ui/menus.js?v=31';
+import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, ConfirmScreen, Worlds, setLogoArt, seedFrom } from './ui/menus.js?v=31';
 import { ItemIcons } from './ui/icons.js?v=31';
 import { Inventory, inventoryScreen } from './ui/inventory.js?v=31';
 import { Hud } from './ui/hud.js?v=31';
@@ -84,8 +84,8 @@ const breath = () => document.hidden ? Promise.resolve() : new Promise(res => {
 });
 const FETCHED = 'lc2: fetched, not run';
 const script = src => URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
-async function importParts() {
-  const last = './parts.js?v=31';
+async function importParts(tries) {
+  const last = './parts.js?v=31' + (tries ? '&retry=' + tries : '');
   /* Everything down and linked first, nothing run: a module that imports them all, after one that
      throws. A module graph stops running at its first error, so the rest are left linked and waiting
      for the imports below. (Any other error is a real one: a module that could not be had.) */
@@ -99,13 +99,28 @@ async function importParts() {
   }
   return import(last);
 }
+/* If they cannot be had (the line dropped while they came down), they are asked for again, twice, a
+   second or two apart, and then forgotten, so whatever wants them next asks afresh, and if that fails too
+   it says so and offers a reload (partsFailed). Chrome keeps a module's failed download for the life of
+   the page, failing the same address again at once without asking: parts.js is asked for under a new
+   address each time, and a module under it that failed comes back only with a reload. */
 let partsP = null;
-const loadParts = () => partsP || (partsP = importParts().then(m => {
-  ({ enchantDebug, Survival, survivalHooks, respawnPlayer, Drops, dropItem, giveXp, Containers, Hands, Entities, Sim, Realms,
-    structuresApi, Details, isSign, SignEditScreen, tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint,
-    MultiplayerScreen, DisconnectedScreen, rejoin, advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements,
-    statsWorld, statsTick, statsState, statsQuit, statsLeave, openStatistics, recipesWorld, recipesTick, recipesState, recipesLeave } = m);
-}));
+const loadParts = () => partsP || (partsP = (async () => {
+  for (let tries = 0; ; tries++) {
+    try {
+      const m = await importParts(tries);
+      ({ enchantDebug, Survival, survivalHooks, respawnPlayer, Drops, dropItem, giveXp, Containers, Hands, Entities, Sim, Realms,
+        structuresApi, Details, isSign, SignEditScreen, tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint,
+        MultiplayerScreen, DisconnectedScreen, rejoin, advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements,
+        statsWorld, statsTick, statsState, statsQuit, statsLeave, openStatistics, recipesWorld, recipesTick, recipesState, recipesLeave } = m);
+      return;
+    } catch (e) {
+      console.warn('the game\'s parts did not load (try ' + (tries + 1) + ')', e);
+      if (tries >= 2) { partsP = null; throw e; }
+      await new Promise(r => setTimeout(r, 1000 * (tries + 1)));
+    }
+  }
+})());
 
 const $ = s => document.querySelector(s);
 const status = (t, f) => { const el = $('#status'); if (el) el.textContent = t; const b = $('#bar'); if (b && f !== undefined) b.style.width = Math.round(f * 100) + '%'; };
@@ -447,7 +462,7 @@ async function boot() {
     applyGraphics: () => {},
     shadersOn: () => video.shadersOn(),
     // the server list (ui/multiplayer.js), and whether the world being played is on a server (the game menu's Disconnect)
-    multiplayer: () => parts().then(() => gui.open(new MultiplayerScreen())),
+    multiplayer: () => parts().then(() => gui.open(new MultiplayerScreen()), () => partsFailed()),
     online: () => !!(game && game.net),
     // the last screen closed in the game: take the mouse back
     closed: () => { if (game && !game.survival.dead) lock(); },
@@ -496,7 +511,19 @@ async function boot() {
     if (window.__lc2) window.__lc2.structures = structures;
     // (the mobs' modules add pictures of their own as they load: painted in the title's idle time too)
     paintIdle();
-  }));
+  }, e => { partsUp = null; throw e; }));
+  /* The game's parts could not be had (loadParts): say so, and offer the reload that brings them,
+     straight back into the world or server being opened (resume, as lc2_resume takes it). Over the
+     loading screen of a world (inWorld) both buttons reload: the world is half made. */
+  function partsFailed(resume, inWorld) {
+    const s = new ConfirmScreen('Could not load the game', 'Part of the game did not download: the connection may have dropped. Reload the page to try again.',
+      'Reload', inWorld ? 'Title Screen' : 'Back', yes => {
+        if (!yes && !inWorld) { gui.back(); return; }
+        try { if (yes && resume) sessionStorage.setItem('lc2_resume', resume); } catch (e) {}
+        location.reload();
+      });
+    if (inWorld) gui.setRoot(s); else gui.open(s);
+  }
 
   let hud = null;                   // the hotbar, hearts and F3, made per world (js/ui/hud.js)
 
@@ -603,8 +630,9 @@ async function boot() {
   }
   MK('title');
   $('#loading').hidden = true;
-  // the game's own parts, from now on (a world opened straight from a reload asks for them itself)
-  if (!resumeTo) parts();
+  // the game's own parts, from now on (a world opened straight from a reload asks for them itself;
+  // if they fail, whatever wants them next says so)
+  if (!resumeTo) parts().catch(() => {});
   gui.panorama = !resumeTo;
   // straight back into a world (below): its loading screen, with no title world or practice in the way
   if (!resumeTo) { gui.setRoot(new TitleScreen()); paintIdle(); }
@@ -614,6 +642,7 @@ async function boot() {
     loading = { text: 'Loading terrain...', progress: 0, chunks: [] };
     gui.setRoot(new LoadingScreen());
     const partsDone = parts();
+    partsDone.catch(() => {});        // (waited for below, once the ground is made)
     // the mobs' pictures painted (what is left of them) while the workers make the ground, not after
     paintIdle();
     // on a server its changes come from the server, and only your own record stays in this browser (net/net.js)
@@ -667,7 +696,7 @@ async function boot() {
     await madeP;
     MK('sgMade');
     // (the game's parts: asked for when this began, and almost always in long before)
-    await partsDone;
+    try { await partsDone; } catch (e) { partsFailed(entry.id, true); return; }
     setDeathPoint(st && st.lastDeath);
     const player = new Player(world);
     if (at) {
@@ -1605,7 +1634,7 @@ async function boot() {
   // after a quality change, straight back into the world you were in
   if (resumeTo) startGame(resumeTo, false);
   // (a server's world comes back by joining it again: ui/multiplayer.js)
-  else if (resumeMp) parts().then(() => rejoin(gui, resumeMp));
+  else if (resumeMp) parts().then(() => rejoin(gui, resumeMp), () => partsFailed('mp-' + resumeMp));
 }
 
 boot().catch(e => { console.error(e); status('Something went wrong: ' + (e && e.message)); });
