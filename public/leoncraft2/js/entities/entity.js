@@ -503,9 +503,11 @@ export class Mob extends Living {
       this.headYaw = rotTowards(this.headYaw, this.bodyYaw, 10 * DEG);
     }
     const max = this.headMax(), off = wrap(this.headYaw - this.bodyYaw);
-    if (Math.abs(off) > max) this.headYaw = this.bodyYaw + Math.sign(off) * max;
+    // (with no head of its own, HEAD_MAX 0, it turns all of itself to look, as a happy ghast does)
+    if (max === 0) this.bodyYaw = this.headYaw;
+    else if (Math.abs(off) > max) this.headYaw = this.bodyYaw + Math.sign(off) * max;
   }
-  // how far the head may turn from the body (75 degrees, a ghast's HEAD_MAX 0 none at all)
+  // how far the head may turn from the body (75 degrees; a ghast's HEAD_MAX 0: it has no head of its own)
   headMax() { const h = this.constructor.HEAD_MAX; return (h === undefined ? 75 : h) * DEG; }
   /* ---- the body: follows the way it walks; standing, it keeps within 75
      degrees of the head (its HEAD_MAX) and, after a moment, turns to it ---- */
