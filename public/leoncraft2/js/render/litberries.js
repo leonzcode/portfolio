@@ -5,9 +5,9 @@
    Three berries a picture, a little round cluster each (a dark rim, a warm
    orange body and a pale yellow highlight up and to the left), sat on the
    vine where it has pixels, one high, one in the middle and one low, so a
-   whole hanging vine reads as dotted with them. The berries glow with the
-   shaders on (their material picture); the block's own light 14 lights the
-   rest, shaders on or off.
+   whole hanging vine reads as dotted with them. The berries glow a little
+   with the shaders on (their material picture); the block's own light 14
+   lights the rest, shaders on or off.
 
      const lit = litBerries(add);    // dim/art.js addDimArt: the layers, empty
      lit.fill(albedoStrip, T);       // once the strip is loaded: the pixels
@@ -39,7 +39,8 @@ function paint(src, seed) {
       if (k === '.') continue;
       const o = ((by + j) * 16 + bx + i) * 4, c = COL[k];
       out[o] = c[0]; out[o + 1] = c[1]; out[o + 2] = c[2]; out[o + 3] = 255;
-      em[o + 3] = k === 'r' ? 120 : 200;
+      // (a faint glow only: more takes the orange to white through the shaders' tone curve)
+      em[o + 3] = k === 'r' ? 0 : 48;
     }
   }
   return [out, em];
