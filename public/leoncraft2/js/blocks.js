@@ -17,6 +17,7 @@
 --------------------------------------------------------------------------- */
 import { DATA } from './blockdata.js?v=33';
 import { MODEL_SHAPES } from './models.js?v=33';
+import { SHELF_TEX } from './shelfmushroom.js?v=33';
 import { dimBlocks } from './dim/blocks.js?v=33';
 
 export const AIR = 0;
@@ -161,6 +162,12 @@ for (const e of DATA) {
   if (model && o.shape !== 'cube') o.opacity = Math.min(o.opacity, o.leaves ? 1 : 0);
   if (o.shape === 'none') { o.solid = false; o.pass = 'none'; if (!o.tex) o.tex = null; }
   def(e.name, o);
+}
+// a shelf mushroom's faces, small and large, each its own piece of the picture (shelfmushroom.js; the layers are
+// made at start-up by render/shelfmushroom.js)
+if (B.shelf_mushroom !== undefined) {
+  const d = BLOCKS[B.shelf_mushroom];
+  d.tex = Object.assign(typeof d.tex === 'string' ? { all: d.tex } : Object.assign({}, d.tex), SHELF_TEX);
 }
 // the Nether's and the End's own blocks and items (portals, frames, flint and steel, eyes of ender)
 dimBlocks(def, B, BLOCKS);

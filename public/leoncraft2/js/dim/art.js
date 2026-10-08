@@ -11,6 +11,7 @@
 --------------------------------------------------------------------------- */
 import { litFronts } from '../render/litfront.js?v=33';
 import { litBerries } from '../render/litberries.js?v=33';
+import { shelfLayers } from '../render/shelfmushroom.js?v=33';
 const THREE = window.THREE;
 
 // a small seeded hash for the art (the same picture every time)
@@ -168,6 +169,8 @@ export function addDimArt(manifest) {
   const lit = litFronts(add);
   // cave vines with glow berries (render/litberries.js), the same way
   const berries = litBerries(add);
+  // a shelf mushroom's faces, small and large (render/shelfmushroom.js), filled at once
+  shelfLayers(add);
   manifest.layers = next;
   return {
     layers,

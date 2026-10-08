@@ -30,6 +30,7 @@
    neighbours, as Minecraft does when it draws them.
 --------------------------------------------------------------------------- */
 import { burnable } from './flame.js?v=33';
+import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=33';
 
 const box = (x0, y0, z0, x1, y1, z1, extra) => {
   const b = { f: [x0, y0, z0], t: [x1, y1, z1] };
@@ -235,6 +236,22 @@ export function buttonModel(m, pressed) {
     return f === 3 ? rotate(b, 0, F) : rotate(b, 2, (F + 2) & 3);
   }
   return turn([box(5, 6, 0, 11, 10, h)], sideFacing(f) || 0);
+}
+/* A shelf mushroom (meta bits 0-2 the face of its cell it hangs on, bit 3 large): the game's model for its size,
+   built facing north (against the block to the south), turned to face away from what holds it. Each face shows its
+   own layer, its piece of the picture in the layer's top left (render/shelfmushroom.js). */
+const SHELF_TURN = { 4: 0, 1: 1, 5: 2, 0: 3 };
+function shelfMushroom(d, m) {
+  const s = (m >> 3) & 1, out = [];
+  SHELF_MODELS[s].forEach(([from, to, faces], b) => {
+    const fc = {};
+    for (const f in faces) {
+      const [u0, v0, u1, v1] = faces[f], a = Math.min(u0, u1), c = Math.min(v0, v1);
+      fc[f] = [[(u0 - a) * 2, (v0 - c) * 2, (u1 - a) * 2, (v1 - c) * 2], d.L[shelfKey(s, b, f)]];
+    }
+    out.push(...element(from, to, fc));
+  });
+  return turn(out, SHELF_TURN[m & 7] || 0);
 }
 // stand a model built on the floor (support below) against another face of its cell
 function hang(list, face) {
@@ -557,7 +574,8 @@ export const SHAPES = {
     return out;
   },
   plate(d) { return [box(1, 0, 1, 15, 1, 15)]; },
-  button(d, m) { return buttonModel(m, false); },
+  // (a shelf mushroom is placed and held as a button is, and drawn as the game's model: shelfMushroom)
+  button(d, m) { return d.name === 'shelf_mushroom' && d.L && d.L[shelfKey(0, 0, 'up')] > 0 ? shelfMushroom(d, m) : buttonModel(m, false); },
   // the game's ladder is a single sheet 0.8 of a pixel off the wall, the same picture from both sides
   ladder(d, m) { return turn([box(0, 0, 0.8, 16, 16, 0.8, { skip: 47, uv: [null, null, null, null, [0, 0, 16, 16], null] })], sideFacing(m & 7) || 0); },
   lantern(d, m) {

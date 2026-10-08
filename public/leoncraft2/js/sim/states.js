@@ -12,6 +12,7 @@
      crops, stems, berries, wart   bits 0-2 age
      cocoa                         bits 0-2 the face it hangs on, bits 3-4 age
      cave vines                    bit 0 glow berries; the tip bits 1-5 age (it grows while under 25)
+     shelf mushroom                bits 0-2 the face it hangs on (as a button's), bit 3 large
      farmland                      bits 0-2 moisture
      leaves                        bit 7 persistent (put there by a player: never decays)
      saplings                      bit 0 stage
@@ -285,7 +286,8 @@ SHAPES.button = function (d, m, nb) {
   const on = !!(m & 8);
   if (d.name === 'lever') return leverModel(d, m, on);
   if (d.name === 'tripwire_hook') return hookModel(d, m, on);
-  if (!on) return buttonBase(d, m, nb);
+  // (bit 3 is a shelf mushroom's size, not a press)
+  if (!on || d.name === 'shelf_mushroom') return buttonBase(d, m, nb);
   // pressed: half as deep
   return buttonModel(m, true);
 };

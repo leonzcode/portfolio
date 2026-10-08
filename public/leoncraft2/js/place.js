@@ -206,7 +206,10 @@ function placeDry(world, hit, id, player) {
       if (n[1] !== 0) return out;
       m = support; break;
     // (on a floor or a ceiling it faces the way you look, bits 4-5)
-    case 'button': m = support === 2 || support === 3 ? support | (look << 4) : support; break;
+    case 'button':
+      // (a shelf mushroom goes only on a side: the game's has the four ways round and no more)
+      if (d.name === 'shelf_mushroom' && n[1] !== 0) return out;
+      m = support === 2 || support === 3 ? support | (look << 4) : support; break;
     case 'lantern': m = n[1] === -1 ? 1 : 0; break;
     // a hopper points into what you clicked, or down when you click a top or a bottom
     case 'hopper': m = n[1] !== 0 ? 4 : horizOf([-n[0], 0, -n[2]]); break;
