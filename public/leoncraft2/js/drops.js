@@ -35,6 +35,8 @@ import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=32';
 import { collisionBoxes } from './models.js?v=32';
 import { LEVEL, FALLING } from './world-const.js?v=32';
 import { lightNear } from './lightlevel.js?v=32';
+import { glints } from './render/armor.js?v=32';
+import { setGlint } from './render/glint.js?v=32';
 import { DIMS } from './dims.js?v=32';
 import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=32';
 import { blockGeometry, intAttribute } from './render/blockmesh.js?v=32';
@@ -503,6 +505,9 @@ export class Drops {
         e.mesh = this._makeMesh(g.geometry, g.cutout);
         e.flat = g.flat; e.copies = n; e.lifted = !!g.lifted;
         e.light = -1;
+        // an enchanted one shimmers on the ground too, as the game draws it (render/glint.js)
+        e.glint = glints(e.stack);
+        if (e.glint) setGlint(e.mesh, true, this.R);
       }
       // the light, now and then
       if ((e.lightT -= dt) <= 0) {
@@ -527,6 +532,8 @@ export class Drops {
       m.compose(p, q, s).multiply(e.lifted ? this._lift2 : this._lift);
       e.mesh.matrix.copy(m);
       e.mesh.matrixWorld.copy(m);
+      // (the shimmer is a child: its place follows only when the parent's is worked out again)
+      if (e.glint) e.mesh.matrixWorldNeedsUpdate = true;
     }
     for (const c of this.bits) {
       if (!c.mesh) {
