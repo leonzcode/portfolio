@@ -11,6 +11,7 @@
    The meta layouts (the game's block states, packed):
      crops, stems, berries, wart   bits 0-2 age
      cocoa                         bits 0-2 the face it hangs on, bits 3-4 age
+     cave vines                    bit 0 glow berries; the tip bits 1-5 age (it grows while under 25)
      farmland                      bits 0-2 moisture
      leaves                        bit 7 persistent (put there by a player: never decays)
      saplings                      bit 0 stage
@@ -75,6 +76,9 @@ addTex('beetroots', stages('beetroots_stage', 4));
 addTex('nether_wart', stages('nether_wart_stage', 3));
 addTex('cocoa', stages('cocoa_stage', 3));
 addTex('sweet_berry_bush', stages('sweet_berry_bush_stage', 4));
+// cave vines with glow berries on them (meta bit 0; the pictures are ours, render/litberries.js)
+addTex('cave_vines', { lit: 'cave_vines_lit' });
+addTex('cave_vines_plant', { lit: 'cave_vines_plant_lit' });
 addTex('farmland', { moist: 'farmland_moist' });
 addTex('redstone_lamp', { on: 'redstone_lamp_on' });
 // (the lit fronts are our own, drawn from the unlit ones: render/litfront.js)
@@ -103,6 +107,7 @@ for (const n of ['redstone_wire', 'melon_stem', 'pumpkin_stem']) if (has(n)) STA
 
 for (const n of ['redstone_lamp', 'redstone_torch', 'redstone_wall_torch', 'respawn_anchor', 'redstone_ore', 'deepslate_redstone_ore', 'furnace', 'smoker', 'blast_furnace']) if (has(n)) SLIGHT[B[n]] = 1;
 for (const d of BLOCKS) if (d && /copper_bulb$/.test(d.name)) SLIGHT[d.id] = 1;
+for (const n of ['cave_vines', 'cave_vines_plant']) if (has(n)) SLIGHT[B[n]] = 1;
 // campfires give no light once put out; candles and candle cakes only while lit (3 a candle)
 for (const d of BLOCKS) if (d && (d.shape === 'campfire' || d.shape === 'candle' || /candle_cake$/.test(d.name))) SLIGHT[d.id] = 1;
 
@@ -125,6 +130,8 @@ export function lightOf(b, m) {
     case 'redstone_ore': case 'deepslate_redstone_ore': return m & 1 ? 9 : 0;
     // burning, 13
     case 'furnace': case 'smoker': case 'blast_furnace': return m & 4 ? 13 : 0;
+    // glow berries on a cave vine: 14
+    case 'cave_vines': case 'cave_vines_plant': return m & 1 ? 14 : 0;
   }
   if (d.shape === 'campfire') return m & 4 ? 0 : d.light || 0;
   if (d.shape === 'candle') return m & 4 ? 3 * ((m & 3) + 1) : 0;
@@ -170,6 +177,7 @@ function make(d, m) {
     }
     case 'carrots': case 'potatoes': { const s = 's' + CARROT[m & 7]; return ok(d, s) ? variant(d, { faces: all6(L[s]) }) : null; }
     case 'cocoa': { const s = 's' + Math.min(2, (m >> 3) & 3); return ok(d, s) ? variant(d, { faces: all6(L[s]) }) : null; }
+    case 'cave_vines': case 'cave_vines_plant': return m & 1 && ok(d, 'lit') ? variant(d, { faces: all6(L.lit) }) : null;
     case 'farmland': return (m & 7) === 7 && ok(d, 'moist') ? variant(d, { faces: [d.faces[0], d.faces[1], L.moist, d.faces[3], d.faces[4], d.faces[5]] }) : null;
     case 'redstone_lamp': return m & 1 && ok(d, 'on') ? variant(d, { faces: all6(L.on) }) : null;
     case 'furnace': case 'smoker': case 'blast_furnace': return m & 4 && ok(d, 'frontOn') ? variant(d, { front: L.frontOn }) : null;

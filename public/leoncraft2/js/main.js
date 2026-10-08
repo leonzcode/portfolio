@@ -660,12 +660,12 @@ async function boot() {
     const generator = genOf(entry);
     const seed = worldSeed(entry);
     // the title screen's world is this one: keep what is already made
-    const reuse = menu && menu.seed === seed && menu.generator === generator && (menu.world.dim || 'overworld') === dim;
+    const reuse = menu && menu.seed === seed && menu.generator === generator && (menu.world.dim || 'overworld') === dim && entry.structures !== false;
     if (!reuse) {
       // made at once, so the workers set up its generator while what changed in it is read
       if (menu) dropWorld(menu.world);
       world = new World({
-        seed, generator, dim, renderDist: renderer.opts.renderDist || RD, manifest, colours, ...video.worldOpts(), edits: new Map(), save: saves[dim], fresh: !!isNew,
+        seed, generator, dim, structures: entry.structures !== false, renderDist: renderer.opts.renderDist || RD, manifest, colours, ...video.worldOpts(), edits: new Map(), save: saves[dim], fresh: !!isNew,
         onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
         onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
       });
@@ -795,8 +795,8 @@ async function boot() {
           itemName: id => itemName(id), damageHeld: (n, kind) => hands.wearHeld(n, kind), fillBucket: name => hands.fillHeld(name), trade: v => hands.trade(v),
           // screens and spilled stacks (a chest boat's chest)
           hands,
-          // the dragon from a spawn egg flies with the End's own (dim/realms.js)
-          realms: () => game && game.realms } });
+          // the dragon from a spawn egg flies with the End's own (dim/realms.js); commands, for a command block minecart
+          realms: () => game && game.realms, commandCtx: () => (game ? chatCtx() : null) } });
       entities.fromJSON(isNew && !g.partsDim ? null : await EntityStore.load(entityKey(g.entry, d)));
       renderer.scene.add(entities.group);
       const sim = new Sim({ world: w, fluids: fl, player, inv, renderer, gui, game: g });
@@ -984,7 +984,7 @@ async function boot() {
         const save = g.saves[dim];
         // made first, so the workers set up its generator while what changed there is read
         world = new World({
-          seed: worldSeed(g.entry), generator: genOf(g.entry), dim,
+          seed: worldSeed(g.entry), generator: genOf(g.entry), dim, structures: g.entry.structures !== false,
           renderDist: renderer.opts.renderDist || RD, manifest, colours, ...video.worldOpts(), edits: new Map(), save,
           onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
           onDrop: (cx, cz) => renderer.dropColumn(cx, cz),

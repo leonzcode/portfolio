@@ -30,6 +30,8 @@ export function stateOf(s) {
     if (props.level && (name === 'water' || name === 'lava')) { const l = +props.level; meta = l >= 8 ? 8 | (l - 8) : l; }
     if (props.facing && FACING[props.facing] !== undefined && !props.axis) meta = FACING[props.facing];
     if (props.half === 'upper') meta |= 8;
+    // cave vines: bit 0 glow berries, the tip's age above it (sim/states.js)
+    if (name === 'cave_vines' || name === 'cave_vines_plant') meta = (props.berries === 'true' ? 1 : 0) | (name === 'cave_vines' ? (Math.min(25, +props.age || 0) << 1) : 0);
   }
   st = { id, meta, name, props };
   STATE.set(key, st);

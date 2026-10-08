@@ -51,7 +51,7 @@ function spareFor(m) {
 }
 let resolved = null;
 let coloured = false;
-const nameOf = m => m.dim + '|' + m.generator + '|' + m.seed;
+const nameOf = m => m.dim + '|' + m.generator + '|' + m.seed + (m.structures === false ? '|ns' : '');
 function make(m) {
   // each dimension has its own generator (js/dims.js); the Overworld is Minecraft's own for worlds
   // made as Vanilla Seed, the first generator for the rest
@@ -59,7 +59,8 @@ function make(m) {
     : m.generator === 'vanilla' ? new G.VanillaGen(String(m.seed)) : /^flat:/.test(m.generator || '') ? new FlatGen(m.seed, m.generator.slice(5)) : new Gen(m.seed | 0);
   // structures read their biomes and heights from whichever generator this is (fortresses and
   // bastions in the Nether, end cities in the End)
-  const s = worldStructures(m.generator === 'vanilla' ? String(m.seed) : m.seed | 0, g, m.dim || 'overworld');
+  // (none at all in a world made with Generate Structures off)
+  const s = m.structures === false ? null : worldStructures(m.generator === 'vanilla' ? String(m.seed) : m.seed | 0, g, m.dim || 'overworld');
   return { gen: g, structs: s, name: nameOf(m) };
 }
 let shown = null;             // the page's texture list the blocks were last worked out from

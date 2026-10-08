@@ -28,7 +28,7 @@ import { model } from './mobs2.js?v=34';
 import { addArt } from './mobart.js?v=34';
 import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=34';
 import { use as useBlock } from '../place.js?v=34';
-import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf } from '../items.js?v=34';
+import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf, STEW_EFFECTS } from '../items.js?v=34';
 import { MountScreen } from '../ui/containers.js?v=34';
 
 // the stack in the player's hand (a mob's interact is told only the item's name), and a stack dropped where a mob is
@@ -1727,8 +1727,29 @@ for (const k of RABBIT_COATS) addArt('rabbit_' + k, [64, 32], p => paintRabbit(p
    back and head; shears take them off (five red mushrooms) and leave a
    plain cow; a bowl gets mushroom stew, a bucket milk. Mushroom fields only.
 --------------------------------------------------------------------------- */
+/* Mooshroom: red, or brown (Minecraft Wiki, Mooshroom). Lightning turns a red one brown and a brown one
+   red (and does not hurt it); a calf takes a parent's colour, the other colour one time in 1024 when both
+   parents are the same; shearing a brown one gives brown mushrooms. A brown one fed a small flower
+   gives suspicious stew with that flower's effect the next time it is milked with a bowl. */
 export class Mooshroom extends Cow {
   static TEX = 'mooshroom';
+  constructor(m, type) { super(m, type); this.variant = 'red'; this.stew = null; }
+  texName() { return this.variant === 'brown' ? 'mooshroom_brown' : 'mooshroom'; }
+  sound(ev) {
+    const S = typeof window !== 'undefined' && window.__lc2sound && window.__lc2sound.Sound;
+    if (S) try { S.play(ev, this.pos.x, this.pos.y + this.h * 0.5, this.pos.z, 2, 1, 'neutral'); } catch (e) { /* no sound */ }
+  }
+  thunderHit() {
+    this.variant = this.variant === 'brown' ? 'red' : 'brown';
+    this.sound('entity.mooshroom.convert');
+    return false;
+  }
+  inherit(a, b) {
+    const va = a.variant || 'red', vb = b.variant || 'red';
+    this.variant = va === vb && RI(1024) === 0 ? (va === 'brown' ? 'red' : 'brown') : RI(2) ? va : vb;
+  }
+  toJSON() { const o = super.toJSON(); if (this.variant === 'brown') o.vr = 'brown'; if (this.stew) o.se = this.stew; return o; }
+  fromJSON(o) { super.fromJSON(o); this.variant = o.vr === 'brown' ? 'brown' : 'red'; this.stew = Array.isArray(o.se) ? o.se.slice(0, 2) : null; }
   static checkSpawn(S, x, y, z) { return S.m.t.get(x, y - 1, z) === B.mycelium && S.brightEnough(x, y, z) && S.onGround(Mooshroom, x, y, z); }
   walkValue(x, y, z) { return this.m.t.get(x, y - 1, z) === B.mycelium ? 10 : this.m.brightness(x, y, z) - 0.5; }
   interact(held, player) {
@@ -1736,18 +1757,30 @@ export class Mooshroom extends Cow {
       const c = this.m.spawn('cow', this.pos.x, this.pos.y, this.pos.z, { natural: false, yaw: this.yaw });
       if (c) { c.health = this.health; c.bodyYaw = c.headYaw = this.bodyYaw; c.persistent = true; }
       this.m.particles('explosion', this.pos.x, this.pos.y + this.h * 0.5, this.pos.z, 1, 0);
-      this.m.dropAt(this, 'red_mushroom', 5);
+      this.m.dropAt(this, this.variant === 'brown' ? 'brown_mushroom' : 'red_mushroom', 5);
       this.remove();
       return 'damage';
     }
     if (held === 'bowl' && this.ageT >= 0) {
-      const P = this.m.P;
-      this.m.dropItemAt(P.pos.x, P.pos.y + 0.5, P.pos.z, 'mushroom_stew', 1, false, true);
+      const P = this.m.P, H = this.m.hooks.hands, D = H && H.drops, id = itemIdOf('suspicious_stew');
+      if (this.stew && D && D.spawn && id) {
+        D.spawn(P.pos.x, P.pos.y + 0.5, P.pos.z, { id, count: 1, stew: this.stew.slice() });
+        this.stew = null;
+        this.sound('entity.mooshroom.suspicious_milk');
+      } else { this.m.dropItemAt(P.pos.x, P.pos.y + 0.5, P.pos.z, 'mushroom_stew', 1, false, true); this.sound('entity.mooshroom.milk'); }
+      return 'consume';
+    }
+    // a small flower to a brown one: its effect, kept for the next bowl (smoke if it already has one)
+    if (this.variant === 'brown' && held && STEW_EFFECTS[held]) {
+      if (this.stew) { this.m.particles('smoke', this.pos.x, this.pos.y + this.h * 0.5, this.pos.z, 2, 0.3); return 'swing'; }
+      this.stew = STEW_EFFECTS[held].slice();
+      this.m.particles('magic', this.pos.x, this.pos.y + this.h * 0.5, this.pos.z, 4, 0.3);
+      this.sound('entity.mooshroom.eat');
       return 'consume';
     }
     return super.interact(held, player);
   }
-  layers(out) { if (this.ageT >= 0) out.push(['mooshroom_shrooms', 'mooshroom_shrooms', null]); }
+  layers(out) { if (this.ageT >= 0) out.push(['mooshroom_shrooms', this.variant === 'brown' ? 'mooshroom_shrooms_brown' : 'mooshroom_shrooms', null]); }
 }
 register('mooshroom', Mooshroom);
 // the mushrooms: on the cow's bones (head, body), each a stalk and a cap
@@ -1764,9 +1797,14 @@ addArt('mooshroom_shrooms', [64, 32], p => {
   p.box(8, 0, 3, 2, 3, { all: 0xc82a22, bottom: 0xe0c8b0 }, 0.08);   // the red cap, white spots
   for (const [x, y] of [[11, 0], [13, 2], [12, 1], [8, 4], [12, 4], [16, 3], [18, 4], [10, 4]]) p.px(x, y, 0xf4f0ea);
 });
+// a brown one's: plain brown caps
+addArt('mooshroom_shrooms_brown', [64, 32], p => {
+  p.clear(0, 0, 64, 32);
+  p.box(0, 0, 1, 2, 1, 0xe8dcc8, 0.05);
+  p.box(8, 0, 3, 2, 3, { all: 0x9a7356, bottom: 0xd8c4a8 }, 0.08);
+});
 // the mooshroom's coat: deep red, pale patches, a light muzzle
-addArt('mooshroom', [64, 32], p => {
-  const red = 0xa4261e, pale = 0xd8d0c8, dark = 0x7a1a14;
+const mooshroomCoat = (red, pale, dark) => p => {
   p.box(0, 0, 8, 8, 6, red, 0.08);
   const fx = 6, fy = 6;
   p.fill(fx + 2, fy + 5, 4, 3, pale, 0.04);
@@ -1782,7 +1820,10 @@ addArt('mooshroom', [64, 32], p => {
   p.box(0, 16, 4, 12, 4, red, 0.08);
   p.fill(0, 20 + 4, 16, 3, pale, 0.04);
   p.fill(0, 20 + 10, 16, 2, 0x26201a, 0.06);
-});
+};
+addArt('mooshroom', [64, 32], mooshroomCoat(0xa4261e, 0xd8d0c8, 0x7a1a14));
+// a brown one: a brown coat, the same pale patches
+addArt('mooshroom_brown', [64, 32], mooshroomCoat(0x8a6a4c, 0xd8d0c8, 0x6a4e36));
 
 /* ---------------------------------------------------------------------------
    Fox: 10 health, speed 0.3, 2 damage, 0.6 x 0.7. Sleeps through the day
