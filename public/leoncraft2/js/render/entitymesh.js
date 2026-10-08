@@ -121,7 +121,8 @@ void main() {
   vec3 amb = ambientAt(N);
   amb = mix(amb, vec3(lum(amb)), 0.22);
   amb += sunC * 0.03;
-  amb *= sky * sky * 0.8;
+  // (the sky's light as the block it stands in gets it, no less: materials.js)
+  amb *= sky * sky;
   // the Nether's even light and the End's dim sky light, as the blocks round them have it (materials.js)
   if (uDim > 0.5) amb = uDimAmb * (uDim < 1.5 ? 1.0 : 0.3 + 0.7 * sky * sky);
   block = max(block, heldLight(vWorld, N));
