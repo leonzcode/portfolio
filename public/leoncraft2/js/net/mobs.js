@@ -37,7 +37,7 @@ import { F } from './players.js?v=32';
 const THREE = window.THREE;
 // besides the living (animals, monsters, villagers, golems, armour stands): paintings, the knots of leads, sand and gravel falling, fireworks
 const EXTRA = new Set(['painting', 'leash_knot', 'falling_block', 'firework_rocket']);
-// (the dragon belongs to the End's fight, dim/realms.js, on each machine)
+// (the dragon belongs to the End's fight, dim/realms.js: shared by endfight.js)
 const NOT = new Set(['ender_dragon']);
 export const shareable = e => !!e && !e.isPlayer && !NOT.has(e.type) && (e instanceof Living || EXTRA.has(e.type));
 const shareableType = t => { const C = TYPES[t]; return !!C && !NOT.has(t) && (C.prototype instanceof Living || EXTRA.has(t)); };
