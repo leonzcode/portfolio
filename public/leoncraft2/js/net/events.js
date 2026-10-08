@@ -36,7 +36,8 @@
                    critical hit, a firework's sparks: what the mobs your
                    machine runs and your hits make, at most 40 a second
      players       others sprinting (the dust of the ground at their feet),
-                   eating (the bits of food), on fire (flames on them),
+                   eating (the bits of food), on fire (the game's flames
+                   over them, as over a burning mob),
                    fishing (their line, from the rod in their hand to the
                    bobber where it floats)
 --------------------------------------------------------------------------- */
@@ -417,6 +418,12 @@ export class Events {
   players(dt) {
     const net = this.net, g = net.game, list = net.players && net.players.list;
     if (!list || !g) return;
+    // on fire: the game's flames over them, every frame, as over a burning mob
+    const Pb = net.ctx.renderer.particles;
+    if (Pb && Pb.burn) for (const r of list.values()) {
+      const s = r.st, f = r.feet;
+      if (s && f && s.f & F.FIRE && r.av && r.av.mesh.visible && !(s.f & F.INVIS)) Pb.burn(f.x, f.y, f.z, 0.6, s.f & F.SNEAK ? 1.5 : s.f & F.SWIM ? 0.6 : 1.8);
+    }
     // their fishing lines, every frame (a line seen while its player is not drawn is hidden)
     for (const [pid, b] of this.bobs) {
       const r = list.get(pid), on = !!(r && r.st && r.feet && r.av && r.av.mesh.visible);
@@ -442,8 +449,6 @@ export class Events {
         const w = g.world, b = w && w.get(Math.floor(f.x), Math.floor(f.y - 0.2), Math.floor(f.z)), v = r.P.vel;
         if (b && BLOCKS[b] && BLOCKS[b].solid && (v.x * v.x + v.z * v.z) > 0.01) Pa.spawn(f.x + (Math.random() - 0.5) * 0.6, f.y + 0.1, f.z + (Math.random() - 0.5) * 0.6, -v.x * 0.6, 0.15, -v.z * 0.6, { block: b });
       }
-      // on fire: flames about them
-      if (s.f & F.FIRE && E && E.particles) E.particles('flame', f.x + (Math.random() - 0.5) * 0.6, f.y + Math.random() * 1.8, f.z + (Math.random() - 0.5) * 0.6, 1, 0.05);
     }
   }
 }
