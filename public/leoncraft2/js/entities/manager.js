@@ -959,8 +959,8 @@ export class Entities {
       if (dx * dx + dz * dz > far2) continue;
       const reach = ed * ((e.w || 0.6) * 2 + (e.h || 0.6)) / 3, dy = y - P.pos.y;
       if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
-      // the light, eased so it never pops
-      e.lS += (e.lightS / 15 - e.lS) * k; e.lB += (e.lightB / 15 - e.lB) * k;
+      // the light, eased so it never pops (anything on fire is lit as by a torch at its brightest, as in the game)
+      e.lS += (e.lightS / 15 - e.lS) * k; e.lB += ((e.fire > 0 ? 15 : e.lightB) / 15 - e.lB) * k;
       this.sphere.center.set(x, y + e.h / 2, z); this.sphere.radius = Math.max(e.w, e.h) + 1.5;
       // under Invisibility a mob is not drawn, nor its shadow
       const seen = this.frustum.intersectsSphere(this.sphere) && !(e.effects && e.effects.invisibility);
@@ -990,6 +990,8 @@ export class Entities {
         this.shadowOf(it, e.prev.x + (e.pos.x - e.prev.x) * alpha, e.prev.y + (e.pos.y - e.prev.y) * alpha, e.prev.z + (e.pos.z - e.prev.z) * alpha, 0.15, 0.75);
       }
     }
+    // (your own model is lit as by a torch at its brightest while you burn, as the game does: render/avatar.js)
+    if (this.R.avatar) this.R.avatar.burning = !!(this.survival && this.survival.onFire);
     // you, burning, seen from behind or in front (F5)
     if (this.survival && this.survival.onFire && this.R.avatar && this.R.avatar.view && this.R.particles && this.mode !== 'spectator') {
       const pp = P.prev || P.pos;

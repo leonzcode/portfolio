@@ -663,7 +663,7 @@ export class Avatar {
     this.lightT -= dt;
     if (this.lightT <= 0) { this.lightT = 0.25; this.refreshCache(feet.x, feet.z); this.sampleLight(feet); }
     const k = Math.min(1, dt * 6);
-    this.sky += (this.skyLv / 15 - this.sky) * k; this.block += (this.blockLv / 15 - this.block) * k;
+    this.sky += (this.skyLv / 15 - this.sky) * k; this.block += ((this.burning ? 15 : this.blockLv) / 15 - this.block) * k;
     this.uLight.value.set(this.sky, this.block);
     this.posed(P, al, feet);
     const third = this.view !== 0 && this.ready;
