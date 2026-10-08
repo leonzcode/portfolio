@@ -382,8 +382,8 @@ export class Mobs {
       if ((e.hurtTime | 0) > (rec.ht | 0)) rec.hurtNow = true;
       rec.ht = e.hurtTime | 0;
       if (e.swinging && e.swingT === 0) rec.swingNow = true;
-      // riding it or leading it keeps it yours (asked again before the server's hold runs out)
-      if ((E.riding === e || (e.leash && e.leash.player)) && now - (rec.claimAt || 0) > 5000) { rec.claimAt = now; net.send({ t: 'mc', id: rec.id }); }
+      // riding it, leading it or trading with it keeps it yours (asked again before the server's hold runs out)
+      if ((E.riding === e || (e.leash && e.leash.player) || e.customer) && now - (rec.claimAt || 0) > 5000) { rec.claimAt = now; net.send({ t: 'mc', id: rec.id }); }
       // every third tick near another player, every sixth further off, every third second where nobody else is
       const dn = nearest(e.pos.x, e.pos.z), seen = dn < SEEN;
       if (moveTick && (dn < CLOSE || (seen && farTick) || slowTick)) {
@@ -611,6 +611,14 @@ export class Orbs {
     D.tick = function (player, collector) {
       // never taken here directly: the server is asked (take)
       this.takeXpDelay = Math.max(this.takeXpDelay, 2);
+      // the others in this dimension, where you see them, alive and not spectating: an orb goes to the nearest of you all
+      const others = this.others || (this.others = []), d = net.dimNow();
+      others.length = 0;
+      if (net.players && this.orbs.length) for (const r of net.players.list.values()) {
+        const s = r.st;
+        if (!s || s.d !== d || (s.f & (F.DEAD | F.SPEC))) continue;
+        others.push(r.feet && r.av && r.av.mesh.visible ? r.feet : s);
+      }
       const r = tick.call(this, player, collector);
       O.take(this, player, collector);
       return r;
