@@ -245,11 +245,13 @@ void main() {
     float spec = ggx(NoH, rough * rough) * smithV(NoV, NoL, rough * rough);
     col += direct * F * min(spec, 8.0) * NoL;
   }
-  // a hint of the sky in shiny things
+  // a hint of the sky in shiny things (the Nether and the End have no sky of their own in the table, which
+  // is the Overworld's: there only their own dim light, or the End's obsidian pillars came out sky blue)
   if (smoothness > 0.6) {
     float NoV = sat(dot(N, V));
     vec3 F = F0 + (1.0 - F0) * pow(1.0 - NoV, 5.0);
-    col += ambientAt(reflect(-V, N)) / PI * F * skyAmt * smoothness * 0.6;
+    vec3 skyR = uDim > 0.5 ? uDimAmb * 0.3 : ambientAt(reflect(-V, N));
+    col += skyR / PI * F * skyAmt * smoothness * 0.6;
   }
   // light of its own
   col += albedo * emit * 6.0;

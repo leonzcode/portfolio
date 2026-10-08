@@ -292,7 +292,12 @@ void main() {
     float edge = smoothstep(uRender * 0.72, uRender, hd);
     col = mix(col, skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))) * (1.0 - uVoid.y), edge);
   }
-  col += texture(uVL, vUv).rgb;
+  // the light shafts' haze: none in the void's black fog near the bottom of the world, nor over the
+  // dark under the horizon below sea level (the air there is out past the shadow map, all of it sunlit,
+  // so it lit the void up a hazy white and brown where the game shows black)
+  vec3 vl = texture(uVL, vUv).rgb * (1.0 - uVoid.y);
+  if (d >= 1.0 && rd.y < 0.0) vl *= 1.0 - uVoid.x;
+  col += vl;
   float sh = shutAt(dist, d);
   col *= 1.0 - sh;
   // (lava, marked 2 by water.js, marked 0 here: the eye does not adapt to it; nor to the black of Blindness and Darkness)
@@ -354,13 +359,25 @@ void main() {
   float w = 1.0 - 0.6 * length(vUv - 0.5);
   o = vec4(l / 16.0 * w, n / 16.0 * w, 0.0, 1.0);
 }`;
+/* The eye opens to what the light pipeline (Low and Medium) would show: the
+   sky's own light under the sky (sky.js, its seventh texel), one level in a
+   cave or under a roof (eased over, uCave) and in the Nether and the End
+   (glsl.js EXPOSURE, which already has the Shader Options' exposure in it).
+   What is in front of you only nudges that, a little under half the way and
+   never more than about a stop either way. It used to follow the screen's
+   own brightness from a fortieth to five and a half times: a patch of sky
+   in view darkened the land to black, the ground in view blew the sky out
+   to white, and a cave lit by one torch swung between the two. */
 const FS_EXPO = /* glsl */`
-uniform sampler2D uLum, uPrev; uniform float uDt, uBias, uEV;
+uniform sampler2D uLum, uPrev, uAmbient; uniform float uDt, uCave, uExposure, uDim;
 in vec2 vUv; out vec4 o;
 void main() {
   vec4 s = textureLod(uLum, vec2(0.5), 10.0);
   float avg = exp2(s.x / max(s.y, 1e-4));
-  float target = clamp(0.115 / max(avg, 1e-5), 0.025, 5.5) * uBias * uEV;
+  float sky = texelFetch(uAmbient, ivec2(6, 0), 0).r;
+  float base = uDim > 0.5 ? uExposure : uCave > 0.0 ? exp(mix(log(max(sky, 1e-4)), log(uExposure), uCave)) : sky;
+  float seen = 0.115 / max(avg, 1e-5);
+  float target = base * clamp(pow(seen / base, 0.4), 0.5, 1.9);
   float prev = texture(uPrev, vec2(0.5)).r;
   if (prev <= 0.0) prev = target;
   // brighter quickly, darker slowly, the way eyes go

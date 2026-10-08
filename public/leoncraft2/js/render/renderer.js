@@ -796,14 +796,15 @@ export class Renderer {
       this.drawHand(state, cam, dt);
       return;
     }
+    // the exposure: under the sky the sky table works it out from the light there is (glsl.js EXPOSURE);
+    // in a cave or under a roof the eye eases over to one level, whatever the time of day;
+    // the Nether and the End have no sky and keep one level each (about where the eye used to settle there)
+    // (the full chain starts from the same and lets what is on the screen nudge it: post.js FS_EXPO)
+    const cave = !sunless && state.skyAtEye < 1 ? 1 : 0;
+    this.caveNow = this.caveNow === undefined ? cave : this.caveNow + (cave - this.caveNow) * Math.min(1, dt * 1.5);
+    U.uCave.value = this.caveNow < 0.002 ? 0 : this.caveNow;
+    U.uExposure.value = (sunless ? (state.dim.id === 'the_end' ? 2.0 : 4.2) : 2.4) * Math.pow(2, this.opts.exposure || 0);
     if (this.ldr) {
-      // the exposure: under the sky the sky table works it out from the light there is (glsl.js EXPOSURE);
-      // in a cave or under a roof the eye eases over to one level, whatever the time of day;
-      // the Nether and the End have no sky and keep one level each (about where the eye used to settle there)
-      const cave = !sunless && state.skyAtEye < 1 ? 1 : 0;
-      this.caveNow = this.caveNow === undefined ? cave : this.caveNow + (cave - this.caveNow) * Math.min(1, dt * 1.5);
-      U.uCave.value = this.caveNow < 0.002 ? 0 : this.caveNow;
-      U.uExposure.value = (sunless ? (state.dim.id === 'the_end' ? 2.0 : 4.2) : 2.4) * Math.pow(2, this.opts.exposure || 0);
       this.sky.setUniforms(U, cam.position.y);
       U.uFogK.value *= this.opts.fog === undefined ? 1 : this.opts.fog;
       r.setRenderTarget(null);
