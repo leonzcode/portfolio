@@ -4364,28 +4364,38 @@ pads.onChange = (i, on, s) => {
   else if (duoUI) duoUI.lost(i);
   const racing = started && !editorFrame && (phase === 'race' || phase === 'count' || phase === 'wait');
   const name = padName(s.id);
-  let msg;
+  /* A pad that was driving somebody going away stops the race and says so. A
+     pad turning up does not: it has just had a button pressed, by somebody
+     who means to use it, so it gets a word on their half and nothing more,
+     unless the menu is up already (the pad going is what put it there). */
+  let msg = null, short = null, n = -1, stop = false;
   if (duo) {
     if (!on) {
-      const n = duo.p.findIndex(p => p.pad === i);
+      n = duo.p.findIndex(p => p.pad === i);
       if (n >= 0) {
-        duo.p[n].pad = null; duo.p[n].lost = true;
+        duo.p[n].pad = null; duo.p[n].lost = true; stop = true;
         msg = 'Player ' + (n + 1) + '’s controller was disconnected. Plug it back in, or carry on with '
           + (n ? 'the arrow keys' : 'W A S D') + '.';
-      } else msg = 'A controller was disconnected.';
+      }
     } else {
-      let n = duo.p.findIndex(p => p.lost && p.pad === null);
+      n = duo.p.findIndex(p => p.lost && p.pad === null);
       if (n < 0) n = duo.p.findIndex(p => p.pad === null || p.pad === undefined);
       if (n >= 0) {
         duo.p[n].pad = i; duo.p[n].lost = false;
-        msg = name + ' connected for Player ' + (n + 1) + '. Press Options or Cross to carry on.';
-      } else msg = name + ' connected. Both players already have a controller.';
+        msg = name + ' connected for Player ' + (n + 1) + '.';
+        short = 'Controller connected';
+      }
     }
   } else {
-    msg = on ? name + ' connected. Press Options or Cross to carry on.'
-      : name + ' disconnected. Plug it back in, or carry on with the keyboard.';
+    stop = !on;
+    msg = on ? name + ' connected.' : name + ' disconnected. Plug it back in, or carry on with the keyboard.';
+    short = on ? name + ' connected' : null;
   }
-  if (racing) pauseFor(msg);
+  if (racing && msg) {
+    if (stop) pauseFor(msg);
+    else if (paused) pauseFor(msg + ' Press Options or Cross to carry on.');
+    else if (short) notice(short, null, (n >= 0 && views[n]) || views[0]);
+  }
   drawPrompts();
   if (duoUI) duoUI.redraw();
 };
