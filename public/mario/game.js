@@ -4319,9 +4319,10 @@ function padStep(now) {
       continue;
     }
     if (!started) continue;
+    // any pad pauses; only a player's own pad drives
+    if (s.went[PB.OPTIONS]) { menu(!paused); continue; }
     const n = duo ? duo.p.findIndex(p => p.pad === i) : 0;
     if (n < 0) continue;
-    if (s.went[PB.OPTIONS]) { menu(!paused); continue; }
     if (paused) continue;
     const k = kartOfPlayer(n);
     // tap to throw, hold to trail, the same as the key
