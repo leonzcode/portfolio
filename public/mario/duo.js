@@ -13,16 +13,18 @@ import { glyph, prompt, padName, kindOf, B } from './pads.js?v=106';
 /* The two sides of the keyboard, by where the keys are (KeyboardEvent.code),
    so a French or German layout still gets the same four keys under the left
    hand. Player 2's drift and item keys are the ones the right hand can reach
-   from the arrows. */
+   from the arrows. Not Right Ctrl, though it is the obvious one: held by
+   Player 2 while Player 1 presses W, it is Ctrl+W, and that closes the tab
+   whatever the page says. */
 export const DUO_KEYS = [
   { gas: ['KeyW'], brake: ['KeyS'], left: ['KeyA'], right: ['KeyD'], hop: ['Space', 'ShiftLeft'],
     item: ['KeyE'], view: ['KeyQ'], look: ['KeyR'] },
   { gas: ['ArrowUp'], brake: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
-    hop: ['ShiftRight', 'ControlRight', 'Numpad0'], item: ['Enter', 'NumpadEnter'], view: ['Period'], look: ['Slash'] },
+    hop: ['ShiftRight', 'Numpad0'], item: ['Enter', 'NumpadEnter'], view: ['Period'], look: ['Slash'] },
 ];
 const KEYS_TEXT = [
   '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &middot; <kbd>Space</kbd> drift &middot; <kbd>E</kbd> item &middot; <kbd>Q</kbd> view &middot; <kbd>R</kbd> look back',
-  '<kbd>&#8593;</kbd><kbd>&#8592;</kbd><kbd>&#8595;</kbd><kbd>&#8594;</kbd> drive &middot; <kbd>Right Shift</kbd> or <kbd>Right Ctrl</kbd> drift &middot; <kbd>Enter</kbd> item &middot; <kbd>.</kbd> view &middot; <kbd>/</kbd> look back',
+  '<kbd>&#8593;</kbd><kbd>&#8592;</kbd><kbd>&#8595;</kbd><kbd>&#8594;</kbd> drive &middot; <kbd>Right Shift</kbd> or <kbd>Num 0</kbd> drift &middot; <kbd>Enter</kbd> item &middot; <kbd>.</kbd> view &middot; <kbd>/</kbd> look back',
 ];
 export function keysText(n) { return KEYS_TEXT[n]; }
 export function padText(kind) {

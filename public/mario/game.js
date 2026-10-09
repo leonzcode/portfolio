@@ -942,6 +942,10 @@ function placeOnGrid(first = 0) {
    the list of humans the server says are racing this round. */
 function startRound(field, seed, asPhase, themeId) {
   LAPS = isCustom(themeId) ? Math.max(1, Math.min(9, customLaps || 3)) : 3;
+  /* A button pressed to get here (Race again, Restart) does not keep the
+     focus into the race, where Enter and Space are somebody's driving keys. */
+  const fa = document.activeElement;
+  if (fa && fa !== document.body && fa.tagName === 'BUTTON' && fa.blur) fa.blur();
   if (!isCustom(themeId)) customMap = null;
   /* The circuit the place is, not the one the room's counter happened to land
      on. The server still sends a seed and still moves it every round; taking
@@ -3651,7 +3655,12 @@ function menu(on) {
   waiting = null;
   el('menu').classList.toggle('on', paused);
   el('padmsg').hidden = true;
-  if (!paused) return;
+  if (!paused) {
+    // nothing in a closed menu keeps the focus: Enter is Player 2's item key, and Space a drift
+    const a = document.activeElement;
+    if (a && el('menu').contains(a) && a.blur) a.blur();
+    return;
+  }
   drawRumble();
   menuPage('main');
   // the same menu from the title screen: nothing to resume, restart or leave
