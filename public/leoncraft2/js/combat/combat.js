@@ -148,12 +148,7 @@ export class Combat {
       P.sprinting = false;
     }
     if (sweep) this.sweep(e, st, base, c, sn, cs);
-    // what the enchantments do after a hit
-    const fa = enchOf(st, 'fire_aspect');
-    if (fa && e.setFire && !e.dead) e.setFire(4 * fa);
-    // Bane of Arthropods: Slowness IV for 1 second to 1 + half a second a level
-    const bane = enchOf(st, 'bane_of_arthropods');
-    if (bane && ARTHROPOD.has(e.type) && e.addEffect && !e.dead) e.addEffect('slowness', 4, 20 + Math.floor(R() * (10 * bane + 1)), m.player);
+    this.afterHit(e, st);
     if (smash) this.smashed(e, st);
     // sparks: the critical's stars, the enchantments' blue ones, and dark hearts for a big hit
     // the game's crit emitters: 3 ticks of sparks round the middle of what was hit (entities/particles.js emit)
@@ -184,6 +179,16 @@ export class Combat {
     if (this.sv && !this.creative) this.sv.exhaust(0.1);
     return base + bonus;
   }
+  /* What the enchantments do to something hit (the target, and each one a sweep reaches):
+     Fire Aspect sets it alight for 4 seconds a level, Bane of Arthropods gives an arthropod
+     Slowness IV for 1 second to 1 + half a second a level */
+  afterHit(e, st) {
+    if (e.dead) return;
+    const fa = enchOf(st, 'fire_aspect');
+    if (fa && e.setFire) e.setFire(4 * fa);
+    const bane = enchOf(st, 'bane_of_arthropods');
+    if (bane && ARTHROPOD.has(e.type) && e.addEffect) e.addEffect('slowness', 4, 20 + Math.floor(R() * (10 * bane + 1)), this.m.player);
+  }
   // a sword's sweep: everything within a block of the target (and within 3 of you) takes 1 (and Sweeping Edge's share)
   sweep(e, st, base, c, sn, cs) {
     const m = this.m, P = this.P;
@@ -198,8 +203,9 @@ export class Combat {
     });
     for (const o of hit) {
       o.knockback(0.4, sn, cs);
-      o.hurt((1 + ratio * base + enchantBonus(st, o)) * c, { type: 'player', attacker: m.player, player: true, x: P.pos.x, z: P.pos.z });
+      const ok = o.hurt((1 + ratio * base + enchantBonus(st, o)) * c, { type: 'player', attacker: m.player, player: true, x: P.pos.x, z: P.pos.z });
       o.lastHurtByPlayer = m.age;
+      if (ok) this.afterHit(o, st);
     }
     m.particlesP.add('sweep', P.pos.x - sn, P.pos.y + 0.9, P.pos.z - cs, 1, 0);
     return hit.length;
