@@ -33,7 +33,9 @@ import { register, TYPES } from './mobs.js?v=38';
 import { model } from './mobs2.js?v=38';
 import { addArt } from './mobart.js?v=38';
 import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=38';
-import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS } from '../items.js?v=38';
+import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, maxDamage } from '../items.js?v=38';
+import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=38';
+import { LegacyRandom } from '../gen/random.js?v=38';
 import { fireworkColour } from '../crafting.js?v=38';
 import { rayBox } from './terrain.js?v=38';
 import { lootStack } from '../containers.js?v=38';
@@ -504,15 +506,32 @@ function paintingFits(m, x, y, z, face, w, h) {
   return !clash;
 }
 
-/* ---- the fishing rod ---- */
+/* ---- the fishing rod (the wiki's Fishing, Java Edition) ----
+   Cast, the bobber settles in the water and waits 100 to 600 ticks, 100
+   fewer a level of Lure (drawn again while that is not above 0); then a fish
+   swims in for 20 to 80 ticks and bites: 20 to 40 ticks to reel it in, or
+   the wait starts again. A tick of the wait or the swim counts 2 a quarter
+   of the time in the rain, and none half the time without open sky above.
+   What comes up: fish 85, junk 10, treasure 5 by weight, each moved by its
+   quality times the luck (the rod's Luck of the Sea): fish -1, junk -2,
+   treasure +2, floor(weight + quality x luck); treasure only in open water
+   (a 5 x 4 x 5 of water below and air above round the bobber). Treasure
+   bows and rods come enchanted at 22 to 30 levels with 0-25% of their
+   durability left, a book at 30 levels (treasure enchantments too); junk
+   boots and rods are worn 0-90%. The catch flies to you, with an orb of 1
+   to 6 experience at your feet. */
 const FISH = [['cod', 60], ['salmon', 25], ['tropical_fish', 2], ['pufferfish', 13]];
 const JUNK = [['lily_pad', 17], ['leather_boots', 10], ['leather', 10], ['bone', 10], ['potion', 10], ['string', 5], ['fishing_rod', 2], ['bowl', 10], ['stick', 5], ['ink_sac', 1], ['tripwire_hook', 10], ['rotten_flesh', 10], ['bamboo', 10]];
 const TREASURE = [['name_tag', 1], ['saddle', 1], ['bow', 1], ['fishing_rod', 1], ['enchanted_book', 1], ['nautilus_shell', 1]];
 const pickW = list => { let t = 0; for (const [, w] of list) t += w; let r = R() * t; for (const [n, w] of list) { if (r < w) return n; r -= w; } return list[0][0]; };
+// the enchantments random loot may carry (the table's and the treasure ones), in the game's order
+const ON_RANDOM_LOOT = ORDER.concat(['binding_curse', 'vanishing_curse', 'frost_walker', 'mending']);
+const BIOME_NAMES = [];
+import('../biomes.js?v=38').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
 export class FishingBobber extends Projectile {
   static W = 0.25; static H = 0.25; static MODEL = 'bobber'; static TEX = 'bobber';
   constructor(m, type) {
-    super(m, type); this.gravity = 0.03; this.drag = 0.92; this.wait = 0; this.bite = 0; this.hooked = null; this.inWaterT = 0; this.lure = 0; this.luck = 0; this.stuckBlock = false;
+    super(m, type); this.gravity = 0.03; this.drag = 0.92; this.wait = 0; this.swim = 0; this.bite = 0; this.hooked = null; this.inWaterT = 0; this.lure = 0; this.luck = 0; this.stuckBlock = false;
     this.line = null;
   }
   tick() {
@@ -524,16 +543,31 @@ export class FishingBobber extends Projectile {
       else { this.prev.copy(p); p.set(h.pos.x, h.pos.y + h.h * 0.8, h.pos.z); this.age++; this.lineTick(); return; }
     }
     if (water) {
-      // floating at the surface, bobbing; the wait for a bite, then a dip
+      // floating at the surface, bobbing; the wait for a bite, the fish swimming in, then a dip
       this.prev.copy(p); this.age++;
       const top = Math.floor(p.y) + 0.9;
       this.vel.x *= 0.9; this.vel.z *= 0.9;
       this.vel.y += (top - p.y) * 0.1 - this.vel.y * 0.3;
-      if (this.bite > 0) { this.vel.y -= 0.1; this.bite--; if (this.bite === 0) this.wait = this.newWait(); }
       p.add(this.vel);
-      if (this.wait <= 0) this.wait = this.newWait();
-      else if (--this.wait === 0) { this.bite = 20 + RI(21); this.m.particles('splash', p.x, p.y, p.z, 6, 0.2); }
-      else if (this.wait < 40 && this.age % 3 === 0) this.m.particles('bubble', p.x + (R() - 0.5) * 1.5, p.y, p.z + (R() - 0.5) * 1.5, 1, 0.1);
+      if (this.bite > 0) {
+        this.vel.y -= 0.1;
+        if (--this.bite === 0) { this.wait = 0; this.swim = 0; }
+      } else {
+        // how much this tick counts: twice now and then in the rain, not at all half the time under cover
+        const bx = Math.floor(p.x), by = Math.floor(p.y) + 1, bz = Math.floor(p.z), m = this.m, W = m.sim && m.sim.weather;
+        const sky = m.seesSky(bx, by, bz);
+        let n = 1;
+        if (sky && m.dim === 'overworld' && (W && W.rainingAt ? W.rainingAt(bx, by, bz) : m.raining()) && R() < 0.25) n = 2;
+        if (!sky && R() < 0.5) n--;
+        if (this.swim > 0) {
+          this.swim -= n;
+          if (this.swim <= 0) { this.bite = 20 + RI(21); this.m.particles('splash', p.x, p.y, p.z, 6, 0.2); }
+          else if (this.age % 2 === 0) this.m.particles('bubble', p.x + (R() - 0.5) * this.swim * 0.05, p.y, p.z + (R() - 0.5) * this.swim * 0.05, 1, 0.05);
+        } else if (this.wait > 0) {
+          this.wait -= n;
+          if (this.wait <= 0) this.swim = 20 + RI(61);
+        } else this.wait = this.newWait();
+      }
       this.lineTick();
       return;
     }
@@ -542,7 +576,53 @@ export class FishingBobber extends Projectile {
     this.lineTick();
     if (this.age > 1200) this.gone();
   }
-  newWait() { return Math.max(20, (100 + RI(500)) - this.lure * 100); }
+  // 100 to 600 ticks less 100 a level of Lure (when that leaves nothing, the next tick draws again)
+  newWait() { return 100 + RI(501) - this.lure * 100; }
+  /* Open water: the 5 x 5 layers round the bobber's block, one below it to two above, each all
+     water (still, or a waterlogged block with nothing to stand on) or all air (or lily pads),
+     and no water over air. */
+  openWater() {
+    const T = this.m.t, x = Math.floor(this.pos.x), y = Math.floor(this.pos.y), z = Math.floor(this.pos.z);
+    let above = false;
+    for (let dy = -1; dy <= 2; dy++) {
+      let kind = 0;
+      for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+        const b = T.get(x + dx, y + dy, z + dz), d = BLOCKS[b];
+        const k = !b || (d && d.name === 'lily_pad') ? 2 : (FLUID[b] === 1 && !(T.meta(x + dx, y + dy, z + dz) & 15)) || (d && d.waterlogged && !d.solid) ? 1 : 3;
+        if (k === 3 || (kind && k !== kind)) return false;
+        kind = k;
+      }
+      if (kind === 2) above = true;
+      else if (above) return false;
+    }
+    return true;
+  }
+  // what a bite brings up: a stack (enchanted and worn where the game makes it so)
+  catchStack() {
+    const luck = this.luck | 0, open = this.openWater();
+    const wf = Math.max(0, Math.floor(85 - luck)), wj = Math.max(0, Math.floor(10 - 2 * luck)), wt = open ? Math.max(0, Math.floor(5 + 2 * luck)) : 0;
+    const r = R() * (wf + wj + wt);
+    const W = this.m.world, b = W && W.biomeAt ? W.biomeAt(Math.floor(this.pos.x), Math.floor(this.pos.z)) : -1;
+    const jungle = /jungle/.test(BIOME_NAMES[b] || '');
+    let name, ench = null, dmg = 0, count = 1;
+    if (r < wf) name = pickW(FISH);
+    else if (r < wf + wj) {
+      name = pickW(jungle ? JUNK : JUNK.filter(e => e[0] !== 'bamboo'));
+      if (name === 'leather_boots' || name === 'fishing_rod') dmg = Math.floor(maxDamage(I[name]) * R() * 0.9);
+      if (name === 'ink_sac') count = 10;
+    } else {
+      name = pickW(TREASURE);
+      const rng = new LegacyRandom(Math.floor(R() * 2 ** 31) * 4096 + RI(4096));
+      if (name === 'bow' || name === 'fishing_rod') {
+        ench = enchanted(I[name], 22 + RI(9), rng, false);
+        dmg = Math.floor(maxDamage(I[name]) * (0.75 + R() * 0.25));
+      } else if (name === 'enchanted_book') ench = enchanted(I.book, 30, rng, true);
+    }
+    const st = { id: I[name], count };
+    if (ench && Object.keys(ench).length) st.ench = ench;
+    if (dmg > 0) st.dmg = Math.min(dmg, maxDamage(st.id) - 1);
+    return st;
+  }
   hitEntity(e) { if (e.isPlayer) return false; this.hooked = e; this.vel.set(0, 0, 0); return true; }
   hitBlock() { this.stuckBlock = true; this.vel.set(0, 0, 0); }
   // reeling in: a fish if one is biting, the hooked mob pulled, else nothing; the rod's wear
@@ -554,10 +634,10 @@ export class FishingBobber extends Projectile {
       if (h.vel) { h.vel.x += dx * 0.1; h.vel.y += dy * 0.1 + Math.sqrt(Math.hypot(dx, dy, dz)) * 0.08; h.vel.z += dz * 0.1; }
       wear = 5;
     } else if (this.bite > 0) {
-      const r = R(), luck = this.luck;
-      const name = r < 0.05 + luck * 0.021 ? pickW(TREASURE) : r < 0.15 + luck * 0.021 - luck * 0.019 ? pickW(JUNK) : pickW(FISH);
-      // what was caught comes out of the water at the bobber
-      m.dropItemAt(p.x, p.y + 0.5, p.z, name, 1, false, true);
+      // what was caught comes out of the water at the bobber and flies to you
+      const st = this.catchStack(), dx = P.pos.x - p.x, dy = P.pos.y - p.y, dz = P.pos.z - p.z;
+      m.dropItemAt(p.x, p.y, p.z, ITEMS[st.id].name, st.count, false, true,
+        { stack: st, delay: 0, vel: [dx * 0.1, dy * 0.1 + Math.sqrt(Math.sqrt(dx * dx + dy * dy + dz * dz)) * 0.08, dz * 0.1] });
       m.xpAt(P.pos.x, P.pos.y + 0.5, P.pos.z + 0.5, 1 + RI(6));
       wear = 1;
     } else if (this.stuckBlock) wear = 2;
@@ -590,6 +670,12 @@ export class FishingBobber extends Projectile {
   remove() { super.remove(); if (this.line && this.line.parent) { this.line.parent.remove(this.line); this.line.geometry.dispose(); this.line = null; } }
 }
 register('fishing_bobber', FishingBobber);
+// enchanted at a level as the table would (a book takes any of the list, an item its primary ones)
+function enchanted(id, level, rng, book) {
+  const out = {}, set = new Set(ON_RANDOM_LOOT);
+  for (const [n, l] of selectEnchants(id, level, rng, (k, it) => set.has(k) && !!ENCH[k] && (book || isPrimary(k, it)), ON_RANDOM_LOOT)) out[n] = l;
+  return out;
+}
 model('bobber', [{ name: 'b', pivot: [0, 24, 0], boxes: [[-1.5, -3, -1.5, 3, 3, 3, 0, 0], [-0.5, -5, -0.5, 1, 2, 1, 12, 0]] }]);
 addArt('bobber', [64, 32], p => { p.box(0, 0, 3, 3, 3, { all: 0xd83030, bottom: 0xf0f0f0 }, 0.05); p.fill(0, 4, 12, 2, 0xf0f0f0); p.box(12, 0, 1, 2, 1, 0x3a3a3a, 0.05); });
 
