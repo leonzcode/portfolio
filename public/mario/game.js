@@ -4461,9 +4461,21 @@ function drawPadKeys() {
   const box = el('padkeys');
   if (!box) return;
   const kind = pads.count ? lastPadKind : 'ps';
-  box.innerHTML = '<p class="sub">Controller' + (pads.count ? '' : ' (plug one in and press a button)') + '</p>'
-    + '<div class="pk">' + duoPadText(kind) + '</div>'
-    + (duo ? '<p class="sub">Split screen</p><div class="pk"><b>P1</b> ' + duoKeysText(0) + '</div><div class="pk"><b>P2</b> ' + duoKeysText(1) + '</div>' : '');
+  const pad = '<p class="sub">Controller' + (pads.count ? '' : ' (plug one in and press a button)') + '</p>'
+    + '<div class="pk">' + duoPadText(kind) + '</div>';
+  /* In split screen its own keys come first, since those are the ones in use;
+     the table above them is for racing on your own, so it says so. */
+  const keys = el('menukeys');
+  if (duo) {
+    box.innerHTML = '<p class="sub">Split screen keys (fixed)</p><div class="pk"><b>P1</b> ' + duoKeysText(0) + '</div><div class="pk"><b>P2</b> '
+      + duoKeysText(1) + '</div>' + pad + '<p class="sub">On your own: click a key, then press the one you want</p>';
+    keys.insertBefore(box, keys.firstChild);
+    const head = keys.querySelector(':scope > p.sub');
+    if (head) head.hidden = true;
+  } else {
+    box.innerHTML = pad;
+    keys.insertBefore(box, el('bindrows').nextSibling);
+  }
 }
 
 /* ----------------------------------------------------- split screen ------ */
