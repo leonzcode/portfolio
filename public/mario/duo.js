@@ -27,7 +27,7 @@ const KEYS_TEXT = [
 export function keysText(n) { return KEYS_TEXT[n]; }
 export function padText(kind) {
   return prompt('gas', kind) + ' go &middot; ' + prompt('brake', kind) + ' brake &middot; ' + glyph('stick', kind) + ' steer &middot; '
-    + prompt('hop', kind) + ' drift &middot; ' + prompt('item', kind, true) + ' item &middot; ' + prompt('view', kind) + ' view &middot; '
+    + prompt('hop', kind, true) + ' drift &middot; ' + prompt('item', kind, true) + ' item &middot; ' + prompt('view', kind) + ' view &middot; '
     + prompt('look', kind) + ' look back &middot; ' + prompt('pause', kind) + ' pause';
 }
 

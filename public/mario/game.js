@@ -4325,7 +4325,7 @@ function padStep(now) {
     if (paused) continue;
     const k = kartOfPlayer(n);
     // tap to throw, hold to trail, the same as the key
-    const held = !!(s.on[PB.CIRCLE] || s.on[PB.L1]);
+    const held = !!(s.on[PB.CIRCLE] || s.on[PB.SQUARE]);
     if (held && !s.itemWas) itemDown(k);
     else if (!held && s.itemWas && !(duo ? duoDown(n, 'item') : down('item'))) itemUp(k);
     s.itemWas = held;
@@ -4453,7 +4453,7 @@ function drawPrompts() {
 function padKeysLine(kind) {
   const p = a => padPrompt(a, kind);
   return p('gas') + ' go &middot; ' + p('brake') + ' brake &middot; ' + glyph('stick', kind) + ' steer &middot; '
-    + p('hop') + ' hop and drift<br>' + padPrompt('item', kind, true) + ' use item &middot; ' + p('look') + ' look back &middot; '
+    + padPrompt('hop', kind, true) + ' hop and drift<br>' + padPrompt('item', kind, true) + ' use item &middot; ' + p('look') + ' look back &middot; '
     + p('view') + ' view &middot; ' + p('pause') + ' menu &middot; ' + glyph('dpad', kind) + ' ' + glyph('cross', kind) + ' ' + glyph('circle', kind) + ' menus';
 }
 // the Controls page: the keys are rebound above; the pad and split screen are listed under them
@@ -4535,10 +4535,12 @@ function duoFinish(k) {
   duoBrains.set(k, makeBrain(k, 0.9, k === me ? 5151 : 5252));
   if (humans().every(h => h.finished)) showResults(false);
 }
+// the two players in the order they came home
 function duoTitle() {
   if (!me || !me2) return 'Race over';
-  if (duo.mode === 'vs') return ((me.place || 1) < (me2.place || 2) ? me.name : me2.name) + ' wins!';
-  return me.name + ' ' + ord(me.place || 1) + ' · ' + me2.name + ' ' + ord(me2.place || 2);
+  const [a, b] = (me.place || 99) <= (me2.place || 99) ? [me, me2] : [me2, me];
+  if (duo.mode === 'vs') return a.name + ' wins!';
+  return a.name + ' ' + ord(a.place || 1) + ' · ' + b.name + ' ' + ord(b.place || 2);
 }
 nav = makeNav({ layer: navLayer });
 duoUI = makeDuo({

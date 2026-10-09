@@ -122,8 +122,9 @@ export function makePads() {
 
   /* What a driver would make of pad i. The stick has a small dead zone and a
      gentle curve, so the middle of its travel is for placing the car and the
-     edge is for full lock; the triggers are read for how far they are in. The
-     face buttons drive too, the way the classic kart games lay them out. */
+     edge is for full lock; the triggers are read for how far they are in.
+     Either shoulder hops and drifts, Square or Circle throws, and Cross is a
+     second throttle for anybody who would rather press than pull. */
   function drive(i) {
     const s = slots[i];
     const out = { gas: 0, brake: 0, steer: 0, hop: false, item: false, look: false };
@@ -136,9 +137,9 @@ export function makePads() {
     if (s.on[B.RIGHT]) out.steer = -1;
     const trig = v => (v < 0.06 ? 0 : Math.min(1, (v - 0.06) / 0.9));
     out.gas = Math.max(trig(s.val[B.R2]), s.on[B.CROSS] ? 1 : 0);
-    out.brake = Math.max(trig(s.val[B.L2]), s.on[B.SQUARE] ? 1 : 0);
-    out.hop = !!s.on[B.R1];
-    out.item = !!(s.on[B.CIRCLE] || s.on[B.L1]);
+    out.brake = trig(s.val[B.L2]);
+    out.hop = !!(s.on[B.R1] || s.on[B.L1]);
+    out.item = !!(s.on[B.CIRCLE] || s.on[B.SQUARE]);
     out.look = !!(s.on[B.TRIANGLE] || s.on[B.PAD]);
     return out;
   }
@@ -219,7 +220,7 @@ export function glyph(name, kind) {
 /* What each thing a driver does is on, for a hint line. The first one listed
    is the one a hint shows when it only has room for one. */
 export const PAD_ACTS = {
-  gas: ['r2', 'cross'], brake: ['l2', 'square'], steer: ['stick'], hop: ['r1'], item: ['circle', 'l1'],
+  gas: ['r2', 'cross'], brake: ['l2'], steer: ['stick'], hop: ['r1', 'l1'], item: ['circle', 'square'],
   look: ['triangle'], view: ['create'], pause: ['options'], ok: ['cross'], back: ['circle'],
 };
 export function prompt(act, kind, all) {
