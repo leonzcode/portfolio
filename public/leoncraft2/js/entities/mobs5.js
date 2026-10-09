@@ -10,7 +10,7 @@
    units for the familiar proportions; every texture is painted here, pixel
    by pixel, with our own patterns (no Mojang file).
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=38';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=38';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
   MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=38';
 import { Animal, register, TYPES } from './mobs.js?v=38';
@@ -90,12 +90,12 @@ class UndeadHorse extends AbstractHorse {
 }
 export class SkeletonHorse extends UndeadHorse {
   static TEX = 'skeleton_horse'; static WATER_BREATHER = true; static WATER_SPEED = 0.06;
-  loot(drop) { drop('bone', RI(3)); if (this.saddled) drop('saddle', 1); }
+  loot(drop, byPlayer, L) { drop('bone', RI(3) + looted(L)); if (this.saddled) drop('saddle', 1); }
 }
 register('skeleton_horse', SkeletonHorse);
 export class ZombieHorse extends UndeadHorse {
   static TEX = 'zombie_horse';
-  loot(drop) { drop('rotten_flesh', RI(3)); if (this.saddled) drop('saddle', 1); }
+  loot(drop, byPlayer, L) { drop('rotten_flesh', RI(3) + looted(L)); if (this.saddled) drop('saddle', 1); }
 }
 register('zombie_horse', ZombieHorse);
 function paintUndeadHorse(p, c) {
@@ -206,7 +206,7 @@ register('camel', Camel);
 export class CamelHusk extends Camel {
   static TEX = 'camel_husk'; static UNDEAD = true; static FOOD = ['rotten_flesh'];
   eatFood() { if (this.health < this.maxHealth) { this.heal(2); return true; } return false; }
-  loot(drop) { drop('rotten_flesh', RI(3)); if (this.saddled) drop('saddle', 1); }
+  loot(drop, byPlayer, L) { drop('rotten_flesh', RI(3) + looted(L)); if (this.saddled) drop('saddle', 1); }
 }
 register('camel_husk', CamelHusk);
 const camelParts = saddle => [
@@ -363,7 +363,7 @@ export class Llama extends AbstractHorse {
     if (this.decor) out.push(['llama_decor', this.decor === 'trader' ? 'llama_decor_trader' : 'llama_decor', this.decor === 'trader' ? null : CARPET_RGB[this.decor]]);
     if (this.chest) out.push(['llama_chest', this.texName(), null]);
   }
-  loot(drop) { super.loot(drop); if (this.chest) drop('chest', 1); if (this.decor) drop(this.decor + '_carpet', 1); }
+  loot(drop, byPlayer, L) { super.loot(drop, byPlayer, L); if (this.chest) drop('chest', 1); if (this.decor) drop(this.decor + '_carpet', 1); }
   anim(A, a) { super.anim(A, a); A.eat = 0; }
   toJSON() { const o = super.toJSON(); o.coat = this.coat; o.str = this.strength; if (this.decor) o.dec = this.decor; if (this.chest) o.ch = 1; return o; }
   fromJSON(o) { this.strength = o.str || 3; super.fromJSON(o); this.coat = o.coat || 'creamy'; this.decor = o.dec || null; if (o.ch && !this.chest) this.setChest(true); }
@@ -371,7 +371,7 @@ export class Llama extends AbstractHorse {
 register('llama', Llama);
 export class TraderLlama extends Llama {
   finalizeSpawn(o) { super.finalizeSpawn(o); this.decor = 'trader'; }
-  loot(drop) { drop('leather', RI(3)); }
+  loot(drop, byPlayer, L) { drop('leather', RI(3) + looted(L)); }
   layers(out) { out.push(['llama_decor', 'llama_decor_trader', null]); if (this.chest) out.push(['llama_chest', this.texName(), null]); }
 }
 register('trader_llama', TraderLlama);
@@ -610,7 +610,7 @@ export class Panda extends Animal {
     if (held === 'bamboo') { this.sitT = 120; return super.interact(held) || 'consume'; }
     return super.interact(held);
   }
-  loot(drop) { drop('bamboo', RI(3)); }
+  loot(drop) { drop('bamboo', 1); }
   anim(A, a) { A.sit = this.oSit + (this.sit - this.oSit) * a; A.roll = this.rollT > 0 ? this.rollA + a * PI / 10 : 0; }
   rootPose(root, t, a, A) { if (A.roll) { root.multiply(t.makeTranslation(0, 0.6, 0)); root.multiply(t.makeRotationX(A.roll)); root.multiply(t.makeTranslation(0, -0.6, 0)); } }
   toJSON() { const o = super.toJSON(); o.gn = this.gene; return o; }

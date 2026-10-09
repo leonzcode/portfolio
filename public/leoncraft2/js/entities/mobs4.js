@@ -20,7 +20,7 @@
 
    The player is the only owner there can be, so "tamed" means "yours".
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=38';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=38';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
   MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=38';
 import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=38';
@@ -1141,8 +1141,8 @@ export class AbstractHorse extends Animal {
     if (this.body) { const mat = itemNameOf(this.body.id).replace(/_horse_armor$/, ''); out.push(['horse_armor', 'horse_armor_' + mat, mat === 'leather' ? (this.body.color !== undefined ? this.body.color : 0xA06540) : null, !!this.body.ench]); }
     if (this.saddled) out.push([this.passengers.length ? 'horse_saddle_reins' : 'horse_saddle', 'horse_saddle', null]);
   }
-  loot(drop) {
-    drop('leather', RI(3)); if (this.saddled) drop('saddle', 1); if (this.body) { dropStack(this, this.body); this.body = null; }
+  loot(drop, byPlayer, L) {
+    drop('leather', RI(3) + looted(L)); if (this.saddled) drop('saddle', 1); if (this.body) { dropStack(this, this.body); this.body = null; }
     if (this.chest && this.type !== 'llama' && this.type !== 'trader_llama') drop('chest', 1);
     if (this.chestSlots) { for (const s of this.chestSlots) if (s) dropStack(this, s); this.chestSlots = null; }
   }
@@ -1449,7 +1449,7 @@ export class Cat extends Tamable {
     A.sprint = !this.sitting && (this.fleeing || (this.target && this.aggressive)) && this.walkAmt > 0.6;
   }
   layers(out) { if (this.tamed) out.push(['cat_collar', 'cat_collar', DYE_RGB[this.collar] || DYE_RGB.red]); }
-  loot(drop) { drop('string', RI(3)); }
+  loot(drop, byPlayer, L) { drop('string', RI(3) + looted(L)); }
   get xp() { return this.ageT < 0 ? 0 : 1 + RI(3); }
   toJSON() { const o = super.toJSON(); o.coat = this.coat; if (this.collar !== 'red') o.col = this.collar; return o; }
   fromJSON(o) { super.fromJSON(o); this.coat = o.coat || 'tabby'; this.collar = o.col || 'red'; }
@@ -1662,10 +1662,10 @@ export class Rabbit extends Animal {
     if (this.carrotT > 0) this.carrotT--;
   }
   anim(A, a) { A.hop = this.hopT > 0 ? Math.min(1, (this.hopT + a) / this.hopDur) : 0; }
-  loot(drop, byPlayer) {
-    drop('rabbit_hide', RI(2));
-    drop(this.fire > 0 ? 'cooked_rabbit' : 'rabbit', RI(2));
-    if (byPlayer && R() < 0.1) drop('rabbit_foot', 1);
+  loot(drop, byPlayer, L) {
+    drop('rabbit_hide', RI(2) + looted(L));
+    drop(this.fire > 0 ? 'cooked_rabbit' : 'rabbit', RI(2) + looted(L));
+    if (byPlayer && R() < 0.1 + 0.03 * L) drop('rabbit_foot', 1);
   }
   toJSON() { const o = super.toJSON(); o.coat = this.coat; return o; }
   fromJSON(o) { super.fromJSON(o); this.coat = o.coat || 'brown'; }
@@ -2203,7 +2203,7 @@ export class PolarBear extends Animal {
   doHurtTarget(t) { this.standT = 0; return super.doHurtTarget(t); }
   interact() { return false; }
   anim(A, a) { A.stand = this.oStand + (this.stand - this.oStand) * a; }
-  loot(drop) { if (R() < 0.75) drop(this.fire > 0 ? 'cooked_cod' : 'cod', RI(3)); else drop(this.fire > 0 ? 'cooked_salmon' : 'salmon', RI(3)); }
+  loot(drop, byPlayer, L) { if (R() < 0.75) drop(this.fire > 0 ? 'cooked_cod' : 'cod', RI(3) + looted(L)); else drop(this.fire > 0 ? 'cooked_salmon' : 'salmon', RI(3) + looted(L)); }
 }
 register('polar_bear', PolarBear);
 model('polar_bear', [

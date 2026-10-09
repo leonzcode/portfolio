@@ -11,7 +11,7 @@
    The models follow the game's proportions; every texture is painted here,
    pixel by pixel, in our own colours.
 --------------------------------------------------------------------------- */
-import { Mob, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=38';
+import { Mob, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=38';
 import { FloatGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, MeleeAttackGoal, NearestPlayerTargetGoal, HurtByTargetGoal, SwimGoal } from './ai.js?v=38';
 import { register, Monster, DYE_RGB } from './mobs.js?v=38';
 import { model } from './mobs2.js?v=38';
@@ -337,8 +337,8 @@ export class Enderman extends Monster {
     this.teleported = (this.teleported || 0) + 1;
     return true;
   }
-  loot(drop) {
-    drop('ender_pearl', RI(2));
+  loot(drop, byPlayer, L) {
+    drop('ender_pearl', RI(2) + looted(L));
     if (this.carried && BLOCKS[this.carried]) drop(BLOCKS[this.carried].name, 1);
   }
   anim(A) { A.angry = !!this.target && !this.dead; A.carry = this.carried ? 1 : 0; }
@@ -661,7 +661,7 @@ export class Slime extends Monster {
     }
     super.remove();
   }
-  loot(drop) { if (this.size === 1) drop('slime_ball', RI(3)); }
+  loot(drop, byPlayer, L) { if (this.size === 1) drop('slime_ball', RI(3) + looted(L)); }
   rootPose(root, t, a) {
     const sq = this.oSquish + (this.squish - this.oSquish) * a;
     const f2 = sq / (this.size * 0.5 + 1), f3 = 1 / (f2 + 1);
@@ -813,11 +813,11 @@ export class Witch extends Monster {
   /* Its loot: 4 to 8 redstone, and 1 to 3 rolls of 0 to 2 of a glass bottle,
      glowstone dust, gunpowder, a spider eye, sugar or sticks (twice as
      likely); killed while drinking, the potion 8.5% of the time. */
-  loot(drop) {
-    drop('redstone', between(4, 8));
+  loot(drop, byPlayer, L) {
+    drop('redstone', between(4, 8) + looted(L));
     const pool = ['glass_bottle', 'glowstone_dust', 'gunpowder', 'spider_eye', 'sugar', 'stick', 'stick'];
-    for (let i = 0, n = between(1, 3); i < n; i++) drop(pool[RI(pool.length)], RI(3));
-    if (this.drinkT > 0 && this.drink && R() < 0.085) drop('potion', 1);
+    for (let i = 0, n = between(1, 3); i < n; i++) drop(pool[RI(pool.length)], RI(3) + looted(L));
+    if (this.drinkT > 0 && this.drink && R() < 0.085 + 0.01 * L) drop('potion', 1);
   }
   anim(A) { A.drinking = this.drinkT > 0; }
   layers(out) { if (this.drinkT > 0 && this.drink) out.push(['witch_bottle', 'witch_bottle', POTION_RGB[this.drink] || 0xffffff]); }
@@ -971,7 +971,7 @@ export class Squid extends Mob {
     }
   }
   inkColour() { return [0.06, 0.06, 0.09]; }
-  loot(drop) { drop('ink_sac', between(1, 3)); }
+  loot(drop, byPlayer, L) { drop('ink_sac', between(1, 3) + looted(L)); }
   anim(A, a) { A.tentacle = this.oTentAngle + (this.tentAngle - this.oTentAngle) * a; }
   rootPose(root, t, a) {
     const xb = this.oxBody + (this.xBody - this.oxBody) * a, zb = this.ozBody + (this.zBody - this.ozBody) * a;
@@ -1002,7 +1002,7 @@ export class GlowSquid extends Squid {
   }
   onHurt(amount, source) { super.onHurt(amount, source); this.darkT = 100; }
   inkColour() { return [0.12, 0.62, 0.58]; }
-  loot(drop) { drop('glow_ink_sac', between(1, 3)); }
+  loot(drop, byPlayer, L) { drop('glow_ink_sac', between(1, 3) + looted(L)); }
   // below y 30, in water, where neither the sky nor a block gives any light
   static checkSpawn(S, x, y, z) {
     const T = S.m.t;

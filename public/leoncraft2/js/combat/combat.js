@@ -123,13 +123,13 @@ export class Combat {
     if (e.dead || (base <= 0 && bonus <= 0)) return false;
     const strong = c > 0.9;
     const sprintHit = P.sprinting && strong;
-    // the mace: more for every block fallen (before the critical)
+    // the mace: more for every block fallen (before the critical); Breach works on every hit with it
     let smash = false;
     if (w.kind === 'mace' && !spin && P.fallDistance > 1.5 && !P.flying && !P.gliding) {
       base += smashBonus(P.fallDistance, enchOf(st, 'density'));
       smash = true;
-      if (enchOf(st, 'breach')) src.breach = enchOf(st, 'breach');
     }
+    if (enchOf(st, 'breach')) src.breach = enchOf(st, 'breach');
     const crit = strong && P.fallDistance > 0 && !P.onGround && !P.climbing && !P.inWater && !m.riding && !P.flying
       && !P.sprinting && !lv(fx, 'blindness') && !lv(fx, 'slow_falling') && w.kind !== 'spear';
     if (crit) base *= 1.5;
@@ -151,7 +151,9 @@ export class Combat {
     // what the enchantments do after a hit
     const fa = enchOf(st, 'fire_aspect');
     if (fa && e.setFire && !e.dead) e.setFire(4 * fa);
-    if (enchOf(st, 'bane_of_arthropods') && ARTHROPOD.has(e.type) && e.slow !== undefined) e.slow = Math.max(e.slow, 20 + Math.floor(R() * 10 * enchOf(st, 'bane_of_arthropods')));
+    // Bane of Arthropods: Slowness IV for 1 second to 1 + half a second a level
+    const bane = enchOf(st, 'bane_of_arthropods');
+    if (bane && ARTHROPOD.has(e.type) && e.addEffect && !e.dead) e.addEffect('slowness', 4, 20 + Math.floor(R() * (10 * bane + 1)), m.player);
     if (smash) this.smashed(e, st);
     // sparks: the critical's stars, the enchantments' blue ones, and dark hearts for a big hit
     // the game's crit emitters: 3 ticks of sparks round the middle of what was hit (entities/particles.js emit)
@@ -216,9 +218,14 @@ export class Combat {
       const l = Math.hypot(dx, dz) || 1;
       o.vel.x += dx / l * f; o.vel.y += 0.7 * f; o.vel.z += dz / l * f;
     });
-    // Wind Burst: up you go again
+    // Wind Burst: a burst of wind where you are throws you up again, x1.2, x1.75, x2.2 (less 15% a level of Blast Protection worn)
     const wb = enchOf(st, 'wind_burst');
-    if (wb) P.vel.y = 1.2 + 0.35 * (wb - 1);
+    if (wb) {
+      let bp = 0;
+      for (const a of (this.inv && this.inv.armor) || []) bp += enchOf(a, 'blast_protection');
+      P.vel.y += ([1.2, 1.75, 2.2][wb - 1] || 1.5 + 0.35 * (wb - 1)) * Math.max(0, 1 - 0.15 * bp);
+      P.onGround = false;
+    }
   }
   // wear on the held item (a tool used in a fight)
   wearHeld(n) { if (this.inv && this.inv.damageSelected) this.inv.damageSelected(n); }
