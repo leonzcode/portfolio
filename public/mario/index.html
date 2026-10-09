@@ -1305,7 +1305,11 @@
 
   /* ---- split screen: each half's HUD, names and glass kept to its own half,
      the corner furniture zoomed to the size of the half (--hz, from game.js) */
-  body.duo #hud, body.duo #tags, body.duo #wet, body.duo #drops, body.duo #oil{ overflow:hidden; }
+  /* Not the HUD itself: a clipped box round the masked speed lines stalls the
+     compositor in Chrome (every frame stops about two seconds into a race, the
+     moment the lines first show). Everything in the HUD is placed inside its
+     half anyway. */
+  body.duo #tags, body.duo #wet, body.duo #drops, body.duo #oil{ overflow:hidden; }
   body.duo.tb #hud:not(.p2), body.duo.tb #tags:not(.p2), body.duo.tb #wet:not(.p2),
   body.duo.tb #drops:not(.p2), body.duo.tb #oil:not(.p2){ bottom:50%; }
   body.duo.tb #hud.p2, body.duo.tb #tags.p2, body.duo.tb #wet.p2, body.duo.tb #drops.p2, body.duo.tb #oil.p2{ top:50%; }
