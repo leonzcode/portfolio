@@ -767,7 +767,9 @@ export function useExtra(m, name, target, take, build) {
       return true;
     }
     const b = throwIt('fishing_bobber', 0.6 + R() * 0.2, 0);
-    if (b) { b.lure = enchOf(st, 'lure'); b.luck = enchOf(st, 'luck_of_the_sea'); m.bobber = b; }
+    // the luck: Luck of the Sea, and a level for each of Luck (less Bad Luck) on the player
+    const fx = m.survival && m.survival.effects, lv = n => (fx && fx[n] ? fx[n].level || 1 : 0);
+    if (b) { b.lure = enchOf(st, 'lure'); b.luck = enchOf(st, 'luck_of_the_sea') + lv('luck') - lv('unluck'); m.bobber = b; }
     return true;
   }
   if (name === 'brush') return brushAt(m, target);
