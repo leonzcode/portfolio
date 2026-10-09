@@ -443,7 +443,7 @@ addEventListener('keydown', e => {
   if (chatting) { if (k === 'escape') closeChat(false); return; }
   keys[k] = true;
   codes[e.code] = true;
-  if (lastDevice !== 'keys') { lastDevice = 'keys'; drawPrompts(); }
+  if (e.isTrusted && lastDevice !== 'keys') { lastDevice = 'keys'; drawPrompts(); }
   if (k === 'escape' && started) { menu(!paused); e.preventDefault(); return; }
   // the 2 Players screen is closed by Esc, as the track picker is
   if (k === 'escape' && duoUI && duoUI.open) { duoUI.show(false); e.preventDefault(); return; }
@@ -3194,6 +3194,8 @@ function buildPaint() {
   cv.addEventListener('pointercancel', done);
   // and from the keyboard: left and right go round, up and down go in and out
   cv.tabIndex = 0;
+  // a controller's left and right turn it too (padnav.js sends it the arrow keys)
+  cv.setAttribute('data-padlr', '');
   cv.addEventListener('keydown', e => {
     const k = e.key;
     if (k === 'ArrowLeft') myPaint.h = (myPaint.h + 352) % 360;

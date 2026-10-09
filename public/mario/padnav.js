@@ -53,7 +53,10 @@ export function makeNav(g) {
       return true;
     }
     if (cur.hasAttribute('data-padlr') && (dir === 'left' || dir === 'right')) {
-      cur.dispatchEvent(new KeyboardEvent('keydown', { key: dir === 'left' ? 'ArrowLeft' : 'ArrowRight', bubbles: true }));
+      // a press and a release, or the page's own key table thinks the arrow is still held
+      const key = dir === 'left' ? 'ArrowLeft' : 'ArrowRight';
+      cur.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      cur.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
       return true;
     }
     /* The nearest thing that way. First anything straight in line with the
