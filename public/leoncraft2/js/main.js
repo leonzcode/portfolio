@@ -1190,11 +1190,12 @@ async function boot() {
       setMode,
       // (a teleport takes you off what you ride, as in the game)
       teleport: (x, y, z) => { const p = g.player; if (g.entities && g.entities.riding) g.entities.dismount(); p.pos.set(x, y, z); p.prev.copy(p.pos); p.vel.set(0, 0, 0); p.fallDistance = 0; },
-      give: (name, count) => {
-        // any item or block by its name (items.js knows both)
+      give: (name, count, extra) => {
+        // any item or block by its name (items.js knows both); extra: what its components set (enchantments, wear)
         const id = itemId(name) || (B[name] !== undefined && BLOCKS[B[name]] && BLOCKS[B[name]].item !== false ? B[name] : 0);
         if (!id) return null;
-        g.inv.add(id, count);
+        if (extra && (extra.ench || extra.dmg)) for (let i = 0; i < count; i++) g.inv.addStack(Object.assign({ id, count: 1 }, extra.dmg ? { dmg: extra.dmg } : null, extra.ench ? { ench: Object.assign({}, extra.ench) } : null));
+        else g.inv.add(id, count);
         return itemDisplay(id) || displayName(id);
       },
       clearInventory: name => {

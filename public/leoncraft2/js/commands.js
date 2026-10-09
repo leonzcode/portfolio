@@ -12,6 +12,7 @@
 --------------------------------------------------------------------------- */
 import { B, BLOCKS } from './blocks.js?v=38';
 import { Y0 } from './world-const.js?v=38';
+import { ENCHANTS } from './itemdata.js?v=38';
 
 const REG = new Map();
 export function register(name, def) { REG.set(name, def); for (const a of def.aliases || []) REG.set(a, def); }
@@ -155,17 +156,60 @@ register('tp', {
   },
 });
 register('give', {
-  usage: '<player> <item> [count]',
+  usage: '<player> <item>[components] [count]',
   suggest: (i, w) => i === 0 ? ['@s'] : i === 1 ? ctx_itemNames().filter(n => n.startsWith(w[1] || '')).slice(0, 40) : ['1', '16', '64'],
   run(args, ctx) {
     self(args[0], ctx);
-    const name = (args[1] || '').replace(/^minecraft:/, '');
-    const count = args[2] ? int(args[2], 1, 6400) : 1;
-    const r = ctx.give(name, count);
-    if (!r) fail(`Unknown item '${args[1] || ''}'`);
+    // an item's components in brackets may hold spaces: the words up to the closing bracket are one argument
+    let item = args[1] || '', k = 2;
+    while (item.indexOf('[') >= 0 && depth(item) > 0 && k < args.length) item += ' ' + args[k++];
+    const m = /^([a-z0-9_:.\-]+)(?:\[(.*)\])?$/i.exec(item);
+    if (!m) fail(`Unknown item '${item}'`);
+    const name = m[1].replace(/^minecraft:/, '');
+    const extra = m[2] !== undefined ? components(m[2]) : null;
+    const count = args[k] ? int(args[k], 1, 6400) : 1;
+    const r = ctx.give(name, count, extra);
+    if (!r) fail(`Unknown item '${m[1]}'`);
     ctx.say(`Gave ${count} [${r}] to ${ctx.playerName}`);
   },
 });
+const depth = s => { let d = 0; for (const c of s) { if (c === '[' || c === '{') d++; else if (c === ']' || c === '}') d--; } return d; };
+/* Item components as /give takes them, the ones that mean something here:
+   enchantments={sharpness:5,unbreaking:3} (or the older {levels:{"minecraft:sharpness":5}}),
+   stored_enchantments (a book's, kept as its enchantments) and damage=N. */
+function components(text) {
+  const out = {};
+  for (const part of splitTop(text)) {
+    const eq = part.indexOf('=');
+    if (eq < 0) fail(`Expected '=' in ${part}`);
+    const key = part.slice(0, eq).trim().replace(/^minecraft:/, ''), val = part.slice(eq + 1).trim();
+    if (key === 'enchantments' || key === 'stored_enchantments') {
+      let body = val.replace(/^\{|\}$/g, '').trim();
+      const lv = /^levels\s*:\s*\{(.*)\}/.exec(body);
+      if (lv) body = lv[1];
+      const ench = out.ench || {};
+      for (const e of splitTop(body)) {
+        const mm = /^\s*"?(?:minecraft:)?([a-z_]+)"?\s*:\s*(\d+)\s*$/.exec(e);
+        if (!mm) fail(`Malformed enchantments: ${val}`);
+        if (!ENCHANTS.some(x => x[0] === mm[1])) fail(`Can't find element 'minecraft:${mm[1]}' of type 'minecraft:enchantment'`);
+        const n = Math.min(255, +mm[2]);
+        if (n > 0) ench[mm[1]] = n;
+      }
+      if (Object.keys(ench).length) out.ench = ench;
+    } else if (key === 'damage') out.dmg = int(val, 0);
+  }
+  return out;
+}
+// split at top-level commas
+function splitTop(s) {
+  const out = []; let d = 0, cur = '';
+  for (const c of s) {
+    if (c === '{' || c === '[') d++; else if (c === '}' || c === ']') d--;
+    if (c === ',' && d === 0) { if (cur.trim()) out.push(cur); cur = ''; } else cur += c;
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
+}
 let itemNamesFn = () => BLOCKS.filter(d => d && d.name && d.item !== false).map(d => d.name);
 export function setItemNames(fn) { itemNamesFn = fn; }
 function ctx_itemNames() { return itemNamesFn(); }
@@ -268,6 +312,8 @@ const RULES = {
   doTileDrops: true, doMobLoot: true, doEntityDrops: true, randomTickSpeed: 3, spawnRadius: 10, playersSleepingPercentage: 100,
   showDeathMessages: true, announceAdvancements: true, doInsomnia: true, doPatrolSpawning: true, doTraderSpawning: true, maxEntityCramming: 24,
 };
+// for commands other parts register (enchanting.js /enchant): the same errors and arguments
+export { fail, int, self };
 export function gameRule(game, name) { const r = game && game.rules; return r && r[name] !== undefined ? r[name] : RULES[name]; }
 register('gamerule', {
   usage: '<rule> [value]',
