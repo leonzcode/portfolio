@@ -224,6 +224,15 @@ export function makeDuo(g) {
     g.ding();
     return true;
   }
+  // a controller takes the first free seat, unless it has one already
+  function seat(i) {
+    if (!open || pads.indexOf(i) >= 0 || !g.pads.has(i)) return false;
+    const free = pads.indexOf(null);
+    if (free < 0) return false;
+    pads[free] = i;
+    draw();
+    return true;
+  }
   // a controller went: its seat is free again
   function lost(i) {
     const n = pads.indexOf(i);
@@ -231,7 +240,7 @@ export function makeDuo(g) {
   }
 
   return {
-    show, pad, lost,
+    show, pad, lost, seat,
     redraw() { if (open) draw(); },
     get open() { return open; },
     get plan() { return plan; },

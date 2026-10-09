@@ -5,7 +5,7 @@
    pad is moving the keyboard focus: the D-pad or the left stick goes to the
    nearest thing in that direction, Cross presses it, Circle goes back. Which
    screen that is, and what "back" means on it, the game says through
-   `g.layer()`: { root, back, first }. Whatever is not on the top screen is not
+   `g.layer()`: { root, back, first, okFirst }. Whatever is not on the top screen is not
    reachable, so a pad cannot press a button hidden under a dialog.
 
    A range input takes left and right itself, and anything marked data-padlr
@@ -56,26 +56,36 @@ export function makeNav(g) {
       cur.dispatchEvent(new KeyboardEvent('keydown', { key: dir === 'left' ? 'ArrowLeft' : 'ArrowRight', bubbles: true }));
       return true;
     }
-    /* The nearest thing that way, by the middles of the two boxes: how far
-       along the direction it is, and twice as much for how far off to the side,
-       so a grid moves along its rows and down its columns. */
+    /* The nearest thing that way. First anything straight in line with the
+       focus (its box overlapping the focus's across the direction), the
+       nearest row of those and in it the one most nearly opposite: that is
+       what a row of buttons or a column of arrows expects. Only when nothing
+       is in line does it look off to the side, by how far along the direction
+       a thing is plus twice how far off to the side, inside a cone. */
     const a = cur.getBoundingClientRect();
     const ax = a.left + a.width / 2, ay = a.top + a.height / 2;
+    const flat = dir === 'left' || dir === 'right';
+    const inLine = [];
     let best = null, bestScore = Infinity;
     for (const e of list) {
       if (e === cur) continue;
       const b = e.getBoundingClientRect();
       const bx = b.left + b.width / 2, by = b.top + b.height / 2;
-      let along, side;
-      if (dir === 'left') { along = ax - bx; side = Math.abs(by - ay); }
-      else if (dir === 'right') { along = bx - ax; side = Math.abs(by - ay); }
-      else if (dir === 'up') { along = ay - by; side = Math.abs(bx - ax); }
-      else { along = by - ay; side = Math.abs(bx - ax); }
-      // overlapping boxes in a row are beside each other, not above
+      const along = dir === 'left' ? ax - bx : dir === 'right' ? bx - ax : dir === 'up' ? ay - by : by - ay;
       if (along <= 4) continue;
-      if ((dir === 'up' || dir === 'down') && side > along * 3 + 60) continue;
+      const side = flat ? Math.abs(by - ay) : Math.abs(bx - ax);
+      const gap = flat ? Math.max(a.top, b.top) - Math.min(a.bottom, b.bottom)
+                       : Math.max(a.left, b.left) - Math.min(a.right, b.right);
+      if (gap < 0) { inLine.push({ e, along, side }); continue; }
+      if (side > along * (flat ? 1.5 : 3) + (flat ? 30 : 60)) continue;
       const score = along + side * 2;
       if (score < bestScore) { bestScore = score; best = e; }
+    }
+    if (inLine.length) {
+      const near = Math.min(...inLine.map(c => c.along));
+      let pick = null;
+      for (const c of inLine) if (c.along <= near + 10 && (!pick || c.side < pick.side)) pick = c;
+      return put(pick.e);
     }
     if (best) return put(best);
     return false;
@@ -84,7 +94,14 @@ export function makeNav(g) {
     const L = g.layer();
     if (!L) return false;
     const cur = document.activeElement;
-    if (!cur || !L.root.contains(cur) || !usable(cur)) return move('down');
+    if (!cur || !L.root.contains(cur) || !usable(cur)) {
+      /* Nothing picked yet. Where the screen has one obvious next step (Race
+         again, on the results) Cross takes it; anywhere else it only shows
+         where the focus is, so a stray press never starts anything. */
+      const f = L.okFirst && L.first && L.first();
+      if (f && L.root.contains(f) && usable(f)) { put(f); f.click(); return true; }
+      return move('down');
+    }
     // a text box has nothing a pad can type, and a slider is moved, not pressed
     if (cur.tagName === 'INPUT' && cur.type !== 'button' && cur.type !== 'submit' && cur.type !== 'checkbox') return false;
     if (cur.tagName === 'TEXTAREA' || cur.tagName === 'SELECT') return false;

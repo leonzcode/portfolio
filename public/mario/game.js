@@ -235,6 +235,7 @@ const codes = Object.create(null);
 let resultsAt = 0;                    // when the results came up, so a held Cross does not press them
 const duoBrains = new Map();          // a finished player's kart, driven home by the computer
 let keysHtml = null;                  // the title screen's key line, as written, for when the keys are back
+let padPressing = null;               // the controller whose Cross is pressing a button right now
 /* What a controller's rumble does for each thing: [heavy motor, light motor,
    milliseconds]. Light for a nudge, heavy for being hit, the light motor for
    a boost, both for the line. */
@@ -4309,7 +4310,7 @@ function padStep(now) {
       if (!nav) continue;
       if (s.dirGo) nav.move(s.dirGo);
       // a Cross still held from driving over the line does not press the results
-      if (s.went[PB.CROSS] && !(L.settle && now - L.settle < 900)) nav.ok();
+      if (s.went[PB.CROSS] && !(L.settle && now - L.settle < 900)) { padPressing = i; try { nav.ok(); } finally { padPressing = null; } }
       if (s.went[PB.CIRCLE]) nav.back();
       if (s.went[PB.OPTIONS]) {
         if (started || paused) menu(!paused);
@@ -4350,7 +4351,7 @@ function navLayer() {
     return { root: el('mapsel'), back: () => mapScreen(false), first: () => el('mapmode').querySelector('button') };
   }
   if (el('results').classList.contains('on')) {
-    return { root: el('results'), back: null, settle: resultsAt, first: () => (el('resbtns').hidden ? null : el('again')) };
+    return { root: el('results'), back: null, settle: resultsAt, okFirst: true, first: () => (el('resbtns').hidden ? null : el('again')) };
   }
   if (!started && !el('title').classList.contains('gone')) return { root: el('title'), back: null, first: () => el('solo') };
   return null;
@@ -4550,7 +4551,9 @@ duoUI = makeDuo({
   ding: () => { try { snd.start(); snd.beep(false); } catch (e) {} },
   start: startDuo,
 });
-el('duobtn').addEventListener('click', () => duoUI.show(true));
+/* Opened with a controller, that controller is Player 1's: whoever is holding
+   it is the one who wanted to play. */
+el('duobtn').addEventListener('click', () => { duoUI.show(true); if (padPressing !== null) duoUI.seat(padPressing); });
 drawPrompts();
 
 window.__mk = {
