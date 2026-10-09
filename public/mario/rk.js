@@ -243,7 +243,8 @@ export function makeRanked(g) {
   /* ---- invites: over whatever is on the screen, in a battle too ---- */
   function drawInvites() {
     const box = el('rkinv');
-    const list = [...invites.values()];
+    // not over a split screen race: that is two people on one computer, and stays local
+    const list = g.local && g.local() ? [] : [...invites.values()];
     box.classList.toggle('on', list.length > 0);
     box.innerHTML = list.map(m =>
       '<div class="inv" data-id="' + m.id + '"><p><b>' + esc(m.from.name) + '</b> (score ' + pts(m.from.points) + ') challenges you'

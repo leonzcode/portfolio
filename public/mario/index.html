@@ -1178,6 +1178,156 @@
 
   /* the whole name, on a second line if it needs one, never cut short */
   #times .rows .r span:nth-child(2){ overflow-wrap:anywhere; line-height:1.15; }
+
+  /* ---- controller buttons, drawn in the game's own sticker style (pads.js) */
+  .pg{ display:inline-flex; width:1.35em; height:1.35em; vertical-align:-0.3em; }
+  .pg svg{ display:block; width:100%; height:100%; }
+  .pg.pill{
+    width:auto; height:auto; padding:0 .45em; border-radius:999px; background:var(--ink); color:var(--cream);
+    font-family:var(--display); font-weight:800; font-size:.74em; letter-spacing:.04em; line-height:1.55; vertical-align:.06em;
+  }
+  .pgor{ margin:0 2px; opacity:.6; }
+  #usehint i .pg{ width:1.15em; height:1.15em; vertical-align:-0.24em; }
+  #usehint i .pg.pill{ width:auto; height:auto; }
+  #keys .pg.pill{ font-size:.82em; }
+  #keys .padnote{ font-size:12px; opacity:.85; }
+  kbd{ font-family:var(--display); font-weight:800; font-size:.86em; background:var(--ink); color:var(--cream);
+       border-radius:5px; padding:0 5px; margin:0 1px; white-space:nowrap; }
+  /* a pad moving through a menu: a ring that shows on any background */
+  body.padnav :focus{ outline:4px solid #fff !important; outline-offset:3px !important; box-shadow:0 0 0 10px var(--ink) !important; }
+  #rumble small{ margin-left:auto; font-family:var(--body); font-weight:800; font-size:13px; opacity:.55; }
+  #padmsg{
+    margin:-4px 0 12px; padding:9px 12px; font-weight:800; font-size:14px; line-height:1.4;
+    background:#fff4d6; border:2px solid var(--ink); border-radius:12px;
+  }
+  #padmsg[hidden]{ display:none; }
+  #padkeys .pk{ background:#fff; border:2px solid var(--ink); border-radius:12px; padding:7px 10px; margin-bottom:6px;
+                font-weight:700; font-size:13px; line-height:1.9; }
+  #padkeys .sub{ margin:12px 0 6px; }
+  #padkeys .pk b{ font-family:var(--display); margin-right:4px; }
+
+  /* ---- the 2 Players screen */
+  .big.duob{ background:#ff9ad5; }
+  #duo{
+    position:fixed; inset:0; z-index:61; display:none; flex-direction:column;
+    align-items:center; justify-content:safe center; padding:18px 14px; overflow-y:auto;
+    background:
+      repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 26px, transparent 26px 52px),
+      radial-gradient(120% 90% at 50% 18%, #7fd0ff 0%, #4fb7ff 42%, #2b56d6 100%);
+  }
+  #duo.on{ display:flex; }
+  #duo .card{
+    background:var(--cream); color:var(--ink); border:var(--key); border-radius:18px;
+    box-shadow:0 8px 0 var(--ink); padding:18px 20px; width:min(920px,96vw);
+  }
+  #duo .dhead{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  #duo h2{ font-family:var(--display); font-weight:800; font-size:26px; margin:0; letter-spacing:.04em; }
+  #duo .dsub{ font-size:13px; font-weight:600; line-height:1.45; opacity:.72; margin:6px 0 12px; }
+  #duolay button{ font-size:12px; padding:5px 10px; }
+  #duolay button:focus-visible, #duocards button:focus-visible, #duomaps button:focus-visible{ outline:3px solid var(--blue); outline-offset:2px; }
+  #duocards{ display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); gap:10px; align-items:stretch; }
+  .dcard{
+    display:flex; flex-direction:column; gap:8px; min-width:0; background:#fff; border:3px solid var(--ink);
+    border-radius:14px; box-shadow:0 4px 0 var(--ink); padding:10px 12px;
+  }
+  .dcard header{ display:flex; align-items:center; gap:8px; }
+  .dtag{ font-family:var(--display); font-weight:800; font-size:15px; background:var(--gold);
+         border:2px solid var(--ink); border-radius:8px; padding:0 8px; }
+  .dcard.p2 .dtag{ background:#ff9ad5; }
+  .dname{
+    flex:1; min-width:0; font-family:var(--display); font-weight:700; font-size:17px; padding:5px 9px;
+    color:var(--ink); background:#fff; border:2px solid var(--ink); border-radius:9px; outline:none;
+  }
+  .dname:focus{ border-color:var(--blue); }
+  .dlook{ display:flex; gap:10px; align-items:center; }
+  .dface{
+    flex:0 0 78px; width:78px; height:78px; border-radius:12px; border:3px solid var(--ink); overflow:hidden;
+    display:grid; place-items:center; background:linear-gradient(#dff2ff,#bfe6ff); box-shadow:inset 0 -9px 0 var(--paint, #e8402a);
+  }
+  .dface img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .drows{ flex:1; display:flex; flex-direction:column; gap:4px; min-width:0; }
+  .drow{ display:flex; align-items:center; gap:5px; }
+  .drow em{ font-style:normal; flex:0 0 48px; font-weight:800; font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; opacity:.6; }
+  .drow b{
+    flex:1; min-width:0; text-align:center; font-family:var(--display); font-weight:700; font-size:13px;
+    background:var(--cream); border:2px solid var(--ink); border-radius:8px; padding:2px 4px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .drow button{
+    flex:0 0 30px; height:28px; padding:0; cursor:pointer; font-family:var(--display); font-weight:800; font-size:17px; line-height:1;
+    color:var(--ink); background:#fff; border:2px solid var(--ink); border-radius:8px; box-shadow:0 2px 0 var(--ink);
+  }
+  .drow button:active{ transform:translateY(2px); box-shadow:none; }
+  .dpaint{ display:flex; flex-wrap:wrap; gap:4px; }
+  .dpaint button{ width:22px; height:22px; padding:0; border-radius:7px; border:2px solid var(--ink); cursor:pointer; }
+  .dpaint button.def{ background:repeating-linear-gradient(45deg,#fff 0 4px,#d9dde6 4px 8px); }
+  .dpaint button.on{ outline:3px solid var(--gold); outline-offset:1px; }
+  .ddev{ border-top:2px dashed rgba(23,34,59,.28); padding-top:7px; font-size:12px; font-weight:700; line-height:1.85; }
+  .ddev p{ margin:0; }
+  .ddev .dpad b{ font-family:var(--display); }
+  .ddev .also{ opacity:.6; font-size:11px; line-height:1.7; }
+  .ddev .djoin{ margin-top:5px; padding:4px 9px; background:#dff2ff; border:2px solid var(--ink); border-radius:9px; }
+  .dleave{
+    margin-left:4px; font-family:var(--display); font-weight:800; font-size:11px; padding:1px 8px; cursor:pointer;
+    color:var(--ink); background:var(--cream); border:2px solid var(--ink); border-radius:999px;
+  }
+  .dswap{
+    align-self:center; display:flex; flex-direction:column; align-items:center; gap:0; cursor:pointer;
+    font-family:var(--display); font-weight:800; font-size:21px; line-height:1; padding:7px 7px 5px;
+    color:var(--ink); background:#fff; border:2px solid var(--ink); border-radius:12px; box-shadow:0 3px 0 var(--ink);
+  }
+  .dswap small{ font-size:10px; letter-spacing:.08em; text-transform:uppercase; opacity:.6; }
+  .dswap[hidden]{ display:none; }
+  #duomaps{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin:14px 0 12px; }
+  #duomaps button{
+    width:110px; padding:0 0 7px; cursor:pointer; font-family:var(--display); font-weight:700; font-size:12px;
+    color:var(--ink); background:#fff; border:var(--key); border-radius:13px; box-shadow:0 4px 0 var(--ink); overflow:hidden;
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+  }
+  #duomaps button i{ display:block; width:100%; height:38px; border-bottom:var(--key); }
+  #duomaps button.on{ background:var(--gold); transform:translateY(2px); box-shadow:0 2px 0 var(--ink); }
+  #duomode{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  #duomode button{
+    display:flex; flex-direction:column; align-items:center; gap:3px; padding:12px 10px; cursor:pointer;
+    border:var(--key); border-radius:16px; background:var(--gold); color:var(--ink);
+    font-family:var(--display); font-weight:800; font-size:20px; box-shadow:0 5px 0 var(--ink);
+  }
+  #duomode button[data-m="vs"]{ background:#ff9ad5; }
+  #duomode button small{ font-family:var(--body); font-weight:700; font-size:11px; opacity:.65; }
+  #duomode button:active{ transform:translateY(3px); box-shadow:0 2px 0 var(--ink); }
+  #duomode button:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
+  #duo .go{ display:flex; justify-content:center; margin-top:16px; }
+  @media (max-width: 760px){
+    #duocards{ grid-template-columns:1fr; }
+    .dswap{ flex-direction:row; gap:6px; justify-self:center; }
+    #duomaps button{ width:calc(50% - 8px); }
+  }
+
+  /* ---- split screen: each half's HUD, names and glass kept to its own half,
+     the corner furniture zoomed to the size of the half (--hz, from game.js) */
+  body.duo #hud, body.duo #tags, body.duo #wet, body.duo #drops, body.duo #oil{ overflow:hidden; }
+  body.duo.tb #hud:not(.p2), body.duo.tb #tags:not(.p2), body.duo.tb #wet:not(.p2),
+  body.duo.tb #drops:not(.p2), body.duo.tb #oil:not(.p2){ bottom:50%; }
+  body.duo.tb #hud.p2, body.duo.tb #tags.p2, body.duo.tb #wet.p2, body.duo.tb #drops.p2, body.duo.tb #oil.p2{ top:50%; }
+  body.duo.lr #hud:not(.p2), body.duo.lr #tags:not(.p2), body.duo.lr #wet:not(.p2),
+  body.duo.lr #drops:not(.p2), body.duo.lr #oil:not(.p2){ right:50%; }
+  body.duo.lr #hud.p2, body.duo.lr #tags.p2, body.duo.lr #wet.p2, body.duo.lr #drops.p2, body.duo.lr #oil.p2{ left:50%; }
+  body.duo #speedlines, body.duo #wrong{ position:absolute; }
+  body.duo #slot, body.duo #slotq, body.duo #usehint, body.duo #lap, body.duo #place,
+  body.duo #mini, body.duo #speed, body.duo #clock{ zoom:var(--hz, .7); }
+  body.duo #notice{ top:20%; font-size:clamp(18px, 2.6vw, 34px); }
+  body.duo #wrong{ top:32%; font-size:clamp(22px, 3.6vw, 44px); }
+  body.duo #board, body.duo #chat, body.duo #spec, body.duo #watch, body.duo #lobby, body.duo #vote{ display:none !important; }
+  body.duo #count{ height:100vh; }
+  #duoline{ position:fixed; z-index:25; background:var(--ink); pointer-events:none; display:none; }
+  body.duo #duoline{ display:block; }
+  body.duo.tb #duoline{ left:0; right:0; top:calc(50% - 3px); height:6px; }
+  body.duo.lr #duoline{ top:0; bottom:0; left:calc(50% - 3px); width:6px; }
+  /* Player 2 in pink wherever Player 1 is in gold */
+  #tags .tag.me2{ color:#ff9ad5; }
+  .rows .r.me2{ background:#ffc6ea; }
+  .rows .r .pn{ font-family:var(--display); font-size:11px; background:var(--ink); color:var(--cream);
+                border-radius:5px; padding:0 5px; margin-left:4px; vertical-align:1px; }
 </style>
 
 <div id="title">
@@ -1215,6 +1365,7 @@
     <button class="big alt" id="solo">Singleplayer<small>you and seven others</small></button>
     <button class="big" id="online">Multiplayer<small id="onlinecount">one lobby, everybody in it</small></button>
     <button class="big rkb" id="ranked">Ranked<small id="rkcount">1v1 time trials</small></button>
+    <button class="big duob" id="duobtn">2 Players<small>split screen, one computer</small></button>
   </div>
   <nav id="hubnav" aria-label="More">
     <button type="button" id="hubinv"><i data-icon="backpack"></i>Inventory</button>
@@ -1224,7 +1375,8 @@
   </nav>
   <div id="keys">
     <b>&#8593;</b> <b>W</b> go &middot; <b>&#8595;</b> <b>S</b> brake &middot; <b>&#8592;&#8594;</b> <b>A D</b> steer<br>
-    <b>Space</b> hop and drift &middot; <b>E</b> use item &middot; <b>Q</b> view &middot; <b>M</b> sound &middot; <b>T</b> chat &middot; <b>Esc</b> menu
+    <b>Space</b> hop and drift &middot; <b>E</b> use item &middot; <b>Q</b> view &middot; <b>M</b> sound &middot; <b>T</b> chat &middot; <b>Esc</b> menu<br>
+    <span class="padnote">A PS5, PS4 or Xbox controller works too: press any button on it.</span>
   </div>
   <div id="load">building the circuit&hellip;</div>
 </div>
@@ -1242,6 +1394,20 @@
     <div class="go">
       <button class="big alt" id="mapback">Back</button>
     </div>
+  </div>
+</div>
+
+<div id="duo" role="dialog" aria-modal="true" aria-labelledby="duoh">
+  <div class="card">
+    <div class="dhead"><h2 id="duoh">2 Players</h2><div class="seg" id="duolay" role="group" aria-label="How the screen is split"></div></div>
+    <p class="dsub">Split screen on this computer. Player 1 drives with W A S D and Player 2 with the arrow keys, and a controller can take either seat. Nothing here goes online.</p>
+    <div id="duocards"></div>
+    <div id="duomaps" role="group" aria-label="Track"></div>
+    <div id="duomode" role="group" aria-label="Start">
+      <button type="button" data-m="race">Race<small>you two and six others, items</small></button>
+      <button type="button" data-m="vs">Versus<small>just you two, items on</small></button>
+    </div>
+    <div class="go"><button class="big alt" id="duoback">Back</button></div>
   </div>
 </div>
 
@@ -1332,11 +1498,13 @@
 <div id="menu">
   <div class="panel">
     <h2>Paused</h2>
+    <p id="padmsg" role="status" hidden></p>
     <div id="menumain">
       <button class="mrow go" id="resume">Resume race</button>
       <button class="mrow" id="restart">Restart race<i>&#8635;</i></button>
       <div class="mrow vol"><span>Volume</span><input type="range" id="vol" min="0" max="100" step="1" aria-label="Volume"><b id="voln">50</b></div>
       <button class="mrow" id="tocontrols">Controls<i>&rsaquo;</i></button>
+      <button class="mrow" id="rumble" aria-pressed="true">Controller rumble<small id="rumblenow">On</small></button>
       <button class="mrow" id="toperf">Performance<small id="perfnow">Full</small><i>&rsaquo;</i></button>
       <button class="mrow" id="tostart">Home<i>&rsaquo;</i></button>
       <a class="mrow" id="tohome" href="/">Back to leonzhao.dev<i>&rsaquo;</i></a>
@@ -1351,6 +1519,7 @@
     <div id="menukeys" hidden>
       <p class="sub">Click a key, then press the one you want</p>
       <div class="rows" id="bindrows"></div>
+      <div id="padkeys"></div>
       <div class="mfoot">
         <button class="mrow sm" id="bindreset">Reset to default</button>
         <button class="mrow sm go" id="bindback">Done</button>
@@ -1402,5 +1571,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=105');
+await import('./game.js?v=106');
 </script>

@@ -8,9 +8,9 @@
    seconds after the last one so it is not holding a GPU context for nothing.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { makeKart, artLoaded, racerOf } from './kart.js?v=105';
-import { driverFor } from './drivers.js?v=105';
-import { merge } from './parts.js?v=105';
+import { makeKart, artLoaded, racerOf } from './kart.js?v=106';
+import { driverFor } from './drivers.js?v=106';
+import { merge } from './parts.js?v=106';
 
 const SIZE = 192;
 const cache = new Map();           // key -> data URL (or null when it could not be drawn)
