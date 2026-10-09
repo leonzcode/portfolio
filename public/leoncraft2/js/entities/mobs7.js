@@ -9,7 +9,7 @@
    manager scales a hit on the player for Easy and Hard). Shapes are boxes
    in the game's model units; every texture is painted here.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=38';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=38';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, MeleeAttackGoal, BowAttackGoal, AvoidGoal,
   HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, LeapGoal, randomLandPos } from './ai.js?v=38';
 import { Monster, Skeleton, register, TYPES, spawnArmor } from './mobs.js?v=38';
@@ -58,7 +58,7 @@ export class Bogged extends Skeleton {
     if (held === 'shears' && !this.sheared) { this.sheared = true; this.m.dropAt(this, 'red_mushroom', 1); this.m.dropAt(this, 'brown_mushroom', 1); return 'damage'; }
     return false;
   }
-  loot(drop, byPlayer) { drop('bone', RI(3)); drop('arrow', RI(3)); if (byPlayer && R() < 0.5) drop('tipped_arrow', 1); }
+  loot(drop, byPlayer, L) { drop('bone', RI(3) + looted(L)); drop('arrow', RI(3) + looted(L)); if (byPlayer) drop('tipped_arrow', Math.min(1, RI(2) + looted(L))); }
   layers(out) { if (!this.sheared) out.push(['bogged_shrooms', 'bogged', null]); }
   toJSON() { const o = super.toJSON(); if (this.sheared) o.sh = 1; return o; }
   fromJSON(o) { super.fromJSON(o); this.sheared = !!o.sh; }
@@ -71,7 +71,7 @@ export class Parched extends Skeleton {
     const a = this.m.list[this.m.list.length - 1];
     if (a && a.type === 'arrow' && a.owner === this) { a.effect = 'weakness'; a.effectT = 600; a.pickup = 0; }
   }
-  loot(drop) { drop('bone', RI(3)); drop('arrow', RI(3)); }
+  loot(drop, byPlayer, L) { drop('bone', RI(3) + looted(L)); drop('arrow', RI(3) + looted(L)); }
 }
 register('parched', Parched);
 // the bogged's mushrooms: two little crosses on its head
@@ -267,6 +267,8 @@ register('pillager', Pillager);
 export class Vindicator extends Illager {
   static TEX = 'vindicator'; static ATTACK = 13; static XP = 5;
   constructor(m, type) { super(m, type); this.equip.mainhand = 'iron_axe'; }
+  // an emerald half the time, killed by a player (Looting adds)
+  loot(drop, byPlayer, L) { if (byPlayer) drop('emerald', RI(2) + looted(L)); }
   registerGoals() {
     this.goals.add(0, new FloatGoal(this));
     this.goals.add(4, new MeleeAttackGoal(this, 1, false));
@@ -332,7 +334,7 @@ export class Evoker extends Illager {
     this.targets.add(2, new NearestPlayerTargetGoal(this, true));
   }
   aiStep() { if (this.vexCool > 0) this.vexCool--; if (this.fangCool > 0) this.fangCool--; super.aiStep(); }
-  loot(drop) { drop('totem_of_undying', 1); if (RI(2) === 0) drop('emerald', 1); }
+  loot(drop, byPlayer, L) { drop('totem_of_undying', 1); if (byPlayer) drop('emerald', RI(2) + looted(L)); }
 }
 register('evoker', Evoker);
 export class EvokerFangs extends Living {
@@ -677,7 +679,7 @@ export class Breeze extends Monster {
     return super.hurt(amount, source);
   }
   aiStep() { if (this.jumpT > 0) this.jumpT--; if (this.shootT > 0) this.shootT--; super.aiStep(); if (this.age % 3 === 0) this.m.particles('poof', this.pos.x, this.pos.y + 0.2, this.pos.z, 1, 0.3, [0.85, 0.9, 1]); }
-  loot(drop, byPlayer) { if (byPlayer) drop('breeze_rod', 1 + RI(2)); }
+  loot(drop, byPlayer, L) { if (byPlayer) drop('breeze_rod', 1 + RI(2) + looted(L)); }
   anim(A) { A.jump = this.jumpT > 0; A.shoot = this.shootT / 10; }
 }
 register('breeze', Breeze);
@@ -863,7 +865,7 @@ export class Shulker extends Mob {
     this.peek += Math.max(-0.05, Math.min(0.05, this.peekWant - this.peek));
     this.armor = this.peek < 0.1 ? 20 : 0;
   }
-  loot(drop) { if (R() < 0.5) drop('shulker_shell', 1); }
+  loot(drop, byPlayer, L) { if (R() < 0.5 + 0.0625 * L) drop('shulker_shell', 1); }
   anim(A, a) { A.peek = this.oPeek + (this.peek - this.oPeek) * a; }
 }
 register('shulker', Shulker);
