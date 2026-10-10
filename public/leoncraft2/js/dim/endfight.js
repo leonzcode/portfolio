@@ -138,7 +138,7 @@ export class EndFight {
     if (c.pillar >= 0) this.s.crystals[c.pillar] = false;
     if (this.dragon && this.dragon.crystal === c) { this.dragon.crystal = null; this.dragon.hurt(10, 'head', 'explosion'); }
     if (c.respawner && this.s.respawn) this.cancelRespawn();
-    this.R.explode(c.pos.x, c.pos.y + 1, c.pos.z, 6, { fire: false, source: 'end_crystal' });
+    this.R.explode(c.pos.x, c.pos.y + 1, c.pos.z, 6, { fire: false, source: 'end_crystal', by: source });
   }
 
   /* ---- the dragon ---- */

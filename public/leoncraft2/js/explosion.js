@@ -218,6 +218,6 @@ export function explode(world, x, y, z, power, o) {
       if (below && BLOCKS[below].solid && BLOCKS[below].shape === 'cube' && BLOCKS[below].pass === 'opaque') sim.set(bx, by, bz, B.fire, 0);
     }
   }
-  if (sim && sim.onExplosion) sim.onExplosion(x, y, z, power, cells.length);
+  if (sim && sim.onExplosion) sim.onExplosion(x, y, z, power, cells.length, o);
   return { blocks: cells.length, cells, entities: pushed };
 }
