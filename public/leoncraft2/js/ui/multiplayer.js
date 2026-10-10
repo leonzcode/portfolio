@@ -306,13 +306,15 @@ export function rejoin(gui, id) {
 const DIFFS = ['peaceful', 'easy', 'normal', 'hard'];
 const DIFF_NAMES = { peaceful: 'Peaceful', easy: 'Easy', normal: 'Normal', hard: 'Hard' };
 const MAXES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20];
+// how many /sethome homes each player may have (EssentialsX's sethome-multiple, 3 by default; operators and admins have no limit)
+const HOMES = [1, 2, 3, 4, 5, 10, 20, 50];
 export class ServerSettingsScreen extends Screen {
   constructor(s) {
     super('Server Settings');
     this.s = s;
     const st = s.settings || {};
     this.v = { kind: s.kind, mode: s.mode || 'survival', cheats: !!s.cheats, prot: (s.spawnProt | 0) ? 16 : 0, difficulty: st.difficulty || 'normal',
-      pvp: st.pvp !== false, max: s.max || 20, wl: !!st.wl, ownerOp: st.ownerOp !== false };
+      pvp: st.pvp !== false, max: s.max || 20, wl: !!st.wl, ownerOp: st.ownerOp !== false, homes: HOMES.includes(st.homes) ? st.homes : 3 };
     this.nameField = new TextField(0, 0, 180, 20, { value: s.name, maxLength: 32, onEnter: () => this.done() });
     this.motdField = new TextField(0, 0, 180, 20, { value: s.motd || '', maxLength: 60, hint: 'A line under the name' });
     this.pwField = new TextField(0, 0, 180, 20, { value: '', maxLength: 32, hint: 'Leave blank to keep it' });
@@ -326,13 +328,14 @@ export class ServerSettingsScreen extends Screen {
     const top = y;
     this.labels = [];
     for (const [label, f] of [['Server Name', this.nameField], ['Message of the Day', this.motdField], ['Password', this.pwField], ['Whitelisted Players', this.wlField]]) {
-      this.labels.push([label, lx, y]); f.x = lx; f.y = y + 10; f.w = cw; this.add(f); y += 34;
+      this.labels.push([label, lx, y]); f.x = lx; f.y = y + 10; f.w = cw; this.add(f); y += 32;
     }
     this.pwField.active = v.kind === 'private';
     let x = lx;
     const cyc = (label, key, values, format, tip) => { const b = this.add(new CycleButton(x, y, cw, 20, label, { values, value: v[key], format, onChange: q => { v[key] = q; if (key === 'kind') this.pwField.active = q === 'private'; }, tooltip: tip })); y += 22; return b; };
     const op = cyc('Your OP', 'ownerOp', [true, false], onOff, () => 'Whether you have an operator\'s commands here (you keep the owner\'s either way)');
     op.active = !!this.s.mine;
+    cyc('Homes Per Player', 'homes', HOMES, x => String(x), () => 'How many homes each player can set with /sethome (operators have no limit)');
     this.add(new Button(lx, y, cw, 20, 'Delete Server', () => this.remove())).active = this.s.id !== 'main';
     const leftEnd = y + 22;
     y = top; x = rx;
@@ -358,7 +361,7 @@ export class ServerSettingsScreen extends Screen {
     if (v.kind === 'private' && this.s.kind !== 'private' && !this.pwField.value) { this.error = 'A private server needs a password.'; this.gui.markDirty(); return; }
     this.busy = true; this.error = 'Saving...'; this.gui.markDirty();
     const o = { id: this.s.id, name, motd: this.motdField.value.trim(), kind: v.kind, mode: v.mode, cheats: v.cheats, spawnProt: v.prot, difficulty: v.difficulty,
-      pvp: v.pvp, max: v.max, wl: v.wl, wlNames: this.wlField.value.split(/[\s,]+/).filter(Boolean) };
+      pvp: v.pvp, max: v.max, wl: v.wl, wlNames: this.wlField.value.split(/[\s,]+/).filter(Boolean), homes: v.homes };
     if (this.s.mine) o.ownerOp = v.ownerOp;
     if (this.pwField.value) o.password = this.pwField.value;
     let r;

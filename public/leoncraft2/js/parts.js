@@ -11,7 +11,7 @@
 --------------------------------------------------------------------------- */
 export { enchantDebug } from './enchanting.js?v=39';
 export { Survival } from './survival.js?v=39';
-export { survivalHooks, respawnPlayer } from './life.js?v=39';
+export { survivalHooks, respawnPlayer, respawnSpot } from './life.js?v=39';
 export { Drops, dropItem, giveXp } from './drops.js?v=39';
 export { Containers } from './containers.js?v=39';
 export { Hands } from './hands.js?v=39';

@@ -70,7 +70,7 @@ import { glints } from '../render/armor.js?v=39';
 import { containerKind } from '../containers.js?v=39';
 import { getSkinSettings } from '../render/avatar.js?v=39';
 import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=39';
-import { register, commandDef, execute, gameRule } from '../commands.js?v=39';
+import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=39';
 import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=39';
 import { Projectile } from '../entities/projectiles.js?v=39';
 import { Vehicles } from './vehicles.js?v=39';
@@ -344,6 +344,35 @@ if (spawnDef) {
   }));
 }
 
+/* /tpa, /tpahere, /tpaccept, /tpdeny, /tpacancel, /sethome, /home, /homes and
+   /delhome on a server are the server's, as an EssentialsX server's are:
+   the line goes there, the server answers in Essentials' words and moves
+   whoever goes ('go', handled below), and keeps your homes for your account
+   on that server. Tab finishes the names it sent (your homes, who asked you)
+   and the players on. /home bed is your own respawn point, so it stays here. */
+const ESS_NET = ['tpa', 'tpahere', 'tpaccept', 'tpdeny', 'tpacancel', 'sethome', 'home', 'homes', 'delhome'];
+for (const name of ESS_NET) {
+  const def = commandDef(name);
+  if (!def) continue;
+  const extra = name === 'tpaccept' || name === 'tpdeny' ? (i => (i === 0 ? pendingNames().concat(['*']) : []))
+    : name === 'tpa' || name === 'tpahere' || name === 'tpacancel' ? (i => (i === 0 ? onlineNames().filter(n => !activeNet || n !== activeNet.name) : []))
+    : name === 'home' ? (i => (i === 0 ? homeList().concat(['bed']) : []))
+    : name === 'delhome' ? (i => (i === 0 ? homeList() : [])) : null;
+  register(name, Object.assign({}, def, {
+    always: true,
+    suggest: (i, w, ctx) => (ctx && ctx.game && ctx.game.net && extra ? extra(i, w) : def.suggest ? def.suggest(i, w, ctx) : []),
+    run(args, ctx) {
+      const net = ctx.game && ctx.game.net;
+      if (!net) return def.run(args, ctx);
+      if (name === 'home' && args.length && args[0].toLowerCase() === 'bed') return homeBed(ctx);
+      net.send({ t: 'cmd', line: [ctx.label || name].concat(args).join(' ') });
+    },
+  }));
+}
+// (what Tab offers: your homes on this server, and who has asked you something in the last 120 seconds)
+function homeList() { return activeNet && activeNet.homes ? activeNet.homes.slice() : []; }
+function pendingNames() { const n = activeNet, now = performance.now(); return n && n.tpq ? n.tpq.filter(q => q[1] > now).map(q => q[0]) : []; }
+
 /* a container's record, as containers.js saves one */
 function packContainer(c) {
   const o = { k: c.kind, p: [c.x, c.y, c.z], s: c.slots.map(stackToJSON) };
@@ -473,6 +502,8 @@ export class Net {
     this.mobs.init(m); this.orbs.init(m); this.events.init(m);
     // your own record on this server (MpSave.readState), or null the first time you come
     this.pdata = m.pdata && typeof m.pdata === 'object' ? m.pdata : null;
+    // your homes here, for Tab (the server keeps them: /sethome, /home)
+    this.homes = m.homes && Array.isArray(m.homes.n) ? m.homes.n.map(String) : []; this.homeLimit = m.homes ? m.homes.lim | 0 : 0; this.tpq = [];
     for (const o of m.items || []) this.keepItem(o);
     this.serverNow = m.now;
     this.ping();
@@ -598,7 +629,11 @@ export class Net {
       // a rank tag changed (the server was given to another owner)
       case 'tag': if (m.id === this.id) this.tag = m.tag || ''; else if (this.players) this.players.setTag(m.id, m.tag || ''); else { const p = this.initPlayers && this.initPlayers.find(q => q.id === m.id); if (p) p.tag = m.tag || ''; } if (this.ctx) this.ctx.gui.markDirty(); return;
       case 'prot': this.prot = m.r | 0; return;
-      case 'out': if (this.ctx) for (const l of m.lines || []) if (Array.isArray(l)) this.ctx.chat.add(String(l[0]), l[1] === undefined ? 0xFFFFFF : l[1]); return;
+      // (a line may carry parts to click, [text, colour, { click: [{ text, run, tip }] }]: a teleport request's /tpaccept)
+      case 'out': if (this.ctx) for (const l of m.lines || []) if (Array.isArray(l)) this.ctx.chat.add(String(l[0]), l[1] === undefined ? 0xFFFFFF : l[1], l[2] && typeof l[2] === 'object' ? l[2] : undefined); return;
+      // your homes on this server and how many you may have (-1: no limit), and who has asked you to teleport, with how long each has left
+      case 'homes': this.homes = Array.isArray(m.n) ? m.n.map(String) : []; this.homeLimit = m.lim | 0; return;
+      case 'tpq': { const now = performance.now(); this.tpq = Array.isArray(m.q) ? m.q.filter(Array.isArray).map(q => [String(q[0]), now + (+q[1] || 0)]) : []; return; }
       case 'join': if (this.players) { this.players.add(m.p); } else this.initPlayers.push(m.p); return;
       case 'v=': case 'v+': case 'vs': case 'vc': case 'vr': case 'vj': case 'v-': this.veh.receive(m); return;
       case 'leave': this.veh.left(m.id); this.events.left(m.id); this.bases.delete(m.id); if (this.players) this.players.remove(m.id); else this.initPlayers = this.initPlayers.filter(p => p.id !== m.id); return;
@@ -1222,6 +1257,14 @@ export class Net {
       case 'rules': this.applyRules(m.rules || {}); return;
       case 'diff': this.server.difficulty = m.d; if (this.ctx.setDifficulty) this.ctx.setDifficulty(m.d); return;
       case 'as': this.ranAs(m); return;
+      // the server sends you somewhere (/home, an accepted /tpa): a place in a dimension, or the world spawn
+      case 'go': {
+        const c = this.ctx.commandCtx && this.ctx.commandCtx();
+        if (!c) return;
+        if (m.spawn) { if (c.goSpawn) c.goSpawn(); return; }
+        if (c.goTo && DIM_IDS[m.d | 0]) c.goTo(DIM_IDS[m.d | 0], +m.x, +m.y, +m.z, +m.yaw, +m.pitch);
+        return;
+      }
       case 'it+': for (const o of m.e || []) { const rec = this.keepItem(o); if (rec && rec.d === dimCode(g.dim)) this.showItem(rec); } return;
       case 'it=': this.numbered(m.e || []); return;
       case 'it-': case 'itno': this.itemGone(m.id, m.by); return;
