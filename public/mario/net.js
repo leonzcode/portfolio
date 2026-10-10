@@ -11,7 +11,7 @@
    easing towards the last thing its owner said rather than snapping to it.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { record, pose, clear } from './smooth.js?v=105';
+import { record, pose, clear } from './smooth.js?v=106';
 const drawn = { x: 0, y: 0, z: 0, yaw: 0 };
 
 const WS = (location.hostname.endsWith('leonzhao.dev'))

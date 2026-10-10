@@ -11,15 +11,15 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { driverFor, whenDrivers, loadDrivers, tintDriver, tintMaterial, headBox } from './drivers.js?v=105';
-import { paintMaterial, makeAura, DRIVER_STYLE, normaliseStyle } from './cosmetics.js?v=105';
+import { driverFor, whenDrivers, loadDrivers, tintDriver, tintMaterial, headBox } from './drivers.js?v=106';
+import { paintMaterial, makeAura, DRIVER_STYLE, normaliseStyle } from './cosmetics.js?v=106';
 /* The geometry of the cosmetics - themed bodies, hats, gliders, decorations -
    is fetched with everything else but is not needed to draw a car, so a kart
    built before it arrives simply goes without until it is next built. */
 let ART = null;
 const artWaiting = [];
 // two batches: the first set of cosmetics, and the prizes
-Promise.all([import('./cosmetics-art.js?v=105'), import('./cosmetics-art2.js?v=105').catch(() => ({}))]).then(([a, b]) => {
+Promise.all([import('./cosmetics-art.js?v=106'), import('./cosmetics-art2.js?v=106').catch(() => ({}))]).then(([a, b]) => {
   const both = k => Object.assign({}, a[k] || {}, b[k] || {});
   ART = { HATS: both('HATS'), DECOR: both('DECOR'), GLIDERS: both('GLIDERS'), THEMED_BODIES: both('THEMED_BODIES'), sunglasses: a.sunglasses };
   for (const f of artWaiting.splice(0)) { try { f(); } catch (e) {} }
@@ -27,7 +27,7 @@ Promise.all([import('./cosmetics-art.js?v=105'), import('./cosmetics-art2.js?v=1
 export function whenArt(f) { if (ART) f(); else artWaiting.push(f); }
 export const artLoaded = () => new Promise(res => whenArt(() => res(ART)));
 export const artReady = () => !!ART;
-import { loadKit } from './models.js?v=105';
+import { loadKit } from './models.js?v=106';
 // the drivers and the kit's bodies are fetched once, as soon as anything builds a kart
 loadDrivers('models/chars/');
 loadKit('models/kit/', ['race', 'race-future', 'kart-oobi', 'wheel-racing']);
@@ -128,7 +128,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=105';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=106';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -687,8 +687,11 @@ export function stepKart(k, input, track, dt) {
     k.speed *= Math.exp(-3.4 * dt);
     k.drift = 0; k.driftT = 0; k.slide *= 0.9;
   } else {
-    const gas = input.gas ? 1 : 0;
-    const brake = input.brake ? 1 : 0;
+    /* How far down each pedal is. A key is all or nothing; a controller's
+       trigger is anywhere between, so half a trigger is half the push and a
+       lower speed it will hold, and a full one is exactly the key. */
+    const gas = input.gas ? Math.min(1, +input.gas || 1) : 0;
+    const brake = input.brake ? Math.min(1, +input.brake || 1) : 0;
     // Nothing under the wheels means nothing to push against and nothing to slow
     // you: off a ramp you keep exactly what you took off with, which is what
     // makes the jump worth taking.
@@ -698,8 +701,9 @@ export function stepKart(k, input, track, dt) {
               * (k.offroad && k.star <= 0 ? TUNE.offAccel : 1)
               * (k.stall > 0 ? 0.3 : 1);
     if (flying) { /* airborne: the throttle and the brake are not connected to anything */ }
-    else if (gas) k.speed += acc * dt * (k.speed < 0 ? 2.2 : 1);
-    else if (brake) k.speed -= TUNE.brake * dt;
+    else if (gas >= 1 || (gas && k.speed < top * (0.3 + 0.7 * gas))) k.speed += acc * dt * gas * (k.speed < 0 ? 2.2 : 1);
+    else if (gas) k.speed -= Math.min(Math.abs(k.speed - top * (0.3 + 0.7 * gas)), TUNE.drag * dt);
+    else if (brake) k.speed -= TUNE.brake * dt * brake;
     else k.speed -= Math.sign(k.speed) * Math.min(Math.abs(k.speed), TUNE.drag * dt);
     if (!gas && brake && !flying) k.speed = Math.max(k.speed, -TUNE.reverse);
     if (k.speed > top) k.speed -= (k.speed - top) * Math.min(1, dt * 4.5);
