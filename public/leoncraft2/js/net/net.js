@@ -1115,7 +1115,7 @@ export class Net {
     const fx = sv && sv.effects;
     const f = (P.sneaking ? F.SNEAK : 0) | (P.sprinting ? F.SPRINT : 0) | (P.flying ? F.FLY : 0) | (P.pose === 'swim' ? F.SWIM : 0) |
       (P.onGround ? F.GROUND : 0) | (g.sim && g.sim.sleeping ? F.SLEEP | (g.sim.sleeping.t >= 100 ? F.SLEPT : 0) : 0) | (dead ? F.DEAD : 0) | (P.gliding ? F.GLIDE : 0) | (P.riding ? F.RIDE : 0) |
-      (g.mode === 'spectator' ? F.SPEC : 0) | (fx && fx.invisibility ? F.INVIS : 0) | (g.entities && g.entities.pFire > 0 && !dead ? F.FIRE : 0);
+      (g.mode === 'spectator' ? F.SPEC : 0) | (fx && fx.invisibility ? F.INVIS : 0) | (g.entities && g.entities.pFire > 0 && !dead ? F.FIRE : 0) | (P.spinning && !dead ? F.SPIN : 0);
     const d = dimCode(g.dim);
     // (a millimetre and a twentieth of a degree: finer than any screen shows, in fewer characters)
     const r3 = v => Math.round(v * 1000) / 1000;
