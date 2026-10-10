@@ -22,7 +22,7 @@
 --------------------------------------------------------------------------- */
 import { Avatar } from '../render/avatar.js?v=39';
 import { pieceLook, armorSheet } from '../render/armor.js?v=39';
-import { setLight as setLightOf } from '../render/held.js?v=39';
+import { setLight as setLightOf, loadedLook } from '../render/held.js?v=39';
 import { DRAW, I, stackFromJSON } from '../items.js?v=39';
 import { B, BLOCKS } from '../blocks.js?v=39';
 const THREE = window.THREE;
@@ -154,8 +154,10 @@ export class RemotePlayers {
   equip(r) {
     const av = r.av, eq = r.eq || {}, R = this.R;
     const h = idOf(eq.h), o = idOf(eq.o);
-    if (r.heldId !== h) { r.heldId = h; av.setHeld(0, DRAW[h] || null); }
-    if (r.offId !== o) { r.offId = o; av.setHeld(1, DRAW[o] || null); }
+    // (a loaded crossbow in its loaded picture, as held.js shows yours)
+    const hk = h + (eq.hc || ''), ok = o + (eq.oc || '');
+    if (r.heldKey !== hk) { r.heldKey = hk; r.heldId = h; av.setHeld(0, loadedLook(DRAW[h], eq.hc) || null); }
+    if (r.offKey !== ok) { r.offKey = ok; r.offId = o; av.setHeld(1, loadedLook(DRAW[o], eq.oc) || null); }
     av.glintHeld(0, !!eq.hg); av.glintHeld(1, !!eq.og);
     const armor = [0, 1, 2, 3].map(i => (eq.a && eq.a[i] ? stackFromJSON(eq.a[i]) : null));
     av.setArmor(armor);

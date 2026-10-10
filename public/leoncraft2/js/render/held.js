@@ -161,6 +161,13 @@ export function applyDisplay(m, spec, t, e) {
 /* The mesh for something in a hand: the shield's model, or the block or
    picture (blockmesh.js). */
 let shieldLayers = null, tridentLayers = null;
+/* A crossbow's draw data in its loaded picture ("a" an arrow, "r" a firework
+   rocket), for another player's hand; anything else as it is */
+export function loadedLook(d, c) {
+  if (!d || !c || d.name !== 'crossbow') return d;
+  const L = textureLayer(c === 'r' ? 'crossbow_firework' : 'crossbow_arrow');
+  return L >= 0 ? Object.assign({}, d, { iconLayer: L, faces: [L, L, L, L, L, L] }) : d;
+}
 export function heldGeometry(d) {
   if (d.name === 'shield') {
     if (!shieldLayers) {
