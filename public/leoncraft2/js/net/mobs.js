@@ -273,10 +273,30 @@ export class Mobs {
       e.onGround = !!(s.f & F_GROUND);
       e.fire = s.f & F_FIRE ? Math.max(e.fire, 2) : 0;
     }
+    // a rocket carrying its owner's player stays with them (boosts() each frame); any rocket leaves its sparkle trail, as tick() does
+    if (rec.j && rec.j.t === 'firework_rocket') {
+      if (rec.j.bo) this.boostOne(rec, e);
+      if (e.age % 2 === 0 && e.m && e.m.particles) e.m.particles('sparkle', e.pos.x, e.pos.y - 0.2, e.pos.z, 1, 0.05);
+    }
     e.vel.subVectors(e.pos, e.prev);
     if (e.dead) e.deathTime = Math.min(19, (e.deathTime | 0) + 1);
     if (e.animTick) e.animTick();
     this.lead(rec, e);
+  }
+  /* Every frame: another machine's rocket boosting its player is put on
+     that player as drawn here (feet + 0.5, as the game keeps it), not drawn
+     220 ms behind on its own */
+  boosts() {
+    for (const rec of this.recs.values()) {
+      const e = rec.e;
+      if (e && e.puppet && rec.j && rec.j.bo) this.boostOne(rec, e);
+    }
+  }
+  boostOne(rec, e) {
+    const r = this.net.players && this.net.players.list.get(rec.o), f = r && r.feet;
+    if (!f) return false;
+    e.pos.set(f.x, f.y + 0.5, f.z); e.prev.copy(e.pos);
+    return true;
   }
   /* A puppet's lead, as the game draws one: from its neck to the hand of the
      player holding it (the one whose machine runs it), or to the knot on a

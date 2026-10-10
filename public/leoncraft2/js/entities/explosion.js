@@ -112,6 +112,6 @@ export function explode(m, cx, cy, cz, power, source, o = {}) {
   // the flash and the smoke
   m.particles(power >= 2 && breaks ? 'explosion_big' : 'explosion', cx, cy, cz, 1, 0);
   m.particles('explosion', cx, cy, cz, Math.round(power * 4), power * 0.6);
-  if (m.onExplode) m.onExplode(cx, cy, cz, power);
+  if (m.onExplode) m.onExplode(cx, cy, cz, power, source);
   return hit.size;
 }
