@@ -45,7 +45,7 @@ const shareableType = t => { const C = TYPES[t]; return !!C && !NOT.has(t) && (C
 // its record as a save keeps it (its own toJSON is taken away while it is shared: the server keeps it, not this browser)
 const jsonOf = e => Object.getPrototypeOf(e).toJSON.call(e);
 // what changes every tick and would send the record over and over: left out of the comparison
-const VOLATILE = new Set(['p', 'v', 'y', 'f', 'age', 'l', 'air']);
+const VOLATILE = new Set(['p', 'v', 'y', 'f', 'age', 'l', 'air', 'by', 'hy']);  // (by, hy: the body's and head's turns, which the positions carry)
 const sigOf = j => { let s = ''; for (const k in j) if (!VOLATILE.has(k)) s += k + ':' + JSON.stringify(j[k]) + ';'; return s; };
 // the flags in a position
 const F_GROUND = 1, F_HURT = 2, F_DEAD = 4, F_FIRE = 8, F_SWING = 16, F_RIDDEN = 32;
