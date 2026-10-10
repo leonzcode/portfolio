@@ -652,7 +652,8 @@ export class Orbs {
   take(D, player, collector) {
     if (this.out.length) { this.net.send({ t: 'o+', e: this.out.splice(0, 256) }); }
     const P = player && player.pos;
-    if (!P || !collector || !collector.alive || this.net.game.mode === 'spectator') return;
+    // (the connection gone this tick: the game is let go of before the frame ends)
+    if (!P || !collector || !collector.alive || !this.net.game || this.net.game.mode === 'spectator') return;
     const now = performance.now();
     if (this.wait > now) return;
     for (const o of D.orbs) {
