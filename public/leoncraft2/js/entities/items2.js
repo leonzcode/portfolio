@@ -137,7 +137,8 @@ export class FireworkRocket extends Entity {
     }
     this.remove();
   }
-  toJSON() { const o = super.toJSON(); o.lf = this.life; if (this.stack) o.st = { flight: this.stack.flight, explosions: this.stack.explosions }; return o; }
+  // bo: carrying the player of the machine that runs it (net/mobs.js keeps another machine's copy on that player)
+  toJSON() { const o = super.toJSON(); o.lf = this.life; if (this.stack) o.st = { flight: this.stack.flight, explosions: this.stack.explosions }; if (this.boosting) o.bo = 1; return o; }
   fromJSON(o) { super.fromJSON(o); this.life = o.lf || 30; this.stack = o.st || null; }
 }
 register('firework_rocket', FireworkRocket);
@@ -631,7 +632,9 @@ export class FishingBobber extends Projectile {
     let wear = 0;
     if (this.hooked) {
       const h = this.hooked, dx = P.pos.x - h.pos.x, dy = P.pos.y - h.pos.y, dz = P.pos.z - h.pos.z;
-      if (h.vel) { h.vel.x += dx * 0.1; h.vel.y += dy * 0.1 + Math.sqrt(Math.hypot(dx, dy, dz)) * 0.08; h.vel.z += dz * 0.1; }
+      // another player: the game's pull on an entity, a tenth of the way to you, sent to their machine
+      if (h.remotePlayer) h.push(dx * 0.1, dy * 0.1, dz * 0.1);
+      else if (h.vel) { h.vel.x += dx * 0.1; h.vel.y += dy * 0.1 + Math.sqrt(Math.hypot(dx, dy, dz)) * 0.08; h.vel.z += dz * 0.1; }
       wear = 5;
     } else if (this.bite > 0) {
       // what was caught comes out of the water at the bobber and flies to you
