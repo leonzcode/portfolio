@@ -1149,6 +1149,10 @@ export class Net {
     this.lastHeld = inv.heldId();
     const a = inv.armor ? inv.armor.map(s => (s ? stackToJSON(s) : null)) : null;
     const eq = { h: h ? itemName(h.id) : '', o: o ? itemName(o.id) : '', hg: glints(h), og: glints(o), a };
+    // a loaded crossbow: what it is loaded with ("a" an arrow, "r" a firework rocket), drawn so on their screens
+    const ch = s => s && s.charged && s.charged.length ? (s.charged[0][0] === 'firework_rocket' ? 'r' : 'a') : undefined;
+    if (ch(h)) eq.hc = ch(h);
+    if (ch(o)) eq.oc = ch(o);
     const sig = JSON.stringify(eq);
     if (sig === this.eqSig) return;
     this.eqSig = sig;
