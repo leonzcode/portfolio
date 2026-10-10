@@ -53,6 +53,11 @@ uniform float uBrightD;
 // Night Vision (0..1, flickering at its end): everything lit at least as a dull day lights it (Off's lightmap takes #999999)
 uniform float uNightVision;
 vec3 lightFloor() { return vec3(0.0035, 0.004, 0.006) * (1.0 + 2.0 * min(uBrightD, 0.0)) + vec3(0.03, 0.032, 0.036) * 2.0 * max(uBrightD, 0.0) + vec3(NV_LIGHT) * uNightVision; }
+// Fullbright (Video Settings, the game menu): the light everything is lit up to, about what open ground
+// gets by day (0: off; dim/look.js). It fills in only what the sun or moon, the sky and torches leave
+// (fullbrightFill of that light), so the night and caves come up to a day's light and day stays as it was
+uniform float uFullbright;
+vec3 fullbrightFill(vec3 lit) { return max(vec3(uFullbright) - lit, vec3(0.0)); }
 `;
 
 /* ---- Texture Filtering (Video Settings) ----------------------------------

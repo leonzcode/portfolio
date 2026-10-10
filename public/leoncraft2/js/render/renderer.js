@@ -14,19 +14,19 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Interaction } from './interaction.js?v=40';
-import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=40';
-import { makeNoise2D } from './noisetex.js?v=40';
-import { Avatar } from './avatar.js?v=40';
-import { Held } from './held.js?v=40';
-import { Figure } from './figure.js?v=40';
-import { PumpkinView } from './pumpkin.js?v=40';
-import { glints, pieceLook } from './armor.js?v=40';
-import { dimLook } from '../dim/look.js?v=40';
-import { blockGeometry, intAttribute } from './blockmesh.js?v=40';
-import { applyLook, looked, passMaterials } from './looks.js?v=40';
-import { screenFx } from './screenfx.js?v=40';
-import { endFlash } from './endflash.js?v=40';
+import { Interaction } from './interaction.js?v=41';
+import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=41';
+import { makeNoise2D } from './noisetex.js?v=41';
+import { Avatar } from './avatar.js?v=41';
+import { Held } from './held.js?v=41';
+import { Figure } from './figure.js?v=41';
+import { PumpkinView } from './pumpkin.js?v=41';
+import { glints, pieceLook } from './armor.js?v=41';
+import { dimLook } from '../dim/look.js?v=41';
+import { blockGeometry, intAttribute } from './blockmesh.js?v=41';
+import { applyLook, looked, passMaterials } from './looks.js?v=41';
+import { screenFx } from './screenfx.js?v=41';
+import { endFlash } from './endflash.js?v=41';
 const THREE = window.THREE;
 // a column's distance from (ex, ez), squared, in whole blocks; and nearest first
 const distTo = (col, ex, ez) => { const dx = col.cx * 16 + 8 - ex, dz = col.cz * 16 + 8 - ez; return (dx * dx + dz * dz) | 0; };
@@ -124,6 +124,8 @@ export class Renderer {
       uBrightD: { value: (this.opts.brightness === undefined ? 0.5 : this.opts.brightness) - 0.5 },
       // Night Vision's strength, 0..1 (glsl.js lightFloor; Off's lightmap takes it itself: vanilla.js)
       uNightVision: { value: 0 },
+      // Fullbright's light, 0 when off (glsl.js fullbrightFill; dim/look.js sets it; Off's lightmap takes its own: vanilla.js)
+      uFullbright: { value: 0 },
       // Blindness and Darkness's black fog: start, end, strength (glsl.js LDR, post.js; vanilla.js shutFog)
       uShut: { value: new THREE.Vector3(0, 1, 0) },
       // the still and flowing water textures (the Shader Options' vanilla water, and Shaders OFF)

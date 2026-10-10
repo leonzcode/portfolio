@@ -28,12 +28,12 @@
    flags: bits 0-1 ambient occlusion, 2-3 texture rotation, 4 overlay
    (grass block sides), 5 plant, 6 tinted.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=40';
-import { CH, H, LEVEL, FALLING } from './world-const.js?v=40';
-import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=40';
-import { hash3 } from './noise.js?v=40';
-import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef } from './models.js?v=40';
-import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=40';
+import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=41';
+import { CH, H, LEVEL, FALLING } from './world-const.js?v=41';
+import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=41';
+import { hash3 } from './noise.js?v=41';
+import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef } from './models.js?v=41';
+import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=41';
 
 const W = 48, A = W * W;          // the region: three chunks a side
 let colours = null;               // biome colours, set once at start

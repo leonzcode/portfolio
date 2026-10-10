@@ -44,16 +44,16 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { VANILLA, AVATAR_FS } from './vanilla.js?v=40';
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=40';
-import { lightDefines } from './materials.js?v=40';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=40';
-import { H, idx } from '../world-const.js?v=40';
-import { lightNear } from '../lightlevel.js?v=40';
-import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=40';
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=40';
-import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=40';
-import { setGlint } from './glint.js?v=40';
+import { VANILLA, AVATAR_FS } from './vanilla.js?v=41';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=41';
+import { lightDefines } from './materials.js?v=41';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=41';
+import { H, idx } from '../world-const.js?v=41';
+import { lightNear } from '../lightlevel.js?v=41';
+import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=41';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=41';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=41';
+import { setGlint } from './glint.js?v=41';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -64,7 +64,7 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=40', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=41', import.meta.url).href;
 // the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
 let defaultSkin = DEFAULT_SKIN;
 
@@ -323,7 +323,7 @@ void main() {
   if (uDim > 0.5) amb = uDimAmb * (uDim < 1.5 ? 1.0 : 0.3 + 0.7 * sky * sky);
   block = max(block, heldLight(vWorld, N));
   vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
-  vec3 light = (diffuse * PI + amb + blockL + lightFloor()) / PI;
+  vec3 light = (diffuse * PI + amb + blockL + lightFloor() + fullbrightFill(diffuse * PI + amb + blockL)) / PI;
   vec3 col = albedo * light;
 #ifdef ARMOR
   /* the glint added unlit on the screen's own colour, as the game draws it (Fast: AVATAR_FS below), so
