@@ -1046,7 +1046,12 @@ export class Entities {
     const living = e instanceof Living;
     const body = living ? e.prevBodyYaw + wrap(e.bodyYaw - e.prevBodyYaw) * a : e.prevYaw + wrap(e.yaw - e.prevYaw) * a;
     if (living) {
-      const head = e.prevHeadYaw + wrap(e.headYaw - e.prevHeadYaw) * a;
+      /* the head as a turn off the body, eased between the two ticks' turns: the
+         head and the body eased each on its own could go opposite ways round when
+         the 75-degree clamp moved the head to the body's other side, drawing the
+         head twisted up to 162 degrees off for a frame */
+      const o0 = wrap(e.prevHeadYaw - e.prevBodyYaw), o1 = wrap(e.headYaw - e.bodyYaw);
+      const head = body + o0 + wrap(o1 - o0) * a;
       A.walk = e.prevWalk + (e.walk - e.prevWalk) * a; A.amt = Math.min(1, e.prevWalkAmt + (e.walkAmt - e.prevWalkAmt) * a);
       if (e.dead) A.amt = 0;
       A.age = e.age + a;

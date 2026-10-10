@@ -24,6 +24,13 @@ import { BLOCKS, FLUID, B } from '../blocks.js?v=38';
 const THREE = window.THREE;
 
 export const DEG = Math.PI / 180;
+/* a facing brought round towards another over a few ticks: small changes at once (10
+   degrees or less), a share of a big one, never more than 40 degrees a tick */
+export function easeYaw(from, to) {
+  const d = wrap(to - from), ad = Math.abs(d);
+  const step = Math.min(40 * DEG, Math.max(10 * DEG, ad * 0.4));
+  return ad <= step ? to : from + Math.sign(d) * step;
+}
 export const wrap = a => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
 // turn from a towards b by no more than max
 export const rotTowards = (a, b, max) => { const d = wrap(b - a); return a + Math.max(-max, Math.min(max, d)); };
@@ -509,12 +516,18 @@ export class Mob extends Living {
   }
   // how far the head may turn from the body (75 degrees; a ghast's HEAD_MAX 0: it has no head of its own)
   headMax() { const h = this.constructor.HEAD_MAX; return (h === undefined ? 75 : h) * DEG; }
+  // for mobs that face the way they move, head and all (fish, slimes, tadpoles, bats, ghasts): eased as below
+  followYaw() { this.bodyYaw = this.headYaw = easeYaw(this.bodyYaw, this.yaw); }
   /* ---- the body: follows the way it walks; standing, it keeps within 75
      degrees of the head (its HEAD_MAX) and, after a moment, turns to it ---- */
   bodyControl() {
     const dx = this.pos.x - this.prev.x, dz = this.pos.z - this.prev.z;
     if (dx * dx + dz * dz > 2.5e-7) {
-      this.bodyYaw = this.yaw;
+      /* the body comes round to the way it walks over a few ticks, as the game's
+         client shows it (it eases a mob's facing over three ticks): setting it at
+         once turned a mob that stood looking about 90 to 190 degrees in one tick
+         when it set off, and showed every 90-degree turn of the move control */
+      this.bodyYaw = easeYaw(this.bodyYaw, this.yaw);
       const off = wrap(this.headYaw - this.bodyYaw), max = this.headMax();
       if (Math.abs(off) > max) this.headYaw = this.bodyYaw + Math.sign(off) * max;
       this.lastStableHead = this.headYaw; this.headStableT = 0;
