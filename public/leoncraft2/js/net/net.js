@@ -61,23 +61,23 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=40';
-import { idx, H } from '../world-const.js?v=40';
-import { DIMS, DIM_IDS } from '../dims.js?v=40';
-import { Save } from '../save.js?v=40';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=40';
-import { glints } from '../render/armor.js?v=40';
-import { containerKind } from '../containers.js?v=40';
-import { getSkinSettings } from '../render/avatar.js?v=40';
-import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=40';
-import { register, commandDef, execute, gameRule } from '../commands.js?v=40';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=40';
-import { Projectile } from '../entities/projectiles.js?v=40';
-import { Combat } from '../combat/combat.js?v=40';
-import { Vehicles } from './vehicles.js?v=40';
-import { Mobs, Orbs } from './mobs.js?v=40';
-import { Events } from './events.js?v=40';
-import { EndSync } from './endfight.js?v=40';
+import { B, BLOCKS } from '../blocks.js?v=41';
+import { idx, H } from '../world-const.js?v=41';
+import { DIMS, DIM_IDS } from '../dims.js?v=41';
+import { Save } from '../save.js?v=41';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=41';
+import { glints } from '../render/armor.js?v=41';
+import { containerKind } from '../containers.js?v=41';
+import { getSkinSettings } from '../render/avatar.js?v=41';
+import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=41';
+import { register, commandDef, execute, gameRule } from '../commands.js?v=41';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=41';
+import { Projectile } from '../entities/projectiles.js?v=41';
+import { Combat } from '../combat/combat.js?v=41';
+import { Vehicles } from './vehicles.js?v=41';
+import { Mobs, Orbs } from './mobs.js?v=41';
+import { Events } from './events.js?v=41';
+import { EndSync } from './endfight.js?v=41';
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {

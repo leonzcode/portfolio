@@ -17,10 +17,10 @@
    and the particles (smoke puffs, crits, hearts, flames, explosions), each
    one instanced draw.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=40';
-import { VANILLA } from './vanilla.js?v=40';
-import { lightDefines } from './materials.js?v=40';
-import { GLINT } from './armor.js?v=40';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=41';
+import { VANILLA } from './vanilla.js?v=41';
+import { lightDefines } from './materials.js?v=41';
+import { GLINT } from './armor.js?v=41';
 const THREE = window.THREE;
 
 export const ATLAS = 2048;           // the mob texture atlas, in pixels a side (2048: room for every mob of the game)
@@ -131,7 +131,7 @@ void main() {
   if (uDim > 0.5) amb = uDimAmb * (uDim < 1.5 ? 1.0 : 0.3 + 0.7 * sky * sky);
   block = max(block, heldLight(vWorld, N));
   vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
-  vec3 light = (diffuse * PI + amb + blockL + lightFloor()) / PI;
+  vec3 light = (diffuse * PI + amb + blockL + lightFloor() + fullbrightFill(diffuse * PI + amb + blockL)) / PI;
   vec3 col = albedo * light;
   // enchanted armour: the glint added unlit on the screen's own colour, as bright in any light (as on the player, render/avatar.js)
   vec3 g = vG.z > 0.5 ? glintAt(vG.xy, uClock) : vec3(0.0);

@@ -52,7 +52,7 @@
    textures/gui/. The pack leaves button interiors see-through, so a
    translucent fill goes under them for legible text over the world.
 --------------------------------------------------------------------------- */
-import { Font, cssRGB } from './font.js?v=40';
+import { Font, cssRGB } from './font.js?v=41';
 
 /* ------------------------------ options ------------------------------ */
 
@@ -108,6 +108,19 @@ export const DEFAULT_OPTIONS = {
   renderScale: 'auto',     // 'auto' or 0.4-1
   guiScale: 0,             // 0 = auto
   brightness: 0.5,         // 0 moody - 1 bright
+  // Fullbright (the game menu and Video Settings, as the Fullbright mods: caves and night lit as by day; settings.js)
+  fullbright: false,
+  // the minimap (ui/minimap.js, after Xaero's Minimap's defaults): on/off, its size, zoom, Lock North,
+  // the coordinates under it, the entity radar, cave mode (auto/off), the biome line and its lighting
+  minimap: false,
+  minimapSize: 'auto',     // 'auto' or the mod's units across (70 - 250)
+  minimapZoom: 1,          // 1 - 6, the mod's zoom: half a unit a block at 1
+  minimapNorth: false,
+  minimapCoords: true,
+  minimapEntities: true,
+  minimapCave: 'auto',     // auto (a 3x3 ceiling) or off
+  minimapBiome: false,
+  minimapLighting: true,
   bobbing: true,
   clouds: 'fancy',         // fancy fast off
   menuBlur: 5,             // 0-10
@@ -261,7 +274,7 @@ export class Gui {
     this.ctx = canvas.getContext('2d');
     this.base = base || new URL('../../textures/gui/', import.meta.url).href;
     if (!this.base.endsWith('/')) this.base += '/';
-    this.version = version || '?v=40';
+    this.version = version || '?v=41';
     this.options = options || new Options();
     this.hooks = hooks || {};
     this.sheets = new Map();

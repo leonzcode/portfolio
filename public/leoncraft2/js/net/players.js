@@ -20,11 +20,11 @@
    through walls) while they sneak, none past 64 blocks. Nothing is drawn of
    a player in another dimension or out of sight range.
 --------------------------------------------------------------------------- */
-import { Avatar } from '../render/avatar.js?v=40';
-import { pieceLook, armorSheet } from '../render/armor.js?v=40';
-import { setLight as setLightOf, loadedLook } from '../render/held.js?v=40';
-import { DRAW, I, stackFromJSON } from '../items.js?v=40';
-import { B, BLOCKS } from '../blocks.js?v=40';
+import { Avatar } from '../render/avatar.js?v=41';
+import { pieceLook, armorSheet } from '../render/armor.js?v=41';
+import { setLight as setLightOf, loadedLook } from '../render/held.js?v=41';
+import { DRAW, I, stackFromJSON } from '../items.js?v=41';
+import { B, BLOCKS } from '../blocks.js?v=41';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -148,7 +148,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=40', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=41', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
   }
   equip(r) {

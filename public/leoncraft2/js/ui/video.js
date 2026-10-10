@@ -18,8 +18,9 @@
    Nothing here does anything but change Options; settings.js puts each
    change into effect at once, while you play.
 --------------------------------------------------------------------------- */
-import { Button, Slider, CycleButton, WidgetRow, OptionsListScreen, onOff, WHITE } from './gui.js?v=40';
-import { SHADER_LEVELS } from '../render/looks.js?v=40';
+import { Button, Slider, CycleButton, WidgetRow, OptionsListScreen, onOff, WHITE } from './gui.js?v=41';
+import { SHADER_LEVELS } from '../render/looks.js?v=41';
+import { MinimapSettingsScreen } from './minimap.js?v=41';
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -232,6 +233,10 @@ export class VideoSettingsScreen extends OptionsListScreen {
     });
     fade.tooltip = 'How long in seconds chunks should fade in when they\'re first rendered, if at all.';
 
+    // ours, as the mods add them: Fullbright, and the minimap's settings (ui/minimap.js)
+    const fb = fullbrightButton(0, 0, 150, o);
+    const mm = new Button(0, 0, 150, 20, 'Minimap Settings...', () => g.open(new MinimapSettingsScreen()));
+
     list.entries = [
       new Header('Display'),
       wide(res),
@@ -253,6 +258,7 @@ export class VideoSettingsScreen extends OptionsListScreen {
       new Header('Preferences'),
       new WidgetRow(autosave, vig),
       new WidgetRow(atk, fade),
+      new WidgetRow(fb, mm),
     ];
     // a lone half-width button stays half width, as the game lays it out
     list.entries[16].children[0].wide = false;
@@ -262,6 +268,20 @@ export class VideoSettingsScreen extends OptionsListScreen {
     this.add(shadersButton(W / 2 - 155, H - 27, 150, this.options));
     this.add(new Button(W / 2 + 5, H - 27, 150, 20, 'Done', () => this.gui.back()));
   }
+}
+
+/* ------------------------------ Fullbright ------------------------------ */
+
+/* Fullbright, here and in the game menu, as the Fullbright mods do it: the
+   game's gamma pushed to 1500%, so caves and the night are lit as by day,
+   in every dimension and at every Shaders level, and nothing else changes
+   (render/vanilla.js makeLightmap, dim/look.js; settings.js puts it on). */
+export function fullbrightButton(x, y, w, o) {
+  return new CycleButton(x, y, w, 20, 'Fullbright', {
+    values: [false, true], value: !!o.get('fullbright'), format: onOff,
+    tooltip: () => 'Lights caves and the night as if by day, as the Fullbright mods do.',
+    onChange: v => o.set('fullbright', v),
+  });
 }
 
 /* ------------------------------ Shaders ------------------------------ */
