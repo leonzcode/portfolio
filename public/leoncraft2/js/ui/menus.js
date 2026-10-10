@@ -691,7 +691,8 @@ export class OptionsScreen extends Screen {
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
 export { VideoSettingsScreen } from './video.js?v=39';
-import { VideoSettingsScreen, shadersButton } from './video.js?v=39';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=39';
+import { minimapButtons } from './minimap.js?v=39';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -1192,30 +1193,33 @@ export class ResourcePacksScreen extends Screen {
 /* The pause menu: a 212-wide grid a quarter of the way down, Save and Quit
    across both columns, 98-wide pairs above it. The top pair is Back to Game
    and our one extra, the Shaders button from Video Settings (it takes effect
-   at once, behind the menu). */
+   at once, behind the menu). Under it a pair of our own, as mods add them:
+   Fullbright, and the Minimap with its settings ("...") beside it. */
 export class PauseScreen extends Screen {
   constructor() { super('Game Menu'); this.background = 'world'; this.openedAt = performance.now(); }
   init() {
     const W = this.width, H = this.height, g = this.gui;
-    const top = Math.floor((H - 166) * 0.25);
+    const top = Math.floor((H - 190) * 0.25);
     const xl = Math.floor(W / 2 - 102), xr = Math.floor(W / 2 + 4);
     this.add(new Button(xl, top + 50, 98, 20, 'Back to Game', () => this.resume()));
     this.add(shadersButton(xr, top + 50, 98, this.options));
+    this.add(fullbrightButton(xl, top + 74, 98, this.options));
+    for (const b of minimapButtons(xr, top + 74, 98, this.options, g)) this.add(b);
     const row = (y, a, b) => {
       for (const [x, [label, fn]] of [[xl, a], [xr, b]]) {
         const btn = this.add(new Button(x, y, 98, 20, label, fn));
         if (!fn) off(btn, 'Not in Leoncraft 2 yet');
       }
     };
-    row(top + 74, ['Advancements', this.hooks.advancements ? () => this.hooks.advancements() : null], ['Statistics', this.hooks.statistics ? () => this.hooks.statistics() : null]);
-    row(top + 98, ['Send Feedback', null], ['Report Bugs', null]);
+    row(top + 98, ['Advancements', this.hooks.advancements ? () => this.hooks.advancements() : null], ['Statistics', this.hooks.statistics ? () => this.hooks.statistics() : null]);
+    row(top + 122, ['Send Feedback', null], ['Report Bugs', null]);
     // Open to LAN (ui/lan.js): greyed out once the world is open; on a server the game has Player Reporting there
     const lan = this.hooks.lan && this.hooks.lan();
     const online = !!(this.hooks.online && this.hooks.online());
-    row(top + 122, ['Options...', () => g.open(new OptionsScreen())], online ? ['Player Reporting', null] : ['Open to LAN', lan && !lan.open ? () => g.open(new LanScreen()) : null]);
+    row(top + 146, ['Options...', () => g.open(new OptionsScreen())], online ? ['Player Reporting', null] : ['Open to LAN', lan && !lan.open ? () => g.open(new LanScreen()) : null]);
     if (lan && lan.open && !online) this.widgets[this.widgets.length - 1].tooltip = '';
     // on a server it is Disconnect, as in the game
-    this.add(new Button(xl, top + 146, 204, 20, online ? 'Disconnect' : 'Save and Quit to Title', () => { if (this.hooks.quitToTitle) this.hooks.quitToTitle(); }));
+    this.add(new Button(xl, top + 170, 204, 20, online ? 'Disconnect' : 'Save and Quit to Title', () => { if (this.hooks.quitToTitle) this.hooks.quitToTitle(); }));
   }
   resume() { this.gui.closeAll(); if (this.hooks.resume) this.hooks.resume(); }
   // the Esc that let the mouse go (and so opened this menu) must not close it again at once

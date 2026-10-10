@@ -12,11 +12,16 @@ import { nightVision, shutFog } from '../render/vanilla.js?v=39';
 const THREE = window.THREE;
 const lin = v => Math.pow(v / 255, 2.2);
 const target = new THREE.Vector3();
+/* Fullbright in the shader looks: the light floor (glsl.js lightFloor) raised
+   as Night Vision raises it, but further, so a cave or the night is lit about
+   as open ground is by day; colours are not touched. */
+export const FULLBRIGHT_FLOOR = 2.5;
 
 export function dimLook(R, state, dt) {
   const U = R.U, D = state.dim;
   // Night Vision lifts the light floor (glsl.js lightFloor), Blindness and Darkness close a black fog in (glsl.js uShut), in every dimension
-  if (U.uNightVision) U.uNightVision.value = nightVision(state);
+  // (Fullbright lifts it further, to about what open ground gets by day: FULLBRIGHT_FLOOR)
+  if (U.uNightVision) U.uNightVision.value = Math.max(nightVision(state), R.opts.fullbright ? FULLBRIGHT_FLOOR : 0);
   if (U.uShut) shutFog(state, dt, (R.opts.renderDist || 8) * 16, U.uShut.value);
   if (!D || D.id === 'overworld') { U.uDim.value = 0; return; }
   // (the eye there keeps the renderer's one level for each, as Low and Medium do: post.js FS_EXPO)
