@@ -587,7 +587,7 @@ export class Entities {
   // how charged the next hit is (0..1): ticks since the last swing over 20 / attack speed
   cooldown() { return this.combat.cooldown(); }
   // a click in the air (or a block broken) starts the cooldown again, as the game does
-  swung() { this.ticksSinceSwing = 0; }
+  swung(air) { if (air) this.combat.airJab(); this.ticksSinceSwing = 0; }
   /* The player hits an entity (combat/combat.js). */
   attack(e) {
     const ok = this.combat.attack(e);

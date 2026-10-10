@@ -110,6 +110,7 @@ export class Combat {
     const c = this.cooldown();
     // a spear's jab only goes at a full charge
     if (w.kind === 'spear' && c < 1 && !spin) return false;
+    if (w.kind === 'spear' && !spin) this.lunge(st);
     const fx = this.fx();
     let base = spin ? this.spinDmg : w.damage;
     base = Math.max(0, base + 3 * lv(fx, 'strength') - 4 * lv(fx, 'weakness'));
@@ -162,6 +163,28 @@ export class Combat {
     if (this.sv && !this.creative) this.sv.exhaust(0.1);
     this.lastHit = { dmg: base + bonus, base, bonus, crit, sweep, smash, knock: kb, cooldown: c, before: hp0, after: e.health };
     return true;
+  }
+  /* Lunge, after a spear's jab (26.1.2's enchantment/lunge.json, post_piercing_attack): unless riding, gliding
+     or in water, and with at least 7 food (or in creative), the jab pushes you along the look's level part by
+     0.458 a level (apply_impulse, direction forward, coordinate scale 1/0/1, not normalised again), costs 4
+     exhaustion a level and 1 durability, and plays item.spear.lunge_<level> (sound/game.js). Returns the level
+     when it went, else 0. */
+  lunge(st) {
+    const lvl = Math.min(3, enchOf(st, 'lunge'));
+    if (!lvl) return 0;
+    const m = this.m, P = this.P, sv = this.sv;
+    if (m.riding || P.gliding || P.inWater || P.swimming) return 0;
+    if (!this.creative && sv && sv.food < 7) return 0;
+    const k = 0.458 * lvl, cp = Math.cos(P.pitch);
+    P.vel.x += -Math.sin(P.yaw) * cp * k; P.vel.z += -Math.cos(P.yaw) * cp * k;
+    if (sv) sv.exhaust(4 * lvl);
+    if (!this.creative) this.wearHeld(1);
+    return lvl;
+  }
+  // a jab into the air (manager.swung): a spear at full charge still lunges
+  airJab() {
+    const st = this.held();
+    if (st && weaponOf(st.id).kind === 'spear' && this.cooldown() >= 1) this.lunge(st);
   }
   /* A hit on something the manager does not keep (the dragon's parts, an
      end crystal: dim/realms.js): the same damage by the same rules, the
@@ -216,6 +239,9 @@ export class Combat {
     P.fallDistance = 0;
     P.vel.y = 0.01;
     const k = fall > 5 ? 2 : 1;
+    // the ring of dust from the block under the target (the game's knockback() starts with level event 2013)
+    const bx = Math.floor(e.pos.x), by = Math.floor(e.pos.y - 0.2), bz = Math.floor(e.pos.z);
+    this.smashDust(bx, by, bz, m.world ? m.world.get(bx, by, bz) : 0);
     m.forNear(e.pos.x, e.pos.z, 4, o => {
       if (o === e || o.removed || o.dead || !(o instanceof Living || o.remotePlayer) || o === m.riding) return;
       const dx = o.pos.x - e.pos.x, dz = o.pos.z - e.pos.z, d = Math.hypot(dx, o.pos.y - e.pos.y, dz);
@@ -234,6 +260,11 @@ export class Combat {
       P.vel.y += ([1.2, 1.75, 2.2][wb - 1] || 1.5 + 0.35 * (wb - 1)) * Math.max(0, 1 - 0.15 * bp);
       P.onGround = false;
     }
+  }
+  // the dust itself (net/events.js wraps this to show it to the others near)
+  smashDust(x, y, z, b) {
+    const L = typeof window !== 'undefined' ? window.__lc2 : null, P = L && L.renderer && L.renderer.particles;
+    if (b && P && P.smash) try { P.smash(x, y, z, b); } catch (err) { /* no dust */ }
   }
   // wear on the held item (a tool used in a fight)
   wearHeld(n) { if (this.inv && this.inv.damageSelected) this.inv.damageSelected(n); }
@@ -387,7 +418,7 @@ export class Combat {
     }
     if (it.name === 'crossbow') {
       if (stack.charged && stack.charged.length) { this.fireCrossbow(stack); return true; }
-      if (!this.creative && !this.findAmmo()) return false;
+      if (!this.creative && !this.findAmmo(true)) return false;
       this.begin('crossbow', stack);
       return true;
     }
@@ -476,13 +507,16 @@ export class Combat {
   static bowPower(t) { const f = t / 20; return Math.min(1, (f * f + f * 2) / 3); }
 
   /* The arrows to shoot: the off hand first, then the main hand, then the
-     inventory from the first slot. A crossbow also takes a firework rocket
-     (not in the game yet). Returns { stack, slot } or null. */
-  findAmmo() {
+     inventory from the first slot. A crossbow also takes a firework rocket,
+     but only from a hand (the game's getHeldProjectile: arrow or firework in
+     the off hand, then the main hand; the inventory is searched for arrows
+     only). Returns { stack, slot } or null. */
+  findAmmo(crossbow) {
     const inv = this.inv;
     const isArrow = s => s && ITEMS[s.id] && ARROWS.includes(ITEMS[s.id].name);
-    if (isArrow(inv.offhand)) return { stack: inv.offhand, slot: 'off' };
-    if (isArrow(inv.slots[inv.selected])) return { stack: inv.slots[inv.selected], slot: inv.selected };
+    const held = crossbow ? (s => isArrow(s) || (s && ITEMS[s.id] && ITEMS[s.id].name === 'firework_rocket')) : isArrow;
+    if (held(inv.offhand)) return { stack: inv.offhand, slot: 'off' };
+    if (held(inv.slots[inv.selected])) return { stack: inv.slots[inv.selected], slot: inv.selected };
     for (let i = 0; i < 36; i++) if (isArrow(inv.slots[i])) return { stack: inv.slots[i], slot: i };
     return null;
   }
@@ -540,9 +574,11 @@ export class Combat {
   }
   // the crossbow takes its arrow (three with Multishot, from one) when let go after a full load
   loadCrossbow(s) {
-    const ammo = this.findAmmo();
+    const ammo = this.findAmmo(true);
     if (!ammo && !this.creative) return false;
-    const kind = ammo ? ITEMS[ammo.stack.id].name : 'arrow', potion = ammo ? ammo.stack.potion || null : null;
+    const kind = ammo ? ITEMS[ammo.stack.id].name : 'arrow';
+    // a rocket keeps its flight and stars in the potion's place
+    const potion = !ammo ? null : kind === 'firework_rocket' ? { flight: ammo.stack.flight || 1, explosions: ammo.stack.explosions || [] } : ammo.stack.potion || null;
     const n = enchOf(s, 'multishot') ? 3 : 1;
     s.charged = [];
     for (let i = 0; i < n; i++) s.charged.push(potion ? [kind, potion, i === 0 && !this.creative] : [kind, null, i === 0 && !this.creative]);
@@ -558,6 +594,7 @@ export class Combat {
     let fired = 0;
     for (let i = 0; i < shots.length; i++) {
       const [kind, potion, keep] = shots[i];
+      if (kind === 'firework_rocket') { if (this.shootRocket(potion, offs[i] || 0)) fired += 3; continue; }  // a rocket wears the crossbow by 3
       const a = this.shoot(kind, potion, 3.15, 1, offs[i] || 0);
       if (!a) continue;
       a.crit = true;
@@ -570,6 +607,19 @@ export class Combat {
     this.inv.changed();
     if (this.m.R) this.m.R.swing = 1;
     this.lastShot = { kind: 'crossbow', count: fired, pierce };
+  }
+  /* A firework rocket off a crossbow (the game's CrossbowItem.shootProjectile): from 0.15 under the eyes, at 1.6
+     (the crossbow's power with a rocket loaded, against 3.15 for arrows), inaccuracy 1, no shooter's motion added;
+     it flies straight with no gravity (shot at an angle) and goes off on what it hits (items2.js FireworkRocket). */
+  shootRocket(st, yawOff) {
+    const m = this.m, P = this.P;
+    const r = m.spawn('firework_rocket', P.pos.x, P.pos.y + (P.eyeH || 1.62) - 0.15, P.pos.z, { natural: false });
+    if (!r) return null;
+    r.init(st || { flight: 1, explosions: [] });
+    r.owner = m.player; r.angled = true;
+    const dir = this.look(yawOff);
+    r.shootAt(dir.x, dir.y, dir.z, 1.6, 1);
+    return r;
   }
   // in water, or out in the rain (Riptide's rule)
   wetOrRain() {

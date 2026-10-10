@@ -97,7 +97,7 @@ export class Interactor {
         this.useHeld = true; this.useDelay = 5; this.hand.swing(); return;
       }
     }
-    if (button === 0 && !this.target && this.entities) this.entities.swung();
+    if (button === 0 && !this.target && this.entities) this.entities.swung(true);
     if (button === 0) {
       // the dragon or a crystal nearer than the block (js/dim/realms.js)
       if (this.onAttack && this.onAttack(this.target)) { this.hand.swing(); return; }
