@@ -16,8 +16,8 @@
    sixteen to twenty-two metres wide.
 --------------------------------------------------------------------------- */
 import { GLTFLoader } from '/legacy/vendor/three-addons-0.163.0/loaders/GLTFLoader.js';
-import { dressOf } from './themes.js?v=105';
-import { thin, share } from './perf.js?v=105';
+import { dressOf } from './themes.js?v=106';
+import { thin, share } from './perf.js?v=106';
 
 /* Which part of a place's palette each model wears. The kit is one kit, so
    without this every circuit has the same green trees and the same red barriers
