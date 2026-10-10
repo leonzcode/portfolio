@@ -110,6 +110,7 @@ export class Combat {
     const c = this.cooldown();
     // a spear's jab only goes at a full charge
     if (w.kind === 'spear' && c < 1 && !spin) return false;
+    if (w.kind === 'spear' && !spin) this.lunge(st);
     const fx = this.fx();
     let base = spin ? this.spinDmg : w.damage;
     base = Math.max(0, base + 3 * lv(fx, 'strength') - 4 * lv(fx, 'weakness'));
@@ -165,6 +166,28 @@ export class Combat {
     if (this.sv && !this.creative) this.sv.exhaust(0.1);
     this.lastHit = { dmg: base + bonus, base, bonus, crit, sweep, smash, knock: kb, cooldown: c, before: hp0, after: e.health };
     return true;
+  }
+  /* Lunge, after a spear's jab (26.1.2's enchantment/lunge.json, post_piercing_attack): unless riding, gliding
+     or in water, and with at least 7 food (or in creative), the jab pushes you along the look's level part by
+     0.458 a level (apply_impulse, direction forward, coordinate scale 1/0/1, not normalised again), costs 4
+     exhaustion a level and 1 durability, and plays item.spear.lunge_<level> (sound/game.js). Returns the level
+     when it went, else 0. */
+  lunge(st) {
+    const lvl = Math.min(3, enchOf(st, 'lunge'));
+    if (!lvl) return 0;
+    const m = this.m, P = this.P, sv = this.sv;
+    if (m.riding || P.gliding || P.inWater || P.swimming) return 0;
+    if (!this.creative && sv && sv.food < 7) return 0;
+    const k = 0.458 * lvl, cp = Math.cos(P.pitch);
+    P.vel.x += -Math.sin(P.yaw) * cp * k; P.vel.z += -Math.cos(P.yaw) * cp * k;
+    if (sv) sv.exhaust(4 * lvl);
+    if (!this.creative) this.wearHeld(1);
+    return lvl;
+  }
+  // a jab into the air (manager.swung): a spear at full charge still lunges
+  airJab() {
+    const st = this.held();
+    if (st && weaponOf(st.id).kind === 'spear' && this.cooldown() >= 1) this.lunge(st);
   }
   /* A hit on something the manager does not keep (the dragon's parts, an
      end crystal: dim/realms.js): the same damage by the same rules, the
