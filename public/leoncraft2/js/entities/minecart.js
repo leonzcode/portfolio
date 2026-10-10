@@ -36,12 +36,12 @@
    Lava hurts a cart 4 a tick and sets it alight, a fire block 1 (soul fire
    2); alight it takes 1 a second; water puts it out. 40 damage breaks it.
 --------------------------------------------------------------------------- */
-import { Entity, Living, DEG, wrap } from './entity.js?v=38';
-import { register } from './mobs.js?v=38';
-import { MODELS } from './mobmodels.js?v=38';
-import { addArt } from './mobart.js?v=38';
-import { BLOCKS, B } from '../blocks.js?v=38';
-import { riderDrop } from './boat.js?v=38';
+import { Entity, Living, DEG, wrap } from './entity.js?v=39';
+import { register } from './mobs.js?v=39';
+import { MODELS } from './mobmodels.js?v=39';
+import { addArt } from './mobart.js?v=39';
+import { BLOCKS, B } from '../blocks.js?v=39';
+import { riderDrop } from './boat.js?v=39';
 
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];      // north, east, south, west (as models.js)
 const RAIL = new Uint8Array(4096), POWERED = new Uint8Array(4096), SOURCE = new Uint8Array(4096);

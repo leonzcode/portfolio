@@ -61,22 +61,22 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=38';
-import { idx, H } from '../world-const.js?v=38';
-import { DIMS, DIM_IDS } from '../dims.js?v=38';
-import { Save } from '../save.js?v=38';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=38';
-import { glints } from '../render/armor.js?v=38';
-import { containerKind } from '../containers.js?v=38';
-import { getSkinSettings } from '../render/avatar.js?v=38';
-import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=38';
-import { register, commandDef, execute, gameRule } from '../commands.js?v=38';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=38';
-import { Projectile } from '../entities/projectiles.js?v=38';
-import { Vehicles } from './vehicles.js?v=38';
-import { Mobs, Orbs } from './mobs.js?v=38';
-import { Events } from './events.js?v=38';
-import { EndSync } from './endfight.js?v=38';
+import { B, BLOCKS } from '../blocks.js?v=39';
+import { idx, H } from '../world-const.js?v=39';
+import { DIMS, DIM_IDS } from '../dims.js?v=39';
+import { Save } from '../save.js?v=39';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=39';
+import { glints } from '../render/armor.js?v=39';
+import { containerKind } from '../containers.js?v=39';
+import { getSkinSettings } from '../render/avatar.js?v=39';
+import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=39';
+import { register, commandDef, execute, gameRule } from '../commands.js?v=39';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=39';
+import { Projectile } from '../entities/projectiles.js?v=39';
+import { Vehicles } from './vehicles.js?v=39';
+import { Mobs, Orbs } from './mobs.js?v=39';
+import { Events } from './events.js?v=39';
+import { EndSync } from './endfight.js?v=39';
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {

@@ -11,16 +11,16 @@
    The models follow the game's proportions; every texture is painted here,
    pixel by pixel, in our own colours.
 --------------------------------------------------------------------------- */
-import { Mob, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=38';
-import { FloatGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, MeleeAttackGoal, NearestPlayerTargetGoal, HurtByTargetGoal, SwimGoal } from './ai.js?v=38';
-import { register, Monster, DYE_RGB } from './mobs.js?v=38';
-import { model } from './mobs2.js?v=38';
-import { POSE } from './mobmodels.js?v=38';
-import { addArt, SLOTS } from './mobart.js?v=38';
-import { B, BLOCKS, FLUID, SOLID, OPAQUE } from '../blocks.js?v=38';
-import { Y0 } from '../world-const.js?v=38';
-import { breakAt } from '../place.js?v=38';
-import { dropOf } from '../survival.js?v=38';
+import { Mob, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=39';
+import { FloatGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, MeleeAttackGoal, NearestPlayerTargetGoal, HurtByTargetGoal, SwimGoal } from './ai.js?v=39';
+import { register, Monster, DYE_RGB } from './mobs.js?v=39';
+import { model } from './mobs2.js?v=39';
+import { POSE } from './mobmodels.js?v=39';
+import { addArt, SLOTS } from './mobart.js?v=39';
+import { B, BLOCKS, FLUID, SOLID, OPAQUE } from '../blocks.js?v=39';
+import { Y0 } from '../world-const.js?v=39';
+import { breakAt } from '../place.js?v=39';
+import { dropOf } from '../survival.js?v=39';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -595,7 +595,7 @@ export class Slime extends Monster {
      and face always point the way it is going (90 degrees a tick at most). */
   moveControl() {
     this.yaw = rotTowards(this.yaw, this.wantYaw, 90 * DEG);
-    this.headYaw = this.bodyYaw = this.yaw;
+    // (the body and face come round after it, in bodyControl)
     let jump = false;
     if (this.wantMove) {
       this.wantMove = false;
@@ -614,7 +614,7 @@ export class Slime extends Monster {
   // ticks between hops (a magma cube waits four times as long)
   hopDelay() { return 10 + RI(20); }
   lookControl() {}
-  bodyControl() { this.bodyYaw = this.headYaw = this.yaw; }
+  bodyControl() { this.followYaw(); }
   // turning towards its target, 10 degrees a tick
   turnTo(t) { this.yaw = rotTowards(this.yaw, yawTo(t.pos.x - this.pos.x, t.pos.z - this.pos.z), 10 * DEG); }
   tick() {
@@ -1129,7 +1129,7 @@ export class Fish extends Mob {
   // ticks between hops (a magma cube waits four times as long)
   hopDelay() { return 10 + RI(20); }
   lookControl() {}
-  bodyControl() { this.bodyYaw = this.headYaw = this.yaw; }
+  bodyControl() { this.followYaw(); }
   travel() {
     if (this.inWater) {
       this.moveRelative(0.01, this.xxa, this.zza);
@@ -1651,7 +1651,8 @@ export class Bat extends Mob {
     v.y += (Math.sign(dy) * 0.7 - v.y) * 0.1;
     v.z += (Math.sign(dz) * 0.5 - v.z) * 0.1;
     this.yaw = yawTo(v.x, v.z);
-    this.bodyYaw = this.headYaw = this.yaw;
+    // (its own serverAi, so no bodyControl: the body is eased round here)
+    this.followYaw();
     this.zza = 0.5; this.moveSpeedNow = 1;
     if (RI(100) === 0 && this.ceiling()) this.resting = true;
   }

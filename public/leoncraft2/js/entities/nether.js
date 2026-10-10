@@ -31,18 +31,18 @@
      blaze             hovers, three fireballs 6 ticks apart then 5 seconds
                        off, burns you; water and snowballs hurt it
 --------------------------------------------------------------------------- */
-import { Mob, Living, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=38';
+import { Mob, Living, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=39';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal, posAway, randomLandPos } from './ai.js?v=38';
-import { register, Monster, Zombie, Skeleton, Animal, TYPES } from './mobs.js?v=38';
-import { Slime } from './mobs3.js?v=38';
-import { Projectile } from './projectiles.js?v=38';
-import { model } from './mobs2.js?v=38';
-import { addArt } from './mobart.js?v=38';
-import { POSE } from './mobmodels.js?v=38';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=38';
-import { I, ITEMS } from '../items.js?v=38';
-import { dropStack, activeDrops } from '../drops.js?v=38';
+  MeleeAttackGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal, posAway, randomLandPos } from './ai.js?v=39';
+import { register, Monster, Zombie, Skeleton, Animal, TYPES } from './mobs.js?v=39';
+import { Slime } from './mobs3.js?v=39';
+import { Projectile } from './projectiles.js?v=39';
+import { model } from './mobs2.js?v=39';
+import { addArt } from './mobart.js?v=39';
+import { POSE } from './mobmodels.js?v=39';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=39';
+import { I, ITEMS } from '../items.js?v=39';
+import { dropStack, activeDrops } from '../drops.js?v=39';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -850,7 +850,7 @@ export class Ghast extends Mob {
     // facing: its target, or the way it drifts
     if (t) { this.yaw = yawTo(t.pos.x - p.x, t.pos.z - p.z); }
     else if (Math.abs(this.vel.x) + Math.abs(this.vel.z) > 1e-4) this.yaw = yawTo(this.vel.x, this.vel.z);
-    this.bodyYaw = this.headYaw = this.yaw;
+    this.followYaw();
     /* The fireball: while it sees its target within 64, the charge counts
        up; at 10 the face shows it, at 20 it shoots and waits 40. */
     if (t && t.alive() && this.dist2(t.pos.x, t.pos.y, t.pos.z) < 4096 && this.canSee(t)) {
