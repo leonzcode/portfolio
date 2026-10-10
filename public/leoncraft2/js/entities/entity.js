@@ -391,6 +391,10 @@ export class Living extends Entity {
   }
   toJSON() {
     const o = super.toJSON(); o.h = r3(this.health); if (this.persistent) o.pp = 1;
+    // the body's and head's own turns (a mob standing about keeps its body where its head took it, away from yaw,
+    // the way it last walked: loaded with both set to yaw, it swung round up to 180 degrees in one frame)
+    if (this.bodyYaw !== undefined && Math.abs(this.bodyYaw - this.yaw) > 1e-3) o.by = r3(this.bodyYaw);
+    if (this.headYaw !== undefined && Math.abs(this.headYaw - this.yaw) > 1e-3) o.hy = r3(this.headYaw);
     if (this.maxHealth !== (this.constructor.HEALTH || 20)) o.mh = this.maxHealth;
     if (this.customName) o.cn = this.customName;
     if (this.equip && Object.keys(this.equip).length) o.eq = this.equip;
@@ -400,7 +404,7 @@ export class Living extends Entity {
   }
   fromJSON(o) {
     super.fromJSON(o); if (o.mh) this.maxHealth = o.mh; if (o.h !== undefined) this.health = o.h;
-    this.bodyYaw = this.prevBodyYaw = this.headYaw = this.prevHeadYaw = this.yaw; this.persistent = !!o.pp;
+    this.bodyYaw = this.prevBodyYaw = o.by !== undefined ? o.by : this.yaw; this.headYaw = this.prevHeadYaw = o.hy !== undefined ? o.hy : this.yaw; this.persistent = !!o.pp;
     if (o.cn) this.customName = o.cn;
     if (o.eq && this.equip) Object.assign(this.equip, o.eq);
     if (o.ar !== undefined) this.armor = o.ar; if (o.at) this.toughness = o.at;
