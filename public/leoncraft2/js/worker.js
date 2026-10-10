@@ -63,6 +63,27 @@ function make(m) {
   const s = m.structures === false ? null : worldStructures(m.generator === 'vanilla' ? String(m.seed) : m.seed | 0, g, m.dim || 'overworld');
   return { gen: g, structs: s, name: nameOf(m) };
 }
+// the dimension a /locate is for (struct/hook.js picks the same), as js/dims.js names it
+function otherDim(m) {
+  const d = m.dim || (m.kind === 'fortress' || m.kind === 'bastion_remnant' ? 'nether' : m.kind === 'end_city' ? 'end' : 'overworld');
+  return d === 'nether' || d === 'the_nether' ? 'the_nether' : d === 'end' || d === 'the_end' ? 'the_end' : null;
+}
+// the Nether's or the End's generator and structures for the world this worker serves, made once per world
+let otherWorlds = null;
+function otherStructures(dim) {
+  if (!serving || !G) return null;
+  const [, generator, seed, ns] = serving.split('|');
+  if (ns === 'ns') return null;
+  const key = serving + '>' + dim;
+  if (otherWorlds && otherWorlds.key === key) return otherWorlds;
+  try {
+    const sd = generator === 'vanilla' || !/^-?\d+$/.test(seed) ? seed : Number(seed);
+    const g = dim === 'the_nether' ? new G.NetherGen(sd) : new G.EndGen(sd);
+    const s = worldStructures(generator === 'vanilla' ? String(seed) : Number(seed) | 0, g, dim);
+    otherWorlds = s ? { key, gen: g, structs: s } : null;
+  } catch (e) { console.error('locate in', dim, e); otherWorlds = null; }
+  return otherWorlds;
+}
 let shown = null;             // the page's texture list the blocks were last worked out from
 function prepare(m) {
   if (m.manifest && resolved !== m.manifest.layers) {
@@ -487,7 +508,16 @@ function work(m) {
     return;
   }
   if (m.type === 'structures') {
-    self.postMessage(Object.assign({ type: 'structures', id: m.id }, structureMessage(structs, m, gen, serving ? serving.split('|')[0] : 'overworld')));
+    const here = serving ? serving.split('|')[0] : 'overworld';
+    // a /locate of another dimension's structure (an end city asked for from the Overworld) is answered by that
+    // dimension's own generator, so the End's island heights and biomes decide where the cities stand (this
+    // world's own source has no endGround: every island read as 70 high, and the main island was let through)
+    const other = m.op === 'locate' && structs ? otherDim(m) : null;
+    if (other && other !== here) {
+      const o = otherStructures(other);
+      if (o) { self.postMessage(Object.assign({ type: 'structures', id: m.id }, structureMessage(o.structs, m, o.gen, other))); return; }
+    }
+    self.postMessage(Object.assign({ type: 'structures', id: m.id }, structureMessage(structs, m, gen, here)));
     return;
   }
   if (m.type === 'biomes') {
