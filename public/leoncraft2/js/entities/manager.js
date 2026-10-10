@@ -670,15 +670,24 @@ export class Entities {
     const byPlayer = !!(src && src.player) || (e.lastHurtByPlayer !== undefined && this.age - e.lastHurtByPlayer < 100);
     e.byPlayer = byPlayer;
     const drop = (name, n) => { if (n > 0) this.dropAt(e, name, n, byPlayer); };
-    if (e.loot && !e.isBaby && !(e.baby && e.type === 'zombie' && false)) e.loot(drop, byPlayer);
+    /* killed by the player's own hand: Looting on what it holds (each loot table's own
+       increases), and Fire Aspect cooks the meat even out of fire (or in water) */
+    const held = src && src.type === 'player' && this.inv ? this.inv.slots[this.inv.selected] : null;
+    const looting = held && held.ench ? held.ench.looting | 0 : 0, fire = e.fire;
+    if (held && held.ench && held.ench.fire_aspect && !(e.fire > 0)) e.fire = 1;
+    if (e.loot && !e.isBaby && !(e.baby && e.type === 'zombie' && false)) e.loot(drop, byPlayer, looting);
+    e.fire = fire;
     // what it held or wore, and the experience that adds
-    if (e.dropEquipment) e.dropEquipment(drop, byPlayer);
+    if (e.dropEquipment) e.dropEquipment(drop, byPlayer, looting);
     e.xpExtra = e.equipXp ? e.equipXp() : 0;
     if (this.riding === e) this.dismount();
   }
   dropAt(e, name, n, byPlayer) { this.dropItemAt(e.pos.x, e.pos.y + Math.min(e.h, 1) * 0.5, e.pos.z, name, n, false, byPlayer !== false); }
-  dropItemAt(x, y, z, name, n, fromBlock, toPlayer) {
+  // (o: { stack, vel, delay } for a whole stack, enchanted or worn, thrown with its own speed: a fish reeled in)
+  dropItemAt(x, y, z, name, n, fromBlock, toPlayer, o) {
     if (n <= 0 || !name) return;
+    const D = o && o.stack && this.hooks.hands && this.hooks.hands.drops;
+    if (D && D.spawn) { D.spawn(x, y, z, o.stack, { vel: o.vel, delay: o.delay }); return; }
     if (this.hooks.dropItem) { this.hooks.dropItem(this.world, x, y, z, name, n); return; }
     // no items module: what is a block goes into the inventory
     if (this.inv && B[name] !== undefined && toPlayer !== false && this.mode !== 'creative') this.inv.add(B[name], n);

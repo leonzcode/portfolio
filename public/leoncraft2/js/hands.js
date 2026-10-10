@@ -442,6 +442,8 @@ export class Hands {
     const ar = armorOf(s.id);
     if (ar && !it.block) {
       const old = this.inv.armor[ar.slot];
+      // Curse of Binding keeps what is worn on (but not in creative)
+      if (old && old.ench && old.ench.binding_curse && !this.creative) return false;
       this.inv.armor[ar.slot] = withCount(s, 1);
       if (s.count > 1) { s.count--; if (old) this.inv.placeBack(old); }
       else this.inv.slots[this.inv.selected] = old;
@@ -582,9 +584,9 @@ export class Hands {
   setUsedStack(u, st) { if (u && u.off) this.inv.offhand = st; else this.inv.slots[this.inv.selected] = st; }
   tick() {
     this.mapsTick();
-    // gliding wears the elytra a point a second (never past its last point)
+    // gliding wears the elytra a point a second, Unbreaking sparing it as a tool (never past its last point)
     if (this.player && this.player.gliding && !this.creative) {
-      if (++this.glideT % 20 === 0) { const c = this.inv.armor[1]; if (c) { c.dmg = Math.min((ITEMS[c.id].dur || 432) - 1, (c.dmg | 0) + 1); this.inv.changed(); } }
+      if (++this.glideT % 20 === 0) { const c = this.inv.armor[1]; if (c) { wear(c, 1, false); c.dmg = Math.min((ITEMS[c.id].dur || 432) - 1, c.dmg | 0); this.inv.changed(); } }
     } else this.glideT = 0;
     const u = this.using;
     if (!u) return;

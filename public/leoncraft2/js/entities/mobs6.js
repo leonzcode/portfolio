@@ -11,7 +11,7 @@
    the fish's way (mobs3.js). Numbers from the Minecraft Wiki (Java Edition);
    the shapes are boxes in the game's units, the textures our own.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=39';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=39';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
   MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=39';
 import { Animal, Monster, register, TYPES } from './mobs.js?v=39';
@@ -150,7 +150,7 @@ export class Parrot extends Flyer {
     super.aiStep();
     this.flap = this.onGround ? this.flap * 0.8 : this.flap + 1;
   }
-  loot(drop) { drop('feather', 1 + RI(2)); }
+  loot(drop, byPlayer, L) { drop('feather', 1 + RI(2) + looted(L)); }
   get xp() { return 1 + RI(3); }
   anim(A) { A.flying = !this.onGround && !this.sitting; A.sitting = this.sitting; }
   toJSON() { const o = super.toJSON(); o.kd = this.kind; if (this.tamed) o.tm = 1; if (this.sitting) o.sit = 1; return o; }
@@ -527,7 +527,7 @@ export class Phantom extends Flyer {
   aiStep() { this.sunBurn(); super.aiStep(); }
   sunBurn() { Monster.prototype.sunBurn.call(this); }
   walkValue() { return 0; }
-  loot(drop, byPlayer) { if (byPlayer) drop('phantom_membrane', RI(2)); }
+  loot(drop, byPlayer, L) { if (byPlayer) drop('phantom_membrane', RI(2) + looted(L)); }
   anim(A) { A.flap = A.age * 0.35; }
   rootPose(root, t, a) { root.multiply(t.makeRotationX(-(this.prevPitch + (this.pitch - this.prevPitch) * a))); }
   layers(out) { out.push(['phantom', 'phantom_eyes', null, false, true]); }
@@ -687,7 +687,7 @@ export class Dolphin extends Swimmer {
     const P = this.m.player;
     if (P && P.alive() && this.age % 20 === 0 && this.m.P.inWater && this.dist2(P.pos.x, P.pos.y, P.pos.z) < 100) this.m.effectPlayer('dolphins_grace', 100);
   }
-  loot(drop) { drop(this.fire > 0 ? 'cooked_cod' : 'cod', RI(2)); }
+  loot(drop, byPlayer, L) { drop(this.fire > 0 ? 'cooked_cod' : 'cod', RI(2) + looted(L)); }
   get xp() { return 1 + RI(3); }
   rootPose(root, t, a) { root.multiply(t.makeRotationX(-Math.max(-0.6, Math.min(0.6, (this.vel.y) * 1.5)))); }
 }
@@ -766,7 +766,7 @@ export class Turtle extends Animal {
     }
   }
   grewUp() { this.m.dropAt(this, 'turtle_scute', 1); }
-  loot(drop) { drop('seagrass', RI(3)); }
+  loot(drop, byPlayer, L) { drop('seagrass', RI(3) + looted(L)); }
   walkValue(x, y, z) { return this.m.t.get(x, y - 1, z) === B.sand ? 10 : 0; }
   toJSON() { const o = super.toJSON(); if (this.eggs) o.eg = 1; return o; }
   fromJSON(o) { super.fromJSON(o); this.eggs = !!o.eg; }
@@ -1062,7 +1062,7 @@ export class ZombieNautilus extends Nautilus {
     if (this.age % 20 === 0 && !this.inWater && this.m.isDay() && this.m.seesSky(Math.floor(this.pos.x), Math.floor(this.pos.y + this.h), Math.floor(this.pos.z))) this.fire = Math.max(this.fire || 0, 160);
     super.aiStep();
   }
-  loot(drop) { drop('rotten_flesh', RI(4)); if (this.saddled) drop('saddle', 1); if (this.body) { dropOne(this, this.body); this.body = null; } }
+  loot(drop, byPlayer, L) { drop('rotten_flesh', RI(4) + looted(L)); if (this.saddled) drop('saddle', 1); if (this.body) { dropOne(this, this.body); this.body = null; } }
 }
 register('zombie_nautilus', ZombieNautilus);
 // the mount screen, fetched once (ui/containers.js leads back to the entities, so not imported at the top)
@@ -1157,10 +1157,10 @@ export class Guardian extends Swimmer {
     // out of the water it flops about
     if (!this.inWater && this.onGround && !this.dead) { this.vel.y += 0.5; this.vel.x += (R() - 0.5) * 0.4; this.vel.z += (R() - 0.5) * 0.4; this.onGround = false; }
   }
-  loot(drop) {
-    drop('prismarine_shard', RI(3));
+  loot(drop, byPlayer, L) {
+    drop('prismarine_shard', RI(3) + looted(L));
     const r = R();
-    if (r < 0.4) drop('cod', 1); else if (r < 0.8) drop('prismarine_crystals', 1);
+    if (r < 0.4) drop(this.fire > 0 ? 'cooked_cod' : 'cod', 1 + looted(L)); else if (r < 0.8) drop('prismarine_crystals', 1 + looted(L));
   }
   anim(A) { A.spikes = this.spikes; A.tail = this.want ? 1 : 0.2; }
 }
@@ -1176,7 +1176,7 @@ export class ElderGuardian extends Guardian {
       if (P && P.alive() && this.dist2(P.pos.x, P.pos.y, P.pos.z) < 2500) this.m.effectPlayer('mining_fatigue', 6000, 3);
     }
   }
-  loot(drop) { drop('prismarine_shard', RI(3)); drop('wet_sponge', 1); if (R() < 0.5) drop('cod', 1); else drop('prismarine_crystals', 1); }
+  loot(drop, byPlayer, L) { drop('prismarine_shard', RI(3) + looted(L)); drop('wet_sponge', 1); if (R() < 0.5) drop(this.fire > 0 ? 'cooked_cod' : 'cod', 1 + looted(L)); else drop('prismarine_crystals', 1 + looted(L)); }
 }
 register('elder_guardian', ElderGuardian);
 // the twelve spikes: where each sits (x, y, z from the middle) and its turn (in half turns)
