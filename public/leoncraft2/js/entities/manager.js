@@ -19,45 +19,45 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=39';
-import { PathFinder, Navigation } from './path.js?v=39';
-import { Particles } from './particles.js?v=39';
-import { Ambient } from './ambient.js?v=39';
-import { Living, Mob, wrap, DEG } from './entity.js?v=39';
-import { TYPES } from './mobs.js?v=39';
-import './projectiles.js?v=39';
-import { placeBoat } from './boat.js?v=39';
-import './mobs2.js?v=39';
-import './mobs3.js?v=39';
-import './mobs4.js?v=39';
-import { wandererTick } from './merchant.js?v=39';
-import { tableBooks } from './tablebook.js?v=39';
-import { explode } from './explosion.js?v=39';
-import { splitXp } from './xporb.js?v=39';
-import { placeMinecart, isRail, Minecart } from './minecart.js?v=39';
-import { CART_ITEMS } from './carts.js?v=39';
-import { fallFrom, FALLS, free } from './fallingblock.js?v=39';
-import { Spawner, DESPAWN } from './spawner.js?v=39';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=39';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=39';
-import { EntityMeshes } from '../render/entitymesh.js?v=39';
-import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=39';
-import { lightNear } from '../lightlevel.js?v=39';
-import { activeDrops } from '../drops.js?v=39';
-import { breakAt } from '../place.js?v=39';
-import { dropOf } from '../survival.js?v=39';
-import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=39';
-import { Combat } from '../combat/combat.js?v=39';
-import './nether.js?v=39';
+import { Terrain } from './terrain.js?v=40';
+import { PathFinder, Navigation } from './path.js?v=40';
+import { Particles } from './particles.js?v=40';
+import { Ambient } from './ambient.js?v=40';
+import { Living, Mob, wrap, DEG } from './entity.js?v=40';
+import { TYPES } from './mobs.js?v=40';
+import './projectiles.js?v=40';
+import { placeBoat } from './boat.js?v=40';
+import './mobs2.js?v=40';
+import './mobs3.js?v=40';
+import './mobs4.js?v=40';
+import { wandererTick } from './merchant.js?v=40';
+import { tableBooks } from './tablebook.js?v=40';
+import { explode } from './explosion.js?v=40';
+import { splitXp } from './xporb.js?v=40';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=40';
+import { CART_ITEMS } from './carts.js?v=40';
+import { fallFrom, FALLS, free } from './fallingblock.js?v=40';
+import { Spawner, DESPAWN } from './spawner.js?v=40';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=40';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=40';
+import { EntityMeshes } from '../render/entitymesh.js?v=40';
+import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=40';
+import { lightNear } from '../lightlevel.js?v=40';
+import { activeDrops } from '../drops.js?v=40';
+import { breakAt } from '../place.js?v=40';
+import { dropOf } from '../survival.js?v=40';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=40';
+import { Combat } from '../combat/combat.js?v=40';
+import './nether.js?v=40';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
-import './mobs5.js?v=39';
-import './mobs6.js?v=39';
-import './mobs7.js?v=39';
-import { DIMS } from '../dims.js?v=39';
-import { armorLayers } from './armorlayer.js?v=39';
-import { MobHeld } from '../render/mobheld.js?v=39';
-import { setSpawnerMob } from '../struct/spawners.js?v=39';
-import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=39';
+import './mobs5.js?v=40';
+import './mobs6.js?v=40';
+import './mobs7.js?v=40';
+import { DIMS } from '../dims.js?v=40';
+import { armorLayers } from './armorlayer.js?v=40';
+import { MobHeld } from '../render/mobheld.js?v=40';
+import { setSpawnerMob } from '../struct/spawners.js?v=40';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=40';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -587,7 +587,7 @@ export class Entities {
   // how charged the next hit is (0..1): ticks since the last swing over 20 / attack speed
   cooldown() { return this.combat.cooldown(); }
   // a click in the air (or a block broken) starts the cooldown again, as the game does
-  swung() { this.ticksSinceSwing = 0; }
+  swung(air) { if (air) this.combat.airJab(); this.ticksSinceSwing = 0; }
   /* The player hits an entity (combat/combat.js). */
   attack(e) {
     const ok = this.combat.attack(e);
@@ -670,15 +670,24 @@ export class Entities {
     const byPlayer = !!(src && src.player) || (e.lastHurtByPlayer !== undefined && this.age - e.lastHurtByPlayer < 100);
     e.byPlayer = byPlayer;
     const drop = (name, n) => { if (n > 0) this.dropAt(e, name, n, byPlayer); };
-    if (e.loot && !e.isBaby && !(e.baby && e.type === 'zombie' && false)) e.loot(drop, byPlayer);
+    /* killed by the player's own hand: Looting on what it holds (each loot table's own
+       increases), and Fire Aspect cooks the meat even out of fire (or in water) */
+    const held = src && src.type === 'player' && this.inv ? this.inv.slots[this.inv.selected] : null;
+    const looting = held && held.ench ? held.ench.looting | 0 : 0, fire = e.fire;
+    if (held && held.ench && held.ench.fire_aspect && !(e.fire > 0)) e.fire = 1;
+    if (e.loot && !e.isBaby && !(e.baby && e.type === 'zombie' && false)) e.loot(drop, byPlayer, looting);
+    e.fire = fire;
     // what it held or wore, and the experience that adds
-    if (e.dropEquipment) e.dropEquipment(drop, byPlayer);
+    if (e.dropEquipment) e.dropEquipment(drop, byPlayer, looting);
     e.xpExtra = e.equipXp ? e.equipXp() : 0;
     if (this.riding === e) this.dismount();
   }
   dropAt(e, name, n, byPlayer) { this.dropItemAt(e.pos.x, e.pos.y + Math.min(e.h, 1) * 0.5, e.pos.z, name, n, false, byPlayer !== false); }
-  dropItemAt(x, y, z, name, n, fromBlock, toPlayer) {
+  // (o: { stack, vel, delay } for a whole stack, enchanted or worn, thrown with its own speed: a fish reeled in)
+  dropItemAt(x, y, z, name, n, fromBlock, toPlayer, o) {
     if (n <= 0 || !name) return;
+    const D = o && o.stack && this.hooks.hands && this.hooks.hands.drops;
+    if (D && D.spawn) { D.spawn(x, y, z, o.stack, { vel: o.vel, delay: o.delay }); return; }
     if (this.hooks.dropItem) { this.hooks.dropItem(this.world, x, y, z, name, n); return; }
     // no items module: what is a block goes into the inventory
     if (this.inv && B[name] !== undefined && toPlayer !== false && this.mode !== 'creative') this.inv.add(B[name], n);
@@ -1149,4 +1158,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=39';
+import { rayBox } from './terrain.js?v=40';

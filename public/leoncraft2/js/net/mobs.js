@@ -30,9 +30,9 @@
    walks out of everyone's reach is put away on the server, as the game
    keeps the mobs of unloaded chunks, and comes back with its ground.
 --------------------------------------------------------------------------- */
-import { Living, wrap } from '../entities/entity.js?v=39';
-import { TYPES } from '../entities/mobs.js?v=39';
-import { F } from './players.js?v=39';
+import { Living, wrap } from '../entities/entity.js?v=40';
+import { TYPES } from '../entities/mobs.js?v=40';
+import { F } from './players.js?v=40';
 
 const THREE = window.THREE;
 // besides the living (animals, monsters, villagers, golems, armour stands): paintings, the knots of leads, sand and gravel falling, fireworks,
@@ -45,7 +45,7 @@ const shareableType = t => { const C = TYPES[t]; return !!C && !NOT.has(t) && (C
 // its record as a save keeps it (its own toJSON is taken away while it is shared: the server keeps it, not this browser)
 const jsonOf = e => Object.getPrototypeOf(e).toJSON.call(e);
 // what changes every tick and would send the record over and over: left out of the comparison
-const VOLATILE = new Set(['p', 'v', 'y', 'f', 'age', 'l', 'air']);
+const VOLATILE = new Set(['p', 'v', 'y', 'f', 'age', 'l', 'air', 'by', 'hy']);  // (by, hy: the body's and head's turns, which the positions carry)
 const sigOf = j => { let s = ''; for (const k in j) if (!VOLATILE.has(k)) s += k + ':' + JSON.stringify(j[k]) + ';'; return s; };
 // the flags in a position
 const F_GROUND = 1, F_HURT = 2, F_DEAD = 4, F_FIRE = 8, F_SWING = 16, F_RIDDEN = 32;
@@ -273,10 +273,30 @@ export class Mobs {
       e.onGround = !!(s.f & F_GROUND);
       e.fire = s.f & F_FIRE ? Math.max(e.fire, 2) : 0;
     }
+    // a rocket carrying its owner's player stays with them (boosts() each frame); any rocket leaves its sparkle trail, as tick() does
+    if (rec.j && rec.j.t === 'firework_rocket') {
+      if (rec.j.bo) this.boostOne(rec, e);
+      if (e.age % 2 === 0 && e.m && e.m.particles) e.m.particles('sparkle', e.pos.x, e.pos.y - 0.2, e.pos.z, 1, 0.05);
+    }
     e.vel.subVectors(e.pos, e.prev);
     if (e.dead) e.deathTime = Math.min(19, (e.deathTime | 0) + 1);
     if (e.animTick) e.animTick();
     this.lead(rec, e);
+  }
+  /* Every frame: another machine's rocket boosting its player is put on
+     that player as drawn here (feet + 0.5, as the game keeps it), not drawn
+     220 ms behind on its own */
+  boosts() {
+    for (const rec of this.recs.values()) {
+      const e = rec.e;
+      if (e && e.puppet && rec.j && rec.j.bo) this.boostOne(rec, e);
+    }
+  }
+  boostOne(rec, e) {
+    const r = this.net.players && this.net.players.list.get(rec.o), f = r && r.feet;
+    if (!f) return false;
+    e.pos.set(f.x, f.y + 0.5, f.z); e.prev.copy(e.pos);
+    return true;
   }
   /* A puppet's lead, as the game draws one: from its neck to the hand of the
      player holding it (the one whose machine runs it), or to the knot on a

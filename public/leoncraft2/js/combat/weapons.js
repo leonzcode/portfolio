@@ -17,7 +17,7 @@
    Durability: a sword, trident, mace or spear wears 1 a hit, the other
    tools 2.
 --------------------------------------------------------------------------- */
-import { ITEMS } from '../items.js?v=39';
+import { ITEMS } from '../items.js?v=40';
 
 // the kinds of mob some enchantments care about, by entity type
 export const UNDEAD = new Set(['zombie', 'husk', 'drowned', 'zombie_villager', 'skeleton', 'stray', 'wither_skeleton', 'bogged', 'parched',
@@ -76,9 +76,9 @@ export function smashBonus(fall, density) {
   const a = Math.min(fall, 3), b = Math.min(Math.max(fall - 3, 0), 5), c = Math.max(fall - 8, 0);
   return 4 * a + 2 * b + c + 0.5 * (density || 0) * fall;
 }
-// the game's armour formula, for mobs as for players (Breach takes 15% of the armour a level)
+// the game's armour formula, for mobs as for players (Breach takes 15 percentage points a level off what the armour stops)
 export function afterArmor(dmg, armor, toughness, breach) {
   if (armor <= 0) return dmg;
   const f = Math.min(20, Math.max(armor / 5, armor - 4 * dmg / ((toughness || 0) + 8))) / 25;
-  return dmg * (1 - f * Math.max(0, 1 - 0.15 * (breach || 0)));
+  return dmg * (1 - Math.max(0, f - 0.15 * (breach || 0)));
 }

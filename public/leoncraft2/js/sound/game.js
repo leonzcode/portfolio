@@ -17,19 +17,19 @@
    Everything is played with the game's own volumes and pitches (see the
    notes at each, from the Minecraft Wiki and the game's sounds.json).
 --------------------------------------------------------------------------- */
-import { Sound } from './sound.js?v=39';
-import { SoundPacks, MinecraftPack } from './packs.js?v=39';
-import { blockSound, doorSound, voice, spread } from './sfx.js?v=39';
-import { COVERS, INSIDE } from './blocksounds.js?v=39';
-import { Music, situation } from './music.js?v=39';
-import { Ambience } from './ambient.js?v=39';
-import { MobSounds } from './mobsounds.js?v=39';
-import { Captions } from './captions.js?v=39';
-import { MusicToast } from './toast.js?v=39';
-import { B, BLOCKS, FLUID } from '../blocks.js?v=39';
-import { ITEMS } from '../items.js?v=39';
-import { BIOMES } from '../biomes.js?v=39';
-import { setUiSound } from '../ui/gui.js?v=39';
+import { Sound } from './sound.js?v=40';
+import { SoundPacks, MinecraftPack } from './packs.js?v=40';
+import { blockSound, doorSound, voice, spread } from './sfx.js?v=40';
+import { COVERS, INSIDE } from './blocksounds.js?v=40';
+import { Music, situation } from './music.js?v=40';
+import { Ambience } from './ambient.js?v=40';
+import { MobSounds } from './mobsounds.js?v=40';
+import { Captions } from './captions.js?v=40';
+import { MusicToast } from './toast.js?v=40';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=40';
+import { ITEMS } from '../items.js?v=40';
+import { BIOMES } from '../biomes.js?v=40';
+import { setUiSound } from '../ui/gui.js?v=40';
 
 const R = Math.random;
 const amb = new Ambience();
@@ -441,7 +441,8 @@ function wrapCombat(g, E, atP) {
       return r;
     };
   }
-  if (C.blocked) { const bl = C.blocked.bind(C); C.blocked = (amount, src) => { const r = bl(amount, src); atP('item.shield.block', 1, 0.8 + R() * 0.4); return r; }; }
+  if (C.lunge) { const lu = C.lunge.bind(C); C.lunge = s => { const r = lu(s); if (r) atP('item.spear.lunge_' + r, 1, 1); return r; }; }
+  if (C.blocked) { const bl = C.blocked.bind(C); C.blocked = (amount, src) => { const r = bl(amount, src); atP(src && src.axe ? 'item.shield.break' : 'item.shield.block', src && src.axe ? 0.8 : 1, 0.8 + R() * 0.4); return r; }; }  // an axe putting the shield down: the break sound (the game's entity event 30)
   // thrown things: snowballs, eggs, pearls (the game: 0.5, 0.4 / (0.8-1.2))
   if (E.useHeld) {
     const uh = E.useHeld.bind(E);

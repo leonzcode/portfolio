@@ -37,11 +37,12 @@
    animals in it. A structure's own mobs (villagers, shulkers, guardians...)
    come with it too, once, the first time its chunk is seen.
 --------------------------------------------------------------------------- */
-import { TYPES } from './mobs.js?v=39';
-import { BIOMES } from '../biomes.js?v=39';
-import { B, BLOCKS, SOLID, FLUID, OPAQUE } from '../blocks.js?v=39';
-import { SEA, Y0 } from '../world-const.js?v=39';
-import { DIMS } from '../dims.js?v=39';
+import { TYPES } from './mobs.js?v=40';
+import { BIOMES } from '../biomes.js?v=40';
+import { B, BLOCKS, SOLID, FLUID, OPAQUE } from '../blocks.js?v=40';
+import { SEA, Y0 } from '../world-const.js?v=40';
+import { DIMS } from '../dims.js?v=40';
+import { I } from '../items.js?v=40';
 
 const R = () => Math.random();
 const RI = n => Math.floor(Math.random() * n);
@@ -406,10 +407,35 @@ export class Spawner {
     if (!list || !list.length) return 0;
     let n = 0;
     for (const s of list) {
+      if (s.type === 'item_frame') { if (this.structureFrame(s)) n++; continue; }
       if (!TYPES[s.type]) continue;
       const e = this.m.spawn(s.type, s.x, s.y - Y0, s.z, Object.assign({ natural: true, structure: true }, s));
       if (e) { e.persistent = true; n++; }
     }
     return n;
+  }
+  /* An item frame a structure left (the end ship's elytra): frames are a block plus a details entry here
+     (details.js hangFrame), not an entity. facing is the way the frame looks out (piece.js NORTH 0, EAST 1,
+     SOUTH 2, WEST 3); the block meta is hangFrame's face (+x 1, -x 0, +z 5, -z 4). If the given side has no
+     wall behind it, the first side that has one is used. */
+  structureFrame(s) {
+    const L = typeof window !== 'undefined' ? window.__lc2 : null, D = L && L.game && L.game.details;
+    const w = this.m.world, b = B.lc2_item_frame;
+    if (!w || b === undefined) return false;
+    const x = Math.floor(s.x), y = Math.floor(s.y - Y0), z = Math.floor(s.z);
+    const cur = w.get(x, y, z);
+    if (cur && !BLOCKS[cur].replaceable) return false;
+    const OUT = [[0, -1], [1, 0], [0, 1], [-1, 0]], META = [4, 1, 5, 0];
+    let f = (s.facing | 0) & 3;
+    const wall = d => SOLID[w.get(x - OUT[d][0], y, z - OUT[d][1])];
+    if (!wall(f)) for (let d = 0; d < 4; d++) if (wall(d)) { f = d; break; }
+    w.set(x, y, z, b, META[f]);
+    if (D && D.entry) {
+      const e = D.entry(x, y, z, 'frame');
+      const id = s.item ? I[s.item] : undefined;
+      e.item = id !== undefined ? { id, count: 1 } : null; e.rot = 0;
+      D.changed(e);
+    }
+    return true;
   }
 }

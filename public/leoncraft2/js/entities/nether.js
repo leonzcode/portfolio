@@ -31,18 +31,18 @@
      blaze             hovers, three fireballs 6 ticks apart then 5 seconds
                        off, burns you; water and snowballs hurt it
 --------------------------------------------------------------------------- */
-import { Mob, Living, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=39';
+import { Mob, Living, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=40';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal, posAway, randomLandPos } from './ai.js?v=39';
-import { register, Monster, Zombie, Skeleton, Animal, TYPES } from './mobs.js?v=39';
-import { Slime } from './mobs3.js?v=39';
-import { Projectile } from './projectiles.js?v=39';
-import { model } from './mobs2.js?v=39';
-import { addArt } from './mobart.js?v=39';
-import { POSE } from './mobmodels.js?v=39';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=39';
-import { I, ITEMS } from '../items.js?v=39';
-import { dropStack, activeDrops } from '../drops.js?v=39';
+  MeleeAttackGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal, posAway, randomLandPos } from './ai.js?v=40';
+import { register, Monster, Zombie, Skeleton, Animal, TYPES } from './mobs.js?v=40';
+import { Slime } from './mobs3.js?v=40';
+import { Projectile } from './projectiles.js?v=40';
+import { model } from './mobs2.js?v=40';
+import { addArt } from './mobart.js?v=40';
+import { POSE } from './mobmodels.js?v=40';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=40';
+import { I, ITEMS } from '../items.js?v=40';
+import { dropStack, activeDrops } from '../drops.js?v=40';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -389,9 +389,9 @@ export class ZombifiedPiglin extends Zombie {
     this.speed = (this.target ? 0.28 : 0.23) * (this.baby ? 1.5 : 1);
   }
   anim(A) { A.aggressive = this.aggressive; A.zombieArms = !!this.target; }
-  loot(drop, byPlayer) {
-    drop('rotten_flesh', RI(2)); drop('gold_nugget', RI(2));
-    if (byPlayer && R() < 0.025) drop('gold_ingot', 1);
+  loot(drop, byPlayer, L) {
+    drop('rotten_flesh', RI(2) + looted(L)); drop('gold_nugget', RI(2) + looted(L));
+    if (byPlayer && R() < 0.025 + 0.01 * L) drop('gold_ingot', 1);
   }
   // no darkness needed, only not on nether wart blocks (and light 11 or less, where it would walk)
   static checkSpawn(S, x, y, z) {
@@ -702,10 +702,10 @@ export class Hoglin extends Animal {
     if (!inNether(this.m) && !this.immune) { if (++this.zombifyT >= 300) this.m.convertMob(this, 'zoglin'); }
     else this.zombifyT = 0;
   }
-  loot(drop) {
+  loot(drop, byPlayer, L) {
     if (this.ageT < 0) return;
-    drop(this.fire > 0 ? 'cooked_porkchop' : 'porkchop', between(2, 4));
-    drop('leather', RI(2));
+    drop(this.fire > 0 ? 'cooked_porkchop' : 'porkchop', between(2, 4) + looted(L));
+    drop('leather', RI(2) + looted(L));
   }
   get xp() { return 5; }
   anim(A) { A.hoglinAttack = this.attackT; A.shake = this.zombifyT > 0; }
@@ -736,7 +736,7 @@ export class Zoglin extends Monster {
   sunBurn() {}
   doHurtTarget(t) { return hoglinHit(this, t); }
   aiStep() { super.aiStep(); if (this.attackT > 0) this.attackT--; }
-  loot(drop) { drop('rotten_flesh', between(1, 3)); }
+  loot(drop, byPlayer, L) { drop('rotten_flesh', between(1, 3) + looted(L)); }
   anim(A) { A.hoglinAttack = this.attackT; }
 }
 register('zoglin', Zoglin);
@@ -871,7 +871,7 @@ export class Ghast extends Mob {
     const d = this.inWater ? 0.8 : this.inLava ? 0.5 : 0.91;
     v.x *= d; v.y *= d; v.z *= d;
   }
-  loot(drop) { drop('ghast_tear', RI(2)); drop('gunpowder', RI(3)); }
+  loot(drop, byPlayer, L) { drop('ghast_tear', RI(2) + looted(L)); drop('gunpowder', RI(3) + looted(L)); }
   // one in twenty tries, on a block it could stand on, with room for its 4 x 4 x 4
   static checkSpawn(S, x, y, z) { return S.m.difficulty !== 'peaceful' && RI(20) === 0 && S.onGround(this, x, y, z); }
 }
@@ -902,7 +902,7 @@ export class MagmaCube extends Slime {
     if (Math.abs(pp.x - p.x) < 0.6 + this.hw && Math.abs(pp.z - p.z) < 0.6 + this.hw && pp.y < p.y + this.h && pp.y + 1.8 > p.y && this.canSee(P)) this.doHurtTarget(P);
   }
   get xp() { return this.size; }
-  loot(drop) { if (this.size > 1 && RI(4) === 0) drop('magma_cream', 1); }
+  loot(drop, byPlayer, L) { if (this.size > 1) drop('magma_cream', (RI(4) === 0 ? 1 : 0) + looted(L)); }
   // any light, on a block it could stand on
   static checkSpawn(S, x, y, z) { return S.m.difficulty !== 'peaceful' && S.onGround(this, x, y, z); }
 }
@@ -995,7 +995,7 @@ export class Strider extends Animal {
   seat() { return [0, this.h - 0.2, 0]; }
   layers(out) { if (this.saddled) out.push(['strider', 'strider_saddle', null]); }
   anim(A) { A.shiver = this.cold && !this.passengers.length; }
-  loot(drop) { drop('string', between(2, 5)); if (this.saddled) drop('saddle', 1); }
+  loot(drop, byPlayer, L) { drop('string', between(2, 5) + looted(L)); if (this.saddled) drop('saddle', 1); }
   /* Spawning: in lava with air above the lava's top; one in thirty with a
      zombified piglin riding it, holding the stick. */
   static checkSpawn(S, x, y, z) {
@@ -1050,10 +1050,10 @@ export class WitherSkeleton extends Skeleton {
     if (ok) { if (t.isPlayer) this.m.effectPlayer('wither', 200, 1); else if (t.wither) t.wither(200); }
     return ok;
   }
-  loot(drop, byPlayer) {
-    if (RI(3) === 0) drop('coal', 1);
-    drop('bone', RI(3));
-    if (byPlayer && R() < 0.025) drop('wither_skeleton_skull', 1);
+  loot(drop, byPlayer, L) {
+    drop('coal', (RI(3) === 0 ? 1 : 0) + looted(L));
+    drop('bone', RI(3) + looted(L));
+    if (byPlayer && R() < 0.025 + 0.01 * L) drop('wither_skeleton_skull', 1);
   }
   anim(A) { A.aiming = false; A.aggressive = this.aggressive; }
   layers() {}
@@ -1126,7 +1126,7 @@ export class Blaze extends Monster {
     super.aiStep();
     if (!this.dead && this.age % 2 === 0) this.m.particles(this.charged ? 'flame' : 'smoke', this.pos.x + (R() - 0.5) * this.w, this.pos.y + R() * this.h, this.pos.z + (R() - 0.5) * this.w, 1, 0);
   }
-  loot(drop, byPlayer) { if (byPlayer) drop('blaze_rod', RI(2)); }
+  loot(drop, byPlayer, L) { if (byPlayer) drop('blaze_rod', RI(2) + looted(L)); }
   // light 11 or less (where it would walk), on a block it could stand on, at any darkness
   static checkSpawn(S, x, y, z) { return S.m.difficulty !== 'peaceful' && S.onGround(this, x, y, z) && S.walkOk(x, y, z); }
 }

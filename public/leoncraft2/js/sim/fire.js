@@ -21,8 +21,8 @@
    it does nothing, as in the game. It lights TNT; campfires and candles
    are details.js's, portals dim/realms.js's.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=39';
-import { catchOf, burnOf } from '../flame.js?v=39';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=40';
+import { catchOf, burnOf } from '../flame.js?v=40';
 
 const RI = (s, n) => Math.floor(s.rng() * n);
 const NB6 = [[1, 0, 0], [-1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1]];
@@ -171,7 +171,8 @@ export function installFire(sim) {
     if (held !== 'flint_and_steel' && held !== 'fire_charge') return false;
     const b = sim.get(hit.x, hit.y, hit.z), n = b ? BLOCKS[b].name : '';
     // a fire charge is used up; flint and steel wears by 1 (interact.js passes wornHeld to the hand)
-    if (n === 'tnt') { sim.set(hit.x, hit.y, hit.z, 0, 0); sim.primeTnt(hit.x, hit.y, hit.z, sim.player, 80); if (held === 'fire_charge') sim.usedHeld = true; else sim.wornHeld = 1; return true; }
+    // (the TNT's owner is the player entity, as the game's PrimedTnt owner is: net/events.js credits the blast to it)
+    if (n === 'tnt') { sim.set(hit.x, hit.y, hit.z, 0, 0); sim.primeTnt(hit.x, hit.y, hit.z, (sim.game && sim.game.entities && sim.game.entities.player) || sim.player, 80); if (held === 'fire_charge') sim.usedHeld = true; else sim.wornHeld = 1; return true; }
     const f = hit.face, x = hit.x + f[0], y = hit.y + f[1], z = hit.z + f[2];
     if (!isAir(sim.get(x, y, z))) return false;
     if (!sim.lightFire(x, y, z, 0)) return false;
@@ -180,12 +181,13 @@ export function installFire(sim) {
   };
 
   /* a burning arrow or a fireball that hits TNT lights it; an unlit campfire or candle it hits is lit (rsparts.js
-     tells of the hit; the game's onProjectileHit for each) */
-  sim.projectileFire = (x, y, z) => {
+     tells of the hit; the game's onProjectileHit for each). TNT lit this way is owned by the projectile's
+     owner when that is a living thing (TntBlock.onProjectileHit: the player who shot, a skeleton, a blaze) */
+  sim.projectileFire = (x, y, z, owner) => {
     const b = sim.get(x, y, z), d = b && BLOCKS[b];
     if (!d) return;
     const m = sim.meta(x, y, z);
-    if (b === B.tnt) { sim.set(x, y, z, 0, 0); if (sim.primeTnt) sim.primeTnt(x, y, z, null, 80); }
+    if (b === B.tnt) { sim.set(x, y, z, 0, 0); if (sim.primeTnt) sim.primeTnt(x, y, z, owner && typeof owner === 'object' && typeof owner.hurt === 'function' && !owner.kind ? owner : null, 80); }
     else if (d.shape === 'campfire' && (m & 4)) sim.set(x, y, z, b, m & ~4);
     else if (/candle$|candle_cake$/.test(d.name) && !(m & 4)) sim.set(x, y, z, b, m | 4);
   };

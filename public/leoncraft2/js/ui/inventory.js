@@ -34,17 +34,17 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=39';
-import { Screen, TextField, WHITE } from './gui.js?v=39';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=39';
-import { matchGrid, consumeGrid } from '../crafting.js?v=39';
-import { enchName, ENCH } from '../enchanting.js?v=39';
-import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=39';
-import { patternLines, drawBannerIcon } from '../banners.js?v=39';
-import { mapLines } from '../maps.js?v=39';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=39';
-import { dialPicture, usePicture } from '../dials.js?v=39';
-import { RecipeBook } from './recipebook.js?v=39';
+import { BLOCKS, B } from '../blocks.js?v=40';
+import { Screen, TextField, WHITE } from './gui.js?v=40';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=40';
+import { matchGrid, consumeGrid } from '../crafting.js?v=40';
+import { enchName, ENCH } from '../enchanting.js?v=40';
+import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=40';
+import { patternLines, drawBannerIcon } from '../banners.js?v=40';
+import { mapLines } from '../maps.js?v=40';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=40';
+import { dialPicture, usePicture } from '../dials.js?v=40';
+import { RecipeBook } from './recipebook.js?v=40';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -606,6 +606,8 @@ export class ContainerScreen extends Screen {
     return true;
   }
   limit(s, id) { return Math.min(maxStack(id), s.kind === 'armor' ? 1 : 64); }
+  // Curse of Binding: armour that has it cannot be taken off (except in creative)
+  mayTake(s) { const st = this.getStack(s); return !(s.kind === 'armor' && st && st.ench && st.ench.binding_curse && !this.creative); }
   setCarried(st) { this.inv.carried = st && st.count > 0 ? st : null; }
   // a slot the drag, the double click and spreading leave alone
   special(s) { return s.kind === 'result' || s.kind === 'grid' || s.kind === 'destroy'; }
@@ -672,6 +674,7 @@ export class ContainerScreen extends Screen {
       else if (same(st, c)) { const n = Math.min(maxStack(c.id) - c.count, st.count); if (n > 0) { c.count += n; st.count -= n; this.setStack(s, st.count ? st : null); this.tookOutput(s, n); } }
       return;
     }
+    if (st && !this.mayTake(s)) return;
     if (button === 0) {
       if (!c) { if (st) { this.setCarried(st); this.setStack(s, null); } }
       else if (!st) {
@@ -752,7 +755,7 @@ export class ContainerScreen extends Screen {
   quickMove(s) {
     if (s.kind === 'result') { this.shiftResult(); return; }
     const st = this.getStack(s);
-    if (!st) return;
+    if (!st || !this.mayTake(s)) return;
     const MAIN = range(9, 36), HOT = range(0, 9);
     if (s.kind === 'craft' || s.kind === 'armor' || s.kind === 'offhand') this.moveInto(st, MAIN.concat(HOT));
     else if (s.kind === 'inv') {
@@ -770,7 +773,7 @@ export class ContainerScreen extends Screen {
     const max = maxStack(c.id);
     for (let pass = 0; pass < 2 && c.count < max; pass++) {
       for (const s of this.slots) {
-        if (this.special(s) || !this.slotShown(s)) continue;
+        if (this.special(s) || !this.slotShown(s) || !this.mayTake(s)) continue;
         const st = this.getStack(s);
         if (!same(st, c) || (pass === 0 && st.count >= max)) continue;
         const n = Math.min(max - c.count, st.count);
@@ -796,6 +799,7 @@ export class ContainerScreen extends Screen {
     const a = this.getStack(s), b = this.inv.slots[n];
     if (s.kind === 'result') { if (this.result && !b) this.inv.slots[n] = this.craftOnce(); return; }   // (null when it cannot be taken)
     if (s.output) { if (a && !b) { this.inv.slots[n] = a; this.setStack(s, null); this.tookOutput(s, a.count); } return; }
+    if (a && !this.mayTake(s)) return;
     if (b && !this.mayPlace(s, b)) return;
     if (b && b.count > this.limit(s, b.id)) return;
     this.setStack(s, b); this.setStack(hs, a);
@@ -803,6 +807,7 @@ export class ContainerScreen extends Screen {
   swapOffhand(s) {
     if (s.kind === 'offhand' || s.kind === 'result' || s.output) return;
     const a = this.getStack(s), b = this.inv.offhand;
+    if (a && !this.mayTake(s)) return;
     if (b && !this.mayPlace(s, b)) return;
     this.setStack(s, b); this.inv.offhand = a;
   }
@@ -940,7 +945,7 @@ export class ContainerScreen extends Screen {
       return;
     }
     const st = this.getStack(s);
-    if (!st) return;
+    if (!st || !this.mayTake(s)) return;
     const n = all ? st.count : 1;
     this.inv.emit('drop', withCount(st, n));
     st.count -= n;
