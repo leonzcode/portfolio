@@ -475,6 +475,8 @@ function skyLightAt(dayTime) {
   for (let n = 0; n < 4; n++) skyOut[n] = a[n + 1] + (b[n + 1] - a[n + 1]) * f;
   return skyOut;
 }
+// the sky light's strength at a time of day (1 by day, 0.24 at night: the game's sky light factor; ui/minimap.js)
+export const skyLightFactor = dayTime => skyLightAt(dayTime)[0];
 
 export class Vanilla {
   constructor(renderer, textures) {

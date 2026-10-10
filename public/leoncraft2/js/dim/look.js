@@ -12,16 +12,27 @@ import { nightVision, shutFog } from '../render/vanilla.js?v=39';
 const THREE = window.THREE;
 const lin = v => Math.pow(v / 255, 2.2);
 const target = new THREE.Vector3();
-/* Fullbright in the shader looks: the light floor (glsl.js lightFloor) raised
-   as Night Vision raises it, but further, so a cave or the night is lit about
-   as open ground is by day; colours are not touched. */
-export const FULLBRIGHT_FLOOR = 2.5;
+/* Fullbright in the shader looks: everything is lit up to this much light
+   (glsl.js fullbrightFill: only what the sun or moon, the sky and torches
+   leave is filled in), so a cave or the night is lit about as open ground is
+   by day and day stays as it was; colours are not touched. One for the light
+   pipeline (Low, Medium) and one for the full chain (High, RIP Computer),
+   whose eye opens up in a cave: each measured so a stone floor in a dark cave
+   comes out about as bright as one in the noon sun. The light pipeline's
+   exposure is known here (sky.js uExpo): it opens up at night outdoors, so
+   the light is scaled by the cave's exposure over it and the night comes out
+   as the cave does. (The full chain's eye is worked out on the graphics card.) */
+export const FULLBRIGHT_LIGHT = { ldr: 0.7, full: 1.0 };
 
 export function dimLook(R, state, dt) {
   const U = R.U, D = state.dim;
   // Night Vision lifts the light floor (glsl.js lightFloor), Blindness and Darkness close a black fog in (glsl.js uShut), in every dimension
-  // (Fullbright lifts it further, to about what open ground gets by day: FULLBRIGHT_FLOOR)
-  if (U.uNightVision) U.uNightVision.value = Math.max(nightVision(state), R.opts.fullbright ? FULLBRIGHT_FLOOR : 0);
+  if (U.uNightVision) U.uNightVision.value = nightVision(state);
+  // Fullbright: everything lit up to a day's light (FULLBRIGHT_LIGHT)
+  if (U.uFullbright) {
+    const k = R.opts.ldr && U.uExpo && U.uExpo.value > 0 && U.uExposure ? Math.min(4, Math.max(0.25, U.uExposure.value / U.uExpo.value)) : 1;
+    U.uFullbright.value = R.opts.fullbright ? FULLBRIGHT_LIGHT[R.opts.ldr ? 'ldr' : 'full'] * k : 0;
+  }
   if (U.uShut) shutFog(state, dt, (R.opts.renderDist || 8) * 16, U.uShut.value);
   if (!D || D.id === 'overworld') { U.uDim.value = 0; return; }
   // (the eye there keeps the renderer's one level for each, as Low and Medium do: post.js FS_EXPO)
