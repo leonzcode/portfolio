@@ -646,6 +646,7 @@ export class Net {
       this.players.frame(now, dt, g.world, dimCode(g.dim), eye, Math.max(48, (R.opts.renderDist || 8) * 16), g.mode === 'spectator');
     }
     this.events.players(dt);
+    if (this.mobs) this.mobs.boosts();
     // a new skin chosen while playing goes to everyone
     if ((this.skinCheck = (this.skinCheck || 0) + dt) > 2) { this.skinCheck = 0; this.sendSkin(); }
   }

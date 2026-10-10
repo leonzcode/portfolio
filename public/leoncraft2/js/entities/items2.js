@@ -135,7 +135,8 @@ export class FireworkRocket extends Entity {
     }
     this.remove();
   }
-  toJSON() { const o = super.toJSON(); o.lf = this.life; if (this.stack) o.st = { flight: this.stack.flight, explosions: this.stack.explosions }; return o; }
+  // bo: carrying the player of the machine that runs it (net/mobs.js keeps another machine's copy on that player)
+  toJSON() { const o = super.toJSON(); o.lf = this.life; if (this.stack) o.st = { flight: this.stack.flight, explosions: this.stack.explosions }; if (this.boosting) o.bo = 1; return o; }
   fromJSON(o) { super.fromJSON(o); this.life = o.lf || 30; this.stack = o.st || null; }
 }
 register('firework_rocket', FireworkRocket);
