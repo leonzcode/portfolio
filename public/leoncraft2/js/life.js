@@ -22,6 +22,7 @@ import { DIMS } from './dims.js?v=39';
 import { Y0 } from './world-const.js?v=39';
 import { EFFECTS, effectId, effectName } from './effects.js?v=39';
 import { xpForLevel } from './survival.js?v=39';
+import { Account } from './net/account.js?v=39';
 
 /* ---- what survival.js asks ---- */
 export function survivalHooks(getGame, deps) {
@@ -33,7 +34,8 @@ export function survivalHooks(getGame, deps) {
     rainingAt: (x, y, z) => { const G = g(); return !!(G && G.sim && G.sim.weather && G.sim.weather.rainingAt(x, y, z)); },
     player: () => g() && g().player,
     riding: () => { const G = g(); return !!(G && G.entities && G.entities.riding); },
-    name: () => 'Player',
+    // (your account's name: net/account.js)
+    name: () => Account.name || 'Player',
     hardcore: () => !!(g() && g().entry.hardcore),
     // the death message goes to chat (the showDeathMessages rule)
     onDeath: message => { if (gameRule(g(), 'showDeathMessages') && deps.chat) { deps.chat.add(message, 0xFFFFFF); } },

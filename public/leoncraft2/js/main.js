@@ -32,6 +32,8 @@ import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps,
 import { SEA, Y0 } from './world-const.js?v=39';
 import { Gui, Options } from './ui/gui.js?v=39';
 import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, ConfirmScreen, Worlds, setLogoArt, seedFrom } from './ui/menus.js?v=39';
+import { Account } from './net/account.js?v=39';
+import { LoginScreen } from './ui/account.js?v=39';
 import { ItemIcons } from './ui/icons.js?v=39';
 import { Inventory, inventoryScreen } from './ui/inventory.js?v=39';
 import { Hud } from './ui/hud.js?v=39';
@@ -505,7 +507,7 @@ async function boot() {
      as soon as the title is up; a world waits for them only once its ground is made. */
   let partsUp = null, structures = null;
   const parts = () => partsUp || (partsUp = loadParts().then(() => {
-    advInit({ gui, chat, icons, options, name: () => (game && game.net ? game.net.name : 'Player') });
+    advInit({ gui, chat, icons, options, name: () => (game && game.net ? game.net.name : Account.name || 'Player') });
     // structures: /locate, strongholds for eyes of ender, chest loot, spawners (struct/spawners.js)
     structures = structuresApi(() => (game ? game.world : menu && menu.world), () => game && game.player);
     if (window.__lc2) window.__lc2.structures = structures;
@@ -636,6 +638,15 @@ async function boot() {
   gui.panorama = !resumeTo;
   // straight back into a world (below): its loading screen, with no title world or practice in the way
   if (!resumeTo) { gui.setRoot(new TitleScreen()); paintIdle(); }
+  /* Your account (net/account.js): the session kept in this browser is checked
+     with the server; with none, or one it no longer takes, the login screen
+     comes up over the title before anything can be played (ui/account.js).
+     With no answer, a kept session stands for singleplayer. */
+  Account.check().then(ok => {
+    if (ok || resumeTo || resumeMp) return;
+    const top = gui.screen;
+    if (top && top.constructor === TitleScreen) gui.open(new LoginScreen(null));
+  });
 
   /* ---- playing a world ---- */
   async function startGame(entry, isNew) {
@@ -1181,7 +1192,7 @@ async function boot() {
   const chatCtx = () => {
     const g = game;
     return {
-      game: g, playerName: g.net ? g.net.name : 'Player',
+      game: g, playerName: g.net ? g.net.name : Account.name || 'Player',
       // on a server what you say goes to everyone (net/net.js)
       sendChat: g.net ? t => g.net.chat(t) : null,
       // Allow Commands: as set when the world was made (creative worlds have it on unless turned off)
@@ -1633,6 +1644,13 @@ async function boot() {
       mode: mode || 'creative', created: Date.now(), lastPlayed: Date.now() }), true),
     get realms() { return game && game.realms; }, DIMS, travel: (dim, resolve, near) => travel(dim, resolve, near),
     isLeaf: b => !BLOCKS[b] || BLOCKS[b].leaves || BLOCKS[b].log || !BLOCKS[b].solid,
+    // for test harnesses: log in without typing (account.login(name, password) -> the server's answer; the login screen closes itself)
+    account: {
+      get name() { return Account.name; }, get ready() { return Account.ready; }, get admin() { return Account.admin; }, get session() { return Account.session; },
+      login: async (name, password) => { const r = await Account.login(name, password); if (r.ok && gui.screen instanceof LoginScreen) gui.back(); return r; },
+      create: async (name, password) => { const r = await Account.create(name, password); if (r.ok && gui.screen instanceof LoginScreen) gui.back(); return r; },
+      logout: () => Account.logout(), check: () => Account.check(),
+    },
   };
   // after a quality change, straight back into the world you were in
   if (resumeTo) startGame(resumeTo, false);

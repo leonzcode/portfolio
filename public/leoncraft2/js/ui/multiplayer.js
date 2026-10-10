@@ -15,12 +15,17 @@
    that turns you away or a connection that drops says why, with Back to
    server list.
 
-   Your name on servers is set with the button where the game has Direct
-   Connection (kept in this browser).
+   You play as your account (net/account.js): the server takes your name
+   from your session, so the button where the game has Direct Connection
+   shows your account (change the password, log out). The owner of a server
+   (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
+   session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
 import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=39';
 import { ConfirmScreen } from './menus.js?v=39';
-import { Net, listServers, createServer, editServer, deleteServer, playerName, setPlayerName, cleanName, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=39';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=39';
+import { Account } from '../net/account.js?v=39';
+import { LoginScreen, AccountScreen } from './account.js?v=39';
 import { parseSeed } from '../gen/random.js?v=39';
 
 const PW_KEY = 'lc2_pw_';
@@ -36,7 +41,7 @@ class ServerEntry {
     g.text(g.font.trim(s.name, width - 80), left + 35, top + 1, WHITE, false);
     const line1 = s.motd || (s.kind === 'private' ? 'A private server' : 'A public server');
     g.text(g.font.trim(line1, width - 40), left + 35, top + 12, 0x808080, false);
-    const line2 = (MODE_NAMES[s.mode] || 'Survival') + ' Mode' + (s.cheats ? ', Commands' : '') + (s.kind === 'private' ? ', Password' : '') + (s.mine ? ', yours' : '');
+    const line2 = (MODE_NAMES[s.mode] || 'Survival') + ' Mode' + (s.cheats ? ', Commands' : '') + (s.kind === 'private' ? ', Password' : '') + (s.mine ? ', yours' : s.owner ? ', ' + s.owner + "'s" : '');
     g.text(g.font.trim(line2, width - 40), left + 35, top + 21, 0x808080, false);
     // the player count and the signal bars, top right
     const count = s.players + '/' + s.max, cw = g.textWidth(count);
@@ -82,9 +87,9 @@ export class MultiplayerScreen extends Screen {
       onActivate: e => this.join(e.s),
     }));
     this.joinB = this.add(new Button(W / 2 - 154, H - 52, 100, 20, 'Join Server', () => { const s = this.sel(); if (s) this.join(s); }));
-    this.add(new Button(W / 2 - 50, H - 52, 100, 20, 'Name: ' + playerName(), () => g.open(new NameScreen())));
+    this.add(new Button(W / 2 - 50, H - 52, 100, 20, Account.name || 'Account', () => g.open(new AccountScreen()), 'Your account: change your password, or log out'));
     this.add(new Button(W / 2 + 54, H - 52, 100, 20, 'Create Server', () => g.open(new CreateServerScreen())));
-    this.editB = this.add(new Button(W / 2 - 154, H - 28, 70, 20, 'Edit', () => { const s = this.sel(); if (s && s.mine) g.open(new CreateServerScreen(s)); }));
+    this.editB = this.add(new Button(W / 2 - 154, H - 28, 70, 20, 'Settings', () => { const s = this.sel(); if (s && s.canEdit) g.open(new ServerSettingsScreen(s)); }));
     this.delB = this.add(new Button(W / 2 - 74, H - 28, 70, 20, 'Delete', () => this.remove()));
     this.add(new Button(W / 2 + 4, H - 28, 70, 20, 'Refresh', () => this.refresh()));
     this.add(new Button(W / 2 + 80, H - 28, 75, 20, 'Back', () => g.back()));
@@ -95,8 +100,9 @@ export class MultiplayerScreen extends Screen {
   updateButtons() {
     const s = this.sel();
     this.joinB.active = !!s;
-    this.editB.active = this.delB.active = !!(s && s.mine);
-    this.editB.tooltip = this.delB.tooltip = s && !s.mine ? 'Only the browser that made a server can change it' : null;
+    this.editB.active = !!(s && s.canEdit);
+    this.delB.active = !!(s && s.canEdit && s.id !== 'main');
+    this.editB.tooltip = this.delB.tooltip = s && !s.canEdit ? 'Only the owner of a server can change it' : null;
   }
   fill() {
     this.list.entries = this.servers.map(s => new ServerEntry(s, this));
@@ -121,7 +127,7 @@ export class MultiplayerScreen extends Screen {
   }
   remove() {
     const s = this.sel(), g = this.gui;
-    if (!s || !s.mine) return;
+    if (!s || !s.canEdit) return;
     g.open(new ConfirmScreen('Are you sure you want to remove this server?', "'" + s.name + "' will be lost forever! (A long time!)", 'Delete', 'Cancel', async yes => {
       g.back();
       if (!yes) return;
@@ -136,7 +142,7 @@ export class MultiplayerScreen extends Screen {
     if (s.kind === 'private' && !pw) { g.open(new PasswordScreen(s, false)); return; }
     const scr = new ConnectingScreen();
     g.open(scr);
-    Net.connect(s.id, pw, playerName()).then(net => {
+    Net.connect(s.id, pw).then(net => {
       if (scr.cancelled) { net.close(); return; }
       if (s.kind === 'private') keepPassword(s.id, pw);
       scr.text = 'Joining world...';
@@ -144,6 +150,8 @@ export class MultiplayerScreen extends Screen {
     }, err => {
       if (scr.cancelled) return;
       if (err && err.password) { keepPassword(s.id, ''); g.replace(new PasswordScreen(s, !!pw)); return; }
+      // (your session ran out, or you were logged out elsewhere: log in, then on to the server)
+      if (err && err.session) { g.replace(new LoginScreen(() => this.join(s, pw), { error: 'Your session has expired. Log in again.' })); return; }
       g.replace(new DisconnectedScreen('Failed to connect to the server', (err && err.reason) || 'Connection refused'));
     });
   }
@@ -288,30 +296,97 @@ export function rejoin(gui, id) {
   list.join({ id, name: 'the server', kind: 'public' }, savedPassword(id));
 }
 
-/* ---- your name on servers ---- */
-export class NameScreen extends Screen {
-  constructor() {
-    super('Your Name');
-    this.field = new TextField(0, 0, 200, 20, { value: playerName(), maxLength: 16, filter: v => /^[A-Za-z0-9_ -]*$/.test(v), onEnter: () => this.done() });
+/* ---- Server Settings: for the owner (and an admin) ----
+   As a server's server.properties and whitelist would have it: the name and
+   message of the day, public or private (and its password), the default game
+   mode, Allow Commands, spawn protection, the difficulty, PvP, the most
+   players at once, the whitelist and who is on it, and the owner's own OP.
+   Delete Server is here too, behind a confirmation. Saved with Done; whoever
+   is on hears at once what changed (lc2.js /mc/lc2/edit). */
+const DIFFS = ['peaceful', 'easy', 'normal', 'hard'];
+const DIFF_NAMES = { peaceful: 'Peaceful', easy: 'Easy', normal: 'Normal', hard: 'Hard' };
+const MAXES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20];
+export class ServerSettingsScreen extends Screen {
+  constructor(s) {
+    super('Server Settings');
+    this.s = s;
+    const st = s.settings || {};
+    this.v = { kind: s.kind, mode: s.mode || 'survival', cheats: !!s.cheats, prot: (s.spawnProt | 0) ? 16 : 0, difficulty: st.difficulty || 'normal',
+      pvp: st.pvp !== false, max: s.max || 20, wl: !!st.wl, ownerOp: st.ownerOp !== false };
+    this.nameField = new TextField(0, 0, 180, 20, { value: s.name, maxLength: 32, onEnter: () => this.done() });
+    this.motdField = new TextField(0, 0, 180, 20, { value: s.motd || '', maxLength: 60, hint: 'A line under the name' });
+    this.pwField = new TextField(0, 0, 180, 20, { value: '', maxLength: 32, hint: 'Leave blank to keep it' });
+    this.wlField = new TextField(0, 0, 180, 20, { value: (st.wlNames || []).join(', '), maxLength: 400, hint: 'Names, with commas between' });
+    this.error = '';
   }
   init() {
-    const W = this.width, H = this.height, y = Math.floor(H / 4) + 30;
-    this.field.x = W / 2 - 100; this.field.y = y;
-    this.add(this.field);
-    this.add(new Button(W / 2 - 100, y + 36, 200, 20, 'Done', () => this.done()));
-    this.gui.focusText(this.field);
-    this.top = y;
+    const W = this.width, H = this.height, g = this.gui, v = this.v;
+    const cw = Math.min(180, Math.floor((W - 16) / 2)), lx = Math.floor(W / 2 - cw - 3), rx = Math.floor(W / 2 + 3);
+    let y = Math.max(22, Math.floor((H - 24 - 8 * 22) / 2));
+    const top = y;
+    this.labels = [];
+    for (const [label, f] of [['Server Name', this.nameField], ['Message of the Day', this.motdField], ['Password', this.pwField], ['Whitelisted Players', this.wlField]]) {
+      this.labels.push([label, lx, y]); f.x = lx; f.y = y + 10; f.w = cw; this.add(f); y += 34;
+    }
+    this.pwField.active = v.kind === 'private';
+    let x = lx;
+    const cyc = (label, key, values, format, tip) => { const b = this.add(new CycleButton(x, y, cw, 20, label, { values, value: v[key], format, onChange: q => { v[key] = q; if (key === 'kind') this.pwField.active = q === 'private'; }, tooltip: tip })); y += 22; return b; };
+    const op = cyc('Your OP', 'ownerOp', [true, false], onOff, () => 'Whether you have an operator\'s commands here (you keep the owner\'s either way)');
+    op.active = !!this.s.mine;
+    this.add(new Button(lx, y, cw, 20, 'Delete Server', () => this.remove())).active = this.s.id !== 'main';
+    const leftEnd = y + 22;
+    y = top; x = rx;
+    cyc('', 'kind', ['public', 'private'], x => (x === 'public' ? 'Public' : 'Private'), x => (x === 'public' ? 'Anyone can join' : 'Only people with the password can join'));
+    cyc('Default Game Mode', 'mode', ['survival', 'creative', 'adventure'], x => MODE_NAMES[x]);
+    cyc('Difficulty', 'difficulty', DIFFS, x => DIFF_NAMES[x]);
+    cyc('PvP', 'pvp', [true, false], onOff, () => 'Whether players can hurt each other');
+    cyc('Max Players', 'max', MAXES, x => String(x));
+    cyc('Whitelist', 'wl', [false, true], onOff, () => 'Only the players on the whitelist (and operators) can join');
+    cyc('Allow Commands', 'cheats', [false, true], onOff, () => 'Whether everyone on the server can use commands like /gamemode and /time');
+    cyc('Spawn Protection', 'prot', [16, 0], x => (x ? x + ' blocks' : 'OFF'), () => 'Only operators can break, place or use blocks this close to the world spawn');
+    const by = Math.min(H - 24, Math.max(y, leftEnd) + 4);
+    this.add(new Button(W / 2 - 100, by, 98, 20, 'Done', () => this.done()));
+    this.add(new Button(W / 2 + 2, by, 98, 20, 'Cancel', () => g.back()));
+    this.errY = by - 11;
+    this.top = top;
+    void g;
   }
-  done() {
-    const n = cleanName(this.field.value);
-    if (n) setPlayerName(n);
-    // (going back lays the list out again, with the new name on its button)
+  async done() {
+    if (this.busy) return;
+    const v = this.v, name = this.nameField.value.trim();
+    if (!name) { this.error = 'Give your server a name.'; this.gui.markDirty(); return; }
+    if (v.kind === 'private' && this.s.kind !== 'private' && !this.pwField.value) { this.error = 'A private server needs a password.'; this.gui.markDirty(); return; }
+    this.busy = true; this.error = 'Saving...'; this.gui.markDirty();
+    const o = { id: this.s.id, name, motd: this.motdField.value.trim(), kind: v.kind, mode: v.mode, cheats: v.cheats, spawnProt: v.prot, difficulty: v.difficulty,
+      pvp: v.pvp, max: v.max, wl: v.wl, wlNames: this.wlField.value.split(/[\s,]+/).filter(Boolean) };
+    if (this.s.mine) o.ownerOp = v.ownerOp;
+    if (this.pwField.value) o.password = this.pwField.value;
+    let r;
+    try { r = await editServer(o); } catch (e) { r = { error: 'Could not reach the server.' }; }
+    this.busy = false;
+    if (!r || r.error) { this.error = (r && r.error) || 'Something went wrong.'; this.gui.markDirty(); return; }
+    if (v.kind === 'private' && this.pwField.value) keepPassword(this.s.id, this.pwField.value);
+    const parent = this.parent;
     this.gui.back();
+    if (parent instanceof MultiplayerScreen) { parent.message = ''; parent.refresh(); }
+  }
+  remove() {
+    const s = this.s, g = this.gui, parent = this.parent;
+    g.open(new ConfirmScreen('Are you sure you want to delete this server?', "'" + s.name + "' will be lost forever! (A long time!) Everyone on it is sent back to the server list.", 'Delete', 'Cancel', async yes => {
+      g.back();
+      if (!yes) return;
+      let r;
+      try { r = await deleteServer(s.id); } catch (e) { r = { error: 'Could not reach the server.' }; }
+      if (r && r.error) { this.error = r.error; g.markDirty(); return; }
+      g.back();
+      if (parent instanceof MultiplayerScreen) { parent.selectedId = null; parent.refresh(); }
+    }));
   }
   render(g, mx, my, dt) {
-    g.centered(this.title, this.width / 2, this.top - 30, WHITE);
-    g.centered('What other players see over your head', this.width / 2, this.top - 14, GREY);
+    g.centered(this.title + ': ' + this.s.name, this.width / 2, Math.max(4, this.top - 18), WHITE);
+    for (const [t, x, y] of this.labels) g.text(t, x, y, GREY);
     super.render(g, mx, my, dt);
+    if (this.error) g.centered(this.error, this.width / 2, this.errY, this.busy ? GREY : 0xFF5555);
   }
 }
 

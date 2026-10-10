@@ -515,6 +515,7 @@ export class Gui {
     field.focused = true;
     field.focusTime = performance.now();
     const inp = this.input;
+    inp.type = field.password ? 'password' : 'text';
     inp.maxLength = field.maxLength;
     inp.value = field.value;
     inp.focus({ preventScroll: true });
@@ -910,6 +911,8 @@ export class TextField extends Widget {
     this.filter = opts.filter || null;
     this.onChange = opts.onChange || null;
     this.onEnter = opts.onEnter || null;
+    // (a password is drawn as stars)
+    this.password = !!opts.password;
     this.cursor = this.value.length;
     this.selEnd = this.cursor;
     this.first = 0;
@@ -938,24 +941,26 @@ export class TextField extends Widget {
     if (this.gui) this.gui.dirty = true;
     if (changed && this.onChange) this.onChange(v);
   }
+  get shownValue() { return this.password ? '*'.repeat(this.value.length) : this.value; }
   draw(g) {
     const { x, y, w, h } = this;
+    const val = this.shownValue;
     this.gui = g;
     g.fill(x - 1, y - 1, x + w + 1, y + h + 1, this.focused ? 0xFFFFFFFF : 0xFFA0A0A0);
     g.fill(x, y, x + w, y + h, 0xFF000000);
     const inner = w - 8, tx = x + 4, ty = y + ((h - 8) >> 1);
     const f = g.font;
     if (this.cursor < this.first) this.first = this.cursor;
-    while (this.first < this.cursor && f.width(this.value.slice(this.first, this.cursor)) > inner) this.first++;
-    const shown = f.trim(this.value.slice(this.first), inner);
+    while (this.first < this.cursor && f.width(val.slice(this.first, this.cursor)) > inner) this.first++;
+    const shown = f.trim(val.slice(this.first), inner);
     const colour = this.active ? LABEL : 0x707070;
     if (!this.value && !this.focused && this.hint) g.text(f.trim(this.hint, inner), tx, ty, 0x808080);
     g.text(shown, tx, ty, colour);
-    const cx = tx + f.width(this.value.slice(this.first, this.cursor));
+    const cx = tx + f.width(val.slice(this.first, this.cursor));
     if (this.selEnd !== this.cursor) {
       const s0 = Math.max(this.first, Math.min(this.cursor, this.selEnd)), s1 = Math.min(this.first + shown.length, Math.max(this.cursor, this.selEnd));
       if (s1 > s0) {
-        const a = tx + f.width(this.value.slice(this.first, s0)), b = tx + f.width(this.value.slice(this.first, s1));
+        const a = tx + f.width(val.slice(this.first, s0)), b = tx + f.width(val.slice(this.first, s1));
         g.ctx.globalCompositeOperation = 'difference';
         g.fill(a, ty - 1, b, ty + 9, 0xFFFFFFFF);
         g.ctx.globalCompositeOperation = 'source-over';
@@ -963,7 +968,7 @@ export class TextField extends Widget {
     }
     const on = this.focused && (((g.now - this.focusTime) / 300 | 0) & 1) === 0;
     if (on) {
-      if (this.cursor < this.value.length || this.value.length >= this.maxLength) g.fill(cx, ty - 1, cx + 1, ty + 9, 0xFFD0D0D0);
+      if (this.cursor < val.length || val.length >= this.maxLength) g.fill(cx, ty - 1, cx + 1, ty + 9, 0xFFD0D0D0);
       else g.text('_', cx, ty, colour);
     }
   }
@@ -973,9 +978,9 @@ export class TextField extends Widget {
     const g = this.gui;
     if (g) {
       // put the caret under the pointer
-      const f = g.font, rel = mx - (this.x + 4);
+      const f = g.font, rel = mx - (this.x + 4), val = this.shownValue;
       let i = this.first;
-      while (i < this.value.length && f.width(this.value.slice(this.first, i + 1)) <= rel) i++;
+      while (i < val.length && f.width(val.slice(this.first, i + 1)) <= rel) i++;
       this.cursor = this.selEnd = i;
       g.focusText(this);
       try { g.input.setSelectionRange(i, i); } catch (e) { /* hidden */ }

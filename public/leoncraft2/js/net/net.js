@@ -77,6 +77,9 @@ import { Vehicles } from './vehicles.js?v=39';
 import { Mobs, Orbs } from './mobs.js?v=39';
 import { Events } from './events.js?v=39';
 import { EndSync } from './endfight.js?v=39';
+import { Account, wsBase, httpBase } from './account.js?v=39';
+import { rankTag } from './players.js?v=39';
+export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {
@@ -86,23 +89,9 @@ export function deviceId() {
     return d;
   } catch (e) { return 'd' + Math.random().toString(36).slice(2, 12); }
 }
-export function playerName() {
-  let n = '';
-  try { n = localStorage.getItem('lc2_name') || ''; } catch (e) {}
-  if (!n) { n = 'Player' + (100 + Math.floor(Math.random() * 900)); setPlayerName(n); }
-  return n;
-}
-export function setPlayerName(n) { try { localStorage.setItem('lc2_name', n); } catch (e) {} }
-export const cleanName = s => String(s || '').replace(/[^A-Za-z0-9_ -]/g, '').trim().slice(0, 16);
-// ?mp=ws://host:port/mc/ws points the game at another server (a local one while testing)
-export function wsBase() {
-  const q = new URLSearchParams(location.search).get('mp');
-  if (q) return q;
-  const h = location.hostname || 'localhost';
-  if (h.endsWith('leonzhao.dev')) return 'wss://apps.leonzhao.dev/mc/ws';
-  return 'ws://' + h + ':8600/mc/ws';
-}
-export const httpBase = () => wsBase().replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/ws$/, '');
+// your name is your account's (net/account.js): the same on every server and in singleplayer
+export function playerName() { return Account.name || 'Player'; }
+export const cleanName = s => String(s || '').replace(/[^A-Za-z0-9_]/g, '').trim().slice(0, 16);
 /* Why the server could not be reached, in words for the player:
      down  nothing answers (the server stopped, restarting after an update, or
            no network): the page asked and heard nothing, or the proxy in
@@ -120,9 +109,10 @@ async function answer(r) {
   const text = await r.text();
   try { return JSON.parse(text); } catch (e) { throw { kind: SERVER_OLD }; }
 }
+// (with your session, so the server knows who asks; and this browser, for a server made before accounts)
 async function post(path, body) {
   let r;
-  try { r = await fetch(httpBase() + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ device: deviceId() }, body)) }); }
+  try { r = await fetch(httpBase() + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ device: deviceId(), token: Account.token }, body)) }); }
   catch (e) { return { error: FAIL_TEXT.down[1] }; }
   try { return await answer(r); } catch (e) { return { error: FAIL_TEXT[e.kind || SERVER_DOWN][1] }; }
 }
@@ -130,7 +120,7 @@ async function post(path, body) {
 export async function listServers() {
   const t0 = performance.now();
   let r;
-  try { r = await fetch(httpBase() + '/lc2/servers?device=' + encodeURIComponent(deviceId()), { cache: 'no-store' }); }
+  try { r = await fetch(httpBase() + '/lc2/servers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: Account.token, device: deviceId() }), cache: 'no-store' }); }
   catch (e) { throw { kind: SERVER_DOWN }; }
   const j = await answer(r);
   if (!j || !Array.isArray(j.servers)) throw { kind: SERVER_OLD };
@@ -364,10 +354,11 @@ export class Net {
                        had Leoncraft 2 (FAIL_TEXT.old)
        closed early    it opened and shut without a word: refused
        30 seconds      Timed out, as the game says it */
-  static connect(server, password, name) {
+  static connect(server, password) {
     return new Promise((resolve, reject) => {
+      // (who you are is your session: the server takes the name from your account)
       const url = wsBase() + '?mode=lc2&pv=4&server=' + encodeURIComponent(server) + '&pw=' + encodeURIComponent(password || '') +
-        '&name=' + encodeURIComponent(name) + '&device=' + encodeURIComponent(deviceId());
+        '&tok=' + encodeURIComponent(Account.token) + '&device=' + encodeURIComponent(deviceId());
       let ws;
       try { ws = new WebSocket(url); } catch (e) { reject({ reason: FAIL_TEXT.down[1], kind: SERVER_DOWN }); return; }
       const net = new Net(ws);
@@ -379,7 +370,7 @@ export class Net {
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
         if (!done) {
           if (m.t === 'init') { net.onInit(m); end(true, net); }
-          else if (m.t === 'refused') end(false, { reason: m.reason, password: !!m.password });
+          else if (m.t === 'refused') { if (m.session) Account.expired(); end(false, { reason: m.reason, password: !!m.password, session: !!m.session }); }
           // another game's welcome ({ type: ... }): the server has not been updated for this one
           else if (m.type && !m.t) { end(false, { reason: FAIL_TEXT.old[0] + ' ' + FAIL_TEXT.old[1], kind: SERVER_OLD }); try { ws.close(); } catch (e) {} }
           return;
@@ -431,6 +422,8 @@ export class Net {
     this.id = m.id; this.name = m.name; this.server = m.server;
     // (an older server sends no level: its Allow Commands is all there is)
     this.op = m.op !== undefined ? m.op | 0 : m.server && m.server.cheats ? 2 : 0;
+    // the owner's powers (every command a server's owner has, its settings) and your rank tag, as the server decides them
+    this.powers = !!m.powers; this.admin = !!m.admin; this.tag = m.tag || '';
     this.rules = m.rules || null;
     // spawn protection: how far round the world spawn you may not change anything (0: none for you, or none here)
     this.prot = m.prot | 0;
@@ -576,7 +569,9 @@ export class Net {
     switch (m.t) {
       // the other players: straight away, with when each position got here
       case 'p': this.stats.gotP++; if (this.players) this.players.state(m.id, m, performance.now()); else this.early(m); return;
-      case 'op': this.op = m.level | 0; return;
+      case 'op': this.op = m.level | 0; if (m.powers !== undefined) this.powers = !!m.powers; return;
+      // a rank tag changed (the server was given to another owner)
+      case 'tag': if (m.id === this.id) this.tag = m.tag || ''; else if (this.players) this.players.setTag(m.id, m.tag || ''); else { const p = this.initPlayers && this.initPlayers.find(q => q.id === m.id); if (p) p.tag = m.tag || ''; } if (this.ctx) this.ctx.gui.markDirty(); return;
       case 'prot': this.prot = m.r | 0; return;
       case 'out': if (this.ctx) for (const l of m.lines || []) if (Array.isArray(l)) this.ctx.chat.add(String(l[0]), l[1] === undefined ? 0xFFFFFF : l[1]); return;
       case 'join': if (this.players) { this.players.add(m.p); } else this.initPlayers.push(m.p); return;
@@ -1184,7 +1179,8 @@ export class Net {
       case 'dt': this.detail(m.d, m.p, m.o); return;
       case 'chat':
         if (m.system) this.ctx.chat.add(m.text, m.colour !== undefined ? m.colour : 0xFFFF55);
-        else this.ctx.chat.add('<' + m.name + '> ' + m.text);
+        // (a rank tag before the name, as servers show it: [ADMIN] red, [OWNER] gold)
+        else this.ctx.chat.add('<' + rankTag(m.tag) + m.name + '> ' + m.text);
         return;
       case 'time': {
         // the server's clock, moved on by half the time the message took
