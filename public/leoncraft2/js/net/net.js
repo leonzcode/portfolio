@@ -302,14 +302,20 @@ if (tpDef) {
 
 /* /difficulty, /gamerule and /defaultgamemode on a server are the server's,
    for everyone: asked of it, and what it says goes to everyone (a rule's
-   value is asked here, from the rules the server sent; pvp is one of them) */
+   value is asked here, from the rules the server sent; pvp is one of them).
+   The server's owner (and an admin) has them, and /setworldspawn, with their
+   own OP on or off, as a server's console does: the server checks again. */
+const mayRun = (ctx, net) => (net ? net.canCheat() || net.powers : ctx.cheats);
+const denied = ctx => ctx.say('You do not have permission to use this command', 0xFF5555);
 for (const name of ['difficulty', 'gamerule', 'defaultgamemode']) {
   const def = commandDef(name);
   if (!def) continue;
   register(name, Object.assign({}, def, {
+    always: true,
     suggest: (i, w) => (name === 'gamerule' && i === 0 ? (def.suggest ? def.suggest(i, w) : []).concat(['pvp']) : def.suggest ? def.suggest(i, w) : []),
     run(args, ctx) {
       const net = ctx.game && ctx.game.net;
+      if (!mayRun(ctx, net)) return denied(ctx);
       if (!net) return def.run(args, ctx);
       if (name === 'gamerule' && args[0] && args[1] === undefined) {
         const v = args[0] === 'pvp' ? net.server.pvp !== false : gameRule(ctx.game, args[0]);
@@ -319,6 +325,21 @@ for (const name of ['difficulty', 'gamerule', 'defaultgamemode']) {
       }
       if (name === 'gamerule' && args[0] !== 'pvp' && gameRule(ctx.game, args[0]) === undefined) { ctx.say('Incorrect argument for command', 0xFF5555); return; }
       net.send({ t: 'cmd', line: [name].concat(args).join(' ') });
+    },
+  }));
+}
+
+// /setworldspawn on a server: the world's spawn is the server's, for everyone
+const spawnDef = commandDef('setworldspawn');
+if (spawnDef) {
+  register('setworldspawn', Object.assign({}, spawnDef, {
+    always: true,
+    run(args, ctx) {
+      const net = ctx.game && ctx.game.net;
+      if (!mayRun(ctx, net)) return denied(ctx);
+      spawnDef.run(args, ctx);
+      const sp = ctx.game.entry.spawn;
+      if (net && sp) net.send({ t: 'spawn', x: sp.x, z: sp.z, force: true });
     },
   }));
 }
