@@ -41,14 +41,30 @@
                      block under open space; the Nether is always like that
                      (its roof), the End's open islands are not
      lighting        each block lit as the mod lights it, (9 + the brighter of
-                     its block light and its sky light by the time of day) / 24:
-                     the night and caves dark, torches lit; the Nether at one
+                     its block light and the sky light by the time of day) / 24,
+                     the sky light being full on the surface and the block's
+                     own in cave mode: the night and caves dark, torches lit; the Nether at one
                      fixed sky level (2.4 of 15), the End at full brightness
      unknown         ground not loaded is black at half strength
 
-   Block colours are the game's own map colours (maps.js MAP_RGB: the mod's
-   "Vanilla" block colours), shaded by height as a map is. Each chunk is
-   worked out once into a 16 x 16 piece of a big picture that wraps round (a
+   colours         the mod's default "Accurate" colours: each block the mean
+                     colour of its top face's picture (from the terrain strip as
+                     loaded, so a resource pack's too), times its biome tint
+                     (grass, leaves, water: the column and its four neighbours);
+                     which blocks show is still the game's map rule (anything
+                     with a map colour), less torches, short grass, glass and
+                     the double plants that are not flowers, as the mod skips
+     see-through     water, ice and stained glass are layers over the ground
+                     under them (Block Transparency): each its picture's
+                     share, darker as the sky light fades through them
+     shading         Default 3D slopes: lit from the north west against the
+                     block to the north and the one to the north west, the
+                     shadow side tinted (blue in the Overworld, red in the
+                     Nether), and terrain depth (a little darker below y 63);
+                     blocks that give off light are brightened, not lit
+     nothing there   on the surface the mod's near-black purple (10, 0, 23)
+
+   Each chunk is worked out once into a 16 x 16 piece of a big picture that wraps round (a
    ring of 64 x 64 chunks), and again only when its mesh changes (a block
    changed there), the slice changes (cave mode, a new height) or the light
    level changes (dusk, dawn); a few a frame, nearest first, in a fraction of
@@ -62,8 +78,8 @@
    minimapLighting.
 --------------------------------------------------------------------------- */
 import { MAP_RGB, mapColourOf } from '../maps.js?v=39';
-import { FLUID, BLOCKS, SOLID, OPACITY, MAX_ID } from '../blocks.js?v=39';
-import { BIOMES } from '../biomes.js?v=39';
+import { FLUID, BLOCKS, SOLID, OPACITY, EMIT, MAX_ID } from '../blocks.js?v=39';
+import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from '../biomes.js?v=39';
 import { H, Y0 } from '../world-const.js?v=39';
 import { lightLevel } from '../lightlevel.js?v=39';
 import { skyLightFactor } from '../render/vanilla.js?v=39';
@@ -83,14 +99,18 @@ const COMPASS_BG = 'rgba(85,85,255,0.565)', COMPASS_SHADOW = 0x5555FF;
 const FRAME = [[0, 0, 0], [147, 71, 109], [93, 126, 112], [16, 43, 30]];
 const HEIGHT_LIMIT = 20, FADE_FROM = 15;
 const BUDGET = 0.25;               // ms a frame for working out chunks
+const TEX_PIECE = 32;              // pictures read back at a time for the block colours
 const TOGGLE_MS = 1000;            // the mod's Cave Mode Toggle Timer
 // the Nether's fixed sky level for the map (MinimapRenderer.getSunBrightness: its ambient light 0.1
 // x 24 / 15, plus nothing from its sky light factor of 0)
 const NETHER_SKY = Math.min(1, 0.1 * 24 / 15);
+// the slopes' shadow colour by dimension (MinimapClientWorldData): bluish in the Overworld, red in the Nether, none in the End
+const SHADOW = { overworld: [0.518, 0.678, 1], the_nether: [1, 0, 0], the_end: [1, 1, 1] };
+// blocks that stand in water (seagrass, kelp): the water over them is a see-through layer (minimap kindTable)
+let WATERY = null;
 
 const biomeName = b => !b || !b.name ? '' : b.name.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
-// a block the cave slice sees through (air, torches, glass, grass...: nothing that shows on a map)
-const open = b => !b || !mapColourOf(b);
+const NEXT = [[0, 1], [1, 0], [1, 1]];
 const COMPASS = [['N', 0, -1], ['E', 1, 0], ['S', 0, 1], ['W', -1, 0]];
 const rgbCss = (r, g, b) => 'rgb(' + r + ',' + g + ',' + b + ')';
 // a block that makes a ceiling for cave mode: solid, and not see-through, leaves or a liquid (the mod's test)
@@ -119,7 +139,10 @@ export class Minimap {
     this.cave = false; this.caveTop = 0; this.caveAt = ''; this.caveT = 0; this.toggledAt = -1e9;
     this.root = null; this.shown = false;
     this.cost = 0; this.tileMs = 0;            // ms a frame, eased (tests read them)
-    this.heights = new Int16Array(16);
+    this.hgt = new Int32Array(17 * 17);           // heights round a chunk being painted (paint)
+    this.tL = new Int32Array(6); this.tS = new Int32Array(6); this.tY = new Int32Array(6); this.nT = 0;
+    this.tG = new Uint32Array(256); this.tF = new Uint32Array(256); this.tW = new Uint32Array(256);
+    this.strip = null; this.colours = null; this.blockRGB = null; this.kinds = null;
     this.zoom = 0; this.lastT = 0;
     this.weather = null;                       // the renderer's weatherState (main.js): rain dims the daylight
   }
@@ -294,6 +317,8 @@ export class Minimap {
     }
     const q = this.queue;
     let made = 0;
+    // (the block colours are worked out first, a few pictures a frame)
+    if (!this.meanColours(t0)) return;
     while (this.qi < q.length) {
       if (made && performance.now() - t0 > BUDGET) break;
       const cx = q[this.qi + 1], cz = q[this.qi + 2], v = q[this.qi + 3];
@@ -304,8 +329,8 @@ export class Minimap {
       const fresh = this.owner[s] !== c;
       this.paint(w, c, cave);
       this.owner[s] = c; this.ver[s] = v; this.mode[s] = key;
-      // a new chunk changes the shading of the row south of it (its pixels compare with this one's)
-      if (fresh) { const s2 = ((cz + 1) & MASK) * N + (cx & MASK); if (this.owner[s2]) this.ver[s2] = -2; }
+      // a new chunk changes the slopes of the chunks south, east and south east of it (they compare with its edge)
+      if (fresh) for (const [ex, ez] of NEXT) { const s2 = ((cz + ez) & MASK) * N + ((cx + ex) & MASK); if (this.owner[s2]) this.ver[s2] = -2; }
       made++;
       this.painted = (this.painted || 0) + 1;
     }
@@ -324,87 +349,261 @@ export class Minimap {
     return this.cave ? Math.min(6, Math.round(z * 2)) : z;
   }
 
-  /* ---- one chunk into its 16 x 16 slot ---- */
+  /* ---- the block colours: Xaero's default "Accurate" colours ----
+     A block shows the mean colour of its top face's picture (the mod reads the top face's sprite),
+     times its biome tint. The means are worked out from the terrain strip as it was loaded (with a
+     resource pack's pictures in it, if one is on), a few dozen pictures a frame until done. */
+  textures(strip, colours) {
+    this.strip = strip || null; this.colours = colours || null;
+    this.texRGB = null; this.texAt = 0; this.blockRGB = null;
+  }
+  meanColours(t0) {
+    if (!this.strip) return true;
+    if (this.blockRGB) return true;
+    const st = this.strip, n = Math.floor(st.height / 16);
+    if (!this.texRGB) {
+      this.texN = n; this.texRGB = new Uint32Array(n); this.texA = new Uint8Array(n); this.texAt = 0;
+      const cv = document.createElement('canvas'); cv.width = 16; cv.height = 16 * TEX_PIECE;
+      this.texCtx = cv.getContext('2d', { willReadFrequently: true });
+    }
+    const g = this.texCtx;
+    while (this.texAt < n) {
+      const z = this.texAt, k = Math.min(TEX_PIECE, n - z);
+      g.clearRect(0, 0, 16, 16 * TEX_PIECE);
+      g.drawImage(st, 0, z * 16, 16, k * 16, 0, 0, 16, k * 16);
+      const px = g.getImageData(0, 0, 16, k * 16).data;
+      for (let l = 0; l < k; l++) {
+        // the mean of the pixels that show, and how much of the picture shows (a cut-out or see-through one)
+        let r = 0, gg = 0, b = 0, a = 0, m = 0;
+        for (let i = l * 1024, e = i + 1024; i < e; i += 4) {
+          const al = px[i + 3];
+          if (!al) continue;
+          r += px[i]; gg += px[i + 1]; b += px[i + 2]; a += al; m++;
+        }
+        this.texRGB[z + l] = m ? (Math.round(r / m) << 16) | (Math.round(gg / m) << 8) | Math.round(b / m) : 0;
+        this.texA[z + l] = Math.round(a / 256);
+      }
+      this.texAt += k;
+      if (performance.now() - t0 > BUDGET) return false;
+    }
+    // each block's colour: its top face's picture
+    const rgb = new Int32Array(MAX_ID).fill(-1), al = new Uint8Array(MAX_ID);
+    for (let i = 1; i < BLOCKS.length; i++) {
+      const d = BLOCKS[i];
+      if (!d || !d.faces) continue;
+      const l = d.faces[2];
+      if (l >= 0 && l < n && this.texA[l]) { rgb[i] = this.texRGB[l]; al[i] = this.texA[l]; }
+    }
+    this.blockA = al; this.blockRGB = rgb;
+    return true;
+  }
+  /* what the map makes of each block (MinimapWriter.findBlockHelp): 0 passed over (a torch, short
+     grass, glass, tall grass and the other double plants that are not flowers, anything with no map
+     colour), 1 see-through (water, ice, stained glass: a layer the ground shows through, Block
+     Transparency being on by default), 2 shown */
+  kindTable() {
+    const K = new Uint8Array(MAX_ID);
+    for (let i = 1; i < BLOCKS.length; i++) {
+      const d = BLOCKS[i];
+      if (!d) continue;
+      const n = d.name || '';
+      if (FLUID[i] === 1) { K[i] = 1; continue; }
+      if (n === 'torch' || n === 'short_grass' || n === 'glass' || n === 'glass_pane' || /^(tall_grass|large_fern|tall_seagrass|small_dripleaf)/.test(n)) continue;
+      if (d.pass === 'translucent' || n === 'tinted_glass') { K[i] = 1; continue; }
+      if (mapColourOf(i)) K[i] = 2;
+    }
+    WATERY = new Uint8Array(MAX_ID);
+    for (let i = 1; i < BLOCKS.length; i++) if (BLOCKS[i] && BLOCKS[i].waterlogged) WATERY[i] = 1;
+    this.kinds = K;
+    return K;
+  }
+  /* A column walked down as MinimapWriter.findBlock walks it: from top (the surface's top, or the
+     cave slice's top and 30 blocks down) the first shown block, with up to five see-through layers
+     over it (this.tL ids, tS how deep, tY where each starts; a sixth or more counts as the fifth
+     going deeper). In cave mode nothing counts until open air (or a liquid) has been passed.
+     Returns the shown block's height, or -1 (this.lastY: the last block looked at). */
+  walk(bl, col, top, cave) {
+    const K = this.kinds || this.kindTable(), tL = this.tL, tS = this.tS, tY = this.tY;
+    let under = !cave, nT = 0;
+    this.firstY = -1; this.lastY = 0;
+    const lo = cave ? Math.max(1, top - 29) : 1;
+    const layer = (b, y) => {
+      if (this.firstY < 0) this.firstY = y;
+      this.lastY = y;
+      if (nT && tL[nT - 1] === b) tS[nT - 1]++;
+      else if (nT < 5) { tL[nT] = b; tS[nT] = 1; tY[nT] = y; nT++; }
+      else tS[nT - 1]++;
+    };
+    for (let y = Math.min(H - 1, top); y >= lo; y--) {
+      const b = bl[(y << 8) | col];
+      if (!b) { under = true; continue; }
+      // a liquid (or a plant standing in water) counts as open space above what is under it
+      if (FLUID[b] === 1 || WATERY[b]) {
+        under = true;
+        layer(this.waterId, y);
+        if (FLUID[b]) continue;
+      } else if (FLUID[b]) under = true;
+      if (!under) continue;
+      const k = K[b];
+      if (k === 1) { layer(b, y); continue; }
+      if (k === 2) {
+        if (this.firstY < 0) this.firstY = y;
+        this.lastY = y; this.nT = nT;
+        return y;
+      }
+    }
+    this.nT = nT;
+    return -1;
+  }
+  // the light just over a block in a chunk (its own, flooded with its mesh): sky * 16 + block
+  lightOver(c, y, col, cave) {
+    if (y >= H) return 0xF0;
+    const L = c.light;
+    if (!L) return cave ? 0 : 0xF0;
+    if (y >= c.lightH) return 0xF0;
+    return L[(y << 8) | col];
+  }
+
+  /* ---- one chunk into its 16 x 16 slot (MinimapWriter.loadBlockColor with the mod's defaults:
+     Accurate colours, Default 3D slopes, terrain depth, lighting, block transparency) ---- */
   paint(w, c, cave) {
     const d = this.img.data, bl = c.blocks;
-    const top = cave ? this.caveTop : 0;
-    const hN = this.heights;
-    // the heights of the row north of this chunk, for its first row's shading
-    const n = w.chunkXZ(c.cx, c.cz - 1);
-    for (let x = 0; x < 16; x++) {
-      if (!n) { hN[x] = -1; continue; }
-      const col = (15 << 4) | x;
-      const p = cave ? this.caveCol(n.blocks, col, top) : this.surfCol(n.blocks, col, n.top);
-      hN[x] = p < 0 ? -1 : (p >> 8);
+    const surfTop = ch => (ch.top === undefined ? H - 1 : ch.top + 1);
+    const top = cave ? this.caveTop : surfTop(c);
+    if (!this.kinds) this.kindTable();
+    if (!this.waterId) { this.waterId = BLOCKS.findIndex(b => b && b.name === 'water'); }
+    // the heights of the shown blocks round this chunk: index (z + 1) * 17 + x + 1, z and x from -1
+    const hg = this.hgt, NONE = -32768;
+    const n = w.chunkXZ(c.cx, c.cz - 1), we = w.chunkXZ(c.cx - 1, c.cz), nw = w.chunkXZ(c.cx - 1, c.cz - 1);
+    for (let x = -1; x < 16; x++) {
+      const src = x < 0 ? nw : n;
+      if (!src) { hg[x + 1] = NONE; continue; }
+      const col = (15 << 4) | (x & 15), y = this.walk(src.blocks, col, cave ? top : surfTop(src), cave);
+      hg[x + 1] = y >= 0 ? y : this.lastY;
     }
+    for (let z = 0; z < 16; z++) {
+      if (!we) { hg[(z + 1) * 17] = NONE; continue; }
+      const col = (z << 4) | 15, y = this.walk(we.blocks, col, cave ? top : surfTop(we), cave);
+      hg[(z + 1) * 17] = y >= 0 ? y : this.lastY;
+    }
+    // the biome tints, each the mean of the column and its four neighbours (BiomeBlendCalculator)
+    const C = this.colours, tG = this.tG, tF = this.tF, tW = this.tW;
+    if (C) {
+      const e = w.chunkXZ(c.cx + 1, c.cz), s = w.chunkXZ(c.cx, c.cz + 1), own = c.biome;
+      const bio = (x, z) => {
+        if (x >= 0 && x < 16 && z >= 0 && z < 16) return own[(z << 4) | x];
+        const ch = x < 0 ? we : x > 15 ? e : z < 0 ? n : s;
+        return ch && ch.biome ? ch.biome[((z & 15) << 4) | (x & 15)] : own[(Math.max(0, Math.min(15, z)) << 4) | Math.max(0, Math.min(15, x))];
+      };
+      const S5 = [0, 0, -1, 0, 1, 0, 0, -1, 0, 1];
+      for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
+        let gr = 0, gg = 0, gb = 0, fr = 0, fg = 0, fb = 0, wr = 0, wg = 0, wb = 0;
+        for (let k = 0; k < 10; k += 2) {
+          const b = bio(x + S5[k], z + S5[k + 1]), G = C.grass[b], F = C.leaf[b], W = C.water[b];
+          gr += G >> 16; gg += (G >> 8) & 255; gb += G & 255;
+          fr += F >> 16; fg += (F >> 8) & 255; fb += F & 255;
+          wr += W >> 16; wg += (W >> 8) & 255; wb += W & 255;
+        }
+        const i = (z << 4) | x;
+        tG[i] = ((gr / 5) << 16) | ((gg / 5) << 8) | (gb / 5);
+        tF[i] = ((fr / 5) << 16) | ((fg / 5) << 8) | (fb / 5);
+        tW[i] = ((wr / 5) << 16) | ((wg / 5) << 8) | (wb / 5);
+      }
+    }
+    // a block's colour in this column: its picture's mean times its tint, or its map colour without the pictures
+    const RGB = this.blockRGB, A = this.blockA;
+    const colourOf = (b, col) => {
+      let v = RGB && RGB[b] >= 0 ? RGB[b] : MAP_RGB[mapColourOf(b) * 4 + 2];
+      const def = BLOCKS[b];
+      let t = 0xFFFFFF;
+      switch (def.tint) {
+        case 'grass': t = C ? tG[col] : t; break;
+        case 'foliage': t = C ? tF[col] : t; break;
+        case 'water': t = C ? tW[col] : t; break;
+        case 'spruce': t = SPRUCE_LEAF; break;
+        case 'birch': t = BIRCH_LEAF; break;
+        default: if (def.rgb !== undefined) t = def.rgb;
+      }
+      if (t !== 0xFFFFFF && RGB) {
+        v = (Math.floor((t >> 16) * (v >> 16) / 255) << 16) | (Math.floor(((t >> 8) & 255) * ((v >> 8) & 255) / 255) << 8) | Math.floor((t & 255) * (v & 255) / 255);
+      }
+      // a block that gives off light is brought up to a brightness (MinimapWriterHelper.getGlowingColour)
+      if (EMIT[b]) {
+        const tot = (v >> 16) + ((v >> 8) & 255) + (v & 255), k = tot > 0 ? Math.max(1, 407 / tot) : 1;
+        v = (Math.min(255, Math.floor((v >> 16) * k)) << 16) | (Math.min(255, Math.floor(((v >> 8) & 255) * k)) << 8) | Math.min(255, Math.floor((v & 255) * k));
+      }
+      return v;
+    };
     /* the light (MinimapWriter): (9 + the brighter of the block light and the sky light by the time of
        day) / 24. The End is "end-like" (ambient light 0.25, and it flashes), so the mod turns its
        lighting off and draws it at full brightness; the Nether has no sky light, so every block gets
        one fixed sky level, the mod's sun brightness there: ambient x 24 / 15 (0.16, its sky light
-       factor being 0) times 15 */
-    const lit = this.o.get('minimapLighting') !== false && w.dim !== 'the_end';
-    const skyOn = w.dim === 'overworld', fixedSky = skyOn ? 0 : NETHER_SKY * 15;
-    const lv = this.level || 0, skyF = lv === 0 ? 1 : (4 - lv) / 4;
-    const L = c.light, LH = c.lightH;
-    const wx0 = c.cx * 16, wz0 = c.cz * 16;
-    for (let x = 0; x < 16; x++) {
-      let prevH = hN[x];
-      for (let z = 0; z < 16; z++) {
-        const col = (z << 4) | x, o = (z * 16 + x) * 4;
-        const p = cave ? this.caveCol(bl, col, top) : this.surfCol(bl, col, c.top);
-        // (nothing found in a loaded chunk: black; the mod draws no block there)
-        if (p < 0) { d[o] = d[o + 1] = d[o + 2] = 0; d[o + 3] = 255; prevH = -1; continue; }
-        const h = p >> 8, base = p & 255;
-        let shade;
-        if (base === 12) {
-          // water: darker the deeper, with a checkerboard between the bands (the game's map)
-          let depth = 0, yy = h - 1;
-          while (yy > 0 && depth < 16 && FLUID[bl[(yy << 8) | col]] === 1) { depth++; yy--; }
-          const k = depth * 0.1 + ((wx0 + x + wz0 + z) & 1) * 0.2;
-          shade = k < 0.5 ? 2 : k > 0.9 ? 0 : 1;
-        } else {
-          const k = prevH < 0 ? 0 : (h - prevH) * 0.8 + (((wx0 + x + wz0 + z) & 1) - 0.5) * 0.4;
-          shade = k > 0.6 ? 2 : k < -0.6 ? 0 : 1;
-        }
-        const rgb = MAP_RGB[base * 4 + shade];
-        let f = 1;
-        if (lit) {
-          // the light just over the block (the chunk's own, flooded with its mesh)
-          const ly = h + 1;
-          let sky, blk;
-          if (ly >= H) { sky = 15; blk = 0; }
-          else if (L) { if (ly >= LH) { sky = 15; blk = 0; } else { const v = L[(ly << 8) | col]; sky = v >> 4; blk = v & 15; } }
-          else { sky = cave ? 0 : 15; blk = 0; }
-          f = (9 + Math.max(skyOn ? skyF * sky : fixedSky, blk)) / 24;
-        }
-        d[o] = (rgb >> 16) * f; d[o + 1] = ((rgb >> 8) & 255) * f; d[o + 2] = (rgb & 255) * f; d[o + 3] = 255;
-        prevH = h;
+       factor being 0) times 15. With Lighting off it is one level at full brightness too. */
+    const lighting = this.o.get('minimapLighting') !== false && w.dim !== 'the_end';
+    const levels1 = !lighting || w.dim !== 'overworld';
+    const fixed15 = (!lighting ? 1 : NETHER_SKY) * 15;
+    const lv = this.level || 0, lf = lv === 0 ? 1 : (4 - lv) / 4;
+    const gb = (sun, f, blk) => (9 + Math.max(f * sun, blk)) / 24;
+    const fb = blk => (9 + Math.max(fixed15, blk)) / 24;
+    const shadow = SHADOW[w.dim] || SHADOW.the_end;
+    const tL = this.tL, tS = this.tS, tY = this.tY;
+    const caveBottom = top + 1 - 30;
+    for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
+      const col = (z << 4) | x, o = (z * 16 + x) * 4;
+      const y = this.walk(bl, col, top, cave), nT = this.nT, hasT = nT > 0, firstY = this.firstY;
+      hg[(z + 1) * 17 + x + 1] = y >= 0 ? y : this.lastY;
+      if (y < 0 && !hasT) {
+        // nothing at all: black in cave mode, the mod's near-black purple on the surface
+        if (cave) { d[o] = d[o + 1] = d[o + 2] = 0; } else { d[o] = 10; d[o + 1] = 0; d[o + 2] = 23; }
+        d[o + 3] = 255; continue;
       }
+      // the sky over the first block met: full on the surface, its own in cave mode (with lighting)
+      const lFirst = firstY >= 0 ? this.lightOver(c, firstY + 1, col, cave) : 0xF0;
+      const firstSun = cave && lighting ? lFirst >> 4 : 15, topLight = lighting ? lFirst & 15 : 0;
+      let sun = hasT ? 15 : firstSun, TM = 1, uR = 0, uG = 0, uB = 0;
+      // the see-through layers, top first, each over what is under it, each taking its share of the sky light
+      for (let i = 0; i < nT; i++) {
+        const b = tL[i], v = colourOf(b, col);
+        const vt = FLUID[b] === 1 ? 0.75 : /ice/.test(BLOCKS[b].name) ? 0.85 : 0.5;
+        const tr = (A && A[b] ? A[b] / 255 : vt) * (lighting ? gb(sun, 1, this.lightOver(c, tY[i] + 1, col, cave) & 15) : 1);
+        const k = TM * tr;
+        uR += (v >> 16) * k; uG += ((v >> 8) & 255) * k; uB += (v & 255) * k;
+        TM *= 1 - tr;
+        sun = Math.max(0, sun - OPACITY[b] * tS[i]);
+      }
+      let r = 0, g = 0, bb = 0, br = 1, sR = 1, sG = 1, sB = 1;
+      if (y >= 0) {
+        const b = bl[(y << 8) | col], v = colourOf(b, col), glow = EMIT[b] > 0;
+        r = v >> 16; g = (v >> 8) & 255; bb = v & 255;
+        const blk = lighting ? this.lightOver(c, y + 1, col, cave) & 15 : 0;
+        if (!glow) br = hasT ? gb(sun, 1, blk) : levels1 ? fb(blk) : gb(sun, lf, blk);
+        // terrain depth: lower ground a little darker (from y 63 down to y 57 on the surface; in cave mode by the slice)
+        let depth = 1;
+        if (!glow) {
+          depth = cave ? 0.7 + 0.3 * (y - caveBottom) / (top - caveBottom) : (y + Y0) / 63;
+          depth = Math.max(0.9, Math.min(1, depth));
+        }
+        // Default 3D slopes: lit from the north west, against the block to the north and the one to the north west
+        const hN = hg[z * 17 + x + 1], hNW = hg[z * 17 + x];
+        const vs = hN === NONE ? 0 : Math.max(-128, Math.min(127, y - hN)), ds = hNW === NONE ? 0 : Math.max(-128, Math.min(127, y - hNW));
+        let cos = 0;
+        if (-vs < 1) {
+          if (vs === 1 && ds === 1) cos = 1;
+          else { const cx = vs - ds, cz = -vs; cos = (1 - cz) / Math.sqrt(cx * cx + 1 + cz * cz) / Math.SQRT2; }
+        }
+        const ambC = glow ? 0 : 0.2, ambW = glow ? 1 : 0.5, maxD = glow ? 0.22222224 : 0.6666667;
+        const direct = cos === 1 ? maxD : cos > 0 ? Math.ceil(cos * 10) / 10 * maxD * 0.88388 : 0;
+        const white = ambW + direct;
+        sR = (shadow[0] * ambC + white) * depth; sG = (shadow[1] * ambC + white) * depth; sB = (shadow[2] * ambC + white) * depth;
+      } else if (cave) { r = g = bb = 0; } else { r = 10; g = 0; bb = 23; }
+      // over see-through layers, everything takes the light over the top one
+      const post = hasT ? (levels1 ? fb(topLight) : gb(firstSun, lf, topLight)) : 1;
+      d[o] = Math.min(255, (r * br * sR * TM + uR) * post);
+      d[o + 1] = Math.min(255, (g * br * sG * TM + uG) * post);
+      d[o + 2] = Math.min(255, (bb * br * sB * TM + uB) * post);
+      d[o + 3] = 255;
     }
     this.rctx.putImageData(this.img, (c.cx & MASK) * 16, (c.cz & MASK) * 16);
-  }
-  // the top block that shows on a map: height * 256 + base colour, or -1
-  surfCol(bl, col, top) {
-    for (let y = Math.min(H - 1, (top === undefined ? H - 1 : top) + 1); y > 0; y--) {
-      const b = bl[(y << 8) | col];
-      if (!b) continue;
-      const base = mapColourOf(b);
-      if (base) return (y << 8) | base;
-    }
-    return -1;
-  }
-  /* The cave slice from height top, 30 blocks down (MinimapWriter.findBlock in cave mode): the
-     first block under open space (a liquid shows at once); rock all the way is left black. */
-  caveCol(bl, col, top) {
-    const lo = Math.max(1, top - 29);
-    let air = false;
-    for (let y = top; y >= lo; y--) {
-      const b = bl[(y << 8) | col];
-      if (b && FLUID[b]) { const m = mapColourOf(b); if (m) return (y << 8) | m; }
-      if (open(b)) { air = true; continue; }
-      if (air) return (y << 8) | mapColourOf(b);
-    }
-    return -1;
   }
 
   /* ---- drawing ---- */
