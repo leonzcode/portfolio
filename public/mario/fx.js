@@ -118,6 +118,11 @@ export function coinPop(pos) {
   for (let i = 0; i < 5; i++) spark(pos, 0xffd233, 3);
 }
 
+/* Every spark and puff turned to face one camera. They are flat cards, so in
+   split screen each half turns them to its own camera before it is drawn. */
+export function faceFx(camera) {
+  for (let i = 0; i < live.length; i++) live[i].o.quaternion.copy(camera.quaternion);
+}
 export function stepFx(dt, camera) {
   for (let i = live.length - 1; i >= 0; i--) {
     const e = live[i];

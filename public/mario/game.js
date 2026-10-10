@@ -11,27 +11,30 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso, setCustomTrack } from './track.js?v=105';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=105';
-import { packLook, unpackLook, normalise } from './parts.js?v=105';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=105';
-import { whenKit } from './models.js?v=105';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=105';
-import { makeRescue } from './rescue.js?v=105';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=105';
-import { makeBrain, driveBrain } from './ai.js?v=105';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=105';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=105';
-import { makeRanked } from './rk.js?v=105';
-import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=105';
-import { makeHub } from './hub.js?v=105';
-import { icon, KIND_ICON } from './icons.js?v=105';
-import { makeCones } from './cones.js?v=105';
-import { makeHazards } from './hazards.js?v=105';
-import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=105';
-import * as snd from './audio.js?v=105';
-import { PERF_LEVELS, perfId, perfLevel, setPerf, applyToTrack } from './perf.js?v=105';
-import { record as recordPose, pose as posePast } from './smooth.js?v=105';
+import { buildTrack, setAniso, setCustomTrack } from './track.js?v=106';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=106';
+import { packLook, unpackLook, normalise } from './parts.js?v=106';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=106';
+import { whenKit } from './models.js?v=106';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=106';
+import { makeRescue } from './rescue.js?v=106';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=106';
+import { makeBrain, driveBrain } from './ai.js?v=106';
+import { initFx, spark, puff, blast, stepFx, faceFx } from './fx.js?v=106';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=106';
+import { makeRanked } from './rk.js?v=106';
+import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=106';
+import { makeHub } from './hub.js?v=106';
+import { icon, KIND_ICON } from './icons.js?v=106';
+import { makeCones } from './cones.js?v=106';
+import { makeHazards } from './hazards.js?v=106';
+import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=106';
+import * as snd from './audio.js?v=106';
+import { PERF_LEVELS, perfId, perfLevel, setPerf, applyToTrack, perfOverride } from './perf.js?v=106';
+import { record as recordPose, pose as posePast } from './smooth.js?v=106';
+import { makePads, B as PB, glyph, prompt as padPrompt, padName } from './pads.js?v=106';
+import { makeNav } from './padnav.js?v=106';
+import { makeDuo, DUO_KEYS, keysText as duoKeysText, padText as duoPadText } from './duo.js?v=106';
 const drawnPose = { x: 0, y: 0, z: 0, yaw: 0 };
 
 const el = id => document.getElementById(id);
@@ -89,6 +92,8 @@ function applyLevel() {
     camera.far = 1600 * L.far;
     camera.updateProjectionMatrix();
   }
+  // and the second half's camera, in split screen
+  for (let i = 1; i < views.length; i++) { views[i].camera.far = 1600 * L.far; views[i].camera.updateProjectionMatrix(); }
   if (scene && scene.fog && track) {
     scene.fog.near = track.theme.fogNear * L.far;
     scene.fog.far = track.theme.fogFar * L.far;
@@ -121,6 +126,29 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x4fb7ff);
 scene.fog = new THREE.Fog(0x8fd3ff, 260, 640);
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.3, 1600);
+
+/* ---------------------------------------------------------------------------
+   The views. One picture on the screen and everything that goes with it: a
+   camera and where it has got to, and the HUD drawn over it. A race on your
+   own has one, the whole window. Split screen has two, each with its own copy
+   of the HUD, and the world is drawn once for each of them.
+--------------------------------------------------------------------------- */
+function makeView(n, cam, roots) {
+  const V = {
+    n, camera: cam, mode: 0, hidden: null,
+    pos: new THREE.Vector3(), aim: new THREE.Vector3(), roll: 0, shake: 0, fov: cam.fov,
+    rect: { x: 0, y: 0, w: innerWidth, h: innerHeight },
+    hud: roots.hud, tags: roots.tags, wet: roots.wet, drops: roots.drops, oil: roots.oil,
+    last: {}, noticeT: 0, hintT: 0, wrongT: 0, linesAt: 0, wetOn: false, dryT: 0, oilT: 0,
+    tagFor: new Map(), tagBox: null, tagAt: 0, mini: null, miniBack: null, cache: {},
+  };
+  // an element of this view's HUD, by the id it has in the first one
+  V.q = id => V.cache[id] || (V.cache[id] = V.hud.querySelector('#' + id));
+  return V;
+}
+const views = [makeView(0, camera, { hud: el('hud'), tags: el('tags'), wet: el('wet'), drops: el('drops'), oil: el('oil') })];
+// a class on every view's HUD at once
+function hudClass(cls, on) { for (const V of views) V.hud.classList.toggle(cls, !!on); }
 
 /* a bright sky with a few flat clouds, painted into a dome */
 const sky = new THREE.Mesh(
@@ -190,6 +218,32 @@ let started = false, paused = false, chatting = false;
 let frozen = false;
 let camPinned = false;          // a test has parked the camera; leave it alone
 let soloRound = 0, autoBrain = null;
+/* ---- split screen, and controllers ----
+   `duo` is null outside a split screen race. In one it is the plan the 2
+   Players screen made: { mode: 'race' | 'vs', layout: 'tb' | 'lr', p: [{ name,
+   cast, build, colour, pad }, { ... }] }. Player 1's kart is `me`, as it always
+   is, and Player 2's is `me2`. Neither of them is ever sent anywhere. */
+let duo = null, me2 = null, autoBrain2 = null;
+let duoUI = null, nav = null;
+const pads = makePads();
+// which hands were used last, for which hints to show: the keys, or a pad of which kind
+let lastDevice = 'keys', lastPadKind = 'ps';
+let rumbleOn = true;
+try { rumbleOn = localStorage.getItem('mkRumble') !== '0'; } catch (e) {}
+// the keys held, by where they are on the keyboard: the two players' halves
+const codes = Object.create(null);
+let resultsAt = 0;                    // when the results came up, so a held Cross does not press them
+const duoBrains = new Map();          // a finished player's kart, driven home by the computer
+let keysHtml = null;                  // the title screen's key line, as written, for when the keys are back
+let padPressing = null;               // the controller whose Cross is pressing a button right now
+/* What a controller's rumble does for each thing: [heavy motor, light motor,
+   milliseconds]. Light for a nudge, heavy for being hit, the light motor for
+   a boost, both for the line. */
+const RUMBLE = {
+  nudge: [0.22, 0.3, 90], bump: [0.5, 0.35, 140], land: [0.35, 0.2, 100], hit: [0.95, 0.7, 420],
+  boost: [0.15, 0.6, 220], turbo: [0.2, 0.55, 240], finish: [0.7, 0.9, 700],
+};
+const LIGHTER = { full: 'balanced', balanced: 'light', light: 'light', minimal: 'minimal' };
 
 /* The secret drivers this browser has opened with a code typed on the title
    screen (Nubert), kept here and on the server under your name. */
@@ -388,10 +442,15 @@ addEventListener('keydown', e => {
   if (on && (on.tagName === 'INPUT' || on.tagName === 'TEXTAREA' || on.isContentEditable)) return;
   if (chatting) { if (k === 'escape') closeChat(false); return; }
   keys[k] = true;
+  codes[e.code] = true;
+  if (e.isTrusted && lastDevice !== 'keys') { lastDevice = 'keys'; drawPrompts(); }
   if (k === 'escape' && started) { menu(!paused); e.preventDefault(); return; }
+  // the 2 Players screen is closed by Esc, as the track picker is
+  if (k === 'escape' && duoUI && duoUI.open) { duoUI.show(false); e.preventDefault(); return; }
   // on the title screen too, but not over the track picker, where Esc is Back
   if (k === 'escape' && !started && !el('mapsel').classList.contains('on')) { menu(!paused); e.preventDefault(); return; }
   if (paused) return;                       // the menu has the keyboard while it is up
+  if (duo && started) { duoKeyDown(e, k); return; }
   if (hit('chat', k) && started) { openChat(); e.preventDefault(); }
   if (hit('item', k) && started) itemDown(me);
   /* Steering does nothing at all while you are watching somebody else drive,
@@ -402,7 +461,7 @@ addEventListener('keydown', e => {
   }
   if (phase === 'wait' && k >= '1' && k <= '5') castVote(THEMES[+k - 1].id);
   if (hit('go', k) && started && phase === 'wait' && net && net.alive) net.go();
-  if (hit('view', k) && started) { camMode = (camMode + 1) % CAM.length; notice(CAM[camMode].name + ' view'); }
+  if (hit('view', k) && started) cycleView(views[0]);
   if (hit('mute', k) && started) { snd.mute(!snd.muted_()); notice(snd.muted_() ? 'Sound off' : 'Sound on'); }
   // the pause menu's Restart race, on a key; held down it restarts once, not every repeat
   if (hit('reset', k) && started && !e.repeat) restartRace();
@@ -411,28 +470,99 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => {
   const k = e.key.toLowerCase();
   keys[k] = false;
+  codes[e.code] = false;
+  if (duo && started) { if (!paused) duoKeyUp(e); return; }
   if (hit('item', k) && started && !paused) itemUp(me);
 });
 addEventListener('blur', () => {
   for (const k in keys) keys[k] = false;
+  for (const c in codes) codes[c] = false;
   // the window going away is not a reason to keep holding a shell out
   if (me && me.holdKind) itemUp(me);
+  if (me2 && me2.holdKind) itemUp(me2);
 });
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  layoutViews();
 });
+function cycleView(V) {
+  V.mode = (V.mode + 1) % CAM.length;
+  notice(CAM[V.mode].name + ' view', null, V);
+}
 
-function readInput() {
-  const left = down('left'), right = down('right');
-  input.gas = down('gas') ? 1 : 0;
-  input.brake = down('brake') ? 1 : 0;
-  // a positive steer is a turn to the left in kart.js, which is the sign the
-  // front wheels and the lean are already drawn from, so left is the +1 here
-  input.steer = (left ? 1 : 0) - (right ? 1 : 0);
-  input.hop = down('hop');
-  if ((phase !== 'race' && phase !== 'wait') || spectating || !me || me.finished || paused) {
+/* Split screen: each player's own half of the keyboard, by where the keys are.
+   Nothing else on the keyboard does anything in a split screen race but Esc
+   (the menu, for both) and M (the sound), so neither player can restart the
+   race or open a chat with an elbow. */
+const duoHit = (n, act, code) => DUO_KEYS[n][act].indexOf(code) >= 0;
+const duoDown = (n, act) => DUO_KEYS[n][act].some(c => codes[c]);
+const duoCode = code => DUO_KEYS.some(K => { for (const a in K) if (K[a].indexOf(code) >= 0) return true; return false; });
+function duoKeyDown(e, k) {
+  for (let n = 0; n < 2; n++) {
+    if (e.repeat) break;
+    if (duoHit(n, 'item', e.code)) itemDown(kartOfPlayer(n));
+    if (duoHit(n, 'view', e.code)) cycleView(views[n] || views[0]);
+  }
+  if (hit('mute', k)) { snd.mute(!snd.muted_()); noticeAll(snd.muted_() ? 'Sound off' : 'Sound on'); }
+  if (duoCode(e.code) || bound(k)) e.preventDefault();
+}
+function duoKeyUp(e) {
+  for (let n = 0; n < 2; n++) {
+    // let go of the item only when neither of the player's item keys, nor the pad's, still holds it
+    if (duoHit(n, 'item', e.code) && !duoDown(n, 'item') && !padHolds(n, 'item')) itemUp(kartOfPlayer(n));
+  }
+}
+const kartOfPlayer = n => (n === 1 ? me2 : me);
+
+/* What a player is asking the kart to do, before the race decides whether it
+   is allowed to. On your own that is the keyboard as it is bound, with every
+   controller that is plugged in driving the same kart; in split screen it is
+   the player's own half of the keyboard and their own controller. Analogue
+   where the pad is: the stick steers by how far it is pushed and the triggers
+   go and stop by how far they are pulled. */
+function rawInput(n) {
+  const out = { gas: 0, brake: 0, steer: 0, hop: false, look: false };
+  if (!duo) {
+    const left = down('left'), right = down('right');
+    out.gas = down('gas') ? 1 : 0;
+    out.brake = down('brake') ? 1 : 0;
+    // a positive steer is a turn to the left in kart.js, which is the sign the
+    // front wheels and the lean are already drawn from, so left is the +1 here
+    out.steer = (left ? 1 : 0) - (right ? 1 : 0);
+    out.hop = down('hop');
+    out.look = down('look');
+    for (const i of pads.indices()) mergePad(out, pads.drive(i));
+  } else {
+    out.gas = duoDown(n, 'gas') ? 1 : 0;
+    out.brake = duoDown(n, 'brake') ? 1 : 0;
+    out.steer = (duoDown(n, 'left') ? 1 : 0) - (duoDown(n, 'right') ? 1 : 0);
+    out.hop = duoDown(n, 'hop');
+    out.look = duoDown(n, 'look');
+    const pi = duo.p[n] ? duo.p[n].pad : null;
+    if (pi !== null && pi !== undefined && pads.has(pi)) mergePad(out, pads.drive(pi));
+  }
+  return out;
+}
+function mergePad(out, d) {
+  out.gas = Math.max(out.gas, d.gas);
+  out.brake = Math.max(out.brake, d.brake);
+  out.steer = clamp(out.steer + d.steer, -1, 1);
+  out.hop = out.hop || d.hop;
+  out.look = out.look || d.look;
+}
+function padHolds(n, what) {
+  if (!duo) return pads.indices().some(i => pads.drive(i)[what]);
+  const pi = duo.p[n] ? duo.p[n].pad : null;
+  return pi !== null && pi !== undefined && pads.has(pi) && !!pads.drive(pi)[what];
+}
+const inputs = [{ gas: 0, brake: 0, steer: 0, hop: false }, { gas: 0, brake: 0, steer: 0, hop: false }];
+function readInput(n = 0) {
+  const r = rawInput(n), input = inputs[n];
+  input.gas = r.gas; input.brake = r.brake; input.steer = r.steer; input.hop = r.hop;
+  const k = kartOfPlayer(n);
+  if ((phase !== 'race' && phase !== 'wait') || spectating || !k || k.finished || paused) {
     // nobody moves before the lights; holding the throttle there is the rocket
     // start, and goRace() is where that gets paid out. The lobby is the one
     // other place you are allowed to drive.
@@ -536,7 +666,7 @@ function runMeta() {
    finished, so the recording never was either. The full one replaces this
    copy a couple of seconds later if you are still there. */
 function keepEarly() {
-  if (runKept || !me || me.dnf || !me.finished) return;
+  if (duo || runKept || !me || me.dnf || !me.finished) return;
   runKept = true;
   const run = recorder.finish(runMeta());
   if (!run) return;
@@ -549,7 +679,7 @@ function keepEarly() {
   if (pendingPost) postTime(pendingPost, run);
 }
 function finishRun() {
-  if (runReady || !me || me.dnf || !me.finished) return;
+  if (duo || runReady || !me || me.dnf || !me.finished) return;
   // the recorder hears about the line here if the race ended before it could
   recorder.tick(Math.max(raceTime, me.time), me);
   const run = recorder.finish(runMeta());
@@ -569,10 +699,11 @@ function ghostSplit(i) {
 /* Your speed across the line, in the HUD's km/h, and the ghost's at the moment
    it crossed the same line: read out of its recording, which keeps its speed
    twenty times a second. Green if you were carrying more. */
-function speedSplit(i) {
-  const mine = Math.round(Math.abs(me ? me.speed : 0) * 3.6);
+function speedSplit(i, k) {
+  k = k || me;
+  const mine = Math.round(Math.abs(k ? k.speed : 0) * 3.6);
   const out = { text: mine + ' km/h' };
-  if (ghost && ghost.T && ghost.meta.laps && ghost.meta.laps[i] > 0) {
+  if (k === me && ghost && ghost.T && ghost.meta.laps && ghost.meta.laps[i] > 0) {
     const T = ghost.T, at = Math.max(0, Math.min(T.n - 1, Math.round(ghost.meta.laps[i] * T.rate)));
     const d = mine - Math.round(T.speed[at] * 3.6);
     out.text += '   ' + (d >= 0 ? '+' : '−') + Math.abs(d) + ' km/h vs ghost';
@@ -616,7 +747,7 @@ function dressQuiet() {
   }
   if (cones) for (const m of cones.meshes) m.visible = !q;
   if (hazards) hazards.group.visible = !q;
-  el('hud').classList.toggle('tt', q);
+  hudClass('tt', q);
   document.body.classList.toggle('tt', q);
 }
 /* The sky, the light and the haze belong to the place, so they move with it.
@@ -712,7 +843,7 @@ function buildScenery() {
   const forWorld = track;
   if (!forWorld) return;
   for (let o = scene.getObjectByName('props'); o; o = scene.getObjectByName('props')) shredGroup(o);
-  import('./props.js?v=105')
+  import('./props.js?v=106')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -811,6 +942,10 @@ function placeOnGrid(first = 0) {
    the list of humans the server says are racing this round. */
 function startRound(field, seed, asPhase, themeId) {
   LAPS = isCustom(themeId) ? Math.max(1, Math.min(9, customLaps || 3)) : 3;
+  /* A button pressed to get here (Race again, Restart) does not keep the
+     focus into the race, where Enter and Space are somebody's driving keys. */
+  const fa = document.activeElement;
+  if (fa && fa !== document.body && fa.tagName === 'BUTTON' && fa.blur) fa.blur();
   if (!isCustom(themeId)) customMap = null;
   /* The circuit the place is, not the one the room's counter happened to land
      on. The server still sends a seed and still moves it every round; taking
@@ -821,8 +956,12 @@ function startRound(field, seed, asPhase, themeId) {
   clearField();
   results = [];
   raceTime = 0; notified = 0;
-  wrongT = 0;
-  el('wrong').classList.remove('on');
+  me2 = null;
+  duoBrains.clear();
+  for (const V of views) {
+    V.wrongT = 0; V.q('wrong').classList.remove('on');
+    V.noticeT = 0; V.q('notice').classList.remove('on');
+  }
   const grid = [];
   if (field && field.length) {
     for (const p of field) {
@@ -851,6 +990,14 @@ function startRound(field, seed, asPhase, themeId) {
     // watching: nobody on the grid at all, only the ghost
     me = null;
     spectating = true;
+  } else if (duo) {
+    /* Split screen: the two players on the front row, Player 1 on pole. Player
+       1 wears what they have won; Player 2 has no account here, so no
+       cosmetics, just the driver, the parts and the paint they picked. */
+    spectating = false;
+    const P = duo.p;
+    me = addKart(racerOf(P[0].cast, P[0].colour), { id: 'p1', name: P[0].name, build: P[0].build, style: styleNow() });
+    me2 = addKart(racerOf(P[1].cast, P[1].colour), { id: 'p2', name: P[1].name, build: P[1].build, style: null });
   } else {
     spectating = false;
     me = addKart(myRacer(), { id: 'me', name: myName || 'You', build: myBuild, style: styleNow() });
@@ -862,10 +1009,11 @@ function startRound(field, seed, asPhase, themeId) {
   // own. A lobby with one person in it is still a lobby: the next person to turn
   // up should find a grid of people rather than a field of robots. Not in a
   // time trial, and not while watching a replay.
-  if (solo && !quietRound) {
+  // Versus is the two of you and nobody else
+  if (solo && !quietRound && !(duo && duo.mode === 'vs')) {
     let s = (seed | 0) || 1234;
     const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
-    const pool = RACERS.filter(r => !r.secret && !(me && me.who === r));
+    const pool = RACERS.filter(r => !r.secret && !(me && me.who === r) && !(me2 && me2.who.id === r.id) && !(duo && me && me.who.id === r.id));
     for (let n = karts.length; n < GRID; n++) {
       const r = pool[(n - 1 + pool.length) % pool.length];
       const k = addKart(r, { id: 'bot' + n, name: r.name, bot: true });
@@ -902,11 +1050,12 @@ function startRound(field, seed, asPhase, themeId) {
   phaseT = lobby ? 0 : 4.2;
   el('watch').classList.toggle('on', spectating && !lobby);
   el('results').classList.remove('on');
-  el('hud').classList.add('on');
+  hudClass('on', true);
   hudItem();
   lobbyShow(lobby);
   makeTags();
   rkReport();
+  if (duo) return;
   if (rk) say(rk.watch ? (rk.single ? 'Watching ' + esc(rk.players[0].name) + '.' : 'Watching a ranked battle.') : 'Ranked against <b>' + esc(rk.opp.name) + '</b>. Three laps, '
     + rk.left + (rk.left === 1 ? ' restart' : ' restarts') + ' left.', 'sys');
   else say(lobby ? 'In the lobby. Drive about, and press ' + keyName(bind.go[0]) + ' when everybody is here.'
@@ -925,10 +1074,10 @@ function lapLogic(k, pr) {
       k.lap++;
       if (k === me) { me.lapTimes = me.lapTimes || []; me.lapTimes.push(+(raceTime - (me.lapStart || 0)).toFixed(2)); me.lapStart = raceTime; }
       if (k.lap > LAPS) finishKart(k);
-      else if (k === me) {
+      else if (viewOf(k)) {
         snd.lapChime();
-        notice((k.lap === LAPS ? 'Final lap' : 'Lap ' + k.lap) + ghostSplit(k.lap - 2), speedSplit(k.lap - 2));
-        if (k.lap === LAPS) say('Final lap.', 'sys');
+        notice((k.lap === LAPS ? 'Final lap' : 'Lap ' + k.lap) + (k === me ? ghostSplit(k.lap - 2) : ''), speedSplit(k.lap - 2, k), viewOf(k));
+        if (k.lap === LAPS && !duo) say('Final lap.', 'sys');
       }
     }
   }
@@ -941,9 +1090,11 @@ function finishKart(k) {
   k.lap = LAPS;
   results.push(k);
   k.place = results.length;
+  if (duo && isPlayer(k)) { duoFinish(k); return; }
   if (k === me) {
-    notice((rk ? 'Finished! ' + time(raceTime) : ord(results.length) + '!') + ghostSplit(LAPS - 1), speedSplit(LAPS - 1));
+    notice((rk ? 'Finished! ' + time(raceTime) : ord(results.length) + '!') + ghostSplit(LAPS - 1), speedSplit(LAPS - 1, me));
     snd.fanfare(results.length <= 3);
+    rumble(me, 'finish');
     showResults(false);
   }
   if (k === me && net) net.finish(raceTime, results.length);
@@ -959,6 +1110,19 @@ function finishKart(k) {
    driver, you were watching a position. It follows one car now until you pick
    another, and only falls back to the leader when the car you picked has left
    the race. */
+/* The players at this computer: you, and in split screen the second player
+   too. viewOf says which half of the screen a kart is shown in, if it is one
+   of theirs; the computer drivers and anybody online have none. */
+function humans() { return duo ? [me, me2].filter(Boolean) : (me ? [me] : []); }
+function isPlayer(k) { return !!k && (k === me || (!!duo && k === me2)); }
+function viewOf(k) {
+  if (!k) return null;
+  if (k === me) return views[0];
+  if (duo && k === me2) return views[1] || null;
+  return null;
+}
+// the kart a view follows: your own, the one you are watching, or Player 2's
+function subjectOf(V) { return V.n === 0 ? watched() : me2; }
 function watched() {
   if (replay && ghost) return ghost.k;
   if (!spectating) return me;
@@ -1060,7 +1224,7 @@ function tryRail(k, pr) {
     if ((fx * tx + fz * tz) / tl < 0.88) continue;
     k.rail = { r, s: j * r.step, hopWas: true };
     k.drift = 0; k.driftT = 0; k.slide = 0;
-    if (k === me) { notice('Rail grind!'); snd.boost(); }
+    if (viewOf(k)) { notice('Rail grind!', null, viewOf(k)); snd.boost(); rumble(k, 'boost'); }
     return;
   }
 }
@@ -1082,7 +1246,7 @@ function rideRail(k, inp, dt) {
       const a = track.samples[q.i];
       k.pos.x -= a.n.x * r.side * 1.6; k.pos.z -= a.n.z * r.side * 1.6;
     }
-    if (k === me) snd.boost();
+    if (isPlayer(k)) snd.boost();
     return stepKart(k, { gas: 1, brake: 0, steer: 0, hop: false }, track, dt);
   }
   const a = r.pts[j], b = r.pts[j + 1], t = f - j;
@@ -1118,9 +1282,10 @@ function pickupBox(k, b) {
   k.rollN = rollCount(k.rollTo, k.place, karts.length);
   // a gold box is two items, the second landing behind the first
   k.rollExtra = b.double ? 1 : 0;
-  if (k === me) {
-    el('slot').classList.add('spin'); el('slot').classList.remove('empty');
-    if (b.double) notice('Double item box!');
+  const V = viewOf(k);
+  if (V) {
+    V.q('slot').classList.add('spin'); V.q('slot').classList.remove('empty');
+    if (b.double) notice('Double item box!', null, V);
   }
 }
 
@@ -1128,8 +1293,9 @@ function useItem(k) {
   if (!k || !k.item || k.finished || phase !== 'race' || quietRound) return;
   const id = k.item;
   const def = ITEMS[id];
+  const V = viewOf(k);
   if (def.self) {
-    if (id === 'star') { k.star = 6.5; k.boost = Math.max(k.boost, 0.4); if (k === me) notice('Star!'); }
+    if (id === 'star') { k.star = 6.5; k.boost = Math.max(k.boost, 0.4); if (V) notice('Star!', null, V); }
     if (id === 'oil') {
       // the computer drivers get slowed here; a person's screen is splattered by
       // the 'fire' that goes out with this, which their browser hears and this
@@ -1138,19 +1304,20 @@ function useItem(k) {
         if (o === k || o.remote || o.star > 0) continue;
         o.slow = Math.max(o.slow, 2.2);
       }
-      if (k === me) notice('Oil can!');
-      else oilSplat();                      // a computer driver got you
+      if (V) notice('Oil can!', null, V);
+      // a computer driver got you, or in split screen the other player did
+      for (const W of views) if (W !== V) oilSplat(W);
       puff(k.pos.clone().setY(k.pos.y + 1.2), 0x1b2030);
     }
     if (id === 'bullet') {
       k.bullet = 6.5;
       k.star = Math.max(k.star, 6.5);      // nothing touches you while it runs
-      if (k === me) { notice('Bullet!'); snd.boost(); }
+      if (V) { notice('Bullet!', null, V); snd.boost(); rumble(k, 'boost'); }
       for (let i = 0; i < 10; i++) spark(k.pos.clone().setY(k.pos.y + 0.5), 0x8fd3ff, 3);
     }
     if (id === 'plant') {
       plantOn(k);
-      if (k === me) notice('Snapper!');
+      if (V) notice('Snapper!', null, V);
       puff(k.pos.clone().setY(k.pos.y + 1.1), 0x2f9440);
     }
     if (id === 'surge') {
@@ -1159,12 +1326,12 @@ function useItem(k) {
         o.slow = 3; o.speed *= 0.6;
         if (o.remote && net && k === me) net.hitThem(o.id, 'surge');
       }
-      if (k === me) notice('Surge!');
+      if (V) notice('Surge!', null, V);
       puff(k.pos.clone().setY(k.pos.y + 1.4), 0x8fd3ff);
     }
   } else if (id === 'turbo') {
     k.boost = Math.max(k.boost, 1.25);
-    if (k === me) snd.boost();
+    if (V) { snd.boost(); rumble(k, 'boost'); }
     for (let i = 0; i < 6; i++) spark(k.pos.clone().setY(k.pos.y + 0.4), 0xffd233, 2);
   } else {
     items.spawn(id, k, karts);
@@ -1182,7 +1349,8 @@ function spendItem(k) {
     if (next) { k.item = next.id; k.itemN = next.n; }
     else { k.item = null; k.itemN = 0; }
   }
-  if (k === me) { hudItem(); useHint(false); }
+  const V = viewOf(k);
+  if (V) { hudItem(V); useHint(V, false); }
 }
 
 /* Tap to throw, hold to trail.
@@ -1197,7 +1365,7 @@ function itemDown(k) {
   if (k.holdKind) return;                       // already out there
   if (!CAN_TRAIL[k.item]) { useItem(k); return; }
   items.hold(k.item, k);
-  if (k === me) snd.tick();
+  if (isPlayer(k)) snd.tick();
 }
 function itemUp(k) {
   if (!k || !k.holdKind) return;
@@ -1241,8 +1409,11 @@ function stepWorld(dt) {
      against how far it wants to be, sets how hard it tries - and it only ever
      changes that slowly. The place it wants wanders a car length or three
      either way over most of a minute, so the order is not fixed for the race. */
-  if (phase === 'race' && me && !me.finished) {
-    const at = lapProg(me, track);
+  /* In split screen the field keeps its distances from the two of you
+     together, the middle of wherever the players still racing are. */
+  const racingNow = humans().filter(k => !k.finished);
+  if (phase === 'race' && racingNow.length) {
+    const at = racingNow.reduce((s, k) => s + lapProg(k, track), 0) / racingNow.length;
     for (const b of brains) {
       const k = b.kart;
       if (k.finished || b.gap0 === undefined) continue;
@@ -1273,12 +1444,19 @@ function stepWorld(dt) {
      parked: left bound to that, the autopilot asks for no throttle at all and
      the new car sits on the line for the rest of the race. */
   if (autoBrain && me && autoBrain.kart !== me) autoBrain = makeBrain(me, 0.95, 4242);
+  if (autoBrain2 && me2 && autoBrain2.kart !== me2) autoBrain2 = makeBrain(me2, 0.95, 4343);
 
   // the computer drivers, and the autopilot when a test is driving
-  if (autoBrain) {
-    autoBrain.hazards = dodge;
-    autoBrain.input = phase === 'race' ? driveBrain(autoBrain, track, dt, karts, leader, useItem)
-                                       : { gas: 0, brake: 0, steer: 0, hop: false };
+  for (const A of [autoBrain, autoBrain2]) {
+    if (!A) continue;
+    A.hazards = dodge;
+    A.input = phase === 'race' ? driveBrain(A, track, dt, karts, leader, useItem)
+                               : { gas: 0, brake: 0, steer: 0, hop: false };
+  }
+  // and a split screen player who has finished, driven on round by the computer
+  for (const [k, A] of duoBrains) {
+    A.hazards = dodge;
+    A.input = phase === 'race' ? driveBrain(A, track, dt, karts, leader, () => {}) : { gas: 0, brake: 0, steer: 0, hop: false };
   }
   for (const b of brains) {
     b.hazards = dodge;
@@ -1289,13 +1467,16 @@ function stepWorld(dt) {
   for (const k of karts) {
     if (k.remote) continue;                       // somebody else's kart, they drive it
     let inp;
-    if (k === me) inp = autoBrain ? (autoBrain.input || { gas: 1, brake: 0, steer: 0, hop: false }) : readInput();
+    if (k === me) inp = autoBrain ? (autoBrain.input || { gas: 1, brake: 0, steer: 0, hop: false }) : readInput(0);
+    else if (k === me2) inp = autoBrain2 ? (autoBrain2.input || { gas: 1, brake: 0, steer: 0, hop: false }) : readInput(1);
     else {
       const b = brains.find(q => q.kart === k);
       inp = (b && b.input) || { gas: 1, brake: 0, steer: 0, hop: false };
       if (phase !== 'race') inp = { gas: 0, brake: 0, steer: 0, hop: false };
     }
-    if (k.finished) inp = { gas: 1, brake: 0, steer: (brains.find(q => q.kart === k) ? 0 : 0), hop: false };
+    if (k.finished) inp = duoBrains.has(k) ? (duoBrains.get(k).input || { gas: 1, brake: 0, steer: 0, hop: false })
+      : { gas: 1, brake: 0, steer: (brains.find(q => q.kart === k) ? 0 : 0), hop: false };
+    const V = viewOf(k);                      // the half of the screen this kart is, if it is a player's
     // being carried back is not being driven: the balloon owns the car until it
     // puts it down, and a physics step in the middle of that fights it
     if (k.rescue) continue;
@@ -1305,7 +1486,7 @@ function stepWorld(dt) {
 
     // a lane of boosters down one half of a straight
     if (pr.boostlane && phase === 'race') {
-      if (k === me && k.boost <= 0.2) snd.boost();
+      if (V && k.boost <= 0.2) { snd.boost(); rumble(k, 'boost'); }
       k.boost = Math.max(k.boost, 0.8);
     }
 
@@ -1317,11 +1498,11 @@ function stepWorld(dt) {
       // the box going is something everybody sees, whoever took it
       puff(b.pos.clone(), 0x8fd3ff);
       for (let n = 0; n < 7; n++) spark(b.pos.clone(), n % 2 ? 0xdff2ff : 0x2f7fd0, 2.2);
-      if (k === me) snd.tick();
+      if (V) snd.tick();
     }
     for (const p of track.boostPads) {
       if (Math.hypot(p.pos.x - k.pos.x, p.pos.z - k.pos.z) > p.w + 2) continue;
-      if (k === me && k.boost <= 0.2) snd.boost();
+      if (V && k.boost <= 0.2) { snd.boost(); rumble(k, 'boost'); }
       k.boost = Math.max(k.boost, p.ramp ? 1.2 : 0.85);
     }
 
@@ -1331,10 +1512,10 @@ function stepWorld(dt) {
        needs telling. It has to hold for most of a second before it says so:
        half a spin out points you the wrong way for an instant, and being shouted
        at for that is worse than not being told at all. */
-    if (k === me && phase === 'race') {
+    if (V && phase === 'race') {
       const wrong = (-Math.sin(k.yaw) * pr.t.x + -Math.cos(k.yaw) * pr.t.z) < -0.35;
-      wrongT = wrong ? Math.min(2, wrongT + dt) : 0;
-      el('wrong').classList.toggle('on', wrongT > 0.7);
+      V.wrongT = wrong ? Math.min(2, V.wrongT + dt) : 0;
+      V.q('wrong').classList.toggle('on', V.wrongT > 0.7);
     }
 
     // The ramps do not throw anybody any more: kart.js works out that the road
@@ -1352,7 +1533,7 @@ function stepWorld(dt) {
     if (k.landed) {
       k.landed = 0;
       puff(k.pos.clone().setY(k.pos.y + 0.2), 0xcfd6e0);
-      if (k === me) { snd.land(); shake = Math.min(1, shake + 0.45); }
+      if (V) { snd.land(); V.shake = Math.min(1, V.shake + 0.45); rumble(k, 'land'); }
     }
 
     // the roulette landing
@@ -1366,7 +1547,11 @@ function stepWorld(dt) {
           k.queue.push({ id: id2, n: rollCount(id2, k.place, karts.length) });
         }
         k.rollExtra = 0;
-        if (k === me) { el('slot').classList.remove('spin'); el('slot').classList.add('land'); setTimeout(() => el('slot').classList.remove('land'), 300); hudItem(); snd.land(); useHint(true); }
+        if (V) {
+          const slot = V.q('slot');
+          slot.classList.remove('spin'); slot.classList.add('land'); setTimeout(() => slot.classList.remove('land'), 300);
+          hudItem(V); snd.land(); useHint(V, true);
+        }
       }
     }
     // the drift sparks, and the boost trail
@@ -1400,7 +1585,7 @@ function stepWorld(dt) {
     /* And each tier arriving says so. The sparks change colour behind you,
        which is no use at all at forty metres a second with a corner to look
        at, so the useful half of it is the note. */
-    if (k === me) {
+    if (V) {
       const t2 = k.drift !== 0 ? driftTier(k) : 0;
       if (t2 > (k.tierWas || 0)) snd.charge(t2);
       k.tierWas = t2;
@@ -1408,7 +1593,7 @@ function stepWorld(dt) {
     // the turbo going off, which until now was the one boost in the game that
     // made no noise whatsoever
     if (k.mtFired) {
-      if (k === me) snd.turbo(k.mtFired);
+      if (V) { snd.turbo(k.mtFired); rumble(k, 'turbo', k.mtFired); }
       k.mtFired = 0;
     }
     /* The boost trail, out of the exhausts this car actually has rather than
@@ -1444,7 +1629,7 @@ function stepWorld(dt) {
     if (k.wallHit) {
       k.wallHit = 0;
       puff(k.pos.clone().setY(k.pos.y + 0.6), 0xfff6e2);
-      if (k === me) { snd.bump(); shake = Math.min(1, shake + 0.3); }
+      if (V) { snd.bump(); V.shake = Math.min(1, V.shake + 0.3); rumble(k, 'bump'); }
     }
   }
 
@@ -1467,7 +1652,7 @@ function stepWorld(dt) {
       break;
     }
     k.draftT = inAir ? k.draftT + dt : 0;
-    if (k === me && k.draftT > 0.5 && Math.random() < 0.5) {
+    if (isPlayer(k) && k.draftT > 0.5 && Math.random() < 0.5) {
       const nose = k.pos.clone().setY(k.pos.y + 0.8);
       nose.x += fx * 1.6; nose.z += fz * 1.6;
       spark(nose, 0x8fd3ff, 0.6, 'bubble', 0.7);
@@ -1491,14 +1676,19 @@ function stepWorld(dt) {
             k.boost = Math.max(k.boost, 0.75);
             k.spinB = 0.45;
           }
-          if (a === me || b === me) {
+          for (const k of [a, b]) {
+            if (!isPlayer(k)) continue;
             snd.boost();
-            spark(me.pos.clone().setY(me.pos.y + 0.7), 0x8fe4ff, 1, 'star', 1.1);
+            rumble(k, 'boost');
+            spark(k.pos.clone().setY(k.pos.y + 0.7), 0x8fe4ff, 1, 'star', 1.1);
           }
         }
+        // a nudge you can feel, through a controller
+        if (isPlayer(a)) rumble(a, 'nudge');
+        if (isPlayer(b)) rumble(b, 'nudge');
         // a star, or a bullet, ploughs straight through anybody else
-        if (a.star > 0 && b.star <= 0 && !b.remote) spinOut(b, false);
-        if (b.star > 0 && a.star <= 0 && !a.remote) spinOut(a, false);
+        if (a.star > 0 && b.star <= 0 && !b.remote && spinOut(b, false)) rumble(b, 'hit');
+        if (b.star > 0 && a.star <= 0 && !a.remote && spinOut(a, false)) rumble(a, 'hit');
       }
     }
   }
@@ -1509,7 +1699,8 @@ function stepWorld(dt) {
   for (const k of karts) {
     if (k.falling > 0.35 && !k.rescue && !k.finished) {
       rescue.send(k);
-      if (k === me) { notice('Fished out'); snd.spin(); }
+      const V = viewOf(k);
+      if (V) { notice('Fished out', null, V); snd.spin(); rumble(k, 'hit'); }
     }
   }
   rescue.step(dt);
@@ -1521,39 +1712,45 @@ function stepWorld(dt) {
     if (kind === 'hazard') {
       items.eat(victim);
       puff(new THREE.Vector3(victim.x, me ? me.pos.y + 0.6 : 0.6, victim.z), 0x2f9440);
-      if (owner === me) snd.tick();
+      if (isPlayer(owner)) snd.tick();
       return;
     }
     if (!victim.remote) spinOut(victim, false, { x: dir.x, z: dir.z, speed: 18 });
     if (victim.remote && owner === me && net) net.hitThem(victim.id, 'plant');
     puff(victim.pos.clone().setY(victim.pos.y + 0.9), 0x2f9440);
-    if (victim === me) { notice(hitBy(owner.id, 'plant')); snd.spin(); }
-    if (owner === me) snd.bump();
+    const V = viewOf(victim);
+    if (V) { notice(hitBy(owner.id, 'plant', victim), null, V); snd.spin(); rumble(victim, 'hit'); }
+    if (isPlayer(owner)) snd.bump();
   });
 
   /* Whatever this place does that the others do not. It runs off the race
      clock rather than off dt, so every browser in the room has the gates shut
      and the geysers blowing at the same moment without anybody saying so. */
   if (!quietRound) hazards.step(dt, raceTime, karts, (k, what) => {
-    if (k !== me || !what) return;
-    notice('HIT BY ' + what.toUpperCase());
+    const V = viewOf(k);
+    if (!V || !what) return;
+    notice('HIT BY ' + what.toUpperCase(), null, V);
     snd.bump();
+    rumble(k, 'hit');
   });
 
   // the cones, which go where they are knocked and stay there
   if (!quietRound) cones.step(dt, karts, (k, i, vx, vz) => {
     if (k === me && net && net.alive) net.cone(i, vx, vz);
-    if (k === me) snd.bump();
+    if (isPlayer(k)) { snd.bump(); rumble(k, 'nudge'); }
   });
 
   items.step(dt, karts, (k, kind, by) => {
-    if (k === me) { notice(hitBy(by, kind)); snd.spin(); }
-    if (kind === 'bomb' && Math.hypot(k.pos.x - (me ? me.pos.x : 0), k.pos.z - (me ? me.pos.z : 0)) < 22) snd.bang();
+    const V = viewOf(k);
+    if (V) { notice(hitBy(by, kind, k), null, V); snd.spin(); rumble(k, 'hit'); }
+    if (kind === 'bomb' && (humans().length ? humans() : [null]).some(h =>
+      Math.hypot(k.pos.x - (h ? h.pos.x : 0), k.pos.z - (h ? h.pos.z : 0)) < 22)) snd.bang();
     // my shell, their kart: their browser has to be told, it owns that kart
     if (k.remote && me && by === me.id && net) net.hitThem(k.id, kind);
   }, k => {
     // it took the hit instead of you, and went with it
-    if (k === me) { notice('Blocked!'); snd.bump(); }
+    const V = viewOf(k);
+    if (V) { notice('Blocked!', null, V); snd.bump(); rumble(k, 'nudge'); }
     puff(k.pos.clone().setY(k.pos.y + 0.7), 0xfff6e2);
     spendItem(k);
   });
@@ -1586,7 +1783,8 @@ function stepWorld(dt) {
     if (v > (me.topRun || 0)) me.topRun = v;
     me.distRun = (me.distRun || 0) + v * dt;
   }
-  if (phase === 'race' && me && !spectating) {
+  // nothing in split screen is recorded: it never goes on a board
+  if (phase === 'race' && me && !spectating && !duo) {
     recorder.tick(raceTime, me);
     if (me.finished) { if (recorder.active) keepEarly(); else finishRun(); }
   }
@@ -1623,20 +1821,21 @@ function dressTrack() {
 }
 
 /* -------------------------------------------------------------- the camera -- */
-let camMode = 0, camHidden = null;
-let camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
-let camRoll = 0;                  // how far the picture leans into a slide
-let shake = 0;                    // and how hard the last thing hit it
-function snapCamera() {
+/* Each view keeps its own: which camera mode it is in (mode), where the camera
+   has got to (pos, aim), how far the picture leans into a slide (roll), how
+   hard the last thing hit it (shake), and which kart it has hidden because the
+   camera is sitting inside it (hidden). */
+function snapCamera(V) {
+  if (!V) { for (const W of views) snapCamera(W); return; }
   // whoever is being watched, which when spectating is not me and never was
-  const watch = watched() || karts[0];
+  const watch = subjectOf(V) || karts[0];
   if (!watch) return;
-  const c = CAM[camMode];
-  camPos.set(watch.pos.x + Math.sin(watch.yaw) * c.d, watch.pos.y + c.h, watch.pos.z + Math.cos(watch.yaw) * c.d);
-  if (c.aim) camAim.set(watch.pos.x - Math.sin(watch.yaw) * c.aim, watch.pos.y + 1.1, watch.pos.z - Math.cos(watch.yaw) * c.aim);
-  else camAim.set(watch.pos.x, watch.pos.y + 1.25, watch.pos.z);
-  camera.position.copy(camPos);
-  camera.lookAt(camAim);
+  const c = CAM[V.mode];
+  V.pos.set(watch.pos.x + Math.sin(watch.yaw) * c.d, watch.pos.y + c.h, watch.pos.z + Math.cos(watch.yaw) * c.d);
+  if (c.aim) V.aim.set(watch.pos.x - Math.sin(watch.yaw) * c.aim, watch.pos.y + 1.1, watch.pos.z - Math.cos(watch.yaw) * c.aim);
+  else V.aim.set(watch.pos.x, watch.pos.y + 1.25, watch.pos.z);
+  V.camera.position.copy(V.pos);
+  V.camera.lookAt(V.aim);
 }
 // d is how far behind, h how high, aim how far up the road it looks instead of
 // at the kart, hide whether the kart is in the way of its own camera
@@ -1647,19 +1846,36 @@ const CAM = [
   { name: 'Driver',   d: 0.15, h: 1.45, fov: 78, aim: 15, hide: true },
   { name: 'Overhead', d: 2.2,  h: 15,   fov: 52 },
 ];
-function stepCamera(dt) {
+/* The sun's shadow box goes where the racing is, and it does that whether or
+   not a test has parked the camera somewhere to take a picture. It used to sit
+   below the camera's early return: park the camera and the box stayed wherever
+   it was last left, which on any circuit bigger than the box itself meant
+   nothing in shot cast a shadow at all. Split screen places it itself, once
+   for both halves when they are close enough to share it (see drawViews). */
+function aimSun() {
   const watch = watched();
   if (!watch) return;
-  /* The sun's shadow box goes where the racing is, and it does that whether or
-     not a test has parked the camera somewhere to take a picture. It used to
-     sit below the early return: park the camera and the box stayed wherever it
-     was last left, which on any circuit bigger than the box itself meant
-     nothing in shot cast a shadow at all. */
   sun.position.set(watch.pos.x + 120, 190, watch.pos.z + 80);
   sun.target.position.set(watch.pos.x, 0, watch.pos.z);
+}
+/* A strip as wide as a split screen half is would stretch a racing lens to
+   well past a hundred degrees across, so the picture is narrowed to keep
+   about the width the whole screen has. */
+function fovFor(V, f) {
+  if (!duo) return f;
+  const a = V.rect.w / V.rect.h, ref = 16 / 9;
+  if (a <= ref) return f;
+  return 2 * Math.atan(Math.tan(f * Math.PI / 360) * Math.pow(ref / a, 0.6)) * 180 / Math.PI;
+}
+// looking out of the back: the player's look key or button
+function lookBack(n) { return rawInput(n).look; }
+function stepCamera(V, dt) {
+  const watch = subjectOf(V);
+  if (!watch) return;
   if (camPinned) return;
-  const c = CAM[camMode];
-  const back = down('look') ? -1 : 1;
+  const camera = V.camera;
+  const c = CAM[V.mode];
+  const back = lookBack(V.n) ? -1 : 1;
   // sit behind where the kart is going, not where it is pointing, so a drift
   // reads as the kart cocked across a view that still follows the road
   const yaw = watch.yaw + watch.slide * 0.35;
@@ -1684,13 +1900,13 @@ function stepCamera(dt) {
              watch.pos.z - Math.cos(yaw) * c.aim * back);
   }
   // from the driver's seat the kart is only in the way
-  if (camHidden && (camHidden !== watch || !c.hide)) { camHidden.group.visible = true; camHidden = null; }
-  if (c.hide) { watch.group.visible = false; camHidden = watch; }
+  if (V.hidden && (V.hidden !== watch || !c.hide)) { V.hidden.group.visible = true; V.hidden = null; }
+  if (c.hide) { watch.group.visible = false; V.hidden = watch; }
   const k = 1 - Math.exp(-(phase === 'count' ? 3 : 7.5) * dt);
-  camPos.lerp(want, k);
-  camAim.lerp(look, 1 - Math.exp(-11 * dt));
-  camera.position.copy(camPos);
-  camera.lookAt(camAim);
+  V.pos.lerp(want, k);
+  V.aim.lerp(look, 1 - Math.exp(-11 * dt));
+  camera.position.copy(V.pos);
+  camera.lookAt(V.aim);
 
   /* Where the sense of speed comes from.
 
@@ -1703,70 +1919,74 @@ function stepCamera(dt) {
   const fast = Math.min(1, Math.abs(watch.speed) / (TUNE.top * 1.15));
   const fov = c.fov + fast * 7
     + (watch.boost > 0 ? 9 : 0) + (watch.star > 0 ? 3 : 0) + (watch.bullet > 0 ? 13 : 0);
-  camera.fov = lerp(camera.fov, fov, 1 - Math.exp(-(watch.boost > 0 ? 12 : 5) * dt));
-  camRoll = lerp(camRoll, -watch.slide * 0.22 - watch.drift * 0.035, 1 - Math.exp(-7 * dt));
+  V.fov = lerp(duo ? V.fov : camera.fov, fov, 1 - Math.exp(-(watch.boost > 0 ? 12 : 5) * dt));
+  camera.fov = fovFor(V, V.fov);
+  V.roll = lerp(V.roll, -watch.slide * 0.22 - watch.drift * 0.035, 1 - Math.exp(-7 * dt));
   /* And a kick when something happens to you. It decays in about a third of a
      second, so it reads as an impact rather than as a camera fault. */
-  if (shake > 0.002) {
+  if (V.shake > 0.002) {
     /* Only on your own kart. The kick comes from things that happen to you,
        and while you watch somebody else it shook their view with your bumps. */
-    if (watch === me && !spectating) {
+    if (watch === kartOfPlayer(V.n) && !spectating) {
       const t = performance.now() * 0.001;
-      camera.position.x += Math.sin(t * 61) * shake * 0.22;
-      camera.position.y += Math.sin(t * 47) * shake * 0.16;
-      camRoll += Math.sin(t * 53) * shake * 0.04;
+      camera.position.x += Math.sin(t * 61) * V.shake * 0.22;
+      camera.position.y += Math.sin(t * 47) * V.shake * 0.16;
+      V.roll += Math.sin(t * 53) * V.shake * 0.04;
     }
-    shake = Math.max(0, shake - dt * 3.2);
+    V.shake = Math.max(0, V.shake - dt * 3.2);
   }
-  camera.rotation.z += camRoll;
+  camera.rotation.z += V.roll;
   camera.updateProjectionMatrix();
 }
 
 /* ----------------------------------------------------------------- the HUD -- */
+/* Everything here draws into one view's HUD (V). On your own that is the only
+   one there is; in split screen each half has its own copy, cloned from the
+   first, and each player's numbers go on their own. */
 function ord(n) {
   const s = ['th', 'st', 'nd', 'rd'][(n % 10 > 3 || (n % 100 - n % 10) === 10) ? 0 : n % 10] || 'th';
   return n + s;
 }
 /* A word about the thing that just landed, for as long as it takes to read it.
-   It names whatever the use key is bound to, and goes the moment the slot is
+   It names whatever the use key is bound to, or the button on the controller
+   when that is what is being driven with, and goes the moment the slot is
    empty, so it can never be telling you to press something for nothing. */
-let hintT = 0;
-function useHint(on) {
-  hintT = on ? 3.6 : 0;
-  const h = el('usehint');
+function useHint(V, on) {
+  V.hintT = on ? 3.6 : 0;
+  const h = V.q('usehint');
   if (!h) return;
-  h.querySelector('i').textContent = keyName(bind.item[0] || 'e');
+  h.querySelector('i').innerHTML = itemKeyFor(V.n);
   h.classList.toggle('on', !!on);
 }
-function hintStep(dt) {
-  if (hintT <= 0) return;
-  hintT -= dt;
-  if (hintT <= 0 || !me || !me.item) { hintT = 0; el('usehint').classList.remove('on'); }
+function hintStep(V, dt) {
+  if (V.hintT <= 0) return;
+  V.hintT -= dt;
+  const k = kartOfPlayer(V.n);
+  if (V.hintT <= 0 || !k || !k.item) { V.hintT = 0; V.q('usehint').classList.remove('on'); }
 }
 
-function hudItem() {
-  const slot = el('slot'), face = el('face');
-  const q = el('slotq');
+function hudItem(V) {
+  if (!V) { for (const W of views) hudItem(W); return; }
+  const k = kartOfPlayer(V.n);
+  const slot = V.q('slot'), face = V.q('face');
+  const q = V.q('slotq');
   if (q) {
-    q.innerHTML = (me ? me.queue : []).map(it =>
+    q.innerHTML = (k ? k.queue : []).map(it =>
       '<div class="q">' + ITEMS[it.id].face + (it.n > 1 ? '<span class="n">x' + it.n + '</span>' : '') + '</div>'
     ).join('');
   }
-  if (!me || !me.item) { slot.classList.add('empty'); face.innerHTML = ''; return; }
+  if (!k || !k.item) { slot.classList.add('empty'); face.innerHTML = ''; return; }
   slot.classList.remove('empty');
-  face.innerHTML = ITEMS[me.item].face + (me.itemN > 1 ? '<span class="n">x' + me.itemN + '</span>' : '');
+  face.innerHTML = ITEMS[k.item].face + (k.itemN > 1 ? '<span class="n">x' + k.itemN + '</span>' : '');
 }
-/* Somebody's oil, on your glass. Fresh blobs each time so it never lands the
-   same way twice, and they wipe themselves off after a few seconds. */
 /* Water on the glass: it beads up while you are under and runs off when you
    come out. The drops are made once on the way in, because making them every
    frame is a lot of DOM for something nobody is looking at yet. */
-let wetOn = false, dryT = 0;
-function wetGlass(under, dt) {
-  const box = el('drops');
+function wetGlass(V, under, dt) {
+  const box = V.drops;
   if (!box) return;
-  if (under && !wetOn) {
-    wetOn = true; dryT = 0;
+  if (under && !V.wetOn) {
+    V.wetOn = true; V.dryT = 0;
     box.classList.remove('off');
     const n = 16 + Math.floor(Math.random() * 10);
     let html = '';
@@ -1779,19 +1999,22 @@ function wetGlass(under, dt) {
     }
     box.innerHTML = html;
     box.classList.add('on');
-  } else if (!under && wetOn) {
-    wetOn = false; dryT = 1.3;
+  } else if (!under && V.wetOn) {
+    V.wetOn = false; V.dryT = 1.3;
     box.classList.add('off');
   }
-  if (dryT > 0) {
-    dryT -= dt;
-    if (dryT <= 0) { box.classList.remove('on', 'off'); box.innerHTML = ''; }
+  if (V.dryT > 0) {
+    V.dryT -= dt;
+    if (V.dryT <= 0) { box.classList.remove('on', 'off'); box.innerHTML = ''; }
   }
 }
 
-let oilT = 0;
-function oilSplat() {
-  const box = el('oil');
+/* Somebody's oil, on your glass. Fresh blobs each time so it never lands the
+   same way twice, and they wipe themselves off after a few seconds. With no
+   view, it is yours. */
+function oilSplat(V) {
+  V = V || views[0];
+  const box = V.oil;
   if (!box) return;
   const n = 7 + Math.floor(Math.random() * 4);
   let html = '';
@@ -1804,53 +2027,57 @@ function oilSplat() {
   }
   box.innerHTML = html;
   box.classList.add('on');
-  oilT = 3.4;
+  V.oilT = 3.4;
   snd.bump();
+  rumble(kartOfPlayer(V.n), 'nudge');
 }
-function oilStep(dt) {
-  if (oilT <= 0) return;
-  oilT -= dt;
-  if (oilT <= 0) { el('oil').classList.remove('on'); el('oil').innerHTML = ''; }
+function oilStep(V, dt) {
+  if (V.oilT <= 0) return;
+  V.oilT -= dt;
+  if (V.oilT <= 0) { V.oil.classList.remove('on'); V.oil.innerHTML = ''; }
 }
 
 /* Everybody's name over their kart, yours in gold so you can pick yourself out
-   of a pack. One div each, moved by projecting the kart's head through the
-   camera: eight elements is nothing, and text drawn by the browser stays crisp
-   at any distance in a way a texture does not. */
-let tagFor = new Map();
+   of a pack (and Player 2's in pink, in split screen). One div each, moved by
+   projecting the kart's head through the camera: eight elements is nothing,
+   and text drawn by the browser stays crisp at any distance in a way a texture
+   does not. Each view has its own set, placed through its own camera. */
 function makeTags() {
-  const box = el('tags');
-  if (!box) return;
-  box.innerHTML = '';
-  tagFor = new Map();
-  for (const k of karts) {
-    const d = document.createElement('div');
-    d.className = 'tag' + (k === me ? ' me' : '') + (k.ghost ? ' ghost' : '');
-    d.textContent = k.name;
-    box.appendChild(d);
-    tagFor.set(k, d);
-  }
-  if (ghost) {
-    const d = document.createElement('div');
-    d.className = 'tag ghost';
-    d.innerHTML = icon('ghost') + ' ' + esc(ghost.k.name);
-    box.appendChild(d);
-    tagFor.set(ghost.k, d);
+  for (const V of views) {
+    const box = V.tags;
+    if (!box) continue;
+    box.innerHTML = '';
+    V.tagFor = new Map();
+    for (const k of karts) {
+      const d = document.createElement('div');
+      d.className = 'tag' + (k === me ? ' me' : '') + (duo && k === me2 ? ' me2' : '') + (k.ghost ? ' ghost' : '');
+      d.textContent = k.name;
+      box.appendChild(d);
+      V.tagFor.set(k, d);
+    }
+    if (ghost) {
+      const d = document.createElement('div');
+      d.className = 'tag ghost';
+      d.innerHTML = icon('ghost') + ' ' + esc(ghost.k.name);
+      box.appendChild(d);
+      V.tagFor.set(ghost.k, d);
+    }
   }
 }
 const tagV = new THREE.Vector3();
 const tagLit = [], tagPut = [];
 // only touch the style when it changes: an unchanged write still dirties the element
 function tagOp(d, v) { if (d._op !== v) { d._op = v; d.style.opacity = v; } }
-function drawTags() {
-  if (!tagFor.size) return;
-  const w = innerWidth, h = innerHeight;
+function drawTags(V) {
+  if (!V.tagFor.size) return;
+  const w = V.rect.w, h = V.rect.h;
+  const own = kartOfPlayer(V.n);
   tagLit.length = 0;
-  for (const [k, d] of tagFor) {
-    if (k === me && camMode === 3) { tagOp(d, '0'); continue; }
+  for (const [k, d] of V.tagFor) {
+    if (k === own && V.mode === 3) { tagOp(d, '0'); continue; }
     if (k.ghost && !k.group.visible) { tagOp(d, '0'); continue; }
-    tagV.set(k.pos.x, k.pos.y + k.hop + 2.5, k.pos.z).project(camera);
-    const far = k === me ? 0 : Math.hypot(k.pos.x - camPos.x, k.pos.z - camPos.z);
+    tagV.set(k.pos.x, k.pos.y + k.hop + 2.5, k.pos.z).project(V.camera);
+    const far = k === own ? 0 : Math.hypot(k.pos.x - V.pos.x, k.pos.z - V.pos.z);
     const x = (tagV.x * 0.5 + 0.5) * w, y = (-tagV.y * 0.5 + 0.5) * h;
     if (tagV.z > 1 || far > 150 || y < 0 || y > h) { tagOp(d, '0'); continue; }
     tagLit.push({ k, d, x, y, far });
@@ -1859,13 +2086,14 @@ function drawTags() {
   /* The ghost's name before anybody else's but your own. It sits inside or
      beside your car for most of a close race, so its name is always the one
      colliding with somebody's, and it is the one you are racing. */
-  const tagRank = x => (x.k === me ? -2 : x.k.ghost ? -1 : x.far);
+  const tagRank = x => (x.k === own ? -2 : x.k.ghost ? -1 : x.far);
   tagLit.sort((a, b) => tagRank(a) - tagRank(b));
   tagPut.length = 0;
   /* The standings sit over the top right and a name that slides under them is
      worse than no name: you get half a word and a guess. Read once, before any
-     tag is touched, so this does not cost a layout per tag. */
-  const bd = el('board');
+     tag is touched, so this does not cost a layout per tag. Split screen has no
+     standings panel. */
+  const bd = V.n === 0 && !duo ? el('board') : null;
   /* Its own box, not offsetParent: that is null for anything fixed whether it
      is on screen or not, so asking it quietly turned this check off. */
   /* Its box, read every half second rather than every frame: reading layout
@@ -1873,14 +2101,14 @@ function drawTags() {
      quarter of the game's CPU time), and the standings panel only moves when
      the window does. */
   const nowT = performance.now();
-  if (!drawTags.box || nowT - drawTags.at > 500) { drawTags.box = bd ? bd.getBoundingClientRect() : null; drawTags.at = nowT; }
-  const br = drawTags.box;
+  if (!V.tagBox || nowT - V.tagAt > 500) { V.tagBox = bd ? bd.getBoundingClientRect() : { width: 0 }; V.tagAt = nowT; }
+  const br = V.tagBox;
   const panel = br && br.width > 0 ? br : null;
   for (const t of tagLit) {
     /* Smaller the further away, which is how a name behaves in the world
        rather than on the glass, and it is what stops a distant pack reading
        as one long word. */
-    const size = Math.max(10, (t.k === me ? 15 : 14) * (1 - Math.min(1, t.far / 150) * 0.42));
+    const size = Math.max(10, (t.k === own ? 15 : 14) * (1 - Math.min(1, t.far / 150) * 0.42));
     const half = t.k.name.length * size * 0.32 + 4;
     // off the side of the screen it is half a name hanging on the bezel
     if (t.x - half < 2 || t.x + half > w - 2) { tagOp(t.d, '0'); continue; }
@@ -1916,81 +2144,83 @@ function nameOf(id) {
   const k = karts.find(q => q.id === id);
   return k ? k.name : null;
 }
-function hitBy(by, kind) {
+// victim: whose screen this is going on; you, when nobody is named
+function hitBy(by, kind, victim) {
   const what = ITEMS[kind] ? ITEMS[kind].name : 'that';
   const who = nameOf(by);
-  return who && by !== (me && me.id) ? 'Hit by ' + who + "'s " + what + '!' : 'Hit!';
+  const self = victim ? victim.id : (me && me.id);
+  return who && by !== self ? 'Hit by ' + who + "'s " + what + '!' : 'Hit!';
 }
 
-// how long you have been pointing back down the road
-let wrongT = 0;
-
-let noticeT = 0;
-function notice(text, sub) {
-  el('notice').textContent = text;
+/* A line across the middle of one view, for a second and a half, or for as
+   long as `hold` says. With no view it goes on yours. */
+function notice(text, sub, V, hold) {
+  V = V || views[0];
+  const box = V.q('notice');
+  box.textContent = text;
   // a second, smaller line under it: the speed through the line, and against the ghost
   if (sub) {
     const s = document.createElement('small');
     s.textContent = sub.text;
     if (sub.cls) s.className = sub.cls;
-    el('notice').appendChild(s);
+    box.appendChild(s);
   }
-  el('notice').classList.add('on');
-  noticeT = 1.6;
+  box.classList.add('on');
+  V.noticeT = hold || 1.6;
 }
+// the same thing on every view: something about the race, not about one player
+function noticeAll(text, sub) { for (const V of views) notice(text, sub, V); }
 /* Speed lines. They only turn up when you are genuinely quick, and they get
    out of the way the moment you are not, so what they mark is the boost rather
    than the driving. Drawn in CSS because a full screen effect that costs one
    opacity write a frame is the right kind of cheap. */
-function speedLines(watch, dt) {
-  const el0 = el('speedlines');
+function speedLines(V, watch, dt) {
+  const el0 = V.q('speedlines');
   if (!el0) return;
   const fast = Math.max(0, Math.abs(watch.speed) / TUNE.top - 0.82);
   const want = Math.min(1, fast * 2.2 + (watch.boost > 0 ? 0.75 : 0) + (watch.bullet > 0 ? 1 : 0));
-  linesAt = lerp(linesAt, want, 1 - Math.exp(-9 * dt));
-  el0.style.opacity = linesAt < 0.02 ? '0' : (Math.min(1, linesAt) * 0.62).toFixed(3);
+  V.linesAt = lerp(V.linesAt, want, 1 - Math.exp(-9 * dt));
+  el0.style.opacity = V.linesAt < 0.02 ? '0' : (Math.min(1, V.linesAt) * 0.62).toFixed(3);
   el0.classList.toggle('hot', watch.boost > 0 || watch.bullet > 0);
 }
-let linesAt = 0;
 
 /* The HUD writes only what has changed. Setting the same text again is not
    free: it replaces the text node, and the page lays that part out again. Sixty
    times a second, for numbers that change a few times a lap, it was most of the
    work the page did outside the 3D. */
-const hudLast = {};
-function hudText(id, v) {
+function hudText(V, id, v) {
   v = String(v);
-  if (hudLast[id] === v) return;
-  hudLast[id] = v;
-  el(id).textContent = v;
+  if (V.last[id] === v) return;
+  V.last[id] = v;
+  V.q(id).textContent = v;
 }
-function drawHud(dt) {
-  oilStep(dt);
-  hintStep(dt);
-  drawTags();
-  if (noticeT > 0) { noticeT -= dt; if (noticeT <= 0) el('notice').classList.remove('on'); }
-  const watch = watched();
-  drawWatchBar();
-  if (watch) speedLines(watch, dt);
+function drawHud(V, dt) {
+  oilStep(V, dt);
+  hintStep(V, dt);
+  drawTags(V);
+  if (V.noticeT > 0) { V.noticeT -= dt; if (V.noticeT <= 0) V.q('notice').classList.remove('on'); }
+  const watch = subjectOf(V);
+  if (V.n === 0) drawWatchBar();
+  if (watch) speedLines(V, watch, dt);
   // under the surface, if that is where whoever we are watching happens to be
-  el('wet').classList.toggle('on', !!(watch && watch.wet));
-  wetGlass(!!(watch && watch.wet), dt);
+  V.wet.classList.toggle('on', !!(watch && watch.wet));
+  wetGlass(V, !!(watch && watch.wet), dt);
   if (!watch) return;
-  hudText('lapn', Math.min(LAPS, watch.lap));
-  hudText('lapof', '/' + LAPS);
+  hudText(V, 'lapn', Math.min(LAPS, watch.lap));
+  hudText(V, 'lapof', '/' + LAPS);
   const pl = watch.place || 1;
-  hudText('placen', pl);
-  hudText('placesfx', ord(pl).replace(/^\d+/, ''));
-  if (hudLast.placeCls !== pl) { hudLast.placeCls = pl; el('place').className = 'p' + Math.min(3, pl); }
-  hudText('speedn', Math.round(Math.abs(watch.speed) * 3.6));
+  hudText(V, 'placen', pl);
+  hudText(V, 'placesfx', ord(pl).replace(/^\d+/, ''));
+  if (V.last.placeCls !== pl) { V.last.placeCls = pl; V.q('place').className = 'p' + Math.min(3, pl); }
+  hudText(V, 'speedn', Math.round(Math.abs(watch.speed) * 3.6));
   const clk = replay && ghost ? Math.min(raceTime, ghost.meta.time)
     : watch.finished ? (watch.time || 0) : (phase === 'race' ? raceTime : 0);
-  hudText('clockn', time(clk));
+  hudText(V, 'clockn', time(clk));
   /* No charge bar. The sparks off the back wheels are the meter, the way they
      are in Mario Kart: white, then blue, then orange, then purple, and you read
      them out of the corner of your eye without taking them off the road. */
-  drawBoard();
-  drawMini();
+  if (V.n === 0 && !duo) drawBoard();
+  drawMini(V);
 }
 
 function drawBoard() {
@@ -2001,14 +2231,14 @@ function drawBoard() {
     + '<span>' + esc(k.name) + '</span>'
     + '<span class="t">' + (k.finished ? time(k.time) : 'L' + Math.min(LAPS, k.lap)) + '</span></div>').join('');
   // rebuilt only when the order or a lap has actually changed
-  if (hudLast.board === rows) return;
-  hudLast.board = rows;
+  if (views[0].last.board === rows) return;
+  views[0].last.board = rows;
   el('boardrows').innerHTML = rows;
 }
 
-const minic = el('minic'), mg = minic.getContext('2d');
-let miniBack = null;
-function drawMini() {
+function drawMini(V) {
+  if (!V.mini) { const c = V.q('minic'); V.mini = { c, g: c.getContext('2d') }; }
+  const minic = V.mini.c, mg = V.mini.g;
   const W = minic.width, H = minic.height;
   const b = track.bounds;
   const pad = 16;
@@ -2020,7 +2250,7 @@ function drawMini() {
   mg.clearRect(0, 0, W, H);
   /* The circuit does not move, so it is drawn once per track into a canvas
      of its own and copied in; only the dots are drawn fresh each frame. */
-  if (!miniBack || miniBack.track !== track || miniBack.c.width !== W || miniBack.c.height !== H) {
+  if (!V.miniBack || V.miniBack.track !== track || V.miniBack.c.width !== W || V.miniBack.c.height !== H) {
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const g = c.getContext('2d');
     g.lineWidth = 10; g.lineJoin = 'round'; g.strokeStyle = '#17223b';
@@ -2028,16 +2258,20 @@ function drawMini() {
     track.outline.forEach((p, i) => { i ? g.lineTo(X(p[0]), Z(p[1])) : g.moveTo(X(p[0]), Z(p[1])); });
     g.closePath(); g.stroke();
     g.lineWidth = 6; g.strokeStyle = '#9aa3b2'; g.stroke();
-    miniBack = { track, c };
+    V.miniBack = { track, c };
   }
-  mg.drawImage(miniBack.c, 0, 0);
-  for (const k of karts) {
+  mg.drawImage(V.miniBack.c, 0, 0);
+  // the view's own kart drawn last, so it is never under somebody else's dot
+  const own = kartOfPlayer(V.n);
+  const dot = k => {
     mg.beginPath();
-    mg.arc(X(k.pos.x), Z(k.pos.z), k === me ? 7 : 5, 0, 7);
-    mg.fillStyle = k === me ? '#ffd233' : (k.bot ? '#fff6e2' : '#8fd3ff');
+    mg.arc(X(k.pos.x), Z(k.pos.z), k === me ? 7 : isPlayer(k) ? 7 : 5, 0, 7);
+    mg.fillStyle = k === me ? '#ffd233' : isPlayer(k) ? '#ff7ad9' : (k.bot ? '#fff6e2' : '#8fd3ff');
     mg.fill();
     mg.lineWidth = 3; mg.strokeStyle = '#17223b'; mg.stroke();
-  }
+  };
+  for (const k of karts) if (k !== own) dot(k);
+  if (own && karts.indexOf(own) >= 0) dot(own);
 }
 
 /* ---- the record board ----------------------------------------------------
@@ -2567,7 +2801,7 @@ function showResults(final) {
   /* A race you actually finished goes on the board: all three laps, under your
      own power, not the flag falling on you while you were still out there. */
   if (worldTheme) boardMap = worldTheme;
-  if (me && !postedRace && !me.dnf && me.lap >= LAPS && me.time > 0) {
+  if (!duo && me && !postedRace && !me.dnf && me.lap >= LAPS && me.time > 0) {
     postedRace = true;
     try {
       if (quietRound) {
@@ -2589,7 +2823,8 @@ function showResults(final) {
     if (runReady && pendingPost) postTime(pendingPost, runReady);
   }
   drawTimes();
-  el('restitle').textContent = replay ? 'Replay over'
+  el('restitle').textContent = duo ? duoTitle()
+    : replay ? 'Replay over'
     : quietRound && me ? 'Time trial: ' + time(me.time)
     : final ? 'Race over' : 'You finished ' + ord(me ? me.place : 1);
   /* On your own you can go again straight away, without waiting for the
@@ -2597,9 +2832,11 @@ function showResults(final) {
   el('resbtns').hidden = !!(net && net.alive);
   el('again').textContent = replay ? 'Watch again' : 'Race again';
   el('resrows').innerHTML = live.map(k =>
-    '<div class="r' + (k === me ? ' me' : '') + (k.bot ? ' bot' : '') + (k.place === 1 ? ' p1' : '') + '">'
-    + '<span class="p">' + k.place + '</span><span>' + esc(k.name) + '</span>'
+    '<div class="r' + (k === me ? ' me' : '') + (duo && k === me2 ? ' me2' : '') + (k.bot ? ' bot' : '') + (k.place === 1 ? ' p1' : '') + '">'
+    + '<span class="p">' + k.place + '</span><span>' + esc(k.name)
+    + (duo && isPlayer(k) ? ' <small class="pn">P' + (k === me ? 1 : 2) + '</small>' : '') + '</span>'
     + '<span class="t">' + (k.finished ? time(k.time) : '-') + '</span></div>').join('');
+  resultsAt = performance.now();
   drawCup();
   if (rk) rkPanel();
   el('results').classList.add('on');
@@ -2652,15 +2889,16 @@ function stepPhase(dt) {
     // revving on the grid: hold the throttle or the drift button and the kart
     // shakes, and the longer you hold it the harder it goes when the lights
     // change. Let go and it winds back down.
-    if (me && !spectating && !paused) {
-      const on = down('gas') || down('hop');
+    if (!spectating && !paused) for (const k of humans()) {
+      const r = rawInput(k === me2 ? 1 : 0);
+      const on = r.gas > 0.5 || r.hop;
       /* How long it has been held without letting go, which is the whole of
          the start. Hold it from the second light and the car goes; hold it
          from the first and the engine is flooded by the time the flag drops.
          Letting go puts it back to nothing, so an early grab can be taken
          back - which is the decision the start is made of. */
-      me.revHold = on ? me.revHold + dt : 0;
-      me.rev = Math.max(0, Math.min(1, me.rev + (on ? 1.05 : -2.2) * dt));
+      k.revHold = on ? k.revHold + dt : 0;
+      k.rev = Math.max(0, Math.min(1, k.rev + (on ? 1.05 : -2.2) * dt));
     }
     for (const b of brains) b.kart.rev = Math.min(1, b.kart.rev + b.skill * 0.9 * dt);
     /* A ranked battle's first start waits on the grid, lights out, until the
@@ -2699,7 +2937,7 @@ function goRace() {
   phase = 'race';
   raceTime = 0;
   runReady = null; runKept = false; pendingPost = 0;
-  if (me && !spectating) recorder.begin(me, me.slot || 0);
+  if (me && !spectating && !duo) recorder.begin(me, me.slot || 0);
   litWas = -1;
   snd.beep(true);
   snd.music(true, 'race');
@@ -2713,15 +2951,18 @@ function goRace() {
      floods: no launch at all, and it coughs for a couple of seconds while
      everybody else drives away. Held from the second light it is a rocket
      start. That window is the point of the countdown. */
-  if (me && !spectating) {
-    if (me.revHold > FLOOD_AT) {
-      me.boost = 0;
-      me.stall = 2.1;
-      notice('Engine flooded!');
+  if (!spectating) for (const k of humans()) {
+    const V = viewOf(k);
+    if (k.revHold > FLOOD_AT) {
+      k.boost = 0;
+      k.stall = 2.1;
+      notice('Engine flooded!', null, V);
       snd.bump && snd.bump();
-    } else if (me.rev > 0.15) {
-      me.boost = 0.75 + me.rev * 0.75;
-      notice(me.rev > 0.85 ? 'Rocket start!' : 'Good launch');
+      rumble(k, 'bump');
+    } else if (k.rev > 0.15) {
+      k.boost = 0.75 + k.rev * 0.75;
+      notice(k.rev > 0.85 ? 'Rocket start!' : 'Good launch', null, V);
+      rumble(k, 'boost');
     }
   }
   for (const k of karts) { k.rev = 0; k.revHold = 0; }
@@ -2730,7 +2971,8 @@ function goRace() {
 /* The end of your race or trial, for the stats page: the laps, how fast,
    and whether you finished. A replay or a watched race is nobody's run. */
 function postRun(finished) {
-  if (!me || me.runSent || spectating || replay) return;
+  // split screen is played here and nowhere else: nothing about it is sent
+  if (duo || !me || me.runSent || spectating || replay) return;
   me.runSent = true;
   const name = (myName || '').trim();
   if (!name) return;
@@ -2776,6 +3018,7 @@ function frame() {
   last = now;
   tickCosmetics(now / 1000);
   if (editorFrame) { editorFrame(dt); renderer.render(scene, camera); return; }
+  padStep(now);
   if (started) watchFrame(raw, now);
   if (!started) {
     // the title screen is a panel over the world, so the world behind it barely
@@ -2799,17 +3042,63 @@ function frame() {
      as though they were. */
   if (net && net.alive && !frozen) net.tick(dt);
   if (!frozen) rkTick(dt);
-  stepCamera(dt);
+  for (const V of views) stepCamera(V, dt);
+  if (!duo) aimSun();
   stepFx(dt, camera);
   stepSound(dt);
-  drawHud(dt);
-  renderer.render(scene, camera);
+  for (const V of views) drawHud(V, dt);
+  drawViews();
+}
+
+/* Drawing the world: once on your own, and once for each half in split
+   screen. The two halves share one shadow map while the players are close
+   enough for a single box to hold both of them, which is most of a race; it
+   grows from the usual 110 m either way up to SHARE_SUN, and past that each
+   half draws its own, around its own kart. */
+const SHARE_SUN = 240;
+function setSunBox(e) {
+  const S = sun.shadow.camera;
+  if (S.right === e) return;
+  S.left = -e; S.right = e; S.top = e; S.bottom = -e;
+  S.updateProjectionMatrix();
+}
+function sunOver(x, z) { sun.position.set(x + 120, 190, z + 80); sun.target.position.set(x, 0, z); }
+let sunShared = true;
+function drawViews() {
+  if (!duo || views.length < 2) { renderer.render(scene, camera); return; }
+  const H = innerHeight;
+  const a = subjectOf(views[0]), b = subjectOf(views[1]);
+  sunShared = true;
+  if (a && b) {
+    const half = Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z) / 2 + 60;
+    sunShared = half <= SHARE_SUN;
+    setSunBox(sunShared ? Math.max(110, Math.ceil(half / 10) * 10) : 110);
+    if (sunShared) sunOver((a.pos.x + b.pos.x) / 2, (a.pos.z + b.pos.z) / 2);
+  } else if (a || b) sunOver((a || b).pos.x, (a || b).pos.z);
+  renderer.shadowMap.autoUpdate = false;
+  // the first half always draws it; the second only when it has a box of its own
+  renderer.shadowMap.needsUpdate = true;
+  renderer.setScissorTest(true);
+  for (const V of views) {
+    if (!sunShared) { const k = subjectOf(V); if (k) sunOver(k.pos.x, k.pos.z); renderer.shadowMap.needsUpdate = true; }
+    // the kart a half's camera is sitting in is hidden from that half only
+    for (const W of views) if (W.hidden) W.hidden.group.visible = W !== V;
+    faceFx(V.camera);
+    const r = V.rect, y = H - r.y - r.h;
+    renderer.setViewport(r.x, y, r.w, r.h);
+    renderer.setScissor(r.x, y, r.w, r.h);
+    renderer.render(scene, V.camera);
+  }
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, innerWidth, innerHeight);
 }
 
 /* ------------------------------------------------------------------ sound --- */
 function stepSound() {
   if (!snd.isOn()) return;
-  const k = watched();
+  /* One engine note for the room. In split screen it is whichever of the two
+     is going faster, which is the one that sounds like a race. */
+  const k = duo && me2 && me && Math.abs(me2.speed) > Math.abs(me.speed) ? me2 : watched();
   if (!k) return;
   snd.engine(phase === 'race' || phase === 'count', k.speed, topSpeed(k), k.offroad,
              k.hop > 0.35 || !!k.falling);
@@ -2905,6 +3194,8 @@ function buildPaint() {
   cv.addEventListener('pointercancel', done);
   // and from the keyboard: left and right go round, up and down go in and out
   cv.tabIndex = 0;
+  // a controller's left and right turn it too (padnav.js sends it the arrow keys)
+  cv.setAttribute('data-padlr', '');
   cv.addEventListener('keydown', e => {
     const k = e.key;
     if (k === 'ArrowLeft') myPaint.h = (myPaint.h + 352) % 360;
@@ -3157,7 +3448,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=105');
+    const mod = await import('./net.js?v=106');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3205,7 +3496,7 @@ async function start(online) {
   el('title').classList.add('gone');
   if (rkFirst) { const f = rkFirst; rkFirst = null; f(); }
   else if (!net || !net.alive) startRound(null, soloSeed, undefined, pickedTheme);
-  el('hud').classList.add('on');
+  hudClass('on', true);
 }
 
 /* The five places, as swatches of their own sky over their own ground. Picking
@@ -3350,8 +3641,8 @@ function lobbyShow(on) {
   snd.music(on, 'lobby');
   el('lobby').classList.toggle('on', on);
   el('board').classList.toggle('on', !on);
-  el('hud').classList.toggle('lobby', on);
-  el('lobbykey').textContent = keyName(bind.go[0] || 'k');
+  hudClass('lobby', on);
+  el('lobbykey').innerHTML = lobbyKey();
   el('vote').classList.toggle('on', on && !!(net && net.alive));
   if (on) drawVote();
   if (on) { el('count').classList.remove('on'); el('results').classList.remove('on'); }
@@ -3365,7 +3656,14 @@ function menu(on) {
   paused = !!on;
   waiting = null;
   el('menu').classList.toggle('on', paused);
-  if (!paused) return;
+  el('padmsg').hidden = true;
+  if (!paused) {
+    // nothing in a closed menu keeps the focus: Enter is Player 2's item key, and Space a drift
+    const a = document.activeElement;
+    if (a && el('menu').contains(a) && a.blur) a.blur();
+    return;
+  }
+  drawRumble();
   menuPage('main');
   // the same menu from the title screen: nothing to resume, restart or leave
   el('menu').querySelector('h2').textContent = started ? 'Paused' : 'Settings';
@@ -3382,7 +3680,7 @@ function menuPage(which) {
   el('menumain').hidden = which !== 'main';
   el('menukeys').hidden = which !== 'keys';
   el('menuperf').hidden = which !== 'perf';
-  if (which === 'keys') drawBinds();
+  if (which === 'keys') { drawBinds(); drawPadKeys(); }
   if (which === 'perf') drawPerf();
   el('perfnow').textContent = perfLevel().name;
 }
@@ -3394,12 +3692,15 @@ function drawPerf() {
   const now = perfId();
   el('perfrows').innerHTML = PERF_LEVELS.map(l =>
     '<button type="button" class="prow' + (l.id === now ? ' on' : '') + '" data-p="' + l.id + '">'
-    + '<b>' + l.name + '</b><span>' + esc(l.note) + '</span></button>').join('');
+    + '<b>' + l.name + '</b><span>' + esc(l.note) + '</span></button>').join('')
+    + (duo && perfLevel().id !== now ? '<p class="sub">Split screen draws the circuit twice, so it races one step lighter: '
+      + esc(perfLevel().name) + '.</p>' : '');
 }
 el('perfrows').addEventListener('click', e => {
   const b = e.target.closest('[data-p]');
   if (!b || b.dataset.p === perfId()) return;
   setPerf(b.dataset.p);
+  duoPerf();
   drawPerf();
   el('perfnow').textContent = perfLevel().name;
   if (track) { applyToTrack(track.group); buildScenery(); }
@@ -3533,7 +3834,7 @@ function editorCtx() {
   };
 }
 function editorModule() {
-  if (!editorMod) editorMod = import('./editor.js?v=105');
+  if (!editorMod) editorMod = import('./editor.js?v=106');
   return editorMod;
 }
 function playCustomMap(id, mode) {
@@ -3568,6 +3869,7 @@ rkNet = makeRanked({
   cast: () => packLook(myCast, myBuild, myColour),
   started: () => started,
   inBattle: () => !!(rk && !rk.watch && !rk.res),
+  local: () => !!duo,
   watching: () => !!(rk && rk.watch && !rk.res),
   // driving something else: accepting a challenge leaves it
   racing: () => started && !(rk && !rk.res),
@@ -3703,9 +4005,11 @@ function rkWatchRound() {
 // what this page is doing, for the ranked list everybody else sees
 function rkReport() {
   if (!rkNet) return;
+  /* Split screen says nothing about itself: to the list it is a page on the
+     menu, so nobody can ask to watch it and nothing of it goes out. */
   const m = rk ? (rk.watch && !rk.res ? 'watch' : 'title')
-    : !started ? 'title' : (net && net.alive) ? 'multi' : replay ? 'replay' : quietRound ? 'tt' : 'solo';
-  rkNet.status({ mode: m, theme: started && !rk ? worldTheme : null, round: ++rkRound });
+    : !started || duo ? 'title' : (net && net.alive) ? 'multi' : replay ? 'replay' : quietRound ? 'tt' : 'solo';
+  rkNet.status({ mode: m, theme: started && !rk && !duo ? worldTheme : null, round: ++rkRound });
 }
 function rkField() {
   return [{ id: rk.me, name: rkNet.name || myName, cast: packLook(myCast, myBuild, myColour) },
@@ -3763,7 +4067,7 @@ function rkTick(dt) {
   /* Outside a battle: only somebody watching you wants to know where you are,
      and then from whatever you are driving, on your own or in a lobby. */
   if (!rk) {
-    if (rkFans > 0 && me && (phase === 'race' || phase === 'count' || phase === 'wait') && now - rkSendAt > 100) {
+    if (rkFans > 0 && me && !duo && (phase === 'race' || phase === 'count' || phase === 'wait') && now - rkSendAt > 100) {
       rkSendAt = now;
       rkNet.pos({
         x: +me.pos.x.toFixed(2), y: +me.pos.y.toFixed(2), z: +me.pos.z.toFixed(2), yaw: +me.yaw.toFixed(3),
@@ -3998,6 +4302,296 @@ loadProfile(!localStorage.getItem('mkStyle'));
 // on the list from the moment the page opens, whatever you go on to play
 rkNet.presence();
 
+/* ----------------------------------------------------- controllers ------- */
+/* Once a frame, before anything reads an input: what every pad is doing. On a
+   screen with buttons (the title, a menu, the results) a pad moves the focus
+   and presses things; in a race it drives, and Options is Esc. In split screen
+   each pad belongs to the player it joined; on your own, every pad drives you. */
+function padStep(now) {
+  pads.poll(now);
+  const list = pads.indices();
+  if (!list.length) return;
+  for (const i of list) {
+    const s = pads.get(i);
+    if (s.used && (lastDevice !== 'pad' || lastPadKind !== s.kind)) { lastDevice = 'pad'; lastPadKind = s.kind; drawPrompts(); }
+    // the 2 Players screen first: a pad nobody has yet joins with Cross
+    if (duoUI && duoUI.open && duoUI.pad(i, s)) continue;
+    const L = navLayer();
+    if (L) {
+      if (!nav) continue;
+      if (s.dirGo) nav.move(s.dirGo);
+      // a Cross still held from driving over the line does not press the results
+      if (s.went[PB.CROSS] && !(L.settle && now - L.settle < 900)) { padPressing = i; try { nav.ok(); } finally { padPressing = null; } }
+      if (s.went[PB.CIRCLE]) nav.back();
+      if (s.went[PB.OPTIONS]) {
+        if (started || paused) menu(!paused);
+        else if (L.root === el('title')) menu(true);
+      }
+      continue;
+    }
+    if (!started) continue;
+    // any pad pauses; only a player's own pad drives
+    if (s.went[PB.OPTIONS]) { menu(!paused); continue; }
+    const n = duo ? duo.p.findIndex(p => p.pad === i) : 0;
+    if (n < 0) continue;
+    if (paused) continue;
+    const k = kartOfPlayer(n);
+    // tap to throw, hold to trail, the same as the key
+    const held = !!(s.on[PB.CIRCLE] || s.on[PB.SQUARE]);
+    if (held && !s.itemWas) itemDown(k);
+    else if (!held && s.itemWas && !(duo ? duoDown(n, 'item') : down('item'))) itemUp(k);
+    s.itemWas = held;
+    if (s.went[PB.CREATE] || s.went[PB.PAD]) cycleView(views[n] || views[0]);
+    // watching a lobby race: left and right go down the field, as the keys do
+    if (spectating && !duo && (s.dirGo === 'left' || s.dirGo === 'right')) watchStep(s.dirGo === 'left' ? -1 : 1);
+    // and in the lobby, Triangle is the key that starts the race
+    if (phase === 'wait' && s.went[PB.TRIANGLE] && net && net.alive) net.go();
+  }
+}
+/* Which screen a pad is moving round, and what Circle does on it: the top one
+   that is showing. Nothing when a race is being driven. */
+function navLayer() {
+  if (el('menu').classList.contains('on')) {
+    return { root: el('menu'), first: () => el('resume'),
+             back: () => (el('menumain').hidden ? menuPage('main') : menu(false)) };
+  }
+  if (duoUI && duoUI.open) return { root: el('duo'), back: () => duoUI.show(false) };
+  const hp = document.querySelector('.hubpage.on');
+  if (hp) return { root: hp, back: () => hub && hub.hide() };
+  if (el('rk').classList.contains('on')) return { root: el('rk'), back: () => el('rkback').click() };
+  if (el('mapsel').classList.contains('on')) {
+    return { root: el('mapsel'), back: () => mapScreen(false), first: () => el('mapmode').querySelector('button') };
+  }
+  if (el('results').classList.contains('on')) {
+    return { root: el('results'), back: null, settle: resultsAt, okFirst: true, first: () => (el('resbtns').hidden ? null : el('again')) };
+  }
+  if (!started && !el('title').classList.contains('gone')) return { root: el('title'), back: null, first: () => el('solo') };
+  return null;
+}
+/* A pad came or went. Mid-race that stops the race with a word about it, so
+   nobody is left driving into a wall with a dead controller in their hands.
+   In split screen a pad that comes back goes to the player who lost one. */
+pads.onChange = (i, on, s) => {
+  if (on) { lastDevice = 'pad'; lastPadKind = s.kind; }
+  else if (duoUI) duoUI.lost(i);
+  const racing = started && !editorFrame && (phase === 'race' || phase === 'count' || phase === 'wait');
+  const name = padName(s.id);
+  /* A pad that was driving somebody going away stops the race and says so. A
+     pad turning up does not: it has just had a button pressed, by somebody
+     who means to use it, so it gets a word on their half and nothing more,
+     unless the menu is up already (the pad going is what put it there). */
+  let msg = null, short = null, n = -1, stop = false;
+  if (duo) {
+    if (!on) {
+      n = duo.p.findIndex(p => p.pad === i);
+      if (n >= 0) {
+        duo.p[n].pad = null; duo.p[n].lost = true; stop = true;
+        msg = 'Player ' + (n + 1) + '’s controller was disconnected. Plug it back in, or carry on with '
+          + (n ? 'the arrow keys' : 'W A S D') + '.';
+      }
+    } else {
+      n = duo.p.findIndex(p => p.lost && p.pad === null);
+      if (n < 0) n = duo.p.findIndex(p => p.pad === null || p.pad === undefined);
+      if (n >= 0) {
+        duo.p[n].pad = i; duo.p[n].lost = false;
+        msg = name + ' connected for Player ' + (n + 1) + '.';
+        short = 'Controller connected';
+      }
+    }
+  } else {
+    stop = !on;
+    msg = on ? name + ' connected.' : name + ' disconnected. Plug it back in, or carry on with the keyboard.';
+    short = on ? name + ' connected' : null;
+  }
+  if (racing && msg) {
+    if (stop) pauseFor(msg);
+    else if (paused) pauseFor(msg + ' Press Options or Cross to carry on.');
+    else if (short) notice(short, null, (n >= 0 && views[n]) || views[0]);
+  }
+  drawPrompts();
+  if (duoUI) duoUI.redraw();
+};
+function pauseFor(msg) {
+  if (!paused) menu(true);
+  const m = el('padmsg');
+  m.textContent = msg;
+  m.hidden = false;
+}
+
+/* Rumble, through whichever pads are driving that kart. The same thing again
+   before the last one has finished is the same thing, so rubbing along a wall
+   is one long rumble rather than sixty starts a second. */
+function rumble(k, kind, tier) {
+  if (!rumbleOn || !k || !isPlayer(k)) return;
+  const R = RUMBLE[kind];
+  if (!R) return;
+  let strong = R[0], weak = R[1], ms = R[2];
+  if (kind === 'turbo' && tier) { weak = Math.min(1, 0.3 + tier * 0.2); ms = 150 + tier * 90; }
+  const now = performance.now();
+  k.rumbleAt = k.rumbleAt || {};
+  if (now - (k.rumbleAt[kind] || 0) < ms) return;
+  k.rumbleAt[kind] = now;
+  const list = duo ? [duo.p[k === me2 ? 1 : 0].pad] : pads.indices();
+  for (const i of list) if (i !== null && i !== undefined && pads.has(i)) pads.rumble(i, strong, weak, ms);
+}
+function drawRumble() {
+  const b = el('rumble');
+  if (!b) return;
+  el('rumblenow').textContent = rumbleOn ? 'On' : 'Off';
+  b.setAttribute('aria-pressed', String(rumbleOn));
+}
+el('rumble').addEventListener('click', () => {
+  rumbleOn = !rumbleOn;
+  try { localStorage.setItem('mkRumble', rumbleOn ? '1' : '0'); } catch (e) {}
+  drawRumble();
+  // a short one to say it is on
+  if (rumbleOn) for (const i of pads.indices()) pads.rumble(i, 0.3, 0.5, 160);
+});
+
+/* The hints, in whatever is being driven with: the keys as they are bound, or
+   the buttons on the pad, drawn as the pad's own shapes. */
+function itemKeyFor(n) {
+  if (duo) {
+    const pi = duo.p[n] ? duo.p[n].pad : null;
+    if (pi !== null && pi !== undefined && pads.has(pi)) return glyph('circle', pads.get(pi).kind);
+    return n ? 'Enter' : 'E';
+  }
+  if (lastDevice === 'pad' && pads.count) return glyph('circle', lastPadKind);
+  return esc(keyName(bind.item[0] || 'e'));
+}
+function lobbyKey() {
+  return lastDevice === 'pad' && pads.count ? glyph('triangle', lastPadKind) : esc(keyName(bind.go[0] || 'k'));
+}
+function drawPrompts() {
+  const box = el('keys');
+  if (!box) return;
+  if (keysHtml === null) keysHtml = box.innerHTML;
+  const pad = lastDevice === 'pad' && pads.count > 0;
+  const want = pad ? padKeysLine(lastPadKind) : keysHtml;
+  if (box._was !== want) { box._was = want; box.innerHTML = want; }
+  el('lobbykey').innerHTML = lobbyKey();
+  for (const V of views) if (V.hintT > 0) V.q('usehint').querySelector('i').innerHTML = itemKeyFor(V.n);
+}
+function padKeysLine(kind) {
+  const p = a => padPrompt(a, kind);
+  return p('gas') + ' go &middot; ' + p('brake') + ' brake &middot; ' + glyph('stick', kind) + ' steer &middot; '
+    + padPrompt('hop', kind, true) + ' hop and drift<br>' + padPrompt('item', kind, true) + ' use item &middot; ' + p('look') + ' look back &middot; '
+    + p('view') + ' view &middot; ' + p('pause') + ' menu &middot; ' + glyph('dpad', kind) + ' ' + glyph('cross', kind) + ' ' + glyph('circle', kind) + ' menus';
+}
+// the Controls page: the keys are rebound above; the pad and split screen are listed under them
+function drawPadKeys() {
+  const box = el('padkeys');
+  if (!box) return;
+  const kind = pads.count ? lastPadKind : 'ps';
+  const pad = '<p class="sub">Controller' + (pads.count ? '' : ' (plug one in and press a button)') + '</p>'
+    + '<div class="pk">' + duoPadText(kind) + '</div>';
+  /* In split screen its own keys come first, since those are the ones in use;
+     the table above them is for racing on your own, so it says so. */
+  const keys = el('menukeys');
+  if (duo) {
+    box.innerHTML = '<p class="sub">Split screen keys (fixed)</p><div class="pk"><b>P1</b> ' + duoKeysText(0) + '</div><div class="pk"><b>P2</b> '
+      + duoKeysText(1) + '</div>' + pad + '<p class="sub">On your own: click a key, then press the one you want</p>';
+    keys.insertBefore(box, keys.firstChild);
+    const head = keys.querySelector(':scope > p.sub');
+    if (head) head.hidden = true;
+  } else {
+    box.innerHTML = pad;
+    keys.insertBefore(box, el('bindrows').nextSibling);
+  }
+}
+
+/* ----------------------------------------------------- split screen ------ */
+/* The second half: a camera of its own, and a copy of the HUD and of the
+   things that go over the glass (names, water, oil), each kept to its half of
+   the window by the stylesheet (body.duo). */
+function addSecondView() {
+  if (views[1]) return views[1];
+  const cam = new THREE.PerspectiveCamera(62, 1, 0.3, camera.far);
+  const twin = id => {
+    const a = el(id), b = a.cloneNode(true);
+    b.classList.add('p2');
+    b.setAttribute('aria-hidden', 'true');
+    a.after(b);
+    return b;
+  };
+  const V = makeView(1, cam, { hud: twin('hud'), tags: twin('tags'), wet: twin('wet'), drops: twin('drops'), oil: twin('oil') });
+  V.tags.innerHTML = ''; V.drops.innerHTML = ''; V.oil.innerHTML = '';
+  views.push(V);
+  const line = document.createElement('div');
+  line.id = 'duoline';
+  document.body.appendChild(line);
+  return V;
+}
+/* Where each half is, in CSS pixels from the top left, and how big the HUD
+   furniture can be in it (--hz, used as a zoom on the corners). */
+function layoutViews() {
+  const W = innerWidth, H = innerHeight;
+  if (!duo || views.length < 2) { views[0].rect = { x: 0, y: 0, w: W, h: H }; return; }
+  const lr = duo.layout === 'lr';
+  const cut = lr ? Math.round(W / 2) : Math.round(H / 2);
+  views[0].rect = lr ? { x: 0, y: 0, w: cut, h: H } : { x: 0, y: 0, w: W, h: cut };
+  views[1].rect = lr ? { x: cut, y: 0, w: W - cut, h: H } : { x: 0, y: cut, w: W, h: H - cut };
+  for (const V of views) {
+    V.camera.aspect = V.rect.w / V.rect.h;
+    V.camera.updateProjectionMatrix();
+    V.tagBox = null;
+  }
+  const r = views[0].rect;
+  document.body.style.setProperty('--hz', Math.max(0.5, Math.min(1, r.h / 640, r.w / 860)).toFixed(3));
+}
+// the scenery one step lighter while the circuit is being drawn twice
+function duoPerf() { perfOverride(duo ? LIGHTER[perfId()] : null); }
+/* The race, from the 2 Players screen's plan. The same race as on your own,
+   built the same way, with a second kart and a second half. */
+function startDuo(plan) {
+  if (started || !plan) return;
+  duo = { mode: plan.mode === 'vs' ? 'vs' : 'race', layout: plan.layout === 'lr' ? 'lr' : 'tb',
+          p: plan.p.map(P => ({ name: P.name, cast: P.cast, build: normalise(P.build), colour: P.colour,
+                                pad: P.pad === undefined ? null : P.pad, lost: false })) };
+  pickedTheme = themeById(plan.theme).id;
+  mode = 'race'; replay = false; ghostWant = null; customMap = null;
+  addSecondView();
+  document.body.classList.add('duo', duo.layout);
+  layoutViews();
+  duoPerf();
+  // and a step down the quality ladder to start; the frame watcher takes it from there
+  if (level < 1) level = 1;
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  start(false);
+}
+/* A player over the line. Their half says where they came, and the computer
+   drives their kart on round while the other one is still racing; the results
+   come up when both are home, or when the race is called. */
+function duoFinish(k) {
+  notice(ord(k.place) + '!', { text: time(k.time) }, viewOf(k), 1e9);
+  snd.fanfare(k.place <= 3);
+  rumble(k, 'finish');
+  duoBrains.set(k, makeBrain(k, 0.9, k === me ? 5151 : 5252));
+  if (humans().every(h => h.finished)) showResults(false);
+}
+// the two players in the order they came home
+function duoTitle() {
+  if (!me || !me2) return 'Race over';
+  const [a, b] = (me.place || 99) <= (me2.place || 99) ? [me, me2] : [me2, me];
+  if (duo.mode === 'vs') return a.name + ' wins!';
+  return a.name + ' ' + ord(a.place || 1) + ' · ' + b.name + ' ' + ord(b.place || 2);
+}
+nav = makeNav({ layer: navLayer });
+duoUI = makeDuo({
+  el, esc, racers: RACERS, canDrive, normalise, parts: PARTS, themes: THEMES,
+  theme: () => pickedTheme,
+  mine: () => ({ name: (myName || '').trim(), cast: myCast, build: myBuild, colour: myColour }),
+  portrait: i => (hub ? hub.portrait(i) : null),
+  pads,
+  tick: () => { try { snd.tick(); } catch (e) {} },
+  ding: () => { try { snd.start(); snd.beep(false); } catch (e) {} },
+  start: startDuo,
+});
+/* Opened with a controller, that controller is Player 1's: whoever is holding
+   it is the one who wanted to play. */
+el('duobtn').addEventListener('click', () => { duoUI.show(true); if (padPressing !== null) duoUI.seat(padPressing); });
+drawPrompts();
+
 window.__mk = {
   get phase() { return phase; },
   get karts() { return karts; },
@@ -4102,7 +4696,7 @@ window.__mk = {
   roll: (place, field) => rollItem(place, field, track.rules.items),
   get bind() { return bind; },
   menu,
-  get view() { return CAM[camMode].name; },
+  get view() { return CAM[views[0].mode].name; },
   get views() { return CAM.map(c => c.name); },
   get net() { return net; },
   get started() { return started; },
@@ -4135,14 +4729,36 @@ window.__mk = {
     for (let i = 0; i < (n || 1); i++) {
       stepPhase(dt || 0.02);
       if (phase === 'race' || phase === 'count' || phase === 'wait') stepWorld(dt || 0.02);
-      stepCamera(dt || 0.02);
+      for (const V of views) stepCamera(V, dt || 0.02);
+      if (!duo) aimSun();
     }
-    drawHud(dt || 0.02);
+    for (const V of views) drawHud(V, dt || 0.02);
   },
-  autopilot(on) {
+  // the autopilot for you, or in split screen for player n (0 or 1)
+  autopilot(on, n) {
+    if (n === 1) { autoBrain2 = on && me2 ? makeBrain(me2, 0.95, 4343) : null; return !!autoBrain2; }
     autoBrain = on && me ? makeBrain(me, 0.95, 4242) : null;
     return !!autoBrain;
   },
+  /* Split screen and controllers, for a test: the plan the 2 Players screen
+     would hand over, the second kart, both halves, what each player is asking
+     for, and the pads as the page sees them. */
+  startDuo(plan) { startDuo(plan); return true; },
+  get duo() { return duo; },
+  get me2() { return me2; },
+  get duoUI() { return duoUI; },
+  get halves() { return views.map(V => ({ n: V.n, rect: Object.assign({}, V.rect), mode: CAM[V.mode].name, fov: +V.camera.fov.toFixed(1),
+                                         aspect: +V.camera.aspect.toFixed(3), subject: subjectOf(V) ? subjectOf(V).id : null,
+                                         gap: subjectOf(V) ? +V.camera.position.distanceTo(subjectOf(V).pos).toFixed(2) : null })); },
+  input(n) { return rawInput(n || 0); },
+  get pads() { return pads.indices().map(i => { const p = pads.get(i); return { i, id: p.id, kind: p.kind, drive: pads.drive(i) }; }); },
+  get lastDevice() { return lastDevice + (lastDevice === 'pad' ? ':' + lastPadKind : ''); },
+  get rumbleOn() { return rumbleOn; },
+  get sunShared() { return sunShared; },
+  get perfNow() { return perfLevel().id; },
+  get navLayer() { const L = navLayer(); return L ? (L.root.id || L.root.className) : null; },
+  get focus() { const a = document.activeElement; return a ? (a.id || a.getAttribute('data-f') || a.textContent.trim().slice(0, 30)) : null; },
+  finishP(n) { const k = kartOfPlayer(n || 0); if (k) finishKart(k); return k ? +k.time.toFixed(2) : 0; },
   // what the autopilot is asking for, so a test can see why a car is not moving
   get brain() { return autoBrain; },
   /* The field back on the grid and the flag dropped again, on the circuit that
@@ -4215,6 +4831,8 @@ window.__mk = {
       karts: karts.length, bots: brains.length, time: +raceTime.toFixed(2),
       finished: me ? !!me.finished : false, results: results.length,
       trackLen: track ? Math.round(track.length) : 0,
+      p2: me2 ? { lap: me2.lap, place: me2.place, speed: +me2.speed.toFixed(2), finished: !!me2.finished, item: me2.item } : null,
+      level,
     };
   },
 };

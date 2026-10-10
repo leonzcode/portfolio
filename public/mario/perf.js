@@ -36,7 +36,14 @@ export function perfId() {
 export function setPerf(id) {
   try { localStorage.setItem(KEY, id); } catch (e) {}
 }
-export function perfLevel() { return PERF_LEVELS.find(l => l.id === perfId()) || PERF_LEVELS[0]; }
+/* A level used for now without being saved as the choice: split screen draws
+   the world twice, so it races one step lighter than whatever was picked. */
+let override = null;
+export function perfOverride(id) {
+  override = id && PERF_LEVELS.some(l => l.id === id) ? id : null;
+  return override;
+}
+export function perfLevel() { return PERF_LEVELS.find(l => l.id === (override || perfId())) || PERF_LEVELS[0]; }
 // the share of one kind of thing at the current level
 export function share(kind) {
   const k = perfLevel().k[kind];
