@@ -56,6 +56,7 @@ import { loadEntityArt } from './entities/packart.js?v=39';
 import { ITEM_TEX } from './itemdata.js?v=39';
 import { debugLines, F3_HELP } from './ui/debug.js?v=39';
 import { Spin } from './render/screenfx.js?v=39';
+import { Minimap } from './ui/minimap.js?v=39';
 const THREE = window.THREE;
 /* The game's own parts (js/parts.js: mobs, the simulation, the dimensions, the hands, advancements,
    statistics, the server code...) are not wanted by the title screen: they are loaded once it is up
@@ -471,6 +472,8 @@ async function boot() {
     statistics: () => openStatistics(gui, icons),
   };
   const gui = new Gui($('#gui'), { base: base + 'gui/', options, hooks, version: TEX_V });
+  // the minimap (ui/minimap.js): its own small canvas under the GUI's, drawn each frame you play
+  const minimap = new Minimap(gui, options);
   await gui.load();
   MK('gui');
   // music and sound (js/sound)
@@ -1422,6 +1425,7 @@ async function boot() {
       video.frame(game && game.ready ? game : null, dt);
       if (game && game.ready && !travelling) { playFrame(now, dt); if (firstFrames && --firstFrames.left <= 0) firstFrames.res(); }
       else {
+        minimap.frame(null);
         drawDt = 0;
         // the title world turns slowly: half the frames are plenty, and the menus stay quick
         menuAcc += dt;
@@ -1550,6 +1554,8 @@ async function boot() {
       }, Math.min(0.25, drawDt));
       drawDt = 0; drawn(); frames++;
     }
+    minimap.hud = hud;
+    minimap.frame(g, v.feet, player.yaw, alpha);
     if (g.mode === 'survival' || g.mode === 'adventure') hud.setStats(survival.stats());
     hud.setEffects(survival.effects);
     // no crosshair in third person, or with the HUD hidden
@@ -1616,7 +1622,7 @@ async function boot() {
   requestAnimationFrame(loop);
   window.__lc2 = {
     structures,                     // (once the game's parts are in: parts())
-    renderer, gui, options, B, BLOCKS, video,
+    renderer, gui, options, B, BLOCKS, video, minimap,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud, chat, cheats: false,
     command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=39').then(m => m.execute(line, ctx)); },

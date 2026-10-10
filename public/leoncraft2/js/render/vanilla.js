@@ -456,6 +456,12 @@ export function shutFog(state, dt, R, out) {
   return out.set(bl > 0 ? f * 0.25 : f * 0.75, f, Math.max(bl, dk));
 }
 const ZERO4 = [0, 0, 0, 0];
+/* Fullbright (Video Settings, the game menu): what the Fullbright mods do, the
+   game's gamma (Brightness) set to 1500% instead of 0..100%. Every cell of the
+   lightmap comes out at or next to full white, so caves, the night, the Nether
+   and the End are lit as at noon; the face shades and the textures' own
+   colours are left as they are. */
+export const FULLBRIGHT_GAMMA = 15;
 // the End's sky light in a flash: its colour, and how strong at the flash's height
 const END_SKY = [1, ...END_FLASH_COLOUR], END_FLASH_LIGHT = 0.6;
 const skyOut = [0, 0, 0, 0];
@@ -534,7 +540,7 @@ export class Vanilla {
     // (the End's sky light is off but for its flashes, when it comes up in its purple: render/endflash.js)
     const ef = D && D.sky === 'end' ? U.uEndFlash.value.w : 0;
     this.makeLightmap(sl ? (wx.flash > 0 ? 1 : sl[0] * (1 - rain * 5 / 16) * (1 - thunder * 5 / 16)) : ef * END_FLASH_LIGHT, sl || (ef > 0 ? END_SKY : ZERO4), AMBIENT_LIGHT[D ? D.id : 'overworld'] || AMBIENT_LIGHT.overworld,
-      Math.max(0, (opts.brightness === undefined ? 0.5 : opts.brightness) - dk), nightVision(state), dkPulse);
+      Math.max(0, (opts.fullbright ? FULLBRIGHT_GAMMA : opts.brightness === undefined ? 0.5 : opts.brightness) - dk), nightVision(state), dkPulse);
     // the sky and fog colours of the biome you are in, eased so a border does not snap
     const b = state.biome;
     if (b && b.sky !== undefined) rgb(b.sky, this.tmp); else skyColour(b ? b.temp : 0.8, this.tmp);

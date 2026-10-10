@@ -14,7 +14,8 @@
      distances             Simulation Distance, Entity Distance, Cloud Distance,
                            Weather Effect Radius
      the rest              Particles, Entity Shadows, Attack Indicator, Chunk
-                           Fade, Glint Speed and Strength, Damage Tilt
+                           Fade, Glint Speed and Strength, Damage Tilt, and our
+                           Fullbright (render/vanilla.js, dim/look.js)
      frames                Max Framerate, VSync, Reduce FPS when (hold())
      over the game         the vignette (Show Vignette) and "Saving world"
                            (Autosave Indicator)
@@ -48,6 +49,7 @@ export class VideoSettings {
     return Object.assign(lookOf(this.shader(), this.shadersOn()), {
       rgss: o.get('textureFiltering') === 'rgss', improvedTransparency: !!o.get('improvedTransparency'),
       cloudDist: o.get('cloudDistance'), weatherRadius: o.get('weatherRadius'), chunkFade: o.get('chunkFade'),
+      fullbright: !!o.get('fullbright'),
     });
   }
   worldOpts() {
@@ -109,6 +111,8 @@ export class VideoSettings {
       case 'cloudDistance': this.setR('cloudDist', v); break;
       case 'weatherRadius': this.setR('weatherRadius', v); break;
       case 'chunkFade': this.setR('chunkFade', v); break;
+      // Fullbright: read by the lightmap (Off) and the light floor (the shader looks) every frame
+      case 'fullbright': this.setR('fullbright', !!v); break;
       case 'brightness': R.U.uBrightD.value = v - 0.5; break;
       case 'particles': particleSetting.level = v; break;
       case 'glintSpeed': case 'glintStrength': R.U.uGlint.value.set(this.o.get('glintSpeed'), this.o.get('glintStrength')); break;
