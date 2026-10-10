@@ -379,7 +379,7 @@ export class Combat {
     }
     if (it.name === 'crossbow') {
       if (stack.charged && stack.charged.length) { this.fireCrossbow(stack); return true; }
-      if (!this.creative && !this.findAmmo()) return false;
+      if (!this.creative && !this.findAmmo(true)) return false;
       this.begin('crossbow', stack);
       return true;
     }
@@ -468,13 +468,16 @@ export class Combat {
   static bowPower(t) { const f = t / 20; return Math.min(1, (f * f + f * 2) / 3); }
 
   /* The arrows to shoot: the off hand first, then the main hand, then the
-     inventory from the first slot. A crossbow also takes a firework rocket
-     (not in the game yet). Returns { stack, slot } or null. */
-  findAmmo() {
+     inventory from the first slot. A crossbow also takes a firework rocket,
+     but only from a hand (the game's getHeldProjectile: arrow or firework in
+     the off hand, then the main hand; the inventory is searched for arrows
+     only). Returns { stack, slot } or null. */
+  findAmmo(crossbow) {
     const inv = this.inv;
     const isArrow = s => s && ITEMS[s.id] && ARROWS.includes(ITEMS[s.id].name);
-    if (isArrow(inv.offhand)) return { stack: inv.offhand, slot: 'off' };
-    if (isArrow(inv.slots[inv.selected])) return { stack: inv.slots[inv.selected], slot: inv.selected };
+    const held = crossbow ? (s => isArrow(s) || (s && ITEMS[s.id] && ITEMS[s.id].name === 'firework_rocket')) : isArrow;
+    if (held(inv.offhand)) return { stack: inv.offhand, slot: 'off' };
+    if (held(inv.slots[inv.selected])) return { stack: inv.slots[inv.selected], slot: inv.selected };
     for (let i = 0; i < 36; i++) if (isArrow(inv.slots[i])) return { stack: inv.slots[i], slot: i };
     return null;
   }
@@ -532,9 +535,11 @@ export class Combat {
   }
   // the crossbow takes its arrow (three with Multishot, from one) when let go after a full load
   loadCrossbow(s) {
-    const ammo = this.findAmmo();
+    const ammo = this.findAmmo(true);
     if (!ammo && !this.creative) return false;
-    const kind = ammo ? ITEMS[ammo.stack.id].name : 'arrow', potion = ammo ? ammo.stack.potion || null : null;
+    const kind = ammo ? ITEMS[ammo.stack.id].name : 'arrow';
+    // a rocket keeps its flight and stars in the potion's place
+    const potion = !ammo ? null : kind === 'firework_rocket' ? { flight: ammo.stack.flight || 1, explosions: ammo.stack.explosions || [] } : ammo.stack.potion || null;
     const n = enchOf(s, 'multishot') ? 3 : 1;
     s.charged = [];
     for (let i = 0; i < n; i++) s.charged.push(potion ? [kind, potion, i === 0 && !this.creative] : [kind, null, i === 0 && !this.creative]);
@@ -550,6 +555,7 @@ export class Combat {
     let fired = 0;
     for (let i = 0; i < shots.length; i++) {
       const [kind, potion, keep] = shots[i];
+      if (kind === 'firework_rocket') { if (this.shootRocket(potion, offs[i] || 0)) fired += 3; continue; }  // a rocket wears the crossbow by 3
       const a = this.shoot(kind, potion, 3.15, 1, offs[i] || 0);
       if (!a) continue;
       a.crit = true;
@@ -562,6 +568,19 @@ export class Combat {
     this.inv.changed();
     if (this.m.R) this.m.R.swing = 1;
     this.lastShot = { kind: 'crossbow', count: fired, pierce };
+  }
+  /* A firework rocket off a crossbow (the game's CrossbowItem.shootProjectile): from 0.15 under the eyes, at 1.6
+     (the crossbow's power with a rocket loaded, against 3.15 for arrows), inaccuracy 1, no shooter's motion added;
+     it flies straight with no gravity (shot at an angle) and goes off on what it hits (items2.js FireworkRocket). */
+  shootRocket(st, yawOff) {
+    const m = this.m, P = this.P;
+    const r = m.spawn('firework_rocket', P.pos.x, P.pos.y + (P.eyeH || 1.62) - 0.15, P.pos.z, { natural: false });
+    if (!r) return null;
+    r.init(st || { flight: 1, explosions: [] });
+    r.owner = m.player; r.angled = true;
+    const dir = this.look(yawOff);
+    r.shootAt(dir.x, dir.y, dir.z, 1.6, 1);
+    return r;
   }
   // in water, or out in the rain (Riptide's rule)
   wetOrRain() {
