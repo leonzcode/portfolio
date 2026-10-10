@@ -131,7 +131,7 @@ void main() {
   if (uDim > 0.5) amb = uDimAmb * (uDim < 1.5 ? 1.0 : 0.3 + 0.7 * sky * sky);
   block = max(block, heldLight(vWorld, N));
   vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
-  vec3 light = (diffuse * PI + amb + blockL + lightFloor()) / PI;
+  vec3 light = (diffuse * PI + amb + blockL + lightFloor() + fullbrightFill(diffuse * PI + amb + blockL)) / PI;
   vec3 col = albedo * light;
   // enchanted armour: the glint added unlit on the screen's own colour, as bright in any light (as on the player, render/avatar.js)
   vec3 g = vG.z > 0.5 ? glintAt(vG.xy, uClock) : vec3(0.0);

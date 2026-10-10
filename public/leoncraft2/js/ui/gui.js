@@ -111,15 +111,16 @@ export const DEFAULT_OPTIONS = {
   // Fullbright (the game menu and Video Settings, as the Fullbright mods: caves and night lit as by day; settings.js)
   fullbright: false,
   // the minimap (ui/minimap.js, after Xaero's Minimap's defaults): on/off, its size, zoom, Lock North,
-  // the coordinates under it, the entity radar, cave mode (auto/off) and the biome line
+  // the coordinates under it, the entity radar, cave mode (auto/off), the biome line and its lighting
   minimap: false,
-  minimapSize: 'auto',     // auto small medium large huge
-  minimapZoom: 2,          // device pixels a block at GUI scale 4 (1 1.5 2 3 4 6)
+  minimapSize: 'auto',     // 'auto' or the mod's units across (70 - 250)
+  minimapZoom: 1,          // 1 - 6, the mod's zoom: half a unit a block at 1
   minimapNorth: false,
   minimapCoords: true,
   minimapEntities: true,
-  minimapCave: 'auto',     // auto off
+  minimapCave: 'auto',     // auto (a 3x3 ceiling) or off
   minimapBiome: false,
+  minimapLighting: true,
   bobbing: true,
   clouds: 'fancy',         // fancy fast off
   menuBlur: 5,             // 0-10

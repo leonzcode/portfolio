@@ -1554,7 +1554,7 @@ async function boot() {
       }, Math.min(0.25, drawDt));
       drawDt = 0; drawn(); frames++;
     }
-    minimap.hud = hud;
+    minimap.hud = hud; minimap.weather = renderer.weatherState;
     minimap.frame(g, v.feet, player.yaw, alpha);
     if (g.mode === 'survival' || g.mode === 'adventure') hud.setStats(survival.stats());
     hud.setEffects(survival.effects);

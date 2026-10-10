@@ -246,7 +246,7 @@ void main() {
     amb = uDimAmb * ao * (uDim < 1.5 ? 1.0 : 0.3 + 0.7 * skyAmt);
   }
   vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : skyAmt * sat(lum(sunC) * 0.3)) * ao : vec3(0.0);
-  vec3 minimum = lightFloor() * ao;
+  vec3 minimum = (lightFloor() + fullbrightFill(diffuse * PI * (metal ? 0.25 : 1.0) + amb + blockL)) * ao;
 #ifdef HAND
   // (and no shine: the game's held things have none, so a gold or iron block is as bright as its picture)
   vec3 col = albedo / PI * (diffuse * PI + amb + blockL + minimum) * hShade;
@@ -398,7 +398,8 @@ void main() {
   // Chunk Fade: a column just come into the world fades in from the fog's colour
   // (in the Nether and the End from their own fog colour: the sky's fog table is left as the Overworld had it)
   if (uChunkFade < 1.0) { keep *= uChunkFade; add = mix((uDim > 0.5 ? uDimFog : fogColour(normalize(world.xyz - cameraPosition))) * uExpo, add, uChunkFade); }
-  vAmb = (amb + blockL + lightFloor() * ao) / PI * keep;
+  // (Fullbright fills up to its light what the sun or moon, unshadowed, the sky and torches leave: glsl.js)
+  vAmb = (amb + blockL + (lightFloor() + fullbrightFill(sun * PI * (plant ? 1.0 : sat(dot(Ng, Lt))) + amb + blockL)) * ao) / PI * keep;
   vFog = vec4(add, mat.g > 0.0 ? 6.0 * dot(keep, vec3(1.0 / 3.0)) : 0.0);
   // how much of the sun the face takes: its angle to the light (a plant's from straight up, softened,
   // the same from either side) and the glow. A face is flat, so this is the same all over it

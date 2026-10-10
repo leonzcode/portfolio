@@ -124,6 +124,8 @@ export class Renderer {
       uBrightD: { value: (this.opts.brightness === undefined ? 0.5 : this.opts.brightness) - 0.5 },
       // Night Vision's strength, 0..1 (glsl.js lightFloor; Off's lightmap takes it itself: vanilla.js)
       uNightVision: { value: 0 },
+      // Fullbright's light, 0 when off (glsl.js fullbrightFill; dim/look.js sets it; Off's lightmap takes its own: vanilla.js)
+      uFullbright: { value: 0 },
       // Blindness and Darkness's black fog: start, end, strength (glsl.js LDR, post.js; vanilla.js shutFog)
       uShut: { value: new THREE.Vector3(0, 1, 0) },
       // the still and flowing water textures (the Shader Options' vanilla water, and Shaders OFF)
