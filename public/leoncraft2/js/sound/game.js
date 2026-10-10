@@ -441,7 +441,7 @@ function wrapCombat(g, E, atP) {
       return r;
     };
   }
-  if (C.blocked) { const bl = C.blocked.bind(C); C.blocked = (amount, src) => { const r = bl(amount, src); atP('item.shield.block', 1, 0.8 + R() * 0.4); return r; }; }
+  if (C.blocked) { const bl = C.blocked.bind(C); C.blocked = (amount, src) => { const r = bl(amount, src); atP(src && src.axe ? 'item.shield.break' : 'item.shield.block', src && src.axe ? 0.8 : 1, 0.8 + R() * 0.4); return r; }; }  // an axe putting the shield down: the break sound (the game's entity event 30)
   // thrown things: snowballs, eggs, pearls (the game: 0.5, 0.4 / (0.8-1.2))
   if (E.useHeld) {
     const uh = E.useHeld.bind(E);
