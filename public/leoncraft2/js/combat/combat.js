@@ -208,6 +208,9 @@ export class Combat {
     P.fallDistance = 0;
     P.vel.y = 0.01;
     const k = fall > 5 ? 2 : 1;
+    // the ring of dust from the block under the target (the game's knockback() starts with level event 2013)
+    const bx = Math.floor(e.pos.x), by = Math.floor(e.pos.y - 0.2), bz = Math.floor(e.pos.z);
+    this.smashDust(bx, by, bz, m.world ? m.world.get(bx, by, bz) : 0);
     m.forNear(e.pos.x, e.pos.z, 4, o => {
       if (o === e || o.removed || o.dead || !(o instanceof Living) || o === m.riding) return;
       const dx = o.pos.x - e.pos.x, dz = o.pos.z - e.pos.z, d = Math.hypot(dx, o.pos.y - e.pos.y, dz);
@@ -219,6 +222,11 @@ export class Combat {
     // Wind Burst: up you go again
     const wb = enchOf(st, 'wind_burst');
     if (wb) P.vel.y = 1.2 + 0.35 * (wb - 1);
+  }
+  // the dust itself (net/events.js wraps this to show it to the others near)
+  smashDust(x, y, z, b) {
+    const L = typeof window !== 'undefined' ? window.__lc2 : null, P = L && L.renderer && L.renderer.particles;
+    if (b && P && P.smash) try { P.smash(x, y, z, b); } catch (err) { /* no dust */ }
   }
   // wear on the held item (a tool used in a fight)
   wearHeld(n) { if (this.inv && this.inv.damageSelected) this.inv.damageSelected(n); }
