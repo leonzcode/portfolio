@@ -50,7 +50,7 @@ import { lightDefines } from './materials.js?v=39';
 import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=39';
 import { H, idx } from '../world-const.js?v=39';
 import { lightNear } from '../lightlevel.js?v=39';
-import { armorSheet, avatarArmorGeometry, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=39';
+import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=39';
 import { blockGeometry, isFlatItem } from './blockmesh.js?v=39';
 import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=39';
 import { setGlint } from './glint.js?v=39';
@@ -635,7 +635,36 @@ export class Avatar {
     const sw = P.pose === 'swim' && !P.flying && !P.gliding ? 1 : 0;
     this.swim = sw > this.swim ? Math.min(1, this.swim + 0.09) : Math.max(0, this.swim - 0.09);
     this.glide = P.gliding ? this.glide + 1 : 0;
+    this.wingTick(P);
     this.age++;
+  }
+
+  /* The elytra's wings, as the game's ElytraModel works them out: folded
+     (15 degrees back, 15 out) standing; gliding, spread 20 degrees back and
+     90 out, folding back in as the dive steepens (by 1 - (down share of the
+     velocity)^1.5); crouching, 40 back, 45 out, 5 degrees round and 3 pixels
+     lower. Eased 0.3 of the way a tick (our reading of the 26.x elytra
+     animation state; the older game eased 0.1 a frame). Remote players get
+     this too, since their gliding and sneaking come in the position flags. */
+  wingTick(P) {
+    let x = 0.2617994, z = -0.2617994, y = 0, ry = 0;
+    if (P.gliding) {
+      const v = P.vel; let f = 1;
+      if (v.y < 0) { const l = Math.hypot(v.x, v.y, v.z); if (l > 1e-9) f = 1 - Math.pow(-v.y / l, 1.5); }
+      x = f * 0.34906584 + (1 - f) * x;
+      z = f * -PI / 2 + (1 - f) * z;
+    } else if (P.sneaking && !P.flying) { x = 0.6981317; z = -0.7853982; y = 3; ry = 0.08726646; }
+    const W = this.wing || (this.wing = { x: 0.2617994, z: -0.2617994, ry: 0, y: 0, ox: 0.2617994, oz: -0.2617994, ory: 0, oy: 0 });
+    W.ox = W.x; W.oz = W.z; W.ory = W.ry; W.oy = W.y;
+    W.x += (x - W.x) * 0.3; W.z += (z - W.z) * 0.3; W.ry += (ry - W.ry) * 0.3; W.y = y;
+  }
+  wingPose(a) {
+    const W = this.wing;
+    if (!W || this.uPiece.value[4].y <= 0) return;
+    const x = W.ox + (W.x - W.ox) * a, z = W.oz + (W.z - W.oz) * a, ry = W.ory + (W.ry - W.ory) * a;
+    if (this.wingSet && Math.abs(this.wingSet[0] - x) + Math.abs(this.wingSet[1] - z) + Math.abs(this.wingSet[2] - ry) + Math.abs(this.wingSet[3] - W.y) < 1e-4) return;
+    this.wingSet = [x, z, ry, W.y];
+    poseWings(this.armor.geometry, x, ry, z, W.y);
   }
 
   /* ---- every frame: ticks since the last one, light, pose, camera ---- */
@@ -685,7 +714,7 @@ export class Avatar {
     // the armour, its pictures taken up again whenever another file has landed in the sheet
     this.armor.visible = third && this.wearing;
     this.armorShadow.visible = this.ready && this.wearing;
-    if (this.wearing) { const sh = armorSheet(); if (sh.version !== this.armorV) { this.armorV = sh.version; this.armorTex.needsUpdate = true; } }
+    if (this.wearing) { const sh = armorSheet(); if (sh.version !== this.armorV) { this.armorV = sh.version; this.armorTex.needsUpdate = true; } this.wingPose(al); }
     const lv = (Math.round(this.sky * 255) << 8) | Math.round(this.block * 255);
     for (const h of this.held) {
       if (!h) continue;
