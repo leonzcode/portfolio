@@ -80,6 +80,8 @@ export function execute(line, ctx) {
   const def = REG.get(name);
   if (!def) { ctx.say('Unknown or incomplete command, see below for error', RED); ctx.say(line + '<--[HERE]', RED); return false; }
   if (!ctx.cheats && !def.always) { ctx.say('You do not have permission to use this command', RED); return false; }
+  // (the name as typed, for the help that names it: /removehome, not /delhome)
+  ctx.label = name;
   try {
     def.run(args, ctx);
     return true;
@@ -89,13 +91,13 @@ export function execute(line, ctx) {
     return false;
   }
 }
-// what Tab offers for the word being typed
-export function complete(line) {
+// what Tab offers for the word being typed (ctx: the chat's command context, for what depends on the world: your homes)
+export function complete(line, ctx) {
   const words = line.replace(/^\//, '').split(' ');
   if (words.length === 1) return commandNames().filter(n => n.startsWith(words[0])).map(n => '/' + n);
   const def = REG.get(words[0]);
   if (!def || !def.suggest) return [];
-  const opts = def.suggest(words.length - 2, words.slice(1)) || [];
+  const opts = def.suggest(words.length - 2, words.slice(1), ctx) || [];
   const last = words[words.length - 1];
   return opts.filter(o => o.startsWith(last)).map(o => '/' + words.slice(0, -1).concat(o).join(' '));
 }
@@ -297,3 +299,122 @@ register('xp', {
     ctx.say(op === 'add' ? `Gave ${n} experience ${levels ? 'levels' : 'points'} to ${ctx.playerName}` : `Set ${n} experience ${levels ? 'levels' : 'points'} on ${ctx.playerName}`);
   },
 });
+
+/* ---- teleport requests and homes, as EssentialsX has them ----
+   On a server these are the server's (net/net.js sends them there and
+   lc2.js answers, keeping each account's homes per server). Here, in a world
+   of your own, the homes are kept with the world (game.homes, saved with the
+   rest of your state) and there is nobody to send a request to. The words
+   are Essentials' own (its messages.properties), in its colours: gold for
+   the text, red for names and commands, dark red for what went wrong, each
+   error after a red "Error:". Without commands allowed, as on a server where
+   every player has them. */
+const P = '§6', S = '§c', D = '§4';
+export const ESS = {
+  error: m => `${S}Error:${D} ${m}`,
+  playerNotFound: 'Player not found.',
+  noPendingRequest: 'You do not have a pending request.',
+  homeSet: `${P}Home set to current location.`,
+  teleportHome: n => `${P}Teleporting to ${S}${n}${P}.`,
+  homes: list => `${P}Homes:§r ${list.join(', ')}`,
+  noHomeSetPlayer: `${P}Player has not set a home.`,
+  invalidHome: n => `${D}Home${S} ${n} ${D}doesn't exist!`,
+  deleteHome: n => `${P}Home${S} ${n} ${P}has been removed.`,
+  invalidHomeName: 'Invalid home name!',
+  bedMissing: 'Your bed is either unset, missing or blocked.',
+};
+// the command help Essentials shows when something is missing (verbose-command-usages, its default)
+export const ESS_HELP = {
+  tpa: ['Request to teleport to the specified player.', [[`/tpa §e<player>§f`, 'Requests to teleport to the specified player']]],
+  tpahere: ['Request that the specified player teleport to you.', [[`/tpahere §e<player>§f`, 'Requests for the specified player to teleport to you']]],
+  home: ['Teleport to your home.', [[`/home §e<name>§f`, 'Teleports you to your home with the given name'], [`/home §e<player>§f:§e<name>§f`, "Teleports you to the specified player's home with the given name"]]],
+  delhome: ['Removes a home.', [[`/delhome §e<name>§f`, 'Deletes your home with the given name'], [`/delhome §e<player>§f:§e<name>§f`, "Deletes the specified player's home with the given name"]]],
+};
+export function essHelp(cmd, label) {
+  const [desc, uses] = ESS_HELP[cmd];
+  const out = [`${P}Command Help: §f/${label}`, `${P}Description: §f${desc}`, `${P}Usage(s);`];
+  for (const [u, d] of uses) out.push(`§f${u.replace('/' + cmd, '/' + label)} ${P}- ${d}`);
+  return out;
+}
+// a home's name as Essentials keeps it (StringUtil.safeString: lower case, anything but a-z, 0-9 and - made _)
+export const homeName = s => String(s || '').toLowerCase().replace(/[^a-z0-9-]/g, '_').slice(0, 32);
+// (bed and numbers, as Essentials refuses them; and the one name an object's own keys cannot hold)
+const badHomeName = n => n === 'bed' || n === '__proto__' || /^-?\d+$/.test(n);
+const hasHome = (homes, n) => Object.prototype.hasOwnProperty.call(homes, n);
+const WHITE = 0xFFFFFF;
+const essSay = (ctx, t, extra) => ctx.say(t, WHITE, extra);
+const essFail = (ctx, m) => essSay(ctx, ESS.error(m));
+const homesOf = ctx => (ctx.game.homes || (ctx.game.homes = {}));
+// where you stand, as a home keeps it
+function here(ctx) {
+  const p = ctx.game.player;
+  return { d: ctx.game.dim || 'overworld', x: +p.pos.x.toFixed(3), y: +p.pos.y.toFixed(3), z: +p.pos.z.toFixed(3), yaw: +p.yaw.toFixed(4), pitch: +p.pitch.toFixed(4) };
+}
+const label = (ctx, cmd) => ctx.label || cmd;
+// /home bed: the respawn point (a bed, a respawn anchor, a /spawnpoint), the same alone and on a server
+export function homeBed(ctx) {
+  if (!ctx.goBed || !ctx.goBed()) { essFail(ctx, ESS.bedMissing); return; }
+  essSay(ctx, ESS.teleportHome('bed'));
+}
+register('sethome', {
+  always: true, usage: '[name]', aliases: ['createhome'],
+  run(args, ctx) {
+    let name = 'home';
+    if (args.length) { const parts = args[0].split(':'); name = homeName(parts.length > 1 ? parts[1] : parts[0]); }
+    // (alone in your world you have the server owner's unlimited homes)
+    if (badHomeName(name) || !name) { essFail(ctx, ESS.invalidHomeName); return; }
+    homesOf(ctx)[name] = here(ctx);
+    essSay(ctx, ESS.homeSet);
+  },
+});
+register('home', {
+  always: true, usage: '[name]',
+  suggest: (i, w, ctx) => (i === 0 && ctx && ctx.game ? Object.keys(homesOf(ctx)).concat(['bed']) : []),
+  run(args, ctx) {
+    const homes = homesOf(ctx), names = Object.keys(homes);
+    const name = args.length ? homeName(args[0].split(':')[0]) : '';
+    if (name === 'bed') { homeBed(ctx); return; }
+    const go = n => { const h = homes[n]; ctx.goTo(h.d, h.x, h.y, h.z, h.yaw, h.pitch); essSay(ctx, ESS.teleportHome(n)); };
+    if (name && hasHome(homes, name)) { go(name); return; }
+    // no name, or one that is no home: as Essentials, the spawn with no homes yet (spawn-if-no-home), the one home, or the list
+    if (!names.length) { if (ctx.goSpawn) ctx.goSpawn(); return; }
+    if (names.length === 1) { go(names[0]); return; }
+    essSay(ctx, ESS.homes(names));
+  },
+});
+register('homes', {
+  always: true, usage: '',
+  run(args, ctx) {
+    const names = Object.keys(homesOf(ctx));
+    if (!names.length) { essFail(ctx, ESS.noHomeSetPlayer); return; }
+    essSay(ctx, ESS.homes(names));
+  },
+});
+register('delhome', {
+  always: true, usage: '<name>', aliases: ['removehome', 'remhome', 'rmhome'],
+  suggest: (i, w, ctx) => (i === 0 && ctx && ctx.game ? Object.keys(homesOf(ctx)) : []),
+  run(args, ctx) {
+    if (!args.length) { for (const l of essHelp('delhome', label(ctx, 'delhome'))) essSay(ctx, l); return; }
+    const homes = homesOf(ctx), name = homeName(args[0].split(':')[0]);
+    if (name === 'bed') { essFail(ctx, ESS.invalidHomeName); return; }
+    const del = n => { if (hasHome(homes, n)) { delete homes[n]; essSay(ctx, ESS.deleteHome(n)); } else essSay(ctx, ESS.invalidHome(n)); };
+    if (args[0] === '*') { for (const n of Object.keys(homes)) del(n); return; }
+    del(name);
+  },
+});
+// the requests need someone else: alone, every name is nobody, as Essentials finds no such player
+for (const [name, aliases] of [['tpa', ['tpask']], ['tpahere', []]]) {
+  register(name, {
+    always: true, usage: '<player>', aliases,
+    run(args, ctx) {
+      if (!args.length || args[0].toLowerCase() === String(ctx.playerName).toLowerCase()) { for (const l of essHelp(name, label(ctx, name))) essSay(ctx, l); return; }
+      essFail(ctx, ESS.playerNotFound);
+    },
+  });
+}
+for (const [name, aliases] of [['tpaccept', ['tpyes']], ['tpdeny', ['tpno']], ['tpacancel', []]]) {
+  register(name, {
+    always: true, usage: name === 'tpacancel' ? '[player]' : '[player|*]', aliases,
+    run(args, ctx) { essFail(ctx, ESS.noPendingRequest); },
+  });
+}

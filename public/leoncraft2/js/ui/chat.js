@@ -20,12 +20,54 @@ export class Chat {
     this.dirty = true;
     this.under = true;      // part of the HUD: a screen (the inventory, a chest) covers it, as in the game
   }
-  // extra.hover: { text, lines } a part of the line with a tooltip under the mouse while chat is open (an advancement's name)
+  /* extra.hover: { text, lines } a part of the line with a tooltip under the mouse while chat is open (an advancement's name)
+     extra.click: [{ text, run, tip }] parts of the line that run a command when clicked with chat open (the game's
+     run_command click event: a teleport request's /tpaccept and /tpdeny), tip the tooltip shown over them */
   add(text, colour = 0xFFFFFF, extra) {
-    for (const part of String(text).split('\n')) this.lines.push({ text: part, colour, at: performance.now(), hover: extra && extra.hover || null });
+    const click = extra && Array.isArray(extra.click) ? extra.click.filter(c => c && typeof c.text === 'string' && typeof c.run === 'string' && c.run.startsWith('/')) : null;
+    for (const part of String(text).split('\n')) this.lines.push({ text: part, colour, at: performance.now(), hover: extra && extra.hover || null, click: click && click.length ? click : null });
     if (this.lines.length > KEEP) this.lines.splice(0, this.lines.length - KEEP);
     this.dirty = true;
   }
+  // a line wrapped to the chat's width, each row starting in the colour the row before it ended in
+  wrapped(f, text) {
+    const parts = f.wrap(text, WIDTH);
+    let code = '';
+    return parts.map((p, i) => {
+      const row = i && code && !p.startsWith('§') ? code + p : p;
+      const m = p.match(/§[0-9a-fr]/gi);
+      if (m) code = m[m.length - 1].toLowerCase() === '§r' ? '' : m[m.length - 1];
+      return row;
+    });
+  }
+  // the rows open chat shows, newest first: [row text, the line it is part of, its bottom y] (as draw lays them)
+  openRows(g) {
+    const f = g.font, out = [];
+    let y = g.height - 40;
+    for (let i = this.lines.length - 1; i >= 0 && out.length < 20; i--) {
+      const l = this.lines[i], parts = this.wrapped(f, l.text);
+      for (let k = parts.length - 1; k >= 0 && out.length < 20; k--, y -= LINE) out.push([parts[k], l, y]);
+    }
+    return out;
+  }
+  // the part of a row under the mouse: [part, row] for a hover or click part, or null
+  partAt(g, mx, my, key) {
+    const f = g.font;
+    for (const [row, l, y] of this.openRows(g)) {
+      if (my < y - LINE || my >= y) continue;
+      const list = key === 'hover' ? (l.hover ? [l.hover] : []) : l.click || [];
+      for (const p of list) {
+        const at = row.indexOf(p.text);
+        if (at < 0) continue;
+        const x0 = 2 + f.width(row.slice(0, at)), x1 = x0 + f.width(p.text);
+        if (mx >= x0 && mx < x1) return p;
+      }
+      return null;
+    }
+    return null;
+  }
+  // with chat open: the command a click at the mouse runs, if it is over one
+  clickAt(g, mx, my) { const p = this.partAt(g, mx, my, 'click'); return p ? p.run : null; }
   // redrawn when a line comes in and while one is fading (its last second); for the nine
   // seconds in between nothing about it changes, so the HUD is not drawn again for it
   get animates() {
@@ -37,19 +79,13 @@ export class Chat {
   // with chat open: the tooltip of the part of a line under the mouse, if it has one
   hoverAt(g, mx, my) {
     const f = g.font;
-    let y = g.height - 16, n = 0;
-    for (let i = this.lines.length - 1; i >= 0 && n < 20; i--) {
-      const l = this.lines[i], parts = f.wrap(l.text, WIDTH);
-      for (let k = parts.length - 1; k >= 0 && n < 20; k--, n++, y -= LINE) {
-        if (!l.hover || my < y - LINE || my >= y) continue;
-        const at = parts[k].indexOf(l.hover.text);
-        if (at < 0) continue;
-        const x0 = 2 + f.width(parts[k].slice(0, at)), x1 = x0 + f.width(l.hover.text);
-        // (wrapped as the game wraps hover text: half the screen, or 200 at least; each line keeps its colour)
-        if (mx >= x0 && mx < x1) return l.hover.lines.flatMap(s => { const c = /^§./.test(s) ? s.slice(0, 2) : ''; return f.wrap(s, Math.max(g.width / 2, 200)).map((p, j) => (j && c && !p.startsWith('§') ? c + p : p)); });
-      }
-    }
-    return null;
+    // (the rows as draw lays them, 40 above the bottom: this once counted from 16, a row and a half below the lines)
+    const p = this.partAt(g, mx, my, 'hover') || this.partAt(g, mx, my, 'click');
+    if (!p) return null;
+    const lines = p.lines || (p.tip ? [p.tip] : null);
+    if (!lines) return null;
+    // (wrapped as the game wraps hover text: half the screen, or 200 at least; each line keeps its colour)
+    return lines.flatMap(s => { const c = /^§./.test(s) ? s.slice(0, 2) : ''; return f.wrap(s, Math.max(g.width / 2, 200)).map((q, j) => (j && c && !q.startsWith('§') ? c + q : q)); });
   }
   draw(g) {
     if (!this.lines.length || (g.hideHud && !this.open)) return;
@@ -70,7 +106,7 @@ export class Chat {
       let a = 1;
       if (!this.open) { a = Math.max(0, Math.min(1, (1 - age / 200) * 10)); a *= a; }
       if (a <= 0.02) { if (!this.open) break; else continue; }
-      const parts = f.wrap(l.text, WIDTH);
+      const parts = this.wrapped(f, l.text);
       for (let k = parts.length - 1; k >= 0 && rows.length < max; k--) rows.push([parts[k], l.colour, a]);
     }
     for (const [t, c, a] of rows) {
@@ -111,7 +147,19 @@ export class ChatScreen extends Screen {
     try { inp.setSelectionRange(this.value.length, this.value.length); } catch (e) { /* hidden */ }
     this.suggest();
   }
-  suggest() { this.suggestions = this.value.startsWith('/') ? complete(this.value).slice(0, 10) : []; }
+  suggest() {
+    let ctx = null;
+    try { ctx = this.value.includes(' ') ? this.ctxOf() : null; } catch (e) { ctx = null; }
+    this.suggestions = this.value.startsWith('/') ? complete(this.value, ctx).slice(0, 10) : [];
+  }
+  // a click on a part of a line that runs a command (a teleport request's /tpaccept): chat closes and it runs
+  mouseClicked(mx, my, button) {
+    if (button === 0) {
+      const run = this.chat.clickAt(this.gui, mx, my);
+      if (run) { this.gui.back(); execute(run, this.ctxOf()); return true; }
+    }
+    return super.mouseClicked(mx, my, button);
+  }
   setValue(v) {
     this.value = v; this.field.value = v; this.field.cursor = v.length;
     const inp = this.gui.input; inp.value = v;

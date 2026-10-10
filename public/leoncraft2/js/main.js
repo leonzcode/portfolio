@@ -63,7 +63,7 @@ const THREE = window.THREE;
    statistics, the server code...) are not wanted by the title screen: they are loaded once it is up
    (loadParts), so a first visit loads 91 modules (about 600 KB) less before it. Each name below is
    the module's own, filled in when they come. */
-let enchantDebug, Survival, survivalHooks, respawnPlayer, Drops, dropItem, giveXp, Containers, Hands, Entities, Sim, Realms,
+let enchantDebug, Survival, survivalHooks, respawnPlayer, respawnSpot, Drops, dropItem, giveXp, Containers, Hands, Entities, Sim, Realms,
   structuresApi, Details, isSign, SignEditScreen, tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint,
   MultiplayerScreen, DisconnectedScreen, rejoin, advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements,
   statsWorld, statsTick, statsState, statsQuit, statsLeave, openStatistics, recipesWorld, recipesTick, recipesState, recipesLeave;
@@ -111,7 +111,7 @@ const loadParts = () => partsP || (partsP = (async () => {
   for (let tries = 0; ; tries++) {
     try {
       const m = await importParts(tries);
-      ({ enchantDebug, Survival, survivalHooks, respawnPlayer, Drops, dropItem, giveXp, Containers, Hands, Entities, Sim, Realms,
+      ({ enchantDebug, Survival, survivalHooks, respawnPlayer, respawnSpot, Drops, dropItem, giveXp, Containers, Hands, Entities, Sim, Realms,
         structuresApi, Details, isSign, SignEditScreen, tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint,
         MultiplayerScreen, DisconnectedScreen, rejoin, advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements,
         statsWorld, statsTick, statsState, statsQuit, statsLeave, openStatistics, recipesWorld, recipesTick, recipesState, recipesLeave } = m);
@@ -769,7 +769,9 @@ async function boot() {
       addXp: n => survival.addXp(n),
       mendingRepair: n => hands.mend(n),
     };
-    game = { entry, world, player, fluids, inv, survival, inter, save, saves, dim, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0, hands, collector };
+    game = { entry, world, player, fluids, inv, survival, inter, save, saves, dim, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0, hands, collector,
+      // your /sethome homes in this world (commands.js; on a server the server keeps them)
+      homes: st && st.homes && typeof st.homes === 'object' && !Array.isArray(st.homes) ? st.homes : {} };
     // FOV, FOV Effects and View Bobbing as set in Options, from the first frame
     applyOptions();
     // the world's maps (js/maps.js), kept with the Overworld's save
@@ -1043,7 +1045,7 @@ async function boot() {
     return { player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, flying: p.flying }, time: g.time,
       inventory: g.inv.toJSON ? g.inv.toJSON() : null, survival: g.survival.toJSON(), spawn: g.spawn, mode: g.mode,
       drops: g.drops.toJSON(), hands: g.hands.toJSON(), sim: g.sim ? g.sim.toJSON() : null, dimension: g.dim, realms: g.realms ? g.realms.toJSON() : null,
-      lastDeath: deathPoint(), advancements: advState(), stats: statsState(), recipes: recipesState() };
+      lastDeath: deathPoint(), advancements: advState(), stats: statsState(), recipes: recipesState(), homes: g.homes || {} };
   }
   async function saveGame() {
     if (!game) return;
@@ -1197,8 +1199,35 @@ async function boot() {
       sendChat: g.net ? t => g.net.chat(t) : null,
       // Allow Commands: as set when the world was made (creative worlds have it on unless turned off)
       cheats: !!(window.__lc2.cheats || (g.lan ? g.lan.cheats : g.entry.cheats !== undefined ? g.entry.cheats : g.entry.mode === 'creative')),
-      say: (t, c) => chat.add(t, c),
+      say: (t, c, extra) => chat.add(t, c, extra),
       setMode,
+      /* /home, /tpa and the like: to a place in any dimension; near you in this one, at once, as /tp does;
+         further or in another, through the loading screen as a portal goes (travel), facing as you were there */
+      goTo: (dim, x, y, z, yaw, pitch) => {
+        const p = g.player;
+        if (!DIMS[dim] || ![x, y, z].every(Number.isFinite) || (g.survival && g.survival.dead)) return;
+        if (g.entities && g.entities.riding) g.entities.dismount();
+        const face = () => { if (Number.isFinite(yaw)) p.yaw = yaw; if (Number.isFinite(pitch)) p.pitch = pitch; };
+        if (dim === g.dim && Math.hypot(x - p.pos.x, z - p.pos.z) < 96) { p.pos.set(x, y, z); p.prev.copy(p.pos); p.vel.set(0, 0, 0); p.fallDistance = 0; face(); return; }
+        travel(dim, () => ({ x, y, z, yaw: Number.isFinite(yaw) ? yaw : undefined }), { x, z }).then(face, () => {});
+      },
+      // (/home with no home yet: the world spawn, as Essentials' spawn-if-no-home sends you)
+      goSpawn: () => { if (g.survival && g.survival.dead) return; if (g.entities && g.entities.riding) g.entities.dismount(); travel('overworld', w => spawnPoint(w), g.spawn); },
+      // (/home bed: your respawn point, a bed, an anchor (no charge used) or a /spawnpoint; false when there is none or it is gone)
+      goBed: () => {
+        const sp = g.survival && g.survival.spawnPoint;
+        if (!sp || !DIMS[sp.dim] || g.survival.dead) return false;
+        const look = Object.assign({}, sp, { forced: sp.kind === 'anchor' ? true : sp.forced });
+        if (sp.dim === g.dim && g.world.loaded(sp.x, sp.z)) {
+          const at = respawnSpot(g.world, look, g.mode === 'creative');
+          if (!at) return false;
+          chatCtx().goTo(sp.dim, at.x, at.y, at.z, at.yaw);
+          return true;
+        }
+        if (g.entities && g.entities.riding) g.entities.dismount();
+        travel(sp.dim, w => respawnSpot(w, look, g.mode === 'creative') || { x: sp.x + 0.5, y: sp.y + 1, z: sp.z + 0.5 }, { x: sp.x, z: sp.z });
+        return true;
+      },
       // (a teleport takes you off what you ride, as in the game)
       teleport: (x, y, z) => { const p = g.player; if (g.entities && g.entities.riding) g.entities.dismount(); p.pos.set(x, y, z); p.prev.copy(p.pos); p.vel.set(0, 0, 0); p.fallDistance = 0; },
       give: (name, count) => {
