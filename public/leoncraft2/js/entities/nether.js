@@ -850,7 +850,7 @@ export class Ghast extends Mob {
     // facing: its target, or the way it drifts
     if (t) { this.yaw = yawTo(t.pos.x - p.x, t.pos.z - p.z); }
     else if (Math.abs(this.vel.x) + Math.abs(this.vel.z) > 1e-4) this.yaw = yawTo(this.vel.x, this.vel.z);
-    this.bodyYaw = this.headYaw = this.yaw;
+    this.followYaw();
     /* The fireball: while it sees its target within 64, the charge counts
        up; at 10 the face shows it, at 20 it shoots and waits 40. */
     if (t && t.alive() && this.dist2(t.pos.x, t.pos.y, t.pos.z) < 4096 && this.canSee(t)) {

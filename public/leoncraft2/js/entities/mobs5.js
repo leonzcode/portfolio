@@ -1099,7 +1099,7 @@ export class Tadpole extends Mob {
     } else this.zza = 0;
   }
   lookControl() {}
-  bodyControl() { this.bodyYaw = this.headYaw = this.yaw; }
+  bodyControl() { this.followYaw(); }
   travel() {
     if (this.inWater) { this.moveRelative(0.01, this.xxa, this.zza); this.move(this.vel.x, this.vel.y, this.vel.z); this.vel.multiplyScalar(0.9); }
     else super.travel();
