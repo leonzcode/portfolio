@@ -385,7 +385,10 @@ export class Net {
       const net = new Net(ws);
       let done = false, opened = false;
       const end = (ok, v) => { if (done) return; done = true; clearTimeout(timer); ok ? resolve(v) : reject(v); };
-      const timer = setTimeout(() => { try { ws.close(); } catch (e) {} end(false, { reason: 'Timed out' }); }, 30000);
+      /* (a page held up past the 30 seconds, by a busy machine, can have the
+         world waiting in its queue behind this timer: a moment more for it
+         before giving up) */
+      const timer = setTimeout(() => setTimeout(() => { if (done) return; try { ws.close(); } catch (e) {} end(false, { reason: 'Timed out' }); }, 1500), 30000);
       ws.onopen = () => { opened = true; };
       ws.onmessage = ev => {
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
