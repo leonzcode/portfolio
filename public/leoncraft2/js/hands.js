@@ -49,6 +49,7 @@ import { wear } from './ui/inventory.js?v=39';
 import { BookScreen } from './ui/book.js?v=39';
 import { breaksInCreative } from './modes.js?v=39';
 import { boxOpened, bellRang } from './sim/lids.js?v=39';
+import { Account } from './net/account.js?v=39';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // what a full bucket pours out (the fish buckets are water with a fish in it)
@@ -463,9 +464,9 @@ export class Hands {
     const inv = this.inv, slot = inv.selected, off = !!this.offTurn;
     const put = st => { if (off) inv.offhand = st; else if (inv.slots[slot] === s) inv.slots[slot] = st; inv.changed(); };
     this.open(new BookScreen({
-      pages: s.pages || [], written, player: 'Player',
+      pages: s.pages || [], written, player: Account.name || 'Player',
       done: pages => { const st = withCount(s, s.count); st.pages = pages; if (!pages.some(Boolean)) delete st.pages; put(st); },
-      sign: (title, pages) => { if (I.written_book === undefined) return; put({ id: I.written_book, count: 1, pages, title, author: 'Player' }); },
+      sign: (title, pages) => { if (I.written_book === undefined) return; put({ id: I.written_book, count: 1, pages, title, author: Account.name || 'Player' }); },
     }));
     return true;
   }
