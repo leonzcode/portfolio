@@ -179,9 +179,10 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
     case 'gilded_blackstone': if (table(fortune, [0.1, 0.14285715, 0.25, 1])) add(out, 'gold_nugget', between(2, 5)); else add(out, n, 1); return out;
     case 'wheat': crop(out, meta, 7, 'wheat', 'wheat_seeds', fortune); return out;
     case 'beetroots': crop(out, meta, 3, 'beetroot', 'beetroot_seeds', fortune); return out;
-    case 'carrots': add(out, 'carrot', (meta & 7) >= 7 ? 1 + binomial(3 + fortune, 0.5714286) : 1); return out;
+    // ripe carrots and potatoes: one, and a second with the binomial bonus on it (2 to 5, Fortune adds tries)
+    case 'carrots': add(out, 'carrot', (meta & 7) >= 7 ? 2 + binomial(3 + fortune, 0.5714286) : 1); return out;
     case 'potatoes':
-      add(out, 'potato', (meta & 7) >= 7 ? 1 + binomial(3 + fortune, 0.5714286) : 1);
+      add(out, 'potato', (meta & 7) >= 7 ? 2 + binomial(3 + fortune, 0.5714286) : 1);
       if ((meta & 7) >= 7 && Math.random() < 0.02) add(out, 'poisonous_potato', 1);
       return out;
     case 'nether_wart': add(out, 'nether_wart', (meta & 3) >= 3 ? uniformBonus(between(2, 4), fortune, 1) : 1); return out;

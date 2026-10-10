@@ -150,7 +150,9 @@ function dispense(sim, C, c, i, st, x, y, z, f, fx, fy, fz) {
     else if (fd && /candle$|candle_cake$/.test(fname) && !(fm & 4)) w.set(fx, fy, fz, front, fm | 4);
     else if (front === B.tnt && sim.primeTnt) { w.set(fx, fy, fz, 0, 0); sim.primeTnt(fx, fy, fz, null, 80); }
     else { sound(sim, 'click_fail', x, y, z); return st; }
-    st.dmg = (st.dmg | 0) + 1;
+    // a point of wear (with Unbreaking only 1 time in level + 1)
+    const ub = st.ench ? st.ench.unbreaking | 0 : 0;
+    if (!ub || Math.random() < 1 / (ub + 1)) st.dmg = (st.dmg | 0) + 1;
     return st.dmg >= maxDamage(st.id) ? null : st;
   }
   if (n === 'tnt' && sim.primeTnt) {

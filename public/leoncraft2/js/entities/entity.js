@@ -35,6 +35,10 @@ export const wrap = a => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
 // turn from a towards b by no more than max
 export const rotTowards = (a, b, max) => { const d = wrap(b - a); return a + Math.max(-max, Math.min(max, d)); };
 export const yawTo = (dx, dz) => Math.atan2(-dx, -dz);
+/* Looting on a loot table entry (the game's enchanted_count_increase): the share of
+   a whole item a level (k, mostly 1) times the level, a random part of it, rounded.
+   So one level adds 0 or 1 (even odds), three add 0 to 3, half a level on average. */
+export const looted = (level, k = 1) => (level > 0 ? Math.round(level * k * Math.random()) : 0);
 
 let NEXT_ID = 1;
 const WATERLOGGED = new Uint8Array(4096);
@@ -197,9 +201,10 @@ export class Living extends Entity {
   }
   lavaHurt() { if (!this.constructor.FIRE_IMMUNE) { this.setFire(15); this.hurt(4, { type: 'lava' }); } }
   setFire(seconds) { if (this.constructor.FIRE_IMMUNE) return; this.fire = Math.max(this.fire, seconds * 20); }
+  // a point of fire damage on every 20th tick left, counted before the tick goes (so a hit that set it alight takes the first in its window)
   burnTick() {
-    this.fire--;
     if (this.fire % 20 === 0 && !this.constructor.FIRE_IMMUNE) this.hurt(1, { type: 'fire' });
+    this.fire--;
   }
   landed(dist) {
     const n = Math.ceil(dist - 3 - (this.constructor.SAFE_FALL || 0));
@@ -228,10 +233,10 @@ export class Living extends Entity {
     }
     /* armour, the game's formula: max(points / 5, points - 4 x damage / (toughness + 8)),
        at most 20, takes 4% a point (a zombie's natural 2 takes 1.6% off a 6 point hit);
-       a mace's Breach leaves 15% less of it working a level */
+       a mace's Breach takes 15 percentage points a level off what it stops */
     if (this.armor > 0 && source.type !== 'fall' && source.type !== 'drown' && source.type !== 'void' && source.type !== 'fire' && source.type !== 'magic') {
       const f = Math.min(20, Math.max(this.armor / 5, this.armor - 4 * amount / ((this.toughness || 0) + 8))) / 25;
-      amount = amount * (1 - f * Math.max(0, 1 - 0.15 * (source.breach || 0)));
+      amount = amount * (1 - Math.max(0, f - 0.15 * (source.breach || 0)));
     }
     this.health -= amount;
     if (source.attacker) { this.lastHurtBy = source.attacker; this.lastHurtByTime = 100; }
@@ -422,7 +427,8 @@ export class Mob extends Living {
     this.extra = {};                  // per mob animation state
     /* What it holds and wears, by slot (mainhand, offhand, head, chest,
        legs, feet): item names. Killed by a player, each piece drops 8.5%
-       of the time, and each adds 1 to 3 to the experience. */
+       of the time (and 1% more a level of Looting), and each adds 1 to 3 to
+       the experience. */
     this.equip = {};
     this.registerGoals();
   }
@@ -431,12 +437,12 @@ export class Mob extends Living {
   walkValue() { return 0; }
   holding(name) { return this.equip.mainhand === name || this.equip.offhand === name; }
   equipXp() { let n = 0; for (const k in this.equip) if (this.equip[k]) n += 1 + Math.floor(Math.random() * 3); return n; }
-  dropEquipment(drop, byPlayer) {
+  dropEquipment(drop, byPlayer, looting) {
     for (const k in this.equip) {
       const it = this.equip[k];
       if (!it) continue;
       const ch = this.dropChance && this.dropChance[k] !== undefined ? this.dropChance[k] : 0.085;
-      if (ch >= 1 || (byPlayer && Math.random() < ch)) drop(it, 1);
+      if (ch >= 1 || (byPlayer && Math.random() < ch + 0.01 * (looting || 0))) drop(it, 1);
     }
   }
   zzaScale() { return this.moveSpeedNow || this.speed; }
