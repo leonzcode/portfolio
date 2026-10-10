@@ -552,7 +552,9 @@ export class FishingBobber extends Projectile {
     let wear = 0;
     if (this.hooked) {
       const h = this.hooked, dx = P.pos.x - h.pos.x, dy = P.pos.y - h.pos.y, dz = P.pos.z - h.pos.z;
-      if (h.vel) { h.vel.x += dx * 0.1; h.vel.y += dy * 0.1 + Math.sqrt(Math.hypot(dx, dy, dz)) * 0.08; h.vel.z += dz * 0.1; }
+      // another player: the game's pull on an entity, a tenth of the way to you, sent to their machine
+      if (h.remotePlayer) h.push(dx * 0.1, dy * 0.1, dz * 0.1);
+      else if (h.vel) { h.vel.x += dx * 0.1; h.vel.y += dy * 0.1 + Math.sqrt(Math.hypot(dx, dy, dz)) * 0.08; h.vel.z += dz * 0.1; }
       wear = 5;
     } else if (this.bite > 0) {
       const r = R(), luck = this.luck;

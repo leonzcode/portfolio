@@ -209,11 +209,13 @@ export class Combat {
     P.vel.y = 0.01;
     const k = fall > 5 ? 2 : 1;
     m.forNear(e.pos.x, e.pos.z, 4, o => {
-      if (o === e || o.removed || o.dead || !(o instanceof Living) || o === m.riding) return;
+      if (o === e || o.removed || o.dead || !(o instanceof Living || o.remotePlayer) || o === m.riding) return;
       const dx = o.pos.x - e.pos.x, dz = o.pos.z - e.pos.z, d = Math.hypot(dx, o.pos.y - e.pos.y, dz);
       if (d > 3.5) return;
       const f = (3.5 - d) * 0.7 * k * (1 - (o.kbResist || 0));
       const l = Math.hypot(dx, dz) || 1;
+      // (another player: sent to their machine, which takes off their own knockback resistance)
+      if (o.remotePlayer) { o.push(dx / l * f, 0.7 * f, dz / l * f); return; }
       o.vel.x += dx / l * f; o.vel.y += 0.7 * f; o.vel.z += dz / l * f;
     });
     // Wind Burst: up you go again
@@ -339,7 +341,8 @@ export class Combat {
   blocked(amount, src) {
     const m = this.m, P = this.P, a = src.attacker;
     // a melee attacker is pushed back; an axe puts the shield down for 5 seconds
-    if (src.type === 'mob' && a && a.knockback && !src.direct) a.knockback(0.5, P.pos.x - a.pos.x, P.pos.z - a.pos.z);
+    // (another player's too: sent back to their machine, net.js struck)
+    if ((src.type === 'mob' || (a && a.remotePlayer)) && a && a.knockback && a.pos && !src.direct) a.knockback(0.5, P.pos.x - a.pos.x, P.pos.z - a.pos.z);
     if (src.axe) this.disableShield();
     // the shield wears by the hit, rounded up, from 3 up
     if (amount >= 3 && !this.creative) {
@@ -432,7 +435,7 @@ export class Combat {
     const mount = m.riding, mv = P.moved || [0, 0, 0];
     const v = mount ? { x: mount.pos.x - mount.prev.x, y: mount.pos.y - mount.prev.y, z: mount.pos.z - mount.prev.z } : { x: mv[0], y: mv[1], z: mv[2] };
     m.forNear(ex, ez, 8, t => {
-      if (!(t instanceof Living) || t.dead || t.removed || t === m.riding || t.vehicle === m.riding && m.riding) return;
+      if (!(t instanceof Living || t.remotePlayer) || t.dead || t.removed || t === m.riding || t.vehicle === m.riding && m.riding) return;
       const d = rayBox(ex, ey, ez, lx, ly, lz, t.pos.x - t.hw - g, t.pos.y - g, t.pos.z - t.hw - g, t.pos.x + t.hw + g, t.pos.y + t.h + g, t.pos.z + t.hw + g);
       if (!(d <= 4.5)) return;
       const last = u.hits.get(t);
@@ -600,7 +603,7 @@ export class Combat {
     if (!this.spin) { P.spinning = false; return; }
     let hit = null;
     m.forNear(P.pos.x, P.pos.z, 3, e => {
-      if (hit || e.removed || e.dead || !(e instanceof Living) || e === m.riding) return;
+      if (hit || e.removed || e.dead || !(e instanceof Living || e.remotePlayer) || e === m.riding) return;
       if (Math.abs(e.pos.x - P.pos.x) < e.hw + 0.3 + 0.3 && Math.abs(e.pos.z - P.pos.z) < e.hw + 0.3 + 0.3 && e.pos.y < P.pos.y + 1.8 + 0.3 && e.pos.y + e.h > P.pos.y - 0.3) hit = e;
     });
     if (hit) {

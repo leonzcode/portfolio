@@ -616,8 +616,11 @@ export class WindCharge extends Projectile {
       const ex = exposure(T, e.pos.x - hw, e.pos.y, e.pos.z - hw, e.pos.x + hw, e.pos.y + h, e.pos.z + hw, cx, cy, cz);
       const k = (1 - d / (r * 2)) * ex * this.power * (1 - (e.kbResist || 0));
       if (isP) { this.m.player.push(dx * k, dy * k, dz * k); if (this.owner === this.m.player && this.m.P) { this.m.P.fallDistance = 0; this.m.P.impulseY = this.m.P.pos.y; } }
+      else if (e.remotePlayer) e.push(dx * k, dy * k, dz * k);
       else if (e.vel) { e.vel.x += dx * k; e.vel.y += dy * k; e.vel.z += dz * k; }
     };
+    // (someone else's charge, flown here as a copy: it pushes nobody, its thrower's machine sends the pushes)
+    if (this.ghost) { this.m.particles('poof', cx, cy, cz, 14, 0.6, [0.85, 0.9, 1]); this.remove(); return; }
     const P = this.m.player;
     if (P.alive() && !(this.m.mode === 'spectator')) push(P, true);
     this.m.forNear(cx, cz, r * 2 + 1, e => { if (!e.removed && !e.dead && e !== this && !(e instanceof Projectile)) push(e, false); });

@@ -73,6 +73,7 @@ import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=39';
 import { register, commandDef, execute, gameRule } from '../commands.js?v=39';
 import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=39';
 import { Projectile } from '../entities/projectiles.js?v=39';
+import { Combat } from '../combat/combat.js?v=39';
 import { Vehicles } from './vehicles.js?v=39';
 import { Mobs, Orbs } from './mobs.js?v=39';
 import { Events } from './events.js?v=39';
@@ -841,12 +842,15 @@ export class Net {
       remotePlayer: true, type: 'player', id: 'p' + r.id, name: r.name, get pos() { return r.feet; }, hw: 0.3, w: 0.6, h: heightOf(r.st),
       removed: false, dead: false, vel: { x: 0, y: 0, z: 0 }, fire: 0, kbResist: 0,
       dist2(x, y, z) { const f = r.feet; return (f.x - x) ** 2 + (f.y - y) ** 2 + (f.z - z) ** 2; },
-      hurt(amount, src, info) { return src && (src.type === 'arrow' || src.type === 'trident' || src.type === 'thrown') ? net.shotPlayer(r, amount, src) : net.hitPlayer(r, amount, info); },
+      hurt(amount, src, info) { return src && (src.type === 'arrow' || src.type === 'trident' || src.type === 'thrown' || src.type === 'wind_charge') ? net.shotPlayer(r, amount, src) : net.hitPlayer(r, amount, info); },
       // a flaming arrow's fire, said with the hit that follows it
       setFire(s) { this.fire = Math.max(this.fire, s | 0); },
       // a tipped or spectral arrow's effects, after its hit
       addEffect(n, lv, t, by, inst) { net.send({ t: 'hit', id: r.id, k: 'arrow', dmg: 0, ef: [[n, lv | 0, t | 0, inst === undefined ? 1 : +inst]] }); return true; },
       knockback() {},
+      /* a push that hurts nothing (a mace's shockwave, a fishing rod's pull, a wind charge's burst): added to
+         their velocity on their machine, less by their knockback resistance (struck) */
+      push(x, y, z) { const q = v => Math.round(v * 1000) / 1000; net.send({ t: 'hit', id: r.id, k: 'push', dmg: 0, v: [q(x), q(y), q(z)] }); },
     };
     return r.proxy;
   }
@@ -899,7 +903,8 @@ export class Net {
   shotPlayer(r, amount, src) {
     const d = src.direct, g = this.game, inv = g.inv, st = inv.slots[inv.selected];
     if (!this.server.pvp || !d) return false;
-    const k = src.type, pr = this.proxyOf(r), r3 = v => Math.round(v * 1000) / 1000;
+    // (a wind charge's 1 goes as a thrown thing's hit; its burst's push follows, Proxy.push)
+    const k = src.type === 'wind_charge' ? 'thrown' : src.type, pr = this.proxyOf(r), r3 = v => Math.round(v * 1000) / 1000;
     this.send({ t: 'hit', id: r.id, k, dmg: amount < 0.01 ? amount : Math.round(amount * 1000) / 1000, dir: [r3(d.vel.x), r3(d.vel.y), r3(d.vel.z)], at: [r3(d.pos.x), r3(d.pos.y), r3(d.pos.z)],
       punch: d.knock || 0, fire: pr.fire || 0, pierce: d.pierce > 0 ? 1 : 0, crit: !!d.crit, item: st && st.name ? String(st.name).slice(0, 50) : undefined });
     pr.fire = 0;
@@ -918,7 +923,9 @@ export class Net {
     if (!E || !E.combat || !sv || sv.dead) return;
     const r = this.players && this.players.list.get(m.from), s = r && r.st, P = g.player;
     const from = r && r.feet ? r.feet : s ? { x: s.x, y: s.y, z: s.z } : P.pos;
-    const attacker = { customName: m.name, pos: from, remotePlayer: true };
+    const attacker = { customName: m.name, pos: from, remotePlayer: true,
+      // pushed back off your raised shield (combat.js blocked): the game's knockback of that strength away from you, on their machine
+      knockback: (s, dx, dz) => { if (r && m.from) this.send({ t: 'hit', id: m.from, k: 'push', dmg: 0, kb: s, v: [Math.round(dx * 1000) / 1000, 0, Math.round(dz * 1000) / 1000] }); } };
     // a tipped arrow's potion (after its hit)
     for (const e of Array.isArray(m.ef) ? m.ef : []) {
       const [n, lv, t, inst] = e, k = Math.max(0, Math.min(1, +inst || 1));
@@ -926,6 +933,11 @@ export class Net {
       if (n === 'instant_health') sv.heal(Math.floor(k * (4 << (lv - 1)) + 0.5));
       else if (n === 'instant_damage') sv.hurtEffect(Math.floor(k * (6 << (lv - 1)) + 0.5), 'magic');
       else if (E.effectPlayer) E.effectPlayer(n, t, lv);
+    }
+    // a push from them: added (less by knockback resistance), or with kb a knock away from where it came from
+    if (m.k === 'push' && Array.isArray(m.v) && g.mode !== 'spectator') {
+      if (m.kb > 0) E.combat.knockPlayer(m.kb, m.v[0], m.v[2]);
+      else { const k = 1 - E.combat.knockbackResistance(); P.vel.x += m.v[0] * k; P.vel.y += m.v[1] * k; P.vel.z += m.v[2] * k; if (m.v[1] > 0) P.onGround = false; }
     }
     if (!(m.dmg > 0)) return;
     const proj = m.k === 'arrow' || m.k === 'trident' || m.k === 'thrown';
@@ -1502,14 +1514,28 @@ Projectile.prototype.tick = function () {
     m.onProjectileBlock = null;
     try { return projTick.call(this); } finally { m.onProjectileBlock = opb; }
   }
-  if (!net || !net.players || this.stuck || this.owner !== m.player || !net.server.pvp || !net.game) return projTick.call(this);
-  const own = Object.prototype.hasOwnProperty.call(m, 'forNear'), fn = m.forNear, D = dimCode(net.game.dim);
+  if (this.stuck || this.owner !== m.player) return projTick.call(this);
+  return withPlayers(m, () => projTick.call(this));
+};
+/* fn run with the entity manager's forNear also visiting the other players
+   (their stand-ins) on a server with PvP: your projectiles' flight, and your
+   own fight's reach outside a click (Combat spinTick: Riptide's spin;
+   chargeTick: a spear's charge; smashed: a mace's shockwave) */
+function withPlayers(m, fn) {
+  const net = activeNet;
+  if (!net || !net.players || !net.server.pvp || !net.game || !m || m.withPlayers) return fn();
+  const own = Object.prototype.hasOwnProperty.call(m, 'forNear'), f0 = m.forNear, D = dimCode(net.game.dim);
   m.forNear = function (x, z, r, cb) {
-    fn.call(this, x, z, r, cb);
+    f0.call(this, x, z, r, cb);
     for (const q of net.players.list.values()) if (net.hittable(q, D) && Math.abs(q.feet.x - x) <= r + 1 && Math.abs(q.feet.z - z) <= r + 1) cb(net.proxyOf(q));
   };
-  try { return projTick.call(this); } finally { if (own) m.forNear = fn; else delete m.forNear; }
-};
+  m.withPlayers = true;
+  try { return fn(); } finally { m.withPlayers = false; if (own) m.forNear = f0; else delete m.forNear; }
+}
+for (const k of ['spinTick', 'chargeTick', 'smashed']) {
+  const f = Combat.prototype[k];
+  Combat.prototype[k] = function () { const a = arguments; return withPlayers(this.m, () => f.apply(this, a)); };
+}
 // a container gone with its block on someone else's machine: forgotten here, nothing spilled
 function dropContainer(C, x, y, z) {
   const k = key3(x, y, z), c = C.map.get(k);
