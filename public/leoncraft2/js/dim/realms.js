@@ -359,8 +359,8 @@ export class Realms {
       }
     }
     if (d.use === 'ignite') {
-      // TNT is lit, not set beside (sim/bodies.js primes it)
-      if (hit.b === B.tnt && g.sim && g.sim.primeTnt) { w.set(hit.x, hit.y, hit.z, 0, 0); g.sim.primeTnt(hit.x, hit.y, hit.z, g.player, 80); this.usedItem(id); return true; }
+      // TNT is lit, not set beside (sim/bodies.js primes it), owned by the player entity, as the game's PrimedTnt owner is (net/events.js credits the blast to it)
+      if (hit.b === B.tnt && g.sim && g.sim.primeTnt) { w.set(hit.x, hit.y, hit.z, 0, 0); g.sim.primeTnt(hit.x, hit.y, hit.z, (g.entities && g.entities.player) || g.player, 80); this.usedItem(id); return true; }
       const n = hit.face;
       let x = hit.x, y = hit.y, z = hit.z;
       if (!hb.replaceable || hit.b === B.fire) { x += n[0]; y += n[1]; z += n[2]; }

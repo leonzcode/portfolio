@@ -531,9 +531,9 @@ function paintingFits(m, x, y, z, face, w, h) {
    quality times the luck (the rod's Luck of the Sea): fish -1, junk -2,
    treasure +2, floor(weight + quality x luck); treasure only in open water
    (a 5 x 4 x 5 of water below and air above round the bobber). Treasure
-   bows and rods come enchanted at 22 to 30 levels with 0-25% of their
-   durability left, a book at 30 levels (treasure enchantments too); junk
-   boots and rods are worn 0-90%. The catch flies to you, with an orb of 1
+   bows, rods and books all come enchanted at 30 levels from the random loot
+   list (treasure enchantments too), the bow and rod with 0-25% of their
+   durability left; junk boots and rods keep 0-90% of theirs (worn 10-100%). The catch flies to you, with an orb of 1
    to 6 experience at your feet. */
 const FISH = [['cod', 60], ['salmon', 25], ['tropical_fish', 2], ['pufferfish', 13]];
 const JUNK = [['lily_pad', 17], ['leather_boots', 10], ['leather', 10], ['bone', 10], ['potion', 10], ['string', 5], ['fishing_rod', 2], ['bowl', 10], ['stick', 5], ['ink_sac', 1], ['tripwire_hook', 10], ['rotten_flesh', 10], ['bamboo', 10]];
@@ -623,13 +623,15 @@ export class FishingBobber extends Projectile {
     if (r < wf) name = pickW(FISH);
     else if (r < wf + wj) {
       name = pickW(jungle ? JUNK : JUNK.filter(e => e[0] !== 'bamboo'));
-      if (name === 'leather_boots' || name === 'fishing_rod') dmg = Math.floor(maxDamage(I[name]) * R() * 0.9);
+      // (set_damage uniform(0, 0.9) is the durability left: worn floor((1 - u) x max), 10% to all of it, as SetItemDamageFunction)
+      if (name === 'leather_boots' || name === 'fishing_rod') dmg = Math.floor(maxDamage(I[name]) * (1 - R() * 0.9));
       if (name === 'ink_sac') count = 10;
     } else {
       name = pickW(TREASURE);
       const rng = new LegacyRandom(Math.floor(R() * 2 ** 31) * 4096 + RI(4096));
+      // (26.1.2's fishing/treasure: enchant_with_levels 30 for the bow, the rod and the book alike, from #on_random_loot)
       if (name === 'bow' || name === 'fishing_rod') {
-        ench = enchanted(I[name], 22 + RI(9), rng, false);
+        ench = enchanted(I[name], 30, rng, false);
         dmg = Math.floor(maxDamage(I[name]) * (0.75 + R() * 0.25));
       } else if (name === 'enchanted_book') ench = enchanted(I.book, 30, rng, true);
     }

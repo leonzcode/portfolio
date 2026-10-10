@@ -223,12 +223,13 @@ export class Events {
   boomOut(x, y, z, power, o) {
     const r2 = v => Math.round(v * 100) / 100, g = this.net.game, L = g && g.entities && g.entities.player;
     const mine = s => !!s && typeof s === 'object' && (s === L || s.isPlayer || s.player === true || mine1(s.attacker) || mine1(s.by) || mine1(s.owner));
-    const mine1 = s => !!s && typeof s === 'object' && (s === L || s.isPlayer || s.player === true);
+    const mine1 = s => !!s && typeof s === 'object' && (s === L || (g && s === g.player) || s.isPlayer || s.player === true);
     let by = 0;
     if (o && (o.source === 'bad_respawn_point' || o.source === 'respawn')) by = 'brp';
     else if (o && (mine(o.by) || mine(o.source))) by = 'p';
     else if (o && o.source && typeof o.source === 'object') {
-      const a = o.source.attacker || o.source;
+      // (a mob's TNT, one a skeleton's burning arrow lit or a creeper's blast set off, is the mob's)
+      const s = o.source, a = s.attacker || (s.kind === 'tnt' && s.by && typeof s.by === 'object' ? s.by : null) || s;
       if (a && typeof a.type === 'string' && a.type !== 'player' && /^[a-z_]{1,32}$/.test(a.type)) by = a.type;
     }
     this.send(by ? ['boom', r2(x), r2(y), r2(z), r2(power || 4), by] : ['boom', r2(x), r2(y), r2(z), r2(power || 4)]);

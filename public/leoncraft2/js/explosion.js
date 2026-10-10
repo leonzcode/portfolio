@@ -199,7 +199,9 @@ export function explode(world, x, y, z, power, o) {
     if (b === B.tnt && sim && sim.primeTnt) {
       // caught in a blast: lit with a short fuse
       world.set(bx, by, bz, 0, 0);
-      sim.primeTnt(bx, by, bz, o.source && typeof o.source === 'object' ? o.source : null, 10 + Math.floor(rnd() * 20));
+      // (owned by the blast's indirect source, as the game's PrimedTnt.wasExploded: the one who lit the first TNT of a chain, or the mob)
+      const src = o.source && typeof o.source === 'object' ? o.source : null;
+      sim.primeTnt(bx, by, bz, src && src.kind === 'tnt' && src.b === B.tnt ? (src.by || null) : src, 10 + Math.floor(rnd() * 20));
       continue;
     }
     if (sim) {
