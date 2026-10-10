@@ -24,7 +24,7 @@
                      square of blue (#5555FF at 0x90), the letter white with a
                      blue shadow
      zoom            1: one block a half unit; cave mode zooms in twice
-     radar           diamonds with a black rim, 9 half units across: players
+     radar           upright diamonds (at any turn) with a black rim, 9 half units across: players
                      white, every mob yellow (hostile or not), items red, all
                      other entities (arrows, boats, carts, orbs, paintings,
                      armour stands...) dark purple; names off; a mob more than
@@ -42,7 +42,8 @@
                      (its roof), the End's open islands are not
      lighting        each block lit as the mod lights it, (9 + the brighter of
                      its block light and its sky light by the time of day) / 24:
-                     the night and caves dark, torches lit
+                     the night and caves dark, torches lit; the Nether at one
+                     fixed sky level (2.4 of 15), the End at full brightness
      unknown         ground not loaded is black at half strength
 
    Block colours are the game's own map colours (maps.js MAP_RGB: the mod's
@@ -83,6 +84,9 @@ const FRAME = [[0, 0, 0], [147, 71, 109], [93, 126, 112], [16, 43, 30]];
 const HEIGHT_LIMIT = 20, FADE_FROM = 15;
 const BUDGET = 0.25;               // ms a frame for working out chunks
 const TOGGLE_MS = 1000;            // the mod's Cave Mode Toggle Timer
+// the Nether's fixed sky level for the map (MinimapRenderer.getSunBrightness: its ambient light 0.1
+// x 24 / 15, plus nothing from its sky light factor of 0)
+const NETHER_SKY = Math.min(1, 0.1 * 24 / 15);
 
 const biomeName = b => !b || !b.name ? '' : b.name.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
 // a block the cave slice sees through (air, torches, glass, grass...: nothing that shows on a map)
@@ -125,7 +129,10 @@ export class Minimap {
        box     the map's square, clipping what turns inside it (unknown ground: black at half)
          turn  turned and moved by a CSS transform each frame (the compositor does it: nothing
                is drawn again for turning): the ground (view, one pixel a block, scaled up
-               pixelated) and the dots (drawn at screen resolution, in the ground's own frame)
+               pixelated)
+         dots  not turned: the radar's dots at their turned places, each sprite upright, as the
+               mod turns only the ground's texture and works the dots' places out by sin and cos
+               (so a diamond stays a diamond whichever way you face)
        stat    not turned: the frame and the lines under it (drawn when the size or a line changes)
        inv     the crosshair's inverting part (mix-blend-mode difference)
        dyn     over the map: the compass letters, the crosshair's arms or the arrow */
@@ -141,8 +148,8 @@ export class Minimap {
     this.statEl = mk('canvas', at);
     this.invEl = mk('canvas', Object.assign({ mixBlendMode: 'difference' }, at));
     this.dynEl = mk('canvas', at);
-    this.turn.append(this.viewEl, this.dotEl);
-    this.box.append(this.turn);
+    this.turn.append(this.viewEl);
+    this.box.append(this.turn, this.dotEl);
     this.root.append(this.box, this.statEl, this.invEl, this.dynEl);
     this.vctx = this.viewEl.getContext('2d');
     this.dctx = this.dotEl.getContext('2d');
@@ -330,8 +337,13 @@ export class Minimap {
       const p = cave ? this.caveCol(n.blocks, col, top) : this.surfCol(n.blocks, col, n.top);
       hN[x] = p < 0 ? -1 : (p >> 8);
     }
-    // the light: (9 + the brighter of the block light and the sky light by the time of day) / 24
-    const lit = this.o.get('minimapLighting') !== false, skyOn = w.dim === 'overworld';
+    /* the light (MinimapWriter): (9 + the brighter of the block light and the sky light by the time of
+       day) / 24. The End is "end-like" (ambient light 0.25, and it flashes), so the mod turns its
+       lighting off and draws it at full brightness; the Nether has no sky light, so every block gets
+       one fixed sky level, the mod's sun brightness there: ambient x 24 / 15 (0.16, its sky light
+       factor being 0) times 15 */
+    const lit = this.o.get('minimapLighting') !== false && w.dim !== 'the_end';
+    const skyOn = w.dim === 'overworld', fixedSky = skyOn ? 0 : NETHER_SKY * 15;
     const lv = this.level || 0, skyF = lv === 0 ? 1 : (4 - lv) / 4;
     const L = c.light, LH = c.lightH;
     const wx0 = c.cx * 16, wz0 = c.cz * 16;
@@ -363,8 +375,7 @@ export class Minimap {
           if (ly >= H) { sky = 15; blk = 0; }
           else if (L) { if (ly >= LH) { sky = 15; blk = 0; } else { const v = L[(ly << 8) | col]; sky = v >> 4; blk = v & 15; } }
           else { sky = cave ? 0 : 15; blk = 0; }
-          if (!skyOn) sky = 0;
-          f = (9 + Math.max(skyF * sky, blk)) / 24;
+          f = (9 + Math.max(skyOn ? skyF * sky : fixedSky, blk)) / 24;
         }
         d[o] = (rgb >> 16) * f; d[o + 1] = ((rgb >> 8) & 255) * f; d[o + 2] = (rgb & 255) * f; d[o + 3] = 255;
         prevH = h;
@@ -415,6 +426,7 @@ export class Minimap {
       this.dpr = dpr; this.side = side; this.s = s;
       Object.assign(this.box.style, { left: css(x0), top: css(y0), width: css(side), height: css(side) });
       for (const e of [this.invEl, this.dynEl]) { e.width = e.height = side; Object.assign(e.style, { left: css(x0), top: css(y0), width: css(side), height: css(side) }); }
+      this.dotEl.width = this.dotEl.height = side; Object.assign(this.dotEl.style, { width: css(side), height: css(side) });
       this.statKey = ''; this.viewKey = ''; this.dotKey = ''; this.dynKey = ''; this.invKey = '';
     }
     if (!this.shown) { this.root.style.display = ''; this.shown = true; this.statKey = ''; }
@@ -426,20 +438,30 @@ export class Minimap {
     const ppb = this.zoom * s / 2;
     // the ground round you (copied again only when you cross a block or a chunk changed)
     this.view(feet, side * 0.5 * Math.SQRT2 / ppb + 2, ppb, dpr);
-    // the dots, in the ground's frame (drawn again only when one moved)
+    /* the dots: each place turned about the middle as the ground is (the CSS rotate below: x' =
+       x cos - y sin, y' = x sin + y cos), each sprite drawn upright there; drawn again only when
+       a dot's place on the screen or its look changed */
     const dots = o.get('minimapEntities') !== false ? this.dots(game, feet, alpha, side * 0.5 * Math.SQRT2 / ppb + 2) : null;
-    const cell = s / 2;
-    const dk = (dots ? dots.sig : 'none') + ',' + this.vx0 + ',' + this.vz0 + ',' + ppb + ',' + cell + ',' + this.cave;
+    const cell = s / 2, hs = side / 2;
+    const cos = north ? 1 : Math.cos(yaw), sin = north ? 0 : Math.sin(yaw);
+    let dk = dots ? dots.n : -1;
+    if (dots) {
+      for (let i = 0; i < dots.n; i++) {
+        const e = dots[i], spr = this.sprite(e.k, e.b, this.cave, cell);
+        const px = e.dx * ppb, pz = e.dz * ppb;
+        e.sx = Math.round(hs + px * cos - pz * sin - spr.width / 2);
+        e.sy = Math.round(hs + px * sin + pz * cos - spr.height / 2);
+        e.spr = spr;
+        dk = (Math.imul(dk, 31) + e.sx * 7919 + e.sy * 104729 + spr.width) | 0;
+        dk = (Math.imul(dk, 17) + (e.k.length * 37 + Math.round(e.b * 20))) | 0;
+      }
+    }
+    dk = dk + ',' + side + ',' + (this.cave ? 1 : 0);
     if (dk !== this.dotKey) {
       this.dotKey = dk;
-      const d = this.dctx, n = this.dotEl.width;
-      d.clearRect(0, 0, n, n);
-      if (dots) {
-        for (let i = 0; i < dots.n; i++) {
-          const e = dots[i], spr = this.sprite(e.k, e.b, this.cave, cell);
-          d.drawImage(spr, Math.round((feet.x + e.dx - this.vx0) * ppb - spr.width / 2), Math.round((feet.z + e.dz - this.vz0) * ppb - spr.height / 2));
-        }
-      }
+      const d = this.dctx;
+      d.clearRect(0, 0, side, side);
+      if (dots) for (let i = 0; i < dots.n; i++) { const e = dots[i]; d.drawImage(e.spr, e.sx, e.sy); }
     }
     // the turn: about the map's middle, by your yaw (none with north up), your place at the middle
     const tr = 'translate(' + css(side / 2) + ',' + css(side / 2) + ')' + (north ? '' : ' rotate(' + yaw.toFixed(4) + 'rad)') +
@@ -570,10 +592,6 @@ export class Minimap {
       if (v.width !== n) { v.width = v.height = n; this.viewKey = ''; }
       this.viewPpb = ppb; this.viewDpr = dpr;
       v.style.width = v.style.height = (n * ppb / dpr) + 'px';
-      const d = this.dotEl, m = Math.ceil(n * ppb);
-      if (d.width !== m) { d.width = d.height = m; }
-      d.style.width = d.style.height = (m / dpr) + 'px';
-      this.dotKey = '';
     }
     const key = bx0 + ',' + bz0 + ',' + this.painted + ',' + n;
     if (key === this.viewKey) return v;
@@ -590,8 +608,6 @@ export class Minimap {
       }
       z += hz;
     }
-    // the dots' canvas follows the ground's place
-    this.dotKey = '';
     return v;
   }
 
