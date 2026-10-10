@@ -23,7 +23,7 @@
    The player's armour is drawn by render/avatar.js with these boxes, the
    mobs' by entities/armorlayer.js through the mob atlas.
 --------------------------------------------------------------------------- */
-import { armorOf, ITEMS } from '../items.js?v=39';
+import { armorOf, ITEMS } from '../items.js?v=40';
 const THREE = window.THREE;
 
 /* the materials, in sheet order, with the file name each one's pictures go by */
@@ -141,7 +141,7 @@ export function armorSheet() {
   ARMOR_MATS.forEach((m, i) => {
     for (const layer of [1, 2]) {
       if (m === 'turtle' && layer === 2) continue;
-      jobs.push(load(base + (FILE[m] || m) + '_layer_' + layer + '.png?v=39').then(im => {
+      jobs.push(load(base + (FILE[m] || m) + '_layer_' + layer + '.png?v=40').then(im => {
         if (!im) return;
         const y = i * 64 + (layer - 1) * 32;
         g.clearRect(0, y, 64, 32);
@@ -153,7 +153,7 @@ export function armorSheet() {
     }
   });
   for (const m in OVERLAYS) for (const layer of OVERLAYS[m]) {
-    jobs.push(load(base + m + '_layer_' + layer + '_overlay.png?v=39').then(im => {
+    jobs.push(load(base + m + '_layer_' + layer + '_overlay.png?v=40').then(im => {
       if (!im) return;
       g.imageSmoothingEnabled = false;
       g.drawImage(im, 0, 0, im.naturalWidth, im.naturalHeight, 0, OVERLAY_ROW * 64 + (layer - 1) * 32, 64, 32);
@@ -303,7 +303,7 @@ function faceList(u, v, w, h, d) {
   ];
 }
 export function avatarArmorGeometry() {
-  const P = [], N = [], T = [], A = [], I = [];
+  const P = [], N = [], T = [], A = [], I = [], W = [];
   PIECE_BOXES.forEach((parts, piece) => {
     for (const name in parts) {
       const part = AVATAR_PARTS.indexOf(name);
@@ -313,6 +313,9 @@ export function avatarArmorGeometry() {
         const hx = w / 2 + inf, hy = h / 2 + inf, hz = d / 2 + inf;
         // a box with a pose of its own: turned about its pivot the game's way (z, then y, then x), in the game's axes
         const R = pose ? new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(pose.rot[0], pose.rot[1], pose.rot[2], 'ZYX')) : null;
+        // a posed box's vertices before the turn are kept, so the wings can be turned again (poseWings)
+        const wing = pose ? { at: P.length / 3, pos: [], nrm: [], pivot: pose.pivot, sign: pose.rot[2] < 0 ? 1 : -1 } : null;
+        if (wing) W.push(wing);
         const pv = new THREE.Vector3(), pn = new THREE.Vector3();
         const faces = faceList(u, v, w, h, d);
         if (mirror) { const t = faces[2][2]; faces[2][2] = faces[3][2]; faces[3][2] = t; }
@@ -323,6 +326,7 @@ export function avatarArmorGeometry() {
           for (let k = 0; k < 4; k++) {
             const s = corners[k];
             if (R) {
+              wing.pos.push(cx + s[0] * hx, -(cy + s[1] * hy), -(cz + s[2] * hz)); wing.nrm.push(n[0], -n[1], -n[2]);
               pv.set(cx + s[0] * hx, -(cy + s[1] * hy), -(cz + s[2] * hz)).applyMatrix4(R).add(pn.fromArray(pose.pivot));
               P.push(pv.x, -pv.y, -pv.z);
               pn.set(n[0], -n[1], -n[2]).applyMatrix4(R);
@@ -346,7 +350,30 @@ export function avatarArmorGeometry() {
   g.setAttribute('aPart', new THREE.Float32BufferAttribute(A, 2));
   g.setIndex(I);
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 64);
+  g.userData.wings = W;
   return g;
+}
+
+/* Turn the elytra's wings in an avatarArmorGeometry, as the game's
+   ElytraModel sets them: the left wing (x out from the body) by xRot, yRot,
+   zRot about its pivot moved down by y pixels, the right wing the mirror
+   (yRot and zRot negated). */
+const _m = new THREE.Matrix4(), _e = new THREE.Euler(), _v = new THREE.Vector3();
+export function poseWings(g, xRot, yRot, zRot, y) {
+  const W = g.userData.wings;
+  if (!W) return;
+  const pa = g.attributes.position, na = g.attributes.normal;
+  for (const w of W) {
+    // the first box (sign 1) is the game's left wing
+    _m.makeRotationFromEuler(_e.set(xRot, w.sign * yRot, w.sign * zRot, 'ZYX'));
+    for (let i = 0, n = w.pos.length / 3; i < n; i++) {
+      _v.fromArray(w.pos, i * 3).applyMatrix4(_m);
+      pa.setXYZ(w.at + i, _v.x + w.pivot[0], -(_v.y + w.pivot[1] + y), -(_v.z + w.pivot[2]));
+      _v.fromArray(w.nrm, i * 3).transformDirection(_m);
+      na.setXYZ(w.at + i, _v.x, -_v.y, -_v.z);
+    }
+  }
+  pa.needsUpdate = true; na.needsUpdate = true;
 }
 
 /* ---- the glint, for any shader that has uNoise (render/noisetex.js) ----

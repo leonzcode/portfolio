@@ -44,16 +44,16 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { VANILLA, AVATAR_FS } from './vanilla.js?v=39';
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=39';
-import { lightDefines } from './materials.js?v=39';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=39';
-import { H, idx } from '../world-const.js?v=39';
-import { lightNear } from '../lightlevel.js?v=39';
-import { armorSheet, avatarArmorGeometry, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=39';
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=39';
-import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=39';
-import { setGlint } from './glint.js?v=39';
+import { VANILLA, AVATAR_FS } from './vanilla.js?v=40';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=40';
+import { lightDefines } from './materials.js?v=40';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=40';
+import { H, idx } from '../world-const.js?v=40';
+import { lightNear } from '../lightlevel.js?v=40';
+import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=40';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=40';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=40';
+import { setGlint } from './glint.js?v=40';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -64,7 +64,7 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=39', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=40', import.meta.url).href;
 // the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
 let defaultSkin = DEFAULT_SKIN;
 
@@ -161,6 +161,32 @@ function buildGeometry(slim, onlyParts) {
   g.setIndex(I);
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 64);
   return g;
+}
+
+/* Riptide's swirl: a streaky white-blue picture of our own on two open
+   eight-sided sleeves (render: Avatar.placeSwirl) */
+function makeSwirl(R) {
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 32;
+  const g = cv.getContext('2d');
+  g.clearRect(0, 0, 64, 32);
+  for (let i = 0; i < 9; i++) {
+    const y = 2 + i * 3.3, a = 0.35 + 0.5 * ((i * 37) % 7) / 7;
+    g.strokeStyle = `rgba(${200 + (i % 3) * 20},${230 + (i % 2) * 20},255,${a})`; g.lineWidth = 1 + (i % 2);
+    g.beginPath(); g.moveTo(0, y); g.lineTo(64, y + 6); g.stroke();
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.wrapS = THREE.RepeatWrapping;
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0.85 });
+  const group = new THREE.Group();
+  for (const [r, h] of [[0.62, 1.7], [0.42, 1.2]]) {
+    const geo = new THREE.CylinderGeometry(r, r, h, 8, 1, true);
+    const m = new THREE.Mesh(geo, mat);
+    m.matrixAutoUpdate = false; m.frustumCulled = false;
+    group.add(m);
+  }
+  group.matrixAutoUpdate = false;
+  R.scene.add(group);
+  return group;
 }
 
 /* ---- the shaders ---- */
@@ -635,7 +661,61 @@ export class Avatar {
     const sw = P.pose === 'swim' && !P.flying && !P.gliding ? 1 : 0;
     this.swim = sw > this.swim ? Math.min(1, this.swim + 0.09) : Math.max(0, this.swim - 0.09);
     this.glide = P.gliding ? this.glide + 1 : 0;
+    this.spin = P.spinning && !P.gliding ? (this.spin || 0) + 1 : 0;
+    this.wingTick(P);
     this.age++;
+  }
+
+  /* The elytra's wings, as the game's ElytraModel works them out: folded
+     (15 degrees back, 15 out) standing; gliding, spread 20 degrees back and
+     90 out, folding back in as the dive steepens (by 1 - (down share of the
+     velocity)^1.5); crouching, 40 back, 45 out, 5 degrees round and 3 pixels
+     lower. Eased 0.3 of the way a tick (our reading of the 26.x elytra
+     animation state; the older game eased 0.1 a frame). Remote players get
+     this too, since their gliding and sneaking come in the position flags. */
+  wingTick(P) {
+    let x = 0.2617994, z = -0.2617994, y = 0, ry = 0;
+    if (P.gliding) {
+      const v = P.vel; let f = 1;
+      if (v.y < 0) { const l = Math.hypot(v.x, v.y, v.z); if (l > 1e-9) f = 1 - Math.pow(-v.y / l, 1.5); }
+      x = f * 0.34906584 + (1 - f) * x;
+      z = f * -PI / 2 + (1 - f) * z;
+    } else if (P.sneaking && !P.flying) { x = 0.6981317; z = -0.7853982; y = 3; ry = 0.08726646; }
+    const W = this.wing || (this.wing = { x: 0.2617994, z: -0.2617994, ry: 0, y: 0, ox: 0.2617994, oz: -0.2617994, ory: 0, oy: 0 });
+    W.ox = W.x; W.oz = W.z; W.ory = W.ry; W.oy = W.y;
+    W.x += (x - W.x) * 0.3; W.z += (z - W.z) * 0.3; W.ry += (ry - W.ry) * 0.3; W.y = y;
+  }
+  wingPose(a) {
+    const W = this.wing;
+    if (!W || this.uPiece.value[4].y <= 0) return;
+    const x = W.ox + (W.x - W.ox) * a, z = W.oz + (W.z - W.oz) * a, ry = W.ory + (W.ry - W.ory) * a;
+    if (this.wingSet && Math.abs(this.wingSet[0] - x) + Math.abs(this.wingSet[1] - z) + Math.abs(this.wingSet[2] - ry) + Math.abs(this.wingSet[3] - W.y) < 1e-4) return;
+    this.wingSet = [x, z, ry, W.y];
+    poseWings(this.armor.geometry, x, ry, z, W.y);
+  }
+
+  /* Riptide's swirl round a spinning player: our own drawing of the game's
+     spin attack layer, two open wind sleeves round the body's axis (the
+     inner one smaller), turning the other way at different speeds; seen in
+     third person and on other players. */
+  placeSwirl(root, a) {
+    const on = this.spin > 0 && this.view !== 0 && this.ready;
+    if (!on) { if (this.swirl) this.swirl.visible = false; return; }
+    if (!this.swirl) this.swirl = makeSwirl(this.R);
+    const S = this.swirl, t = this.t, age = this.age + a;
+    S.visible = true;
+    for (let i = 0; i < 2; i++) {
+      const c = S.children[i];
+      c.matrix.copy(root).multiply(t.makeTranslation(0, 0.9 - i * 0.1, 0)).multiply(t.makeRotationY(age * (55 + i * 10) * DEG * (i ? 1 : -1)));
+      c.matrixWorldNeedsUpdate = true;
+    }
+  }
+  dropSwirl() {
+    const S = this.swirl;
+    if (!S) return;
+    if (S.parent) S.parent.remove(S);
+    S.children[0].geometry.dispose(); S.children[1].geometry.dispose(); S.children[0].material.map.dispose(); S.children[0].material.dispose();
+    this.swirl = null;
   }
 
   /* ---- every frame: ticks since the last one, light, pose, camera ---- */
@@ -685,7 +765,7 @@ export class Avatar {
     // the armour, its pictures taken up again whenever another file has landed in the sheet
     this.armor.visible = third && this.wearing;
     this.armorShadow.visible = this.ready && this.wearing;
-    if (this.wearing) { const sh = armorSheet(); if (sh.version !== this.armorV) { this.armorV = sh.version; this.armorTex.needsUpdate = true; } }
+    if (this.wearing) { const sh = armorSheet(); if (sh.version !== this.armorV) { this.armorV = sh.version; this.armorTex.needsUpdate = true; } this.wingPose(al); }
     const lv = (Math.round(this.sky * 255) << 8) | Math.round(this.block * 255);
     for (const h of this.held) {
       if (!h) continue;
@@ -722,6 +802,7 @@ export class Avatar {
         root.multiply(t.makeRotationY(Math.sign(s) * Math.acos(Math.max(-1, Math.min(1, c)))));
       }
     }
+    this.placeSwirl(root, a);
     root.scale(this.vs);
     this.matrices(root, this.parts);
     for (let side = 0; side < 2; side++) {
@@ -740,7 +821,10 @@ export class Avatar {
      Used by the figure in the inventory too, with the mouse's look. */
   layDown(root, P, a, pitch) {
     const t = this.t, swim = this.cur.swim;
-    if (this.glide > 0) root.multiply(t.makeRotationX(Math.min(1, (this.glide + a) ** 2 / 100) * (PI / 2 - pitch)));
+    /* Riptide's spin: laid along the look at once and turning about it 75 degrees a tick, as the
+       game's player renderer does with an auto spin attack */
+    if (this.spin > 0) root.multiply(t.makeRotationX(PI / 2 - pitch)).multiply(t.makeRotationY(-(this.age + a) * 75 * DEG));
+    else if (this.glide > 0) root.multiply(t.makeRotationX(Math.min(1, (this.glide + a) ** 2 / 100) * (PI / 2 - pitch)));
     else if (swim > 0) {
       root.multiply(t.makeRotationX(swim * (P.inWater ? PI / 2 - pitch : PI / 2)));
       if (P.pose === 'swim') root.multiply(t.makeTranslation(0, -1, -0.3));

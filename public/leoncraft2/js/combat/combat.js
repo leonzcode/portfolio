@@ -32,12 +32,12 @@
      water or rain, Channeling calls lightning in a storm); the shield is up
      5 ticks after the button goes down, slowing you to a fifth from the start.
 --------------------------------------------------------------------------- */
-import { ITEMS, I, itemName, addCooldown } from '../items.js?v=39';
-import { wear } from '../ui/inventory.js?v=39';
-import { Living } from '../entities/entity.js?v=39';
-import { weaponOf, enchOf, enchantBonus, chargeTicks, wearPerHit, smashBonus, ARTHROPOD } from './weapons.js?v=39';
-import './trident.js?v=39';
-import { rayBox } from '../entities/terrain.js?v=39';
+import { ITEMS, I, itemName, addCooldown } from '../items.js?v=40';
+import { wear } from '../ui/inventory.js?v=40';
+import { Living } from '../entities/entity.js?v=40';
+import { weaponOf, enchOf, enchantBonus, chargeTicks, wearPerHit, smashBonus, ARTHROPOD } from './weapons.js?v=40';
+import './trident.js?v=40';
+import { rayBox } from '../entities/terrain.js?v=40';
 
 /* The spear's charge (the use button held), as the Spear page gives it, by
    material: [ticks before it works, then engaged, tired and disengaged
@@ -110,6 +110,7 @@ export class Combat {
     const c = this.cooldown();
     // a spear's jab only goes at a full charge
     if (w.kind === 'spear' && c < 1 && !spin) return false;
+    if (w.kind === 'spear' && !spin) this.lunge(st);
     const fx = this.fx();
     let base = spin ? this.spinDmg : w.damage;
     base = Math.max(0, base + 3 * lv(fx, 'strength') - 4 * lv(fx, 'weakness'));
@@ -123,13 +124,13 @@ export class Combat {
     if (e.dead || (base <= 0 && bonus <= 0)) return false;
     const strong = c > 0.9;
     const sprintHit = P.sprinting && strong;
-    // the mace: more for every block fallen (before the critical)
+    // the mace: more for every block fallen (before the critical); Breach works on every hit with it
     let smash = false;
     if (w.kind === 'mace' && !spin && P.fallDistance > 1.5 && !P.flying && !P.gliding) {
       base += smashBonus(P.fallDistance, enchOf(st, 'density'));
       smash = true;
-      if (enchOf(st, 'breach')) src.breach = enchOf(st, 'breach');
     }
+    if (enchOf(st, 'breach')) src.breach = enchOf(st, 'breach');
     const crit = strong && P.fallDistance > 0 && !P.onGround && !P.climbing && !P.inWater && !m.riding && !P.flying
       && !P.sprinting && !lv(fx, 'blindness') && !lv(fx, 'slow_falling') && w.kind !== 'spear';
     if (crit) base *= 1.5;
@@ -148,10 +149,7 @@ export class Combat {
       P.sprinting = false;
     }
     if (sweep) this.sweep(e, st, base, c, sn, cs);
-    // what the enchantments do after a hit
-    const fa = enchOf(st, 'fire_aspect');
-    if (fa && e.setFire && !e.dead) e.setFire(4 * fa);
-    if (enchOf(st, 'bane_of_arthropods') && ARTHROPOD.has(e.type) && e.slow !== undefined) e.slow = Math.max(e.slow, 20 + Math.floor(R() * 10 * enchOf(st, 'bane_of_arthropods')));
+    this.afterHit(e, st);
     if (smash) this.smashed(e, st);
     // sparks: the critical's stars, the enchantments' blue ones, and dark hearts for a big hit
     // the game's crit emitters: 3 ticks of sparks round the middle of what was hit (entities/particles.js emit)
@@ -165,6 +163,28 @@ export class Combat {
     if (this.sv && !this.creative) this.sv.exhaust(0.1);
     this.lastHit = { dmg: base + bonus, base, bonus, crit, sweep, smash, knock: kb, cooldown: c, before: hp0, after: e.health };
     return true;
+  }
+  /* Lunge, after a spear's jab (26.1.2's enchantment/lunge.json, post_piercing_attack): unless riding, gliding
+     or in water, and with at least 7 food (or in creative), the jab pushes you along the look's level part by
+     0.458 a level (apply_impulse, direction forward, coordinate scale 1/0/1, not normalised again), costs 4
+     exhaustion a level and 1 durability, and plays item.spear.lunge_<level> (sound/game.js). Returns the level
+     when it went, else 0. */
+  lunge(st) {
+    const lvl = Math.min(3, enchOf(st, 'lunge'));
+    if (!lvl) return 0;
+    const m = this.m, P = this.P, sv = this.sv;
+    if (m.riding || P.gliding || P.inWater || P.swimming) return 0;
+    if (!this.creative && sv && sv.food < 7) return 0;
+    const k = 0.458 * lvl, cp = Math.cos(P.pitch);
+    P.vel.x += -Math.sin(P.yaw) * cp * k; P.vel.z += -Math.cos(P.yaw) * cp * k;
+    if (sv) sv.exhaust(4 * lvl);
+    if (!this.creative) this.wearHeld(1);
+    return lvl;
+  }
+  // a jab into the air (manager.swung): a spear at full charge still lunges
+  airJab() {
+    const st = this.held();
+    if (st && weaponOf(st.id).kind === 'spear' && this.cooldown() >= 1) this.lunge(st);
   }
   /* A hit on something the manager does not keep (the dragon's parts, an
      end crystal: dim/realms.js): the same damage by the same rules, the
@@ -182,6 +202,17 @@ export class Combat {
     if (this.sv && !this.creative) this.sv.exhaust(0.1);
     return base + bonus;
   }
+  /* What the enchantments do to something hit (the target, and each one a sweep reaches):
+     Fire Aspect sets it alight for 4 seconds a level, Bane of Arthropods gives an arthropod
+     Slowness IV for 1.5 seconds to 1.5 + half a second a level above the first (26.1.2's apply_mob_effect:
+     round(20 x a duration between min 1.5 and 1.5 + 0.5 per level above the first)) */
+  afterHit(e, st) {
+    if (e.dead) return;
+    const fa = enchOf(st, 'fire_aspect');
+    if (fa && e.setFire) e.setFire(4 * fa);
+    const bane = enchOf(st, 'bane_of_arthropods');
+    if (bane && ARTHROPOD.has(e.type) && e.addEffect) e.addEffect('slowness', 4, 30 + Math.round(R() * 10 * (bane - 1)), this.m.player);
+  }
   // a sword's sweep: everything within a block of the target (and within 3 of you) takes 1 (and Sweeping Edge's share)
   sweep(e, st, base, c, sn, cs) {
     const m = this.m, P = this.P;
@@ -196,8 +227,9 @@ export class Combat {
     });
     for (const o of hit) {
       o.knockback(0.4, sn, cs);
-      o.hurt((1 + ratio * base + enchantBonus(st, o)) * c, { type: 'player', attacker: m.player, player: true, x: P.pos.x, z: P.pos.z });
+      const ok = o.hurt((1 + ratio * base + enchantBonus(st, o)) * c, { type: 'player', attacker: m.player, player: true, x: P.pos.x, z: P.pos.z });
       o.lastHurtByPlayer = m.age;
+      if (ok) this.afterHit(o, st);
     }
     m.particlesP.add('sweep', P.pos.x - sn, P.pos.y + 0.9, P.pos.z - cs, 1, 0);
     return hit.length;
@@ -208,17 +240,32 @@ export class Combat {
     P.fallDistance = 0;
     P.vel.y = 0.01;
     const k = fall > 5 ? 2 : 1;
+    // the ring of dust from the block under the target (the game's knockback() starts with level event 2013)
+    const bx = Math.floor(e.pos.x), by = Math.floor(e.pos.y - 0.2), bz = Math.floor(e.pos.z);
+    this.smashDust(bx, by, bz, m.world ? m.world.get(bx, by, bz) : 0);
     m.forNear(e.pos.x, e.pos.z, 4, o => {
-      if (o === e || o.removed || o.dead || !(o instanceof Living) || o === m.riding) return;
+      if (o === e || o.removed || o.dead || !(o instanceof Living || o.remotePlayer) || o === m.riding) return;
       const dx = o.pos.x - e.pos.x, dz = o.pos.z - e.pos.z, d = Math.hypot(dx, o.pos.y - e.pos.y, dz);
       if (d > 3.5) return;
       const f = (3.5 - d) * 0.7 * k * (1 - (o.kbResist || 0));
       const l = Math.hypot(dx, dz) || 1;
+      // (another player: sent to their machine, which takes off their own knockback resistance)
+      if (o.remotePlayer) { o.push(dx / l * f, 0.7 * f, dz / l * f); return; }
       o.vel.x += dx / l * f; o.vel.y += 0.7 * f; o.vel.z += dz / l * f;
     });
-    // Wind Burst: up you go again
+    // Wind Burst: a burst of wind where you are throws you up again, x1.2, x1.75, x2.2 (less 15% a level of Blast Protection worn)
     const wb = enchOf(st, 'wind_burst');
-    if (wb) P.vel.y = 1.2 + 0.35 * (wb - 1);
+    if (wb) {
+      let bp = 0;
+      for (const a of (this.inv && this.inv.armor) || []) bp += enchOf(a, 'blast_protection');
+      P.vel.y += ([1.2, 1.75, 2.2][wb - 1] || 1.5 + 0.35 * (wb - 1)) * Math.max(0, 1 - 0.15 * bp);
+      P.onGround = false;
+    }
+  }
+  // the dust itself (net/events.js wraps this to show it to the others near)
+  smashDust(x, y, z, b) {
+    const L = typeof window !== 'undefined' ? window.__lc2 : null, P = L && L.renderer && L.renderer.particles;
+    if (b && P && P.smash) try { P.smash(x, y, z, b); } catch (err) { /* no dust */ }
   }
   // wear on the held item (a tool used in a fight)
   wearHeld(n) { if (this.inv && this.inv.damageSelected) this.inv.damageSelected(n); }
@@ -339,7 +386,8 @@ export class Combat {
   blocked(amount, src) {
     const m = this.m, P = this.P, a = src.attacker;
     // a melee attacker is pushed back; an axe puts the shield down for 5 seconds
-    if (src.type === 'mob' && a && a.knockback && !src.direct) a.knockback(0.5, P.pos.x - a.pos.x, P.pos.z - a.pos.z);
+    // (another player's too: sent back to their machine, net.js struck)
+    if ((src.type === 'mob' || (a && a.remotePlayer)) && a && a.knockback && a.pos && !src.direct) a.knockback(0.5, P.pos.x - a.pos.x, P.pos.z - a.pos.z);
     if (src.axe) this.disableShield();
     // the shield wears by the hit, rounded up, from 3 up
     if (amount >= 3 && !this.creative) {
@@ -371,7 +419,7 @@ export class Combat {
     }
     if (it.name === 'crossbow') {
       if (stack.charged && stack.charged.length) { this.fireCrossbow(stack); return true; }
-      if (!this.creative && !this.findAmmo()) return false;
+      if (!this.creative && !this.findAmmo(true)) return false;
       this.begin('crossbow', stack);
       return true;
     }
@@ -432,7 +480,7 @@ export class Combat {
     const mount = m.riding, mv = P.moved || [0, 0, 0];
     const v = mount ? { x: mount.pos.x - mount.prev.x, y: mount.pos.y - mount.prev.y, z: mount.pos.z - mount.prev.z } : { x: mv[0], y: mv[1], z: mv[2] };
     m.forNear(ex, ez, 8, t => {
-      if (!(t instanceof Living) || t.dead || t.removed || t === m.riding || t.vehicle === m.riding && m.riding) return;
+      if (!(t instanceof Living || t.remotePlayer) || t.dead || t.removed || t === m.riding || t.vehicle === m.riding && m.riding) return;
       const d = rayBox(ex, ey, ez, lx, ly, lz, t.pos.x - t.hw - g, t.pos.y - g, t.pos.z - t.hw - g, t.pos.x + t.hw + g, t.pos.y + t.h + g, t.pos.z + t.hw + g);
       if (!(d <= 4.5)) return;
       const last = u.hits.get(t);
@@ -460,13 +508,16 @@ export class Combat {
   static bowPower(t) { const f = t / 20; return Math.min(1, (f * f + f * 2) / 3); }
 
   /* The arrows to shoot: the off hand first, then the main hand, then the
-     inventory from the first slot. A crossbow also takes a firework rocket
-     (not in the game yet). Returns { stack, slot } or null. */
-  findAmmo() {
+     inventory from the first slot. A crossbow also takes a firework rocket,
+     but only from a hand (the game's getHeldProjectile: arrow or firework in
+     the off hand, then the main hand; the inventory is searched for arrows
+     only). Returns { stack, slot } or null. */
+  findAmmo(crossbow) {
     const inv = this.inv;
     const isArrow = s => s && ITEMS[s.id] && ARROWS.includes(ITEMS[s.id].name);
-    if (isArrow(inv.offhand)) return { stack: inv.offhand, slot: 'off' };
-    if (isArrow(inv.slots[inv.selected])) return { stack: inv.slots[inv.selected], slot: inv.selected };
+    const held = crossbow ? (s => isArrow(s) || (s && ITEMS[s.id] && ITEMS[s.id].name === 'firework_rocket')) : isArrow;
+    if (held(inv.offhand)) return { stack: inv.offhand, slot: 'off' };
+    if (held(inv.slots[inv.selected])) return { stack: inv.slots[inv.selected], slot: inv.selected };
     for (let i = 0; i < 36; i++) if (isArrow(inv.slots[i])) return { stack: inv.slots[i], slot: i };
     return null;
   }
@@ -524,9 +575,11 @@ export class Combat {
   }
   // the crossbow takes its arrow (three with Multishot, from one) when let go after a full load
   loadCrossbow(s) {
-    const ammo = this.findAmmo();
+    const ammo = this.findAmmo(true);
     if (!ammo && !this.creative) return false;
-    const kind = ammo ? ITEMS[ammo.stack.id].name : 'arrow', potion = ammo ? ammo.stack.potion || null : null;
+    const kind = ammo ? ITEMS[ammo.stack.id].name : 'arrow';
+    // a rocket keeps its flight and stars in the potion's place
+    const potion = !ammo ? null : kind === 'firework_rocket' ? { flight: ammo.stack.flight || 1, explosions: ammo.stack.explosions || [] } : ammo.stack.potion || null;
     const n = enchOf(s, 'multishot') ? 3 : 1;
     s.charged = [];
     for (let i = 0; i < n; i++) s.charged.push(potion ? [kind, potion, i === 0 && !this.creative] : [kind, null, i === 0 && !this.creative]);
@@ -542,6 +595,7 @@ export class Combat {
     let fired = 0;
     for (let i = 0; i < shots.length; i++) {
       const [kind, potion, keep] = shots[i];
+      if (kind === 'firework_rocket') { if (this.shootRocket(potion, offs[i] || 0)) fired += 3; continue; }  // a rocket wears the crossbow by 3
       const a = this.shoot(kind, potion, 3.15, 1, offs[i] || 0);
       if (!a) continue;
       a.crit = true;
@@ -554,6 +608,19 @@ export class Combat {
     this.inv.changed();
     if (this.m.R) this.m.R.swing = 1;
     this.lastShot = { kind: 'crossbow', count: fired, pierce };
+  }
+  /* A firework rocket off a crossbow (the game's CrossbowItem.shootProjectile): from 0.15 under the eyes, at 1.6
+     (the crossbow's power with a rocket loaded, against 3.15 for arrows), inaccuracy 1, no shooter's motion added;
+     it flies straight with no gravity (shot at an angle) and goes off on what it hits (items2.js FireworkRocket). */
+  shootRocket(st, yawOff) {
+    const m = this.m, P = this.P;
+    const r = m.spawn('firework_rocket', P.pos.x, P.pos.y + (P.eyeH || 1.62) - 0.15, P.pos.z, { natural: false });
+    if (!r) return null;
+    r.init(st || { flight: 1, explosions: [] });
+    r.owner = m.player; r.angled = true;
+    const dir = this.look(yawOff);
+    r.shootAt(dir.x, dir.y, dir.z, 1.6, 1);
+    return r;
   }
   // in water, or out in the rain (Riptide's rule)
   wetOrRain() {
@@ -600,7 +667,7 @@ export class Combat {
     if (!this.spin) { P.spinning = false; return; }
     let hit = null;
     m.forNear(P.pos.x, P.pos.z, 3, e => {
-      if (hit || e.removed || e.dead || !(e instanceof Living) || e === m.riding) return;
+      if (hit || e.removed || e.dead || !(e instanceof Living || e.remotePlayer) || e === m.riding) return;
       if (Math.abs(e.pos.x - P.pos.x) < e.hw + 0.3 + 0.3 && Math.abs(e.pos.z - P.pos.z) < e.hw + 0.3 + 0.3 && e.pos.y < P.pos.y + 1.8 + 0.3 && e.pos.y + e.h > P.pos.y - 0.3) hit = e;
     });
     if (hit) {

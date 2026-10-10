@@ -24,15 +24,15 @@
    after travelling, kept topped up while you stand in a portal; end portals
    and gateways at once.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=39';
-import { Y0 } from '../world-const.js?v=39';
-import { DIMS } from '../dims.js?v=39';
-import { explode } from '../explosion.js?v=39';
-import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=39';
-import { EndFight, gatewayBlocks } from './endfight.js?v=39';
-import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=39';
-import { mix32, rng } from '../noise.js?v=39';
-import { portalSwirl } from './art.js?v=39';
+import { B, BLOCKS } from '../blocks.js?v=40';
+import { Y0 } from '../world-const.js?v=40';
+import { DIMS } from '../dims.js?v=40';
+import { explode } from '../explosion.js?v=40';
+import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=40';
+import { EndFight, gatewayBlocks } from './endfight.js?v=40';
+import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=40';
+import { mix32, rng } from '../noise.js?v=40';
+import { portalSwirl } from './art.js?v=40';
 const THREE = window.THREE;
 
 const E = y => y - Y0;                     // world y -> engine y
@@ -146,7 +146,7 @@ export class Realms {
   }
   crystalDestroyed(c, source) {
     if (this.fight) this.fight.crystalDestroyed(c, source);
-    else this.explode(c.pos.x, c.pos.y + 1, c.pos.z, 6, { source: 'end_crystal' });
+    else this.explode(c.pos.x, c.pos.y + 1, c.pos.z, 6, { source: 'end_crystal', by: source });
   }
 
   /* ---- each tick ---- */
@@ -359,8 +359,8 @@ export class Realms {
       }
     }
     if (d.use === 'ignite') {
-      // TNT is lit, not set beside (sim/bodies.js primes it)
-      if (hit.b === B.tnt && g.sim && g.sim.primeTnt) { w.set(hit.x, hit.y, hit.z, 0, 0); g.sim.primeTnt(hit.x, hit.y, hit.z, g.player, 80); this.usedItem(id); return true; }
+      // TNT is lit, not set beside (sim/bodies.js primes it), owned by the player entity, as the game's PrimedTnt owner is (net/events.js credits the blast to it)
+      if (hit.b === B.tnt && g.sim && g.sim.primeTnt) { w.set(hit.x, hit.y, hit.z, 0, 0); g.sim.primeTnt(hit.x, hit.y, hit.z, (g.entities && g.entities.player) || g.player, 80); this.usedItem(id); return true; }
       const n = hit.face;
       let x = hit.x, y = hit.y, z = hit.z;
       if (!hb.replaceable || hit.b === B.fire) { x += n[0]; y += n[1]; z += n[2]; }

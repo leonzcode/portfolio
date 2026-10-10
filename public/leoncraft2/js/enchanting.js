@@ -38,10 +38,11 @@
    the total of each enchantment's lowest cost (rounded up), plus up to as
    much again less one. What comes out keeps a prior work of 2^curses - 1.
 --------------------------------------------------------------------------- */
-import { ENCHANTS } from './itemdata.js?v=39';
-import { ITEMS, I, maxDamage, withCount } from './items.js?v=39';
-import { LegacyRandom } from './gen/random.js?v=39';
-import { BLOCKS } from './blocks.js?v=39';
+import { ENCHANTS } from './itemdata.js?v=40';
+import { ITEMS, I, maxDamage, withCount, displayName } from './items.js?v=40';
+import { register, fail, int, self } from './commands.js?v=40';
+import { LegacyRandom } from './gen/random.js?v=40';
+import { BLOCKS } from './blocks.js?v=40';
 
 /* min and max cost: [base, per level above the first] for each */
 const COST = {
@@ -319,6 +320,29 @@ export function enchName(k, lv) {
   const n = e ? e.display : k;
   return e && e.maxLevel === 1 ? n : n + ' ' + (R[lv] || lv);
 }
+
+/* ---- /enchant <targets> <enchantment> [level]: on the held item, as the game's command does it:
+   refused for an item that cannot carry it or that carries one it clashes with (the same one
+   included), and above the enchantment's highest level ---- */
+register('enchant', {
+  usage: '<targets> <enchantment> [level]',
+  suggest: (i, w) => i === 0 ? ['@s'] : i === 1 ? Object.keys(ENCH).sort().map(n => 'minecraft:' + n).filter(n => n.indexOf((w[1] || '').replace(/^minecraft:/, '')) >= 0) : ['1'],
+  run(args, ctx) {
+    if (args.length < 2) fail('Incomplete command');
+    self(args[0], ctx);
+    const name = args[1].replace(/^minecraft:/, ''), e = ENCH[name];
+    if (!e) fail(`Can't find element 'minecraft:${name}' of type 'minecraft:enchantment'`);
+    const lv = args[2] === undefined ? 1 : int(args[2], 0);
+    if (lv > e.maxLevel) fail(`${lv} is higher than the maximum level of ${e.maxLevel} supported by that enchantment`);
+    const inv = ctx.game.inv, st = inv ? inv.slots[inv.selected] : null;
+    if (!st) fail(`${ctx.playerName} is not holding any item`);
+    const it = ITEMS[st.id];
+    if (!it || (it.ench || []).indexOf(e.category) < 0 || Object.keys(st.ench || {}).some(k => !compatible(k, name))) fail(`${displayName(st.id)} cannot support that enchantment`);
+    if (lv > 0) { st.ench = Object.assign({}, st.ench); st.ench[name] = lv; }
+    inv.changed();
+    ctx.say(`Applied enchantment ${enchName(name, lv)} to ${ctx.playerName}'s item`);
+  },
+});
 
 /* ---- for tests (window.__lc2.enchanting): the table, the anvil and the levels, by name ---- */
 export function enchantDebug(game) {

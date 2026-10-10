@@ -19,10 +19,10 @@
    made and every tick after), so a piece falling into a dark hole darkens
    and dust kicked up by a torch is lit by it.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, SOLID } from '../blocks.js?v=39';
-import { VANILLA } from './vanilla.js?v=39';
-import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=39';
-import { Terrain } from '../entities/terrain.js?v=39';
+import { BLOCKS, B, SOLID } from '../blocks.js?v=40';
+import { VANILLA } from './vanilla.js?v=40';
+import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=40';
+import { Terrain } from '../entities/terrain.js?v=40';
 const THREE = window.THREE;
 
 const MAX = 1500;
@@ -241,6 +241,17 @@ export class Particles {
     const p = this.terrain(px, py, pz, 0, 0, 0, look);
     p.xd *= 0.2; p.yd = (p.yd - 0.1) * 0.2 + 0.1; p.zd *= 0.2;
     p.size *= 0.6;
+  }
+  // a mace's smash (the game's level event 2013, ParticleUtils.spawnSmashAttackParticles): dust of the block the
+  // target stands on, power / 3 round the middle of its top and power / 1.5 in a ring 3.5 out (the game passes 750)
+  smash(x, y, z, b, power = 750) {
+    if (!b) return;
+    const look = this.look(b, x, z);
+    if (!look) return;
+    const cx = x + 0.5, cy = y + 1, cz = z + 0.5;
+    const gs = () => { let u = 0; while (!u) u = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random()); };
+    for (let i = 0; i < power / 3; i++) this.terrain(cx + gs() / 2, cy, cz + gs() / 2, gs() * 0.2, gs() * 0.2, gs() * 0.2, look);
+    for (let j = 0; j < power / 1.5; j++) this.terrain(cx + 3.5 * Math.cos(j) + gs() / 2, cy, cz + 3.5 * Math.sin(j) + gs() / 2, gs() * 0.05, gs() * 0.05, gs() * 0.05, look);
   }
   // anything else: { colour: 0xRRGGBB, size, life, gravity, friction, physics, block }
   spawn(x, y, z, xd, yd, zd, o = {}) {

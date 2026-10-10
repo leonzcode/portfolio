@@ -7,11 +7,11 @@
    range, size, loot, experience, and the goals each one runs, in the
    game's priority order.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK } from './entity.js?v=39';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, looted } from './entity.js?v=40';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal, EatGrassGoal,
-  MeleeAttackGoal, BowAttackGoal, SwellGoal, LeapGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal } from './ai.js?v=39';
-import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=39';
-import { itemId, armorOf } from '../items.js?v=39';
+  MeleeAttackGoal, BowAttackGoal, SwellGoal, LeapGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal } from './ai.js?v=40';
+import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=40';
+import { itemId, armorOf } from '../items.js?v=40';
 
 const R = () => Math.random();
 const RI = n => Math.floor(Math.random() * n);
@@ -166,9 +166,11 @@ export class Zombie extends Monster {
     }
     this.doorT = 0;
   }
-  loot(drop, byPlayer) {
-    drop('rotten_flesh', RI(3));
-    if (byPlayer && R() < 0.025) drop(['iron_ingot', 'carrot', 'potato'][RI(3)], 1);
+  /* L: the Looting on what killed it (manager.js onDeath): a common drop gets up to one
+     more a level, a rare one a percentage point more a level */
+  loot(drop, byPlayer, L) {
+    drop('rotten_flesh', RI(3) + looted(L));
+    if (byPlayer && R() < 0.025 + 0.01 * L) drop(['iron_ingot', 'carrot', this.fire > 0 ? 'baked_potato' : 'potato'][RI(3)], 1);
   }
   doHurtTarget(t) {
     const ok = super.doHurtTarget(t);
@@ -184,10 +186,9 @@ export class Zombie extends Monster {
 }
 Zombie.CONVERTS_TO = 'drowned';
 register('zombie', Zombie);
-// a husk: does not burn, and its hit makes you hungry
+// a husk: does not burn, and its hit makes you hungry (it drops what a zombie drops)
 export class Husk extends Zombie {
   static UNDEAD = false; static TEX = 'husk'; static CONVERTS_TO = 'zombie';
-  loot(drop) { drop('rotten_flesh', RI(3)); }
   doHurtTarget(t) { const ok = super.doHurtTarget(t); if (ok && t.isPlayer) this.m.effectPlayer('hunger', 140 * 2); return ok; }
 }
 register('husk', Husk);
@@ -254,11 +255,11 @@ export class Drowned extends Zombie {
     }
     super.aiStep();
   }
-  loot(drop, byPlayer) { drop('rotten_flesh', RI(3)); if (byPlayer && R() < 0.11) drop('copper_ingot', 1); }
+  loot(drop, byPlayer, L) { drop('rotten_flesh', RI(3) + looted(L)); if (byPlayer && R() < 0.11 + 0.02 * L) drop('copper_ingot', 1); }
 }
 register('drowned', Drowned);
 const BIOME_NAMES = [];
-import('../biomes.js?v=39').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
+import('../biomes.js?v=40').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
 
 /* ---- Zombie villager: a zombie with a villager's face ---- */
 export class ZombieVillager extends Zombie {
@@ -302,7 +303,7 @@ export class Skeleton extends Monster {
     if (this.constructor.STRAY) a.effect = 'slowness';
     this.swing();
   }
-  loot(drop) { drop('bone', RI(3)); drop('arrow', RI(3)); }
+  loot(drop, byPlayer, L) { drop('bone', RI(3) + looted(L)); drop('arrow', RI(3) + looted(L)); }
   /* Seven seconds in powder snow and a skeleton starts to shake; fifteen
      more and it is a stray. */
   aiStep() {
@@ -320,7 +321,7 @@ export class Skeleton extends Monster {
 register('skeleton', Skeleton);
 export class Stray extends Skeleton {
   static TEX = 'stray'; static STRAY = true;
-  loot(drop, byPlayer) { drop('bone', RI(3)); drop('arrow', RI(3)); if (byPlayer && R() < 0.5) drop('tipped_arrow', 1); }
+  loot(drop, byPlayer, L) { drop('bone', RI(3) + looted(L)); drop('arrow', RI(3) + looted(L)); if (byPlayer) drop('tipped_arrow', Math.min(1, RI(2) + looted(L))); }
 }
 register('stray', Stray);
 
@@ -367,7 +368,7 @@ export class Creeper extends Monster {
     }
     super.tick();
   }
-  loot(drop) { drop('gunpowder', RI(3)); }
+  loot(drop, byPlayer, L) { drop('gunpowder', RI(3) + looted(L)); }
   anim(A, a) { A.swell = (this.oSwell + (this.swell - this.oSwell) * a) / (this.fuse - 2); }
   toJSON() { const o = super.toJSON(); if (this.charged) o.ch = 1; if (this.ignited) o.ig = 1; return o; }
   fromJSON(o) { super.fromJSON(o); this.charged = !!o.ch; this.ignited = !!o.ig; }
@@ -391,7 +392,7 @@ export class Spider extends Monster {
     this.targets.add(2, new NearestPlayerTargetGoal(this, true, () => this.m.brightness(Math.floor(this.pos.x), Math.floor(this.pos.y + 0.5), Math.floor(this.pos.z)) < 0.5));
   }
   aiStep() { this.climbing = this.hCollide; super.aiStep(); }
-  loot(drop, byPlayer) { drop('string', RI(3)); if (byPlayer && RI(3) === 0) drop('spider_eye', 1); }
+  loot(drop, byPlayer, L) { drop('string', RI(3) + looted(L)); if (byPlayer) drop('spider_eye', (RI(3) === 0 ? 1 : 0) + looted(L)); }
   // spiders' jockeys and effects on Hard are left out
 }
 // the spider gives up the chase in daylight (one chance in a hundred a tick)
@@ -479,7 +480,7 @@ export class Pig extends Animal {
   // a burst from the carrot on a stick: 140 to 980 ticks, the speed rising and falling up to 2.15 times (as the strider's)
   boost() { if (this.boostT > 0) return false; this.boostLen = this.boostT = 140 + RI(841); return true; }
   boostFactor() { return this.boostT > 0 ? 1 + 1.15 * Math.sin((1 - this.boostT / this.boostLen) * Math.PI) : 1; }
-  loot(drop) { drop(this.fire > 0 ? 'cooked_porkchop' : 'porkchop', between(1, 3)); if (this.saddled) drop('saddle', 1); }
+  loot(drop, byPlayer, L) { drop(this.fire > 0 ? 'cooked_porkchop' : 'porkchop', between(1, 3) + looted(L)); if (this.saddled) drop('saddle', 1); }
   interact(held) {
     if (held === 'saddle' && !this.saddled && this.ageT >= 0) { this.saddled = true; return 'consume'; }
     if (this.saddled && this.passengers.length === 0 && held !== 'carrot' && held !== 'potato' && held !== 'beetroot') { this.m.mount(this); return 'swing'; }
@@ -507,7 +508,7 @@ register('pig', Pig);
 export class Cow extends Animal {
   static W = 0.9; static H = 1.4; static HEALTH = 10; static SPEED = 0.2; static PANIC = 2; static TEMPT = 1.25;
   static MODEL = 'cow'; static TEX = 'cow'; static SHADOW = 0.7;
-  loot(drop) { drop('leather', RI(3)); drop(this.fire > 0 ? 'cooked_beef' : 'beef', between(1, 3)); }
+  loot(drop, byPlayer, L) { drop('leather', RI(3) + looted(L)); drop(this.fire > 0 ? 'cooked_beef' : 'beef', between(1, 3) + looted(L)); }
   interact(held) {
     if (held === 'bucket' && this.ageT >= 0) return 'milk';
     return super.interact(held);
@@ -547,7 +548,7 @@ export class Sheep extends Animal {
     }
     return super.interact(held);
   }
-  loot(drop) { if (!this.sheared) drop(this.color + '_wool', 1); drop(this.fire > 0 ? 'cooked_mutton' : 'mutton', between(1, 2)); }
+  loot(drop, byPlayer, L) { if (!this.sheared) drop(this.color + '_wool', 1); drop(this.fire > 0 ? 'cooked_mutton' : 'mutton', between(1, 2) + looted(L)); }
   layers(out) { if (!this.sheared) out.push(['sheep_wool', 'sheep_wool', DYE_RGB[this.color]]); }
   anim(A, a) { const e = this.extra.eatT || 0; A.eating = e <= 0 ? 0 : e >= 4 && e <= 36 ? 1 : e < 4 ? (e - a) / 4 : -(e - 40 - a) / 4; }
   toJSON() { const o = super.toJSON(); o.c = this.color; if (this.sheared) o.sh = 1; return o; }
@@ -576,7 +577,7 @@ export class Chicken extends Animal {
       this.eggT = 6000 + RI(6000);
     }
   }
-  loot(drop) { drop('feather', RI(3)); drop(this.fire > 0 ? 'cooked_chicken' : 'chicken', 1); }
+  loot(drop, byPlayer, L) { drop('feather', RI(3) + looted(L)); drop(this.fire > 0 ? 'cooked_chicken' : 'chicken', 1 + looted(L)); }
   anim(A, a) {
     const f = this.oFlap + (this.flap - this.oFlap) * a, s = this.oFlapSpeed + (this.flapSpeed - this.oFlapSpeed) * a;
     A.flap = (Math.sin(f) + 1) * s;

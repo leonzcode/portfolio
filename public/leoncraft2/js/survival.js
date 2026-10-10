@@ -67,11 +67,11 @@
    Experience: a level takes 2L + 7 points up to 15, 5L - 38 up to 30, and
    9L - 158 after that.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=39';
-import { I, ITEMS, armorOf } from './items.js?v=39';
-import { wear } from './ui/inventory.js?v=39';
-import { sourceOf, deathMessage } from './damage.js?v=39';
-import { effectId, EFFECTS } from './effects.js?v=39';
+import { B, BLOCKS, FLUID } from './blocks.js?v=40';
+import { I, ITEMS, armorOf } from './items.js?v=40';
+import { wear } from './ui/inventory.js?v=40';
+import { sourceOf, deathMessage } from './damage.js?v=40';
+import { effectId, EFFECTS } from './effects.js?v=40';
 
 const BYPASS_ARMOR = new Set(['fall', 'drown', 'starve', 'void', 'magic', 'poison', 'wither', 'suffocation', 'generic', 'freeze', 'kill']);
 const FIRE = new Set(['lava', 'fire', 'on_fire', 'hot_floor']);
@@ -127,9 +127,10 @@ export class Survival {
     let dmg = def.armor ? this.afterArmor(amount) : amount;
     return Math.max(0, this.afterMagic(dmg, src));
   }
-  afterArmor(dmg) {
+  // (Breach on the weapon takes 15 percentage points a level off what the armour stops, as weapons.js afterArmor and the game's CombatRules)
+  afterArmor(dmg, breach) {
     const { points, toughness } = this.armorValues();
-    return dmg * (1 - Math.min(20, Math.max(points / 5, points - 4 * dmg / (toughness + 8))) / 25);
+    return dmg * (1 - Math.max(0, Math.min(20, Math.max(points / 5, points - 4 * dmg / (toughness + 8))) / 25 - 0.15 * (breach || 0)));
   }
   // Resistance, then the Protection enchantments (both passed over by starving; the void and /kill pass Resistance)
   afterMagic(dmg, src) {
@@ -228,7 +229,7 @@ export class Survival {
   // armour, effects, enchantments, absorption, then health
   actuallyHurt(src, amount) {
     const def = src.def;
-    if (def.armor) { this.wearArmor(amount, def); amount = this.afterArmor(amount); }
+    if (def.armor) { this.wearArmor(amount, def); amount = this.afterArmor(amount, src.raw && src.raw.breach); }
     amount = this.afterMagic(amount, src);
     const health = Math.max(amount - this.absorption, 0);
     this.absorption -= amount - health;

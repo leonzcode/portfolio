@@ -28,27 +28,27 @@
    wear on mobs (wearHeld), worn-out tools break into pieces, and Mending
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=39';
-import { setLodestoneCheck } from './dials.js?v=39';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=39';
-import { breakTicks, wearFor } from './mining.js?v=39';
-import { blockDrops } from './loot.js?v=39';
-import { containerKind, spill } from './containers.js?v=39';
-import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=39';
-import { isPotion, drinkPotion } from './brewing.js?v=39';
-import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=39';
-import { BeaconScreen } from './ui/beacon.js?v=39';
-import { STORE as BEACON_POWERS } from './sim/beacon.js?v=39';
-import { MerchantScreen } from './ui/merchant.js?v=39';
-import { hives } from './entities/hives.js?v=39';
-import { LoomScreen } from './ui/loom.js?v=39';
-import { CartographyScreen } from './ui/cartography.js?v=39';
-import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=39';
-import { countShelves } from './enchanting.js?v=39';
-import { wear } from './ui/inventory.js?v=39';
-import { BookScreen } from './ui/book.js?v=39';
-import { breaksInCreative } from './modes.js?v=39';
-import { boxOpened, bellRang } from './sim/lids.js?v=39';
+import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=40';
+import { setLodestoneCheck } from './dials.js?v=40';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=40';
+import { breakTicks, wearFor } from './mining.js?v=40';
+import { blockDrops } from './loot.js?v=40';
+import { containerKind, spill } from './containers.js?v=40';
+import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=40';
+import { isPotion, drinkPotion } from './brewing.js?v=40';
+import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=40';
+import { BeaconScreen } from './ui/beacon.js?v=40';
+import { STORE as BEACON_POWERS } from './sim/beacon.js?v=40';
+import { MerchantScreen } from './ui/merchant.js?v=40';
+import { hives } from './entities/hives.js?v=40';
+import { LoomScreen } from './ui/loom.js?v=40';
+import { CartographyScreen } from './ui/cartography.js?v=40';
+import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=40';
+import { countShelves } from './enchanting.js?v=40';
+import { wear } from './ui/inventory.js?v=40';
+import { BookScreen } from './ui/book.js?v=40';
+import { breaksInCreative } from './modes.js?v=40';
+import { boxOpened, bellRang } from './sim/lids.js?v=40';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // what a full bucket pours out (the fish buckets are water with a fish in it)
@@ -442,6 +442,8 @@ export class Hands {
     const ar = armorOf(s.id);
     if (ar && !it.block) {
       const old = this.inv.armor[ar.slot];
+      // Curse of Binding keeps what is worn on (but not in creative)
+      if (old && old.ench && old.ench.binding_curse && !this.creative) return false;
       this.inv.armor[ar.slot] = withCount(s, 1);
       if (s.count > 1) { s.count--; if (old) this.inv.placeBack(old); }
       else this.inv.slots[this.inv.selected] = old;
@@ -582,9 +584,9 @@ export class Hands {
   setUsedStack(u, st) { if (u && u.off) this.inv.offhand = st; else this.inv.slots[this.inv.selected] = st; }
   tick() {
     this.mapsTick();
-    // gliding wears the elytra a point a second (never past its last point)
+    // gliding wears the elytra a point a second, Unbreaking sparing it as a tool (never past its last point)
     if (this.player && this.player.gliding && !this.creative) {
-      if (++this.glideT % 20 === 0) { const c = this.inv.armor[1]; if (c) { c.dmg = Math.min((ITEMS[c.id].dur || 432) - 1, (c.dmg | 0) + 1); this.inv.changed(); } }
+      if (++this.glideT % 20 === 0) { const c = this.inv.armor[1]; if (c) { wear(c, 1, false); c.dmg = Math.min((ITEMS[c.id].dur || 432) - 1, c.dmg | 0); this.inv.changed(); } }
     } else this.glideT = 0;
     const u = this.using;
     if (!u) return;

@@ -20,11 +20,11 @@
    through walls) while they sneak, none past 64 blocks. Nothing is drawn of
    a player in another dimension or out of sight range.
 --------------------------------------------------------------------------- */
-import { Avatar } from '../render/avatar.js?v=39';
-import { pieceLook, armorSheet } from '../render/armor.js?v=39';
-import { setLight as setLightOf } from '../render/held.js?v=39';
-import { DRAW, I, stackFromJSON } from '../items.js?v=39';
-import { B, BLOCKS } from '../blocks.js?v=39';
+import { Avatar } from '../render/avatar.js?v=40';
+import { pieceLook, armorSheet } from '../render/armor.js?v=40';
+import { setLight as setLightOf, loadedLook } from '../render/held.js?v=40';
+import { DRAW, I, stackFromJSON } from '../items.js?v=40';
+import { B, BLOCKS } from '../blocks.js?v=40';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -35,7 +35,7 @@ const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
 const idOf = name => !name ? 0 : (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
 
 // the flags each position carries (net/net.js sends them)
-export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024, SPEC: 2048, INVIS: 4096, FIRE: 8192 };
+export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024, SPEC: 2048, INVIS: 4096, FIRE: 8192, SPIN: 16384 };
 // what the use button can be doing with a hand (render/avatar.js useNow kinds), by number in a position
 export const USE_KINDS = ['eat', 'drink', 'horn', 'bow', 'aim', 'crossbow', 'block', 'trident', 'spear', 'spyglass'];
 // sitting on something this machine does not have (a horse): the legs sit
@@ -81,6 +81,7 @@ export class RemotePlayers {
     if (r.av) {
       const av = r.av, R = this.R;
       for (const m of [av.mesh, av.armor]) { R.scene.remove(m); }
+      av.dropSwirl();
       av.mesh.geometry.dispose(); av.arm.geometry.dispose();
       for (let s = 0; s < 2; s++) av.setHeld(s, null);
       av.setHeadItem(null);
@@ -147,14 +148,16 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=39', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=40', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
   }
   equip(r) {
     const av = r.av, eq = r.eq || {}, R = this.R;
     const h = idOf(eq.h), o = idOf(eq.o);
-    if (r.heldId !== h) { r.heldId = h; av.setHeld(0, DRAW[h] || null); }
-    if (r.offId !== o) { r.offId = o; av.setHeld(1, DRAW[o] || null); }
+    // (a loaded crossbow in its loaded picture, as held.js shows yours)
+    const hk = h + (eq.hc || ''), ok = o + (eq.oc || '');
+    if (r.heldKey !== hk) { r.heldKey = hk; r.heldId = h; av.setHeld(0, loadedLook(DRAW[h], eq.hc) || null); }
+    if (r.offKey !== ok) { r.offKey = ok; r.offId = o; av.setHeld(1, loadedLook(DRAW[o], eq.oc) || null); }
     av.glintHeld(0, !!eq.hg); av.glintHeld(1, !!eq.og);
     const armor = [0, 1, 2, 3].map(i => (eq.a && eq.a[i] ? stackFromJSON(eq.a[i]) : null));
     av.setArmor(armor);
@@ -229,7 +232,7 @@ export class RemotePlayers {
       P.w = world;
       P.dying = r.dying || 0;
       r.invis = !!(p.f & F.INVIS);
-      P.sneaking = !!(p.f & F.SNEAK); P.flying = !!(p.f & F.FLY); P.gliding = !!(p.f & F.GLIDE);
+      P.sneaking = !!(p.f & F.SNEAK); P.flying = !!(p.f & F.FLY); P.gliding = !!(p.f & F.GLIDE); P.spinning = !!(p.f & F.SPIN);
       P.riding = p.f & F.RIDE ? (seat ? seat.v : SEAT) : null;
       P.bed = null;
       if (p.f & F.SLEEP) {

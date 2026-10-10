@@ -23,9 +23,9 @@
    The item model numbers (where and how far round each kind sits) are the
    game's display settings for its block, flat, handheld and rod items.
 --------------------------------------------------------------------------- */
-import { blockGeometry, isFlatItem, shieldGeometry, tridentGeometry } from './blockmesh.js?v=39';
-import { setGlint } from './glint.js?v=39';
-import { textureLayer, DRAW, itemId } from '../items.js?v=39';
+import { blockGeometry, isFlatItem, shieldGeometry, tridentGeometry } from './blockmesh.js?v=40';
+import { setGlint } from './glint.js?v=40';
+import { textureLayer, DRAW, itemId } from '../items.js?v=40';
 const THREE = window.THREE;
 const PI = Math.PI, DEG = PI / 180;
 const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
@@ -161,6 +161,13 @@ export function applyDisplay(m, spec, t, e) {
 /* The mesh for something in a hand: the shield's model, or the block or
    picture (blockmesh.js). */
 let shieldLayers = null, tridentLayers = null;
+/* A crossbow's draw data in its loaded picture ("a" an arrow, "r" a firework
+   rocket), for another player's hand; anything else as it is */
+export function loadedLook(d, c) {
+  if (!d || !c || d.name !== 'crossbow') return d;
+  const L = textureLayer(c === 'r' ? 'crossbow_firework' : 'crossbow_arrow');
+  return L >= 0 ? Object.assign({}, d, { iconLayer: L, faces: [L, L, L, L, L, L] }) : d;
+}
 export function heldGeometry(d) {
   if (d.name === 'shield') {
     if (!shieldLayers) {

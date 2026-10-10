@@ -47,12 +47,12 @@
 
    Meta layouts are listed in sim/states.js.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=39';
-import { F6, HFACE, FACE6, FACE_H, FACE_F6, WEAK, STRONG, COND, SOURCE } from './redstone.js?v=39';
-import { lookFacing } from '../place.js?v=39';
-import { Living } from '../entities/entity.js?v=39';
-import { maxStack } from '../items.js?v=39';
-import { selectionBoxes } from '../models.js?v=39';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=40';
+import { F6, HFACE, FACE6, FACE_H, FACE_F6, WEAK, STRONG, COND, SOURCE } from './redstone.js?v=40';
+import { lookFacing } from '../place.js?v=40';
+import { Living } from '../entities/entity.js?v=40';
+import { maxStack } from '../items.js?v=40';
+import { selectionBoxes } from '../models.js?v=40';
 
 const SIN = new Float32Array(65536);
 for (let i = 0; i < 65536; i++) SIN[i] = Math.sin(i * Math.PI * 2 / 65536);
@@ -920,7 +920,7 @@ export function installParts(sim) {
   // a projectile hitting a block (entities/projectiles.js): targets light up
   const onProjectile = (e, x, y, z) => {
     // a burning arrow or a fireball lights TNT, a campfire or a candle it hits (sim/fire.js)
-    if ((e.fire > 0 || /fireball$/.test(e.type)) && S.projectileFire) S.projectileFire(x, y, z);
+    if ((e.fire > 0 || /fireball$/.test(e.type)) && S.projectileFire) S.projectileFire(x, y, z, e.owner);
     if (S.get(x, y, z) !== B.target || !rs.targetHit) return;
     const p = e.pos, d = [1 - (p.x - x), p.x - x, 1 - (p.y - y), p.y - y, 1 - (p.z - z), p.z - z];
     let f = 0; for (let i = 1; i < 6; i++) if (d[i] < d[f]) f = i;

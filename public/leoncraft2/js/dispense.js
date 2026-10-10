@@ -25,10 +25,10 @@
    An item thrown out leaves from 0.7 of a block in front of the middle of
    the block, at 0.2-0.3 blocks a tick along the facing, spread a little.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=39';
-import { I, ITEMS, withCount, armorOf, maxDamage } from './items.js?v=39';
-import { matchGrid, remainderOf } from './crafting.js?v=39';
-import { containerKind, facingVec, isShulkerBox } from './containers.js?v=39';
+import { B, BLOCKS, FLUID } from './blocks.js?v=40';
+import { I, ITEMS, withCount, armorOf, maxDamage } from './items.js?v=40';
+import { matchGrid, remainderOf } from './crafting.js?v=40';
+import { containerKind, facingVec, isShulkerBox } from './containers.js?v=40';
 
 const nameOf = id => (ITEMS[id] ? ITEMS[id].name : '');
 // the game's triangle distribution: centre + (rand - rand) * spread
@@ -150,7 +150,9 @@ function dispense(sim, C, c, i, st, x, y, z, f, fx, fy, fz) {
     else if (fd && /candle$|candle_cake$/.test(fname) && !(fm & 4)) w.set(fx, fy, fz, front, fm | 4);
     else if (front === B.tnt && sim.primeTnt) { w.set(fx, fy, fz, 0, 0); sim.primeTnt(fx, fy, fz, null, 80); }
     else { sound(sim, 'click_fail', x, y, z); return st; }
-    st.dmg = (st.dmg | 0) + 1;
+    // a point of wear (with Unbreaking only 1 time in level + 1)
+    const ub = st.ench ? st.ench.unbreaking | 0 : 0;
+    if (!ub || Math.random() < 1 / (ub + 1)) st.dmg = (st.dmg | 0) + 1;
     return st.dmg >= maxDamage(st.id) ? null : st;
   }
   if (n === 'tnt' && sim.primeTnt) {

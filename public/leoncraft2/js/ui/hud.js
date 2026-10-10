@@ -19,10 +19,11 @@
      hud.setDebug(leftLines, rightLines); // or hud.setDebug(null) to hide F3
      hud.crosshair = false;               // third person
 --------------------------------------------------------------------------- */
-import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=39';
-import { drawBossBar } from '../dim/bossbar.js?v=39';
-import { BLOCKS, B } from '../blocks.js?v=39';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET } from '../effects.js?v=39';
+import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=40';
+import { drawBossBar } from '../dim/bossbar.js?v=40';
+import { BLOCKS, B } from '../blocks.js?v=40';
+import { I } from '../items.js?v=40';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET } from '../effects.js?v=40';
 
 const TICK = 50;
 
@@ -56,6 +57,10 @@ export class Hud {
 
   setStats(s) {
     const o = this.stats;
+    // a totem just went off (survival.js totemT jumps to 40): its show starts now, from a random side
+    const tt = s && s.totem > 0 ? s.totem : 0;
+    if (tt >= 39 && !(this._totemLast >= tt)) { this._totemAt = performance.now(); this._totemOff = [Math.random() * 2 - 1, Math.random() * 2 - 1]; this._dirty = true; }
+    this._totemLast = tt;
     if (s && o && s.health === o.health && s.food === o.food && s.air === o.air && s.xp === o.xp && s.level === o.level && s.armor === o.armor && s.absorption === o.absorption
       && s.poison === o.poison && s.wither === o.wither && s.hungerEffect === o.hungerEffect && s.regen === o.regen && (s.saturation > 0) === (o.saturation > 0)
       && s.fire === o.fire && s.frozen === o.frozen && s.freeze === o.freeze && s.hardcore === o.hardcore) return;
@@ -105,6 +110,8 @@ export class Hud {
     if (this.stats && this.stats.fire && this.crosshair) this._fire(g, now);
     // freezing in powder snow: frost creeps in from the edges of the screen
     if (this.stats && this.stats.freeze > 0) this._frost(g, this.stats.freeze);
+    // a totem of undying going off: it rises out of the screen and spins (the game's item activation)
+    if (this._totemAt) this._totem(g, now);
 
     // the axes in place of the crosshair while F3 is up and the camera is known
     if (this.debug && this.camera) this._axes(g, cx, Math.floor(H / 2));
@@ -350,6 +357,31 @@ export class Hud {
       }
     }
     ctx.restore();
+  }
+
+  /* ---- the totem of undying ----
+     The game's GameRenderer.renderItemActivationAnimation, over 40 ticks: f the share of the way, the curve
+     a = (10.25 f^5 - 24.95 f^4 + 25.5 f^3 - 13.8 f^2 + 4 f) pi, drawn at the screen's middle moved by the
+     random offsets x a quarter of the screen x |sin 2a|, 50 + 175 sin a GUI pixels across, turned about the
+     upright by 900 |sin a| degrees (the fixed display adds 180) and by 6 cos 8f degrees in its own plane (the
+     game's matching tilt towards you is left out of a flat picture). */
+  _totem(g, now) {
+    const f = (now - this._totemAt) / (40 * TICK);
+    if (!(f < 1) || I.totem_of_undying === undefined) { this._totemAt = 0; return; }
+    const f2 = f * f, f3 = f * f2;
+    const a = (10.25 * f3 * f2 - 24.95 * f2 * f2 + 25.5 * f3 - 13.8 * f2 + 4 * f) * Math.PI;
+    const W = g.width, Hh = g.height, o = this._totemOff || [0, 0], s2 = Math.abs(Math.sin(a * 2));
+    const x = W / 2 + o[0] * (W / 4) * s2, y = Hh / 2 + o[1] * (Hh / 4) * s2;
+    const size = 50 + 175 * Math.sin(a), turn = (900 * Math.abs(Math.sin(a)) + 180) * Math.PI / 180;
+    const ctx = g.ctx;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.translate(x, y);
+    ctx.scale(Math.cos(turn) * size / 16, size / 16);
+    ctx.rotate(6 * Math.cos(f * 8) * Math.PI / 180);
+    this.icons.draw(g, I.totem_of_undying, -8, -8);
+    ctx.restore();
+    this._wakeAt(now + 1);
   }
 
   /* ---- frozen ----

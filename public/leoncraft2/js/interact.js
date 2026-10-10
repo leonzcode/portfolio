@@ -34,10 +34,10 @@
      hand.useOn(hit)         right click on a block (chests, tables); true if it did something
      hand.useItem(hit)       right click with the item (eat, armour, buckets); true if it did
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=39';
-import { selectionBoxes } from './models.js?v=39';
-import { placement, use, breakAt } from './place.js?v=39';
-import { breakTime, dropOf } from './survival.js?v=39';
+import { B, BLOCKS, FLUID } from './blocks.js?v=40';
+import { selectionBoxes } from './models.js?v=40';
+import { placement, use, breakAt } from './place.js?v=40';
+import { breakTime, dropOf } from './survival.js?v=40';
 
 export class Interactor {
   constructor(o) {
@@ -97,7 +97,7 @@ export class Interactor {
         this.useHeld = true; this.useDelay = 5; this.hand.swing(); return;
       }
     }
-    if (button === 0 && !this.target && this.entities) this.entities.swung();
+    if (button === 0 && !this.target && this.entities) this.entities.swung(true);
     if (button === 0) {
       // the dragon or a crystal nearer than the block (js/dim/realms.js)
       if (this.onAttack && this.onAttack(this.target)) { this.hand.swing(); return; }

@@ -16,9 +16,9 @@
      exposure    the scene's average brightness, adapted to over a second
      final       AgX tone mapping, a little vignette, sRGB, then FXAA
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS, TONE_CURVES, VOID } from './glsl.js?v=39';
-import { FullScreen, rawMat, floatTarget } from './sky.js?v=39';
-import { END_FLASH_GLSL } from './endflash.js?v=39';
+import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS, TONE_CURVES, VOID } from './glsl.js?v=40';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=40';
+import { END_FLASH_GLSL } from './endflash.js?v=40';
 const THREE = window.THREE;
 /* How much brighter the day sky is drawn than the eye has it (on top of 1): at noon our sky, exposed for
    the land, was a grey blue about half as bright on the screen as the game's light blue (FS_FINAL) */
