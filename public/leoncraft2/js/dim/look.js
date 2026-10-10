@@ -21,8 +21,11 @@ const target = new THREE.Vector3();
    comes out about as bright as one in the noon sun. The light pipeline's
    exposure is known here (sky.js uExpo): it opens up at night outdoors, so
    the light is scaled by the cave's exposure over it and the night comes out
-   as the cave does. (The full chain's eye is worked out on the graphics card.) */
-export const FULLBRIGHT_LIGHT = { ldr: 0.7, full: 1.0 };
+   as the cave does. The full chain's eye starts from the same base, so its
+   light is scaled the same way (what the screen shows only nudges it). Measured
+   (a stone floor's mean grey): Low and Medium day 96, night 91, cave 100; High
+   and RIP Computer day 119, night 119, cave 119. */
+export const FULLBRIGHT_LIGHT = { ldr: 0.7, full: 1.35 };
 
 export function dimLook(R, state, dt) {
   const U = R.U, D = state.dim;
@@ -30,7 +33,17 @@ export function dimLook(R, state, dt) {
   if (U.uNightVision) U.uNightVision.value = nightVision(state);
   // Fullbright: everything lit up to a day's light (FULLBRIGHT_LIGHT)
   if (U.uFullbright) {
-    const k = R.opts.ldr && U.uExpo && U.uExpo.value > 0 && U.uExposure ? Math.min(4, Math.max(0.25, U.uExposure.value / U.uExpo.value)) : 1;
+    let base = R.opts.ldr && U.uExpo ? U.uExpo.value : 0;
+    /* the full chain's eye starts from the same base (post.js FS_EXPO: the sky table's exposure, eased
+       over to uExposure in a cave, uExposure alone in the Nether and the End), so its light is scaled
+       the same way; the table's numbers are kept read back here, as the light pipeline does (sky.js
+       readLight: never waits for the graphics card) */
+    if (!R.opts.ldr && R.opts.fullbright && R.sky && R.sky.light && U.uExposure && U.uCave) {
+      if (R.sky.readLight) R.sky.readLight();
+      const e = Math.max(1e-4, R.sky.light[24]), cave = U.uCave.value, ex = U.uExposure.value;
+      base = D && D.id !== 'overworld' ? ex : cave > 0 ? Math.exp(Math.log(e) + (Math.log(ex) - Math.log(e)) * cave) : e;
+    }
+    const k = base > 0 && U.uExposure ? Math.min(4, Math.max(0.25, U.uExposure.value / base)) : 1;
     U.uFullbright.value = R.opts.fullbright ? FULLBRIGHT_LIGHT[R.opts.ldr ? 'ldr' : 'full'] * k : 0;
   }
   if (U.uShut) shutFog(state, dt, (R.opts.renderDist || 8) * 16, U.uShut.value);

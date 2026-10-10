@@ -474,6 +474,8 @@ async function boot() {
   const gui = new Gui($('#gui'), { base: base + 'gui/', options, hooks, version: TEX_V });
   // the minimap (ui/minimap.js): its own small canvas under the GUI's, drawn each frame you play
   const minimap = new Minimap(gui, options);
+  // its block colours: each top face picture's mean, from the strip as loaded (a resource pack's too), with the biome tints
+  minimap.textures(alb, renderer.colours);
   await gui.load();
   MK('gui');
   // music and sound (js/sound)
