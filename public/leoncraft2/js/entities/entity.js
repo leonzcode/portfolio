@@ -37,7 +37,10 @@ export const rotTowards = (a, b, max) => { const d = wrap(b - a); return a + Mat
 export const yawTo = (dx, dz) => Math.atan2(-dx, -dz);
 /* Looting on a loot table entry (the game's enchanted_count_increase): the share of
    a whole item a level (k, mostly 1) times the level, a random part of it, rounded.
-   So one level adds 0 or 1 (even odds), three add 0 to 3, half a level on average. */
+   So one level adds 0 or 1 (even odds), three add 0 to 3, half a level on average.
+   A base count below one (spider eyes and wither skeleton coal uniform(-1, 1), magma cream uniform(-2, 1)) counts
+   as 0 before Looting: 26.1.2's ItemStack.grow adds to getCount(), which is 0 for an empty stack, so the loot
+   functions' (RI(3) === 0 ? 1 : 0) + looted(L) is the game's own odds. */
 export const looted = (level, k = 1) => (level > 0 ? Math.round(level * k * Math.random()) : 0);
 
 let NEXT_ID = 1;

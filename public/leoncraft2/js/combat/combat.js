@@ -204,13 +204,14 @@ export class Combat {
   }
   /* What the enchantments do to something hit (the target, and each one a sweep reaches):
      Fire Aspect sets it alight for 4 seconds a level, Bane of Arthropods gives an arthropod
-     Slowness IV for 1 second to 1 + half a second a level */
+     Slowness IV for 1.5 seconds to 1.5 + half a second a level above the first (26.1.2's apply_mob_effect:
+     round(20 x a duration between min 1.5 and 1.5 + 0.5 per level above the first)) */
   afterHit(e, st) {
     if (e.dead) return;
     const fa = enchOf(st, 'fire_aspect');
     if (fa && e.setFire) e.setFire(4 * fa);
     const bane = enchOf(st, 'bane_of_arthropods');
-    if (bane && ARTHROPOD.has(e.type) && e.addEffect) e.addEffect('slowness', 4, 20 + Math.floor(R() * (10 * bane + 1)), this.m.player);
+    if (bane && ARTHROPOD.has(e.type) && e.addEffect) e.addEffect('slowness', 4, 30 + Math.round(R() * 10 * (bane - 1)), this.m.player);
   }
   // a sword's sweep: everything within a block of the target (and within 3 of you) takes 1 (and Sweeping Edge's share)
   sweep(e, st, base, c, sn, cs) {
