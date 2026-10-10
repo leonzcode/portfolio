@@ -206,6 +206,13 @@ export class Events {
         return r;
       };
     }
+    // a mace's smash: its ring of dust, for the others near
+    const C = E.combat;
+    if (C && C.smashDust && !C.__netSmash) {
+      C.__netSmash = true;
+      const dust = C.smashDust;
+      C.smashDust = function (x, y, z, b) { const r = dust.apply(this, arguments); if (b && !ev.busy) ev.send(['smash', x | 0, y | 0, z | 0, b | 0]); return r; };
+    }
     // an explosion of a mob's (a creeper, a ghast's fireball: entities/explosion.js)
     const boom = E.onExplode;
     E.onExplode = function (x, y, z, power) { const r = boom ? boom.apply(this, arguments) : undefined; if (!ev.busy) ev.boomOut(x, y, z, power); return r; };
@@ -309,6 +316,7 @@ export class Events {
         if (E && FX[e[4]]) E.particles(e[4], x, y, z, Math.min(64, e[5] | 0) || 1, +e[6] || 0, typeof c === 'number' ? [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255] : undefined);
         return;
       }
+      case 'smash': { const C = g.entities && g.entities.combat; if (C && C.smashDust) C.smashDust(x, y, z, e[4] | 0); return; }
       case 'splash': {
         const E = g.entities, name = String(e[4] || 'water');
         if (!E) return;
