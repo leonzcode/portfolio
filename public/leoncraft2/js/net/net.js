@@ -878,7 +878,8 @@ export class Net {
     const kb = enchOf(st, 'knockback') + (sprint ? 1 : 0);
     if (kb > 0) { P.vel.x *= 0.6; P.vel.z *= 0.6; P.sprinting = false; }
     const item = st && st.name ? String(st.name).slice(0, 50) : undefined;
-    this.send({ t: 'hit', id: r.id, k: smash ? 'smash' : spin ? 'spin' : 'melee', dmg: Math.round((base + bonus) * 1000) / 1000, kb, crit, fire: enchOf(st, 'fire_aspect') * 4, axe: w.kind === 'axe' ? 1 : 0, item });
+    const br = enchOf(st, 'breach');
+    this.send({ t: 'hit', id: r.id, k: smash ? 'smash' : spin ? 'spin' : 'melee', dmg: Math.round((base + bonus) * 1000) / 1000, kb, crit, fire: enchOf(st, 'fire_aspect') * 4, axe: w.kind === 'axe' ? 1 : 0, item, br: br || undefined });
     const pr = this.proxyOf(r), sn = Math.sin(P.yaw), cs = Math.cos(P.yaw);
     if (sweep) {
       // the others beside them, and the mobs (combat.js sweep)
@@ -941,7 +942,7 @@ export class Net {
     }
     if (!(m.dmg > 0)) return;
     const proj = m.k === 'arrow' || m.k === 'trident' || m.k === 'thrown';
-    const src = { type: proj ? m.k : m.k === 'smash' ? 'mace_smash' : 'player', attacker, x: from.x, z: from.z, knock: proj ? 0 : m.kb, yaw: s ? s.yaw : 0, axe: !!m.axe };
+    const src = { type: proj ? m.k : m.k === 'smash' ? 'mace_smash' : 'player', attacker, x: from.x, z: from.z, knock: proj ? 0 : m.kb, yaw: s ? s.yaw : 0, axe: !!m.axe, breach: m.br | 0 };
     if (proj && Array.isArray(m.dir)) src.direct = { vel: { x: m.dir[0], y: m.dir[1], z: m.dir[2] }, pos: Array.isArray(m.at) ? { x: m.at[0], y: m.at[1], z: m.at[2] } : from, pierce: m.pierce ? 1 : 0 };
     // named in a death in the next 5 seconds (survival.js dying)
     sv.attacker = attacker; sv.attackerAge = sv.age;
