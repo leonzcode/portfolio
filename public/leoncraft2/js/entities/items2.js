@@ -92,7 +92,10 @@ addArt('experience_bottle', [64, 32], p => { p.box(0, 0, 4, 4, 4, 0x7ad87a, 0.1)
 /* ---- fireworks ---- */
 export class FireworkRocket extends Entity {
   static W = 0.25; static H = 0.25; static MODEL = 'firework_rocket'; static TEX = 'firework_rocket'; static BRIGHT = true;
-  constructor(m, type) { super(m, type); this.gravity = 0; this.life = 0; this.stack = null; this.boosting = null; }
+  constructor(m, type) { super(m, type); this.gravity = 0; this.life = 0; this.stack = null; this.boosting = null; this.angled = false; this.owner = null; this.stuck = false; this.drag = 1; }
+  // shot from a crossbow: along (dx, dy, dz) at speed, as a projectile is
+  shootAt(dx, dy, dz, speed, inacc) { Projectile.prototype.shoot.call(this, dx, dy, dz, speed, inacc); this.angled = true; }
+  get waterDrag() { return 1; }
   init(stack) {
     this.stack = stack;
     const flight = (stack && stack.flight) || 1;
@@ -109,6 +112,14 @@ export class FireworkRocket extends Entity {
       P.vel.x += lx * 0.1 + (lx * 1.5 - P.vel.x) * 0.5; P.vel.y += ly * 0.1 + (ly * 1.5 - P.vel.y) * 0.5; P.vel.z += lz * 0.1 + (lz * 1.5 - P.vel.z) * 0.5;
       this.pos.set(P.pos.x, P.pos.y + 0.5, P.pos.z);
       void b;
+    } else if (this.angled) {
+      // off a crossbow: straight on at its speed, no gravity; it meets mobs and players as a projectile does
+      // (Projectile.prototype.tick, which counts its own life up: the fuse is kept aside)
+      const fuse = this.life, age = this.age;
+      if (this.vel.lengthSq() > 1e-8) { Projectile.prototype.tick.call(this); this.age = age; }
+      else this.prev.copy(this.pos);
+      if (this.removed) return;
+      this.life = fuse;
     } else {
       this.vel.x *= 1.15; this.vel.z *= 1.15; this.vel.y += 0.04;
       this.move(this.vel.x, this.vel.y, this.vel.z);
@@ -117,6 +128,9 @@ export class FireworkRocket extends Entity {
     if (this.age % 2 === 0) this.m.particles('sparkle', this.pos.x, this.pos.y - 0.2, this.pos.z, 1, 0.05);
     if (this.age > this.life) this.burst();
   }
+  // (shot at an angle) a mob or a player: it goes off there; a block: only one with stars goes off, a plain rocket stops
+  hitEntity() { this.burst(); }
+  hitBlock() { if (this.stack && this.stack.explosions && this.stack.explosions.length) this.burst(); else this.vel.set(0, 0, 0); }
   burst() {
     if (this.removed) return;
     const ex = (this.stack && this.stack.explosions) || [], p = this.pos;
@@ -129,14 +143,14 @@ export class FireworkRocket extends Entity {
     // stars hurt what is close: 5, and 2 more for each further star (within 5 blocks, seen)
     if (ex.length) {
       const dmg = 5 + ex.length * 2;
-      this.m.forNear(p.x, p.z, 5, e => { if (e !== this && e.hurt && !e.dead && e.dist2(p.x, p.y, p.z) <= 25) e.hurt(dmg * Math.sqrt((5 - Math.sqrt(e.dist2(p.x, p.y, p.z))) / 5), { type: 'fireworks', noKnock: true }); });
+      this.m.forNear(p.x, p.z, 5, e => { if (e !== this && e.hurt && !e.dead && e.dist2(p.x, p.y, p.z) <= 25) e.hurt(dmg * Math.sqrt((5 - Math.sqrt(e.dist2(p.x, p.y, p.z))) / 5), { type: 'fireworks', noKnock: true, attacker: this.owner || undefined }); });
       const P = this.m.player, d2 = P.dist2(p.x, p.y, p.z);
       if (P.alive() && d2 <= 25) this.m.hurtPlayer(dmg * Math.sqrt((5 - Math.sqrt(d2)) / 5), { type: 'fireworks', noKnock: true });
     }
     this.remove();
   }
-  toJSON() { const o = super.toJSON(); o.lf = this.life; if (this.stack) o.st = { flight: this.stack.flight, explosions: this.stack.explosions }; return o; }
-  fromJSON(o) { super.fromJSON(o); this.life = o.lf || 30; this.stack = o.st || null; }
+  toJSON() { const o = super.toJSON(); o.lf = this.life; if (this.angled) o.an = 1; if (this.stack) o.st = { flight: this.stack.flight, explosions: this.stack.explosions }; return o; }
+  fromJSON(o) { super.fromJSON(o); this.life = o.lf || 30; this.angled = !!o.an; this.stack = o.st || null; }
 }
 register('firework_rocket', FireworkRocket);
 model('firework_rocket', [{ name: 'rocket', pivot: [0, 24, 0], boxes: [[-1, -8, -1, 2, 5, 2, 0, 0], [-0.5, -3, -0.5, 1, 5, 1, 8, 0], [-1.5, -10, -1.5, 3, 2, 3, 0, 8]] }]);
