@@ -146,7 +146,7 @@ export class Realms {
   }
   crystalDestroyed(c, source) {
     if (this.fight) this.fight.crystalDestroyed(c, source);
-    else this.explode(c.pos.x, c.pos.y + 1, c.pos.z, 6, { source: 'end_crystal' });
+    else this.explode(c.pos.x, c.pos.y + 1, c.pos.z, 6, { source: 'end_crystal', by: source });
   }
 
   /* ---- each tick ---- */

@@ -183,7 +183,7 @@ export class Events {
     }
     // an explosion from the world's own blocks (TNT, a bed, an anchor: explosion.js)
     const boom = S.onExplosion;
-    S.onExplosion = function (x, y, z, power) { const r = boom ? boom.apply(this, arguments) : undefined; if (!ev.busy) ev.boomOut(x, y, z, power); return r; };
+    S.onExplosion = function (x, y, z, power, n, o) { const r = boom ? boom.apply(this, arguments) : undefined; if (!ev.busy) ev.boomOut(x, y, z, power, o); return r; };
   }
   hookEntities(E) {
     const ev = this;
@@ -208,9 +208,24 @@ export class Events {
     }
     // an explosion of a mob's (a creeper, a ghast's fireball: entities/explosion.js)
     const boom = E.onExplode;
-    E.onExplode = function (x, y, z, power) { const r = boom ? boom.apply(this, arguments) : undefined; if (!ev.busy) ev.boomOut(x, y, z, power); return r; };
+    E.onExplode = function (x, y, z, power, source) { const r = boom ? boom.apply(this, arguments) : undefined; if (!ev.busy) ev.boomOut(x, y, z, power, { source }); return r; };
   }
-  boomOut(x, y, z, power) { const r2 = v => Math.round(v * 100) / 100; this.send(['boom', r2(x), r2(y), r2(z), r2(power || 4)]); }
+  /* sent with who set it off, for the other players' death messages: "p" your player (TNT you lit, a
+     crystal you hit), "brp" a bed or respawn anchor in the wrong dimension (the game's Intentional Game
+     Design), or a mob's kind (a creeper of the mobs your machine runs) */
+  boomOut(x, y, z, power, o) {
+    const r2 = v => Math.round(v * 100) / 100, g = this.net.game, L = g && g.entities && g.entities.player;
+    const mine = s => !!s && typeof s === 'object' && (s === L || s.isPlayer || s.player === true || mine1(s.attacker) || mine1(s.by) || mine1(s.owner));
+    const mine1 = s => !!s && typeof s === 'object' && (s === L || s.isPlayer || s.player === true);
+    let by = 0;
+    if (o && (o.source === 'bad_respawn_point' || o.source === 'respawn')) by = 'brp';
+    else if (o && (mine(o.by) || mine(o.source))) by = 'p';
+    else if (o && o.source && typeof o.source === 'object') {
+      const a = o.source.attacker || o.source;
+      if (a && typeof a.type === 'string' && a.type !== 'player' && /^[a-z_]{1,32}$/.test(a.type)) by = a.type;
+    }
+    this.send(by ? ['boom', r2(x), r2(y), r2(z), r2(power || 4), by] : ['boom', r2(x), r2(y), r2(z), r2(power || 4)]);
+  }
 
   /* ---- each tick: what happened here, sent; the cracks of the block you mine ---- */
   tick(dim) {
@@ -303,7 +318,7 @@ export class Events {
         if (P && P.spawn) P.spawn(x + 0.5, y + 1.2, z + 0.5, 0, 0.06, 0, { colour: (c(0) << 16) | (c(1 / 3) << 8) | c(2 / 3), size: 0.18, life: 6, gravity: 0, physics: false });
         return;
       }
-      case 'boom': this.boom(x, y, z, +e[4] || 4); return;
+      case 'boom': this.boom(x, y, z, +e[4] || 4, typeof e[5] === 'string' ? e[5] : '', pid); return;
       case 'px': {
         const E = g.entities, c = e[7];
         if (E && FX[e[4]]) E.particles(e[4], x, y, z, Math.min(64, e[5] | 0) || 1, +e[6] || 0, typeof c === 'number' ? [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255] : undefined);
@@ -364,7 +379,7 @@ export class Events {
   /* Someone else's explosion: its flash and smoke, and your share of it, by
      the game's numbers (the same as explosion.js: what of your box can see
      the centre, the hurt and the push by how near you are) */
-  boom(x, y, z, power) {
+  boom(x, y, z, power, by, pid) {
     const g = this.net.game, E = g.entities, P = g.player;
     if (E) {
       E.particles(power >= 2 ? 'explosion_big' : 'explosion', x, y, z, 1, 0);
@@ -381,7 +396,17 @@ export class Events {
     const seen = exposure(g.world, x, y, z, [p.x - 0.3, p.y, p.z - 0.3, p.x + 0.3, p.y + 1.8, p.z + 0.3]);
     const impact = (1 - dist) * seen;
     const dmg = Math.floor((impact * impact + impact) / 2 * 7 * reach + 1);
-    E.hurtPlayer(dmg, { type: 'explosion', x, z, noKnock: true, explosion: true });
+    // who set it off, named as the game names them: "was blown up by" that player (and so in a death in
+    // the next 5 seconds, as a hit of theirs is), Intentional Game Design, or the mob
+    const src = { type: 'explosion', x, z, noKnock: true, explosion: true };
+    const r = by === 'p' && this.net.players ? this.net.players.list.get(pid) : null, sv = g.survival;
+    if (by === 'brp') src.type = 'bad_respawn_point';
+    else if (r && r.name) {
+      src.type = 'player_explosion';
+      src.attacker = { customName: r.name, pos: r.feet || { x, y, z }, remotePlayer: true };
+      if (sv) { sv.attacker = src.attacker; sv.attackerAge = sv.age; }
+    } else if (by && by !== 'p') src.attacker = { type: by };
+    E.hurtPlayer(dmg, src);
     if (!P.flying) { P.vel.x += dx * impact; P.vel.y += dy * impact; P.vel.z += dz * impact; }
   }
   // another player's cracks on a block (stage -1: they stopped)
