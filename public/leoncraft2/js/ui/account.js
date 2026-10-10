@@ -46,7 +46,9 @@ export class LoginScreen extends Screen {
     const W = this.width, H = this.height, g = this.gui, x = Math.floor(W / 2 - 100);
     this.title = this.creating ? 'Create Account' : 'Log In';
     const n = this.fields.length;
-    let y = Math.max(40, Math.floor(H / 4) - (this.creating ? 6 : 0));
+    // (a quarter down, but never so low that Quit Game runs off the bottom of a small window: fields, the line under them, three buttons)
+    const need = n * 34 + 22 + 68;
+    let y = Math.max(28, Math.min(Math.max(40, Math.floor(H / 4) - (this.creating ? 6 : 0)), H - 4 - need));
     this.labels = [];
     const labels = ['Username', 'Password', 'Confirm Password'];
     this.fields.forEach((f, i) => { this.labels.push([labels[i], x, y]); f.x = x; f.y = y + 10; this.add(f); y += 34; });
@@ -252,10 +254,11 @@ export class AdminScreen extends Screen {
   }
   async run(op, o, okText) {
     const r = await Account.admin_(op, o);
-    if (r && r.ok) { this.msg = okText; this.bad = false; } else { this.msg = (r && r.error) || NO_CONNECTION; this.bad = true; }
+    const ok = !!(r && r.ok), text = ok ? okText : (r && r.error) || NO_CONNECTION;
     await this.refresh();
-    if (r && r.ok) { this.msg = okText; this.bad = false; }
-    this.gui.markDirty();
+    // (what the action said stays up after the list is fetched again, unless fetching it failed)
+    if (!this.bad) { this.msg = text; this.bad = !ok; }
+    if (this.gui) this.gui.markDirty();
   }
   act(op) { const s = this.sel(); if (s) this.run(op, { name: s.name }, op === 'unban' ? 'Unbanned ' + s.name : 'Done'); }
   ban() { const s = this.sel(); if (s) this.gui.open(new AskScreen('Ban ' + s.name, 'Reason (shown to them)', v => this.run('ban', { name: s.name, reason: v }, 'Banned ' + s.name), { max: 200 })); }

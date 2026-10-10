@@ -18,11 +18,17 @@
 --------------------------------------------------------------------------- */
 const KEY = 'lc2_session';
 
-// ?mp=ws://host:port/mc/ws points the game at another server (a local one while testing)
+/* ?mp=ws://host:port/mc/ws points the game at another server (a local one
+   while testing). Only on a page served from this machine: the session token
+   and any password typed go wherever this points, so a link to the live site
+   with ?mp= must never send them elsewhere. */
+const LOCAL_PAGE = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/;
 export function wsBase() {
-  const q = new URLSearchParams(location.search).get('mp');
-  if (q) return q;
   const h = location.hostname || 'localhost';
+  if (LOCAL_PAGE.test(h)) {
+    const q = new URLSearchParams(location.search).get('mp');
+    if (q && /^wss?:\/\//.test(q)) return q;
+  }
   if (h.endsWith('leonzhao.dev')) return 'wss://apps.leonzhao.dev/mc/ws';
   return 'ws://' + h + ':8600/mc/ws';
 }

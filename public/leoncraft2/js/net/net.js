@@ -377,9 +377,10 @@ export class Net {
        30 seconds      Timed out, as the game says it */
   static connect(server, password) {
     return new Promise((resolve, reject) => {
-      // (who you are is your session: the server takes the name from your account)
-      const url = wsBase() + '?mode=lc2&pv=4&server=' + encodeURIComponent(server) + '&pw=' + encodeURIComponent(password || '') +
-        '&tok=' + encodeURIComponent(Account.token) + '&device=' + encodeURIComponent(deviceId());
+      /* (who you are is your session: the server takes the name from your
+         account. The session token and the server's password go in the first
+         message, not the address, which a proxy or a log could keep) */
+      const url = wsBase() + '?mode=lc2&pv=4&server=' + encodeURIComponent(server) + '&device=' + encodeURIComponent(deviceId());
       let ws;
       try { ws = new WebSocket(url); } catch (e) { reject({ reason: FAIL_TEXT.down[1], kind: SERVER_DOWN }); return; }
       const net = new Net(ws);
@@ -389,7 +390,7 @@ export class Net {
          world waiting in its queue behind this timer: a moment more for it
          before giving up) */
       const timer = setTimeout(() => setTimeout(() => { if (done) return; try { ws.close(); } catch (e) {} end(false, { reason: 'Timed out' }); }, 1500), 30000);
-      ws.onopen = () => { opened = true; };
+      ws.onopen = () => { opened = true; try { ws.send(JSON.stringify({ t: 'hello', tok: Account.token, pw: password || '' })); } catch (e) {} };
       ws.onmessage = ev => {
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
         if (!done) {
