@@ -27,6 +27,7 @@
    "while trying to escape" form; a fall longer than 5 blocks says where it
    started (a ladder, vines, scaffolding) or "fell from a high place".
 --------------------------------------------------------------------------- */
+import { Account } from './net/account.js?v=42';
 
 const D = (exh, msg, o) => Object.assign({ exh, msg, armor: true, effects: true, resistance: true, enchant: true, invul: false, scale: 'mob' }, o || {});
 const PASS = { armor: false };
@@ -106,7 +107,8 @@ export function sourceOf(s) {
 // a mob's name as the death message shows it ("Zombie", "Cave Spider")
 export function entityName(e) {
   if (!e) return '';
-  if (e.isPlayer) return 'Player';
+  // (you: your account's name, as in chat and on the death screen)
+  if (e.isPlayer) return e.name || Account.name || 'Player';
   if (e.customName) return e.customName;
   const t = String(e.type || e.kind || 'entity').replace(/^minecraft:/, '');
   return t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());

@@ -30,9 +30,9 @@
    walks out of everyone's reach is put away on the server, as the game
    keeps the mobs of unloaded chunks, and comes back with its ground.
 --------------------------------------------------------------------------- */
-import { Living, wrap } from '../entities/entity.js?v=41';
-import { TYPES } from '../entities/mobs.js?v=41';
-import { F } from './players.js?v=41';
+import { Living, wrap } from '../entities/entity.js?v=42';
+import { TYPES } from '../entities/mobs.js?v=42';
+import { F } from './players.js?v=42';
 
 const THREE = window.THREE;
 // besides the living (animals, monsters, villagers, golems, armour stands): paintings, the knots of leads, sand and gravel falling, fireworks,
@@ -672,7 +672,8 @@ export class Orbs {
   take(D, player, collector) {
     if (this.out.length) { this.net.send({ t: 'o+', e: this.out.splice(0, 256) }); }
     const P = player && player.pos;
-    if (!P || !collector || !collector.alive || this.net.game.mode === 'spectator') return;
+    // (the connection gone this tick: the game is let go of before the frame ends)
+    if (!P || !collector || !collector.alive || !this.net.game || this.net.game.mode === 'spectator') return;
     const now = performance.now();
     if (this.wait > now) return;
     for (const o of D.orbs) {

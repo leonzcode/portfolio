@@ -61,23 +61,26 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=41';
-import { idx, H } from '../world-const.js?v=41';
-import { DIMS, DIM_IDS } from '../dims.js?v=41';
-import { Save } from '../save.js?v=41';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=41';
-import { glints } from '../render/armor.js?v=41';
-import { containerKind } from '../containers.js?v=41';
-import { getSkinSettings } from '../render/avatar.js?v=41';
-import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=41';
-import { register, commandDef, execute, gameRule } from '../commands.js?v=41';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=41';
-import { Projectile } from '../entities/projectiles.js?v=41';
-import { Combat } from '../combat/combat.js?v=41';
-import { Vehicles } from './vehicles.js?v=41';
-import { Mobs, Orbs } from './mobs.js?v=41';
-import { Events } from './events.js?v=41';
-import { EndSync } from './endfight.js?v=41';
+import { B, BLOCKS } from '../blocks.js?v=42';
+import { idx, H } from '../world-const.js?v=42';
+import { DIMS, DIM_IDS } from '../dims.js?v=42';
+import { Save } from '../save.js?v=42';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=42';
+import { glints } from '../render/armor.js?v=42';
+import { containerKind } from '../containers.js?v=42';
+import { getSkinSettings } from '../render/avatar.js?v=42';
+import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=42';
+import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=42';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=42';
+import { Projectile } from '../entities/projectiles.js?v=42';
+import { Combat } from '../combat/combat.js?v=42';
+import { Vehicles } from './vehicles.js?v=42';
+import { Mobs, Orbs } from './mobs.js?v=42';
+import { Events } from './events.js?v=42';
+import { EndSync } from './endfight.js?v=42';
+import { Account, wsBase, httpBase } from './account.js?v=42';
+import { rankTag } from './players.js?v=42';
+export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {
@@ -87,23 +90,9 @@ export function deviceId() {
     return d;
   } catch (e) { return 'd' + Math.random().toString(36).slice(2, 12); }
 }
-export function playerName() {
-  let n = '';
-  try { n = localStorage.getItem('lc2_name') || ''; } catch (e) {}
-  if (!n) { n = 'Player' + (100 + Math.floor(Math.random() * 900)); setPlayerName(n); }
-  return n;
-}
-export function setPlayerName(n) { try { localStorage.setItem('lc2_name', n); } catch (e) {} }
-export const cleanName = s => String(s || '').replace(/[^A-Za-z0-9_ -]/g, '').trim().slice(0, 16);
-// ?mp=ws://host:port/mc/ws points the game at another server (a local one while testing)
-export function wsBase() {
-  const q = new URLSearchParams(location.search).get('mp');
-  if (q) return q;
-  const h = location.hostname || 'localhost';
-  if (h.endsWith('leonzhao.dev')) return 'wss://apps.leonzhao.dev/mc/ws';
-  return 'ws://' + h + ':8600/mc/ws';
-}
-export const httpBase = () => wsBase().replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/ws$/, '');
+// your name is your account's (net/account.js): the same on every server and in singleplayer
+export function playerName() { return Account.name || 'Player'; }
+export const cleanName = s => String(s || '').replace(/[^A-Za-z0-9_]/g, '').trim().slice(0, 16);
 /* Why the server could not be reached, in words for the player:
      down  nothing answers (the server stopped, restarting after an update, or
            no network): the page asked and heard nothing, or the proxy in
@@ -121,9 +110,10 @@ async function answer(r) {
   const text = await r.text();
   try { return JSON.parse(text); } catch (e) { throw { kind: SERVER_OLD }; }
 }
+// (with your session, so the server knows who asks; and this browser, for a server made before accounts)
 async function post(path, body) {
   let r;
-  try { r = await fetch(httpBase() + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ device: deviceId() }, body)) }); }
+  try { r = await fetch(httpBase() + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ device: deviceId(), token: Account.token }, body)) }); }
   catch (e) { return { error: FAIL_TEXT.down[1] }; }
   try { return await answer(r); } catch (e) { return { error: FAIL_TEXT[e.kind || SERVER_DOWN][1] }; }
 }
@@ -131,7 +121,7 @@ async function post(path, body) {
 export async function listServers() {
   const t0 = performance.now();
   let r;
-  try { r = await fetch(httpBase() + '/lc2/servers?device=' + encodeURIComponent(deviceId()), { cache: 'no-store' }); }
+  try { r = await fetch(httpBase() + '/lc2/servers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: Account.token, device: deviceId() }), cache: 'no-store' }); }
   catch (e) { throw { kind: SERVER_DOWN }; }
   const j = await answer(r);
   if (!j || !Array.isArray(j.servers)) throw { kind: SERVER_OLD };
@@ -313,14 +303,20 @@ if (tpDef) {
 
 /* /difficulty, /gamerule and /defaultgamemode on a server are the server's,
    for everyone: asked of it, and what it says goes to everyone (a rule's
-   value is asked here, from the rules the server sent; pvp is one of them) */
+   value is asked here, from the rules the server sent; pvp is one of them).
+   The server's owner (and an admin) has them, and /setworldspawn, with their
+   own OP on or off, as a server's console does: the server checks again. */
+const mayRun = (ctx, net) => (net ? net.canCheat() || net.powers : ctx.cheats);
+const denied = ctx => ctx.say('You do not have permission to use this command', 0xFF5555);
 for (const name of ['difficulty', 'gamerule', 'defaultgamemode']) {
   const def = commandDef(name);
   if (!def) continue;
   register(name, Object.assign({}, def, {
+    always: true,
     suggest: (i, w) => (name === 'gamerule' && i === 0 ? (def.suggest ? def.suggest(i, w) : []).concat(['pvp']) : def.suggest ? def.suggest(i, w) : []),
     run(args, ctx) {
       const net = ctx.game && ctx.game.net;
+      if (!mayRun(ctx, net)) return denied(ctx);
       if (!net) return def.run(args, ctx);
       if (name === 'gamerule' && args[0] && args[1] === undefined) {
         const v = args[0] === 'pvp' ? net.server.pvp !== false : gameRule(ctx.game, args[0]);
@@ -333,6 +329,50 @@ for (const name of ['difficulty', 'gamerule', 'defaultgamemode']) {
     },
   }));
 }
+
+// /setworldspawn on a server: the world's spawn is the server's, for everyone
+const spawnDef = commandDef('setworldspawn');
+if (spawnDef) {
+  register('setworldspawn', Object.assign({}, spawnDef, {
+    always: true,
+    run(args, ctx) {
+      const net = ctx.game && ctx.game.net;
+      if (!mayRun(ctx, net)) return denied(ctx);
+      spawnDef.run(args, ctx);
+      const sp = ctx.game.entry.spawn;
+      if (net && sp) net.send({ t: 'spawn', x: sp.x, z: sp.z, force: true });
+    },
+  }));
+}
+
+/* /tpa, /tpahere, /tpaccept, /tpdeny, /tpacancel, /sethome, /home, /homes and
+   /delhome on a server are the server's, as an EssentialsX server's are:
+   the line goes there, the server answers in Essentials' words and moves
+   whoever goes ('go', handled below), and keeps your homes for your account
+   on that server. Tab finishes the names it sent (your homes, who asked you)
+   and the players on. /home bed is your own respawn point, so it stays here. */
+const ESS_NET = ['tpa', 'tpahere', 'tpaccept', 'tpdeny', 'tpacancel', 'sethome', 'home', 'homes', 'delhome'];
+for (const name of ESS_NET) {
+  const def = commandDef(name);
+  if (!def) continue;
+  const extra = name === 'tpaccept' || name === 'tpdeny' ? (i => (i === 0 ? pendingNames().concat(['*']) : []))
+    : name === 'tpa' || name === 'tpahere' || name === 'tpacancel' ? (i => (i === 0 ? onlineNames().filter(n => !activeNet || n !== activeNet.name) : []))
+    : name === 'home' ? (i => (i === 0 ? homeList().concat(['bed']) : []))
+    : name === 'delhome' ? (i => (i === 0 ? homeList() : [])) : null;
+  register(name, Object.assign({}, def, {
+    always: true,
+    suggest: (i, w, ctx) => (ctx && ctx.game && ctx.game.net && extra ? extra(i, w) : def.suggest ? def.suggest(i, w, ctx) : []),
+    run(args, ctx) {
+      const net = ctx.game && ctx.game.net;
+      if (!net) return def.run(args, ctx);
+      if (name === 'home' && args.length && args[0].toLowerCase() === 'bed') return homeBed(ctx);
+      net.send({ t: 'cmd', line: [ctx.label || name].concat(args).join(' ') });
+    },
+  }));
+}
+// (what Tab offers: your homes on this server, and who has asked you something in the last 120 seconds)
+function homeList() { return activeNet && activeNet.homes ? activeNet.homes.slice() : []; }
+function pendingNames() { const n = activeNet, now = performance.now(); return n && n.tpq ? n.tpq.filter(q => q[1] > now).map(q => q[0]) : []; }
 
 /* a container's record, as containers.js saves one */
 function packContainer(c) {
@@ -365,22 +405,27 @@ export class Net {
                        had Leoncraft 2 (FAIL_TEXT.old)
        closed early    it opened and shut without a word: refused
        30 seconds      Timed out, as the game says it */
-  static connect(server, password, name) {
+  static connect(server, password) {
     return new Promise((resolve, reject) => {
-      const url = wsBase() + '?mode=lc2&pv=4&server=' + encodeURIComponent(server) + '&pw=' + encodeURIComponent(password || '') +
-        '&name=' + encodeURIComponent(name) + '&device=' + encodeURIComponent(deviceId());
+      /* (who you are is your session: the server takes the name from your
+         account. The session token and the server's password go in the first
+         message, not the address, which a proxy or a log could keep) */
+      const url = wsBase() + '?mode=lc2&pv=4&server=' + encodeURIComponent(server) + '&device=' + encodeURIComponent(deviceId());
       let ws;
       try { ws = new WebSocket(url); } catch (e) { reject({ reason: FAIL_TEXT.down[1], kind: SERVER_DOWN }); return; }
       const net = new Net(ws);
       let done = false, opened = false;
       const end = (ok, v) => { if (done) return; done = true; clearTimeout(timer); ok ? resolve(v) : reject(v); };
-      const timer = setTimeout(() => { try { ws.close(); } catch (e) {} end(false, { reason: 'Timed out' }); }, 30000);
-      ws.onopen = () => { opened = true; };
+      /* (a page held up past the 30 seconds, by a busy machine, can have the
+         world waiting in its queue behind this timer: a moment more for it
+         before giving up) */
+      const timer = setTimeout(() => setTimeout(() => { if (done) return; try { ws.close(); } catch (e) {} end(false, { reason: 'Timed out' }); }, 1500), 30000);
+      ws.onopen = () => { opened = true; try { ws.send(JSON.stringify({ t: 'hello', tok: Account.token, pw: password || '' })); } catch (e) {} };
       ws.onmessage = ev => {
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
         if (!done) {
           if (m.t === 'init') { net.onInit(m); end(true, net); }
-          else if (m.t === 'refused') end(false, { reason: m.reason, password: !!m.password });
+          else if (m.t === 'refused') { if (m.session) Account.expired(); end(false, { reason: m.reason, password: !!m.password, session: !!m.session }); }
           // another game's welcome ({ type: ... }): the server has not been updated for this one
           else if (m.type && !m.t) { end(false, { reason: FAIL_TEXT.old[0] + ' ' + FAIL_TEXT.old[1], kind: SERVER_OLD }); try { ws.close(); } catch (e) {} }
           return;
@@ -432,6 +477,8 @@ export class Net {
     this.id = m.id; this.name = m.name; this.server = m.server;
     // (an older server sends no level: its Allow Commands is all there is)
     this.op = m.op !== undefined ? m.op | 0 : m.server && m.server.cheats ? 2 : 0;
+    // the owner's powers (every command a server's owner has, its settings) and your rank tag, as the server decides them
+    this.powers = !!m.powers; this.admin = !!m.admin; this.tag = m.tag || '';
     this.rules = m.rules || null;
     // spawn protection: how far round the world spawn you may not change anything (0: none for you, or none here)
     this.prot = m.prot | 0;
@@ -456,6 +503,8 @@ export class Net {
     this.mobs.init(m); this.orbs.init(m); this.events.init(m);
     // your own record on this server (MpSave.readState), or null the first time you come
     this.pdata = m.pdata && typeof m.pdata === 'object' ? m.pdata : null;
+    // your homes here, for Tab (the server keeps them: /sethome, /home)
+    this.homes = m.homes && Array.isArray(m.homes.n) ? m.homes.n.map(String) : []; this.homeLimit = m.homes ? m.homes.lim | 0 : 0; this.tpq = [];
     for (const o of m.items || []) this.keepItem(o);
     this.serverNow = m.now;
     this.ping();
@@ -577,9 +626,15 @@ export class Net {
     switch (m.t) {
       // the other players: straight away, with when each position got here
       case 'p': this.stats.gotP++; if (this.players) this.players.state(m.id, m, performance.now()); else this.early(m); return;
-      case 'op': this.op = m.level | 0; return;
+      case 'op': this.op = m.level | 0; if (m.powers !== undefined) this.powers = !!m.powers; return;
+      // a rank tag changed (the server was given to another owner)
+      case 'tag': if (m.id === this.id) this.tag = m.tag || ''; else if (this.players) this.players.setTag(m.id, m.tag || ''); else { const p = this.initPlayers && this.initPlayers.find(q => q.id === m.id); if (p) p.tag = m.tag || ''; } if (this.ctx) this.ctx.gui.markDirty(); return;
       case 'prot': this.prot = m.r | 0; return;
-      case 'out': if (this.ctx) for (const l of m.lines || []) if (Array.isArray(l)) this.ctx.chat.add(String(l[0]), l[1] === undefined ? 0xFFFFFF : l[1]); return;
+      // (a line may carry parts to click, [text, colour, { click: [{ text, run, tip }] }]: a teleport request's /tpaccept)
+      case 'out': if (this.ctx) for (const l of m.lines || []) if (Array.isArray(l)) this.ctx.chat.add(String(l[0]), l[1] === undefined ? 0xFFFFFF : l[1], l[2] && typeof l[2] === 'object' ? l[2] : undefined); return;
+      // your homes on this server and how many you may have (-1: no limit), and who has asked you to teleport, with how long each has left
+      case 'homes': this.homes = Array.isArray(m.n) ? m.n.map(String) : []; this.homeLimit = m.lim | 0; return;
+      case 'tpq': { const now = performance.now(); this.tpq = Array.isArray(m.q) ? m.q.filter(Array.isArray).map(q => [String(q[0]), now + (+q[1] || 0)]) : []; return; }
       case 'join': if (this.players) { this.players.add(m.p); } else this.initPlayers.push(m.p); return;
       case 'v=': case 'v+': case 'vs': case 'vc': case 'vr': case 'vj': case 'v-': this.veh.receive(m); return;
       case 'leave': this.veh.left(m.id); this.events.left(m.id); this.bases.delete(m.id); if (this.players) this.players.remove(m.id); else this.initPlayers = this.initPlayers.filter(p => p.id !== m.id); return;
@@ -1202,7 +1257,8 @@ export class Net {
       case 'dt': this.detail(m.d, m.p, m.o); return;
       case 'chat':
         if (m.system) this.ctx.chat.add(m.text, m.colour !== undefined ? m.colour : 0xFFFF55);
-        else this.ctx.chat.add('<' + m.name + '> ' + m.text);
+        // (a rank tag before the name, as servers show it: [ADMIN] red, [OWNER] gold)
+        else this.ctx.chat.add('<' + rankTag(m.tag) + m.name + '> ' + m.text);
         return;
       case 'time': {
         // the server's clock, moved on by half the time the message took
@@ -1219,6 +1275,14 @@ export class Net {
       case 'rules': this.applyRules(m.rules || {}); return;
       case 'diff': this.server.difficulty = m.d; if (this.ctx.setDifficulty) this.ctx.setDifficulty(m.d); return;
       case 'as': this.ranAs(m); return;
+      // the server sends you somewhere (/home, an accepted /tpa): a place in a dimension, or the world spawn
+      case 'go': {
+        const c = this.ctx.commandCtx && this.ctx.commandCtx();
+        if (!c) return;
+        if (m.spawn) { if (c.goSpawn) c.goSpawn(); return; }
+        if (c.goTo && DIM_IDS[m.d | 0]) c.goTo(DIM_IDS[m.d | 0], +m.x, +m.y, +m.z, +m.yaw, +m.pitch);
+        return;
+      }
       case 'it+': for (const o of m.e || []) { const rec = this.keepItem(o); if (rec && rec.d === dimCode(g.dim)) this.showItem(rec); } return;
       case 'it=': this.numbered(m.e || []); return;
       case 'it-': case 'itno': this.itemGone(m.id, m.by); return;
