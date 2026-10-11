@@ -31,10 +31,10 @@
    and per-cell decay comes from a hash of the cell, so each chunk a box
    crosses draws the same thing in the same order.
 --------------------------------------------------------------------------- */
-import { NORTH, EAST, SOUTH, WEST } from '../build.js?v=41';
-import { make, footprint, turned, rect, overlaps, rng } from './util.js?v=41';
-import { BLOCKS } from '../../blocks.js?v=41';
-import { JRand, mthSeed } from '../rand.js?v=41';
+import { NORTH, EAST, SOUTH, WEST } from '../build.js?v=42';
+import { make, footprint, turned, rect, overlaps, rng } from './util.js?v=42';
+import { BLOCKS } from '../../blocks.js?v=42';
+import { JRand, mthSeed } from '../rand.js?v=42';
 
 export const PLANS = {};
 

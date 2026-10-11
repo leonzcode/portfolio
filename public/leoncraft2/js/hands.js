@@ -28,27 +28,28 @@
    wear on mobs (wearHeld), worn-out tools break into pieces, and Mending
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=41';
-import { setLodestoneCheck } from './dials.js?v=41';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=41';
-import { breakTicks, wearFor } from './mining.js?v=41';
-import { blockDrops } from './loot.js?v=41';
-import { containerKind, spill } from './containers.js?v=41';
-import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=41';
-import { isPotion, drinkPotion } from './brewing.js?v=41';
-import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=41';
-import { BeaconScreen } from './ui/beacon.js?v=41';
-import { STORE as BEACON_POWERS } from './sim/beacon.js?v=41';
-import { MerchantScreen } from './ui/merchant.js?v=41';
-import { hives } from './entities/hives.js?v=41';
-import { LoomScreen } from './ui/loom.js?v=41';
-import { CartographyScreen } from './ui/cartography.js?v=41';
-import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=41';
-import { countShelves } from './enchanting.js?v=41';
-import { wear } from './ui/inventory.js?v=41';
-import { BookScreen } from './ui/book.js?v=41';
-import { breaksInCreative } from './modes.js?v=41';
-import { boxOpened, bellRang } from './sim/lids.js?v=41';
+import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=42';
+import { setLodestoneCheck } from './dials.js?v=42';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=42';
+import { breakTicks, wearFor } from './mining.js?v=42';
+import { blockDrops } from './loot.js?v=42';
+import { containerKind, spill } from './containers.js?v=42';
+import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=42';
+import { isPotion, drinkPotion } from './brewing.js?v=42';
+import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=42';
+import { BeaconScreen } from './ui/beacon.js?v=42';
+import { STORE as BEACON_POWERS } from './sim/beacon.js?v=42';
+import { MerchantScreen } from './ui/merchant.js?v=42';
+import { hives } from './entities/hives.js?v=42';
+import { LoomScreen } from './ui/loom.js?v=42';
+import { CartographyScreen } from './ui/cartography.js?v=42';
+import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=42';
+import { countShelves } from './enchanting.js?v=42';
+import { wear } from './ui/inventory.js?v=42';
+import { BookScreen } from './ui/book.js?v=42';
+import { breaksInCreative } from './modes.js?v=42';
+import { boxOpened, bellRang } from './sim/lids.js?v=42';
+import { Account } from './net/account.js?v=42';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // what a full bucket pours out (the fish buckets are water with a fish in it)
@@ -465,9 +466,9 @@ export class Hands {
     const inv = this.inv, slot = inv.selected, off = !!this.offTurn;
     const put = st => { if (off) inv.offhand = st; else if (inv.slots[slot] === s) inv.slots[slot] = st; inv.changed(); };
     this.open(new BookScreen({
-      pages: s.pages || [], written, player: 'Player',
+      pages: s.pages || [], written, player: Account.name || 'Player',
       done: pages => { const st = withCount(s, s.count); st.pages = pages; if (!pages.some(Boolean)) delete st.pages; put(st); },
-      sign: (title, pages) => { if (I.written_book === undefined) return; put({ id: I.written_book, count: 1, pages, title, author: 'Player' }); },
+      sign: (title, pages) => { if (I.written_book === undefined) return; put({ id: I.written_book, count: 1, pages, title, author: Account.name || 'Player' }); },
     }));
     return true;
   }

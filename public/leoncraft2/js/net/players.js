@@ -19,12 +19,18 @@
    faint copy of the name seen through walls, only the faint one (and not
    through walls) while they sneak, none past 64 blocks. Nothing is drawn of
    a player in another dimension or out of sight range.
+
+   A rank tag goes before the name, as servers show one: [ADMIN] in red for
+   an admin account, [OWNER] in gold for the server's owner (rankTag). The
+   server decides it and sends it with the player (lc2.js tagOf), so nobody
+   can give themselves one; it shows over their head, in the Tab list and in
+   their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar } from '../render/avatar.js?v=41';
-import { pieceLook, armorSheet } from '../render/armor.js?v=41';
-import { setLight as setLightOf, loadedLook } from '../render/held.js?v=41';
-import { DRAW, I, stackFromJSON } from '../items.js?v=41';
-import { B, BLOCKS } from '../blocks.js?v=41';
+import { Avatar } from '../render/avatar.js?v=42';
+import { pieceLook, armorSheet } from '../render/armor.js?v=42';
+import { setLight as setLightOf, loadedLook } from '../render/held.js?v=42';
+import { DRAW, I, stackFromJSON } from '../items.js?v=42';
+import { B, BLOCKS } from '../blocks.js?v=42';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -33,6 +39,9 @@ const KEEP = 1500;          // ms of positions kept
 const PI = Math.PI;
 const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
 const idOf = name => !name ? 0 : (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
+// the rank tag before a name, in colour codes (the name after it goes back to the line's own colour)
+const RANKS = { admin: '\u00a7c[ADMIN] \u00a7r', owner: '\u00a76[OWNER] \u00a7r' };
+export const rankTag = tag => RANKS[tag] || '';
 
 // the flags each position carries (net/net.js sends them)
 export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024, SPEC: 2048, INVIS: 4096, FIRE: 8192, SPIN: 16384 };
@@ -66,7 +75,7 @@ export class RemotePlayers {
   /* ---- what the server says ---- */
   add(p) {
     if (this.list.has(p.id)) this.remove(p.id);
-    const r = { id: p.id, name: p.name, buf: [], est: null, estS: null, win: Infinity, winPrev: Infinity, winAt: 0, late: 0, lateMax: 0, delay: DELAY,
+    const r = { id: p.id, name: p.name, rank: p.tag || '', buf: [], est: null, estS: null, win: Infinity, winPrev: Infinity, winAt: 0, late: 0, lateMax: 0, delay: DELAY,
       av: null, P: null, acc: 0, eq: null, tag: null, hurtUntil: 0, st: null, lat: p.lat | 0 };
     this.list.set(p.id, r);
     if (p.st) this.state(p.id, p.st, null);
@@ -122,6 +131,7 @@ export class RemotePlayers {
   swing(id, hand) { const r = this.list.get(id); if (r && r.av && !hand) r.av.startSwing(); }
   hurt(id) { const r = this.list.get(id); if (r) r.hurtUntil = performance.now() + 500; }
   rename(id, name) { const r = this.list.get(id); if (r && r.name !== name) { r.name = name; if (r.tag) this.dropTag(r); } }
+  setTag(id, tag) { const r = this.list.get(id); if (r && r.rank !== tag) { r.rank = tag; if (r.tag) this.dropTag(r); } }
 
   /* ---- the model ---- */
   avatarOf(r) {
@@ -148,7 +158,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=41', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=42', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
   }
   equip(r) {
@@ -170,7 +180,7 @@ export class RemotePlayers {
   /* ---- the name over their head ---- */
   tagOf(r) {
     if (r.tag) return r.tag;
-    const f = this.font, name = r.name || '';
+    const f = this.font, name = rankTag(r.rank) + (r.name || '');
     const w = (f ? f.width(name) : name.length * 6) + 2, h = 10, k = 4;
     const t = document.createElement('canvas'); t.width = w; t.height = h;
     if (f) f.draw(t.getContext('2d'), name, 1, 1, 0xFFFFFF, false);
@@ -362,12 +372,14 @@ export class PlayerList {
   draw(g) {
     if (!this.shown) return;
     const net = this.net, lat = net.lat || {};
-    const rows = [{ name: net.name, ping: Math.round(net.rtt), face: net.ctx ? net.ctx.renderer.avatar.canvas : null }];
-    if (net.players) for (const r of net.players.list.values()) rows.push({ name: r.name, ping: lat[r.id] !== undefined ? lat[r.id] : -1, face: r.av && r.av.ready ? r.av.canvas : null });
+    const rows = [{ name: net.name, rank: net.tag, ping: Math.round(net.rtt), face: net.ctx ? net.ctx.renderer.avatar.canvas : null }];
+    if (net.players) for (const r of net.players.list.values()) rows.push({ name: r.name, rank: r.rank, ping: lat[r.id] !== undefined ? lat[r.id] : -1, face: r.av && r.av.ready ? r.av.canvas : null });
     rows.sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1));
+    // (each shown with its rank tag before it)
+    for (const r of rows) r.shown = rankTag(r.rank) + r.name;
     const n = rows.length, cols = Math.ceil(n / 20), per = Math.ceil(n / cols);
     let nw = 0;
-    for (const r of rows) nw = Math.max(nw, g.textWidth(r.name));
+    for (const r of rows) nw = Math.max(nw, g.textWidth(r.shown));
     const sw = Math.min(nw + 9 + 13 + 4, Math.floor((g.width - 50) / cols));
     const total = sw * cols + (cols - 1) * 5;
     const left = Math.floor(g.width / 2 - total / 2), top = 10;
@@ -376,7 +388,7 @@ export class PlayerList {
       const r = rows[i], x = left + Math.floor(i / per) * (sw + 5), y = top + (i % per) * 9;
       g.fill(x, y, x + sw, y + 8, 0x20FFFFFF);
       if (r.face) { g.blit(r.face, 8, 8, 8, 8, x, y, 8, 8); g.blit(r.face, 40, 8, 8, 8, x, y, 8, 8); }
-      g.text(g.font.trim(r.name, sw - 9 - 13), x + 9, y, 0xFFFFFF);
+      g.text(g.font.trim(r.shown, sw - 9 - 13), x + 9, y, 0xFFFFFF);
       g.blit('icons', 0, 176 + pingBars(r.ping) * 8, 10, 8, x + sw - 11, y);
     }
   }

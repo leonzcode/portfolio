@@ -26,14 +26,16 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=41';
-import { Packs } from './pack.js?v=41';
-import { packArtSummary } from '../entities/packart.js?v=41';
-import { LanScreen } from './lan.js?v=41';
-import { parseSeed } from '../gen/random.js?v=41';
-import { SOUND_CREDITS } from '../sound/credits.js?v=41';
-import { FlatCustomizeScreen } from './flat.js?v=41';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=41';
+} from './gui.js?v=42';
+import { Packs } from './pack.js?v=42';
+import { Account } from '../net/account.js?v=42';
+import { withAccount, AccountScreen, AdminScreen, logOut } from './account.js?v=42';
+import { packArtSummary } from '../entities/packart.js?v=42';
+import { LanScreen } from './lan.js?v=42';
+import { parseSeed } from '../gen/random.js?v=42';
+import { SOUND_CREDITS } from '../sound/credits.js?v=42';
+import { FlatCustomizeScreen } from './flat.js?v=42';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=42';
 
 const PI = Math.PI;
 
@@ -234,10 +236,21 @@ export class TitleScreen extends Screen {
     const g = this.gui, W = this.width, H = this.height;
     if (!this.art) loadLogo(g).then(a => { this.art = a; g.markDirty(); });
     const l = Math.floor(H / 4) + 48;
-    this.add(new Button(W / 2 - 100, l, 200, 20, 'Singleplayer', () => {
+    // (the play buttons ask you to log in first: ui/account.js)
+    this.add(new Button(W / 2 - 100, l, 200, 20, 'Singleplayer', () => withAccount(g, () => {
       g.open(Worlds.list().length ? new SelectWorldScreen() : new CreateWorldScreen());
-    }));
-    this.add(new Button(W / 2 - 100, l + 24, 200, 20, 'Multiplayer', () => (this.hooks.multiplayer ? this.hooks.multiplayer() : g.open(new NoticeScreen('Multiplayer', 'Multiplayer is not available in Leoncraft 2 yet.')))));
+    })));
+    const mp = this.add(new Button(W / 2 - 100, l + 24, 200, 20, 'Multiplayer', () => withAccount(g, () => (this.hooks.multiplayer ? this.hooks.multiplayer() : g.open(new NoticeScreen('Multiplayer', 'Multiplayer is not available in Leoncraft 2 yet.'))))));
+    // (offline, with only the kept session: no servers to reach)
+    if (Account.offline && !Account.checked) { mp.active = false; mp.tooltip = "Can't reach the login server"; }
+    // who you are, top left (Account: change your password), Log Out and, for an admin, Admin top right
+    this.acctSig = Account.name + '|' + Account.ready + '|' + Account.offline + '|' + Account.admin;
+    if (Account.session) {
+      const who = 'Logged in as ' + Account.name, ww = g.textWidth(who);
+      this.add(new TextLink(2, 2, ww, who, () => g.open(new AccountScreen()), WHITE));
+      this.add(new Button(W - 64, 4, 60, 20, 'Log Out', () => logOut(g)));
+      if (Account.admin) this.add(new Button(W - 128, 4, 60, 20, 'Admin', () => withAccount(g, () => g.open(new AdminScreen()))));
+    }
     const realms = this.add(new Button(W / 2 - 100, l + 48, 200, 20, 'Leoncraft Realms', null, 'Not available in Leoncraft'));
     realms.active = false;
     this.add(new IconButton(W / 2 - 124, l + 84, 'language', () => g.open(new LanguageScreen()), 'Language'));
@@ -292,6 +305,10 @@ export class TitleScreen extends Screen {
       ctx.restore();
     }
     g.text('Leoncraft 2', 2, H - 10, WHITE);
+    if (Account.session && Account.offline && !Account.checked) g.text("Offline: can't reach the login server", 2, 12, 0xA0A0A0);
+    // (logged in or out since this was laid out, while it was on top: laid out again)
+    const sig = Account.name + '|' + Account.ready + '|' + Account.offline + '|' + Account.admin;
+    if (sig !== this.acctSig && this.gui && this.gui.screen === this) { this.gui._initScreen(this); this.gui.markDirty(); }
     super.render(g, mx, my, dt);
     ctx.globalAlpha = 1;
   }
@@ -690,9 +707,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=41';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=41';
-import { minimapButtons } from './minimap.js?v=41';
+export { VideoSettingsScreen } from './video.js?v=42';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=42';
+import { minimapButtons } from './minimap.js?v=42';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
