@@ -131,7 +131,7 @@ export class Player {
           // a honey block is a sixteenth in from each side and 15/16 tall (you lean into it to slide)
           if (b === HONEY) { out.push(x + 1 / 16, y, z + 1 / 16, x + 15 / 16, y + 15 / 16, z + 15 / 16); continue; }
           if (d.shape === 'cube') { out.push(x, y, z, x + 1, y + 1, z + 1); continue; }
-          const boxes = collisionBoxes(d, w.meta(x, y, z), nbAt(x, y, z));
+          const boxes = collisionBoxes(d, w.meta(x, y, z), nbAt(x, y, z), x, z);
           if (boxes) for (const c of boxes) out.push(x + c[0], y + c[1], z + c[2], x + c[3], y + c[4], z + c[5]);
         }
     // things in the world you can stand on and walk into: boats (js/entities)
@@ -635,7 +635,7 @@ export class Player {
         // a shaped block: the nearest of its boxes the ray goes through, if any
         const w = this.w, bx = x, by = y, bz = z;
         const nb = (dx, dy, dz) => { const n = w.get(bx + dx, by + dy, bz + dz); return n ? { d: BLOCKS[n], m: w.meta(bx + dx, by + dy, bz + dz) } : null; };
-        const r = rayBoxes(eye, dir, x, y, z, selectionBoxes(d, w.meta(x, y, z), nb));
+        const r = rayBoxes(eye, dir, x, y, z, selectionBoxes(d, w.meta(x, y, z), nb, x, z));
         if (r && r.t <= reach) return { x, y, z, b, face: r.face, t: r.t, hit: r.hit, box: r.box };
       }
       if (tx < ty && tx < tz) { x += sx; t = tx; tx += tdx; face = [-sx, 0, 0]; }

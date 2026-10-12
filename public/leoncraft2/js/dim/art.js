@@ -11,6 +11,7 @@
 --------------------------------------------------------------------------- */
 import { litFronts } from '../render/litfront.js?v=43';
 import { litBerries } from '../render/litberries.js?v=43';
+import { bambooLayers } from '../render/bamboo.js?v=43';
 import { shelfLayers } from '../render/shelfmushroom.js?v=43';
 const THREE = window.THREE;
 
@@ -184,6 +185,8 @@ export function addDimArt(manifest) {
   const berries = litBerries(add);
   // a shelf mushroom's faces, small and large (render/shelfmushroom.js), filled at once
   shelfLayers(add);
+  // bamboo's stalk and leaves (render/bamboo.js), our own pixels, filled at once
+  bambooLayers(add);
   manifest.layers = next;
   return {
     layers,

@@ -24,6 +24,9 @@
      axis        0 up, 1 along x, 2 along z (logs, pillars, chains)
      facing      0-3 horizontal as above, 4 up, 5 down (observers, rods)
      lantern     bit 0 hanging
+     bamboo      bit 0 age (thick), bit 3 stage (done growing), bits 4-5 leaves (0 none, 1 small, 2 large);
+                 bit 2 is left over from when bamboo was a rod standing up (meta 4) and means nothing.
+                 Drawn, bits 6-7 carry which of the game's four stalk models the spot picks (bambooVariant).
      candle/layer/pickle  bits 0-2 how many, less one
      tall plants, beds    bit 3 the upper half / the head
    Fences, walls, panes, rails and redstone work out their shape from their
@@ -1319,6 +1322,71 @@ SHAPES.shulker = function (d, m) {
 };
 MODEL_SHAPES.add('shulker');
 
+/* ---- where a plant stands in its block: the game's random offset (BlockBehaviour.Properties.offsetType and
+   Mth.getSeed, read from the 26.1.2 jar). XZ: up to a quarter block either way (pointed dripstone an eighth, its
+   base's half width), in sixteen steps from the column's seed; XYZ also sinks it up to a fifth of a block. ---- */
+export const OFFSET_XZ = ['mangrove_propagule', 'tall_seagrass', 'dandelion', 'golden_dandelion', 'torchflower', 'poppy', 'blue_orchid',
+  'allium', 'azure_bluet', 'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy', 'cornflower', 'wither_rose',
+  'lily_of_the_valley', 'sunflower', 'lilac', 'rose_bush', 'peony', 'tall_grass', 'large_fern', 'pitcher_plant', 'bamboo_sapling',
+  'bamboo', 'warped_roots', 'nether_sprouts', 'crimson_roots', 'pointed_dripstone', 'hanging_roots', 'open_eyeblossom', 'closed_eyeblossom'];
+export const OFFSET_XYZ = ['short_grass', 'fern', 'short_dry_grass', 'tall_dry_grass', 'small_dripleaf'];
+const MAX_OFFSET = { pointed_dripstone: 0.125 };
+// Mth.getSeed(x, y, z), a Java long (BigInt)
+export function javaPosSeed(x, y, z) {
+  let l = BigInt(Math.imul(x | 0, 3129871)) ^ (BigInt(z | 0) * 116129781n) ^ BigInt(y | 0);
+  l = BigInt.asIntN(64, l);
+  l = BigInt.asIntN(64, l * l * 42317861n + l * 11n);
+  return l >> 16n;
+}
+// [dx, dy, dz] in blocks for a block with d.offset ('xz' or 'xyz') at x, z (a double tall plant: its lower half's y does not matter)
+export function blockOffset(d, x, z) {
+  if (!d || !d.offset) return null;
+  const s = javaPosSeed(x, 0, z), max = MAX_OFFSET[d.name] ?? 0.25;
+  const c = v => Math.max(-max, Math.min(max, v));
+  const dx = c((Number(s & 15n) / 15 - 0.5) * 0.5), dz = c((Number((s >> 8n) & 15n) / 15 - 0.5) * 0.5);
+  const dy = d.offset === 'xyz' ? (Number((s >> 4n) & 15n) / 15 - 1) * 0.2 : 0;
+  return [dx, dy, dz];
+}
+/* Which of a multipart's weighted models a spot picks: the section's random set to the block's seed, one nextLong
+   for the multipart, that set again before the part's own nextInt (MultiPartModel.collectParts, a LegacyRandomSource) */
+const LCG_M = 0x5DEECE66Dn, MASK48 = (1n << 48n) - 1n;
+export function variantAt(x, y, z, n) {
+  let seed = (javaPosSeed(x, y, z) ^ LCG_M) & MASK48;
+  const next = bits => { seed = (seed * LCG_M + 0xBn) & MASK48; return Number(BigInt.asIntN(32, seed >> BigInt(48 - bits))); };
+  const hi = next(32), lo = next(32);
+  const l = BigInt.asIntN(64, (BigInt(hi) << 32n) + BigInt(lo));
+  seed = (l ^ LCG_M) & MASK48;
+  if ((n & (n - 1)) === 0) return Number((BigInt(n) * BigInt(next(31))) >> 31n);
+  let bits, val;
+  do { bits = next(31); val = bits % n; } while (bits - val + (n - 1) < 0 || bits - val + (n - 1) > 2147483647);
+  return val;
+}
+export const bambooVariant = (x, y, z) => variantAt(x, y, z, 4);
+
+/* Bamboo, as the game's models: a stalk two pixels across (age 0) or three (age 1), in one of four models (each
+   takes its sides from its own column of the picture: 0, 3, 6 or 9), its top and bottom from the picture's corner,
+   with the small or large leaves as two flat planes 14.4 pixels wide crossing at the middle (bamboo*_age*.json,
+   bamboo_small_leaves.json, bamboo_large_leaves.json in the 26.1.2 jar). */
+function bambooModel(d, m) {
+  const L = d.L || {}, thick = m & 1, leaves = (m >> 4) & 3, v = (m >> 6) & 3, u0 = v * 3;
+  const r = [];
+  if (thick) {
+    const side = [u0, 0, u0 + 3, 16];
+    r.push(box(6.5, 0, 6.5, 9.5, 16, 9.5, { uv: [side, side, [13, 0, 16, 3], [13, 4, 16, 7], side, side] }));
+  } else {
+    const side = [u0, 0, u0 + 2, 16];
+    r.push(box(7, 0, 7, 9, 16, 9, { uv: [side, side, [13, 0, 15, 2], [13, 4, 15, 6], side, side] }));
+  }
+  const leafLayer = leaves === 2 ? L.large : leaves === 1 ? L.small : undefined;
+  if (leafLayer !== undefined) {
+    r.push({ q: [[0.8, 0, 8], [15.2, 0, 8], [15.2, 16, 8], [0.8, 16, 8]], uv: [0, 0, 16, 16], layer: leafLayer, plain: true });
+    r.push({ q: [[8, 0, 15.2], [8, 0, 0.8], [8, 16, 0.8], [8, 16, 15.2]], uv: [0, 0, 16, 16], layer: leafLayer, plain: true });
+  }
+  return r;
+}
+SHAPES.bamboo = bambooModel;
+MODEL_SHAPES.add('bamboo');
+
 // the boxes (and quads) of a block in a given state; nb(dx, dy, dz) returns { d, m } or null
 export function boxesOf(d, m, nb) {
   const fn = SHAPES[d.shape];
@@ -1330,9 +1398,19 @@ export function boxesOf(d, m, nb) {
 const FULL = [[0, 0, 0, 1, 1, 1]];
 const CACTUS = [[1 / 16, 0, 1 / 16, 15 / 16, 15 / 16, 15 / 16]];
 const toBlocks = list => list.filter(b => !b.q && b.f[1] !== b.t[1]).map(b => [b.f[0] / 16, b.f[1] / 16, b.f[2] / 16, b.t[0] / 16, b.t[1] / 16, b.t[2] / 16]);
-export function collisionBoxes(d, m, nb) {
+const shiftBy = (list, o) => (o && list ? list.map(b => [b[0] + o[0], b[1] + o[1], b[2] + o[2], b[3] + o[0], b[4] + o[1], b[5] + o[2]]) : list);
+// x, z (optional): where the block is, for the ones the game moves about in their block (blockOffset)
+export function collisionBoxes(d, m, nb, x, z) {
+  if (d.offset && x !== undefined) return shiftBy(collisionAt(d, m, nb), blockOffset(d, x, z));
+  return collisionAt(d, m, nb);
+}
+// bamboo: three pixels across whatever its age (BambooStalkBlock COLLISION_SHAPE); outlined six across, ten with large leaves
+const BAMBOO_HIT = [[6.5 / 16, 0, 6.5 / 16, 9.5 / 16, 1, 9.5 / 16]];
+const BAMBOO_SMALL = [[5 / 16, 0, 5 / 16, 11 / 16, 1, 11 / 16]], BAMBOO_LARGE = [[3 / 16, 0, 3 / 16, 13 / 16, 1, 13 / 16]];
+function collisionAt(d, m, nb) {
   if (!d.solid) return null;
   const s = d.shape;
+  if (s === 'bamboo') return BAMBOO_HIT;
   // a honey block is as narrow as a cactus, and as short
   if (d.name === 'honey_block') return CACTUS;
   if (s === 'cube') return FULL;
@@ -1345,8 +1423,13 @@ export function collisionBoxes(d, m, nb) {
   if (s === 'fence' || s === 'wall' || s === 'gate') b = b.map(x => [x[0], 0, x[2], x[3], 1.5, x[5]]);
   return b.length ? b : null;
 }
-export function selectionBoxes(d, m, nb) {
+export function selectionBoxes(d, m, nb, x, z) {
+  if (d.offset && x !== undefined) return shiftBy(selectionAt(d, m, nb), blockOffset(d, x, z));
+  return selectionAt(d, m, nb);
+}
+function selectionAt(d, m, nb) {
   const s = d.shape;
+  if (s === 'bamboo') return ((m >> 4) & 3) === 2 ? BAMBOO_LARGE : BAMBOO_SMALL;
   if (s === 'cube' || s === 'fluid') return FULL;
   if (s === 'cross' || s === 'pad') return d.shape === 'pad' ? [[1 / 16, 0, 1 / 16, 15 / 16, 1.5 / 16, 15 / 16]] : [[2 / 16, 0, 2 / 16, 14 / 16, 13 / 16, 14 / 16]];
   if (s === 'torch') return [[6 / 16, 0, 6 / 16, 10 / 16, 10 / 16, 10 / 16]];

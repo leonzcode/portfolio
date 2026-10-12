@@ -1008,12 +1008,13 @@ FEATURES.bamboo = (D, cfg, r, x, y, z) => {
         R.set(l, yy, m, B.podzol, 0);
       }
     }
+    // (BambooFeature: a thick bare trunk, then thick tops: large leaves done growing, large, small; meta as sim/bamboo.js)
     let yy = y;
-    for (let k = 0; k < n && isAir(R.get(x, yy, z)); k++) { R.set(x, yy, z, B.bamboo, 0); yy++; }
+    for (let k = 0; k < n && isAir(R.get(x, yy, z)); k++) { R.set(x, yy, z, B.bamboo, 1); yy++; }
     if (yy - y >= 3) {
-      R.set(x, yy, z, B.bamboo, 0);
-      R.set(x, yy - 1, z, B.bamboo, 0);
-      R.set(x, yy - 2, z, B.bamboo, 0);
+      R.set(x, yy, z, B.bamboo, 1 | 8 | (2 << 4));
+      R.set(x, yy - 1, z, B.bamboo, 1 | (2 << 4));
+      R.set(x, yy - 2, z, B.bamboo, 1 | (1 << 4));
     }
   }
   return true;

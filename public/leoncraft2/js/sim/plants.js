@@ -38,6 +38,7 @@
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID } from '../blocks.js?v=43';
 import { Gen } from '../worldgen.js?v=43';
+import { randomTick as bambooTick, bambooMeta, SMALL as BAMBOO_SMALL } from './bamboo.js?v=43';
 import { rng } from '../noise.js?v=43';
 import { LEVEL, FALLING } from '../world-const.js?v=43';
 import { vineFaces, vineHolds, VINE_SIDES, VINE_UP, multiFaces, MULTI_DIRS } from '../models.js?v=43';
@@ -300,24 +301,19 @@ export function installPlants(sim) {
   sim.on('cactus', tall('cactus', cactusSurvives));
 
   /* ---- bamboo ---- */
-  const bambooHeight = (x, y, z) => { let h = 0; while (h < 16 && sim.get(x, y - h - 1, z) === B.bamboo) h++; return h; };
-  const growBamboo = (s, x, y, z, height) => {
-    const stage = (height >= 11 && R(s) < 0.25) || height === 15 ? 8 : 0;
-    s.set(x, y + 1, z, B.bamboo, 4 | stage);
-  };
+  // (sim/bamboo.js: the game's growBamboo, leaves and thickness)
   if (B.bamboo !== undefined) sim.on('bamboo', {
     random(s, x, y, z, m) {
       if (m & 8) return;
-      if (RI(s, 3) !== 0 || !isAir(s, x, y + 1, z) || s.brightness(x, y + 1, z, 0) < 9) return;
-      const h = bambooHeight(x, y, z) + 1;
-      if (h < 16) growBamboo(s, x, y, z, h);
+      bambooTick(s, x, y, z, m, () => R(s), isAir(s, x, y + 1, z), s.brightness(x, y + 1, z, 0));
     },
   });
+  // a sapling puts a thin stalk with small leaves on itself and turns into bamboo under it
   if (B.bamboo_sapling !== undefined) sim.on('bamboo_sapling', {
     random(s, x, y, z) {
       if (RI(s, 3) !== 0 || !isAir(s, x, y + 1, z) || s.brightness(x, y + 1, z, 0) < 9) return;
-      s.set(x, y, z, B.bamboo, 4);
-      s.set(x, y + 1, z, B.bamboo, 4);
+      s.set(x, y, z, B.bamboo, 0);
+      s.set(x, y + 1, z, B.bamboo, bambooMeta(0, BAMBOO_SMALL, 0));
     },
   });
 

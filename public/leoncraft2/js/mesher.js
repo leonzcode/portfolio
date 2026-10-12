@@ -29,10 +29,10 @@
    (grass block sides), 5 plant, 6 tinted.
 --------------------------------------------------------------------------- */
 import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=43';
-import { CH, H, LEVEL, FALLING } from './world-const.js?v=43';
+import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=43';
 import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=43';
 import { hash3 } from './noise.js?v=43';
-import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef } from './models.js?v=43';
+import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=43';
 import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=43';
 
 const W = 48, A = W * W;          // the region: three chunks a side
@@ -416,6 +416,8 @@ function build(job, ny, c0, c1, base) {
      else from the block's own cell), then each vertex takes the value at
      its own spot on the face, so half a slab's side shades like half a cube. */
   const BAO = [0, 0, 0, 0], BLS = [0, 0, 0, 0], BLB = [0, 0, 0, 0], PB = [0, 0, 0];
+  // a model block the game moves about in its block (models.js blockOffset): set by drawModel while it draws
+  let OFX = 0, OFY = 0, OFZ = 0;
   function boxFace(buf, f, x, y, z, i, bx, layer, uvr, flags, tint, rnd, edge) {
     const F = FACES[f];
     const fi = edge ? i + NSTEP[f] : i;
@@ -458,7 +460,7 @@ function build(job, ny, c0, c1, base) {
       const aq = Math.round(ao);
       if (c === 0) a0 = aq; else if (c === 1) a1 = aq; else if (c === 2) a2 = aq; else a3 = aq;
       const k = buf.vert(), ar = buf.arrs, P = ar[0], Aa = ar[1], L = ar[2], C = ar[3];
-      P[k * 4] = Math.round((x + PB[0] / 16 + 8) * 32); P[k * 4 + 1] = Math.round((y + PB[1] / 16) * 32); P[k * 4 + 2] = Math.round((z + PB[2] / 16 + 8) * 32); P[k * 4 + 3] = layer;
+      P[k * 4] = Math.round((x + OFX + PB[0] / 16 + 8) * 32); P[k * 4 + 1] = Math.round((y + OFY + PB[1] / 16) * 32); P[k * 4 + 2] = Math.round((z + OFZ + PB[2] / 16 + 8) * 32); P[k * 4 + 3] = layer;
       Aa[k * 4] = tu; Aa[k * 4 + 1] = tv; Aa[k * 4 + 2] = f; Aa[k * 4 + 3] = aq | flags;
       L[k * 4] = Math.round(ls * 17); L[k * 4 + 1] = Math.round(lb * 17); L[k * 4 + 2] = wd * 17; L[k * 4 + 3] = rnd;
       C[k * 4] = tint >> 16; C[k * 4 + 1] = (tint >> 8) & 255; C[k * 4 + 2] = tint & 255; C[k * 4 + 3] = 255;
@@ -473,8 +475,14 @@ function build(job, ny, c0, c1, base) {
       const j = i + dx + dz * W + dy * A, b2 = rb[j];
       return b2 ? { d: BLOCKS[b2], m: rm[j] } : null;
     };
-    const list = boxesOf(d, rm[i] | (mark || 0), nb);
+    // bamboo: which of the game's four stalk models this spot picks (meta bits 6-7, drawn only)
+    const list = boxesOf(d, rm[i] | (mark || 0) | (d.shape === 'bamboo' ? bambooVariant(wx0 + x, y + Y0, wz0 + z) << 6 : 0), nb);
     if (!list) return;
+    const off = d.offset ? blockOffset(d, wx0 + x, wz0 + z) : null;
+    if (off) { OFX = off[0]; OFY = off[1]; OFZ = off[2]; }
+    try { drawList(list, x, y, z, i, d, k2, rnd); } finally { OFX = OFY = OFZ = 0; }
+  }
+  function drawList(list, x, y, z, i, d, k2, rnd) {
     const tint = tintFor(d, k2), tinted = d.tint ? 64 : 0;
     const buf = d.pass === 'translucent' ? out.translucent : d.pass === 'opaque' ? out.opaque : out.cutout;
     const small = SMALL[d.id];
@@ -482,7 +490,7 @@ function build(job, ny, c0, c1, base) {
       if (bx.hide) continue;            // there to be picked, drawn elsewhere (item frames)
       if (bx.q) {
         // a free quad: crossed planes and things lying flat
-        for (let c = 0; c < 4; c++) { QP[c][0] = x + bx.q[c][0] / 16; QP[c][1] = y + bx.q[c][1] / 16; QP[c][2] = z + bx.q[c][2] / 16; }
+        for (let c = 0; c < 4; c++) { QP[c][0] = x + OFX + bx.q[c][0] / 16; QP[c][1] = y + OFY + bx.q[c][1] / 16; QP[c][2] = z + OFZ + bx.q[c][2] / 16; }
         const uv = bx.uv;
         QUV[0][0] = uv[0]; QUV[0][1] = uv[3]; QUV[1][0] = uv[2]; QUV[1][1] = uv[3];
         QUV[2][0] = uv[2]; QUV[2][1] = uv[1]; QUV[3][0] = uv[0]; QUV[3][1] = uv[1];
@@ -664,8 +672,9 @@ function build(job, ny, c0, c1, base) {
         const wd = waterDepth(i, y);
         if (d.shape === 'cross') {
           const tint = tintFor(d, k2), tinted = d.tint ? 64 : 0;
-          let ox = 0, oz = 0;
-          if (d.offset) { ox = (hash3(seed ^ 0x1f, wx, 0, wz) - 0.5) * 0.5; oz = (hash3(seed ^ 0x2f, wx, 0, wz) - 0.5) * 0.5; }
+          // (where the game moves it in its block, from the column alone: models.js blockOffset)
+          let ox = 0, oy = 0, oz = 0;
+          if (d.offset) { const o = blockOffset(d, wx, wz); ox = o[0]; oy = o[1]; oz = o[2]; }
           // a tall plant's two halves sway as one stem: the lower half less
           let wave = d.wave;
           const upperHalf = d.tall && (rm[i] & 8);
@@ -673,8 +682,9 @@ function build(job, ny, c0, c1, base) {
           if (upperHalf && wave === 1) wave = 3;
           const s = 0.45, cx = x + 0.5 + ox, cz = z + 0.5 + oz;
           const layer = upperHalf && d.facesUpper ? d.facesUpper[2] : d.faces[2];
-          const pts1 = [[cx - s, y, cz - s], [cx + s, y, cz + s], [cx + s, y + 1, cz + s], [cx - s, y + 1, cz - s]];
-          const pts2 = [[cx - s, y, cz + s], [cx + s, y, cz - s], [cx + s, y + 1, cz - s], [cx - s, y + 1, cz + s]];
+          const ya = y + oy, yb = y + 1 + oy;
+          const pts1 = [[cx - s, ya, cz - s], [cx + s, ya, cz + s], [cx + s, yb, cz + s], [cx - s, yb, cz - s]];
+          const pts2 = [[cx - s, ya, cz + s], [cx + s, ya, cz - s], [cx + s, yb, cz - s], [cx - s, yb, cz + s]];
           const uvs = [[0, 16], [16, 16], [16, 0], [0, 0]];
           quad(out.plants, pts1, uvs, layer, 2, 32 | tinted, tint, wave, rnd, sl, bl, wd);
           quad(out.plants, pts2, uvs, layer, 2, 32 | tinted, tint, wave, rnd, sl, bl, wd);

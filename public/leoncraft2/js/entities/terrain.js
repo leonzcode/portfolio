@@ -133,7 +133,7 @@ export class Terrain {
         const d = BLOCKS[b];
         if (d.shape === 'cube' && b !== HONEY) { push(x, y, z, x + 1, y + 1, z + 1); continue; }
         this.nbx = x; this.nby = y; this.nbz = z;
-        const boxes = collisionBoxes(d, c.meta[(y << 8) | (lz << 4) | lx], this.nbFn);
+        const boxes = collisionBoxes(d, c.meta[(y << 8) | (lz << 4) | lx], this.nbFn, x, z);
         if (boxes) for (const q of boxes) push(x + q[0], y + q[1], z + q[2], x + q[3], y + q[4], z + q[5]);
       }
     }
@@ -282,7 +282,7 @@ export class Terrain {
         const d = BLOCKS[b];
         if (d.shape === 'cube' || FLUID[b]) { this.rayX = x; this.rayY = y; this.rayZ = z; return t; }
         this.nbx = x; this.nby = y; this.nbz = z;
-        const boxes = collisionBoxes(d, this.meta(x, y, z), this.nbFn);
+        const boxes = collisionBoxes(d, this.meta(x, y, z), this.nbFn, x, z);
         if (boxes) {
           let best = Infinity;
           for (const q of boxes) {

@@ -16,6 +16,7 @@
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID } from '../blocks.js?v=43';
 import { isDirt } from './plants.js?v=43';
+import { boneMeal as bambooBoneMeal, placed as bambooPlaced, bambooMeta, SMALL as BAMBOO_SMALL } from './bamboo.js?v=43';
 import { I, itemName as itemNameOf } from '../items.js?v=43';
 
 const RI = (sim, n) => Math.floor(sim.rng() * n);
@@ -128,8 +129,12 @@ export function installFarming(sim) {
         }
       }
     }
-    // bamboo stands up
-    return list.map(e => (e[3] === B.bamboo ? [e[0], e[1], e[2], e[3], 4] : e));
+    // bamboo: a sapling on the ground, a stalk on a sapling or on bamboo (sim/bamboo.js placed)
+    return list.map(e => {
+      if (e[3] !== B.bamboo) return e;
+      const [b, m] = bambooPlaced(sim.get(e[0], e[1] - 1, e[2]), sim.meta(e[0], e[1] - 1, e[2]), sim.get(e[0], e[1] + 1, e[2]), sim.meta(e[0], e[1] + 1, e[2]));
+      return [e[0], e[1], e[2], b, m];
+    });
   });
 
   /* ---- things in the hand ---- */
@@ -179,18 +184,13 @@ function boneMeal(sim, x, y, z) {
   // a small shelf mushroom grows large (meta bit 3); it never grows on its own
   if (n === 'shelf_mushroom') { if (m & 8) return false; sim.set(x, y, z, b, m | 8); return true; }
   if (n === 'cocoa') { const age = (m >> 3) & 3; if (age >= 2) return false; sim.set(x, y, z, b, (m & 7) | ((age + 1) << 3)); return true; }
-  if (n === 'bamboo' || n === 'bamboo_sapling') {
-    let top = y; while (sim.get(x, top + 1, z) === B.bamboo) top++;
-    let h = 0; while (sim.get(x, y - h - 1, z) === B.bamboo) h++;
-    const grow = between(sim, 1, 2);
-    let made = false;
-    for (let i = 0; i < grow; i++) {
-      const total = top - y + h + 1;
-      if (total >= 16 || sim.get(x, top + 1, z)) break;
-      sim.set(x, top + 1, z, B.bamboo, 4); top++; made = true;
-    }
-    return made;
+  // (sim/bamboo.js: the game's performBonemeal; a sapling grows its first stalk as a random tick does)
+  if (n === 'bamboo_sapling') {
+    if (sim.get(x, y + 1, z)) return false;
+    sim.set(x, y, z, B.bamboo, 0); sim.set(x, y + 1, z, B.bamboo, bambooMeta(0, BAMBOO_SMALL, 0));
+    return true;
   }
+  if (n === 'bamboo') return bambooBoneMeal(sim, x, y, z, () => sim.rng(), (ax, ay, az) => !sim.get(ax, ay, az));
   if (n === 'short_grass' || n === 'fern') {
     const tall = n === 'fern' ? 'large_fern' : 'tall_grass';
     if (sim.get(x, y + 1, z)) return false;

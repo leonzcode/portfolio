@@ -72,7 +72,7 @@ export class Interactor {
     // the cracks: none until some of the block is worn away, then a stage for each tenth
     if (mm && mm.x === hit.x && mm.y === hit.y && mm.z === hit.z && mm.total > 0 && mm.t > 0) stage = Math.min(9, Math.floor(mm.t / mm.total * 10));
     // (adventure and spectator show no outline: there is nothing they could do to the block)
-    if (this.overlay) { if (this.adventure) this.overlay.set(0, 0, 0, null, -1); else this.overlay.set(hit.x, hit.y, hit.z, selectionBoxes(d, w.meta(hit.x, hit.y, hit.z), nb), stage); }
+    if (this.overlay) { if (this.adventure) this.overlay.set(0, 0, 0, null, -1); else this.overlay.set(hit.x, hit.y, hit.z, selectionBoxes(d, w.meta(hit.x, hit.y, hit.z), nb, hit.x, hit.z), stage); }
     return hit;
   }
   down(button) {
@@ -202,7 +202,7 @@ export class Interactor {
       const b = w.get(x, y, z), d = BLOCKS[b];
       if (this.onBreak && d && d.shape !== 'fluid') {
         const nb = (dx, dy, dz) => { const n = w.get(x + dx, y + dy, z + dz); return n ? { d: BLOCKS[n], m: w.meta(x + dx, y + dy, z + dz) } : null; };
-        this.onBreak(x, y, z, b, d.shape === 'cube' ? null : selectionBoxes(d, w.meta(x, y, z), nb));
+        this.onBreak(x, y, z, b, d.shape === 'cube' ? null : selectionBoxes(d, w.meta(x, y, z), nb, x, z));
       }
       // the simulation hears of it (sim/sim.js); drops come from the loot tables (hands.js), or the
       // simulation's loot, or the block itself
