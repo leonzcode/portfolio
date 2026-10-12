@@ -27,18 +27,18 @@
    useExtra(manager, itemName, target, take, build) is the manager's last
    try at a right click (entities/manager.js useHeld).
 --------------------------------------------------------------------------- */
-import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=42';
-import { Projectile } from './projectiles.js?v=42';
-import { register, TYPES } from './mobs.js?v=42';
-import { model } from './mobs2.js?v=42';
-import { addArt } from './mobart.js?v=42';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=42';
-import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, maxDamage } from '../items.js?v=42';
-import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=42';
-import { LegacyRandom } from '../gen/random.js?v=42';
-import { fireworkColour } from '../crafting.js?v=42';
-import { rayBox } from './terrain.js?v=42';
-import { lootStack } from '../containers.js?v=42';
+import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=43';
+import { Projectile } from './projectiles.js?v=43';
+import { register, TYPES } from './mobs.js?v=43';
+import { model } from './mobs2.js?v=43';
+import { addArt } from './mobart.js?v=43';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=43';
+import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, maxDamage } from '../items.js?v=43';
+import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=43';
+import { LegacyRandom } from '../gen/random.js?v=43';
+import { fireworkColour } from '../crafting.js?v=43';
+import { rayBox } from './terrain.js?v=43';
+import { lootStack } from '../containers.js?v=43';
 const THREE = window.THREE;
 
 const PI = Math.PI;
@@ -542,7 +542,7 @@ const pickW = list => { let t = 0; for (const [, w] of list) t += w; let r = R()
 // the enchantments random loot may carry (the table's and the treasure ones), in the game's order
 const ON_RANDOM_LOOT = ORDER.concat(['binding_curse', 'vanishing_curse', 'frost_walker', 'mending']);
 const BIOME_NAMES = [];
-import('../biomes.js?v=42').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
+import('../biomes.js?v=43').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
 export class FishingBobber extends Projectile {
   static W = 0.25; static H = 0.25; static MODEL = 'bobber'; static TEX = 'bobber';
   constructor(m, type) {

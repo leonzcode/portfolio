@@ -26,16 +26,16 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=42';
-import { Packs } from './pack.js?v=42';
-import { Account } from '../net/account.js?v=42';
-import { withAccount, AccountScreen, AdminScreen, logOut } from './account.js?v=42';
-import { packArtSummary } from '../entities/packart.js?v=42';
-import { LanScreen } from './lan.js?v=42';
-import { parseSeed } from '../gen/random.js?v=42';
-import { SOUND_CREDITS } from '../sound/credits.js?v=42';
-import { FlatCustomizeScreen } from './flat.js?v=42';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=42';
+} from './gui.js?v=43';
+import { Packs } from './pack.js?v=43';
+import { Account } from '../net/account.js?v=43';
+import { withAccount, AccountScreen, AdminScreen, logOut } from './account.js?v=43';
+import { packArtSummary } from '../entities/packart.js?v=43';
+import { LanScreen } from './lan.js?v=43';
+import { parseSeed } from '../gen/random.js?v=43';
+import { SOUND_CREDITS } from '../sound/credits.js?v=43';
+import { FlatCustomizeScreen } from './flat.js?v=43';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=43';
 
 const PI = Math.PI;
 
@@ -707,9 +707,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=42';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=42';
-import { minimapButtons } from './minimap.js?v=42';
+export { VideoSettingsScreen } from './video.js?v=43';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=43';
+import { minimapButtons } from './minimap.js?v=43';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }

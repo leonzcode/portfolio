@@ -4,7 +4,7 @@
    said the last time it ran (Previous Output, with the O / X button that
    keeps it or not), Done and Cancel. Done sets the command and says so.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField } from './gui.js?v=42';
+import { Screen, Button, TextField } from './gui.js?v=43';
 
 const WHITE = 0xFFFFFF, GREY = 0xA0A0A0;
 

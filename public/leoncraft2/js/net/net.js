@@ -61,25 +61,25 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=42';
-import { idx, H } from '../world-const.js?v=42';
-import { DIMS, DIM_IDS } from '../dims.js?v=42';
-import { Save } from '../save.js?v=42';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=42';
-import { glints } from '../render/armor.js?v=42';
-import { containerKind } from '../containers.js?v=42';
-import { getSkinSettings } from '../render/avatar.js?v=42';
-import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=42';
-import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=42';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=42';
-import { Projectile } from '../entities/projectiles.js?v=42';
-import { Combat } from '../combat/combat.js?v=42';
-import { Vehicles } from './vehicles.js?v=42';
-import { Mobs, Orbs } from './mobs.js?v=42';
-import { Events } from './events.js?v=42';
-import { EndSync } from './endfight.js?v=42';
-import { Account, wsBase, httpBase } from './account.js?v=42';
-import { rankTag } from './players.js?v=42';
+import { B, BLOCKS } from '../blocks.js?v=43';
+import { idx, H } from '../world-const.js?v=43';
+import { DIMS, DIM_IDS } from '../dims.js?v=43';
+import { Save } from '../save.js?v=43';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=43';
+import { glints } from '../render/armor.js?v=43';
+import { containerKind } from '../containers.js?v=43';
+import { getSkinSettings } from '../render/avatar.js?v=43';
+import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=43';
+import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=43';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=43';
+import { Projectile } from '../entities/projectiles.js?v=43';
+import { Combat } from '../combat/combat.js?v=43';
+import { Vehicles } from './vehicles.js?v=43';
+import { Mobs, Orbs } from './mobs.js?v=43';
+import { Events } from './events.js?v=43';
+import { EndSync } from './endfight.js?v=43';
+import { Account, wsBase, httpBase } from './account.js?v=43';
+import { rankTag } from './players.js?v=43';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
