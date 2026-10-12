@@ -124,6 +124,27 @@ export const gameProjects: Project[] = [
     ],
   },
   {
+    slug: "leoncraft2",
+    title: "Leoncraft 2",
+    description:
+      "A second, much bigger take on a Minecraft-style game in the browser: worlds made the way the real game makes them, survival, the Nether and the End, shader levels from plain to cinematic, and online servers with accounts.",
+    href: "/leoncraft2/",
+    image: "/cards/card_leoncraft2.png",
+    tag: "Multiplayer",
+    story: [
+      "Leoncraft 2 is a new engine, not an update to the first Leoncraft. I wanted to see how close a browser game could get to the real thing, so the terrain follows Minecraft's own world generation: the same biome tables, caves, aquifers, ore veins and structures, built from the seed into chunks by a pool of web workers while you play.",
+      "Most of survival is in: crafting, mining, hunger, mobs, farming, redstone, enchanting and brewing, the Nether and the End with the dragon fight, advancements and statistics. The graphics have a Shaders button with five levels, from Off (lit the way the vanilla game lights its blocks) up to a full pipeline with soft shadows, volumetric clouds, water reflections and light shafts.",
+      "Multiplayer runs against a Node server on my own VPS. You make an account, then join or create servers; mobs, items, explosions and the dragon fight are shared between players, and server owners get the commands and settings a real server owner has. None of the game's art or sound comes from Mojang: the textures are openly licensed packs I audited and patched, and the sounds are CC0 recordings and my own synthesis.",
+    ],
+    tech: [
+      "Three.js (WebGL 2) with hand-written GLSL, plain ES modules, no build step",
+      "Minecraft-style world generation (noise router, aquifers, carvers, structures) in web workers, cached in IndexedDB",
+      "Five shader levels: vanilla-style lighting up to shadows, bloom, volumetric clouds and screen-space reflections",
+      "Node + ws game server on a Hetzner VPS: accounts, shared mobs, server owners and commands",
+      "Openly licensed textures and sounds only, checked against the real game's files",
+    ],
+  },
+  {
     slug: "minecraft",
     title: "Leoncraft",
     description:
