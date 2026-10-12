@@ -437,7 +437,7 @@ export class Events {
     const b = w.get(x, y, z), d = BLOCKS[b];
     if (!d) { c.ov.crack.visible = false; return; }
     const nb = (dx, dy, dz) => { const n = w.get(x + dx, y + dy, z + dz); return n ? { d: BLOCKS[n], m: w.meta(x + dx, y + dy, z + dz) } : null; };
-    c.ov.set(x, y, z, selectionBoxes(d, w.meta(x, y, z), nb), s);
+    c.ov.set(x, y, z, selectionBoxes(d, w.meta(x, y, z), nb, x, z), s);
     c.ov.outline.visible = false;
   }
   dropCrack(c) {

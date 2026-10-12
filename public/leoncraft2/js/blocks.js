@@ -16,7 +16,7 @@
      opacity how much sky light it takes away (15 = all, leaves and water 1)
 --------------------------------------------------------------------------- */
 import { DATA } from './blockdata.js?v=43';
-import { MODEL_SHAPES } from './models.js?v=43';
+import { MODEL_SHAPES, OFFSET_XZ, OFFSET_XYZ } from './models.js?v=43';
 import { SHELF_TEX } from './shelfmushroom.js?v=43';
 import { dimBlocks } from './dim/blocks.js?v=43';
 
@@ -168,6 +168,23 @@ for (const e of DATA) {
 if (B.shelf_mushroom !== undefined) {
   const d = BLOCKS[B.shelf_mushroom];
   d.tex = Object.assign(typeof d.tex === 'string' ? { all: d.tex } : Object.assign({}, d.tex), SHELF_TEX);
+}
+// bamboo is its own model (models.js bambooModel), drawn from our own pictures made at start-up (render/bamboo.js):
+// the stalk laid out as the game's models read theirs, and the small and large leaves
+if (B.bamboo !== undefined) {
+  const d = BLOCKS[B.bamboo];
+  d.shape = 'bamboo';
+  d.tex = { all: 'lc2_bamboo_stalk', small: 'lc2_bamboo_small_leaves', large: 'lc2_bamboo_large_leaves' };
+}
+// which plants the game moves about in their block, and how (models.js blockOffset): its own list, from the 26.1.2 jar
+// (sulfur spike, from 26.3, keeps what the data gave it)
+{
+  const xz = new Set(OFFSET_XZ), xyz = new Set(OFFSET_XYZ);
+  for (const d of BLOCKS) {
+    if (!d || d.name === 'sulfur_spike') continue;
+    d.offset = xyz.has(d.name) ? 'xyz' : xz.has(d.name) ? 'xz' : (d.lower && xz.has(d.lower) ? 'xz' : false);
+  }
+  if (B.sulfur_spike !== undefined && BLOCKS[B.sulfur_spike].offset) BLOCKS[B.sulfur_spike].offset = 'xz';
 }
 // the Nether's and the End's own blocks and items (portals, frames, flint and steel, eyes of ender)
 dimBlocks(def, B, BLOCKS);
