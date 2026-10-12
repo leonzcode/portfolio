@@ -21,12 +21,12 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=44';
-import { ConfirmScreen } from './menus.js?v=44';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=44';
-import { Account } from '../net/account.js?v=44';
-import { LoginScreen, AccountScreen } from './account.js?v=44';
-import { parseSeed } from '../gen/random.js?v=44';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=45';
+import { ConfirmScreen } from './menus.js?v=45';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=45';
+import { Account } from '../net/account.js?v=45';
+import { LoginScreen, AccountScreen } from './account.js?v=45';
+import { parseSeed } from '../gen/random.js?v=45';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
@@ -191,7 +191,7 @@ export class CreateServerScreen extends Screen {
     this.mode = e ? e.mode : 'survival';
     this.cheats = e ? !!e.cheats : false;
     // spawn protection, as server.properties has it: 16 blocks round the world spawn that only operators can change (0 for none)
-    this.prot = e && e.spawnProt !== undefined ? (e.spawnProt | 0 ? 16 : 0) : 16;
+    this.prot = e && e.spawnProt !== undefined ? (e.spawnProt | 0 ? 16 : 0) : 0;
     this.nameField = new TextField(0, 0, 200, 20, { value: e ? e.name : 'Leoncraft Server', maxLength: 32, onEnter: () => this.done() });
     this.motdField = new TextField(0, 0, 200, 20, { value: e ? e.motd || '' : '', maxLength: 60, hint: 'A line under the name' });
     this.pwField = new TextField(0, 0, 200, 20, { value: '', maxLength: 32, hint: e ? 'Leave blank to keep it' : 'Needed to join', onEnter: () => this.done() });

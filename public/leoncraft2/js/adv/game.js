@@ -18,29 +18,29 @@
    (where you are, every second; what you carry, when it changes) is looked
    at here in advTick.
 --------------------------------------------------------------------------- */
-import { Progress, ADV, TABS } from './tracker.js?v=44';
-import { AdvToast } from './toast.js?v=44';
-import { AdvancementsScreen } from './screen.js?v=44';
-import { B, BLOCKS, FLUID } from '../blocks.js?v=44';
-import { itemName, itemId, armorOf } from '../items.js?v=44';
-import { BIOMES } from '../biomes.js?v=44';
-import { Y0 } from '../world-const.js?v=44';
-import { register, gameRule } from '../commands.js?v=44';
-import { Living } from '../entities/entity.js?v=44';
-import { TYPES } from '../entities/mobs.js?v=44';
-import { AbstractHorse } from '../entities/mobs4.js?v=44';
-import { Allay } from '../entities/mobs6.js?v=44';
-import { Piglin } from '../entities/nether.js?v=44';
-import { WindCharge } from '../entities/mobs7.js?v=44';
-import { summonAt } from '../entities/summon.js?v=44';
-import { hives } from '../entities/hives.js?v=44';
-import { Merchant, WanderingTrader, CurableZombieVillager } from '../entities/merchant.js?v=44';
-import { FishingBobber } from '../entities/items2.js?v=44';
-import { EnderDragon } from '../dim/dragon.js?v=44';
-import { EndFight } from '../dim/endfight.js?v=44';
-import { ContainerScreen } from '../ui/inventory.js?v=44';
-import { BrewingScreen } from '../ui/containers.js?v=44';
-import { EnchantScreen, SmithingScreen } from '../ui/workstations.js?v=44';
+import { Progress, ADV, TABS } from './tracker.js?v=45';
+import { AdvToast } from './toast.js?v=45';
+import { AdvancementsScreen } from './screen.js?v=45';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=45';
+import { itemName, itemId, armorOf } from '../items.js?v=45';
+import { BIOMES } from '../biomes.js?v=45';
+import { Y0 } from '../world-const.js?v=45';
+import { register, gameRule } from '../commands.js?v=45';
+import { Living } from '../entities/entity.js?v=45';
+import { TYPES } from '../entities/mobs.js?v=45';
+import { AbstractHorse } from '../entities/mobs4.js?v=45';
+import { Allay } from '../entities/mobs6.js?v=45';
+import { Piglin } from '../entities/nether.js?v=45';
+import { WindCharge } from '../entities/mobs7.js?v=45';
+import { summonAt } from '../entities/summon.js?v=45';
+import { hives } from '../entities/hives.js?v=45';
+import { Merchant, WanderingTrader, CurableZombieVillager } from '../entities/merchant.js?v=45';
+import { FishingBobber } from '../entities/items2.js?v=45';
+import { EnderDragon } from '../dim/dragon.js?v=45';
+import { EndFight } from '../dim/endfight.js?v=45';
+import { ContainerScreen } from '../ui/inventory.js?v=45';
+import { BrewingScreen } from '../ui/containers.js?v=45';
+import { EnchantScreen, SmithingScreen } from '../ui/workstations.js?v=45';
 
 let G = null;          // the game being played
 let P = null;          // its player's advancements
