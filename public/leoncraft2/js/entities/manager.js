@@ -19,45 +19,45 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=46';
-import { PathFinder, Navigation } from './path.js?v=46';
-import { Particles } from './particles.js?v=46';
-import { Ambient } from './ambient.js?v=46';
-import { Living, Mob, wrap, DEG } from './entity.js?v=46';
-import { TYPES } from './mobs.js?v=46';
-import './projectiles.js?v=46';
-import { placeBoat } from './boat.js?v=46';
-import './mobs2.js?v=46';
-import './mobs3.js?v=46';
-import './mobs4.js?v=46';
-import { wandererTick } from './merchant.js?v=46';
-import { tableBooks } from './tablebook.js?v=46';
-import { explode } from './explosion.js?v=46';
-import { splitXp } from './xporb.js?v=46';
-import { placeMinecart, isRail, Minecart } from './minecart.js?v=46';
-import { CART_ITEMS } from './carts.js?v=46';
-import { fallFrom, FALLS, free } from './fallingblock.js?v=46';
-import { Spawner, DESPAWN } from './spawner.js?v=46';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=46';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=46';
-import { EntityMeshes } from '../render/entitymesh.js?v=46';
-import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=46';
-import { lightNear } from '../lightlevel.js?v=46';
-import { activeDrops } from '../drops.js?v=46';
-import { breakAt } from '../place.js?v=46';
-import { dropOf } from '../survival.js?v=46';
-import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=46';
-import { Combat } from '../combat/combat.js?v=46';
-import './nether.js?v=46';
+import { Terrain } from './terrain.js?v=47';
+import { PathFinder, Navigation } from './path.js?v=47';
+import { Particles } from './particles.js?v=47';
+import { Ambient } from './ambient.js?v=47';
+import { Living, Mob, wrap, DEG } from './entity.js?v=47';
+import { TYPES } from './mobs.js?v=47';
+import './projectiles.js?v=47';
+import { placeBoat } from './boat.js?v=47';
+import './mobs2.js?v=47';
+import './mobs3.js?v=47';
+import './mobs4.js?v=47';
+import { wandererTick } from './merchant.js?v=47';
+import { tableBooks } from './tablebook.js?v=47';
+import { explode } from './explosion.js?v=47';
+import { splitXp } from './xporb.js?v=47';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=47';
+import { CART_ITEMS } from './carts.js?v=47';
+import { fallFrom, FALLS, free } from './fallingblock.js?v=47';
+import { Spawner, DESPAWN } from './spawner.js?v=47';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=47';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=47';
+import { EntityMeshes } from '../render/entitymesh.js?v=47';
+import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=47';
+import { lightNear } from '../lightlevel.js?v=47';
+import { activeDrops } from '../drops.js?v=47';
+import { breakAt } from '../place.js?v=47';
+import { dropOf } from '../survival.js?v=47';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=47';
+import { Combat } from '../combat/combat.js?v=47';
+import './nether.js?v=47';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
-import './mobs5.js?v=46';
-import './mobs6.js?v=46';
-import './mobs7.js?v=46';
-import { DIMS } from '../dims.js?v=46';
-import { armorLayers } from './armorlayer.js?v=46';
-import { MobHeld } from '../render/mobheld.js?v=46';
-import { setSpawnerMob } from '../struct/spawners.js?v=46';
-import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=46';
+import './mobs5.js?v=47';
+import './mobs6.js?v=47';
+import './mobs7.js?v=47';
+import { DIMS } from '../dims.js?v=47';
+import { armorLayers } from './armorlayer.js?v=47';
+import { MobHeld } from '../render/mobheld.js?v=47';
+import { setSpawnerMob } from '../struct/spawners.js?v=47';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=47';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -1158,4 +1158,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=46';
+import { rayBox } from './terrain.js?v=47';

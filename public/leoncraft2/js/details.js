@@ -61,16 +61,16 @@
    What it remembers (sign text, food on campfires, framed items, discs, vaults, what pots, shelves and lecterns
    hold) is kept per dimension (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=46';
-import { lightNear } from './lightlevel.js?v=46';
-import { glints } from './render/armor.js?v=46';
-import { setGlint } from './render/glint.js?v=46';
-import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=46';
-import { potWobbled } from './sim/lids.js?v=46';
-import { BookScreen } from './ui/book.js?v=46';
-import { wantBook } from './entities/tablebook.js?v=46';
-import { cookingRecipe } from './crafting.js?v=46';
-import { hiveUse } from './entities/hives.js?v=46';
+import { B, BLOCKS } from './blocks.js?v=47';
+import { lightNear } from './lightlevel.js?v=47';
+import { glints } from './render/armor.js?v=47';
+import { setGlint } from './render/glint.js?v=47';
+import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=47';
+import { potWobbled } from './sim/lids.js?v=47';
+import { BookScreen } from './ui/book.js?v=47';
+import { wantBook } from './entities/tablebook.js?v=47';
+import { cookingRecipe } from './crafting.js?v=47';
+import { hiveUse } from './entities/hives.js?v=47';
 
 /* Other modules keep state of their own with a dimension's block entities (struct/trials.js: a trial
    spawner's cooldown): registerExtra(k, { save(details) -> entries with that k, load(details, entry), reset(details) }). */
@@ -113,19 +113,20 @@ const NOT_DRAWN = new Set(['jukebox', 'vault', 'decorated_pot', 'shelf', 'lecter
 /* Where a sign's board is: its middle, the way its front looks (a unit
    vector), and the board's size in blocks, from the sign's model (models.js). */
 export function signBoard(d, m, x, y, z) {
-  let F, out, cy, w = 1, h = 0.5;
+  let F, out, cy, w = 1, h = 0.5, back = 0;
   if (d.shape === 'wall_sign') {
     const wall = SIDE_FACING[m & 7] || 0;
     // a wall sign looks out from its wall; a hanging one on a wall sticks out from it, so it looks along the wall
     F = d.hanging ? (wall + 1) & 3 : (wall + 2) & 3;
-    if (d.hanging) { out = 1 / 16; cy = 5 / 16; w = 14 / 16; h = 10 / 16; } else { out = 0.5 - 1.5 / 16; cy = 8.5 / 16; }
+    // (a wall sign's board is 1.5/16 thick against the wall, so its middle is that far back from the block's: back)
+    if (d.hanging) { out = 1 / 16; cy = 5 / 16; w = 14 / 16; h = 10 / 16; } else { out = 0.75 / 16; cy = 8.5 / 16; back = 0.5 - 0.75 / 16; }
   } else {
     // a standing sign built facing north: its front looks north, turned with it
     F = m & 3;
     if (d.hanging) { out = 1 / 16; cy = 5 / 16; w = 14 / 16; h = 10 / 16; } else { out = 0.67 / 16; cy = 13.33 / 16; }
   }
   const [dx, , dz] = DIRS[F];
-  return { F, cx: x + 0.5, cy: y + cy, cz: z + 0.5, nx: dx, nz: dz, out, w, h, twoSided: true };
+  return { F, cx: x + 0.5 - dx * back, cy: y + cy, cz: z + 0.5 - dz * back, nx: dx, nz: dz, out, w, h, twoSided: true };
 }
 
 export class Details {
@@ -254,7 +255,7 @@ export class Details {
     if (e.rewarded || e.queue.length) return false;
     e.rewarded = true; e.at = this.ticks + 14; e.unlockUntil = e.at;
     if (!h.creative) h.inv.takeSelected(1);
-    import('./struct/loot.js?v=46').then(L => import('./containers.js?v=46').then(C => {
+    import('./struct/loot.js?v=47').then(L => import('./containers.js?v=47').then(C => {
       const table = 'trial_chambers/' + (ominous ? 'reward_ominous' : 'reward');
       // (the game's getRandomItems: the stacks as drawn, one thrown out at a time, never shuffled or split as a chest's are)
       for (const r of L.rollItems(table, (Math.random() * 2147483647) | 0)) { const st = C.lootStack(r); if (st) e.queue.push(st); }

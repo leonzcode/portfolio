@@ -17,11 +17,11 @@
    The column heads are item icons of our own choosing (the game draws its
    own little pictures there); their tooltips are the game's names.
 --------------------------------------------------------------------------- */
-import { Screen, Button, ScrollList, WHITE } from './gui.js?v=46';
-import { B, BLOCKS } from '../blocks.js?v=46';
-import { itemId, displayName } from '../items.js?v=46';
-import { drawStack } from './inventory.js?v=46';
-import { entityName } from '../damage.js?v=46';
+import { Screen, Button, ScrollList, WHITE } from './gui.js?v=47';
+import { B, BLOCKS } from '../blocks.js?v=47';
+import { itemId, displayName } from '../items.js?v=47';
+import { drawStack } from './inventory.js?v=47';
+import { entityName } from '../damage.js?v=47';
 
 const ROW_GREY = 0xBABABA, DARK = 0x808080;
 // the game's General page: its names, sorted as it sorts them
