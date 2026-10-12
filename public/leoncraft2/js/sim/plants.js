@@ -36,12 +36,12 @@
                     copper that is younger)
    mushrooms        1 in 25, spread if fewer than five round them, in the dark
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=46';
-import { Gen } from '../worldgen.js?v=46';
-import { randomTick as bambooTick, bambooMeta, SMALL as BAMBOO_SMALL } from './bamboo.js?v=46';
-import { rng } from '../noise.js?v=46';
-import { LEVEL, FALLING } from '../world-const.js?v=46';
-import { vineFaces, vineHolds, VINE_SIDES, VINE_UP, multiFaces, MULTI_DIRS } from '../models.js?v=46';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=47';
+import { Gen } from '../worldgen.js?v=47';
+import { randomTick as bambooTick, bambooMeta, SMALL as BAMBOO_SMALL } from './bamboo.js?v=47';
+import { rng } from '../noise.js?v=47';
+import { LEVEL, FALLING } from '../world-const.js?v=47';
+import { vineFaces, vineHolds, VINE_SIDES, VINE_UP, multiFaces, MULTI_DIRS } from '../models.js?v=47';
 
 const HORIZ = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const R = sim => sim.rng();
