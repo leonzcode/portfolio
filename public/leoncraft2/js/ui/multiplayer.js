@@ -21,17 +21,48 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=45';
-import { ConfirmScreen } from './menus.js?v=45';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=45';
-import { Account } from '../net/account.js?v=45';
-import { LoginScreen, AccountScreen } from './account.js?v=45';
-import { parseSeed } from '../gen/random.js?v=45';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=46';
+import { ConfirmScreen } from './menus.js?v=46';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=46';
+import { Account } from '../net/account.js?v=46';
+import { LoginScreen, AccountScreen } from './account.js?v=46';
+import { parseSeed } from '../gen/random.js?v=46';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
 const keepPassword = (id, pw) => { try { if (pw) localStorage.setItem(PW_KEY + id, pw); else localStorage.removeItem(PW_KEY + id); } catch (e) {} };
 const MODE_NAMES = { survival: 'Survival', creative: 'Creative', adventure: 'Adventure' };
+
+/* ---- a server's own picture (Server Settings' Icon...): data URLs made into images once ---- */
+const ICONS = new Map();
+function iconImage(url, gui) {
+  let im = ICONS.get(url);
+  if (!im) { im = new Image(); im.onload = () => gui && gui.markDirty(); im.src = url; ICONS.set(url, im); }
+  return im.complete && im.naturalWidth ? im : null;
+}
+// a picture the owner picks, cut to a square and made 64 x 64 (as the game's server-icon.png), small enough to send
+function pickIcon() {
+  return new Promise(res => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+    inp.onchange = () => {
+      const f = inp.files && inp.files[0]; if (!f) return res(null);
+      const im = new Image(), u = URL.createObjectURL(f);
+      im.onload = () => {
+        const c = document.createElement('canvas'); c.width = c.height = 64;
+        const k = Math.min(im.width, im.height), cx = c.getContext('2d');
+        cx.imageSmoothingQuality = 'high';
+        cx.drawImage(im, (im.width - k) / 2, (im.height - k) / 2, k, k, 0, 0, 64, 64);
+        URL.revokeObjectURL(u);
+        let d = c.toDataURL('image/png');
+        if (d.length > 24000) d = c.toDataURL('image/jpeg', 0.85);
+        res(d.length <= 24000 ? d : null);
+      };
+      im.onerror = () => { URL.revokeObjectURL(u); res(null); };
+      im.src = u;
+    };
+    inp.click();
+  });
+}
 
 /* ---- one server in the list ---- */
 class ServerEntry {
@@ -48,7 +79,10 @@ class ServerEntry {
     g.text(count, left + width - cw - 17, top + 1, 0x808080, false);
     const bars = ping < 0 ? 5 : ping < 150 ? 0 : ping < 300 ? 1 : ping < 600 ? 2 : ping < 1000 ? 3 : 4;
     g.blit('icons', 0, 176 + bars * 8, 10, 8, left + width - 15, top);
-    // the picture: grass and dirt, with a padlock on a private one
+    // the picture: the owner's own, or grass and dirt with a padlock on a private one
+    const icon = s.icon ? iconImage(s.icon, this.screen.gui) : null;
+    if (icon) { const c = g.ctx, sm = c.imageSmoothingEnabled; c.imageSmoothingEnabled = false; c.drawImage(icon, left, top, 32, 32); c.imageSmoothingEnabled = sm; }
+    else {
     g.fill(left, top, left + 32, top + 32, 0xFF5B3F2B);
     g.fill(left, top, left + 32, top + 8, 0xFF5E8C32);
     g.fill(left, top + 8, left + 32, top + 10, 0xFF4A7027);
@@ -58,6 +92,7 @@ class ServerEntry {
       g.fill(left + 10, top + 14, left + 22, top + 26, 0xFFC8A02A);
       g.fill(left + 12, top + 9, left + 14, top + 15, 0xFF9A9A9A); g.fill(left + 18, top + 9, left + 20, top + 15, 0xFF9A9A9A); g.fill(left + 12, top + 8, left + 20, top + 10, 0xFF9A9A9A);
       g.fill(left + 15, top + 18, left + 17, top + 22, 0xFF3A2A08);
+    }
     }
     if (hovered) {
       g.fill(left, top, left + 32, top + 32, 0xA0909090);
@@ -336,7 +371,16 @@ export class ServerSettingsScreen extends Screen {
     const op = cyc('Your OP', 'ownerOp', [true, false], onOff, () => 'Whether you have an operator\'s commands here (you keep the owner\'s either way)');
     op.active = !!this.s.mine;
     cyc('Homes Per Player', 'homes', HOMES, x => String(x), () => 'How many homes each player can set with /sethome (operators have no limit)');
-    this.add(new Button(lx, y, cw, 20, 'Delete Server', () => this.remove())).active = this.s.id !== 'main';
+    // the server's picture in the list: Icon... picks one from this computer, shift-click takes it away
+    const hw = Math.floor((cw - 2) / 2);
+    this.iconBtn = this.add(new Button(lx, y, hw, 20, this.s.icon ? 'Icon: Yours' : 'Icon...', async () => {
+      if (window.event && window.event.shiftKey) { this.v.icon = ''; this.iconBtn.message = 'Icon: None'; this.gui.markDirty(); return; }
+      const d = await pickIcon();
+      if (d) { this.v.icon = d; this.iconBtn.message = 'Icon: New'; this.error = ''; } else if (d === null) this.error = '';
+      this.gui.markDirty();
+    }));
+    this.iconBtn.tooltip = 'The picture beside your server in the list (shift-click to take it away)';
+    this.add(new Button(lx + hw + 2, y, cw - hw - 2, 20, 'Delete Server', () => this.remove())).active = this.s.id !== 'main';
     const leftEnd = y + 22;
     y = top; x = rx;
     cyc('', 'kind', ['public', 'private'], x => (x === 'public' ? 'Public' : 'Private'), x => (x === 'public' ? 'Anyone can join' : 'Only people with the password can join'));
@@ -363,6 +407,7 @@ export class ServerSettingsScreen extends Screen {
     const o = { id: this.s.id, name, motd: this.motdField.value.trim(), kind: v.kind, mode: v.mode, cheats: v.cheats, spawnProt: v.prot, difficulty: v.difficulty,
       pvp: v.pvp, max: v.max, wl: v.wl, wlNames: this.wlField.value.split(/[\s,]+/).filter(Boolean), homes: v.homes };
     if (this.s.mine) o.ownerOp = v.ownerOp;
+    if (typeof v.icon === 'string') o.icon = v.icon;
     if (this.pwField.value) o.password = this.pwField.value;
     let r;
     try { r = await editServer(o); } catch (e) { r = { error: 'Could not reach the server.' }; }
