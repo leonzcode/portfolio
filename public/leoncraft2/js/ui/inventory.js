@@ -34,17 +34,17 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=47';
-import { Screen, TextField, WHITE } from './gui.js?v=47';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=47';
-import { matchGrid, consumeGrid } from '../crafting.js?v=47';
-import { enchName, ENCH } from '../enchanting.js?v=47';
-import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=47';
-import { patternLines, drawBannerIcon } from '../banners.js?v=47';
-import { mapLines } from '../maps.js?v=47';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=47';
-import { dialPicture, usePicture } from '../dials.js?v=47';
-import { RecipeBook } from './recipebook.js?v=47';
+import { BLOCKS, B } from '../blocks.js?v=48';
+import { Screen, TextField, WHITE } from './gui.js?v=48';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=48';
+import { matchGrid, consumeGrid } from '../crafting.js?v=48';
+import { enchName, ENCH } from '../enchanting.js?v=48';
+import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=48';
+import { patternLines, drawBannerIcon } from '../banners.js?v=48';
+import { mapLines } from '../maps.js?v=48';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=48';
+import { dialPicture, usePicture } from '../dials.js?v=48';
+import { RecipeBook } from './recipebook.js?v=48';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -278,7 +278,8 @@ export function creativeItems() {
   }
   // the items that are not blocks, in the game's list order
   for (const k of ITEM_TABS) out[k] = [];
-  for (let id = ITEM_BASE; id < ITEMS.length; id++) { const it = ITEMS[id], tab = it && (TAB_OF[it.name] || it.tab); if (it && out[tab] && it.texIndex >= 0) out[tab].push(id); }
+  // (an item drawn by a block's picture counts: the water and lava buckets, whose pictures are their fluids' item icons)
+  for (let id = ITEM_BASE; id < ITEMS.length; id++) { const it = ITEMS[id], tab = it && (TAB_OF[it.name] || it.tab); if (it && out[tab] && (it.texIndex >= 0 || it.iconLayer !== undefined)) out[tab].push(id); }
   // an item the game lists once for each of its kinds: those kinds in its place (the search tab gets every book level)
   const search = new Map();
   for (const k of BLOCK_TABS.concat(ITEM_TABS)) {
@@ -304,7 +305,7 @@ export function creativeItems() {
   return out;
 }
 // items the generated list files under the wrong tab: the game keeps these with the functional blocks
-const TAB_OF = { item_frame: 'functional', glow_item_frame: 'functional', painting: 'functional', armor_stand: 'functional', end_crystal: 'functional' };
+const TAB_OF = { item_frame: 'functional', glow_item_frame: 'functional', painting: 'functional', armor_stand: 'functional', end_crystal: 'functional', water_bucket: 'tools', lava_bucket: 'tools' };
 /* The kinds the game lists an item under, each a stack to copy: every
    potion as a drink, a splash and a lingering potion and an arrow (the
    game's order of potions); an enchanted book of each enchantment at its top

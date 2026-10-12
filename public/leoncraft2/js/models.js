@@ -32,8 +32,8 @@
    Fences, walls, panes, rails and redstone work out their shape from their
    neighbours, as Minecraft does when it draws them.
 --------------------------------------------------------------------------- */
-import { burnable } from './flame.js?v=47';
-import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=47';
+import { burnable } from './flame.js?v=48';
+import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=48';
 
 const box = (x0, y0, z0, x1, y1, z1, extra) => {
   const b = { f: [x0, y0, z0], t: [x1, y1, z1] };
@@ -93,6 +93,16 @@ export function sheet(f, t, face, uv, layer) {
   };
   // the free quad's corners run left bottom, right bottom, right top, left top
   return { q: [pt(0, 1), pt(1, 1), pt(1, 0), pt(0, 0)], uv, layer };
+}
+// boxes turned round the block's upright middle by deg (as sheets, which can stand at any angle)
+function spinY(list, d, deg) {
+  const a = deg * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a), out = [];
+  const tip = ([x, y, z]) => [8 + (x - 8) * c + (z - 8) * sn, y, 8 - (x - 8) * sn + (z - 8) * c];
+  for (const b of list) for (let f = 0; f < 6; f++) {
+    const q = sheet(b.f, b.t, f, b.uv ? b.uv[f] : [0, 0, 16, 16], (b.faces || d.faces)[f]);
+    q.q = q.q.map(tip); out.push(q);
+  }
+  return out;
 }
 /* One element of a game block model as it is written: from, to, its faces by name ({ north: [uv, layer, turn],
    ... }, those left out not drawn) and, for a tilted one, its rotation { axis: 'x' | 'y' | 'z', angle (degrees),
@@ -740,8 +750,11 @@ export const SHAPES = {
     if (d.banner) return turn(bannerModel(d, 0), m & 3);
     // the game's sign: a board 16 by 8 and 4/3 thick standing on a post, its top a little over the block
     const bd = [0, 0, 16, 8], ps = [7, 8, 9, 16];
-    return turn([box(0, 9.33, 7.33, 16, 17.33, 8.67, { uv: [[7, 0, 8.5, 8], [7, 0, 8.5, 8], [0, 0, 16, 1.5], [0, 0, 16, 1.5], bd, bd] }),
-      box(7.33, 0, 7.33, 8.67, 9.33, 8.67, { uv: [ps, ps, ps, ps, ps, ps] })], m & 3);
+    const parts = [box(0, 9.33, 7.33, 16, 17.33, 8.67, { uv: [[7, 0, 8.5, 8], [7, 0, 8.5, 8], [0, 0, 16, 1.5], [0, 0, 16, 1.5], bd, bd] }),
+      box(7.33, 0, 7.33, 8.67, 9.33, 8.67, { uv: [ps, ps, ps, ps, ps, ps] })];
+    // the game's sixteen ways round: bits 0-1 the quarter, bits 2-3 how many sixteenths of a turn past it (clockwise)
+    const k = (m >> 2) & 3;
+    return turn(k ? spinY(parts, d, -k * 22.5) : parts, m & 3);
   },
   wall_sign(d, m) {
     if (d.banner) return turn(bannerModel(d, 1), sideFacing(m & 7) || 0);

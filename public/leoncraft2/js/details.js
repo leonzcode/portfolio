@@ -61,16 +61,16 @@
    What it remembers (sign text, food on campfires, framed items, discs, vaults, what pots, shelves and lecterns
    hold) is kept per dimension (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=47';
-import { lightNear } from './lightlevel.js?v=47';
-import { glints } from './render/armor.js?v=47';
-import { setGlint } from './render/glint.js?v=47';
-import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=47';
-import { potWobbled } from './sim/lids.js?v=47';
-import { BookScreen } from './ui/book.js?v=47';
-import { wantBook } from './entities/tablebook.js?v=47';
-import { cookingRecipe } from './crafting.js?v=47';
-import { hiveUse } from './entities/hives.js?v=47';
+import { B, BLOCKS } from './blocks.js?v=48';
+import { lightNear } from './lightlevel.js?v=48';
+import { glints } from './render/armor.js?v=48';
+import { setGlint } from './render/glint.js?v=48';
+import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=48';
+import { potWobbled } from './sim/lids.js?v=48';
+import { BookScreen } from './ui/book.js?v=48';
+import { wantBook } from './entities/tablebook.js?v=48';
+import { cookingRecipe } from './crafting.js?v=48';
+import { hiveUse } from './entities/hives.js?v=48';
 
 /* Other modules keep state of their own with a dimension's block entities (struct/trials.js: a trial
    spawner's cooldown): registerExtra(k, { save(details) -> entries with that k, load(details, entry), reset(details) }). */
@@ -125,7 +125,10 @@ export function signBoard(d, m, x, y, z) {
     F = m & 3;
     if (d.hanging) { out = 1 / 16; cy = 5 / 16; w = 14 / 16; h = 10 / 16; } else { out = 0.67 / 16; cy = 13.33 / 16; }
   }
-  const [dx, , dz] = DIRS[F];
+  let [dx, , dz] = DIRS[F];
+  // a standing sign turned sixteenths past its quarter (models.js sign, bits 2-3)
+  const k = d.shape === 'sign' && !d.hanging && !d.banner ? (m >> 2) & 3 : 0;
+  if (k) { const t = (F * 4 + k) * Math.PI / 8; dx = Math.sin(t); dz = -Math.cos(t); }
   return { F, cx: x + 0.5 - dx * back, cy: y + cy, cz: z + 0.5 - dz * back, nx: dx, nz: dz, out, w, h, twoSided: true };
 }
 
@@ -255,7 +258,7 @@ export class Details {
     if (e.rewarded || e.queue.length) return false;
     e.rewarded = true; e.at = this.ticks + 14; e.unlockUntil = e.at;
     if (!h.creative) h.inv.takeSelected(1);
-    import('./struct/loot.js?v=47').then(L => import('./containers.js?v=47').then(C => {
+    import('./struct/loot.js?v=48').then(L => import('./containers.js?v=48').then(C => {
       const table = 'trial_chambers/' + (ominous ? 'reward_ominous' : 'reward');
       // (the game's getRandomItems: the stacks as drawn, one thrown out at a time, never shuffled or split as a chest's are)
       for (const r of L.rollItems(table, (Math.random() * 2147483647) | 0)) { const st = C.lootStack(r); if (st) e.queue.push(st); }

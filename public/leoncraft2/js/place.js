@@ -8,8 +8,8 @@
    the click. The same rules are here, writing the state into the meta byte
    the way js/models.js reads it.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=47';
-import { collisionBoxes, vineFaces, vineHolds, VINE_UP, multiFaces, MULTI_DIRS } from './models.js?v=47';
+import { B, BLOCKS, FLUID } from './blocks.js?v=48';
+import { collisionBoxes, vineFaces, vineHolds, VINE_UP, multiFaces, MULTI_DIRS } from './models.js?v=48';
 
 const DIRS = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]];     // north, east, south, west
 // the horizontal way you look: 0 north, 1 east, 2 south, 3 west
@@ -200,6 +200,8 @@ function placeDry(world, hit, id, player) {
       // a hanging sign needs something above to hang from
       if (d.shape === 'sign' && d.hanging) { const ab = world.get(x, y + 1, z); if (!ab || !BLOCKS[ab].solid) return out; }
       m = d.shape === 'torch' ? 0 : (look + 2) & 3;
+      // a standing sign faces you in sixteenths of a turn, as the game's does (models.js sign: bits 2-3 past the quarter)
+      if (d.shape === 'sign' && !d.hanging && !d.banner) { const r = (((Math.round((Math.PI - player.yaw) / (Math.PI / 8))) % 16) + 16) % 16; m = (r >> 2) | ((r & 3) << 2); }
       break;
     }
     case 'wall_torch': case 'wall_sign': case 'ladder':
