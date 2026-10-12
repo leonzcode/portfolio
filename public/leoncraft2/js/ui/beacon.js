@@ -11,10 +11,10 @@
    Positions are the game's; the sheet is our own (tools/leoncraft2/
    build_stations.py beacon()).
 --------------------------------------------------------------------------- */
-import { ContainerScreen, slot, range, TO_PLAYER, drawStack } from './inventory.js?v=47';
-import { I, withCount } from '../items.js?v=47';
-import { EFFECT_ICON, EFFECT_SHEET, effectName } from '../effects.js?v=47';
-import { POWERS, PAYMENT } from '../sim/beacon.js?v=47';
+import { ContainerScreen, slot, range, TO_PLAYER, drawStack } from './inventory.js?v=48';
+import { I, withCount } from '../items.js?v=48';
+import { EFFECT_ICON, EFFECT_SHEET, effectName } from '../effects.js?v=48';
+import { POWERS, PAYMENT } from '../sim/beacon.js?v=48';
 
 const SHEET = 'container/beacon';
 const MAIN = range(9, 36), HOT = range(0, 9);
