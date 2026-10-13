@@ -26,16 +26,16 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=50';
-import { Packs } from './pack.js?v=50';
-import { Account } from '../net/account.js?v=50';
-import { withAccount, AccountScreen, AdminScreen, logOut } from './account.js?v=50';
-import { packArtSummary } from '../entities/packart.js?v=50';
-import { LanScreen } from './lan.js?v=50';
-import { parseSeed } from '../gen/random.js?v=50';
-import { SOUND_CREDITS } from '../sound/credits.js?v=50';
-import { FlatCustomizeScreen } from './flat.js?v=50';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=50';
+} from './gui.js?v=51';
+import { Packs } from './pack.js?v=51';
+import { Account } from '../net/account.js?v=51';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=51';
+import { packArtSummary } from '../entities/packart.js?v=51';
+import { LanScreen } from './lan.js?v=51';
+import { parseSeed } from '../gen/random.js?v=51';
+import { SOUND_CREDITS } from '../sound/credits.js?v=51';
+import { FlatCustomizeScreen } from './flat.js?v=51';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=51';
 
 const PI = Math.PI;
 
@@ -245,7 +245,11 @@ export class TitleScreen extends Screen {
     if (Account.offline && !Account.checked) { mp.active = false; mp.tooltip = "Can't reach the login server"; }
     // who you are, top left (Account: change your password), Log Out and, for an admin, Admin top right
     this.acctSig = Account.name + '|' + Account.ready + '|' + Account.offline + '|' + Account.admin;
-    if (Account.session) {
+    if (Account.guest) {
+      const who = 'Playing as ' + Account.name + ' (guest)', ww = g.textWidth(who);
+      this.add(new TextLink(2, 2, ww, who, () => g.open(new LoginScreen(null)), WHITE));
+      this.add(new Button(W - 64, 4, 60, 20, 'Log In', () => g.open(new LoginScreen(null))));
+    } else if (Account.session) {
       const who = 'Logged in as ' + Account.name, ww = g.textWidth(who);
       this.add(new TextLink(2, 2, ww, who, () => g.open(new AccountScreen()), WHITE));
       this.add(new Button(W - 64, 4, 60, 20, 'Log Out', () => logOut(g)));
@@ -707,9 +711,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=50';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=50';
-import { minimapButtons } from './minimap.js?v=50';
+export { VideoSettingsScreen } from './video.js?v=51';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=51';
+import { minimapButtons } from './minimap.js?v=51';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }

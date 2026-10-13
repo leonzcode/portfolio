@@ -21,12 +21,12 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=50';
-import { ConfirmScreen } from './menus.js?v=50';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=50';
-import { Account } from '../net/account.js?v=50';
-import { LoginScreen, AccountScreen } from './account.js?v=50';
-import { parseSeed } from '../gen/random.js?v=50';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=51';
+import { ConfirmScreen } from './menus.js?v=51';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=51';
+import { Account } from '../net/account.js?v=51';
+import { LoginScreen, AccountScreen } from './account.js?v=51';
+import { parseSeed } from '../gen/random.js?v=51';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
@@ -122,7 +122,8 @@ export class MultiplayerScreen extends Screen {
       onActivate: e => this.join(e.s),
     }));
     this.joinB = this.add(new Button(W / 2 - 154, H - 52, 100, 20, 'Join Server', () => { const s = this.sel(); if (s) this.join(s); }));
-    this.add(new Button(W / 2 - 50, H - 52, 100, 20, Account.name || 'Account', () => g.open(new AccountScreen()), 'Your account: change your password, or log out'));
+    if (Account.guest) this.add(new Button(W / 2 - 50, H - 52, 100, 20, 'Log In', () => g.open(new LoginScreen(null)), 'You are playing as ' + Account.name + '. Log in or make an account.'));
+    else this.add(new Button(W / 2 - 50, H - 52, 100, 20, Account.name || 'Account', () => g.open(new AccountScreen()), 'Your account: change your password, or log out'));
     this.add(new Button(W / 2 + 54, H - 52, 100, 20, 'Create Server', () => g.open(new CreateServerScreen())));
     this.editB = this.add(new Button(W / 2 - 154, H - 28, 70, 20, 'Settings', () => { const s = this.sel(); if (s && s.canEdit) g.open(new ServerSettingsScreen(s)); }));
     this.delB = this.add(new Button(W / 2 - 74, H - 28, 70, 20, 'Delete', () => this.remove()));
@@ -172,15 +173,15 @@ export class MultiplayerScreen extends Screen {
     }));
   }
   // join: the password kept for it (or none), and ask for one if it is wrong
-  join(s, password) {
-    const g = this.gui, pw = password !== undefined ? password : savedPassword(s.id);
-    // (the owner and an admin go in without it: the server lets them)
-    if (s.kind === 'private' && !pw && !s.canEdit) { g.open(new PasswordScreen(s, false)); return; }
+  join(s, password, watch) {
+    const g = this.gui, pw = watch ? '' : password !== undefined ? password : savedPassword(s.id);
+    // (the owner and an admin go in without it: the server lets them; anyone may watch as a spectator without it)
+    if (s.kind === 'private' && !pw && !s.canEdit && !watch) { g.open(new PasswordScreen(s, false)); return; }
     const scr = new ConnectingScreen();
     g.open(scr);
-    Net.connect(s.id, pw).then(net => {
+    Net.connect(s.id, pw, watch).then(net => {
       if (scr.cancelled) { net.close(); return; }
-      if (s.kind === 'private') keepPassword(s.id, pw);
+      if (s.kind === 'private' && !watch) keepPassword(s.id, pw);
       scr.text = 'Joining world...';
       if (this.hooks.play) this.hooks.play(net.entry(), { isNew: false });
     }, err => {
@@ -306,6 +307,11 @@ export class PasswordScreen extends Screen {
     this.add(this.field);
     this.add(new Button(W / 2 - 100, y + 36, 98, 20, 'Join Server', () => this.go()));
     this.add(new Button(W / 2 + 2, y + 36, 98, 20, 'Cancel', () => this.gui.back()));
+    this.add(new Button(W / 2 - 100, y + 60, 200, 20, 'Spectate', () => {
+      const g = this.gui, parent = this.parent;
+      g.back();
+      if (parent instanceof MultiplayerScreen) parent.join(this.server, '', true);
+    }, 'Watch this server as a spectator. No password needed, but you cannot change anything.'));
     this.gui.focusText(this.field);
     this.top = y;
   }

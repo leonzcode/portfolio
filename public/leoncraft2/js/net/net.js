@@ -61,25 +61,25 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=50';
-import { idx, H } from '../world-const.js?v=50';
-import { DIMS, DIM_IDS } from '../dims.js?v=50';
-import { Save } from '../save.js?v=50';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=50';
-import { glints } from '../render/armor.js?v=50';
-import { containerKind } from '../containers.js?v=50';
-import { getSkinSettings } from '../render/avatar.js?v=50';
-import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=50';
-import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=50';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=50';
-import { Projectile } from '../entities/projectiles.js?v=50';
-import { Combat } from '../combat/combat.js?v=50';
-import { Vehicles } from './vehicles.js?v=50';
-import { Mobs, Orbs } from './mobs.js?v=50';
-import { Events } from './events.js?v=50';
-import { EndSync } from './endfight.js?v=50';
-import { Account, wsBase, httpBase } from './account.js?v=50';
-import { rankTag } from './players.js?v=50';
+import { B, BLOCKS } from '../blocks.js?v=51';
+import { idx, H } from '../world-const.js?v=51';
+import { DIMS, DIM_IDS } from '../dims.js?v=51';
+import { Save } from '../save.js?v=51';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=51';
+import { glints } from '../render/armor.js?v=51';
+import { containerKind } from '../containers.js?v=51';
+import { getSkinSettings } from '../render/avatar.js?v=51';
+import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=51';
+import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=51';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=51';
+import { Projectile } from '../entities/projectiles.js?v=51';
+import { Combat } from '../combat/combat.js?v=51';
+import { Vehicles } from './vehicles.js?v=51';
+import { Mobs, Orbs } from './mobs.js?v=51';
+import { Events } from './events.js?v=51';
+import { EndSync } from './endfight.js?v=51';
+import { Account, wsBase, httpBase } from './account.js?v=51';
+import { rankTag } from './players.js?v=51';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -156,13 +156,14 @@ class MpSave {
   async writeExtra(name, v) { if (name !== 'containers' && name !== 'details') return this.local.writeExtra(name, v); }
   readState() {
     const net = this.net, local = this.local.readState();
+    if (net.watch) return Object.assign({}, local || {}, { mode: 'spectator' }, net.spawn && !local ? { spawn: { x: net.spawn.x, z: net.spawn.z } } : {});
     // (a server without records has none to give: what this browser kept is all there is; one that has none for you yet takes this browser's, once)
     const st = net.pdata ? Object.assign({}, local || {}, net.pdata) : local;
     // the world spawn is the server's
     if (st && net.spawn) st.spawn = { x: net.spawn.x, z: net.spawn.z };
     return st;
   }
-  writeState(s) { this.local.writeState(s); if (s) this.net.savePlayer(s); }
+  writeState(s) { if (this.net.watch) return; this.local.writeState(s); if (s) this.net.savePlayer(s); }
 }
 
 // /list: who is on, as the game answers it (no commands needed; on a server, the server's own count)
@@ -405,7 +406,7 @@ export class Net {
                        had Leoncraft 2 (FAIL_TEXT.old)
        closed early    it opened and shut without a word: refused
        30 seconds      Timed out, as the game says it */
-  static connect(server, password) {
+  static connect(server, password, watch) {
     return new Promise((resolve, reject) => {
       /* (who you are is your session: the server takes the name from your
          account. The session token and the server's password go in the first
@@ -420,7 +421,7 @@ export class Net {
          world waiting in its queue behind this timer: a moment more for it
          before giving up) */
       const timer = setTimeout(() => setTimeout(() => { if (done) return; try { ws.close(); } catch (e) {} end(false, { reason: 'Timed out' }); }, 1500), 30000);
-      ws.onopen = () => { opened = true; try { ws.send(JSON.stringify({ t: 'hello', tok: Account.token, pw: password || '' })); } catch (e) {} };
+      ws.onopen = () => { opened = true; try { ws.send(JSON.stringify({ t: 'hello', tok: Account.token, pw: password || '', guest: Account.guest ? Account.name : '', watch: !!watch })); } catch (e) {} };
       ws.onmessage = ev => {
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
         if (!done) {
@@ -479,6 +480,8 @@ export class Net {
     this.op = m.op !== undefined ? m.op | 0 : m.server && m.server.cheats ? 2 : 0;
     // the owner's powers (every command a server's owner has, its settings) and your rank tag, as the server decides them
     this.powers = !!m.powers; this.admin = !!m.admin; this.tag = m.tag || '';
+    // watching (in as a spectator with no password): nothing you do is kept or sent, and you stay a spectator
+    this.watch = !!m.watch; this.guest = !!m.guest;
     this.rules = m.rules || null;
     // spawn protection: how far round the world spawn you may not change anything (0: none for you, or none here)
     this.prot = m.prot | 0;
@@ -536,6 +539,7 @@ export class Net {
     this.initPlayers = null;
     // the server's game rules and difficulty, for everyone
     if (this.rules) this.applyRules(this.rules);
+    if (this.watch && ctx.chat) ctx.chat.add('You are watching as a spectator. Join with the password to play.', 0xAAAAAA);
     // you: your name in death messages, which go to everyone
     const hooks = game.survival.hooks;
     if (hooks) {

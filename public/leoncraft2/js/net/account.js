@@ -64,6 +64,15 @@ export const Account = {
   get name() { return this.session ? this.session.name : ''; },
   get token() { return this.session ? this.session.token : ''; },
   get admin() { return !!(this.session && this.session.admin); },
+  // playing as a guest: no account, a name of Guest_ and four digits (a server may give another if that one is in use)
+  get guest() { return !!(this.session && this.session.guest); },
+  playAsGuest() {
+    let name = '';
+    try { name = localStorage.getItem('lc2_guest') || ''; } catch (e) {}
+    if (!/^Guest_\d{4}$/.test(name)) { name = 'Guest_' + (1000 + Math.floor(Math.random() * 9000)); try { localStorage.setItem('lc2_guest', name); } catch (e) {} }
+    this.session = { name, token: '', guest: true, admin: false, at: Date.now() };
+    write(this.session); this.checked = true; this.offline = false; this.changed();
+  },
   // whether the title's play buttons work
   get ready() { return !!this.session && (this.checked || this.offline); },
   onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
@@ -86,6 +95,7 @@ export const Account = {
   async _check() {
     const s = this.session = read();
     if (!s) { this.checked = false; this.changed(); return false; }
+    if (s.guest) { this.checked = true; this.offline = false; this.changed(); return true; }
     const r = await call('/lc2/account/me', { token: s.token });
     if (r.ok) { this.session = Object.assign({}, s, { name: r.name, admin: !!r.admin }); write(this.session); this.checked = true; this.offline = false; this.changed(); return true; }
     if (r.code === 'down') { this.offline = true; this.changed(); return 'offline'; }
@@ -108,6 +118,7 @@ export const Account = {
   },
   async logout() {
     const t = this.token;
+    if (this.guest) { this.forget(); return; }
     this.forget();
     if (t) await call('/lc2/account/logout', { token: t });
   },
