@@ -17,9 +17,9 @@
    ctx.r alone; drawing takes from a hash of the frame position, so every
    chunk builds the same ruin.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=49';
-import { hash32 } from '../rand.js?v=49';
-import { id } from '../piece.js?v=49';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=50';
+import { hash32 } from '../rand.js?v=50';
+import { id } from '../piece.js?v=50';
 
 export const PLANS = {};
 const TYPE = 'trail_ruins';

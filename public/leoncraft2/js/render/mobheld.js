@@ -15,11 +15,11 @@
    seconds after it is not; entities/manager.js calls begin(), hold() for each
    mob it draws and end().
 --------------------------------------------------------------------------- */
-import { isFlatItem } from './blockmesh.js?v=49';
-import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=49';
-import { setGlint } from './glint.js?v=49';
-import { glints, pieceLook } from './armor.js?v=49';
-import { DRAW, itemId } from '../items.js?v=49';
+import { isFlatItem } from './blockmesh.js?v=50';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=50';
+import { setGlint } from './glint.js?v=50';
+import { glints, pieceLook } from './armor.js?v=50';
+import { DRAW, itemId } from '../items.js?v=50';
 const THREE = window.THREE;
 
 export class MobHeld {

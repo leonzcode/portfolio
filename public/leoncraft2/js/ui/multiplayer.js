@@ -21,12 +21,12 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=49';
-import { ConfirmScreen } from './menus.js?v=49';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=49';
-import { Account } from '../net/account.js?v=49';
-import { LoginScreen, AccountScreen } from './account.js?v=49';
-import { parseSeed } from '../gen/random.js?v=49';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=50';
+import { ConfirmScreen } from './menus.js?v=50';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=50';
+import { Account } from '../net/account.js?v=50';
+import { LoginScreen, AccountScreen } from './account.js?v=50';
+import { parseSeed } from '../gen/random.js?v=50';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
@@ -72,7 +72,7 @@ class ServerEntry {
     g.text(g.font.trim(s.name, width - 80), left + 35, top + 1, WHITE, false);
     const line1 = s.motd || (s.kind === 'private' ? 'A private server' : 'A public server');
     g.text(g.font.trim(line1, width - 40), left + 35, top + 12, 0x808080, false);
-    const line2 = (MODE_NAMES[s.mode] || 'Survival') + ' Mode' + (s.cheats ? ', Commands' : '') + (s.kind === 'private' ? ', Password' : '') + (s.mine ? ', yours' : s.owner ? ', ' + s.owner + "'s" : '');
+    const line2 = (MODE_NAMES[s.mode] || 'Survival') + ' Mode' + (s.cheats ? ', Commands' : '') + (s.kind === 'private' ? (s.settings && s.settings.password ? ', Password: ' + s.settings.password : ', Password') : '') + (s.mine ? ', yours' : s.owner ? ', ' + s.owner + "'s" : '');
     g.text(g.font.trim(line2, width - 40), left + 35, top + 21, 0x808080, false);
     // the player count and the signal bars, top right
     const count = s.players + '/' + s.max, cw = g.textWidth(count);
@@ -174,7 +174,8 @@ export class MultiplayerScreen extends Screen {
   // join: the password kept for it (or none), and ask for one if it is wrong
   join(s, password) {
     const g = this.gui, pw = password !== undefined ? password : savedPassword(s.id);
-    if (s.kind === 'private' && !pw) { g.open(new PasswordScreen(s, false)); return; }
+    // (the owner and an admin go in without it: the server lets them)
+    if (s.kind === 'private' && !pw && !s.canEdit) { g.open(new PasswordScreen(s, false)); return; }
     const scr = new ConnectingScreen();
     g.open(scr);
     Net.connect(s.id, pw).then(net => {
@@ -352,7 +353,8 @@ export class ServerSettingsScreen extends Screen {
       pvp: st.pvp !== false, max: s.max || 20, wl: !!st.wl, ownerOp: st.ownerOp !== false, homes: HOMES.includes(st.homes) ? st.homes : 3 };
     this.nameField = new TextField(0, 0, 180, 20, { value: s.name, maxLength: 32, onEnter: () => this.done() });
     this.motdField = new TextField(0, 0, 180, 20, { value: s.motd || '', maxLength: 60, hint: 'A line under the name' });
-    this.pwField = new TextField(0, 0, 180, 20, { value: '', maxLength: 32, hint: 'Leave blank to keep it' });
+    // (the owner and an admin see the password as it is now)
+    this.pwField = new TextField(0, 0, 180, 20, { value: (s.settings && s.settings.password) || '', maxLength: 32, hint: 'Leave blank to keep it' });
     this.wlField = new TextField(0, 0, 180, 20, { value: (st.wlNames || []).join(', '), maxLength: 400, hint: 'Names, with commas between' });
     this.error = '';
   }
