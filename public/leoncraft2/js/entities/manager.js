@@ -19,45 +19,45 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=48';
-import { PathFinder, Navigation } from './path.js?v=48';
-import { Particles } from './particles.js?v=48';
-import { Ambient } from './ambient.js?v=48';
-import { Living, Mob, wrap, DEG } from './entity.js?v=48';
-import { TYPES } from './mobs.js?v=48';
-import './projectiles.js?v=48';
-import { placeBoat } from './boat.js?v=48';
-import './mobs2.js?v=48';
-import './mobs3.js?v=48';
-import './mobs4.js?v=48';
-import { wandererTick } from './merchant.js?v=48';
-import { tableBooks } from './tablebook.js?v=48';
-import { explode } from './explosion.js?v=48';
-import { splitXp } from './xporb.js?v=48';
-import { placeMinecart, isRail, Minecart } from './minecart.js?v=48';
-import { CART_ITEMS } from './carts.js?v=48';
-import { fallFrom, FALLS, free } from './fallingblock.js?v=48';
-import { Spawner, DESPAWN } from './spawner.js?v=48';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=48';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=48';
-import { EntityMeshes } from '../render/entitymesh.js?v=48';
-import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=48';
-import { lightNear } from '../lightlevel.js?v=48';
-import { activeDrops } from '../drops.js?v=48';
-import { breakAt } from '../place.js?v=48';
-import { dropOf } from '../survival.js?v=48';
-import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=48';
-import { Combat } from '../combat/combat.js?v=48';
-import './nether.js?v=48';
+import { Terrain } from './terrain.js?v=49';
+import { PathFinder, Navigation } from './path.js?v=49';
+import { Particles } from './particles.js?v=49';
+import { Ambient } from './ambient.js?v=49';
+import { Living, Mob, wrap, DEG } from './entity.js?v=49';
+import { TYPES } from './mobs.js?v=49';
+import './projectiles.js?v=49';
+import { placeBoat } from './boat.js?v=49';
+import './mobs2.js?v=49';
+import './mobs3.js?v=49';
+import './mobs4.js?v=49';
+import { wandererTick } from './merchant.js?v=49';
+import { tableBooks } from './tablebook.js?v=49';
+import { explode } from './explosion.js?v=49';
+import { splitXp } from './xporb.js?v=49';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=49';
+import { CART_ITEMS } from './carts.js?v=49';
+import { fallFrom, FALLS, free } from './fallingblock.js?v=49';
+import { Spawner, DESPAWN } from './spawner.js?v=49';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=49';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=49';
+import { EntityMeshes } from '../render/entitymesh.js?v=49';
+import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=49';
+import { lightNear } from '../lightlevel.js?v=49';
+import { activeDrops } from '../drops.js?v=49';
+import { breakAt } from '../place.js?v=49';
+import { dropOf } from '../survival.js?v=49';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=49';
+import { Combat } from '../combat/combat.js?v=49';
+import './nether.js?v=49';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
-import './mobs5.js?v=48';
-import './mobs6.js?v=48';
-import './mobs7.js?v=48';
-import { DIMS } from '../dims.js?v=48';
-import { armorLayers } from './armorlayer.js?v=48';
-import { MobHeld } from '../render/mobheld.js?v=48';
-import { setSpawnerMob } from '../struct/spawners.js?v=48';
-import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=48';
+import './mobs5.js?v=49';
+import './mobs6.js?v=49';
+import './mobs7.js?v=49';
+import { DIMS } from '../dims.js?v=49';
+import { armorLayers } from './armorlayer.js?v=49';
+import { MobHeld } from '../render/mobheld.js?v=49';
+import { setSpawnerMob } from '../struct/spawners.js?v=49';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=49';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -65,6 +65,9 @@ const CELL = 8;
 const DIFF = { peaceful: 0, easy: 1, normal: 2, hard: 3 };
 // a stick for steering: the mob it works on and how much one burst wears it
 const STICKS = { carrot_on_a_stick: ['pig', 7], warped_fungus_on_a_stick: ['strider', 1] };
+
+// the most things one world keeps at once (mobs, vehicles, arrows...), and the most boats and the most minecarts
+const ENTITY_CAP = 1200, VEHICLE_CAP = 150;
 
 export class Entities {
   constructor(o) {
@@ -248,6 +251,8 @@ export class Entities {
   spawn(type, x, y, z, o = {}) {
     const C = TYPES[type];
     if (!C) { console.warn('no entity', type); return null; }
+    // (past these nothing more comes, so spawn eggs, boats or carts by the hundred cannot swamp a page; a save loads whole)
+    if (!o.json && !o.converted && this.full(type)) return null;
     const e = new C(this, type);
     e.setPos(x, y, z);
     if (o.yaw !== undefined) e.yaw = e.prevYaw = o.yaw;
@@ -264,6 +269,16 @@ export class Entities {
     return e;
   }
   get count() { return this.list.length; }
+  /* Room for one more? At most ENTITY_CAP things in the world, VEHICLE_CAP boats and VEHICLE_CAP minecarts. */
+  full(type) {
+    const L = this.list;
+    if (L.length >= ENTITY_CAP) return true;
+    const kind = /boat|raft/.test(type) ? 1 : /minecart/.test(type) ? 2 : 0;
+    if (!kind) return false;
+    let n = 0;
+    for (let i = 0; i < L.length; i++) { const t = L[i].type; if (!L[i].removed && (kind === 1 ? t === 'boat' : /minecart/.test(t)) && ++n >= VEHICLE_CAP) return true; }
+    return false;
+  }
   /* A mob to show inside a spawner: made like any other but kept out of the
      list (nothing ticks it, hits it or saves it), small enough to fit the
      cage (the game's 0.53125, less for anything bigger than a block), tipped
@@ -835,7 +850,7 @@ export class Entities {
       const at = target && target.face ? this.eggSpot(target) : !target ? this.eggFluidSpot() : null;
       if (!at) return false;
       // (a mob from an egg is not kept for good: like any other it goes when you are far off, unless named)
-      this.spawn(type, at[0], at[1], at[2], { natural: true, egg: true });
+      if (!this.spawn(type, at[0], at[1], at[2], { natural: true, egg: true })) return false;
       take();
       return true;
     }
@@ -1158,4 +1173,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=48';
+import { rayBox } from './terrain.js?v=49';
