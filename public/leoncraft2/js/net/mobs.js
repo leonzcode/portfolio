@@ -30,9 +30,9 @@
    walks out of everyone's reach is put away on the server, as the game
    keeps the mobs of unloaded chunks, and comes back with its ground.
 --------------------------------------------------------------------------- */
-import { Living, wrap } from '../entities/entity.js?v=51';
-import { TYPES } from '../entities/mobs.js?v=51';
-import { F } from './players.js?v=51';
+import { Living, wrap } from '../entities/entity.js?v=52';
+import { TYPES } from '../entities/mobs.js?v=52';
+import { F } from './players.js?v=52';
 
 const THREE = window.THREE;
 // besides the living (animals, monsters, villagers, golems, armour stands): paintings, the knots of leads, sand and gravel falling, fireworks,

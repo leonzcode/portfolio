@@ -28,28 +28,28 @@
    wear on mobs (wearHeld), worn-out tools break into pieces, and Mending
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=51';
-import { setLodestoneCheck } from './dials.js?v=51';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=51';
-import { breakTicks, wearFor } from './mining.js?v=51';
-import { blockDrops } from './loot.js?v=51';
-import { containerKind, spill } from './containers.js?v=51';
-import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=51';
-import { isPotion, drinkPotion } from './brewing.js?v=51';
-import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=51';
-import { BeaconScreen } from './ui/beacon.js?v=51';
-import { STORE as BEACON_POWERS } from './sim/beacon.js?v=51';
-import { MerchantScreen } from './ui/merchant.js?v=51';
-import { hives } from './entities/hives.js?v=51';
-import { LoomScreen } from './ui/loom.js?v=51';
-import { CartographyScreen } from './ui/cartography.js?v=51';
-import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=51';
-import { countShelves } from './enchanting.js?v=51';
-import { wear } from './ui/inventory.js?v=51';
-import { BookScreen } from './ui/book.js?v=51';
-import { breaksInCreative } from './modes.js?v=51';
-import { boxOpened, bellRang } from './sim/lids.js?v=51';
-import { Account } from './net/account.js?v=51';
+import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=52';
+import { setLodestoneCheck } from './dials.js?v=52';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=52';
+import { breakTicks, wearFor } from './mining.js?v=52';
+import { blockDrops } from './loot.js?v=52';
+import { containerKind, spill } from './containers.js?v=52';
+import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=52';
+import { isPotion, drinkPotion } from './brewing.js?v=52';
+import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=52';
+import { BeaconScreen } from './ui/beacon.js?v=52';
+import { STORE as BEACON_POWERS } from './sim/beacon.js?v=52';
+import { MerchantScreen } from './ui/merchant.js?v=52';
+import { hives } from './entities/hives.js?v=52';
+import { LoomScreen } from './ui/loom.js?v=52';
+import { CartographyScreen } from './ui/cartography.js?v=52';
+import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=52';
+import { countShelves } from './enchanting.js?v=52';
+import { wear } from './ui/inventory.js?v=52';
+import { BookScreen } from './ui/book.js?v=52';
+import { breaksInCreative } from './modes.js?v=52';
+import { boxOpened, bellRang } from './sim/lids.js?v=52';
+import { Account } from './net/account.js?v=52';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // what a full bucket pours out (the fish buckets are water with a fish in it)
