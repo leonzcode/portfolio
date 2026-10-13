@@ -11,16 +11,16 @@
    the fish's way (mobs3.js). Numbers from the Minecraft Wiki (Java Edition);
    the shapes are boxes in the game's units, the textures our own.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=50';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=51';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=50';
-import { Animal, Monster, register, TYPES } from './mobs.js?v=50';
-import { model } from './mobs2.js?v=50';
-import { addArt } from './mobart.js?v=50';
-import { MODELS } from './mobmodels.js?v=50';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=50';
-import { activeDrops } from '../drops.js?v=50';
-import { ITEMS, I } from '../items.js?v=50';
+  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=51';
+import { Animal, Monster, register, TYPES } from './mobs.js?v=51';
+import { model } from './mobs2.js?v=51';
+import { addArt } from './mobart.js?v=51';
+import { MODELS } from './mobmodels.js?v=51';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=51';
+import { activeDrops } from '../drops.js?v=51';
+import { ITEMS, I } from '../items.js?v=51';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -1067,7 +1067,7 @@ export class ZombieNautilus extends Nautilus {
 register('zombie_nautilus', ZombieNautilus);
 // the mount screen, fetched once (ui/containers.js leads back to the entities, so not imported at the top)
 let MountScreenRef = null;
-import('../ui/containers.js?v=50').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
+import('../ui/containers.js?v=51').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
 // nautilus armour: bands of the metal round the shell and a plate over its back
 const NAUT_ARMOR_ART = { copper: [0xc8764a, 0x8a4a2a], iron: [0xd8d8d8, 0x9a9a9a], golden: [0xf8d84a, 0xc89a20], diamond: [0x5ae8e0, 0x2aa8a0], netherite: [0x4a4248, 0x2a2428] };
 for (const k in NAUT_ARMOR_ART) addArt('nautilus_armor_' + k, [64, 64], p => {

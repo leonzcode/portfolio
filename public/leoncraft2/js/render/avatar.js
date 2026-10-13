@@ -44,16 +44,16 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { VANILLA, AVATAR_FS } from './vanilla.js?v=50';
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=50';
-import { lightDefines } from './materials.js?v=50';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=50';
-import { H, idx } from '../world-const.js?v=50';
-import { lightNear } from '../lightlevel.js?v=50';
-import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=50';
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=50';
-import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=50';
-import { setGlint } from './glint.js?v=50';
+import { VANILLA, AVATAR_FS } from './vanilla.js?v=51';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=51';
+import { lightDefines } from './materials.js?v=51';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=51';
+import { H, idx } from '../world-const.js?v=51';
+import { lightNear } from '../lightlevel.js?v=51';
+import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=51';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=51';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=51';
+import { setGlint } from './glint.js?v=51';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -64,7 +64,7 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=50', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=51', import.meta.url).href;
 // the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
 let defaultSkin = DEFAULT_SKIN;
 

@@ -13,8 +13,8 @@
    Admin (admin accounts only): every account (ban and unban, reset a
    password, delete) and every server (give it to another owner, delete it).
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, ScrollList, WHITE, GREY } from './gui.js?v=50';
-import { Account, NO_CONNECTION } from '../net/account.js?v=50';
+import { Screen, Button, TextField, ScrollList, WHITE, GREY } from './gui.js?v=51';
+import { Account, NO_CONNECTION } from '../net/account.js?v=51';
 
 const RED = 0xFF5555;
 const fmtDate = t => { if (!t) return 'never'; const d = new Date(t); return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
@@ -47,7 +47,7 @@ export class LoginScreen extends Screen {
     this.title = this.creating ? 'Create Account' : 'Log In';
     const n = this.fields.length;
     // (a quarter down, but never so low that Quit Game runs off the bottom of a small window: fields, the line under them, three buttons)
-    const need = n * 34 + 22 + 68;
+    const need = n * 34 + 22 + 92;
     let y = Math.max(28, Math.min(Math.max(40, Math.floor(H / 4) - (this.creating ? 6 : 0)), H - 4 - need));
     this.labels = [];
     const labels = ['Username', 'Password', 'Confirm Password'];
@@ -59,7 +59,13 @@ export class LoginScreen extends Screen {
       this.creating = !this.creating; this.error = ''; this.pwField.setValue(''); this.pw2Field.setValue('');
       g.replace(this);
     }));
-    this.add(new Button(x, y + 48, 200, 20, 'Quit Game', () => { if (this.hooks.quit) this.hooks.quit(); else location.href = '/'; }));
+    this.add(new Button(x, y + 48, 200, 20, 'Play as Guest', () => {
+      Account.playAsGuest();
+      const then = this.then, gg = this.gui;
+      gg.back();
+      if (then) then();
+    }, 'Play without an account. You can make one later.'));
+    this.add(new Button(x, y + 72, 200, 20, 'Quit Game', () => { if (this.hooks.quit) this.hooks.quit(); else location.href = '/'; }));
     this.top = this.labels[0][2];
     g.focusText(!this.nameField.value ? this.nameField : this.fields[1]);
     void n;
