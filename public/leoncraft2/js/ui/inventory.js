@@ -34,17 +34,17 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=51';
-import { Screen, TextField, WHITE } from './gui.js?v=51';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=51';
-import { matchGrid, consumeGrid } from '../crafting.js?v=51';
-import { enchName, ENCH } from '../enchanting.js?v=51';
-import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=51';
-import { patternLines, drawBannerIcon } from '../banners.js?v=51';
-import { mapLines } from '../maps.js?v=51';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=51';
-import { dialPicture, usePicture } from '../dials.js?v=51';
-import { RecipeBook } from './recipebook.js?v=51';
+import { BLOCKS, B } from '../blocks.js?v=52';
+import { Screen, TextField, WHITE } from './gui.js?v=52';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=52';
+import { matchGrid, consumeGrid } from '../crafting.js?v=52';
+import { enchName, ENCH } from '../enchanting.js?v=52';
+import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=52';
+import { patternLines, drawBannerIcon } from '../banners.js?v=52';
+import { mapLines } from '../maps.js?v=52';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=52';
+import { dialPicture, usePicture } from '../dials.js?v=52';
+import { RecipeBook } from './recipebook.js?v=52';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
