@@ -52,7 +52,7 @@
    textures/gui/. The pack leaves button interiors see-through, so a
    translucent fill goes under them for legible text over the world.
 --------------------------------------------------------------------------- */
-import { Font, cssRGB } from './font.js?v=53';
+import { Font, cssRGB } from './font.js?v=54';
 
 /* ------------------------------ options ------------------------------ */
 
@@ -65,6 +65,9 @@ export const DEFAULT_KEYS = {
   hotbar6: 'Digit6', hotbar7: 'Digit7', hotbar8: 'Digit8', hotbar9: 'Digit9',
   hideGui: 'F1', debug: 'F3', advancements: 'KeyL',
 };
+
+// a second key for any action (the Key Binds screen's second column): G breaks and H places, as the mouse's buttons do
+export const DEFAULT_KEYS2 = { attack: 'KeyG', use: 'KeyH' };
 
 export const DEFAULT_OPTIONS = {
   fov: 70,                 // degrees, 30-110
@@ -136,6 +139,7 @@ export const DEFAULT_OPTIONS = {
   skinModel: 'classic',    // classic slim
   skinParts: { hat: true, jacket: true, leftSleeve: true, rightSleeve: true, leftPants: true, rightPants: true },
   keys: DEFAULT_KEYS,
+  keys2: DEFAULT_KEYS2,
   // Music & Sounds (js/sound): each category's slider (0-1, 1 where unset), Closed Captions, Directional Audio (HRTF),
   // Music Frequency (default frequent constant), Music Toast (never pause toast)
   soundVolumes: {},
@@ -165,7 +169,7 @@ export class Options {
       if (saved && typeof saved === 'object') {
         for (const k in saved) {
           if (!(k in DEFAULT_OPTIONS)) continue;
-          if (k === 'keys' || k === 'skinParts') Object.assign(this.data[k], saved[k]);
+          if (k === 'keys' || k === 'keys2' || k === 'skinParts') Object.assign(this.data[k], saved[k]);
           else this.data[k] = saved[k];
         }
         if (!('graphicsPreset' in saved)) this.carryOver(saved);
@@ -236,7 +240,12 @@ export class Options {
   setKey(action, code) { const keys = Object.assign({}, this.data.keys); keys[action] = code; this.set('keys', keys); }
   setPart(part, on) { const p = Object.assign({}, this.data.skinParts); p[part] = on; this.set('skinParts', p); }
   // the action bound to an event code ('KeyW', 'Mouse0'), or null
-  actionFor(code) { const keys = this.data.keys; for (const a in keys) if (keys[a] === code) return a; return null; }
+  setKey2(action, code) { const keys = Object.assign({}, this.data.keys2); keys[action] = code; this.set('keys2', keys); }
+  actionFor(code) {
+    const keys = this.data.keys; for (const a in keys) if (keys[a] === code) return a;
+    const k2 = this.data.keys2 || {}; for (const a in k2) if (k2[a] === code) return a;
+    return null;
+  }
   onChange(fn) { this.listeners.push(fn); return () => { const i = this.listeners.indexOf(fn); if (i >= 0) this.listeners.splice(i, 1); }; }
   save() { try { localStorage.setItem(this.storageKey, JSON.stringify(this.data)); } catch (e) { /* storage full or blocked */ } }
 }
@@ -291,7 +300,7 @@ export class Gui {
     this.ctx = canvas.getContext('2d');
     this.base = base || new URL('../../textures/gui/', import.meta.url).href;
     if (!this.base.endsWith('/')) this.base += '/';
-    this.version = version || '?v=53';
+    this.version = version || '?v=54';
     this.options = options || new Options();
     this.hooks = hooks || {};
     this.sheets = new Map();
