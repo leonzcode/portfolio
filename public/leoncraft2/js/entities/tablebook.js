@@ -18,11 +18,11 @@
    towards whoever reads it, as the game draws it; put on, it shows at once
    (wantBook), and it goes when the book is taken or the lectern broken.
 --------------------------------------------------------------------------- */
-import { Entity } from './entity.js?v=53';
-import { register } from './mobs.js?v=53';
-import { model } from './mobs2.js?v=53';
-import { addArt } from './mobart.js?v=53';
-import { B, BLOCKS } from '../blocks.js?v=53';
+import { Entity } from './entity.js?v=54';
+import { register } from './mobs.js?v=54';
+import { model } from './mobs2.js?v=54';
+import { addArt } from './mobart.js?v=54';
+import { B, BLOCKS } from '../blocks.js?v=54';
 
 const THREE = window.THREE;
 const R = () => Math.random();

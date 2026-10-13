@@ -25,17 +25,17 @@
 --------------------------------------------------------------------------- */
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
-  WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=53';
-import { Packs } from './pack.js?v=53';
-import { Account } from '../net/account.js?v=53';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=53';
-import { packArtSummary } from '../entities/packart.js?v=53';
-import { LanScreen } from './lan.js?v=53';
-import { parseSeed } from '../gen/random.js?v=53';
-import { SOUND_CREDITS } from '../sound/credits.js?v=53';
-import { FlatCustomizeScreen } from './flat.js?v=53';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=53';
+  WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
+} from './gui.js?v=54';
+import { Packs } from './pack.js?v=54';
+import { Account } from '../net/account.js?v=54';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=54';
+import { packArtSummary } from '../entities/packart.js?v=54';
+import { LanScreen } from './lan.js?v=54';
+import { parseSeed } from '../gen/random.js?v=54';
+import { SOUND_CREDITS } from '../sound/credits.js?v=54';
+import { FlatCustomizeScreen } from './flat.js?v=54';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=54';
 
 const PI = Math.PI;
 
@@ -711,9 +711,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=53';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=53';
-import { minimapButtons } from './minimap.js?v=53';
+export { VideoSettingsScreen } from './video.js?v=54';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=54';
+import { minimapButtons } from './minimap.js?v=54';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -751,27 +751,39 @@ class CategoryRow {
   constructor(name) { this.name = name; }
   render(g, list, i, top, left, width, h) { g.centered(this.name, list.x + list.w / 2, top + h - 9 - 1 + 4, WHITE); }
 }
+// (two keys an action: the main one and a second, so two keys can do the same thing, as G with the left button)
 class KeyRow {
   constructor(screen, action, name) {
     this.screen = screen; this.action = action; this.name = name;
-    this.change = new Button(0, 0, 75, 20, '', () => { screen.waiting = action; });
-    this.reset = new Button(0, 0, 50, 20, 'Reset', () => screen.options.setKey(action, DEFAULT_KEYS[action]));
-    this.children = [this.change, this.reset];
+    this.change = new Button(0, 0, 60, 20, '', () => { screen.waiting = action; screen.slot = 1; });
+    this.change2 = new Button(0, 0, 60, 20, '', () => { screen.waiting = action; screen.slot = 2; });
+    this.reset = new Button(0, 0, 36, 20, 'Reset', () => { screen.options.setKey(action, DEFAULT_KEYS[action]); screen.options.setKey2(action, DEFAULT_KEYS2[action] || null); });
+    this.children = [this.change, this.change2, this.reset];
   }
   render(g, list, i, top, left, width, h, mx, my) {
-    const o = this.screen.options, keys = o.get('keys'), code = keys[this.action];
+    const o = this.screen.options, keys = o.get('keys'), keys2 = o.get('keys2') || {};
     const cx = Math.floor(list.x + list.w / 2);
-    this.reset.x = cx + 155 - 50; this.reset.y = top - 2;
-    this.change.x = this.reset.x - 5 - 75; this.change.y = top - 2;
-    let clash = false;
-    if (code) for (const a in keys) if (a !== this.action && keys[a] === code) { clash = true; break; }
-    const label = keyLabel(code);
-    if (this.screen.waiting === this.action) this.change.message = '§e> §f§n' + label + '§r§e <';
-    else this.change.message = clash ? '§c' + label : label;
-    this.reset.active = code !== DEFAULT_KEYS[this.action];
+    this.reset.x = cx + 155 - 36; this.reset.y = top - 2;
+    this.change2.x = this.reset.x - 3 - 60; this.change2.y = top - 2;
+    this.change.x = this.change2.x - 3 - 60; this.change.y = top - 2;
+    const clashes = code => {
+      if (!code) return false;
+      for (const a in keys) if (a !== this.action && keys[a] === code) return true;
+      for (const a in keys2) if (a !== this.action && keys2[a] === code) return true;
+      return false;
+    };
+    let anyClash = false;
+    for (const [b, code, slot] of [[this.change, keys[this.action], 1], [this.change2, keys2[this.action] || null, 2]]) {
+      const clash = clashes(code), label = slot === 2 && !code ? '-' : keyLabel(code);
+      if (this.screen.waiting === this.action && this.screen.slot === slot) b.message = '§e> §f§n' + label + '§r§e <';
+      else b.message = clash ? '§c' + label : label;
+      if (clash) anyClash = true;
+    }
+    this.reset.active = keys[this.action] !== DEFAULT_KEYS[this.action] || (keys2[this.action] || null) !== (DEFAULT_KEYS2[this.action] || null);
     g.text(this.name, cx - 155, top + ((h - 8) >> 1), WHITE);
-    if (clash) g.fill(this.change.x - 6, top - 2, this.change.x - 3, top + 18, 0xFFFF5555);
+    if (anyClash) g.fill(this.change.x - 6, top - 2, this.change.x - 3, top + 18, 0xFFFF5555);
     this.change.render(g, mx, my);
+    this.change2.render(g, mx, my);
     this.reset.render(g, mx, my);
   }
 }
@@ -787,10 +799,10 @@ export class KeyBindsScreen extends OptionsListScreen {
   }
   footer() {
     const W = this.width, H = this.height, o = this.options;
-    this.resetAll = this.add(new Button(W / 2 - 155, H - 27, 150, 20, 'Reset Keys', () => { o.set('keys', Object.assign({}, DEFAULT_KEYS)); this.waiting = null; }));
+    this.resetAll = this.add(new Button(W / 2 - 155, H - 27, 150, 20, 'Reset Keys', () => { o.set('keys', Object.assign({}, DEFAULT_KEYS)); o.set('keys2', Object.assign({}, DEFAULT_KEYS2)); this.waiting = null; }));
     this.add(new Button(W / 2 + 5, H - 27, 150, 20, 'Done', () => this.gui.back()));
   }
-  bind(code) { this.options.setKey(this.waiting, code); this.waiting = null; }
+  bind(code) { if (this.slot === 2) this.options.setKey2(this.waiting, code); else this.options.setKey(this.waiting, code); this.waiting = null; }
   keyPressed(e) {
     if (this.waiting) { this.bind(e.code === 'Escape' ? null : e.code); return true; }
     return super.keyPressed(e);
@@ -800,9 +812,9 @@ export class KeyBindsScreen extends OptionsListScreen {
     return super.mouseClicked(mx, my, button);
   }
   render(g, mx, my, dt) {
-    const keys = this.options.get('keys');
+    const keys = this.options.get('keys'), keys2 = this.options.get('keys2') || {};
     let changed = false;
-    for (const a in DEFAULT_KEYS) if (keys[a] !== DEFAULT_KEYS[a]) { changed = true; break; }
+    for (const a in DEFAULT_KEYS) if (keys[a] !== DEFAULT_KEYS[a] || (keys2[a] || null) !== (DEFAULT_KEYS2[a] || null)) { changed = true; break; }
     this.resetAll.active = changed;
     super.render(g, mx, my, dt);
   }
