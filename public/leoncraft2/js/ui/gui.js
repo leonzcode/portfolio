@@ -52,7 +52,7 @@
    textures/gui/. The pack leaves button interiors see-through, so a
    translucent fill goes under them for legible text over the world.
 --------------------------------------------------------------------------- */
-import { Font, cssRGB } from './font.js?v=48';
+import { Font, cssRGB } from './font.js?v=49';
 
 /* ------------------------------ options ------------------------------ */
 
@@ -74,6 +74,7 @@ export const DEFAULT_OPTIONS = {
   autoJump: false,
   // Video Settings, as the game's own (ui/video.js). The Preset sets the Quality & Performance ones.
   graphicsPreset: 'fancy', // fast fancy fabulous custom
+  deviceTuned: false,      // a Chromebook or other small machine was put on Fast once (Options.tuneForDevice)
   renderDistance: 16,      // chunks, 2-32
   simulationDistance: 12,  // chunks, 5-32
   chunkBuilder: 'semi',    // threaded semi full
@@ -149,6 +150,11 @@ const clone = v => (v && typeof v === 'object') ? JSON.parse(JSON.stringify(v)) 
 /* The player's settings, kept in localStorage. get/set by key; set saves and
    tells every listener (key, value). Objects (keys, skinParts) come back as
    the live object: change them with setKey / setPart, or set a new object. */
+// a Chromebook, or a machine with little memory or two cores
+export function lowEndDevice() {
+  const n = navigator;
+  return /CrOS/.test(n.userAgent || '') || (n.deviceMemory && n.deviceMemory <= 4) || (n.hardwareConcurrency && n.hardwareConcurrency <= 2);
+}
 export class Options {
   constructor(storageKey = 'lc2_options') {
     this.storageKey = storageKey;
@@ -165,7 +171,18 @@ export class Options {
         if (!('graphicsPreset' in saved)) this.carryOver(saved);
         if (!('shaderLevel' in saved)) this.carryShaders();
       }
+      this.tuneForDevice();
     } catch (e) { /* private window or bad JSON: defaults */ }
+  }
+  /* A Chromebook or another small machine starts on the game's Fast preset (video.js PRESET_VALUES' first
+     column), once: a new player, or one whose Preset is still the Fancy they never changed. */
+  tuneForDevice() {
+    const d = this.data;
+    if (d.deviceTuned || d.graphicsPreset !== 'fancy' || !lowEndDevice()) return;
+    Object.assign(d, { graphicsPreset: 'fast', biomeBlend: 1, renderDistance: 8, chunkBuilder: 'threaded', simulationDistance: 6, smoothLighting: false,
+      clouds: 'fast', particles: 'decreased', mipmapLevels: 2, entityShadows: false, entityDistance: 0.75, menuBlur: 2, cloudDistance: 32,
+      cutoutLeaves: false, improvedTransparency: false, textureFiltering: 'none', maxAnisotropy: 2, weatherRadius: 5, deviceTuned: true });
+    this.save();
   }
   /* Settings saved before Video Settings became the game's own: as the game
      does for players who update, the Preset is Custom so nothing they chose
@@ -274,7 +291,7 @@ export class Gui {
     this.ctx = canvas.getContext('2d');
     this.base = base || new URL('../../textures/gui/', import.meta.url).href;
     if (!this.base.endsWith('/')) this.base += '/';
-    this.version = version || '?v=48';
+    this.version = version || '?v=49';
     this.options = options || new Options();
     this.hooks = hooks || {};
     this.sheets = new Map();

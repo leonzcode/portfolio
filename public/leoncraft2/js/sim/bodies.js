@@ -34,11 +34,11 @@
    Drawn with the block's own model and the held-block material, so they take
    the same light and fog as the world.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=48';
-import { blockGeometry, intAttribute } from '../render/blockmesh.js?v=48';
-import { lightNear } from '../lightlevel.js?v=48';
-import { FALLS, free as fallsInto, touchesWater, concreteOf } from '../entities/fallingblock.js?v=48';
-import { H } from '../world-const.js?v=48';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=49';
+import { blockGeometry, intAttribute } from '../render/blockmesh.js?v=49';
+import { lightNear } from '../lightlevel.js?v=49';
+import { FALLS, free as fallsInto, touchesWater, concreteOf } from '../entities/fallingblock.js?v=49';
+import { H } from '../world-const.js?v=49';
 const THREE = window.THREE;
 
 /* ---- when blocks fall (the game's FallingBlock, PointedDripstoneBlock, ScaffoldingBlock, DragonEggBlock) ---- */
@@ -146,6 +146,9 @@ function installFalling(sim, bodies) {
 }
 
 const W = 0.98, HT = 0.98;
+// primed TNT and falling blocks at once, and explosions a tick, at most
+const MAX_BODIES = 600, BLASTS_PER_TICK = 8;
+
 export class Bodies {
   constructor(sim) {
     this.sim = sim;
@@ -182,11 +185,14 @@ export class Bodies {
 
   /* ---- making them ---- */
   prime(x, y, z, by, fuse) {
+    // (a thousand TNT going up together: past MAX_BODIES the rest just go, unlit, rather than freezing the page)
+    if (this.list.length >= MAX_BODIES) return null;
     const a = Math.random() * Math.PI * 2;
     const e = this.add({ kind: 'tnt', b: B.tnt, m: 0, x: x + 0.5, y, z: z + 0.5, vx: -Math.sin(a) * 0.02, vy: 0.2, vz: -Math.cos(a) * 0.02, fuse: fuse === undefined ? 80 : fuse, by });
     return e;
   }
   fall(x, y, z, b, m) {
+    if (this.list.length >= MAX_BODIES) return null;
     b = b || this.sim.get(x, y, z);
     m = m === undefined ? this.sim.meta(x, y, z) : m;
     this.sim.set(x, y, z, 0, 0);
@@ -268,6 +274,8 @@ export class Bodies {
   tick() {
     this.lastTick = performance.now();
     if (!this.list.length) return;
+    // at most BLASTS_PER_TICK explosions a tick (and none once 15 ms are gone): the rest wait a tick on a spent fuse
+    let blasts = 0;
     for (const e of this.list.slice()) {
       e.px = e.x; e.py = e.y; e.pz = e.z;
       if (!this.sim.w.loaded(e.x, e.z)) continue;
@@ -276,8 +284,9 @@ export class Bodies {
       e.vx *= 0.98; e.vy *= 0.98; e.vz *= 0.98;
       if (e.onGround) { e.vx *= 0.7; e.vz *= 0.7; if (e.kind === 'tnt') e.vy *= -0.5; }
       if (e.kind === 'tnt') {
-        e.fuse--;
-        if (e.fuse <= 0) { e.dead = true; this.drop(e); this.sim.explode(e.x, e.y + HT / 16, e.z, 4, { source: e, decay: false }); }
+        if (e.fuse > 0) e.fuse--;
+        if (e.fuse <= 0 && (blasts >= BLASTS_PER_TICK || (blasts && performance.now() - this.lastTick > 15))) continue;
+        if (e.fuse <= 0) { blasts++; e.dead = true; this.drop(e); this.sim.explode(e.x, e.y + HT / 16, e.z, 4, { source: e, decay: false }); }
       } else {
         e.time++;
         if (e.onGround) { e.dead = true; this.land(e); }
