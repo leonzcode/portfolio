@@ -26,11 +26,11 @@
    can give themselves one; it shows over their head, in the Tab list and in
    their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar } from '../render/avatar.js?v=52';
-import { pieceLook, armorSheet } from '../render/armor.js?v=52';
-import { setLight as setLightOf, loadedLook } from '../render/held.js?v=52';
-import { DRAW, I, stackFromJSON } from '../items.js?v=52';
-import { B, BLOCKS } from '../blocks.js?v=52';
+import { Avatar } from '../render/avatar.js?v=53';
+import { pieceLook, armorSheet } from '../render/armor.js?v=53';
+import { setLight as setLightOf, loadedLook } from '../render/held.js?v=53';
+import { DRAW, I, stackFromJSON } from '../items.js?v=53';
+import { B, BLOCKS } from '../blocks.js?v=53';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -158,7 +158,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=52', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=53', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
   }
   equip(r) {

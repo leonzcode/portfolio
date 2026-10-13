@@ -21,12 +21,12 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=52';
-import { ConfirmScreen } from './menus.js?v=52';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=52';
-import { Account } from '../net/account.js?v=52';
-import { LoginScreen, AccountScreen } from './account.js?v=52';
-import { parseSeed } from '../gen/random.js?v=52';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=53';
+import { ConfirmScreen } from './menus.js?v=53';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=53';
+import { Account } from '../net/account.js?v=53';
+import { LoginScreen, AccountScreen } from './account.js?v=53';
+import { parseSeed } from '../gen/random.js?v=53';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
@@ -89,9 +89,9 @@ class ServerEntry {
     g.fill(left + 4, top + 16, left + 8, top + 20, 0xFF7A5639);
     g.fill(left + 20, top + 22, left + 24, top + 26, 0xFF46301F);
     }
-    // a private server keeps its padlock: in the middle of the plain picture, in the corner (outlined) of the owner's own
+    // a private server keeps its padlock in the middle, over the owner's own picture too (outlined there)
     if (s.kind === 'private') {
-      const ox = icon ? left + 19 : left + 10, oy = icon ? top + 13 : top + 8;
+      const ox = left + 10, oy = top + 8;
       if (icon) { g.fill(ox - 1, oy + 5, ox + 13, oy + 19, 0xFF1A1A1A); g.fill(ox + 1, oy - 1, ox + 11, oy + 6, 0xFF1A1A1A); }
       g.fill(ox, oy + 6, ox + 12, oy + 18, 0xFFC8A02A);
       g.fill(ox + 2, oy + 1, ox + 4, oy + 7, 0xFF9A9A9A); g.fill(ox + 8, oy + 1, ox + 10, oy + 7, 0xFF9A9A9A); g.fill(ox + 2, oy, ox + 10, oy + 2, 0xFF9A9A9A);
