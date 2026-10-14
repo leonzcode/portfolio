@@ -18,10 +18,10 @@
    Anyone can break one; a chest boat's chest goes to the others whenever it
    changes. Mobs riding in one stay on the machine they are on.
 --------------------------------------------------------------------------- */
-import { Boat } from '../entities/boat.js?v=54';
-import { Minecart } from '../entities/minecart.js?v=54';
-import { wrap } from '../entities/entity.js?v=54';
-import { stackToJSON, stackFromJSON } from '../items.js?v=54';
+import { Boat } from '../entities/boat.js?v=55';
+import { Minecart } from '../entities/minecart.js?v=55';
+import { wrap } from '../entities/entity.js?v=55';
+import { stackToJSON, stackFromJSON } from '../items.js?v=55';
 
 const THREE = window.THREE;
 

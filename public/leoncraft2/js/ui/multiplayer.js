@@ -21,12 +21,12 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=54';
-import { ConfirmScreen } from './menus.js?v=54';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=54';
-import { Account } from '../net/account.js?v=54';
-import { LoginScreen, AccountScreen } from './account.js?v=54';
-import { parseSeed } from '../gen/random.js?v=54';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=55';
+import { ConfirmScreen } from './menus.js?v=55';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=55';
+import { Account } from '../net/account.js?v=55';
+import { LoginScreen, AccountScreen } from './account.js?v=55';
+import { parseSeed } from '../gen/random.js?v=55';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
@@ -79,7 +79,7 @@ class ServerEntry {
     g.text(count, left + width - cw - 17, top + 1, 0x808080, false);
     const bars = ping < 0 ? 5 : ping < 150 ? 0 : ping < 300 ? 1 : ping < 600 ? 2 : ping < 1000 ? 3 : 4;
     g.blit('icons', 0, 176 + bars * 8, 10, 8, left + width - 15, top);
-    // the picture: the owner's own, or grass and dirt with a padlock on a private one
+    // the picture: the owner's own, or grass and dirt
     const icon = s.icon ? iconImage(s.icon, this.screen.gui) : null;
     if (icon) { const c = g.ctx, sm = c.imageSmoothingEnabled; c.imageSmoothingEnabled = false; c.drawImage(icon, left, top, 32, 32); c.imageSmoothingEnabled = sm; }
     else {
@@ -89,12 +89,11 @@ class ServerEntry {
     g.fill(left + 4, top + 16, left + 8, top + 20, 0xFF7A5639);
     g.fill(left + 20, top + 22, left + 24, top + 26, 0xFF46301F);
     }
-    // a private server keeps its padlock in the middle, over the owner's own picture too (outlined there)
-    if (s.kind === 'private') {
-      const ox = left + 10, oy = top + 8;
-      if (icon) { g.fill(ox - 1, oy + 5, ox + 13, oy + 19, 0xFF1A1A1A); g.fill(ox + 1, oy - 1, ox + 11, oy + 6, 0xFF1A1A1A); }
+    // every server has a padlock in the picture's top right corner: shut on a private one, open (one leg out) on a public one
+    {
+      const ox = left + 19, oy = top + 1, shut = s.kind === 'private';
       g.fill(ox, oy + 6, ox + 12, oy + 18, 0xFFC8A02A);
-      g.fill(ox + 2, oy + 1, ox + 4, oy + 7, 0xFF9A9A9A); g.fill(ox + 8, oy + 1, ox + 10, oy + 7, 0xFF9A9A9A); g.fill(ox + 2, oy, ox + 10, oy + 2, 0xFF9A9A9A);
+      g.fill(ox + 2, oy + 1, ox + 4, oy + 7, 0xFF9A9A9A); g.fill(ox + 8, oy + 1, ox + 10, shut ? oy + 7 : oy + 3, 0xFF9A9A9A); g.fill(ox + 2, oy, ox + 10, oy + 2, 0xFF9A9A9A);
       g.fill(ox + 5, oy + 10, ox + 7, oy + 14, 0xFF3A2A08);
     }
     if (hovered) {
