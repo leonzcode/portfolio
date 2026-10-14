@@ -23,8 +23,8 @@
    The layout comes from ctx.r alone and the drawing from a hash of the
    frame position, so every chunk builds the same bastion.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=57';
-import { hash32 } from '../rand.js?v=57';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=58';
+import { hash32 } from '../rand.js?v=58';
 
 const PBB = 'polished_blackstone_bricks', CPBB = 'cracked_polished_blackstone_bricks', BS = 'blackstone', GBS = 'gilded_blackstone';
 const PB = 'polished_blackstone', CHIS = 'chiseled_polished_blackstone', BAS = 'basalt', GOLD = 'gold_block';

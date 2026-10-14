@@ -14,19 +14,19 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=57';
-import { I } from '../items.js?v=57';
-import { POTIONS } from '../brewing.js?v=57';
-import { ChestScreen } from '../ui/containers.js?v=57';
-import { RemotePlayers } from './players.js?v=57';
-import { register } from '../commands.js?v=57';
-import { Sound } from '../sound/sound.js?v=57';
-import { RES_OVERRIDE } from '../explosion.js?v=57';
+import { B, BLOCKS } from '../blocks.js?v=58';
+import { I } from '../items.js?v=58';
+import { POTIONS } from '../brewing.js?v=58';
+import { ChestScreen } from '../ui/containers.js?v=58';
+import { RemotePlayers } from './players.js?v=58';
+import { register } from '../commands.js?v=58';
+import { Sound } from '../sound/sound.js?v=58';
+import { RES_OVERRIDE } from '../explosion.js?v=58';
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=57').then(m => {
+import('../adv/toast.js?v=58').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -239,7 +239,7 @@ class UpgradeScreen extends MenuScreen {
   }
 }
 
-const MODE_ICON = { bw_solo: 'red_bed', bw_doubles: 'blue_bed', bw_3s: 'lime_bed', bw_4s: 'yellow_bed', sw_solo: 'ender_eye', sw_doubles: 'ender_pearl', duels_classic: 'iron_sword', duels_sumo: 'slime_ball' };
+const MODE_ICON = { bw_solo: 'red_bed', bw_doubles: 'blue_bed', bw_3s: 'lime_bed', bw_4s: 'yellow_bed', sw_solo: 'ender_eye', sw_doubles: 'ender_pearl', duels_classic: 'iron_sword', duels_sumo: 'slime_ball', tntrun: 'tnt', murder: 'iron_sword' };
 class GameMenu extends MenuScreen {
   constructor(hub, game) { const g = game && (hub.games || []).find(x => x.id === game); super(hub, g ? g.name : 'Game Menu'); this.only = game || null; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); }
   fillBox() {
@@ -347,7 +347,8 @@ export class Hub {
         this.area = m.area; this.floor = m.floor; this.spawn = m.spawn; this.bounds = m.bounds || null;
         if (m.team) this.team = m.team;
         if (m.per) this.per = m.per;
-        this.gameKind = m.game || null; this.spill = !!m.spill; this.noBuild = !!m.noBuild;
+        this.gameKind = m.game || null; this.spill = !!m.spill; this.noBuild = !!m.noBuild; this.jumps = m.jumps | 0;
+        this.hideNames = !!m.hideNames; this.role = m.role || null; this.hadBow = false; this.arrowT = 0;
         if (m.area !== 'game') { this.team = null; this.alive = false; }
         this.setNpcs(m.npcs || []);
         this.setGens(m.gens || []);
@@ -366,6 +367,8 @@ export class Hub {
       }
       case 'spec': this.alive = false; return;
       case 'mode': if (m.m && g.mode !== m.m) this.ctx.commandCtx().setMode(m.m); return;
+      // (Murder Mystery: you shot an innocent)
+      case 'kill': if (this.alive && !g.survival.dead) g.survival.hurt(3.4e38, 'generic_kill'); return;
       case 'title': this.titleT = { t: m.tt || '', s: m.s || '', fi: m.fi | 0, st: m.st | 0, fo: m.fo | 0, at: performance.now() }; this.overlay.animates = true; this.ctx.gui.markDirty(); return;
       case 'board':
         this.board = { title: m.title, lines: m.lines || [] };
@@ -409,6 +412,12 @@ export class Hub {
       inv.slots[8] = stack('red_bed', 1, { name: '§c§lReturn to Lobby §7(Right Click)' });
     } else if (kind === 'empty') {
       this.alive = true;
+    } else if (kind === 'mm_murderer') {
+      this.alive = true;
+      inv.slots[1] = stack('iron_sword', 1, { name: '§cKnife' });
+    } else if (kind === 'mm_detective') {
+      this.alive = true; this.hadBow = true;
+      inv.slots[1] = stack('bow', 1, { name: "§bDetective's Bow" }); inv.slots[8] = stack('arrow', 1);
     } else if (kind === 'duel_classic') {
       // Classic Duels: an iron sword, a bow and five arrows, a fishing rod, iron armour
       this.alive = true;
@@ -710,6 +719,31 @@ export class Hub {
     if (!this.alive) return;
     // the void takes you at once
     if (P.pos.y < this.floor && !sv.dead) { this.voided = true; sv.hurt(3.4e38, 'out_of_world'); return; }
+    // Murder Mystery: ten gold makes a bow and an arrow; the detective's arrow comes back; a bow picked up is told to the server
+    if (this.gameKind === 'murder') {
+      const inv = g.inv, bowId = idOf('bow'), arrowId = idOf('arrow'), hasBow = inv.count(bowId) > 0;
+      if (this.count('gold_ingot') >= 10 && this.role !== 'murderer') {
+        this.take('gold_ingot', 10);
+        if (!hasBow) inv.addStack(stack('bow'));
+        inv.addStack(stack('arrow'));
+        this.ctx.chat.add('§6You got a bow and an arrow for 10 gold!', 0xFFFFFF);
+        this.sound('entity.player.levelup');
+      }
+      if (inv.count(bowId) > 0 && !this.hadBow) { this.hadBow = true; this.send({ k: 'bow' }); }
+      if (this.role === 'detective' && hasBow && inv.count(arrowId) === 0) { if (++this.arrowT >= 100) { this.arrowT = 0; inv.addStack(stack('arrow')); } } else this.arrowT = 0;
+    }
+    // TNT Run: a jump in the air is a double jump, while any are left; nothing hurts but the void
+    if (this.gameKind === 'tntrun') {
+      sv.health = sv.maxHealth; P.fallDistance = 0;
+      const down = !!P.keys[' '];
+      if (down && !this.jumpHeld && !P.onGround && !P.flying && this.jumps > 0) {
+        P.vel.y = 0.75; P.vel.x += -Math.sin(P.yaw) * 0.45; P.vel.z += -Math.cos(P.yaw) * 0.45; P.fallDistance = 0;
+        this.jumps--;
+        this.sound('entity.bat.takeoff');
+        this.titleT = { t: '', s: '§eDouble jumps left: §a' + this.jumps, fi: 0, st: 25, fo: 5, at: performance.now() }; this.overlay.animates = true;
+      }
+      this.jumpHeld = down;
+    }
     if (this.gameKind !== 'bedwars') return;
     if (this.t % 10 === 0) this.applyUpgrades(false);
     if (this.t % 20 === 0) {
@@ -758,6 +792,8 @@ export class Hub {
     this.npcs.frame(now, dt, g.world, 0, eye, 96, g.mode === 'spectator');
     // (their own name tags stay hidden: the words over them are the holograms)
     for (const r of this.npcs.list.values()) if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
+    // Murder Mystery: nobody's name shows over them
+    if (this.hideNames && this.area === 'game' && this.net.players) for (const r of this.net.players.list.values()) if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
   }
 
   /* ---- the sidebar and the titles ---- */
@@ -793,7 +829,7 @@ export class Hub {
 /* ---- the network's commands (each answers only on its server) ---- */
 const onHub = (ctx, fn) => { if (!active || active.game !== ctx.game) { ctx.say('That command only works on Leon Network.', 0xFF5555); return; } fn(active); };
 register('lobby', { always: true, aliases: ['l', 'hub', 'leave'], usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'lobby' })); } });
-const MODE_IDS = ['bw_solo', 'bw_doubles', 'bw_3s', 'bw_4s', 'sw_solo', 'sw_doubles', 'duels_classic', 'duels_sumo'];
+const MODE_IDS = ['bw_solo', 'bw_doubles', 'bw_3s', 'bw_4s', 'sw_solo', 'sw_doubles', 'duels_classic', 'duels_sumo', 'tntrun', 'murder'];
 register('play', {
   always: true, usage: '<' + MODE_IDS.join('|') + '>', suggest: i => (i === 0 ? MODE_IDS : []),
   run(args, ctx) { onHub(ctx, h => h.send({ k: 'play', mode: args[0] || 'bw_solo' })); },

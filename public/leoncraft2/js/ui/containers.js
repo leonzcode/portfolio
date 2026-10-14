@@ -17,12 +17,12 @@
    Layouts and sheets are the game's (176 wide, 18-pixel slots); the art is
    Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { ContainerScreen, SearchField, press, slot, range, TO_PLAYER, TO_PLAYER_REVERSED } from './inventory.js?v=57';
-import { RecipeBook } from './recipebook.js?v=57';
-import { I, ITEMS, fuelTicks } from '../items.js?v=57';
-import { isShulkerBox, smeltResult } from '../containers.js?v=57';
-import { cookingRecipe, matchGrid } from '../crafting.js?v=57';
-import { isPotion, isIngredient } from '../brewing.js?v=57';
+import { ContainerScreen, SearchField, press, slot, range, TO_PLAYER, TO_PLAYER_REVERSED } from './inventory.js?v=58';
+import { RecipeBook } from './recipebook.js?v=58';
+import { I, ITEMS, fuelTicks } from '../items.js?v=58';
+import { isShulkerBox, smeltResult } from '../containers.js?v=58';
+import { cookingRecipe, matchGrid } from '../crafting.js?v=58';
+import { isPotion, isIngredient } from '../brewing.js?v=58';
 
 const LABEL_GREY = 0x404040;
 const MAIN = range(9, 36), HOT = range(0, 9);

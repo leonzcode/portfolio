@@ -31,18 +31,18 @@
      blaze             hovers, three fireballs 6 ticks apart then 5 seconds
                        off, burns you; water and snowballs hurt it
 --------------------------------------------------------------------------- */
-import { Mob, Living, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=57';
+import { Mob, Living, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=58';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal, posAway, randomLandPos } from './ai.js?v=57';
-import { register, Monster, Zombie, Skeleton, Animal, TYPES } from './mobs.js?v=57';
-import { Slime } from './mobs3.js?v=57';
-import { Projectile } from './projectiles.js?v=57';
-import { model } from './mobs2.js?v=57';
-import { addArt } from './mobart.js?v=57';
-import { POSE } from './mobmodels.js?v=57';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=57';
-import { I, ITEMS } from '../items.js?v=57';
-import { dropStack, activeDrops } from '../drops.js?v=57';
+  MeleeAttackGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal, posAway, randomLandPos } from './ai.js?v=58';
+import { register, Monster, Zombie, Skeleton, Animal, TYPES } from './mobs.js?v=58';
+import { Slime } from './mobs3.js?v=58';
+import { Projectile } from './projectiles.js?v=58';
+import { model } from './mobs2.js?v=58';
+import { addArt } from './mobart.js?v=58';
+import { POSE } from './mobmodels.js?v=58';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=58';
+import { I, ITEMS } from '../items.js?v=58';
+import { dropStack, activeDrops } from '../drops.js?v=58';
 
 const PI = Math.PI;
 const R = () => Math.random();
