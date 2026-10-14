@@ -14,18 +14,23 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=56';
-import { I } from '../items.js?v=56';
-import { POTIONS } from '../brewing.js?v=56';
-import { ChestScreen } from '../ui/containers.js?v=56';
-import { RemotePlayers } from './players.js?v=56';
-import { register } from '../commands.js?v=56';
-import { Sound } from '../sound/sound.js?v=56';
+import { B, BLOCKS } from '../blocks.js?v=57';
+import { I } from '../items.js?v=57';
+import { POTIONS } from '../brewing.js?v=57';
+import { ChestScreen } from '../ui/containers.js?v=57';
+import { RemotePlayers } from './players.js?v=57';
+import { register } from '../commands.js?v=57';
+import { Sound } from '../sound/sound.js?v=57';
+import { RES_OVERRIDE } from '../explosion.js?v=57';
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=56').then(m => { const T = m.AdvToast, add = T.add; T.add = function (x) { if (active) return; return add.call(this, x); }; }).catch(() => {});
+import('../adv/toast.js?v=57').then(m => {
+  const T = m.AdvToast, add = T.add, rec = T.addRecipes;
+  T.add = function (x) { if (active) return; return add.call(this, x); };
+  T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
+}).catch(() => {});
 
 const idOf = name => (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
 const stack = (name, count = 1, extra) => { const id = idOf(name); return id ? Object.assign({ id, count }, extra || null) : null; };
@@ -90,6 +95,10 @@ function shopItems(team) {
       { id: 'pearl', name: 'Ender Pearl', price: C('emerald', 4), give: () => [stack('ender_pearl')], icon: 'ender_pearl', lore: ['The quickest way to invade', 'enemy bases.'] },
       { id: 'water', name: 'Water Bucket', price: C('gold', 3), give: () => [stack('water_bucket')], icon: 'water_bucket', lore: ['Great to slow down', 'approaching enemies. Can also', 'protect against TNT.'] },
       { id: 'sponge', name: 'Sponge', price: C('gold', 3), give: () => [stack('sponge', 4)], icon: 'sponge', n: 4, lore: ['Great for soaking up water.'] },
+      { id: 'fireball', name: 'Fireball', price: C('iron', 40), give: () => [stack('fire_charge', 1, { name: '§fFireball' })], icon: 'fire_charge', lore: ['Right-click to launch! Great to', 'knock back enemies walking on', 'thin bridges.'] },
+      { id: 'bridge_egg', name: 'Bridge Egg', price: C('emerald', 1), give: () => [stack('egg', 1, { name: '§fBridge Egg' })], icon: 'egg', lore: ['This egg creates a bridge in its', 'trail after being thrown.'] },
+      { id: 'popup', name: 'Compact Pop-Up Tower', price: C('iron', 24), give: () => [stack('chest', 1, { name: '§fCompact Pop-Up Tower' })], icon: 'chest', lore: ['Place a pop-up defence tower!'] },
+      { id: 'milk', name: 'Magic Milk', price: C('gold', 4), give: () => [stack('milk_bucket', 1, { name: '§fMagic Milk' })], icon: 'milk_bucket', lore: ['Avoid triggering traps for 30', 'seconds after consuming.'] },
     ],
   };
 }
@@ -98,7 +107,10 @@ const CATEGORIES = [
   { id: 'armor', name: 'Armor', icon: 'chainmail_boots' }, { id: 'tools', name: 'Tools', icon: 'stone_pickaxe' }, { id: 'ranged', name: 'Ranged', icon: 'bow' },
   { id: 'potions', name: 'Potions', icon: 'brewing_stand' }, { id: 'utility', name: 'Utility', icon: 'tnt' },
 ];
-const QUICK = ['wool', 'stone_sword', 'chain', 'pick', 'bow', 'speed', 'tnt', 'wood', 'iron_sword', 'ironarmor', 'shears', 'arrow', 'jump', 'water', 'clay', 'endstone', 'axe', 'gapple', 'pearl', 'glass', 'diamond_sword'];
+const QUICK = ['wool', 'stone_sword', 'chain', 'pick', 'bow', 'speed', 'tnt', 'wood', 'iron_sword', 'ironarmor', 'shears', 'arrow', 'jump', 'water', 'clay', 'endstone', 'axe', 'gapple', 'fireball', 'pearl', 'bridge_egg'];
+// the shop's special items, known by their names
+const SPECIAL = { Fireball: 'fireball', 'Bridge Egg': 'bridge', 'Compact Pop-Up Tower': 'popup', 'Magic Milk': 'milk' };
+const specialOf = st => (st && st.name ? SPECIAL[st.name.replace(/\u00a7./g, '')] || null : null);
 const GRID = [19, 20, 21, 22, 23, 24, 25, 28, 29, 30, 31, 32, 33, 34, 37, 38, 39, 40, 41, 42, 43];
 
 /* ---- the team upgrades ---- */
@@ -227,15 +239,20 @@ class UpgradeScreen extends MenuScreen {
   }
 }
 
+const MODE_ICON = { bw_solo: 'red_bed', bw_doubles: 'blue_bed', bw_3s: 'lime_bed', bw_4s: 'yellow_bed', sw_solo: 'ender_eye', sw_doubles: 'ender_pearl', duels_classic: 'iron_sword', duels_sumo: 'slime_ball' };
 class GameMenu extends MenuScreen {
-  constructor(hub) { super(hub, 'Game Menu'); }
+  constructor(hub, game) { const g = game && (hub.games || []).find(x => x.id === game); super(hub, g ? g.name : 'Game Menu'); this.only = game || null; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); }
   fillBox() {
-    const hub = this.hub, beds = ['red_bed', 'blue_bed', 'lime_bed', 'yellow_bed'];
-    (hub.modes || []).forEach((m, i) => {
-      const st = stack(beds[i % beds.length]);
-      if (!st) return;
-      st.name = '§a' + m.name;
-      this.put(20 + i + (i >= 2 ? 1 : 0), st, ['§a' + m.name, '§7Protect your bed and destroy', '§7the enemy beds.', '', '§eClick to play!'], () => { hub.send({ k: 'play', mode: m.id }); hub.closeScreens(); });
+    const hub = this.hub, games = (hub.games || []).filter(g => !this.only || g.id === this.only);
+    games.forEach((g, row) => {
+      const modes = (hub.modes || []).filter(m => m.game === g.id);
+      const start = (this.only ? 2 : 1 + row * 2) * 9 + Math.max(1, Math.floor((9 - modes.length) / 2));
+      modes.forEach((m, i) => {
+        const st = stack(MODE_ICON[m.id] || 'paper');
+        if (!st) return;
+        st.name = '§a' + m.name;
+        this.put(start + i, st, ['§a' + m.name, '§7' + (g.blurb || ''), '', '§eClick to play!'], () => { hub.send({ k: 'play', mode: m.id }); hub.closeScreens(); });
+      });
     });
   }
 }
@@ -273,6 +290,7 @@ export class Hub {
     this.alive = false; this.changed = new Set(); this.modes = [];
     this.shopCat = 'quick';
     this.t = 0;
+    this.tnt = []; this.eggs = []; this.building = false; this.tower = []; this.fireAt = -99;
   }
   send(o) { this.net.send(Object.assign({ t: 'hub' }, o)); }
 
@@ -299,7 +317,12 @@ export class Hub {
     // every change seen while a game is on (yours and everyone's): those may be broken again, the map may not
     const net = this.net, blocks = net.blocks.bind(net), local = net.local.bind(net);
     net.blocks = (d, e) => { if (this.area === 'game') for (let i = 0; i + 4 < e.length; i += 5) this.changed.add(e[i] + ',' + e[i + 1] + ',' + e[i + 2]); return blocks(d, e); };
-    net.local = (w, x, y, z, b, m, prev) => { if (this.area === 'game') this.changed.add(x + ',' + y + ',' + z); return local(w, x, y, z, b, m, prev); };
+    net.local = (w, x, y, z, b, m, prev) => {
+      if (this.area === 'game') { this.changed.add(x + ',' + y + ',' + z); if (b === B.tnt && this.alive) this.tnt.push([x, y, z]); }
+      return local(w, x, y, z, b, m, prev);
+    };
+    // the shop's glass stands any explosion
+    for (const n of ['red', 'blue', 'lime', 'yellow', 'cyan', 'white', 'pink', 'gray']) if (B[n + '_stained_glass'] !== undefined) RES_OVERRIDE.set(B[n + '_stained_glass'], 3600000);
     this.unwrapNet = () => { net.blocks = blocks; net.local = local; };
   }
   detach() {
@@ -310,6 +333,7 @@ export class Hub {
     if (this.group && this.group.parent) this.group.parent.remove(this.group);
     if (this.unhook) this.unhook();
     if (this.unwrapNet) this.unwrapNet();
+    RES_OVERRIDE.clear();
     this.game = null;
   }
 
@@ -318,11 +342,12 @@ export class Hub {
     const g = this.game;
     if (!g) return;
     switch (m.k) {
-      case 'hello': this.modes = m.modes || []; return;
+      case 'hello': this.modes = m.modes || []; this.games = m.games || []; return;
       case 'where': {
         this.area = m.area; this.floor = m.floor; this.spawn = m.spawn; this.bounds = m.bounds || null;
         if (m.team) this.team = m.team;
         if (m.per) this.per = m.per;
+        this.gameKind = m.game || null; this.spill = !!m.spill; this.noBuild = !!m.noBuild;
         if (m.area !== 'game') { this.team = null; this.alive = false; }
         this.setNpcs(m.npcs || []);
         this.setGens(m.gens || []);
@@ -340,6 +365,7 @@ export class Hub {
         return;
       }
       case 'spec': this.alive = false; return;
+      case 'mode': if (m.m && g.mode !== m.m) this.ctx.commandCtx().setMode(m.m); return;
       case 'title': this.titleT = { t: m.tt || '', s: m.s || '', fi: m.fi | 0, st: m.st | 0, fo: m.fo | 0, at: performance.now() }; this.overlay.animates = true; this.ctx.gui.markDirty(); return;
       case 'board':
         this.board = { title: m.title, lines: m.lines || [] };
@@ -381,6 +407,14 @@ export class Hub {
       inv.slots[0] = stack('compass', 1, { name: '§aGame Menu §7(Right Click)' });
     } else if (kind === 'wait') {
       inv.slots[8] = stack('red_bed', 1, { name: '§c§lReturn to Lobby §7(Right Click)' });
+    } else if (kind === 'empty') {
+      this.alive = true;
+    } else if (kind === 'duel_classic') {
+      // Classic Duels: an iron sword, a bow and five arrows, a fishing rod, iron armour
+      this.alive = true;
+      inv.slots[0] = stack('iron_sword'); inv.slots[1] = stack('fishing_rod'); inv.slots[2] = stack('bow'); inv.slots[8] = stack('arrow', 5);
+      inv.armor[0] = stack('iron_helmet'); inv.armor[1] = stack('iron_chestplate'); inv.armor[2] = stack('iron_leggings'); inv.armor[3] = stack('iron_boots');
+      inv.select(0);
     } else if (kind === 'game') {
       if (fresh) this.kit = { armor: 0, pick: 0, axe: 0, shears: false };
       this.alive = true;
@@ -450,7 +484,7 @@ export class Hub {
   // the team's upgrades on what you carry and wear: Sharpness on swords and axes, Protection on armour, Haste; nothing ever wears out
   applyUpgrades(force) {
     const g = this.game;
-    if (!g || this.area !== 'game') return;
+    if (!g || this.area !== 'game' || this.gameKind !== 'bedwars') return;
     const inv = g.inv, up = this.up || {};
     const swordIds = new Set(SWORDS.map(idOf).concat(AXES.filter(Boolean).map(a => idOf(a[0]))));
     let changed = false;
@@ -482,6 +516,7 @@ export class Hub {
       this.alive = false;
     }
     this.voided = false;
+    if (this.spill && this.area === 'game' && g.hands && g.hands.spillAll) { try { g.hands.spillAll(); } catch (e) { /* nothing to spill */ } }
     // made whole where you fell: the server moves you to watch, and back to your island in a while
     sv.respawn(true);
     sv.attacker = null;
@@ -495,18 +530,20 @@ export class Hub {
   /* ---- what may be broken and built ---- */
   mayBreak(x, y, z) {
     if (this.building) return true;
-    if (this.area !== 'game' || !this.alive) return false;
+    if (this.area !== 'game' || !this.alive || this.noBuild) return false;
+    // SkyWars: any of it, within the arena
+    if (this.gameKind === 'skywars') { const b = this.bounds; return !b || (Math.abs(x + 0.5 - b.x) <= b.reach && Math.abs(z + 0.5 - b.z) <= b.reach && y <= b.top && y >= b.bottom); }
     const w = this.game.world, b = w.get(x, y, z), d = BLOCKS[b];
     // another team's bed may be broken; your own never
     if (d && d.shape === 'bed') return !this.team || d.name !== this.team.wool.replace('_wool', '_bed');
     return this.changed.has(x + ',' + y + ',' + z);
   }
-  mayPlace(x, y, z) {
+  mayPlace(x, y, z, quiet) {
     if (this.building) return true;
-    if (this.area !== 'game' || !this.alive) return false;
+    if (this.area !== 'game' || !this.alive || this.noBuild) return false;
     const b = this.bounds;
     if (b && (Math.abs(x + 0.5 - b.x) > b.reach || Math.abs(z + 0.5 - b.z) > b.reach || y > b.top || y < b.bottom)) {
-      this.ctx.chat.add('§cYou can\'t place blocks here!', 0xFF5555);
+      if (quiet !== true) this.ctx.chat.add('§cYou can\'t place blocks here!', 0xFF5555);
       return false;
     }
     return true;
@@ -536,7 +573,7 @@ export class Hub {
     const n = this.npcAt();
     if (!n) return false;
     const [kind, arg] = n.id.split(':');
-    if (kind === 'play') this.send({ k: 'npc', id: n.id });
+    if (kind === 'game') this.openScreen(new GameMenu(this, arg));
     else if (kind === 'shop' && this.alive) this.openScreen(new ShopScreen(this));
     else if (kind === 'upg' && this.alive) this.openScreen(new UpgradeScreen(this));
     return true;
@@ -561,9 +598,66 @@ export class Hub {
   useHeld() {
     const inv = this.game.inv, h = inv.slots[inv.selected];
     if (!h) return false;
+    if (this.area === 'game' && this.alive) {
+      const sp = specialOf(h);
+      if (sp === 'fireball') { if (this.t - this.fireAt >= 10) { this.fireAt = this.t; this.launchFireball(); this.useOne(); } return true; }
+      if (sp === 'milk') {
+        this.useOne(); this.send({ k: 'milk' });
+        this.ctx.chat.add('§aYour Magic Milk is active! Traps will not trigger for 30 seconds.', 0xFFFFFF);
+        this.sound('entity.generic.drink');
+        return true;
+      }
+      if (sp === 'popup') { const T = this.game.inter.target; if (T && T.face && this.popUp(T)) this.useOne(); return true; }
+      // (the egg is thrown as any egg is; its trail is laid in the ticks after)
+      if (sp === 'bridge') this.bridgeAt = this.t;
+    }
     if (this.area === 'lobby' && h.id === idOf('compass')) { this.openScreen(new GameMenu(this)); return true; }
     if (this.area === 'wait' && h.id === idOf('red_bed')) { this.send({ k: 'lobby' }); return true; }
     return false;
+  }
+  useOne() { const inv = this.game.inv, h = inv.slots[inv.selected]; if (!h) return; if (--h.count <= 0) inv.slots[inv.selected] = null; inv.changed(); }
+  look() {
+    const P = this.game.player;
+    return { eye: { x: P.pos.x, y: P.pos.y + (P.sneaking ? 1.27 : 1.62), z: P.pos.z }, d: { x: -Math.sin(P.yaw) * Math.cos(P.pitch), y: Math.sin(P.pitch), z: -Math.cos(P.yaw) * Math.cos(P.pitch) } };
+  }
+  // a fireball from your eyes the way you look: it breaks the blocks a player put down (not the map, not blast-proof glass) and throws people back
+  launchFireball() {
+    const E = this.game.entities, { eye, d } = this.look();
+    if (!E) return;
+    const f = E.spawn('fireball', eye.x + d.x * 1.2, eye.y + d.y * 1.2 - 0.5, eye.z + d.z * 1.2, { natural: false });
+    if (!f) return;
+    f.owner = E.player; f.power = 2; f.deflected = true;
+    f.vel.set(d.x, d.y, d.z);
+    this.sound('entity.ghast.shoot');
+  }
+  /* A pop-up tower where you clicked: a one-block shaft with a ladder, walls
+     of your wool round it with a way in towards you, and a platform with
+     battlements on top, put up a few blocks a tick. */
+  popUp(T) {
+    const g = this.game, P = g.player, n = T.face;
+    const bx = T.x + n[0], by = T.y + n[1], bz = T.z + n[2];
+    const yaw = P.yaw, sx = -Math.sin(yaw), sz = -Math.cos(yaw);
+    const fx = Math.abs(sx) > Math.abs(sz) ? Math.sign(sx) : 0, fz = fx ? 0 : Math.sign(sz);
+    const rx = -fz, rz = fx, wool = B[this.team ? this.team.wool : 'white_wool'], ladder = B.ladder;
+    const face = fx === 1 ? 0 : fx === -1 ? 1 : fz === 1 ? 4 : 5;
+    const cells = [];
+    const at = (f, r, y, b, m) => cells.push([bx + f * fx + r * rx, by + y, bz + f * fz + r * rz, b, m | 0]);
+    for (let y = 0; y < 5; y++) {
+      for (let f = -1; f <= 1; f++) for (let r = -1; r <= 1; r++) {
+        if (!f && !r) continue;
+        if (f === -1 && r === 0 && y < 2) continue;          // the way in, on your side
+        at(f, r, y, wool);
+      }
+      at(0, 0, y, ladder, face);
+    }
+    for (let f = -2; f <= 2; f++) for (let r = -2; r <= 2; r++) {
+      if (!f && !r) { at(0, 0, 5, ladder, face); continue; }
+      at(f, r, 5, wool);
+      if ((Math.abs(f) === 2 || Math.abs(r) === 2) && ((f + r) & 1) === 0) at(f, r, 6, wool);
+    }
+    this.tower.push(...cells);
+    this.sound('block.wool.place');
+    return true;
   }
   openScreen(s) { this.game.hands.open(s); }
   // (for tests: window.__lc2hub)
@@ -612,9 +706,11 @@ export class Hub {
       if (this.spawn && P.pos.y < this.floor) this.ctx.commandCtx().goTo(g.dim, this.spawn.x, this.spawn.y, this.spawn.z, this.spawn.yaw, 0);
       return;
     }
+    this.items();
     if (!this.alive) return;
     // the void takes you at once
     if (P.pos.y < this.floor && !sv.dead) { this.voided = true; sv.hurt(3.4e38, 'out_of_world'); return; }
+    if (this.gameKind !== 'bedwars') return;
     if (this.t % 10 === 0) this.applyUpgrades(false);
     if (this.t % 20 === 0) {
       const up = this.up || {};
@@ -625,6 +721,35 @@ export class Hub {
       // (beds broken drop nothing worth keeping)
       const inv = g.inv;
       for (let i = 0; i < 36; i++) { const s = inv.slots[i]; if (s && BLOCKS[s.id] && BLOCKS[s.id].shape === 'bed') { inv.slots[i] = null; inv.changed(); } }
+    }
+  }
+  // TNT lights itself as it goes down; a bridge egg lays wool behind it; a pop-up tower goes up
+  items() {
+    const g = this.game, w = g.world;
+    for (const [x, y, z] of this.tnt.splice(0)) {
+      if (w.get(x, y, z) !== B.tnt || !g.sim || !g.sim.primeTnt) continue;
+      w.set(x, y, z, 0, 0);
+      g.sim.primeTnt(x, y, z, g.entities && g.entities.player, 52);
+      this.sound('entity.tnt.primed');
+    }
+    const E = g.entities, wool = B[this.team ? this.team.wool : 'white_wool'];
+    if (E && this.bridgeAt !== undefined && this.t - this.bridgeAt <= 3) {
+      for (const e of E.list) if (e.type === 'egg' && e.owner === E.player && !e.removed && !this.eggs.some(q => q.e === e)) { this.eggs.push({ e, sx: e.pos.x, sz: e.pos.z, last: null }); this.bridgeAt = undefined; break; }
+    }
+    this.eggs = this.eggs.filter(q => {
+      const e = q.e;
+      if (e.removed || Math.hypot(e.pos.x - q.sx, e.pos.z - q.sz) > 30) return false;
+      const x = Math.floor(e.pos.x), y = Math.floor(e.pos.y) - 2, z = Math.floor(e.pos.z);
+      // (the cell under the egg, and the one beside it on the way from the last, so the bridge can be walked)
+      const put = (cx, cy, cz) => { if (!w.get(cx, cy, cz) && this.mayPlace(cx, cy, cz, true)) w.set(cx, cy, cz, wool, 0); };
+      if (q.last && q.last[0] !== x && q.last[2] !== z) put(x, y, q.last[2]);
+      put(x, y, z);
+      q.last = [x, y, z];
+      return true;
+    });
+    if (this.tower.length) {
+      for (const [x, y, z, b, m] of this.tower.splice(0, 8)) if (!w.get(x, y, z) && this.mayPlace(x, y, z, true)) w.set(x, y, z, b, m);
+      if (this.t % 3 === 0) this.sound('block.wool.place');
     }
   }
   frame(now, dt, eye) {
@@ -668,8 +793,9 @@ export class Hub {
 /* ---- the network's commands (each answers only on its server) ---- */
 const onHub = (ctx, fn) => { if (!active || active.game !== ctx.game) { ctx.say('That command only works on Leon Network.', 0xFF5555); return; } fn(active); };
 register('lobby', { always: true, aliases: ['l', 'hub', 'leave'], usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'lobby' })); } });
+const MODE_IDS = ['bw_solo', 'bw_doubles', 'bw_3s', 'bw_4s', 'sw_solo', 'sw_doubles', 'duels_classic', 'duels_sumo'];
 register('play', {
-  always: true, usage: '<bw_solo|bw_doubles|bw_3s|bw_4s>', suggest: i => (i === 0 ? ['bw_solo', 'bw_doubles', 'bw_3s', 'bw_4s'] : []),
+  always: true, usage: '<' + MODE_IDS.join('|') + '>', suggest: i => (i === 0 ? MODE_IDS : []),
   run(args, ctx) { onHub(ctx, h => h.send({ k: 'play', mode: args[0] || 'bw_solo' })); },
 });
 register('start', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'start' })); } });
