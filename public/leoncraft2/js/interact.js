@@ -34,10 +34,10 @@
      hand.useOn(hit)         right click on a block (chests, tables); true if it did something
      hand.useItem(hit)       right click with the item (eat, armour, buckets); true if it did
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=55';
-import { selectionBoxes } from './models.js?v=55';
-import { placement, use, breakAt } from './place.js?v=55';
-import { breakTime, dropOf } from './survival.js?v=55';
+import { B, BLOCKS, FLUID } from './blocks.js?v=56';
+import { selectionBoxes } from './models.js?v=56';
+import { placement, use, breakAt } from './place.js?v=56';
+import { breakTime, dropOf } from './survival.js?v=56';
 
 export class Interactor {
   constructor(o) {
@@ -45,6 +45,8 @@ export class Interactor {
     this.creative = true;
     this.adventure = false;       // adventure (and spectator): nothing broken or placed (modes.js)
     this.locked = null;           // (x, y, z) -> true where nothing may be broken, placed or used: a server's spawn protection (net/net.js)
+    this.mayBreak = null;         // (x, y, z) -> false where a block may not be broken (a minigame's map: net/hub.js)
+    this.mayPlace = null;         // (x, y, z, id) -> false where a block may not go (outside a minigame's build space)
     this.spectator = false;       // spectator: nothing done at all
     this.attack = false; this.useHeld = false;
     this.mining = null;           // { x, y, z, b, t, total }
@@ -139,7 +141,7 @@ export class Interactor {
   }
   startMining() {
     const h = this.target;
-    if (!h || (this.locked && this.locked(h.x, h.y, h.z))) { this.mining = null; return; }
+    if (!h || (this.locked && this.locked(h.x, h.y, h.z)) || (this.mayBreak && !this.mayBreak(h.x, h.y, h.z))) { this.mining = null; return; }
     // a block that answers a punch (the dragon egg teleports away: sim/bodies.js)
     if (this.sim && this.sim.attacked && this.sim.attacked(h)) { this.mining = null; this.target = null; return; }
     // with the hand's rules, t runs from 0 to 1 by the tool's progress a tick; without, seconds by hand
@@ -192,6 +194,7 @@ export class Interactor {
     // a sword, trident, mace or debug stick breaks nothing in creative (modes.js)
     if (this.creative && this.hand.mayBreak && !this.hand.mayBreak()) return;
     if (this.locked && this.locked(h.x, h.y, h.z)) return;
+    if (this.mayBreak && !this.mayBreak(h.x, h.y, h.z)) return;
     const w = this.world;
     const cells = breakAt(w, h.x, h.y, h.z);
     // a block broken starts the attack cooldown again
@@ -267,6 +270,7 @@ export class Interactor {
     if (list.length && this.sim) list = this.sim.placed(list, h, id);
     // a block that cannot go there fails the click outright: the other hand does not get its turn (the game's FAIL)
     if (!list.length) return 'fail';
+    if (this.mayPlace && list.some(([x, y, z, b]) => !this.mayPlace(x, y, z, b))) return 'fail';
     for (const [x, y, z, b, m] of list) {
       const cur = this.world.get(x, y, z);
       this.world.set(x, y, z, b, m);

@@ -61,25 +61,26 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=55';
-import { idx, H } from '../world-const.js?v=55';
-import { DIMS, DIM_IDS } from '../dims.js?v=55';
-import { Save } from '../save.js?v=55';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=55';
-import { glints } from '../render/armor.js?v=55';
-import { containerKind } from '../containers.js?v=55';
-import { getSkinSettings } from '../render/avatar.js?v=55';
-import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=55';
-import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=55';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=55';
-import { Projectile } from '../entities/projectiles.js?v=55';
-import { Combat } from '../combat/combat.js?v=55';
-import { Vehicles } from './vehicles.js?v=55';
-import { Mobs, Orbs } from './mobs.js?v=55';
-import { Events } from './events.js?v=55';
-import { EndSync } from './endfight.js?v=55';
-import { Account, wsBase, httpBase } from './account.js?v=55';
-import { rankTag } from './players.js?v=55';
+import { B, BLOCKS } from '../blocks.js?v=56';
+import { idx, H } from '../world-const.js?v=56';
+import { DIMS, DIM_IDS } from '../dims.js?v=56';
+import { Save } from '../save.js?v=56';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=56';
+import { glints } from '../render/armor.js?v=56';
+import { containerKind } from '../containers.js?v=56';
+import { getSkinSettings } from '../render/avatar.js?v=56';
+import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=56';
+import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=56';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=56';
+import { Projectile } from '../entities/projectiles.js?v=56';
+import { Combat } from '../combat/combat.js?v=56';
+import { Vehicles } from './vehicles.js?v=56';
+import { Mobs, Orbs } from './mobs.js?v=56';
+import { Events } from './events.js?v=56';
+import { EndSync } from './endfight.js?v=56';
+import { Hub } from './hub.js?v=56';
+import { Account, wsBase, httpBase } from './account.js?v=56';
+import { rankTag } from './players.js?v=56';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -476,6 +477,8 @@ export class Net {
   /* ---- the world the server sent ---- */
   onInit(m) {
     this.id = m.id; this.name = m.name; this.server = m.server;
+    // Leon Network: the minigames' own part of the page (net/hub.js)
+    this.hub = m.server && m.server.hub ? new Hub(this) : null;
     // (an older server sends no level: its Allow Commands is all there is)
     this.op = m.op !== undefined ? m.op | 0 : m.server && m.server.cheats ? 2 : 0;
     // the owner's powers (every command a server's owner has, its settings) and your rank tag, as the server decides them
@@ -568,6 +571,8 @@ export class Net {
     document.addEventListener('keyup', this.onKey);
     this.sendSkin();
     this.events.attach();
+    // (after the death hook above: a death on the network is its own)
+    if (this.hub) this.hub.attach(game, ctx);
     // the world's spawn, found by the first player to arrive
     if (!this.spawn && game.spawn) this.send({ t: 'spawn', x: game.spawn.x, z: game.spawn.z });
     game.time = this.serverTime();
@@ -595,6 +600,7 @@ export class Net {
     if (this.onKey) { document.removeEventListener('keydown', this.onKey); document.removeEventListener('keyup', this.onKey); this.onKey = null; }
     if (this.unswing) { this.unswing(); this.unswing = null; }
     this.events.detach();
+    if (this.hub) this.hub.detach();
     this.game = null;
   }
   // the connection went (the server stopped, the network, kicked): back to the title with the reason
@@ -688,6 +694,7 @@ export class Net {
     this.mobs.tick(dimCode(g.dim), stamp);
     this.end.tick();
     this.events.tick(dimCode(g.dim));
+    if (this.hub) this.hub.tick();
     this.shareShots();
     this.sendState(stamp);
     if (++this.eqTick % 5 === 0 || this.eqTick === 1 || g.inv.heldId() !== this.lastHeld) this.sendEquip();
@@ -706,6 +713,7 @@ export class Net {
       this.players.frame(now, dt, g.world, dimCode(g.dim), eye, Math.max(48, (R.opts.renderDist || 8) * 16), g.mode === 'spectator');
     }
     this.events.players(dt);
+    if (this.hub) this.hub.frame(now, dt, eye);
     if (this.mobs) this.mobs.boosts();
     // a new skin chosen while playing goes to everyone
     if ((this.skinCheck = (this.skinCheck || 0) + dt) > 2) { this.skinCheck = 0; this.sendSkin(); }
@@ -1279,6 +1287,7 @@ export class Net {
       case 'rules': this.applyRules(m.rules || {}); return;
       case 'diff': this.server.difficulty = m.d; if (this.ctx.setDifficulty) this.ctx.setDifficulty(m.d); return;
       case 'as': this.ranAs(m); return;
+      case 'hub': if (this.hub) this.hub.receive(m); return;
       // the server sends you somewhere (/home, an accepted /tpa): a place in a dimension, or the world spawn
       case 'go': {
         const c = this.ctx.commandCtx && this.ctx.commandCtx();

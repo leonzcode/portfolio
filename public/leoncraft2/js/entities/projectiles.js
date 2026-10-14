@@ -11,12 +11,12 @@
    spectral one 10 seconds of Glowing. Stuck in a block it stays for a
    minute (1200 ticks). Thrown things fall 0.03 a tick and drag 0.99.
 --------------------------------------------------------------------------- */
-import { Entity, r3 } from './entity.js?v=55';
-import { rayBox } from './terrain.js?v=55';
-import { register } from './mobs.js?v=55';
-import { FLUID } from '../blocks.js?v=55';
-import { POTIONS } from '../brewing.js?v=55';
-import { applyPotion, splashPotion, lingeringPotion } from './mobfx.js?v=55';
+import { Entity, r3 } from './entity.js?v=56';
+import { rayBox } from './terrain.js?v=56';
+import { register } from './mobs.js?v=56';
+import { FLUID } from '../blocks.js?v=56';
+import { POTIONS } from '../brewing.js?v=56';
+import { applyPotion, splashPotion, lingeringPotion } from './mobfx.js?v=56';
 
 const R = () => Math.random();
 const gauss = () => { let u = 0, v = 0; while (!u) u = R(); while (!v) v = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };

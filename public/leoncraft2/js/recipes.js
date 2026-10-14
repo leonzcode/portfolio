@@ -18,12 +18,12 @@
    Unlocked! toast (adv/toast.js, in the same column as the advancements);
    /recipe gives and takes them.
 --------------------------------------------------------------------------- */
-import { BLOCKS } from './blocks.js?v=55';
-import { ITEMS } from './items.js?v=55';
-import { allRecipes } from './crafting.js?v=55';
-import { register } from './commands.js?v=55';
-import { UNLOCKS, START } from './recipeunlocks.js?v=55';
-import { AdvToast } from './adv/toast.js?v=55';
+import { BLOCKS } from './blocks.js?v=56';
+import { ITEMS } from './items.js?v=56';
+import { allRecipes } from './crafting.js?v=56';
+import { register } from './commands.js?v=56';
+import { UNLOCKS, START } from './recipeunlocks.js?v=56';
+import { AdvToast } from './adv/toast.js?v=56';
 
 const nameOf = id => (ITEMS[id] ? ITEMS[id].name : BLOCKS[id] ? BLOCKS[id].name : '');
 

@@ -20,9 +20,9 @@
    killed a raider has Hero of the Village (40 minutes); lose every villager
    and it ends in defeat; after 40 minutes it ends anyway.
 --------------------------------------------------------------------------- */
-import { BLOCKS } from '../blocks.js?v=55';
-import { BIOMES } from '../biomes.js?v=55';
-import { CH } from '../world-const.js?v=55';
+import { BLOCKS } from '../blocks.js?v=56';
+import { BIOMES } from '../biomes.js?v=56';
+import { CH } from '../world-const.js?v=56';
 
 const R = Math.random, RI = n => Math.floor(Math.random() * n);
 const lc2 = () => (typeof window !== 'undefined' ? window.__lc2 : null);
