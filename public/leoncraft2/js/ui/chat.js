@@ -7,8 +7,8 @@
    it, / opens it with a slash already typed; Enter sends, Esc closes, Up and
    Down walk back through what you sent, Tab finishes a command's name.
 --------------------------------------------------------------------------- */
-import { Screen } from './gui.js?v=54';
-import { execute, complete } from '../commands.js?v=54';
+import { Screen } from './gui.js?v=55';
+import { execute, complete } from '../commands.js?v=55';
 
 const LINE = 9, KEEP = 100, WIDTH = 320;
 
