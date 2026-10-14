@@ -18,13 +18,13 @@
    cities then come out of the same code (fortress.js has the exact
    layout; bastions and end cities are our own designs, builds/).
 --------------------------------------------------------------------------- */
-import { Structures, makeSource } from './starts.js?v=57';
-import { SETS, FAMILY } from './placement.js?v=57';
-import { dungeons } from './dungeon.js?v=57';
-import { BIOMES } from '../biomes.js?v=57';
-import { pickBiome } from '../worldgen.js?v=57';
-import { Y0, VOL } from '../world-const.js?v=57';
-import { B, BLOCKS } from '../blocks.js?v=57';
+import { Structures, makeSource } from './starts.js?v=58';
+import { SETS, FAMILY } from './placement.js?v=58';
+import { dungeons } from './dungeon.js?v=58';
+import { BIOMES } from '../biomes.js?v=58';
+import { pickBiome } from '../worldgen.js?v=58';
+import { Y0, VOL } from '../world-const.js?v=58';
+import { B, BLOCKS } from '../blocks.js?v=58';
 
 export function worldStructures(seed, gen, dim) {
   // the worker names dimensions as js/dims.js does ('the_nether', 'the_end'); the structure sets say 'nether' and 'end'

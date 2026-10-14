@@ -25,10 +25,10 @@
    An item thrown out leaves from 0.7 of a block in front of the middle of
    the block, at 0.2-0.3 blocks a tick along the facing, spread a little.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=57';
-import { I, ITEMS, withCount, armorOf, maxDamage } from './items.js?v=57';
-import { matchGrid, remainderOf } from './crafting.js?v=57';
-import { containerKind, facingVec, isShulkerBox } from './containers.js?v=57';
+import { B, BLOCKS, FLUID } from './blocks.js?v=58';
+import { I, ITEMS, withCount, armorOf, maxDamage } from './items.js?v=58';
+import { matchGrid, remainderOf } from './crafting.js?v=58';
+import { containerKind, facingVec, isShulkerBox } from './containers.js?v=58';
 
 const nameOf = id => (ITEMS[id] ? ITEMS[id].name : '');
 // the game's triangle distribution: centre + (rand - rand) * spread

@@ -26,9 +26,9 @@
    Both need commands allowed, as in the game, and run /gamemode, so the
    chat says what it always says.
 --------------------------------------------------------------------------- */
-import { B } from './blocks.js?v=57';
-import { I, ITEMS } from './items.js?v=57';
-import { drawStack } from './ui/inventory.js?v=57';
+import { B } from './blocks.js?v=58';
+import { I, ITEMS } from './items.js?v=58';
+import { drawStack } from './ui/inventory.js?v=58';
 
 export const MODES = ['survival', 'creative', 'adventure', 'spectator'];
 export const MODE_TITLES = { survival: 'Survival Mode', creative: 'Creative Mode', adventure: 'Adventure Mode', spectator: 'Spectator Mode' };

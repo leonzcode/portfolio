@@ -23,9 +23,9 @@
    The item model numbers (where and how far round each kind sits) are the
    game's display settings for its block, flat, handheld and rod items.
 --------------------------------------------------------------------------- */
-import { blockGeometry, isFlatItem, shieldGeometry, tridentGeometry } from './blockmesh.js?v=57';
-import { setGlint } from './glint.js?v=57';
-import { textureLayer, DRAW, itemId } from '../items.js?v=57';
+import { blockGeometry, isFlatItem, shieldGeometry, tridentGeometry } from './blockmesh.js?v=58';
+import { setGlint } from './glint.js?v=58';
+import { textureLayer, DRAW, itemId } from '../items.js?v=58';
 const THREE = window.THREE;
 const PI = Math.PI, DEG = PI / 180;
 const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
