@@ -44,6 +44,24 @@ export class Font {
     c.width = img.width; c.height = img.height;
     const g = c.getContext('2d', { willReadFrequently: true });
     g.drawImage(img, 0, 0);
+    /* A cross (✘) where the sheet has none, drawn in the empty × cell, for the
+       minigames' scoreboards (net/hub.js); ✔ is the sheet's own √. */
+    const xc = 128 + CP437_HI.indexOf('×'), n0 = img.width / 16;
+    if (xc >= 128) {
+      const CROSS = ['X.....X', 'XX...XX', '.XX.XX.', '..XXX..', '.XX.XX.', 'XX...XX', 'X.....X'];
+      const cx0 = (xc & 15) * n0, cy0 = (xc >> 4) * n0, k = n0 / 8;
+      let empty = true;
+      const cell = g.getImageData(cx0, cy0, n0, n0).data;
+      for (let i = 3; i < cell.length; i += 4) if (cell[i]) { empty = false; break; }
+      if (empty) {
+        g.fillStyle = '#fff';
+        CROSS.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (row[x] === 'X') g.fillRect(cx0 + x * k, cy0 + y * k, k, k); });
+        img = c;
+      }
+      this.map.set(0x2718, xc); this.map.set(0x2717, xc);
+      this.map.set(0x2714, 128 + CP437_HI.indexOf('√')); this.map.set(0x2713, 128 + CP437_HI.indexOf('√'));
+    }
+    this.img = img;
     const px = g.getImageData(0, 0, img.width, img.height).data;
     const n = this.cell;
     for (let ch = 0; ch < 256; ch++) {
