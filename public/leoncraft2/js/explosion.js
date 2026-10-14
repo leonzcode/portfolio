@@ -25,7 +25,7 @@
    Fire (beds, respawn anchors, fireballs): each destroyed cell that is air
    afterwards, with a solid block under it, catches fire one time in three.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=56';
+import { B, BLOCKS, FLUID } from './blocks.js?v=57';
 
 /* Blast resistance from the wiki where it is not the block's hardness. Worked out the first time it
    is wanted, or when the page is next idle: its 34 passes over every block took 11-15 ms here, and
@@ -72,8 +72,12 @@ function makeRes() {
 }
 if (typeof requestIdleCallback === 'function') requestIdleCallback(() => { if (!resMade) makeRes(); }, { timeout: 5000 });
 
+// resistance set from outside, ahead of the table (a minigame's blast-proof glass: net/hub.js)
+export const RES_OVERRIDE = new Map();
 export function resistance(b) {
   if (!b) return 0;
+  const o = RES_OVERRIDE.get(b);
+  if (o !== undefined) return o;
   if (!resMade) makeRes();
   const r = RES.get(b);
   if (r !== undefined) return r;
