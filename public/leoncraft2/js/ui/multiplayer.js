@@ -21,12 +21,12 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=58';
-import { ConfirmScreen } from './menus.js?v=58';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=58';
-import { Account } from '../net/account.js?v=58';
-import { LoginScreen, AccountScreen } from './account.js?v=58';
-import { parseSeed } from '../gen/random.js?v=58';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=59';
+import { ConfirmScreen } from './menus.js?v=59';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=59';
+import { Account } from '../net/account.js?v=59';
+import { LoginScreen, AccountScreen } from './account.js?v=59';
+import { parseSeed } from '../gen/random.js?v=59';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
@@ -89,11 +89,11 @@ class ServerEntry {
     g.fill(left + 4, top + 16, left + 8, top + 20, 0xFF7A5639);
     g.fill(left + 20, top + 22, left + 24, top + 26, 0xFF46301F);
     }
-    // every server has a padlock in the picture's top right corner: shut on a private one, open (one leg out) on a public one
-    {
-      const ox = left + 19, oy = top + 1, shut = s.kind === 'private';
+    // a private server has a padlock in the picture's top right corner; a public one has none
+    if (s.kind === 'private') {
+      const ox = left + 19, oy = top + 1;
       g.fill(ox, oy + 6, ox + 12, oy + 18, 0xFFC8A02A);
-      g.fill(ox + 2, oy + 1, ox + 4, oy + 7, 0xFF9A9A9A); g.fill(ox + 8, oy + 1, ox + 10, shut ? oy + 7 : oy + 3, 0xFF9A9A9A); g.fill(ox + 2, oy, ox + 10, oy + 2, 0xFF9A9A9A);
+      g.fill(ox + 2, oy + 1, ox + 4, oy + 7, 0xFF9A9A9A); g.fill(ox + 8, oy + 1, ox + 10, oy + 7, 0xFF9A9A9A); g.fill(ox + 2, oy, ox + 10, oy + 2, 0xFF9A9A9A);
       g.fill(ox + 5, oy + 10, ox + 7, oy + 14, 0xFF3A2A08);
     }
     if (hovered) {
@@ -177,8 +177,8 @@ export class MultiplayerScreen extends Screen {
   // join: the password kept for it (or none), and ask for one if it is wrong
   join(s, password, watch) {
     const g = this.gui, pw = watch ? '' : password !== undefined ? password : savedPassword(s.id);
-    // (the owner and an admin go in without it: the server lets them; anyone may watch as a spectator without it)
-    if (s.kind === 'private' && !pw && !s.canEdit && !watch) { g.open(new PasswordScreen(s, false)); return; }
+    // (the owner, an admin and a mod go in without it: the server lets them; anyone may watch as a spectator without it)
+    if (s.kind === 'private' && !pw && !s.canEdit && !s.free && !watch) { g.open(new PasswordScreen(s, false)); return; }
     const scr = new ConnectingScreen();
     g.open(scr);
     Net.connect(s.id, pw, watch).then(net => {

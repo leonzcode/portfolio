@@ -16,7 +16,7 @@
    Detailed draws the terrain with lighter shaders that light per vertex
    (LEAN_VS / LEAN_FS below); the rest is the full chain's.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS, FILTER } from './glsl.js?v=58';
+import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS, FILTER } from './glsl.js?v=59';
 const THREE = window.THREE;
 
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray; precision highp sampler2DShadow;\n`;
@@ -654,7 +654,7 @@ export function makeMaterials(shared, q) {
     vertexShader: vs,
     fragmentShader: fs,
     uniforms: shared, defines: Object.assign({}, base, defines),
-    side: defines.CUTOUT || defines.TRANSLUCENT ? THREE.DoubleSide : THREE.FrontSide,
+    side: defines.CUTOUT ? THREE.DoubleSide : THREE.FrontSide,      // see-through blocks show only their outsides, as the game draws them
     transparent: !!transparent, depthWrite: !transparent,
   }, extra || {}));
   const sh = defines => new THREE.RawShaderMaterial({

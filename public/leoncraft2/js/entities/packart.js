@@ -22,9 +22,9 @@
        the level's badge, all from the pack once its villager skin fits, so
        a villager never wears our clothes over the game's skin.
 --------------------------------------------------------------------------- */
-import { setArtImage, artSize, artMask, artNames } from './mobart.js?v=58';
-import { PAINTING_VARIANTS } from '../items.js?v=58';
-import { resolver, packFiles } from '../ui/pack.js?v=58';
+import { setArtImage, artSize, artMask, artNames } from './mobart.js?v=59';
+import { PAINTING_VARIANTS } from '../items.js?v=59';
+import { resolver, packFiles } from '../ui/pack.js?v=59';
 
 const RAW = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
 function pixels(src, sx, sy, sw, sh, w, h, tile) {

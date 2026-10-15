@@ -274,5 +274,45 @@ These textures, including the changes above, are shared under the same
 licence, CC BY-SA 4.0.
 
 
+Player skins (skin/gallery/)
+----------------------------
+The Skin Gallery's skins and Leon Network's people are from the Minetest
+skin database, https://skinsdb.terraqueststudios.net/ (each with its number
+there), used unchanged under the licence each author gave it:
+
+  flower_girl.png: "Flower Girl" by julito, CC BY-SA 3.0 (#1028)
+  super_nerd.png: "Super Nerd" by julito, CC BY-SA 3.0 (#1029)
+  mermaid.png: "Mermaid 2" by loupicate, CC BY-SA 4.0 (#1036)
+  space_noob.png: "Space Noob" by Fedora P, CC BY-SA 3.0 (#1037)
+  good_bot.png: "good bot" by julito, CC BY-SA 3.0 (#1054)
+  scientist.png: "Scientist MB" by Néoprene, CC BY-SA 3.0 (#1138)
+  ice_boy.png: "Ice Boy :3" by ElMehdiBen, CC BY-SA 3.0 (#1210)
+  trader.png: "Trader 1" by TenPlus1, CC BY-SA 3.0 (#1258)
+  pastel_girl.png: "Pastel Girl" by Rin0002, CC BY 3.0 (#1271)
+  elf_princess.png: "Elf Princess" by Rin0002, CC BY 3.0 (#1273)
+  green_sweater.png: "Green Sweater" by Rin0002, CC BY 3.0 (#1275)
+  candy_girl.png: "Candy Girl" by Belen1, CC0 1.0 (#1290)
+  king_gerold.png: "King Gerold" by Extex, CC BY-SA 3.0 (#1434)
+  the_green_wizard.png: "The Green Wizard" by Extex, CC BY-SA 3.0 (#1435)
+  plaid_cat.png: "Plaid Cat" by 0ssd, CC0 1.0 (#1486)
+  rpg_kid.png: "RPG Kid" by Hugues Ross, CC BY-SA 4.0 (#1509)
+  t_rex.png: "T Rex" by Kefka., CC BY-SA 3.0 (#1539)
+  carrot_man.png: "Carrot Man" by piesock, CC BY-SA 3.0 (#1579)
+  frog_girl.png: "Frog GIrl" by Illa, CC0 1.0 (#2256)
+  knighted_girl.png: "Knighted Girl" by Celtina, CC0 1.0 (#2335)
+  explorer.png: "Aguia Explorer" by Davizinho, CC BY-SA 3.0 (#189)
+  red_knight.png: "character_CTF_red_knight" by Sam_0, CC BY 4.0 (#2036)
+  pilot.png: "Pilot" by yotuderconnect, CC BY 4.0 (#2124)
+  knight.png: "Knight" by me, CC BY-SA 3.0 (#1166)
+  blue_tnt_mouse.png: "Blue TNT Mouse" by Enrico, CC BY-SA 3.0 (#1420)
+  shadow_ninja.png: "ShadowNinja" by ShadowNinja, CC BY-SA 4.0 (#158)
+  ghost.png: "ghost" by BlockMen, CC BY-SA 4.0 (#1969)
+  camouflaged_wizard.png: "Camouflaged wizard" by nm0i, CC BY-SA 4.0 (#696)
+
+CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+CC BY 3.0 / 4.0: https://creativecommons.org/licenses/by/3.0/ , /by/4.0/
+CC BY-SA 3.0 / 4.0: https://creativecommons.org/licenses/by-sa/3.0/ , /by-sa/4.0/
+
+
 Not an official Minecraft product. Not approved by or associated with Mojang
 or Microsoft.

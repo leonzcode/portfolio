@@ -20,10 +20,10 @@
    game. Cells are looked at only when a neighbour changes, so a still sea
    costs nothing.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, SOLID } from './blocks.js?v=58';
-import { LEVEL, FALLING } from './world-const.js?v=58';
-import { blockDrops } from './loot.js?v=58';
-import { dropStack } from './drops.js?v=58';
+import { B, BLOCKS, FLUID, SOLID } from './blocks.js?v=59';
+import { LEVEL, FALLING } from './world-const.js?v=59';
+import { blockDrops } from './loot.js?v=59';
+import { dropStack } from './drops.js?v=59';
 
 // what a flow washes away (the game's: no collision, not a door, sign, ladder, sugar cane or a block that holds water)
 const WASH = new Uint8Array(4096);
@@ -131,19 +131,18 @@ export class Fluids {
     }
     if (!source) {
       // where does this cell's level come from now?
-      let want;
-      if (this.kindAt(x, y + 1, z) === kind) want = FALLING;
-      else {
-        let best = 99, sources = 0;
-        for (const [dx, dz] of DIRS) {
-          const l = this.levelOf(x + dx, y, z + dz, kind);
-          if (l < best) best = l;
-          if (this.isSource(x + dx, y, z + dz, kind)) sources++;
-        }
-        const below = this.w.get(x, y - 1, z);
-        if (kind === 1 && sources >= 2 && (SOLID[below] || this.isSource(x, y - 1, z, kind))) want = 0;
-        else want = best + drop <= max ? best + drop : -1;
+      // (the game's order: two sources beside it over something solid or a source make a new source,
+      // even under a falling column; then water from above; then one level past its highest neighbour)
+      let want, best = 99, sources = 0;
+      for (const [dx, dz] of DIRS) {
+        const l = this.levelOf(x + dx, y, z + dz, kind);
+        if (l < best) best = l;
+        if (this.isSource(x + dx, y, z + dz, kind)) sources++;
       }
+      const below = this.w.get(x, y - 1, z);
+      if (kind === 1 && sources >= 2 && (SOLID[below] || this.isSource(x, y - 1, z, kind))) want = 0;
+      else if (this.kindAt(x, y + 1, z) === kind) want = FALLING;
+      else want = best + drop <= max ? best + drop : -1;
       if (want === -1) {
         this.w.set(x, y, z, 0, 0);
         this.onChange(x, y, z, 0);

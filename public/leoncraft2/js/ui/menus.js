@@ -26,16 +26,17 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=58';
-import { Packs } from './pack.js?v=58';
-import { Account } from '../net/account.js?v=58';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=58';
-import { packArtSummary } from '../entities/packart.js?v=58';
-import { LanScreen } from './lan.js?v=58';
-import { parseSeed } from '../gen/random.js?v=58';
-import { SOUND_CREDITS } from '../sound/credits.js?v=58';
-import { FlatCustomizeScreen } from './flat.js?v=58';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=58';
+} from './gui.js?v=59';
+import { Packs } from './pack.js?v=59';
+import { Account } from '../net/account.js?v=59';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=59';
+import { packArtSummary } from '../entities/packart.js?v=59';
+import { LanScreen } from './lan.js?v=59';
+import { parseSeed } from '../gen/random.js?v=59';
+import { SOUND_CREDITS } from '../sound/credits.js?v=59';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=59';
+import { FlatCustomizeScreen } from './flat.js?v=59';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=59';
 
 const PI = Math.PI;
 
@@ -711,9 +712,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=58';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=58';
-import { minimapButtons } from './minimap.js?v=58';
+export { VideoSettingsScreen } from './video.js?v=59';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=59';
+import { minimapButtons } from './minimap.js?v=59';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -830,13 +831,16 @@ export class SkinCustomizationScreen extends OptionsListScreen {
     model.tooltip = 'Classic arms are 4 pixels wide, slim arms 3.';
     const choose = new Button(0, 0, 150, 20, 'Choose Skin File...', () => this.pick());
     choose.tooltip = 'A 64 x 64 PNG skin, kept in this browser.';
-    const reset = new Button(0, 0, 150, 20, 'Reset to Default', () => { o.set('skin', 'default'); o.set('skinModel', 'classic'); g._initScreen(this); });
+    const reset = new Button(0, 0, 150, 20, 'Reset to Default', () => { o.set('skin', 'default'); o.set('skinModel', 'classic'); o.set('skinName', ''); g._initScreen(this); });
+    const gallery = new Button(0, 0, 310, 20, 'Skin Gallery...', () => g.open(new SkinGalleryScreen()));
+    gallery.tooltip = 'Skins other players drew and shared, to wear';
     reset.active = o.get('skin') !== 'default';
     list.entries = [
       new WidgetRow(part('hat', 'Hat'), part('jacket', 'Jacket')),
       new WidgetRow(part('leftSleeve', 'Left Sleeve'), part('rightSleeve', 'Right Sleeve')),
       new WidgetRow(part('leftPants', 'Left Pants Leg'), part('rightPants', 'Right Pants Leg')),
       new WidgetRow(hand, model),
+      new WidgetRow(gallery),
       new WidgetRow(choose, reset),
     ];
   }
@@ -851,7 +855,7 @@ export class SkinCustomizationScreen extends OptionsListScreen {
       r.onload = () => {
         const img = new Image();
         img.onload = () => {
-          if (img.width === 64 && (img.height === 64 || img.height === 32)) { o.set('skin', r.result); g._initScreen(this); g.markDirty(); }
+          if (img.width === 64 && (img.height === 64 || img.height === 32)) { o.set('skin', r.result); o.set('skinName', ''); g._initScreen(this); g.markDirty(); }
           else g.open(new NoticeScreen('Skin not used', 'A skin has to be a 64 x 64 (or 64 x 32) PNG. That file is ' + img.width + ' x ' + img.height + '.'));
         };
         img.onerror = () => g.open(new NoticeScreen('Skin not used', 'That file could not be read as a PNG picture.'));
@@ -864,7 +868,7 @@ export class SkinCustomizationScreen extends OptionsListScreen {
   render(g, mx, my, dt) {
     super.render(g, mx, my, dt);
     const s = this.options.get('skin');
-    g.centered(s === 'default' ? 'Skin: Default' : 'Skin: Your own file', this.width / 2, 22, GREY);
+    g.centered(s === 'default' ? 'Skin: Default' : this.options.get('skinName') ? 'Skin: ' + this.options.get('skinName') : 'Skin: Your own file', this.width / 2, 22, GREY);
   }
 }
 
@@ -1010,6 +1014,7 @@ const CREDITS = [
   ['Leoncraft packs, recolours and extends them, and shares'], ['those changes under the same licence.'],
   ['The title logo is drawn from the pack\'s stone texture.'], [''],
   ['@sounds'],
+  ['@skins'],
   ['Code', 0xFFFF55],
   ['three.js, MIT License'],
   ['threejs.org', 0, 'https://threejs.org/'],
@@ -1062,6 +1067,7 @@ export class CreditsScreen extends OptionsListScreen {
     list.entries = [];
     const g = this.gui;
     for (const [t, c, url] of CREDITS) {
+      if (t === '@skins') { for (const r of skinCredits()) for (const line of r[2] ? [r[0]] : g.font.wrap(r[0], Math.min(300, this.width - 20))) list.entries.push(new TextRow(line, r[1] || WHITE, r[2] || null)); continue; }
       if (t === '@sounds') { for (const r of soundCredits()) for (const line of r[2] ? [r[0]] : g.font.wrap(r[0], Math.min(300, this.width - 20))) list.entries.push(new TextRow(line, r[1] || WHITE, r[2] || null)); continue; }
       for (const line of url ? [t] : g.font.wrap(t, Math.min(300, this.width - 20))) list.entries.push(new TextRow(line, c || WHITE, url || null));
     }
