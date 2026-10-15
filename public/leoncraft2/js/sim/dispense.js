@@ -19,12 +19,12 @@
    lower, at 0.2 to 0.3 blocks a tick forward and 0.2 up, spread by a
    triangle of 0.1 either way.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=59';
-import { LEVEL, FALLING } from '../world-const.js?v=59';
-import { F6, FACE6 } from './redstone.js?v=59';
-import { I, ITEMS, armorOf, withCount } from '../items.js?v=59';
-import { containerKind } from '../containers.js?v=59';
-import { placeMinecart } from '../entities/minecart.js?v=59';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=60';
+import { LEVEL, FALLING } from '../world-const.js?v=60';
+import { F6, FACE6 } from './redstone.js?v=60';
+import { I, ITEMS, armorOf, withCount } from '../items.js?v=60';
+import { containerKind } from '../containers.js?v=60';
+import { placeMinecart } from '../entities/minecart.js?v=60';
 
 const tri = (r, a, b) => a + b * (r() - r());
 

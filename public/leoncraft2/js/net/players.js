@@ -26,11 +26,11 @@
    can give themselves one; it shows over their head, in the Tab list and in
    their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar } from '../render/avatar.js?v=59';
-import { pieceLook, armorSheet } from '../render/armor.js?v=59';
-import { setLight as setLightOf, loadedLook } from '../render/held.js?v=59';
-import { DRAW, I, stackFromJSON } from '../items.js?v=59';
-import { B, BLOCKS } from '../blocks.js?v=59';
+import { Avatar } from '../render/avatar.js?v=60';
+import { pieceLook, armorSheet } from '../render/armor.js?v=60';
+import { setLight as setLightOf, loadedLook } from '../render/held.js?v=60';
+import { DRAW, I, stackFromJSON } from '../items.js?v=60';
+import { B, BLOCKS } from '../blocks.js?v=60';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -158,7 +158,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=59', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=60', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
   }
   equip(r) {
@@ -370,7 +370,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=59', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=60', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;

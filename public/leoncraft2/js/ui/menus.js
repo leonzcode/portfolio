@@ -26,17 +26,17 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=59';
-import { Packs } from './pack.js?v=59';
-import { Account } from '../net/account.js?v=59';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=59';
-import { packArtSummary } from '../entities/packart.js?v=59';
-import { LanScreen } from './lan.js?v=59';
-import { parseSeed } from '../gen/random.js?v=59';
-import { SOUND_CREDITS } from '../sound/credits.js?v=59';
-import { SkinGalleryScreen, skinCredits } from './skins.js?v=59';
-import { FlatCustomizeScreen } from './flat.js?v=59';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=59';
+} from './gui.js?v=60';
+import { Packs } from './pack.js?v=60';
+import { Account } from '../net/account.js?v=60';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=60';
+import { packArtSummary } from '../entities/packart.js?v=60';
+import { LanScreen } from './lan.js?v=60';
+import { parseSeed } from '../gen/random.js?v=60';
+import { SOUND_CREDITS } from '../sound/credits.js?v=60';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=60';
+import { FlatCustomizeScreen } from './flat.js?v=60';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=60';
 
 const PI = Math.PI;
 
@@ -712,9 +712,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=59';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=59';
-import { minimapButtons } from './minimap.js?v=59';
+export { VideoSettingsScreen } from './video.js?v=60';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=60';
+import { minimapButtons } from './minimap.js?v=60';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -1015,6 +1015,11 @@ const CREDITS = [
   ['The title logo is drawn from the pack\'s stone texture.'], [''],
   ['@sounds'],
   ['@skins'],
+  ['Maps', 0xFFFF55],
+  ['Leon Network\'s Prop Hunt map, Hillside: from "Hide and Seek Minigame"'], ['by Tert, GNU GPL version 3 (joined, cut and changed for the game).'],
+  ['curseforge.com/minecraft/worlds/hide-and-seek-minigame', 0, 'https://www.curseforge.com/minecraft/worlds/hide-and-seek-minigame'],
+  ['gnu.org/licenses/gpl-3.0', 0, 'https://www.gnu.org/licenses/gpl-3.0.html'],
+  ['Every other Leon Network map is our own.'], [''],
   ['Code', 0xFFFF55],
   ['three.js, MIT License'],
   ['threejs.org', 0, 'https://threejs.org/'],
