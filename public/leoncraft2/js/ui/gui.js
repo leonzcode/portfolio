@@ -52,7 +52,7 @@
    textures/gui/. The pack leaves button interiors see-through, so a
    translucent fill goes under them for legible text over the world.
 --------------------------------------------------------------------------- */
-import { Font, cssRGB } from './font.js?v=58';
+import { Font, cssRGB } from './font.js?v=59';
 
 /* ------------------------------ options ------------------------------ */
 
@@ -137,6 +137,7 @@ export const DEFAULT_OPTIONS = {
   advancedTooltips: false, // F3 + H: durability and the item's id under its name
   skin: 'default',         // or a 64 x 64 PNG data URL
   skinModel: 'classic',    // classic slim
+  skinName: '',            // the Skin Gallery's name for the skin in use ('' for the default or a file of your own)
   skinParts: { hat: true, jacket: true, leftSleeve: true, rightSleeve: true, leftPants: true, rightPants: true },
   keys: DEFAULT_KEYS,
   keys2: DEFAULT_KEYS2,
@@ -300,7 +301,7 @@ export class Gui {
     this.ctx = canvas.getContext('2d');
     this.base = base || new URL('../../textures/gui/', import.meta.url).href;
     if (!this.base.endsWith('/')) this.base += '/';
-    this.version = version || '?v=58';
+    this.version = version || '?v=59';
     this.options = options || new Options();
     this.hooks = hooks || {};
     this.sheets = new Map();

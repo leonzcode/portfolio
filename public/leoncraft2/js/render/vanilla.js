@@ -25,10 +25,10 @@
    No shadow map, no post-processing, drawn straight to the screen at full
    resolution with nearest-neighbour textures.
 --------------------------------------------------------------------------- */
-import { COMMON, FILTER } from './glsl.js?v=58';
-import { FullScreen, VS_FULL } from './sky.js?v=58';
-import { BlockClouds } from './clouds.js?v=58';
-import { END_FLASH_GLSL, END_FLASH_COLOUR } from './endflash.js?v=58';
+import { COMMON, FILTER } from './glsl.js?v=59';
+import { FullScreen, VS_FULL } from './sky.js?v=59';
+import { BlockClouds } from './clouds.js?v=59';
+import { END_FLASH_GLSL, END_FLASH_COLOUR } from './endflash.js?v=59';
 const THREE = window.THREE;
 
 // the game's rain and thunder colour shift: towards a grey of the colour's own brightness times k
@@ -703,7 +703,7 @@ export function makeVanillaMaterials(U, o) {
     vertexShader: HEAD + VANILLA + TERRAIN_VS,
     fragmentShader: HEAD + VANILLA + FILTER + TERRAIN_FS,
     uniforms: U, defines: Object.assign({}, base, defines),
-    side: defines.CUTOUT || defines.TRANSLUCENT ? THREE.DoubleSide : THREE.FrontSide,
+    side: defines.CUTOUT ? THREE.DoubleSide : THREE.FrontSide,      // see-through blocks show only their outsides, as the game draws them
     transparent: !!transparent, depthWrite: !transparent,
   }, extra || {}));
   const fluid = new THREE.RawShaderMaterial({

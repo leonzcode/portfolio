@@ -10,9 +10,9 @@
      voice()                         a mob's voice pitch: 1 +- 0.2, 1.5 for a baby
      at(event, x, y, z, v, p, cat)   any other event in the world
 --------------------------------------------------------------------------- */
-import { Sound } from './sound.js?v=58';
-import { soundType } from './blocksounds.js?v=58';
-import { BLOCKS } from '../blocks.js?v=58';
+import { Sound } from './sound.js?v=59';
+import { soundType } from './blocksounds.js?v=59';
+import { BLOCKS } from '../blocks.js?v=59';
 
 const R = Math.random;
 // (r - r): the game's spread, from -1 to 1 and most often near 0

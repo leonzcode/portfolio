@@ -15,10 +15,10 @@
      light   block light it gives off (0-15)
      opacity how much sky light it takes away (15 = all, leaves and water 1)
 --------------------------------------------------------------------------- */
-import { DATA } from './blockdata.js?v=58';
-import { MODEL_SHAPES, OFFSET_XZ, OFFSET_XYZ } from './models.js?v=58';
-import { SHELF_TEX } from './shelfmushroom.js?v=58';
-import { dimBlocks } from './dim/blocks.js?v=58';
+import { DATA } from './blockdata.js?v=59';
+import { MODEL_SHAPES, OFFSET_XZ, OFFSET_XYZ } from './models.js?v=59';
+import { SHELF_TEX } from './shelfmushroom.js?v=59';
+import { dimBlocks } from './dim/blocks.js?v=59';
 
 export const AIR = 0;
 export const MAX_ID = 4096;   // block ids are 16-bit in the world; this many fit the lookup tables
@@ -284,7 +284,9 @@ export const FLUID = new Uint8Array(MAX_ID);      // 1 water, 2 lava
 export const PLANT = new Uint8Array(MAX_ID);      // not a cube: drawn without occluding anything
 for (const d of BLOCKS) {
   if (!d) continue;
-  OPAQUE[d.id] = d.shape === 'cube' && d.pass === 'opaque' ? 1 : 0;
+  // a dirt path and farmland are a pixel short of a block, as the game's models (their side pictures leave the top row empty)
+  if (d.name === 'dirt_path' || d.name === 'farmland') { d.flat = 15 / 16; d.opacity = 1; }   // (and let light in, as the game's light engine does for them)
+  OPAQUE[d.id] = d.shape === 'cube' && d.pass === 'opaque' && !d.flat ? 1 : 0;
   SOLID[d.id] = d.solid ? 1 : 0;
   OPACITY[d.id] = d.opacity;
   EMIT[d.id] = d.light || 0;

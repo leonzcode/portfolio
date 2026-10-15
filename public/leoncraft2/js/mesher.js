@@ -28,12 +28,12 @@
    flags: bits 0-1 ambient occlusion, 2-3 texture rotation, 4 overlay
    (grass block sides), 5 plant, 6 tinted.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=58';
-import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=58';
-import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=58';
-import { hash3 } from './noise.js?v=58';
-import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=58';
-import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=58';
+import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=59';
+import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=59';
+import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=59';
+import { hash3 } from './noise.js?v=59';
+import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=59';
+import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=59';
 
 const W = 48, A = W * W;          // the region: three chunks a side
 let colours = null;               // biome colours, set once at start
@@ -620,13 +620,13 @@ function build(job, ny, c0, c1, base) {
           const tint = tintFor(d, k2);
           const tinted = d.tint ? 64 : 0;
           // snow comes in eight layers (meta 0-7), two pixels each
-          const box = d.shape === 'snow' ? { h: ((rm[i] & 7) + 1) / 8 } : d.shape === 'cactus' ? { in: 1 / 16 } : null;
+          const box = d.shape === 'snow' ? { h: ((rm[i] & 7) + 1) / 8 } : d.flat ? { h: d.flat } : d.shape === 'cactus' ? { in: 1 / 16 } : null;
           const snowy = d.snowy && (rb[i + A] === B.snow || rb[i + A] === B.snow_block || rb[i + A] === B.powder_snow);
           // a block that turns: each face's picture and how it lies, worked out once per state
           const look = LOOK[b] ? cubeLook(d, rm[i]) : null;
           for (let f = 0; f < 6; f++) {
             const nb = rb[i + NSTEP[f]];
-            if (box && box.h !== undefined) { if (f === 3 && OPAQUE[nb]) continue; if (f !== 2 && f !== 3 && OPAQUE[nb]) continue; }
+            if (box && box.h !== undefined) { if (f === 3 && OPAQUE[nb]) continue; if (f !== 2 && f !== 3 && (OPAQUE[nb] || (d.flat && nb === b))) continue; }
             else {
               if (OPAQUE[nb]) continue;
               if (fastLeaf && LEAF[nb]) continue;

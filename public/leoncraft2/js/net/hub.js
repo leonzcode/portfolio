@@ -14,19 +14,22 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=58';
-import { I } from '../items.js?v=58';
-import { POTIONS } from '../brewing.js?v=58';
-import { ChestScreen } from '../ui/containers.js?v=58';
-import { RemotePlayers } from './players.js?v=58';
-import { register } from '../commands.js?v=58';
-import { Sound } from '../sound/sound.js?v=58';
-import { RES_OVERRIDE } from '../explosion.js?v=58';
+import { B, BLOCKS } from '../blocks.js?v=59';
+import { I } from '../items.js?v=59';
+import { POTIONS } from '../brewing.js?v=59';
+import { ChestScreen } from '../ui/containers.js?v=59';
+import { RemotePlayers } from './players.js?v=59';
+import { register } from '../commands.js?v=59';
+import { Sound } from '../sound/sound.js?v=59';
+import { RES_OVERRIDE } from '../explosion.js?v=59';
+import { skinUrl } from '../ui/skins.js?v=59';
+// each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
+const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=58').then(m => {
+import('../adv/toast.js?v=59').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -564,7 +567,8 @@ export class Hub {
     this.clearHolos();
     this.npcList = list.map((n, i) => Object.assign({ nid: -1000 - i }, n));
     for (const n of this.npcList) {
-      this.npcs.add({ id: n.nid, name: '', eq: n.held ? { h: n.held, o: '', a: null } : null });
+      const sk = NPC_SKIN[String(n.id).replace(/^game:/, '')];
+      this.npcs.add({ id: n.nid, name: '', skin: sk ? skinUrl(sk) : '', eq: n.held ? { h: n.held, o: '', a: null } : null });
       this.feed(n);
       this.holo('npc:' + n.id, n.x, n.y + 1.95, n.z, n.lines || []);
     }

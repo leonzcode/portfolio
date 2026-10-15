@@ -26,11 +26,11 @@
    can give themselves one; it shows over their head, in the Tab list and in
    their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar } from '../render/avatar.js?v=58';
-import { pieceLook, armorSheet } from '../render/armor.js?v=58';
-import { setLight as setLightOf, loadedLook } from '../render/held.js?v=58';
-import { DRAW, I, stackFromJSON } from '../items.js?v=58';
-import { B, BLOCKS } from '../blocks.js?v=58';
+import { Avatar } from '../render/avatar.js?v=59';
+import { pieceLook, armorSheet } from '../render/armor.js?v=59';
+import { setLight as setLightOf, loadedLook } from '../render/held.js?v=59';
+import { DRAW, I, stackFromJSON } from '../items.js?v=59';
+import { B, BLOCKS } from '../blocks.js?v=59';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -40,7 +40,7 @@ const PI = Math.PI;
 const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
 const idOf = name => !name ? 0 : (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
 // the rank tag before a name, in colour codes (the name after it goes back to the line's own colour)
-const RANKS = { admin: '\u00a7c[ADMIN] \u00a7r', owner: '\u00a76[OWNER] \u00a7r' };
+const RANKS = { admin: '\u00a7c[ADMIN] \u00a7r', mod: '\u00a72[MOD] \u00a7r', owner: '\u00a76[OWNER] \u00a7r' };
 export const rankTag = tag => RANKS[tag] || '';
 
 // the flags each position carries (net/net.js sends them)
@@ -158,7 +158,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=58', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=59', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
   }
   equip(r) {
@@ -367,13 +367,21 @@ export class RemotePlayers {
    column for every 20), their face from their skin, their name, and the
    signal bars for how long the server takes to hear from them. */
 const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 : ms < 1000 ? 3 : 4);
+// a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
+const FACES = new Map();
+function faceOf(url) {
+  const key = url || new URL('../../textures/skin/default.png?v=59', import.meta.url).href;
+  let im = FACES.get(key);
+  if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
+  return im.complete && im.naturalWidth >= 64 ? im : null;
+}
 export class PlayerList {
   constructor(net) { this.net = net; this.shown = false; this.animates = false; }
   draw(g) {
     if (!this.shown) return;
     const net = this.net, lat = net.lat || {};
     const rows = [{ name: net.name, rank: net.tag, ping: Math.round(net.rtt), face: net.ctx ? net.ctx.renderer.avatar.canvas : null }];
-    if (net.players) for (const r of net.players.list.values()) rows.push({ name: r.name, rank: r.rank, ping: lat[r.id] !== undefined ? lat[r.id] : -1, face: r.av && r.av.ready ? r.av.canvas : null });
+    if (net.players) for (const r of net.players.list.values()) rows.push({ name: r.name, rank: r.rank, ping: lat[r.id] !== undefined ? lat[r.id] : -1, face: r.av && r.av.ready ? r.av.canvas : faceOf(r.skinUrl) });
     rows.sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1));
     // (each shown with its rank tag before it)
     for (const r of rows) r.shown = rankTag(r.rank) + r.name;

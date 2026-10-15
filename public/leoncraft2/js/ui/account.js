@@ -13,8 +13,8 @@
    Admin (admin accounts only): every account (ban and unban, reset a
    password, delete) and every server (give it to another owner, delete it).
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, ScrollList, WHITE, GREY } from './gui.js?v=58';
-import { Account, NO_CONNECTION } from '../net/account.js?v=58';
+import { Screen, Button, TextField, ScrollList, WHITE, GREY } from './gui.js?v=59';
+import { Account, NO_CONNECTION } from '../net/account.js?v=59';
 
 const RED = 0xFF5555;
 const fmtDate = t => { if (!t) return 'never'; const d = new Date(t); return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
@@ -198,7 +198,7 @@ class AccountRow {
   constructor(a) { this.a = a; }
   render(g, list, i, top, left, width) {
     const a = this.a;
-    g.text((a.admin ? '§c[ADMIN] §f' : '') + a.name + (a.online ? ' §a(online)' : ''), left + 2, top + 1, WHITE, false);
+    g.text((a.admin ? '§c[ADMIN] §f' : a.mod ? '§2[MOD] §f' : '') + a.name + (a.online ? ' §a(online)' : ''), left + 2, top + 1, WHITE, false);
     g.text(g.font.trim(a.banned ? '§cBanned: ' + a.banned : 'Last login ' + fmtDate(a.lastLogin) + ', made ' + fmtDate(a.createdAt), width - 6), left + 2, top + 12, 0x808080, false);
   }
 }
@@ -231,8 +231,16 @@ export class AdminScreen extends Screen {
       this.b4 = this.add(new Button(W / 2 + 4, by, 150, 20, 'Delete Server', () => this.sdel()));
       this.b2 = this.b3 = null;
     }
-    this.add(new Button(W / 2 - 154, H - 28, 150, 20, 'Refresh', () => this.refresh()));
-    this.add(new Button(W / 2 + 4, H - 28, 150, 20, 'Done', () => g.back()));
+    // (only the Leon account makes and removes mods: the server checks it too)
+    this.modB = null;
+    if (this.tab === 'accounts' && String(Account.name || '').toLowerCase() === 'leon') {
+      this.modB = this.add(new Button(W / 2 - 154, H - 28, 100, 20, 'Make Mod', () => this.mod(), 'A mod sees and joins every server, private ones and Leon Network too, without a password'));
+      this.add(new Button(W / 2 - 50, H - 28, 100, 20, 'Refresh', () => this.refresh()));
+      this.add(new Button(W / 2 + 54, H - 28, 100, 20, 'Done', () => g.back()));
+    } else {
+      this.add(new Button(W / 2 - 154, H - 28, 150, 20, 'Refresh', () => this.refresh()));
+      this.add(new Button(W / 2 + 4, H - 28, 150, 20, 'Done', () => g.back()));
+    }
     this.fill();
     if (!this.loaded) { this.loaded = true; this.refresh(); }
   }
@@ -249,6 +257,7 @@ export class AdminScreen extends Screen {
     const s = this.sel();
     for (const b of [this.b1, this.b2, this.b3, this.b4]) if (b) b.active = !!s;
     if (s && this.tab === 'accounts') { this.b1.active = !s.admin && !s.banned; this.b2.active = !!s.banned; this.b4.active = !s.admin; }
+    if (this.modB) { this.modB.active = !!s && !s.admin; this.modB.message = s && s.mod ? 'Remove Mod' : 'Make Mod'; }
     if (s && this.tab === 'servers') this.b4.active = s.id !== 'main';
   }
   async refresh() {
@@ -266,6 +275,7 @@ export class AdminScreen extends Screen {
     if (!this.bad) { this.msg = text; this.bad = !ok; }
     if (this.gui) this.gui.markDirty();
   }
+  mod() { const s = this.sel(); if (s && !s.admin) this.run('mod', { name: s.name, on: !s.mod }, s.mod ? s.name + ' is no longer a mod' : s.name + ' is a mod now'); }
   act(op) { const s = this.sel(); if (s) this.run(op, { name: s.name }, op === 'unban' ? 'Unbanned ' + s.name : 'Done'); }
   ban() { const s = this.sel(); if (s) this.gui.open(new AskScreen('Ban ' + s.name, 'Reason (shown to them)', v => this.run('ban', { name: s.name, reason: v }, 'Banned ' + s.name), { max: 200 })); }
   reset() { const s = this.sel(); if (s) this.gui.open(new AskScreen('Reset Password', 'A new password for ' + s.name + ' (6 or more characters)', v => this.run('reset', { name: s.name, password: v }, 'Reset the password of ' + s.name), { password: true })); }

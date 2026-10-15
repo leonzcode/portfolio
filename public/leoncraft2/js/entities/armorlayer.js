@@ -11,10 +11,10 @@
    pieces shimmer, and armour does not flash red when the mob is hurt, as in
    the game.
 --------------------------------------------------------------------------- */
-import { MODELS } from './mobmodels.js?v=58';
-import { addArt, SLOTS } from './mobart.js?v=58';
-import { ARMOR_MATS, PIECE_BOXES, OVERLAY_ROW, armorSheet, pieceLook } from '../render/armor.js?v=58';
-import { itemId } from '../items.js?v=58';
+import { MODELS } from './mobmodels.js?v=59';
+import { addArt, SLOTS } from './mobart.js?v=59';
+import { ARMOR_MATS, PIECE_BOXES, OVERLAY_ROW, armorSheet, pieceLook } from '../render/armor.js?v=59';
+import { itemId } from '../items.js?v=59';
 
 const SLOT_NAMES = ['head', 'chest', 'legs', 'feet'];
 // a slot in the atlas for each material (and leather's undyed overlay), left empty here and filled from the sheet

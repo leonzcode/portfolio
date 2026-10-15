@@ -10,13 +10,15 @@
    Each command gets a context: ctx.game (the world being played), and
    ctx.say(text, colour) for the reply.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=58';
-import { Y0 } from './world-const.js?v=58';
-import { ENCHANTS } from './itemdata.js?v=58';
+import { B, BLOCKS, FLUID } from './blocks.js?v=59';
+import { Y0 } from './world-const.js?v=59';
+import { ENCHANTS } from './itemdata.js?v=59';
 
 const REG = new Map();
 export function register(name, def) { REG.set(name, def); for (const a of def.aliases || []) REG.set(a, def); }
 export function commandNames() { return [...new Set([...REG.keys()])].sort(); }
+// a command this place does not have (def.hidden(ctx): Leon Network's teleports and homes for everyone but an admin) is unknown there
+const shown = (n, ctx) => { const d = REG.get(n); return !!d && !(d.hidden && d.hidden(ctx)); };
 // a command as registered (net/net.js builds the server's versions of a few on them)
 export const commandDef = name => REG.get(name);
 
@@ -78,7 +80,7 @@ export function displayName(id) { const d = BLOCKS[id]; return d ? (d.display ||
 export function execute(line, ctx) {
   const args = line.trim().replace(/^\//, '').split(/\s+/).filter(Boolean);
   const name = (args.shift() || '').replace(/^minecraft:/, '');
-  const def = REG.get(name);
+  const def = shown(name, ctx) ? REG.get(name) : null;
   if (!def) { ctx.say('Unknown or incomplete command, see below for error', RED); ctx.say(line + '<--[HERE]', RED); return false; }
   if (!ctx.cheats && !def.always) { ctx.say('You do not have permission to use this command', RED); return false; }
   // (the name as typed, for the help that names it: /removehome, not /delhome)
@@ -95,8 +97,8 @@ export function execute(line, ctx) {
 // what Tab offers for the word being typed (ctx: the chat's command context, for what depends on the world: your homes)
 export function complete(line, ctx) {
   const words = line.replace(/^\//, '').split(' ');
-  if (words.length === 1) return commandNames().filter(n => n.startsWith(words[0])).map(n => '/' + n);
-  const def = REG.get(words[0]);
+  if (words.length === 1) return commandNames().filter(n => n.startsWith(words[0]) && shown(n, ctx)).map(n => '/' + n);
+  const def = shown(words[0], ctx) ? REG.get(words[0]) : null;
   if (!def || !def.suggest) return [];
   const opts = def.suggest(words.length - 2, words.slice(1), ctx) || [];
   const last = words[words.length - 1];
@@ -109,7 +111,7 @@ const MODE_SHORT = { s: 'survival', c: 'creative', a: 'adventure', sp: 'spectato
 
 register('help', {
   always: true, aliases: ['?'],
-  run(args, ctx) { for (const n of commandNames()) ctx.say('/' + n + (REG.get(n).usage ? ' ' + REG.get(n).usage : ''), GREY); },
+  run(args, ctx) { for (const n of commandNames()) if (shown(n, ctx)) ctx.say('/' + n + (REG.get(n).usage ? ' ' + REG.get(n).usage : ''), GREY); },
 });
 register('gamemode', {
   usage: '<survival|creative|adventure|spectator>',
@@ -236,6 +238,7 @@ register('setblock', {
     const w = ctx.game.world;
     if (w.get(x, y - Y0, z) === id) fail('Could not set the block');
     w.set(x, y - Y0, z, id, 0);
+    if (ctx.game.fluids) ctx.game.fluids.around(x, y - Y0, z);     // water and lava next to it (or put down) flow, as after any block change
     ctx.blockChanged(x, y - Y0, z);
     ctx.say(`Changed the block at ${x}, ${y}, ${z}`);
   },
@@ -260,6 +263,7 @@ register('fill', {
       else if (mode === 'keep') { if (w.get(x, y - Y0, z)) continue; }
       if (w.get(x, y - Y0, z) === want) continue;
       w.set(x, y - Y0, z, want, 0);
+      if (ctx.game.fluids && (FLUID[want] || edge)) ctx.game.fluids.around(x, y - Y0, z);
       n++;
     }
     if (!n) fail('No blocks were filled');

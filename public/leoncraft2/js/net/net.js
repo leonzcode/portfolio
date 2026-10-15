@@ -61,26 +61,26 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=58';
-import { idx, H } from '../world-const.js?v=58';
-import { DIMS, DIM_IDS } from '../dims.js?v=58';
-import { Save } from '../save.js?v=58';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=58';
-import { glints } from '../render/armor.js?v=58';
-import { containerKind } from '../containers.js?v=58';
-import { getSkinSettings } from '../render/avatar.js?v=58';
-import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=58';
-import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=58';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=58';
-import { Projectile } from '../entities/projectiles.js?v=58';
-import { Combat } from '../combat/combat.js?v=58';
-import { Vehicles } from './vehicles.js?v=58';
-import { Mobs, Orbs } from './mobs.js?v=58';
-import { Events } from './events.js?v=58';
-import { EndSync } from './endfight.js?v=58';
-import { Hub } from './hub.js?v=58';
-import { Account, wsBase, httpBase } from './account.js?v=58';
-import { rankTag } from './players.js?v=58';
+import { B, BLOCKS } from '../blocks.js?v=59';
+import { idx, H } from '../world-const.js?v=59';
+import { DIMS, DIM_IDS } from '../dims.js?v=59';
+import { Save } from '../save.js?v=59';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=59';
+import { glints } from '../render/armor.js?v=59';
+import { containerKind } from '../containers.js?v=59';
+import { getSkinSettings } from '../render/avatar.js?v=59';
+import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=59';
+import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=59';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=59';
+import { Projectile } from '../entities/projectiles.js?v=59';
+import { Combat } from '../combat/combat.js?v=59';
+import { Vehicles } from './vehicles.js?v=59';
+import { Mobs, Orbs } from './mobs.js?v=59';
+import { Events } from './events.js?v=59';
+import { EndSync } from './endfight.js?v=59';
+import { Hub } from './hub.js?v=59';
+import { Account, wsBase, httpBase } from './account.js?v=59';
+import { rankTag } from './players.js?v=59';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -363,6 +363,8 @@ for (const name of ESS_NET) {
     : name === 'delhome' ? (i => (i === 0 ? homeList() : [])) : null;
   register(name, Object.assign({}, def, {
     always: true,
+    // (Leon Network has none of them, but for an admin: the server refuses them too)
+    hidden: ctx => { const net = ctx && ctx.game && ctx.game.net; return !!(net && net.hub && !net.admin); },
     suggest: (i, w, ctx) => (ctx && ctx.game && ctx.game.net && extra ? extra(i, w) : def.suggest ? def.suggest(i, w, ctx) : []),
     run(args, ctx) {
       const net = ctx.game && ctx.game.net;
