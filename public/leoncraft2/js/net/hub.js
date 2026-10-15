@@ -14,22 +14,26 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=59';
-import { I } from '../items.js?v=59';
-import { POTIONS } from '../brewing.js?v=59';
-import { ChestScreen } from '../ui/containers.js?v=59';
-import { RemotePlayers } from './players.js?v=59';
-import { register } from '../commands.js?v=59';
-import { Sound } from '../sound/sound.js?v=59';
-import { RES_OVERRIDE } from '../explosion.js?v=59';
-import { skinUrl } from '../ui/skins.js?v=59';
+import { B, BLOCKS } from '../blocks.js?v=60';
+import { I } from '../items.js?v=60';
+import { POTIONS } from '../brewing.js?v=60';
+import { ChestScreen } from '../ui/containers.js?v=60';
+import { RemotePlayers } from './players.js?v=60';
+import { register } from '../commands.js?v=60';
+import { Sound } from '../sound/sound.js?v=60';
+import { RES_OVERRIDE } from '../explosion.js?v=60';
+import { skinUrl } from '../ui/skins.js?v=60';
+import { Painter, PaintScreen, faceColour, faceOfNormal } from '../ui/paint.js?v=60';
+import { blockGeometry } from '../render/blockmesh.js?v=60';
+import { lightNear } from '../lightlevel.js?v=60';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=60';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=59').then(m => {
+import('../adv/toast.js?v=60').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -242,15 +246,32 @@ class UpgradeScreen extends MenuScreen {
   }
 }
 
-const MODE_ICON = { bw_solo: 'red_bed', bw_doubles: 'blue_bed', bw_3s: 'lime_bed', bw_4s: 'yellow_bed', sw_solo: 'ender_eye', sw_doubles: 'ender_pearl', duels_classic: 'iron_sword', duels_sumo: 'slime_ball', tntrun: 'tnt', murder: 'iron_sword' };
+const MODE_ICON = { bw_solo: 'red_bed', bw_doubles: 'blue_bed', bw_3s: 'lime_bed', bw_4s: 'yellow_bed', sw_solo: 'ender_eye', sw_doubles: 'ender_pearl', duels_classic: 'iron_sword', duels_sumo: 'slime_ball', tntrun: 'tnt', murder: 'iron_sword',
+  duels_bridge: 'blue_terracotta', duels_bedwars: 'red_bed', duels_skywars: 'ender_eye', buildbattle: 'bricks', spleef: 'diamond_shovel', prophunt: 'oak_leaves', ch_classic: 'brush', ch_infection: 'rotten_flesh', ch_double: 'ender_pearl' };
+const GAME_ICON = { bedwars: 'red_bed', skywars: 'ender_eye', duels: 'iron_sword', tntrun: 'tnt', murder: 'bow', buildbattle: 'bricks', spleef: 'diamond_shovel', prophunt: 'oak_leaves', chameleon: 'brush' };
+// the lobby compass shows every game (a click opens that game's own menu); a person on the stand shows their game's modes
 class GameMenu extends MenuScreen {
   constructor(hub, game) { const g = game && (hub.games || []).find(x => x.id === game); super(hub, g ? g.name : 'Game Menu'); this.only = game || null; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); }
   fillBox() {
-    const hub = this.hub, games = (hub.games || []).filter(g => !this.only || g.id === this.only);
-    games.forEach((g, row) => {
-      const modes = (hub.modes || []).filter(m => m.game === g.id);
-      const start = (this.only ? 2 : 1 + row * 2) * 9 + Math.max(1, Math.floor((9 - modes.length) / 2));
-      modes.forEach((m, i) => {
+    const hub = this.hub;
+    if (!this.only) {
+      const games = hub.games || [], slots = [];
+      // seven to a row, each row in the middle, from the second row down
+      for (let i = 0; i < games.length; i += 7) { const n = Math.min(7, games.length - i), start = (1 + 2 * (i / 7)) * 9 + 1 + Math.floor((7 - n) / 2); for (let j = 0; j < n; j++) slots.push(start + j); }
+      games.forEach((g, i) => {
+        const st = stack(GAME_ICON[g.id] || 'paper');
+        if (!st || slots[i] === undefined) return;
+        st.name = '§a' + g.name;
+        this.put(slots[i], st, ['§a' + g.name, '§7' + (g.blurb || ''), '', '§eClick to browse!'], () => { setTimeout(() => hub.openScreen(new GameMenu(hub, g.id)), 0); });
+      });
+      return;
+    }
+    const g = (hub.games || []).find(x => x.id === this.only) || {};
+    const modes = (hub.modes || []).filter(m => (m.menu || m.game) === this.only);
+    const first = modes.slice(0, 7), more = modes.slice(7);
+    [first, more].forEach((list, row) => {
+      const start = (2 + row) * 9 + Math.max(1, Math.floor((9 - list.length) / 2));
+      list.forEach((m, i) => {
         const st = stack(MODE_ICON[m.id] || 'paper');
         if (!st) return;
         st.name = '§a' + m.name;
@@ -259,6 +280,8 @@ class GameMenu extends MenuScreen {
     });
   }
 }
+// Build Battle's votes, as the hotbar holds them
+const VOTES = [['Super Poop', '§4', 'red_terracotta'], ['Poop', '§c', 'pink_terracotta'], ['OK', '§a', 'lime_terracotta'], ['Good', '§2', 'green_terracotta'], ['Epic', '§5', 'purple_terracotta'], ['Legendary', '§6', 'yellow_terracotta']];
 
 /* ---- words floating in the world (generators, the people on the stands) ---- */
 function holoSprites(font, lines) {
@@ -294,6 +317,8 @@ export class Hub {
     this.shopCat = 'quick';
     this.t = 0;
     this.tnt = []; this.eggs = []; this.building = false; this.tower = []; this.fireAt = -99;
+    this.props = new Map(); this.propMeshes = new Map(); this.still = 0; this.lockAt = null; this.hitAt = -99;
+    this.painter = null; this.paintOn = false;
   }
   send(o) { this.net.send(Object.assign({ t: 'hub' }, o)); }
 
@@ -313,7 +338,7 @@ export class Hub {
     // the people on the stands answer either button; what you hold in a lobby (the game menu, the way back) answers the right one
     const I2 = game.inter, use = I2.useWith.bind(I2), down = I2.down.bind(I2);
     I2.useWith = () => { if (this.clickNpc() || this.useHeld()) return true; return use(); };
-    I2.down = b => { if (b === 0 && this.clickNpc()) return; down(b); };
+    I2.down = b => { if (b === 0 && this.clickNpc()) return; if (b === 0) this.seekerSwing(I2); down(b); };
     I2.mayBreak = (x, y, z) => this.mayBreak(x, y, z);
     I2.mayPlace = (x, y, z) => this.mayPlace(x, y, z);
     this.unhook = () => { I2.useWith = use; I2.down = down; I2.mayBreak = null; I2.mayPlace = null; };
@@ -332,6 +357,7 @@ export class Hub {
     if (active === this) active = null;
     if (this.overlay) { const o = this.ctx.gui.overlays, i = o.indexOf(this.overlay); if (i >= 0) o.splice(i, 1); }
     if (this.npcs) { this.npcs.dispose(); this.npcs = null; }
+    this.clearProps(); this.unpaint();
     this.clearHolos();
     if (this.group && this.group.parent) this.group.parent.remove(this.group);
     if (this.unhook) this.unhook();
@@ -352,6 +378,12 @@ export class Hub {
         if (m.per) this.per = m.per;
         this.gameKind = m.game || null; this.spill = !!m.spill; this.noBuild = !!m.noBuild; this.jumps = m.jumps | 0;
         this.hideNames = !!m.hideNames; this.role = m.role || null; this.hadBow = false; this.arrowT = 0;
+        // the new games: The Bridge's goals (no building there), a Build Battle plot and its vote, Spleef's snow, hiding
+        this.noPlace = m.noPlace || null; this.plot = m.plot || null; this.vote = !!m.vote; this.theme = m.theme || ''; this.owner = m.owner || ''; this.dig = m.dig || null;
+        this.hide = m.hide || null; this.paintOn = !!(m.hide && m.hide.paint);
+        if (!this.hide || this.hide.kind !== 'prophunt') this.clearProps();
+        if (!this.hide || this.hide.kind !== 'chameleon' || this.role === 'seeker') this.unpaint();
+        if (this.paintOn && !this.painter) this.startPaint();
         if (m.area !== 'game') { this.team = null; this.alive = false; }
         this.setNpcs(m.npcs || []);
         this.setGens(m.gens || []);
@@ -399,6 +431,17 @@ export class Hub {
       }
       case 'sound': this.sound(m.s); return;
       case 'build': this.building = !!m.on; return;
+      // Prop Hunt: every disguise, and where it is locked
+      case 'props': this.props = new Map((m.list || []).map(e => [e[0], { b: e[1], lock: e[2] || null }])); return;
+      // Chameleon: the time to paint is over, or you were found and seek now
+      case 'paint': this.paintOn = !!m.on; if (!m.on) this.closeScreens(); return;
+      case 'role': this.role = m.role || null; if (this.role === 'seeker') this.unpaint(); return;
+      case 'fx': {
+        try { Sound.play(m.s || 'entity.firework_rocket.blast', +m.x, +m.y, +m.z, 1.5, 1, 'player'); } catch (e) { /* no sound yet */ }
+        const E = g.entities;
+        if (E && E.particles) { E.particles('sparkle', +m.x, +m.y + 0.5, +m.z, 30, 0.6, [1, 0.85, 0.2]); E.particles('crit', +m.x, +m.y + 0.5, +m.z, 20, 0.6); }
+        return;
+      }
     }
   }
   sound(name) { try { const L = Sound.listener; Sound.play(name, L.x, L.y, L.z, 1, 1, 'player'); } catch (e) { /* no sound yet */ } }
@@ -426,6 +469,41 @@ export class Hub {
       this.alive = true;
       inv.slots[0] = stack('iron_sword'); inv.slots[1] = stack('fishing_rod'); inv.slots[2] = stack('bow'); inv.slots[8] = stack('arrow', 5);
       inv.armor[0] = stack('iron_helmet'); inv.armor[1] = stack('iron_chestplate'); inv.armor[2] = stack('iron_leggings'); inv.armor[3] = stack('iron_boots');
+      inv.select(0);
+    } else if (kind === 'bridge') {
+      // The Bridge: a sword, a bow and its arrow (it comes back), a pickaxe, two stacks of your clay, golden apples, your colour to wear
+      this.alive = true;
+      const clay = this.team ? this.team.clay : 'white_terracotta', rgb = this.team ? this.team.rgb : 0xFFFFFF;
+      inv.slots[0] = stack('iron_sword'); inv.slots[1] = stack('bow'); inv.slots[2] = stack('diamond_pickaxe', 1, { ench: { efficiency: 2 } });
+      inv.slots[3] = stack(clay, 64); inv.slots[4] = stack(clay, 64); inv.slots[5] = stack('golden_apple', 8); inv.slots[8] = stack('arrow');
+      inv.armor[1] = stack('leather_chestplate', 1, { color: rgb }); inv.armor[2] = stack('leather_leggings', 1, { color: rgb }); inv.armor[3] = stack('leather_boots', 1, { color: rgb });
+      inv.select(0);
+    } else if (kind === 'spleef') {
+      this.alive = true;
+      inv.slots[0] = stack('diamond_shovel', 1, { name: '§bSpleef Shovel', ench: { efficiency: 5, unbreaking: 3 } });
+      inv.select(0);
+    } else if (kind === 'bb_vote') {
+      VOTES.forEach((v, i) => { inv.slots[i + 1] = stack(v[2], 1, { name: v[1] + '§l' + v[0] }); });
+      inv.select(3);
+    } else if (kind === 'ph_hider') {
+      this.alive = true;
+      // (an empty hand to pick a block with; the taunt at the end of the bar)
+      inv.slots[7] = stack('paper', 1, { name: '§eRight click any block to become it' });
+      inv.slots[8] = stack('firework_star', 1, { name: '§aTaunt §7(Right Click)' });
+      inv.select(0);
+    } else if (kind === 'ph_seeker') {
+      this.alive = true;
+      inv.slots[0] = stack('iron_sword'); inv.slots[1] = stack('bow'); inv.slots[8] = stack('arrow', 32);
+      inv.select(0);
+    } else if (kind === 'ch_hider') {
+      this.alive = true;
+      inv.slots[0] = stack('brush', 1, { name: '§aPaint Brush §7(Right Click)' }) || stack('feather', 1, { name: '§aPaint Brush §7(Right Click)' });
+      inv.slots[1] = stack('spyglass', 1, { name: '§bColour Picker §7(Right Click a block)' }) || stack('stick', 1, { name: '§bColour Picker §7(Right Click a block)' });
+      inv.slots[2] = stack('paper', 1, { name: '§dBlock Stamp §7(Right Click a block)' });
+      inv.select(0);
+    } else if (kind === 'ch_seeker' || kind === 'ch_hunter') {
+      this.alive = true;
+      inv.slots[0] = stack('stick', 1, { name: '§cSpotter §7(one hit finds)' });
       inv.select(0);
     } else if (kind === 'game') {
       if (fresh) this.kit = { armor: 0, pick: 0, axe: 0, shears: false };
@@ -540,9 +618,12 @@ export class Hub {
   }
 
   /* ---- what may be broken and built ---- */
+  inPlot(x, y, z) { const p = this.plot; return !!p && x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1 && y >= p.y0 && y <= p.y1; }
   mayBreak(x, y, z) {
     if (this.building) return true;
     if (this.area !== 'game' || !this.alive || this.noBuild) return false;
+    if (this.gameKind === 'buildbattle') return !this.vote && this.inPlot(x, y, z);
+    if (this.dig) { const b = this.game.world.get(x, y, z); return !!BLOCKS[b] && BLOCKS[b].name === this.dig; }
     // SkyWars: any of it, within the arena
     if (this.gameKind === 'skywars') { const b = this.bounds; return !b || (Math.abs(x + 0.5 - b.x) <= b.reach && Math.abs(z + 0.5 - b.z) <= b.reach && y <= b.top && y >= b.bottom); }
     const w = this.game.world, b = w.get(x, y, z), d = BLOCKS[b];
@@ -552,7 +633,9 @@ export class Hub {
   }
   mayPlace(x, y, z, quiet) {
     if (this.building) return true;
-    if (this.area !== 'game' || !this.alive || this.noBuild) return false;
+    if (this.area !== 'game' || !this.alive || this.noBuild || this.dig) return false;
+    if (this.gameKind === 'buildbattle') { if (this.vote || !this.inPlot(x, y, z)) { if (quiet !== true && !this.vote) this.ctx.chat.add('§cYou can only build on your own plot!', 0xFF5555); return false; } return true; }
+    if (this.noPlace) for (const q of this.noPlace) if (x + 0.5 >= q[0] && x + 0.5 <= q[3] && z + 0.5 >= q[2] && z + 0.5 <= q[5]) { if (quiet !== true) this.ctx.chat.add('§cYou can\'t place blocks there!', 0xFF5555); return false; }
     const b = this.bounds;
     if (b && (Math.abs(x + 0.5 - b.x) > b.reach || Math.abs(z + 0.5 - b.z) > b.reach || y > b.top || y < b.bottom)) {
       if (quiet !== true) this.ctx.chat.add('§cYou can\'t place blocks here!', 0xFF5555);
@@ -610,8 +693,10 @@ export class Hub {
   }
   useHeld() {
     const inv = this.game.inv, h = inv.slots[inv.selected];
-    if (!h) return false;
-    if (this.area === 'game' && this.alive) {
+    // (a Prop Hunt hider picks a block with an empty hand too)
+    const hider = this.area === 'game' && this.alive && this.hide && this.hide.kind === 'prophunt' && this.role === 'hider';
+    if (!h && !hider) return false;
+    if (h && this.area === 'game' && this.alive) {
       const sp = specialOf(h);
       if (sp === 'fireball') { if (this.t - this.fireAt >= 10) { this.fireAt = this.t; this.launchFireball(); this.useOne(); } return true; }
       if (sp === 'milk') {
@@ -624,6 +709,32 @@ export class Hub {
       // (the egg is thrown as any egg is; its trail is laid in the ticks after)
       if (sp === 'bridge') this.bridgeAt = this.t;
     }
+    if (h && this.area === 'game' && this.alive) {
+      const nm = h.name ? h.name.replace(/\u00a7./g, '') : '';
+      // Build Battle: a vote
+      const vi = this.vote ? VOTES.findIndex(v => v[0] === nm) : -1;
+      if (vi >= 0) { this.send({ k: 'vote', v: vi + 1 }); this.sound('block.note_block.pling'); return true; }
+      // Prop Hunt: a taunt
+      if (this.hide && this.hide.kind === 'prophunt' && /^Taunt/.test(nm)) { this.send({ k: 'taunt' }); return true; }
+      // Chameleon: the brush, the picker and the stamp
+      if (this.hide && this.hide.kind === 'chameleon' && this.painter) {
+        const T = this.game.inter.target;
+        if (/^Paint Brush/.test(nm)) { if (this.paintOn) this.openScreen(new PaintScreen(this.painter)); else this.ctx.chat.add('§cThe time to paint is over!', 0xFF5555); return true; }
+        if (/^Colour Picker/.test(nm)) { if (T) { const c = faceColour(T.b || this.game.world.get(T.x, T.y, T.z), faceOfNormal(T.face)); if (c !== null) { this.painter.setColour(c); this.ctx.chat.add('§bPicked a colour: §f#' + c.toString(16).padStart(6, '0') + ' §7(paint with it in the Paint Brush)', 0xFFFFFF); this.sound('block.note_block.hat'); } } return true; }
+        if (/^Block Stamp/.test(nm)) { if (!this.paintOn) { this.ctx.chat.add('§cThe time to paint is over!', 0xFF5555); return true; } if (T && this.painter.stamp(T.b || this.game.world.get(T.x, T.y, T.z), faceOfNormal(T.face))) { this.ctx.chat.add('§dYou are covered in ' + ((BLOCKS[T.b || this.game.world.get(T.x, T.y, T.z)] || {}).display || 'that block') + '!', 0xFFFFFF); this.sound('block.wool.place'); } return true; }
+      }
+    }
+    // Prop Hunt: a hider's right click on any block of the map makes them it
+    if (hider) {
+      const T = this.game.inter.target;
+      if (T) {
+        const d = BLOCKS[T.b || this.game.world.get(T.x, T.y, T.z)];
+        if (d && (this.hide.props || []).indexOf(d.name) >= 0) { this.send({ k: 'disguise', b: d.name }); this.disguise = d.name; this.ctx.chat.add('§aYou are now disguised as §e' + (d.display || d.name) + '§a! Stand still to lock in place.', 0xFFFFFF); this.sound('entity.chicken.egg'); }
+        else this.ctx.chat.add('§cYou can\'t disguise as that block.', 0xFF5555);
+        return true;
+      }
+    }
+    if (!h) return false;
     if (this.area === 'lobby' && h.id === idOf('compass')) { this.openScreen(new GameMenu(this)); return true; }
     if (this.area === 'wait' && h.id === idOf('red_bed')) { this.send({ k: 'lobby' }); return true; }
     return false;
@@ -736,6 +847,34 @@ export class Hub {
       if (inv.count(bowId) > 0 && !this.hadBow) { this.hadBow = true; this.send({ k: 'bow' }); }
       if (this.role === 'detective' && hasBow && inv.count(arrowId) === 0) { if (++this.arrowT >= 100) { this.arrowT = 0; inv.addStack(stack('arrow')); } } else this.arrowT = 0;
     }
+    // The Bridge: the arrow comes back three and a half seconds after it is gone
+    if (this.gameKind === 'bridge') {
+      const inv = g.inv;
+      if (inv.count(idOf('bow')) > 0 && inv.count(idOf('arrow')) === 0) { if (++this.arrowT >= 70) { this.arrowT = 0; inv.addStack(stack('arrow')); } } else this.arrowT = 0;
+    }
+    // Spleef: nothing hurts but the void
+    if (this.gameKind === 'spleef') { sv.health = sv.maxHealth; P.fallDistance = 0; }
+    // Build Battle: you stay over your own plot while building
+    if (this.gameKind === 'buildbattle') {
+      sv.health = sv.maxHealth;
+      const p = this.plot;
+      if (p && !this.vote && this.spawn && (P.pos.x < p.x0 - 1 || P.pos.x > p.x1 + 2 || P.pos.z < p.z0 - 1 || P.pos.z > p.z1 + 2 || P.pos.y > p.y1 + 6 || P.pos.y < p.y0 - 2)) {
+        this.ctx.commandCtx().goTo(g.dim, this.spawn.x, this.spawn.y, this.spawn.z, P.yaw, P.pitch);
+        this.ctx.chat.add('§cYou can\'t leave your plot!', 0xFF5555);
+      }
+    }
+    // Prop Hunt: a hider standing still for two seconds locks into the block grid; moving off unlocks
+    if (this.hide && this.hide.kind === 'prophunt' && this.role === 'hider' && this.disguise) {
+      const moving = Math.hypot(P.vel.x, P.vel.z) > 0.01 || !P.onGround;
+      if (this.lockAt) { if (Math.hypot(P.pos.x - (this.lockAt[0] + 0.5), P.pos.z - (this.lockAt[2] + 0.5)) > 0.35 || Math.abs(P.pos.y - this.lockAt[1]) > 0.6) { this.lockAt = null; this.send({ k: 'lock', at: null }); } }
+      else if (moving) this.still = 0;
+      else if (++this.still >= 40) {
+        this.lockAt = [Math.floor(P.pos.x), Math.floor(P.pos.y + 0.01), Math.floor(P.pos.z)];
+        P.pos.x = this.lockAt[0] + 0.5; P.pos.z = this.lockAt[2] + 0.5; if (P.prev) { P.prev.x = P.pos.x; P.prev.z = P.pos.z; }
+        this.send({ k: 'lock', at: this.lockAt });
+        this.titleT = { t: '', s: '§aLocked in place', fi: 0, st: 20, fo: 5, at: performance.now() }; this.overlay.animates = true;
+      }
+    }
     // TNT Run: a jump in the air is a double jump, while any are left; nothing hurts but the void
     if (this.gameKind === 'tntrun') {
       sv.health = sv.maxHealth; P.fallDistance = 0;
@@ -798,6 +937,80 @@ export class Hub {
     for (const r of this.npcs.list.values()) if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
     // Murder Mystery: nobody's name shows over them
     if (this.hideNames && this.area === 'game' && this.net.players) for (const r of this.net.players.list.values()) if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
+    this.drawProps();
+  }
+  /* Prop Hunt: each disguised hider is drawn as their block, where they are
+     (or in the cell they locked into); their own model is not drawn. */
+  drawProps() {
+    const R = this.ctx.renderer, players = this.net.players, w = this.game.world;
+    for (const [id, m] of this.propMeshes) {
+      const pr = this.props.get(id);
+      if (!pr || pr.b !== m.b || m.mats !== R.mats) { this.group.remove(m.mesh); m.mesh.geometry.dispose(); this.propMeshes.delete(id); }
+    }
+    if (!this.props.size || !players) return;
+    for (const [id, pr] of this.props) {
+      if (id === this.net.id) continue;
+      const r = players.list.get(id);
+      if (!r || !r.feet) continue;
+      const av = r.av;
+      if (av) { av.mesh.visible = av.armor.visible = false; for (const h of av.held) if (h) h.mesh.visible = false; if (av.headItem) av.headItem.mesh.visible = false; }
+      if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
+      let m = this.propMeshes.get(id);
+      if (!m) {
+        const d = BLOCKS[B[pr.b]];
+        if (!d) continue;
+        let geo;
+        try { geo = blockGeometry(d, 0); } catch (e) { continue; }
+        const mesh = new THREE.Mesh(geo.geometry, geo.cutout ? R.mats.cutout : R.mats.opaque);
+        mesh.frustumCulled = false; mesh.matrixAutoUpdate = false;
+        this.group.add(mesh);
+        m = { mesh, b: pr.b, mats: R.mats, lv: -1 };
+        this.propMeshes.set(id, m);
+      }
+      const x = pr.lock ? pr.lock[0] + 0.5 : r.feet.x, y = pr.lock ? pr.lock[1] : r.feet.y, z = pr.lock ? pr.lock[2] + 0.5 : r.feet.z;
+      m.mesh.matrix.makeTranslation(x, y - 0.5, z);
+      m.mesh.matrixWorldNeedsUpdate = true;
+      const v = lightNear(w, Math.floor(x), Math.floor(y + 0.5), Math.floor(z), !!w.noSky), lv = (Math.round((v >> 4) / 15 * 255) << 8) | Math.round((v & 15) / 15 * 255);
+      if (lv !== m.lv) { m.lv = lv; const L = m.mesh.geometry.attributes.aL; if (L) { for (let i = 0; i < L.count; i++) { L.array[i * 4] = lv >> 8; L.array[i * 4 + 1] = lv & 255; } L.needsUpdate = true; } }
+    }
+  }
+  clearProps() {
+    this.props = new Map(); this.disguise = null; this.lockAt = null; this.still = 0;
+    for (const [, m] of this.propMeshes) { if (this.group) this.group.remove(m.mesh); m.mesh.geometry.dispose(); }
+    this.propMeshes = new Map();
+  }
+  // Prop Hunt: a seeker's swing that lands on a real block (not a hider) costs half a heart
+  seekerSwing(I2) {
+    if (!this.hide || this.hide.kind !== 'prophunt' || this.role !== 'seeker' || !this.alive || this.area !== 'game') return;
+    if (I2.lastEye) I2.look(I2.lastEye);
+    if (I2.entityTarget || !I2.target || this.t - this.hitAt < 10) return;
+    this.hitAt = this.t;
+    const sv = this.game.survival;
+    sv.health = Math.max(1, sv.health - 1);
+    this.ctx.chat.add('§cThat block was not a hider! §7(-0.5 health)', 0xFF5555);
+    this.sound('entity.player.hurt');
+  }
+
+  /* ---- Chameleon: your skin, painted, for this game only ---- */
+  startPaint() {
+    const o = this.ctx.gui.options, own = o.get('skin');
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=60', import.meta.url).href;
+    this.painter = new Painter(canvas => {
+      const data = canvas.toDataURL('image/png');
+      this.net.skinOverride = data;
+      setOwnSkin(data, false);
+      if (this.net.sendSkin) this.net.sendSkin();
+    });
+    this.painter.start(url);
+  }
+  unpaint() {
+    if (!this.painter && !(this.net && this.net.skinOverride)) return;
+    this.painter = null; this.paintOn = false;
+    if (this.net) this.net.skinOverride = null;
+    if (!this.ctx) return;
+    const o = this.ctx.gui.options, own = o.get('skin');
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=60', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    if (this.net.sendSkin) this.net.sendSkin();
   }
 
   /* ---- the sidebar and the titles ---- */
@@ -833,11 +1046,19 @@ export class Hub {
 /* ---- the network's commands (each answers only on its server) ---- */
 const onHub = (ctx, fn) => { if (!active || active.game !== ctx.game) { ctx.say('That command only works on Leon Network.', 0xFF5555); return; } fn(active); };
 register('lobby', { always: true, aliases: ['l', 'hub', 'leave'], usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'lobby' })); } });
-const MODE_IDS = ['bw_solo', 'bw_doubles', 'bw_3s', 'bw_4s', 'sw_solo', 'sw_doubles', 'duels_classic', 'duels_sumo', 'tntrun', 'murder'];
+const MODE_IDS = ['bw_solo', 'bw_doubles', 'bw_3s', 'bw_4s', 'sw_solo', 'sw_doubles', 'duels_classic', 'duels_sumo', 'duels_bridge', 'duels_bedwars', 'duels_skywars', 'tntrun', 'murder', 'buildbattle', 'spleef', 'prophunt', 'ch_classic', 'ch_infection', 'ch_double'];
 register('play', {
-  always: true, usage: '<' + MODE_IDS.join('|') + '>', suggest: i => (i === 0 ? MODE_IDS : []),
+  always: true, usage: '<mode>', suggest: i => (i === 0 ? (active && active.modes && active.modes.length ? active.modes.map(m => m.id) : MODE_IDS) : []),
   run(args, ctx) { onHub(ctx, h => h.send({ k: 'play', mode: args[0] || 'bw_solo' })); },
 });
 register('start', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'start' })); } });
 register('shout', { always: true, usage: '<message>', run(args, ctx) { onHub(ctx, h => h.send({ k: 'shout', text: args.join(' ') })); } });
 register('hubbuild', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'build' })); } });
+// parties, as the network has them: /party invite <player> (or just /party <player>), accept, leave, list, kick, transfer, disband; /pc talks to it
+const PARTY_SUBS = ['invite', 'accept', 'leave', 'list', 'kick', 'transfer', 'disband', 'help'];
+register('party', {
+  always: true, aliases: ['p'], usage: '<invite|accept|leave|list|kick|transfer|disband> [player]',
+  suggest: (i, w, ctx) => (i === 0 ? PARTY_SUBS : i === 1 && active && active.net && active.net.players ? [...active.net.players.list.values()].map(r => r.name) : []),
+  run(args, ctx) { onHub(ctx, h => h.send({ k: 'party', a: args })); },
+});
+register('pc', { always: true, aliases: ['partychat'], usage: '<message>', run(args, ctx) { onHub(ctx, h => { if (args.length) h.send({ k: 'pchat', text: args.join(' ') }); else ctx.say('Usage: /pc <message>', 0xFF5555); }); } });

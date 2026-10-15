@@ -20,8 +20,8 @@
    down the sides, each running through its own frames) at full light, the
    same colour by day and night and wherever the eye has adapted to.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, WIND, WAVES, TONEMAP, LDR, LIGHTS } from './glsl.js?v=59';
-import { lightDefines } from './materials.js?v=59';
+import { COMMON, SHADOW, WIND, WAVES, TONEMAP, LDR, LIGHTS } from './glsl.js?v=60';
+import { lightDefines } from './materials.js?v=60';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray; precision highp sampler2DShadow;\n`;
 

@@ -61,26 +61,26 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=59';
-import { idx, H } from '../world-const.js?v=59';
-import { DIMS, DIM_IDS } from '../dims.js?v=59';
-import { Save } from '../save.js?v=59';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=59';
-import { glints } from '../render/armor.js?v=59';
-import { containerKind } from '../containers.js?v=59';
-import { getSkinSettings } from '../render/avatar.js?v=59';
-import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=59';
-import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=59';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=59';
-import { Projectile } from '../entities/projectiles.js?v=59';
-import { Combat } from '../combat/combat.js?v=59';
-import { Vehicles } from './vehicles.js?v=59';
-import { Mobs, Orbs } from './mobs.js?v=59';
-import { Events } from './events.js?v=59';
-import { EndSync } from './endfight.js?v=59';
-import { Hub } from './hub.js?v=59';
-import { Account, wsBase, httpBase } from './account.js?v=59';
-import { rankTag } from './players.js?v=59';
+import { B, BLOCKS } from '../blocks.js?v=60';
+import { idx, H } from '../world-const.js?v=60';
+import { DIMS, DIM_IDS } from '../dims.js?v=60';
+import { Save } from '../save.js?v=60';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=60';
+import { glints } from '../render/armor.js?v=60';
+import { containerKind } from '../containers.js?v=60';
+import { getSkinSettings } from '../render/avatar.js?v=60';
+import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=60';
+import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=60';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=60';
+import { Projectile } from '../entities/projectiles.js?v=60';
+import { Combat } from '../combat/combat.js?v=60';
+import { Vehicles } from './vehicles.js?v=60';
+import { Mobs, Orbs } from './mobs.js?v=60';
+import { Events } from './events.js?v=60';
+import { EndSync } from './endfight.js?v=60';
+import { Hub } from './hub.js?v=60';
+import { Account, wsBase, httpBase } from './account.js?v=60';
+import { rankTag } from './players.js?v=60';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -1253,11 +1253,13 @@ export class Net {
   }
   sendSkin() {
     const s = getSkinSettings();
-    const skin = typeof s.skin === 'string' && s.skin.startsWith('data:image/png') ? s.skin : '';
-    const sig = skin.length + ':' + skin.slice(-64) + s.slim;
+    // (Chameleon's painted skin stands in for yours while the game lasts: net/hub.js)
+    const own = this.skinOverride || (typeof s.skin === 'string' && s.skin.startsWith('data:image/png') ? s.skin : '');
+    const skin = own, slim = this.skinOverride ? false : !!s.slim;
+    const sig = skin.length + ':' + skin.slice(-64) + slim;
     if (sig === this.skinSig) return;
     this.skinSig = sig;
-    this.send({ t: 'skin', skin: skin.length <= 24000 ? skin : '', slim: !!s.slim });
+    this.send({ t: 'skin', skin: skin.length <= 24000 ? skin : '', slim });
   }
 
   /* ---- the server's news that changes the world, on a tick ---- */

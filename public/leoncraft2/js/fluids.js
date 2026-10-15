@@ -20,10 +20,10 @@
    game. Cells are looked at only when a neighbour changes, so a still sea
    costs nothing.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, SOLID } from './blocks.js?v=59';
-import { LEVEL, FALLING } from './world-const.js?v=59';
-import { blockDrops } from './loot.js?v=59';
-import { dropStack } from './drops.js?v=59';
+import { B, BLOCKS, FLUID, SOLID } from './blocks.js?v=60';
+import { LEVEL, FALLING } from './world-const.js?v=60';
+import { blockDrops } from './loot.js?v=60';
+import { dropStack } from './drops.js?v=60';
 
 // what a flow washes away (the game's: no collision, not a door, sign, ladder, sugar cane or a block that holds water)
 const WASH = new Uint8Array(4096);
