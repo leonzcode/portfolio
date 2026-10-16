@@ -67,11 +67,11 @@
    Experience: a level takes 2L + 7 points up to 15, 5L - 38 up to 30, and
    9L - 158 after that.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=62';
-import { I, ITEMS, armorOf } from './items.js?v=62';
-import { wear } from './ui/inventory.js?v=62';
-import { sourceOf, deathMessage } from './damage.js?v=62';
-import { effectId, EFFECTS } from './effects.js?v=62';
+import { B, BLOCKS, FLUID } from './blocks.js?v=63';
+import { I, ITEMS, armorOf } from './items.js?v=63';
+import { wear } from './ui/inventory.js?v=63';
+import { sourceOf, deathMessage } from './damage.js?v=63';
+import { effectId, EFFECTS } from './effects.js?v=63';
 
 const BYPASS_ARMOR = new Set(['fall', 'drown', 'starve', 'void', 'magic', 'poison', 'wither', 'suffocation', 'generic', 'freeze', 'kill']);
 const FIRE = new Set(['lava', 'fire', 'on_fire', 'hot_floor']);
@@ -450,7 +450,8 @@ export class Survival {
     // the void: 64 below the dimension's floor (player.voidY, set per dimension by main.js)
     if (P.pos.y < (P.voidY ?? -64)) this.hurt(4, 'out_of_world');
     // the head in a solid block
-    if (!P.noclip && w && this.inWall(P)) this.hurt(1, 'in_wall');
+    // (noSuffocate: a server's minigame turns it off, Leon Network's Chameleon)
+    if (!P.noclip && !this.noSuffocate && w && this.inWall(P)) this.hurt(1, 'in_wall');
     // gliding into a wall (player.js)
     if (P.wallHit) { this.hurt(P.wallHit, 'fly_into_wall'); P.wallHit = 0; }
     this.breathe(P);
