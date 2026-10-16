@@ -14,26 +14,27 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=64';
-import { I } from '../items.js?v=64';
-import { POTIONS } from '../brewing.js?v=64';
-import { ChestScreen } from '../ui/containers.js?v=64';
-import { RemotePlayers, playerSize, F } from './players.js?v=64';
-import { register } from '../commands.js?v=64';
-import { Sound } from '../sound/sound.js?v=64';
-import { RES_OVERRIDE } from '../explosion.js?v=64';
-import { skinUrl } from '../ui/skins.js?v=64';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=64';
-import { blockGeometry } from '../render/blockmesh.js?v=64';
-import { lightNear } from '../lightlevel.js?v=64';
-import { setSkin as setOwnSkin } from '../render/avatar.js?v=64';
+import { B, BLOCKS } from '../blocks.js?v=65';
+import { I } from '../items.js?v=65';
+import { POTIONS } from '../brewing.js?v=65';
+import { ChestScreen } from '../ui/containers.js?v=65';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=65';
+import { RemotePlayers, playerSize, F } from './players.js?v=65';
+import { register } from '../commands.js?v=65';
+import { Sound } from '../sound/sound.js?v=65';
+import { RES_OVERRIDE } from '../explosion.js?v=65';
+import { skinUrl } from '../ui/skins.js?v=65';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=65';
+import { blockGeometry } from '../render/blockmesh.js?v=65';
+import { lightNear } from '../lightlevel.js?v=65';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=65';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=64').then(m => {
+import('../adv/toast.js?v=65').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -285,64 +286,132 @@ class GameMenu extends MenuScreen {
     });
   }
 }
-// the Map Editor, in Prop Hunt's and Chameleon's menus: open to mods and admins, a locked door to everyone else
-function editorEntry(menu, hub, game, slot) {
-  const ok = !!hub.staff, st = stack(ok ? 'writable_book' : 'barrier');
+// the map lists' orders (the sort button cycles them): most liked, the best likes to dislikes, the newest, A to Z
+const SORTS = [['liked', 'Most Liked'], ['ratio', 'Best Ratio'], ['newest', 'Newest'], ['az', 'A to Z']];
+function sortMaps(list, mode) {
+  const ratio = m => ((m.up | 0) + 1) / ((m.down | 0) + 1);
+  const by = mode === 'ratio' ? (a, b) => ratio(b) - ratio(a) || (b.up | 0) - (a.up | 0)
+    : mode === 'newest' ? (a, b) => (b.created || 0) - (a.created || 0)
+    : mode === 'az' ? (a, b) => String(a.name).localeCompare(String(b.name))
+    : (a, b) => (b.up | 0) - (a.up | 0) || ratio(b) - ratio(a);
+  return list.slice().sort(by);
+}
+const STATUS = { draft: '§7Draft', pending: '§eWaiting for approval', approved: '§aApproved', denied: '§cDenied' };
+const likes = m => '§a✔ ' + (m.up | 0) + '  §c✘ ' + (m.down | 0);
+function sortButton(menu, slot) {
+  const hub = menu.hub, cur = SORTS.find(x => x[0] === hub.sortMode) || SORTS[0], st = stack('hopper');
   if (!st) return;
-  st.name = (ok ? '§a' : '§c') + 'Map Editor';
-  menu.put(slot, st, ok ? ['§aMap Editor', '§7Change this game\'s maps, or make', '§7new ones. Every change is saved', '§7and used by the next game.', '', '§eClick to open!']
-    : ['§cMap Editor §7(Locked)', '§7Change this game\'s maps, or make', '§7new ones.', '', '§cYou need §2[MOD] §cor §c[ADMIN]', '§cto use this.'],
-  () => { if (!hub.staff) { hub.ctx.chat.add('§cYou need §2[MOD] §cor §c[ADMIN] §cto use the Map Editor.', 0xFFFFFF); hub.sound('block.note_block.bass'); return; } hub.send({ k: 'editor', game }); });
+  st.name = '§eSort: §f' + cur[1];
+  menu.put(slot, st, ['§eSort: §f' + cur[1], '', ...SORTS.map(x => (x[0] === cur[0] ? '§a▶ ' : '§7  ') + x[1]), '', '§eClick to change!'], () => {
+    const i = SORTS.findIndex(x => x[0] === cur[0]); hub.sortMode = SORTS[(i + 1) % SORTS.length][0];
+  });
+}
+// the Map Editor, in Prop Hunt's and Chameleon's menus: anyone makes their own maps (a mod or an admin approves them for the vote)
+function editorEntry(menu, hub, game, slot) {
+  const st = stack('writable_book');
+  if (!st) return;
+  st.name = '§aMap Editor';
+  menu.put(slot, st, ['§aMap Editor', '§7Make your own maps for this game,', '§7share them with your building team,', '§7and send them to be approved', '§7for the vote.', '', '§eClick to open!'], () => hub.send({ k: 'editor', game }));
 }
 class EditorMenu extends MenuScreen {
-  constructor(hub, game, maps) { super(hub, 'Map Editor'); this.game = game; this.maps = maps || []; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); }
+  constructor(hub, game, maps, staffList, canMake) { super(hub, 'Map Editor'); this.game = game; this.maps = maps || []; this.staffList = !!staffList; this.canMake = canMake !== false; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); }
   fillBox() {
-    const hub = this.hub, maps = this.maps || [];
-    maps.slice(0, 27).forEach((m, i) => {
+    const hub = this.hub, maps = sortMaps(this.maps || [], hub.sortMode);
+    maps.slice(0, 28).forEach((m, i) => {
       const st = stack(m.custom ? 'map' : 'filled_map') || stack('paper');
       if (!st) return;
       st.name = '§a' + m.name;
-      this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, ['§a' + m.name, m.by ? '§7by ' + m.by : '§7Leon Network\'s own', m.custom ? '§7Made in the editor' : '', '', '§eClick to edit!'].filter((l, j) => l || j !== 2),
-        () => { hub.send({ k: 'edit', game: this.game, id: m.id }); hub.closeScreens(); });
+      const tip = ['§a' + m.name, '§7by §f' + m.by, m.custom ? STATUS[m.status] || '' : '§7Leon Network\'s own (staff only)', likes(m)];
+      if (m.custom && m.editors && m.editors.length) tip.push('§7Team: §f' + m.editors.slice(0, 4).join(', ') + (m.editors.length > 4 ? '...' : ''));
+      tip.push('', '§eClick to edit!');
+      this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, tip, () => { hub.send({ k: 'edit', game: this.game, id: m.id }); hub.closeScreens(); });
     });
+    if (!maps.length) { const st = stack('barrier'); if (st) { st.name = '§7No maps yet'; this.put(22, st, ['§7No maps yet', '§7Make one with Create New Map,', '§7or ask to help build someone else\'s.'], null); } }
+    sortButton(this, 47);
     const nw = stack('anvil');
-    if (nw) { nw.name = '§aCreate New Map'; this.put(49, nw, ['§aCreate New Map', '§7Starts as a flat field of grass.', '§7Rename it with §f/mapname <name>§7.', '', '§eClick to make one!'], () => { hub.send({ k: 'newmap', game: this.game }); hub.closeScreens(); }); }
+    if (nw && this.canMake) { nw.name = '§aCreate New Map'; this.put(49, nw, ['§aCreate New Map', '§7Starts as a flat field of grass.', '§7A mod or an admin approves it', '§7before it goes in the vote.', '', '§eClick to make one!'], () => { hub.send({ k: 'newmap', game: this.game }); hub.closeScreens(); }); }
+    const ob = stack('compass');
+    if (ob) { ob.name = '§bOther Players\' Maps'; this.put(51, ob, ['§bOther Players\' Maps', '§7Ask to join a map\'s building team.', '', '§eClick to browse!'], () => hub.send({ k: 'mapbrowse', game: this.game })); }
+  }
+}
+// the players' approved maps that are not yours: a click asks their maker to let you on the building team
+class BrowseMenu extends MenuScreen {
+  constructor(hub, game, maps) { super(hub, 'Other Players\' Maps'); this.game = game; this.maps = maps || []; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); }
+  fillBox() {
+    const hub = this.hub, maps = sortMaps(this.maps || [], hub.sortMode);
+    maps.slice(0, 28).forEach((m, i) => {
+      const st = stack('map') || stack('paper');
+      if (!st) return;
+      st.name = '§a' + m.name;
+      this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, ['§a' + m.name, '§7by §f' + m.by, likes(m), '', m.asked ? '§eYou have asked to help build this.' : '§eClick to ask to join its building team!'],
+        () => { if (!m.asked) { m.asked = true; hub.send({ k: 'mapjoinreq', game: this.game, id: m.id }); } });
+    });
+    if (!maps.length) { const st = stack('barrier'); if (st) { st.name = '§7No other maps yet'; this.put(22, st, ['§7No approved maps by other players yet.'], null); } }
+    sortButton(this, 49);
   }
 }
 class VoteMenu extends MenuScreen {
   constructor(hub) { super(hub, 'Map Vote'); }
   fillBox() {
     const hub = this.hub, V = hub.votes || { maps: [] };
-    (V.maps || []).slice(0, 21).forEach((m, i) => {
+    sortMaps(V.maps || [], hub.sortMode).slice(0, 28).forEach((m, i) => {
       const mine = V.mine === m.id, st = stack(mine ? 'filled_map' : 'map') || stack('paper');
       if (!st) return;
       st.name = (mine ? '§a§l' : '§a') + m.name;
       if (mine) st.ench = { unbreaking: 1 };
-      this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, ['§a' + m.name, m.by ? '§7by ' + m.by : '§7Leon Network\'s own', '', '§7Votes: §e' + m.v, '', mine ? '§aYou voted for this map!' : '§eClick to vote!'],
+      this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, ['§a' + m.name, '§7by §f' + (m.by || 'Leon Network'), likes(m), '', '§7Votes: §e' + m.v, '', mine ? '§aYou voted for this map!' : '§eClick to vote!'],
         () => { hub.send({ k: 'mapvote', id: m.id }); });
     });
+    sortButton(this, 49);
   }
 }
-/* Chameleon's poses (the Pose item cycles them; everyone sees them through the server's 'poses'):
-   each bends the parts of the model as the game's model space has them (S: head, body, right arm,
-   left arm, right leg, left leg; x right, y down, angles in radians). */
-const HALF = Math.PI / 2;
-const POSES = [
-  ['Standing', null],
-  ['T-Pose', S => { S[2].rx = S[3].rx = 0; S[2].ry = S[3].ry = 0; S[2].rz = HALF; S[3].rz = -HALF; }],
-  ['Arms Up', S => { S[2].rx = S[3].rx = -Math.PI; S[2].rz = 0.12; S[3].rz = -0.12; }],
-  ['Zombie', S => { S[2].rx = S[3].rx = -HALF; S[2].ry = S[3].ry = 0; S[2].rz = S[3].rz = 0; }],
-  ['Sitting', S => { for (const q of S) q.y += 10; S[4].rx = S[5].rx = -HALF; S[4].ry = 0.15; S[5].ry = -0.15; S[2].rx = S[3].rx = -0.4; }],
-  ['Star', S => { S[2].rx = S[3].rx = 0; S[2].rz = 2.3; S[3].rz = -2.3; S[4].rx = S[5].rx = 0; S[4].rz = 0.45; S[5].rz = -0.45; }],
-  ['Waving', S => { S[2].rx = -2.9; S[2].rz = 0.35; S[3].rx = 0; S[3].rz = -0.1; }],
-];
-// a seeker crouching: down on one knee's lean, both arms out along the look as if sighting down a rifle
-const SNIPE = (S, sneak) => {
-  const head = S[0];
-  S[2].rx = -HALF + head.rx; S[2].ry = -0.1 + head.ry; S[2].rz = 0;
-  S[3].rx = -HALF + head.rx - 0.15; S[3].ry = 0.55 + head.ry; S[3].rz = 0;
-  if (sneak) { S[0].rz = 0.12; }
-};
+/* Map Settings, from the item in the editor: the map's name, who is on its building team (and who asks to
+   be), sending it to be approved, deleting it. What the server says (k 'mapinfo') fills it; each button
+   sends one change, and the server answers with the map as it is now. */
+class MapSettingsScreen extends Screen {
+  constructor(hub, info) { super('Map Settings'); this.hub = hub; this.info = info; this.vals = { name: '', who: '' }; }
+  set(info) { this.info = info; if (this.gui) { this.gui.screen === this && this.reinit(); } }
+  reinit() { const g = this.gui; this.widgets = []; this.init(); g.markDirty(); }
+  init() {
+    const W = this.width, H = this.height, I = this.info || {}, hub = this.hub, mine = !!I.mine;
+    const x0 = Math.floor(W / 2 - 160), y0 = 40;
+    this.nameF = this.add(new TextField(x0, y0 + 26, 150, 18, { value: this.vals.name, maxLength: 24, hint: 'A new name', onChange: v => { this.vals.name = v; } }));
+    this.add(new Button(x0 + 154, y0 + 25, 60, 20, 'Rename', () => { const n = this.nameF.value.trim(); if (n) { hub.send({ k: 'mapname', name: n }); this.vals.name = ''; } })).active = mine && I.custom;
+    this.whoF = this.add(new TextField(x0, y0 + 52, 150, 18, { value: this.vals.who, maxLength: 16, hint: 'A player\'s name', onChange: v => { this.vals.who = v; } }));
+    this.add(new Button(x0 + 154, y0 + 51, 60, 20, 'Add', () => { const n = this.whoF.value.trim(); if (n) { hub.send({ k: 'mapshare', name: n, on: true }); this.vals.who = ''; } }, 'Let them build on this map')).active = mine && I.custom;
+    // the team (left) and the requests to join it (right)
+    this.rowsY = y0 + 92;
+    (I.editors || []).slice(0, 6).forEach((n, i) => {
+      this.add(new Button(x0 + 100, this.rowsY + i * 16, 50, 14, 'Remove', () => hub.send({ k: 'mapshare', name: n, on: false }))).active = mine;
+    });
+    (I.joinReqs || []).slice(0, 6).forEach((n, i) => {
+      this.add(new Button(x0 + 270, this.rowsY + i * 16, 22, 14, '§a✔', () => hub.send({ k: 'mapjoin', name: n, ok: true }), 'Let them on the building team')).active = mine;
+      this.add(new Button(x0 + 294, this.rowsY + i * 16, 22, 14, '§c✘', () => hub.send({ k: 'mapjoin', name: n, ok: false }), 'Turn them down')).active = mine;
+    });
+    const by = H - 28;
+    const sub = this.add(new Button(W / 2 - 170, by, 130, 20, 'Submit for Approval', () => hub.send({ k: 'mapsubmit' }), 'A mod or an admin looks at it, then it goes in the vote'));
+    sub.active = mine && I.custom && (I.status === 'draft' || I.status === 'denied');
+    this.add(new Button(W / 2 - 36, by, 84, 20, '§cDelete Map', () => { if (this.sure) { hub.send({ k: 'mapdelete' }); this.gui.back(); } else { this.sure = true; this.reinit(); } }, 'Click twice: it cannot be undone')).active = mine && I.custom;
+    this.add(new Button(W / 2 + 52, by, 118, 20, 'Done', () => this.gui.back()));
+  }
+  render(g, mx, my, dt) {
+    super.render(g, mx, my, dt);
+    const I = this.info || {}, W = this.width, x0 = Math.floor(W / 2 - 160), y0 = 40;
+    g.centered(this.title, W / 2, 10, WHITE);
+    g.centered('§e' + (I.name || '') + ' §7by §f' + (I.by || '') + '   ' + (I.custom ? STATUS[I.status] || '' : '§7Leon Network\'s own') + '   ' + likes(I), W / 2, 22, WHITE);
+    g.text('§7Name', x0 + 220, y0 + 31, WHITE); g.text('§7Share with', x0 + 220, y0 + 57, WHITE);
+    g.text('§fBuilding team', x0, this.rowsY - 12, WHITE);
+    const ed = I.editors || [];
+    if (!ed.length) g.text('§7Only you', x0, this.rowsY + 3, WHITE);
+    ed.slice(0, 6).forEach((n, i) => g.text(n, x0, this.rowsY + i * 16 + 3, WHITE));
+    g.text('§fAsking to join', x0 + 170, this.rowsY - 12, WHITE);
+    const rq = I.joinReqs || [];
+    if (!rq.length) g.text('§7Nobody yet', x0 + 170, this.rowsY + 3, WHITE);
+    rq.slice(0, 6).forEach((n, i) => g.text(n, x0 + 170, this.rowsY + i * 16 + 3, WHITE));
+    if (I.status === 'denied' && I.why) g.centered('§cNot approved: §f' + I.why, W / 2, this.height - 44, WHITE);
+    else if (!I.mine) g.centered('§7Only the map\'s maker can change these.', W / 2, this.height - 44, WHITE);
+  }
+}
 // Build Battle's votes, as the hotbar holds them
 const VOTES = [['Super Poop', '§4', 'red_terracotta'], ['Poop', '§c', 'pink_terracotta'], ['OK', '§a', 'lime_terracotta'], ['Good', '§2', 'green_terracotta'], ['Epic', '§5', 'purple_terracotta'], ['Legendary', '§6', 'yellow_terracotta']];
 
@@ -445,12 +514,21 @@ export class Hub {
     const g = this.game;
     if (!g) return;
     switch (m.k) {
-      case 'hello': this.modes = m.modes || []; this.games = m.games || []; this.staff = !!m.staff; this.editable = m.editable || []; return;
+      case 'hello': {
+        this.modes = m.modes || []; this.games = m.games || []; this.staff = !!m.staff; this.editable = m.editable || [];
+        // (sent here from the server list's Map Requests: look round a map waiting for approval)
+        const act = window.__lc2HubAction; window.__lc2HubAction = null;
+        if (act && act.k === 'mapspectate') setTimeout(() => this.send(act), 1500);
+        return;
+      }
       case 'votes': this.votes = m; this.refreshScreen(); return;
+      case 'browsemaps': { const cur = this.ctx.gui.screen, M = new BrowseMenu(this, m.game, m.maps); if (cur instanceof MenuScreen) this.ctx.gui.replace(M); else this.openScreen(M); return; }
+      case 'mapinfo': { const cur = this.ctx.gui.screen; if (cur instanceof MapSettingsScreen) cur.set(m); else if (!m.refresh) this.openScreen(new MapSettingsScreen(this, m)); return; }
+      case 'rated': this.rated = true; this.dropRating(); return;
       case 'poses': this.poses = new Map(m.list || []); this.seekerIds = new Set(m.seekers || []); return;
       // (the menu it was asked from is swapped for the list in one step: closing it first would hand the game the mouse,
       // and its pointer lock lands after the list opens, hiding the cursor over a menu nobody can click)
-      case 'editmaps': { const cur = this.ctx.gui.screen, E = new EditorMenu(this, m.game, m.maps); if (cur instanceof MenuScreen) { E.hub = this; this.ctx.gui.replace(E); } else this.openScreen(E); return; }
+      case 'editmaps': { const cur = this.ctx.gui.screen, E = new EditorMenu(this, m.game, m.maps, m.staff, m.canMake); if (cur instanceof MenuScreen) { E.hub = this; this.ctx.gui.replace(E); } else this.openScreen(E); return; }
       case 'where': {
         this.area = m.area; this.floor = m.floor; this.spawn = m.spawn; this.bounds = m.bounds || null;
         if (m.team) this.team = m.team;
@@ -475,7 +553,7 @@ export class Hub {
         else if (this.role !== 'hider') this.myPose = 0;
         return;
       }
-      case 'start': this.changed.clear(); this.kit = { armor: 0, pick: 0, axe: 0, shears: false }; this.up = {}; this.traps = []; return;
+      case 'start': this.rated = false; this.changed.clear(); this.kit = { armor: 0, pick: 0, axe: 0, shears: false }; this.up = {}; this.traps = []; return;
       case 'kit': this.giveKit(m.kind, m.fresh); return;
       case 'go': {
         const c = this.ctx.commandCtx(), sv = g.survival;
@@ -551,6 +629,9 @@ export class Hub {
       if (kind === 'wait_vote') inv.slots[0] = stack('filled_map', 1, { name: '§aMap Vote §7- Right Click to choose the map' }) || stack('paper', 1, { name: '§aMap Vote §7- Right Click to choose the map' });
     } else if (kind === 'edit') {
       this.alive = true;
+      inv.slots[8] = stack('writable_book', 1, { name: '§6Map Settings §7- Right Click: name, building team, approval' });
+    } else if (kind === 'review') {
+      this.alive = true;
     } else if (kind === 'empty') {
       this.alive = true;
     } else if (kind === 'mm_murderer') {
@@ -611,6 +692,19 @@ export class Hub {
       this.dressUp();
       inv.select(0);
     }
+    this.giveRating();
+    inv.changed();
+  }
+  // in a round of a game with a choice of maps: a like and a dislike for the map, once a round (the server keeps count)
+  giveRating() {
+    const inv = this.game.inv;
+    if (this.area !== 'game' || this.rated || !['prophunt', 'chameleon', 'murder'].includes(this.gameKind)) return;
+    if (!inv.slots[5]) inv.slots[5] = stack('lime_dye', 1, { name: '§aLike this map §7- Right Click' });
+    if (!inv.slots[6]) inv.slots[6] = stack('red_dye', 1, { name: '§cDislike this map §7- Right Click' });
+  }
+  dropRating() {
+    const inv = this.game.inv;
+    for (let i = 0; i < inv.slots.length; i++) { const s = inv.slots[i]; if (s && s.name && /this map/.test(s.name)) inv.slots[i] = null; }
     inv.changed();
   }
   dressUp() {
@@ -858,6 +952,8 @@ export class Hub {
     if (this.area === 'lobby' && h.id === idOf('compass')) { this.openScreen(new GameMenu(this)); return true; }
     if (this.area === 'wait' && h.id === idOf('red_bed')) { this.send({ k: 'lobby' }); return true; }
     if (this.area === 'wait' && h.name && /^Map Vote/.test(h.name.replace(/\u00a7./g, ''))) { this.openScreen(new VoteMenu(this)); return true; }
+    if (this.area === 'edit' && h.name && /^Map Settings/.test(h.name.replace(/\u00a7./g, ''))) { this.send({ k: 'mapinfo' }); return true; }
+    if (this.area === 'game' && h.name && /this map/.test(h.name)) { this.send({ k: 'maprate', v: /^.?.?Like/.test(h.name.replace(/\u00a7./g, '')) ? 1 : -1 }); return true; }
     return false;
   }
   useOne() { const inv = this.game.inv, h = inv.slots[inv.selected]; if (!h) return; if (--h.count <= 0) inv.slots[inv.selected] = null; inv.changed(); }
@@ -1162,7 +1258,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=64', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=65', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1177,7 +1273,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=64', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=65', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1185,7 +1281,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=64', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=65', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -1238,6 +1334,12 @@ register('start', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.
 // the Map Editor's own: a name for a map made there, or the map gone
 register('mapname', { always: true, usage: '<name>', run(args, ctx) { onHub(ctx, h => h.send({ k: 'mapname', name: args.join(' ') })); } });
 register('mapdelete', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'mapdelete' })); } });
+// the building team, approval, and staff's decision while looking round a map
+register('mapshare', { always: true, usage: '<player>', run(args, ctx) { onHub(ctx, h => h.send({ k: 'mapshare', name: args[0] || '', on: true })); } });
+register('mapunshare', { always: true, usage: '<player>', run(args, ctx) { onHub(ctx, h => h.send({ k: 'mapshare', name: args[0] || '', on: false })); } });
+register('mapsubmit', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'mapsubmit' })); } });
+register('mapapprove', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'mapreview', ok: true })); } });
+register('mapdeny', { always: true, usage: '[reason]', run(args, ctx) { onHub(ctx, h => h.send({ k: 'mapreview', ok: false, why: args.join(' ') })); } });
 register('shout', { always: true, usage: '<message>', run(args, ctx) { onHub(ctx, h => h.send({ k: 'shout', text: args.join(' ') })); } });
 register('hubbuild', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'build' })); } });
 // parties, as the network has them: /party invite <player> (or just /party <player>), accept, leave, list, kick, transfer, disband; /pc talks to it

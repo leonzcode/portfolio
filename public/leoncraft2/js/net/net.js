@@ -61,26 +61,26 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=64';
-import { idx, H } from '../world-const.js?v=64';
-import { DIMS, DIM_IDS } from '../dims.js?v=64';
-import { Save } from '../save.js?v=64';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=64';
-import { glints } from '../render/armor.js?v=64';
-import { containerKind } from '../containers.js?v=64';
-import { getSkinSettings } from '../render/avatar.js?v=64';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=64';
-import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=64';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=64';
-import { Projectile } from '../entities/projectiles.js?v=64';
-import { Combat } from '../combat/combat.js?v=64';
-import { Vehicles } from './vehicles.js?v=64';
-import { Mobs, Orbs } from './mobs.js?v=64';
-import { Events } from './events.js?v=64';
-import { EndSync } from './endfight.js?v=64';
-import { Hub } from './hub.js?v=64';
-import { Account, wsBase, httpBase } from './account.js?v=64';
-import { rankTag } from './players.js?v=64';
+import { B, BLOCKS } from '../blocks.js?v=65';
+import { idx, H } from '../world-const.js?v=65';
+import { DIMS, DIM_IDS } from '../dims.js?v=65';
+import { Save } from '../save.js?v=65';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=65';
+import { glints } from '../render/armor.js?v=65';
+import { containerKind } from '../containers.js?v=65';
+import { getSkinSettings } from '../render/avatar.js?v=65';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=65';
+import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=65';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=65';
+import { Projectile } from '../entities/projectiles.js?v=65';
+import { Combat } from '../combat/combat.js?v=65';
+import { Vehicles } from './vehicles.js?v=65';
+import { Mobs, Orbs } from './mobs.js?v=65';
+import { Events } from './events.js?v=65';
+import { EndSync } from './endfight.js?v=65';
+import { Hub } from './hub.js?v=65';
+import { Account, wsBase, httpBase } from './account.js?v=65';
+import { rankTag } from './players.js?v=65';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -131,6 +131,9 @@ export async function listServers() {
 export const createServer = o => post('/lc2/create', o);
 export const editServer = o => post('/lc2/edit', o);
 export const deleteServer = id => post('/lc2/delete', { id });
+// Leon Network's Map Requests (mods and admins): the players' maps waiting for approval, and a decision on one
+export const mapRequests = () => post('/lc2/hub/requests', {});
+export const mapReview = (game, id, ok, why) => post('/lc2/hub/review', { game, id, ok, why: why || '' });
 
 const dimCode = name => (DIMS[name] || DIMS.overworld).code;
 const key3 = (x, y, z) => x + ',' + y + ',' + z;

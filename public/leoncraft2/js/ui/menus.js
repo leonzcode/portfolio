@@ -26,17 +26,17 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=64';
-import { Packs } from './pack.js?v=64';
-import { Account } from '../net/account.js?v=64';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=64';
-import { packArtSummary } from '../entities/packart.js?v=64';
-import { LanScreen } from './lan.js?v=64';
-import { parseSeed } from '../gen/random.js?v=64';
-import { SOUND_CREDITS } from '../sound/credits.js?v=64';
-import { SkinGalleryScreen, skinCredits } from './skins.js?v=64';
-import { FlatCustomizeScreen } from './flat.js?v=64';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=64';
+} from './gui.js?v=65';
+import { Packs } from './pack.js?v=65';
+import { Account } from '../net/account.js?v=65';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=65';
+import { packArtSummary } from '../entities/packart.js?v=65';
+import { LanScreen } from './lan.js?v=65';
+import { parseSeed } from '../gen/random.js?v=65';
+import { SOUND_CREDITS } from '../sound/credits.js?v=65';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=65';
+import { FlatCustomizeScreen } from './flat.js?v=65';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=65';
 
 const PI = Math.PI;
 
@@ -712,9 +712,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=64';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=64';
-import { minimapButtons } from './minimap.js?v=64';
+export { VideoSettingsScreen } from './video.js?v=65';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=65';
+import { minimapButtons } from './minimap.js?v=65';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -1023,7 +1023,7 @@ const CREDITS = [
   ['Prop Hunt: Frost, End, Nether and Desert Arena, from "Prop Hunt: 4'], ['Themed Arena" by seaboiii, Public Domain.'],
   ['Murder Mystery: Bread Hotel, from "Murder Mystery Hotel" by'], ['bread4tabread (MIT); Botello Manor, from "SoS: The Botello Manor"'],
   ['by GreatOrator (MIT); Modern House, from "Ultra Modern House" by'], ['JobKay (Public Domain); Houseville, by noxgame1230 (ISC).'],
-  ['Chameleon plays on the first Leoncraft’s Mecha maps (Purpular by VoxelParrot).'],
+  ['Chameleon plays on the first Leoncraft’s Mecha maps (Purpular, Fortress and Classroom by carver and Leon, the rest by Leon).'],
   ['The rest of Leon Network\'s maps are our own.'], [''],
   ['Code', 0xFFFF55],
   ['three.js, MIT License'],

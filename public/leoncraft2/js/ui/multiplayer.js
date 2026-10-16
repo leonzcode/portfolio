@@ -21,12 +21,13 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=64';
-import { ConfirmScreen } from './menus.js?v=64';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=64';
-import { Account } from '../net/account.js?v=64';
-import { LoginScreen, AccountScreen } from './account.js?v=64';
-import { parseSeed } from '../gen/random.js?v=64';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=65';
+import { ConfirmScreen } from './menus.js?v=65';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=65';
+import { Account } from '../net/account.js?v=65';
+import { LoginScreen, AccountScreen } from './account.js?v=65';
+import { parseSeed } from '../gen/random.js?v=65';
+import { MapRequestsScreen } from './maprequests.js?v=65';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
@@ -131,6 +132,12 @@ export class MultiplayerScreen extends Screen {
     this.delB = this.add(new Button(W / 2 - 74, H - 28, 70, 20, 'Delete', () => this.remove()));
     this.add(new Button(W / 2 + 4, H - 28, 70, 20, 'Refresh', () => this.refresh()));
     this.add(new Button(W / 2 + 80, H - 28, 75, 20, 'Back', () => g.back()));
+    // mods and admins: the players' Leon Network maps waiting for approval (Spectate joins the network to look round one)
+    if (Account.admin || Account.mod) this.add(new Button(W - 92, 6, 86, 20, 'Map Requests', () => g.open(new MapRequestsScreen(() => {
+      const hub = this.servers.find(x => x.id === 'hub');
+      if (!hub) { window.__lc2HubAction = null; return; }
+      g.back(); this.join(hub);
+    })), 'Maps made by players for Leon Network, waiting to be approved'));
     this.fill();
     if (!this.loaded) { this.loaded = true; this.refresh(); }
   }
