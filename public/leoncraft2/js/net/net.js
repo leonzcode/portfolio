@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=70';
-import { idx, H } from '../world-const.js?v=70';
-import { DIMS, DIM_IDS } from '../dims.js?v=70';
-import { Save } from '../save.js?v=70';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=70';
-import { glints } from '../render/armor.js?v=70';
-import { containerKind } from '../containers.js?v=70';
-import { getSkinSettings } from '../render/avatar.js?v=70';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=70';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf } from '../commands.js?v=70';
-import { Y0 } from '../world-const.js?v=70';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=70';
-import { Projectile } from '../entities/projectiles.js?v=70';
-import { Combat } from '../combat/combat.js?v=70';
-import { Vehicles } from './vehicles.js?v=70';
-import { Mobs, Orbs } from './mobs.js?v=70';
-import { Events } from './events.js?v=70';
-import { EndSync } from './endfight.js?v=70';
-import { Hub } from './hub.js?v=70';
-import { Account, wsBase, httpBase } from './account.js?v=70';
-import { rankTag } from './players.js?v=70';
+import { B, BLOCKS } from '../blocks.js?v=71';
+import { idx, H } from '../world-const.js?v=71';
+import { DIMS, DIM_IDS } from '../dims.js?v=71';
+import { Save } from '../save.js?v=71';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=71';
+import { glints } from '../render/armor.js?v=71';
+import { containerKind } from '../containers.js?v=71';
+import { getSkinSettings } from '../render/avatar.js?v=71';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=71';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=71';
+import { Y0 } from '../world-const.js?v=71';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=71';
+import { Projectile } from '../entities/projectiles.js?v=71';
+import { Combat } from '../combat/combat.js?v=71';
+import { Vehicles } from './vehicles.js?v=71';
+import { Mobs, Orbs } from './mobs.js?v=71';
+import { Events } from './events.js?v=71';
+import { EndSync } from './endfight.js?v=71';
+import { Hub } from './hub.js?v=71';
+import { Account, wsBase, httpBase } from './account.js?v=71';
+import { rankTag } from './players.js?v=71';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -191,6 +191,8 @@ const SERVER_ONLY = {
 for (const name in SERVER_ONLY) {
   register(name, {
     usage: SERVER_ONLY[name], always: true,
+    // (not in a world of your own: not in the list Tab shows, and unknown, as said below)
+    hidden: ctx => !!(ctx && ctx.game && !ctx.game.net),
     suggest: (i, w) => {
       if (name === 'whitelist') return i === 0 ? ['on', 'off', 'add', 'remove', 'list', 'reload'] : i === 1 ? onlineNames() : [];
       return i === 0 && SERVER_ONLY[name] ? onlineNames() : [];
@@ -205,6 +207,8 @@ for (const name in SERVER_ONLY) {
 // the names Tab offers for a player (everyone on the server you are on)
 let activeNet = null;
 function onlineNames() { const n = activeNet; return n ? [n.name].concat(n.players ? [...n.players.list.values()].map(r => r.name) : []) : []; }
+// (and for every command's player argument: '@s' in its suggestions, commands.js)
+setPlayerNames(ctx => (activeNet && ctx && ctx.game && ctx.game.net ? onlineNames() : ctx && ctx.playerName ? [ctx.playerName] : []));
 
 /* ---- commands aimed at other players ----
    /gamemode creative Bob, /give Bob diamond, /kill Bob, /tp Bob Cara... As
@@ -228,7 +232,7 @@ for (const name in TARGET_ARG) {
   if (!def) continue;
   const at = TARGET_ARG[name];
   register(name, Object.assign({}, def, {
-    suggest: (i, w) => (i === at ? ['@s', '@a', '@p', '@r'].concat(onlineNames()) : def.suggest ? def.suggest(i, w) : []),
+    suggest: (i, w, ctx) => (i === at ? ['@s'] : def.suggest ? def.suggest(i, w, ctx) : []),
     run(args, ctx) {
       const net = ctx.game && ctx.game.net;
       const sub = name === 'effect' ? args[0] : null;
@@ -308,7 +312,6 @@ function netWorld(net, ctx) {
 }
 if (tpDef) {
   register('tp', Object.assign({}, tpDef, {
-    suggest: (i, w, ctx) => tpDef.suggest(i, w, Object.assign({}, ctx, { tpNames: () => onlineNames().filter(n => !ctx || n !== ctx.playerName) })),
     run(args, ctx) {
       const net = ctx.game && ctx.game.net;
       if (net) ctx.tpWorld = netWorld(net, ctx);
@@ -536,7 +539,9 @@ export class Net {
   entry() {
     const s = this.server, net = this;
     // (cheats is asked each time a command is typed: an /op or /deop counts at once)
+    // (lc1: a server brought over from the first Leoncraft, made partly by its generator: lc1/mixed.js)
     return { id: 'mp-' + s.id, name: s.name, seed: s.seed, generator: s.generator || 'vanilla', mode: s.mode, difficulty: s.difficulty,
+      lc1: s.lc1 && typeof s.lc1 === 'object' && s.lc1.key ? s.lc1 : undefined,
       get cheats() { return net.canCheat(); }, set cheats(v) {}, spawn: this.spawn || undefined, mp: this, created: 0, lastPlayed: Date.now() };
   }
   // save.js's stand-in for each dimension (main.js asks by the save's id)

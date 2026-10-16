@@ -10,10 +10,10 @@
    Each command gets a context: ctx.game (the world being played), and
    ctx.say(text, colour) for the reply.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=70';
-import { Y0 } from './world-const.js?v=70';
-import { ENCHANTS } from './itemdata.js?v=70';
-import { stateOf } from './gen/states.js?v=70';
+import { B, BLOCKS, FLUID } from './blocks.js?v=71';
+import { Y0 } from './world-const.js?v=71';
+import { ENCHANTS } from './itemdata.js?v=71';
+import { stateOf } from './gen/states.js?v=71';
 
 const REG = new Map();
 export function register(name, def) { REG.set(name, def); for (const a of def.aliases || []) REG.set(a, def); }
@@ -99,15 +99,69 @@ export function execute(line, ctx) {
     return report(e);
   }
 }
-// what Tab offers for the word being typed (ctx: the chat's command context, for what depends on the world: your homes)
+/* ---- Tab: what the chat suggests, as the game's (1.13+) command suggestions ----
+   suggestions(line, cursor, ctx) -> { start, list }: the word from start to the
+   cursor is the one being typed, and each entry of list would take its place.
+   A command's suggest(i, words, ctx) gives what may stand at word i; here they
+   are matched the game's way (SharedSuggestionProvider): any capitals, at the
+   start or after an underscore (plank finds oak_planks), and an id with
+   minecraft: by its own name too. '@s' in a list stands for any player: the
+   selectors and everyone on (net/net.js says who, setPlayerNames). */
+const SELECTORS = ['@a', '@e', '@p', '@r', '@s'];
+let namesFn = ctx => (ctx && ctx.playerName ? [ctx.playerName] : []);
+export function setPlayerNames(fn) { namesFn = fn; }
+// the players a command may name: everyone on (you alone in your own world)
+export function playerNames(ctx) { try { return namesFn(ctx) || []; } catch (e) { return []; } }
+const matchesSub = (input, s) => {
+  let i = 0;
+  while (!s.startsWith(input, i)) { i = s.indexOf('_', i); if (i < 0) return false; i++; }
+  return true;
+};
+export function matches(typed, option) {
+  const t = typed.toLowerCase(), o = option.toLowerCase();
+  if (!t) return true;
+  const colon = o.indexOf(':');
+  if (colon > 0 && !/\s/.test(o) && !t.includes(':')) {
+    const ns = o.slice(0, colon), path = o.slice(colon + 1);
+    return matchesSub(t, ns) || (ns === 'minecraft' && matchesSub(t, path));
+  }
+  return matchesSub(t, o);
+}
+// coordinates keep the order posSuggest gives them; the rest go in the game's order (alphabetical, any capitals)
+const isPlace = s => /^[~^\-\d.]/.test(s);
+function order(list) {
+  const seen = new Set(), place = [], rest = [];
+  for (const s of list) {
+    const k = s.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    (isPlace(s) ? place : rest).push(s);
+  }
+  rest.sort((a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return x < y ? -1 : x > y ? 1 : 0; });
+  return place.concat(rest);
+}
+export function suggestions(line, cursor = line.length, ctx = null) {
+  const text = line.slice(0, cursor);
+  if (!text.startsWith('/')) return { start: cursor, list: [] };
+  const words = text.slice(1).split(' ');
+  const start = cursor - words[words.length - 1].length;
+  const typed = words[words.length - 1];
+  if (words.length === 1) {
+    const list = commandNames().filter(n => n.toLowerCase().startsWith(typed.toLowerCase()) && shown(n, ctx));
+    return { start, list };
+  }
+  const name = words[0].replace(/^minecraft:/, '');
+  const def = shown(name, ctx) ? REG.get(name) : null;
+  if (!def || !def.suggest) return { start, list: [] };
+  let opts;
+  try { opts = def.suggest(words.length - 2, words.slice(1), ctx) || []; } catch (e) { opts = []; }
+  if (opts.includes('@s')) opts = opts.filter(o => o !== '@s').concat(SELECTORS, playerNames(ctx));
+  return { start, list: order(opts.filter(o => typeof o === 'string' && o && matches(typed, o))) };
+}
+// (the older form: whole lines, each with one suggestion put in)
 export function complete(line, ctx) {
-  const words = line.replace(/^\//, '').split(' ');
-  if (words.length === 1) return commandNames().filter(n => n.startsWith(words[0]) && shown(n, ctx)).map(n => '/' + n);
-  const def = shown(words[0], ctx) ? REG.get(words[0]) : null;
-  if (!def || !def.suggest) return [];
-  const opts = def.suggest(words.length - 2, words.slice(1), ctx) || [];
-  const last = words[words.length - 1];
-  return opts.filter(o => o.startsWith(last)).map(o => '/' + words.slice(0, -1).concat(o).join(' '));
+  const { start, list } = suggestions(line, line.length, ctx);
+  return list.map(s => line.slice(0, start) + s);
 }
 
 /* ---- the commands ---- */
@@ -120,7 +174,7 @@ register('help', {
 });
 register('gamemode', {
   usage: '<survival|creative|adventure|spectator>',
-  suggest: i => i === 0 ? ['survival', 'creative', 'adventure', 'spectator'] : ['@s'],
+  suggest: i => i === 0 ? ['survival', 'creative', 'adventure', 'spectator'] : i === 1 ? ['@s'] : [],
   run(args, ctx) {
     const m = MODE_SHORT[args[0]] || args[0];
     if (!MODE_NAMES[m]) fail(`Unknown game mode '${args[0] || ''}'`);
@@ -137,7 +191,7 @@ register('defaultgamemode', {
 });
 register('time', {
   usage: '<set|add|query> <value>',
-  suggest: i => i === 0 ? ['set', 'add', 'query'] : ['day', 'noon', 'night', 'midnight', 'daytime', 'gametime', 'day'],
+  suggest: (i, w) => i === 0 ? ['set', 'add', 'query'] : i === 1 && w[0] === 'set' ? ['day', 'noon', 'night', 'midnight'] : i === 1 && w[0] === 'query' ? ['daytime', 'gametime', 'day'] : [],
   run(args, ctx) {
     const g = ctx.game, op = args[0];
     const named = { day: 1000, noon: 6000, night: 13000, midnight: 18000, sunrise: 23000, sunset: 12000 };
@@ -195,7 +249,8 @@ export function moveSelf(ctx, d) {
 register('tp', {
   usage: '<targets> <location|destination> [yaw pitch | facing ...]', aliases: ['teleport'],
   suggest: (i, w, ctx) => {
-    const names = (ctx && ctx.tpNames ? ctx.tpNames() : []).concat(['@s', '@a', '@p', '@r']);
+    // ('@s' is every player and selector: suggestions() puts them in)
+    const names = ['@s'];
     if (i === 0) return posSuggest(0, ctx).concat(names);
     // where the place starts: at once (/tp x y z) or after the targets (/tp Bob x y z)
     const lead = isCoord(w[0]) ? 0 : 1;
@@ -275,7 +330,7 @@ register('tp', {
 });
 register('give', {
   usage: '<player> <item>[components] [count]',
-  suggest: (i, w) => i === 0 ? ['@s'] : i === 1 ? ctx_itemNames().filter(n => n.startsWith(w[1] || '')).slice(0, 40) : ['1', '16', '64'],
+  suggest: i => i === 0 ? ['@s'] : i === 1 ? ids(ctx_itemNames()) : [],
   run(args, ctx) {
     self(args[0], ctx);
     // an item's components in brackets may hold spaces: the words up to the closing bracket are one argument
@@ -331,12 +386,15 @@ function splitTop(s) {
 let itemNamesFn = () => BLOCKS.filter(d => d && d.name && d.item !== false).map(d => d.name);
 export function setItemNames(fn) { itemNamesFn = fn; }
 function ctx_itemNames() { return itemNamesFn(); }
+// names as the game suggests them: with their minecraft: (matched without it too)
+const ids = list => list.map(n => (n.startsWith('#') || n.includes(':') ? n : 'minecraft:' + n));
 register('clear', {
   usage: '[player] [item]',
+  suggest: i => i === 0 ? ['@s'] : i === 1 ? ids(ctx_itemNames()) : [],
   run(args, ctx) { self(args[0], ctx); const n = ctx.clearInventory(args[1] ? args[1].replace(/^minecraft:/, '') : null); if (!n) fail(`No items were found on player ${ctx.playerName}`); ctx.say(`Removed ${n} item(s) from player ${ctx.playerName}`); },
 });
 register('kill', {
-  usage: '[target]',
+  usage: '[target]', suggest: i => i === 0 ? ['@s'] : [],
   run(args, ctx) { self(args[0], ctx); ctx.kill(); ctx.say(`Killed ${ctx.playerName}`); },
 });
 register('seed', {
@@ -403,7 +461,7 @@ function blockArg(s) {
 }
 // the block tags, from the generator's data (loaded only when a tag is asked for)
 let TAGS = null;
-const loadTags = () => import('./gen/vdata.js?v=70').then(m => { TAGS = m.VDATA.block_tags || {}; });
+const loadTags = () => import('./gen/vdata.js?v=71').then(m => { TAGS = m.VDATA.block_tags || {}; });
 function tagIds(name, seen = new Set()) {
   const key = name.replace(/^minecraft:/, '');
   const list = TAGS[key];
@@ -473,7 +531,7 @@ function posSuggest(k, ctx) {
 const SET_MODES = ['destroy', 'keep', 'replace', 'strict'];
 register('setblock', {
   usage: '<pos> <block> [destroy|keep|replace|strict]',
-  suggest: (i, w, ctx) => i < 3 ? posSuggest(i, ctx) : i === 3 ? blockNames() : i === 4 ? SET_MODES : [],
+  suggest: (i, w, ctx) => i < 3 ? posSuggest(i, ctx) : i === 3 ? ids(blockNames()) : i === 4 ? SET_MODES : [],
   run(args0, ctx) {
     const args = joinArgs(args0);
     const [x, y, z] = blockPos(args, 0, ctx.game.player);
@@ -506,9 +564,9 @@ register('fill', {
   usage: '<from> <to> <block> [destroy|hollow|keep|outline|replace|strict]',
   suggest: (i, w, ctx) => {
     if (i < 6) return posSuggest(i % 3, ctx);
-    if (i === 6) return blockNames();
+    if (i === 6) return ids(blockNames());
     if (i === 7) return FILL_MODES;
-    if (i === 8 && w[7] === 'replace') return blockNames();
+    if (i === 8 && w[7] === 'replace') return ids(blockNames());
     if (i === 9 && w[7] === 'replace') return FILTER_MODES;
     return [];
   },
@@ -583,6 +641,7 @@ register('difficulty', {
 });
 register('spawnpoint', {
   usage: '[player] [x y z]',
+  suggest: (i, w, ctx) => i === 0 ? ['@s'] : i < 4 ? posSuggest(i - 1, ctx) : [],
   run(args, ctx) {
     const p = ctx.game.player;
     if (args[0] && args[0].startsWith('@')) args = args.slice(1);
@@ -592,7 +651,7 @@ register('spawnpoint', {
   },
 });
 register('setworldspawn', {
-  usage: '[x y z]',
+  usage: '[x y z]', suggest: (i, w, ctx) => i < 3 ? posSuggest(i, ctx) : [],
   run(args, ctx) {
     const p = ctx.game.player;
     const [x, y, z] = args.length >= 3 ? blockPos(args, 0, p) : [Math.floor(p.pos.x), Math.floor(p.pos.y + Y0), Math.floor(p.pos.z)];
@@ -611,7 +670,7 @@ export { fail, int, self };
 export function gameRule(game, name) { const r = game && game.rules; return r && r[name] !== undefined ? r[name] : RULES[name]; }
 register('gamerule', {
   usage: '<rule> [value]',
-  suggest: i => i === 0 ? Object.keys(RULES) : ['true', 'false'],
+  suggest: (i, w) => i === 0 ? Object.keys(RULES) : i === 1 && typeof RULES[w[0]] === 'boolean' ? ['true', 'false'] : [],
   run(args, ctx) {
     const g = ctx.game, name = args[0];
     if (!(name in RULES)) fail(`Incorrect argument for command`);

@@ -16,20 +16,21 @@
    more than half of a worker's code, so they are loaded only when a world
    first needs them: the title screen's world (the first generator) starts
    without waiting for them. */
-import { Gen, pickBiome } from './worldgen.js?v=70';
-import { FlatGen } from './gen/flat.js?v=70';
-import { meshColumn, setColours } from './mesher.js?v=70';
-import { resolveTextures, BLOCKS } from './blocks.js?v=70';
-import { forgetLooks } from './models.js?v=70';
-import { forgetStates } from './sim/states.js?v=70';
-import { biomeColours } from './biomes.js?v=70';
-import { CH } from './world-const.js?v=70';
-import { worldStructures, structureMessage } from './struct/hook.js?v=70';
-import { keepChunk, readChunks, sweepChunks, keptCount, keepMesh, readMeshes } from './chunkcache.js?v=70';
+import { Gen, pickBiome } from './worldgen.js?v=71';
+import { FlatGen } from './gen/flat.js?v=71';
+import { meshColumn, setColours } from './mesher.js?v=71';
+import { resolveTextures, BLOCKS } from './blocks.js?v=71';
+import { forgetLooks } from './models.js?v=71';
+import { forgetStates } from './sim/states.js?v=71';
+import { biomeColours } from './biomes.js?v=71';
+import { CH } from './world-const.js?v=71';
+import { worldStructures, structureMessage } from './struct/hook.js?v=71';
+import { keepChunk, readChunks, sweepChunks, keptCount, keepMesh, readMeshes } from './chunkcache.js?v=71';
+import { lc1Mixed, lc1Suffix } from './lc1/mixed.js?v=71';
 
 let G = null;                 // { VanillaGen, NetherGen, EndGen } once loaded
 let loadingG = null;
-const loadGens = () => loadingG || (loadingG = Promise.all([import('./gen/vanillagen.js?v=70'), import('./gen/nether.js?v=70'), import('./gen/end.js?v=70')])
+const loadGens = () => loadingG || (loadingG = Promise.all([import('./gen/vanillagen.js?v=71'), import('./gen/nether.js?v=71'), import('./gen/end.js?v=71')])
   .then(([v, n, e]) => { G = { VanillaGen: v.VanillaGen, NetherGen: n.NetherGen, EndGen: e.EndGen }; }));
 // whether a world (init or practice) needs one of Minecraft's generators
 const needsG = m => m.dim === 'the_nether' || m.dim === 'the_end' || m.generator === 'vanilla';
@@ -51,7 +52,8 @@ function spareFor(m) {
 }
 let resolved = null;
 let coloured = false;
-const nameOf = m => m.dim + '|' + m.generator + '|' + m.seed + (m.structures === false ? '|ns' : '');
+// (a world brought over from the first Leoncraft has its own chunks of that one's terrain: lc1/mixed.js)
+const nameOf = m => m.dim + '|' + m.generator + '|' + m.seed + (m.structures === false ? '|ns' : '') + lc1Suffix(m.lc1);
 function make(m) {
   // each dimension has its own generator (js/dims.js); the Overworld is Minecraft's own for worlds
   // made as Vanilla Seed, the first generator for the rest
@@ -61,6 +63,7 @@ function make(m) {
   // bastions in the Nether, end cities in the End)
   // (none at all in a world made with Generate Structures off)
   const s = m.structures === false ? null : worldStructures(m.generator === 'vanilla' ? String(m.seed) : m.seed | 0, g, m.dim || 'overworld');
+  if (m.lc1) lc1Mixed(g, m);
   return { gen: g, structs: s, name: nameOf(m) };
 }
 // the dimension a /locate is for (struct/hook.js picks the same), as js/dims.js names it
@@ -153,7 +156,7 @@ function startPre(m) {
     });
   }
   // the texture list and the biome colours, for the mesher (the page asked for all three already: they come from the browser's cache)
-  const tex = f => new URL('../textures/' + f + '?v=70', import.meta.url);
+  const tex = f => new URL('../textures/' + f + '?v=71', import.meta.url);
   const pixels = f => fetch(tex(f)).then(r => r.blob()).then(b => createImageBitmap(b)).then(img => {
     const c = new OffscreenCanvas(img.width, img.height), g = c.getContext('2d', { willReadFrequently: true });
     g.drawImage(img, 0, 0);
@@ -473,7 +476,8 @@ function work(m) {
     if (m.proto) { gen.protoCache.clear(); gen.writeCache.clear(); }
     // the structures reaching into this chunk (one that cannot be built is left out, not the chunk)
     let extra = made ? made.extra : null;
-    if (!made) try { extra = structs ? structs.build(c, m.cx, m.cz) : null; } catch (e) { console.error('structures in ' + m.cx + ',' + m.cz, e); }
+    // (none in the first Leoncraft's own chunks of a world brought over from it)
+    if (!made && !(gen.lc1Has && gen.lc1Has(m.cx, m.cz))) try { extra = structs ? structs.build(c, m.cx, m.cz) : null; } catch (e) { console.error('structures in ' + m.cx + ',' + m.cz, e); }
     if (cacheKey) keepChunk(cacheKey, m.cx, m.cz, c, extra);
     // (the terrain it was made from goes back to be used again, as a decoration's do; the chunk is a copy of it)
     const back = m.proto && m.proto.blocks.buffer !== c.blocks.buffer && m.proto.meta.buffer !== c.meta.buffer ? [m.proto.blocks.buffer, m.proto.meta.buffer] : [];
