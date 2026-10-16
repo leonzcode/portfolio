@@ -14,26 +14,26 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=63';
-import { I } from '../items.js?v=63';
-import { POTIONS } from '../brewing.js?v=63';
-import { ChestScreen } from '../ui/containers.js?v=63';
-import { RemotePlayers, playerSize } from './players.js?v=63';
-import { register } from '../commands.js?v=63';
-import { Sound } from '../sound/sound.js?v=63';
-import { RES_OVERRIDE } from '../explosion.js?v=63';
-import { skinUrl } from '../ui/skins.js?v=63';
-import { Painter, PaintScreen, faceColour, faceOfNormal } from '../ui/paint.js?v=63';
-import { blockGeometry } from '../render/blockmesh.js?v=63';
-import { lightNear } from '../lightlevel.js?v=63';
-import { setSkin as setOwnSkin } from '../render/avatar.js?v=63';
+import { B, BLOCKS } from '../blocks.js?v=64';
+import { I } from '../items.js?v=64';
+import { POTIONS } from '../brewing.js?v=64';
+import { ChestScreen } from '../ui/containers.js?v=64';
+import { RemotePlayers, playerSize, F } from './players.js?v=64';
+import { register } from '../commands.js?v=64';
+import { Sound } from '../sound/sound.js?v=64';
+import { RES_OVERRIDE } from '../explosion.js?v=64';
+import { skinUrl } from '../ui/skins.js?v=64';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=64';
+import { blockGeometry } from '../render/blockmesh.js?v=64';
+import { lightNear } from '../lightlevel.js?v=64';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=64';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=63').then(m => {
+import('../adv/toast.js?v=64').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -323,6 +323,26 @@ class VoteMenu extends MenuScreen {
     });
   }
 }
+/* Chameleon's poses (the Pose item cycles them; everyone sees them through the server's 'poses'):
+   each bends the parts of the model as the game's model space has them (S: head, body, right arm,
+   left arm, right leg, left leg; x right, y down, angles in radians). */
+const HALF = Math.PI / 2;
+const POSES = [
+  ['Standing', null],
+  ['T-Pose', S => { S[2].rx = S[3].rx = 0; S[2].ry = S[3].ry = 0; S[2].rz = HALF; S[3].rz = -HALF; }],
+  ['Arms Up', S => { S[2].rx = S[3].rx = -Math.PI; S[2].rz = 0.12; S[3].rz = -0.12; }],
+  ['Zombie', S => { S[2].rx = S[3].rx = -HALF; S[2].ry = S[3].ry = 0; S[2].rz = S[3].rz = 0; }],
+  ['Sitting', S => { for (const q of S) q.y += 10; S[4].rx = S[5].rx = -HALF; S[4].ry = 0.15; S[5].ry = -0.15; S[2].rx = S[3].rx = -0.4; }],
+  ['Star', S => { S[2].rx = S[3].rx = 0; S[2].rz = 2.3; S[3].rz = -2.3; S[4].rx = S[5].rx = 0; S[4].rz = 0.45; S[5].rz = -0.45; }],
+  ['Waving', S => { S[2].rx = -2.9; S[2].rz = 0.35; S[3].rx = 0; S[3].rz = -0.1; }],
+];
+// a seeker crouching: down on one knee's lean, both arms out along the look as if sighting down a rifle
+const SNIPE = (S, sneak) => {
+  const head = S[0];
+  S[2].rx = -HALF + head.rx; S[2].ry = -0.1 + head.ry; S[2].rz = 0;
+  S[3].rx = -HALF + head.rx - 0.15; S[3].ry = 0.55 + head.ry; S[3].rz = 0;
+  if (sneak) { S[0].rz = 0.12; }
+};
 // Build Battle's votes, as the hotbar holds them
 const VOTES = [['Super Poop', '§4', 'red_terracotta'], ['Poop', '§c', 'pink_terracotta'], ['OK', '§a', 'lime_terracotta'], ['Good', '§2', 'green_terracotta'], ['Epic', '§5', 'purple_terracotta'], ['Legendary', '§6', 'yellow_terracotta']];
 
@@ -427,7 +447,10 @@ export class Hub {
     switch (m.k) {
       case 'hello': this.modes = m.modes || []; this.games = m.games || []; this.staff = !!m.staff; this.editable = m.editable || []; return;
       case 'votes': this.votes = m; this.refreshScreen(); return;
-      case 'editmaps': this.closeScreens(); this.openScreen(new EditorMenu(this, m.game, m.maps)); return;
+      case 'poses': this.poses = new Map(m.list || []); this.seekerIds = new Set(m.seekers || []); return;
+      // (the menu it was asked from is swapped for the list in one step: closing it first would hand the game the mouse,
+      // and its pointer lock lands after the list opens, hiding the cursor over a menu nobody can click)
+      case 'editmaps': { const cur = this.ctx.gui.screen, E = new EditorMenu(this, m.game, m.maps); if (cur instanceof MenuScreen) { E.hub = this; this.ctx.gui.replace(E); } else this.openScreen(E); return; }
       case 'where': {
         this.area = m.area; this.floor = m.floor; this.spawn = m.spawn; this.bounds = m.bounds || null;
         if (m.team) this.team = m.team;
@@ -441,12 +464,15 @@ export class Hub {
         this.hide = m.hide || null; this.paintOn = !!(m.hide && m.hide.paint);
         if (!this.hide || this.hide.kind !== 'prophunt') this.clearProps();
         if (!this.hide || this.hide.kind !== 'chameleon' || this.role === 'seeker') this.unpaint();
+        if (this.hide && this.hide.kind === 'chameleon' && this.role === 'seeker' && m.area === 'game') this.wearSeeker();
         if (this.paintOn && !this.painter) this.startPaint();
         if (m.area !== 'game') { this.team = null; this.alive = false; }
         this.setNpcs(m.npcs || []);
         this.setGens(m.gens || []);
         this.closeScreens();
         this.applySize();
+        if (m.area !== 'game' || this.gameKind !== 'chameleon') { this.poses = new Map(); this.seekerIds = new Set(); this.myPose = 0; }
+        else if (this.role !== 'hider') this.myPose = 0;
         return;
       }
       case 'start': this.changed.clear(); this.kit = { armor: 0, pick: 0, axe: 0, shears: false }; this.up = {}; this.traps = []; return;
@@ -495,7 +521,7 @@ export class Hub {
       case 'props': this.props = new Map((m.list || []).map(e => [e[0], { b: e[1], lock: e[2] || null }])); return;
       // Chameleon: the time to paint is over, or you were found and seek now
       case 'paint': this.paintOn = !!m.on; if (!m.on) this.closeScreens(); return;
-      case 'role': this.role = m.role || null; if (this.role === 'seeker') this.unpaint(); return;
+      case 'role': this.role = m.role || null; if (this.role === 'seeker') { this.unpaint(); if (this.hide && this.hide.kind === 'chameleon') this.wearSeeker(); } return;
       case 'fx': {
         // (a whistle: its notes one after another, each [ms later, pitch])
         const notes = Array.isArray(m.notes) ? m.notes : [[0, 1]];
@@ -570,6 +596,7 @@ export class Hub {
       inv.slots[0] = named(['brush', 'feather'], '§aPaint Brush §7- Right Click to paint your skin');
       inv.slots[1] = named(['spyglass', 'stick'], '§bColour Picker §7- Right Click a block to copy its colour');
       inv.slots[2] = stack('paper', 1, { name: '§dBlock Stamp §7- Right Click a block to wear its picture' });
+      inv.slots[3] = named(['armor_stand', 'oak_fence'], '§6Pose §7- Right Click to change your pose');
       inv.slots[8] = named(['goat_horn', 'note_block'], '§eWhistle §7- Right Click to whistle (+2 points)');
       inv.select(0);
     } else if (kind === 'ch_seeker' || kind === 'ch_hunter') {
@@ -705,7 +732,12 @@ export class Hub {
   mayPlace(x, y, z, quiet, id) {
     if (this.building || this.area === 'edit') return true;
     // the lobby: only a temporary block, only into the air (the server takes it away again)
-    if (this.area === 'lobby') return id === idOf(TEMP_BLOCK) && !this.game.world.get(x, y, z);
+    if (this.area === 'lobby') {
+      if (id !== idOf(TEMP_BLOCK) || this.game.world.get(x, y, z)) return false;
+      // (never round the people on the stand: 3 blocks clear of each, as the server has it)
+      for (const n of this.npcList || []) if (Math.abs(x + 0.5 - n.x) <= 3 && Math.abs(z + 0.5 - n.z) <= 3 && y >= n.y - 2 && y <= n.y + 4) { if (quiet !== true) this.ctx.chat.add('§cYou cannot place blocks near the people on the stand!', 0xFF5555); return false; }
+      return true;
+    }
     if (this.area !== 'game' || !this.alive || this.noBuild || this.dig) return false;
     if (this.gameKind === 'buildbattle') { if (this.vote || !this.inPlot(x, y, z)) { if (quiet !== true && !this.vote) this.ctx.chat.add('§cYou can only build on your own plot!', 0xFF5555); return false; } return true; }
     if (this.noPlace) for (const q of this.noPlace) if (x + 0.5 >= q[0] && x + 0.5 <= q[3] && z + 0.5 >= q[2] && z + 0.5 <= q[5]) { if (quiet !== true) this.ctx.chat.add('§cYou can\'t place blocks there!', 0xFF5555); return false; }
@@ -791,6 +823,14 @@ export class Hub {
       if (this.hide && this.hide.kind === 'prophunt' && /^Taunt/.test(nm)) { this.send({ k: 'taunt' }); return true; }
       // Chameleon: a whistle, heard by everyone near (the server keeps its wait)
       if (this.hide && this.hide.kind === 'chameleon' && /^Whistle/.test(nm)) { this.send({ k: 'whistle' }); return true; }
+      // Chameleon: the next pose (as LC1's Mecha had them), told to everyone through the server
+      if (this.hide && this.hide.kind === 'chameleon' && /^Pose/.test(nm)) {
+        this.myPose = ((this.myPose | 0) + 1) % POSES.length;
+        this.send({ k: 'pose', p: this.myPose });
+        this.ctx.chat.add('§6Pose: §e' + POSES[this.myPose][0] + ' §7(right click again for the next)', 0xFFFFFF);
+        this.sound('block.wood.place');
+        return true;
+      }
       // Chameleon: the brush, the picker and the stamp
       if (this.hide && this.hide.kind === 'chameleon' && this.painter) {
         const T = this.game.inter.target;
@@ -964,11 +1004,14 @@ export class Hub {
         this.titleT = { t: '', s: '§aLocked in place', fi: 0, st: 20, fo: 5, at: performance.now() }; this.overlay.animates = true;
       }
     }
-    // TNT Run: a jump in the air is a double jump, while any are left; nothing hurts but the void
+    // TNT Run: space pressed twice quickly (the second in the air) is a double jump, while any are left; one press is a
+    // plain jump. Nothing hurts but the void
     if (this.gameKind === 'tntrun') {
       sv.health = sv.maxHealth; P.fallDistance = 0;
-      const down = !!P.keys[' '];
-      if (down && !this.jumpHeld && !P.onGround && !P.flying && this.jumps > 0) {
+      const down = !!P.keys[' '], pressed = down && !this.jumpHeld, quick = pressed && this.t - (this.jumpAt || -99) <= 6;
+      if (pressed) this.jumpAt = this.t;
+      if (quick && !P.onGround && !P.flying && this.jumps > 0) {
+        this.jumpAt = -99;
         P.vel.y = 0.75; P.vel.x += -Math.sin(P.yaw) * 0.45; P.vel.z += -Math.cos(P.yaw) * 0.45; P.fallDistance = 0;
         this.jumps--;
         this.sound('entity.bat.takeoff');
@@ -1027,6 +1070,7 @@ export class Hub {
     // Murder Mystery: nobody's name shows over them
     if (this.hideNames && this.area === 'game' && this.net.players) for (const r of this.net.players.list.values()) if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
     this.drawProps();
+    this.applyPoses();
   }
   /* Prop Hunt: each disguised hider is drawn as their block, where they are
      (or in the cell they locked into); their own model is not drawn. */
@@ -1075,8 +1119,25 @@ export class Hub {
     if (g && g.player && g.player.setScale) g.player.setScale(k);
     // (and nobody in it is hurt by a block at the eyes: half-size players squeeze into places, and paint against walls)
     if (g && g.survival) g.survival.noSuffocate = k !== 1;
+    // and everyone in it climbs walls by holding jump against them (never the barriers round the map, or anyone could climb out)
+    if (g && g.player) { g.player.wallClimb = k !== 1; g.player.noBarrierClimb = true; }
     const A = this.ctx && this.ctx.renderer && this.ctx.renderer.avatar;
     if (A) A.size = k;
+  }
+  // Chameleon: a hider's pose, or a seeker's aim while crouching, on every body drawn (none anywhere else)
+  applyPoses() {
+    // (and Prop Hunt's seekers never heal by themselves: a wrong hit's half heart stays lost)
+    if (this.game.survival) this.game.survival.noRegen = this.area === 'game' && this.gameKind === 'prophunt' && this.role === 'seeker';
+    const on = this.area === 'game' && this.gameKind === 'chameleon', A = this.ctx.renderer.avatar, P = this.game.player;
+    if (A) A.poseOverride = !on ? null : this.role === 'seeker' ? (P.sneaking ? SNIPE : null) : (POSES[this.myPose | 0] || POSES[0])[1];
+    const players = this.net.players;
+    if (!players) return;
+    for (const [id, r] of players.list) {
+      if (!r.av) continue;
+      if (!on) { r.av.poseOverride = null; continue; }
+      const pz = this.poses && this.poses.get(id);
+      r.av.poseOverride = pz ? (POSES[pz] || POSES[0])[1] : this.seekerIds && this.seekerIds.has(id) && r.st && (r.st.f & F.SNEAK) ? SNIPE : null;
+    }
   }
   clearProps() {
     this.props = new Map(); this.disguise = null; this.lockAt = null; this.still = 0;
@@ -1101,14 +1162,22 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=63', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=64', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
       setOwnSkin(data, false);
       if (this.net.sendSkin) this.net.sendSkin();
     });
-    this.painter.start(url);
+    // (a hider starts as a plain white figure, not their own skin)
+    void url; this.painter.startBlank();
+  }
+  // a Chameleon seeker wears the seekers' skin for the game (Rhys the SWAT Agent, CC BY-SA 3.0, from the gallery)
+  wearSeeker() {
+    if (!this.net) return;
+    const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
+    if (this.seekerSkin) { put(this.seekerSkin); return; }
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=64', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1116,7 +1185,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=63', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=64', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 

@@ -304,6 +304,7 @@ there), used unchanged under the licence each author gave it:
   red_knight.png: "character_CTF_red_knight" by Sam_0, CC BY 4.0 (#2036)
   pilot.png: "Pilot" by yotuderconnect, CC BY 4.0 (#2124)
   knight.png: "Knight" by me, CC BY-SA 3.0 (#1166)
+  swat_agent.png: "Rhys the SWAT Agent" by Rhys, CC BY-SA 3.0 (#437); worn by Leon Network's Chameleon seekers
   blue_tnt_mouse.png: "Blue TNT Mouse" by Enrico, CC BY-SA 3.0 (#1420)
   shadow_ninja.png: "ShadowNinja" by ShadowNinja, CC BY-SA 4.0 (#158)
   ghost.png: "ghost" by BlockMen, CC BY-SA 4.0 (#1969)

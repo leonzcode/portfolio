@@ -9,18 +9,18 @@
    manager scales a hit on the player for Easy and Hard). Shapes are boxes
    in the game's model units; every texture is painted here.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=63';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=64';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, MeleeAttackGoal, BowAttackGoal, AvoidGoal,
-  HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, LeapGoal, randomLandPos } from './ai.js?v=63';
-import { Monster, Skeleton, register, TYPES, spawnArmor } from './mobs.js?v=63';
-import { model } from './mobs2.js?v=63';
-import { addArt } from './mobart.js?v=63';
-import { MODELS } from './mobmodels.js?v=63';
-import { Projectile } from './projectiles.js?v=63';
-import { exposure } from './explosion.js?v=63';
-import { Entity } from './entity.js?v=63';
-import { EnderDragon } from '../dim/dragon.js?v=63';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=63';
+  HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, LeapGoal, randomLandPos } from './ai.js?v=64';
+import { Monster, Skeleton, register, TYPES, spawnArmor } from './mobs.js?v=64';
+import { model } from './mobs2.js?v=64';
+import { addArt } from './mobart.js?v=64';
+import { MODELS } from './mobmodels.js?v=64';
+import { Projectile } from './projectiles.js?v=64';
+import { exposure } from './explosion.js?v=64';
+import { Entity } from './entity.js?v=64';
+import { EnderDragon } from '../dim/dragon.js?v=64';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=64';
 
 const PI = Math.PI;
 const R = () => Math.random();

@@ -27,8 +27,8 @@
    blast. The machine running the fight starts a respawn when the four are
    on the portal, whoever put them there.
 --------------------------------------------------------------------------- */
-import { F } from './players.js?v=63';
-import { EndCrystal, DragonFireball, BreathCloud } from '../dim/entities.js?v=63';
+import { F } from './players.js?v=64';
+import { EndCrystal, DragonFireball, BreathCloud } from '../dim/entities.js?v=64';
 
 const PHASES = ['holding', 'strafe', 'approach', 'landing', 'scanning', 'roar', 'flame', 'takeoff', 'charge', 'dying'];
 const KEY = '0,0,0';

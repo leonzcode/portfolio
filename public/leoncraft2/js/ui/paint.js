@@ -10,8 +10,8 @@
    each change is put on your model and sent to everyone as your skin for the
    game only (net.skinOverride), never kept as your skin setting.
 --------------------------------------------------------------------------- */
-import { Screen, Button, WHITE, GREY } from './gui.js?v=63';
-import { BLOCKS } from '../blocks.js?v=63';
+import { Screen, Button, WHITE, GREY } from './gui.js?v=64';
+import { BLOCKS } from '../blocks.js?v=64';
 
 // the skin's parts in the 64 x 64 layout: every face of each, base layer only
 export const PARTS = {
@@ -52,7 +52,7 @@ function terrain() {
   TERRAIN = { data: null };
   const im = new Image();
   im.onload = () => { const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const x = c.getContext('2d'); x.drawImage(im, 0, 0); TERRAIN.data = x.getImageData(0, 0, im.width, im.height); };
-  im.src = new URL('../../textures/terrain_albedo.png?v=63', import.meta.url).href;
+  im.src = new URL('../../textures/terrain_albedo.png?v=64', import.meta.url).href;
   return TERRAIN;
 }
 terrain();
@@ -90,6 +90,16 @@ export function faceColour(id, face) {
 export class Painter {
   constructor(apply) { this.canvas = null; this.colour = 0x6B8E23; this.recent = []; this.apply = apply; this.base = null; this.size = 1; this.grain = false; this.undos = []; }
   async start(url) { this.canvas = await loadSkin64(url); if (this.canvas) { this.base = document.createElement('canvas'); this.base.width = this.base.height = 64; this.base.getContext('2d').drawImage(this.canvas, 0, 0); this.apply(this.canvas); } }
+  // a plain white figure to paint on (Chameleon's hiders start as one, as in Meccha Chameleon); Start Again comes back to it
+  startBlank() {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const x = c.getContext('2d');
+    x.fillStyle = '#f4f4f4';
+    for (const r of Object.values(PARTS)) x.fillRect(r[0], r[1], r[2] - r[0], r[3] - r[1]);
+    this.canvas = c;
+    this.base = document.createElement('canvas'); this.base.width = this.base.height = 64; this.base.getContext('2d').drawImage(c, 0, 0);
+    this.apply(c);
+  }
   ctx() { return this.canvas && this.canvas.getContext('2d', { willReadFrequently: true }); }
   setColour(c) { if (c === null || c === undefined) return; this.colour = c; this.recent = [c].concat(this.recent.filter(x => x !== c)).slice(0, 8); }
   css(c) { return '#' + c.toString(16).padStart(6, '0'); }
@@ -205,7 +215,7 @@ export class PaintScreen extends Screen {
     this.sizes = [1, 2, 3].map((n, i) => { const b = this.add(new Button(x0 + 198 + i * 14, y1, 13, 18, String(n), () => { P.size = n; }, 'Brush size')); b.size = n; return b; });
     this.grainB = this.add(new Button(x0, y2, 58, 20, 'Grain: ' + (P.grain ? 'On' : 'Off'), () => { P.grain = !P.grain; this.grainB.message = 'Grain: ' + (P.grain ? 'On' : 'Off'); }, 'Each pixel a little lighter or darker, like the pictures of blocks'));
     this.undoB = this.add(new Button(x0 + 60, y2, 50, 20, 'Undo', () => { if (P.undo()) this.live(); }, 'Ctrl+Z'));
-    this.add(new Button(x0 + 112, y2, 72, 20, 'Start Again', () => { P.reset(); this.live(); }, 'Back to how you looked when the game began'));
+    this.add(new Button(x0 + 112, y2, 72, 20, 'Start Again', () => { P.reset(); this.live(); }, 'Back to plain white, as you began'));
     this.add(new Button(x0 + 186, y2, 52, 20, 'Done', () => g.back()));
   }
   get sv() { return [this.bx + this.bw - 58, this.by + 4, 44, 62]; }

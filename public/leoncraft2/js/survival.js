@@ -67,11 +67,11 @@
    Experience: a level takes 2L + 7 points up to 15, 5L - 38 up to 30, and
    9L - 158 after that.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=63';
-import { I, ITEMS, armorOf } from './items.js?v=63';
-import { wear } from './ui/inventory.js?v=63';
-import { sourceOf, deathMessage } from './damage.js?v=63';
-import { effectId, EFFECTS } from './effects.js?v=63';
+import { B, BLOCKS, FLUID } from './blocks.js?v=64';
+import { I, ITEMS, armorOf } from './items.js?v=64';
+import { wear } from './ui/inventory.js?v=64';
+import { sourceOf, deathMessage } from './damage.js?v=64';
+import { effectId, EFFECTS } from './effects.js?v=64';
 
 const BYPASS_ARMOR = new Set(['fall', 'drown', 'starve', 'void', 'magic', 'poison', 'wither', 'suffocation', 'generic', 'freeze', 'kill']);
 const FIRE = new Set(['lava', 'fire', 'on_fire', 'hot_floor']);
@@ -463,7 +463,7 @@ export class Survival {
     if (w) this.touching(P, w);
     this.freezing(P);
     // Peaceful: a point of health a second, a point of food each half second
-    if (this.difficulty() === 'peaceful' && this.rule('naturalRegeneration')) {
+    if (this.difficulty() === 'peaceful' && this.rule('naturalRegeneration') && !this.noRegen) {
       if (this.health < this.maxHealth && this.age % 20 === 0) this.heal(1);
       if (this.food < 20 && this.age % 10 === 0) this.food++;
     }
@@ -611,7 +611,8 @@ export class Survival {
       if (this.saturation > 0) this.saturation = Math.max(this.saturation - 1, 0);
       else if (d !== 'peaceful') this.food = Math.max(this.food - 1, 0);
     }
-    const regen = this.rule('naturalRegeneration'), hurt = this.health > 0 && this.health < this.maxHealth;
+    // (noRegen: a server's minigame turns it off, Leon Network's Prop Hunt seekers)
+    const regen = this.rule('naturalRegeneration') && !this.noRegen, hurt = this.health > 0 && this.health < this.maxHealth;
     if (regen && this.saturation > 0 && hurt && this.food >= 20) {
       if (++this.foodTimer >= 10) {
         const f = Math.min(this.saturation, 6);

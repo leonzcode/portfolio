@@ -39,9 +39,9 @@
    at the first one in the way. Walking into something up to 0.6 high steps
    up onto it, which is how stairs and slabs are climbed.
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=63';
-import { collisionBoxes, selectionBoxes } from './models.js?v=63';
-import { LEVEL, FALLING } from './world-const.js?v=63';
+import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=64';
+import { collisionBoxes, selectionBoxes } from './models.js?v=64';
+import { LEVEL, FALLING } from './world-const.js?v=64';
 const THREE = window.THREE;
 
 const W = 0.3, HT = 1.8, STEP = 0.6;
@@ -347,6 +347,20 @@ export class Player {
           if (st) this.stuck = st;
         }
     this.climbing = CLIMB.has(this.w.get(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)));
+    // a wall as a ladder (Leon Network's Chameleon, as the first Leoncraft's Mecha had it): pressed against one, holding jump
+    if (!this.climbing && this.wallClimb && this.keys[' '] && !this.flying && this.onWall()) this.climbing = true;
+  }
+  // touching a solid block's side (a shade past your own box); barriers only when noBarrierClimb is off (hiders cannot see them)
+  onWall() {
+    const p = this.pos, r = this.halfW + 0.08;
+    for (let y = Math.floor(p.y + 0.1); y <= Math.floor(p.y + this.h - 0.1); y++)
+      for (const [dx, dz] of [[r, 0], [-r, 0], [0, r], [0, -r]]) {
+        const b = this.w.get(Math.floor(p.x + dx), y, Math.floor(p.z + dz));
+        if (!b || !SOLID[b]) continue;
+        if (this.noBarrierClimb && b === B.barrier) continue;
+        return true;
+      }
+    return false;
   }
 
   /* Gliding on an elytra, the game's own flight (its fall-flying travel):
