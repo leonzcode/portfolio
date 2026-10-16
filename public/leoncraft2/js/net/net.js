@@ -61,26 +61,26 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=61';
-import { idx, H } from '../world-const.js?v=61';
-import { DIMS, DIM_IDS } from '../dims.js?v=61';
-import { Save } from '../save.js?v=61';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=61';
-import { glints } from '../render/armor.js?v=61';
-import { containerKind } from '../containers.js?v=61';
-import { getSkinSettings } from '../render/avatar.js?v=61';
-import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=61';
-import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=61';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=61';
-import { Projectile } from '../entities/projectiles.js?v=61';
-import { Combat } from '../combat/combat.js?v=61';
-import { Vehicles } from './vehicles.js?v=61';
-import { Mobs, Orbs } from './mobs.js?v=61';
-import { Events } from './events.js?v=61';
-import { EndSync } from './endfight.js?v=61';
-import { Hub } from './hub.js?v=61';
-import { Account, wsBase, httpBase } from './account.js?v=61';
-import { rankTag } from './players.js?v=61';
+import { B, BLOCKS } from '../blocks.js?v=62';
+import { idx, H } from '../world-const.js?v=62';
+import { DIMS, DIM_IDS } from '../dims.js?v=62';
+import { Save } from '../save.js?v=62';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=62';
+import { glints } from '../render/armor.js?v=62';
+import { containerKind } from '../containers.js?v=62';
+import { getSkinSettings } from '../render/avatar.js?v=62';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=62';
+import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=62';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=62';
+import { Projectile } from '../entities/projectiles.js?v=62';
+import { Combat } from '../combat/combat.js?v=62';
+import { Vehicles } from './vehicles.js?v=62';
+import { Mobs, Orbs } from './mobs.js?v=62';
+import { Events } from './events.js?v=62';
+import { EndSync } from './endfight.js?v=62';
+import { Hub } from './hub.js?v=62';
+import { Account, wsBase, httpBase } from './account.js?v=62';
+import { rankTag } from './players.js?v=62';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -536,6 +536,7 @@ export class Net {
     this.game = game; this.ctx = ctx;
     activeNet = this;
     this.players = new RemotePlayers(ctx.renderer, ctx.gui.font);
+    this.players.sized = true;   // (the people on Leon Network's stands keep their size)
     // the puff of smoke a player leaves when they die
     this.players.onPoof = (x, y, z) => { const E = this.game && this.game.entities; if (E && E.particles) E.particles('poof', x, y + 0.9, z, 20, 0.4); };
     for (const p of this.initPlayers) this.players.add(p);
@@ -890,7 +891,7 @@ export class Net {
     for (const r of this.players.list.values()) {
       if (!this.hittable(r, D)) continue;
       const f = r.feet, h = heightOf(r.st);
-      const t = rayBox(eye.x, eye.y, eye.z, dx, dy, dz, f.x - 0.3, f.y, f.z - 0.3, f.x + 0.3, f.y + h, f.z + 0.3);
+      const hw = 0.3 * playerSize.k, t = rayBox(eye.x, eye.y, eye.z, dx, dy, dz, f.x - hw, f.y, f.z - hw, f.x + hw, f.y + h, f.z + hw);
       if (t < lim) { lim = t; best = r; }
     }
     return best ? this.proxyOf(best) : found;
@@ -908,7 +909,7 @@ export class Net {
     if (r.proxy) { r.proxy.name = r.name; r.proxy.h = heightOf(r.st); return r.proxy; }
     const net = this;
     r.proxy = {
-      remotePlayer: true, type: 'player', id: 'p' + r.id, name: r.name, get pos() { return r.feet; }, hw: 0.3, w: 0.6, h: heightOf(r.st),
+      remotePlayer: true, type: 'player', id: 'p' + r.id, name: r.name, get pos() { return r.feet; }, get hw() { return 0.3 * playerSize.k; }, get w() { return 0.6 * playerSize.k; }, h: heightOf(r.st),
       removed: false, dead: false, vel: { x: 0, y: 0, z: 0 }, fire: 0, kbResist: 0,
       dist2(x, y, z) { const f = r.feet; return (f.x - x) ** 2 + (f.y - y) ** 2 + (f.z - z) ** 2; },
       hurt(amount, src, info) { return src && (src.type === 'arrow' || src.type === 'trident' || src.type === 'thrown' || src.type === 'wind_charge') ? net.shotPlayer(r, amount, src) : net.hitPlayer(r, amount, info); },
@@ -1087,11 +1088,11 @@ export class Net {
   pushTick() {
     const g = this.game, P = g.player, E = g.entities;
     if (!this.players || P.flying || g.mode === 'spectator' || (g.survival && g.survival.dead) || P.riding || (E && E.riding) || (g.sim && g.sim.sleeping)) return;
-    const D = dimCode(g.dim), myH = P.sneaking ? 1.5 : P.pose === 'swim' ? 0.6 : 1.8;
+    const D = dimCode(g.dim), myH = P.h || 1.8, near = 0.6 * playerSize.k;
     for (const r of this.players.list.values()) {
       const s = r.st, f = r.feet;
       if (!s || !f || s.d !== D || (s.f & (F.DEAD | F.SPEC | F.SLEEP | F.RIDE))) continue;
-      if (Math.abs(f.x - P.pos.x) >= 0.6 || Math.abs(f.z - P.pos.z) >= 0.6 || f.y >= P.pos.y + myH || f.y + heightOf(s) <= P.pos.y) continue;
+      if (Math.abs(f.x - P.pos.x) >= near || Math.abs(f.z - P.pos.z) >= near || f.y >= P.pos.y + myH || f.y + heightOf(s) <= P.pos.y) continue;
       // (the game's Entity.push: along the larger of the two gaps, 0.05 a tick, harder the closer)
       let dx = f.x - P.pos.x, dz = f.z - P.pos.z, d = Math.max(Math.abs(dx), Math.abs(dz));
       if (d < 0.01) continue;
@@ -1573,7 +1574,7 @@ export class Net {
   }
 }
 // a player's height by their pose: 1.8, 1.5 sneaking, 0.6 swimming or crawling
-const heightOf = s => (s && s.f & F.SNEAK ? 1.5 : s && s.f & F.SWIM ? 0.6 : 1.8);
+const heightOf = s => (s && s.f & F.SNEAK ? 1.5 : s && s.f & F.SWIM ? 0.6 : 1.8) * playerSize.k;
 // the commands an operator's /command <you> runs on your machine (ranAs)
 const AS_OK = new Set(['gamemode', 'give', 'clear', 'kill', 'xp', 'experience', 'effect', 'enchant', 'spawnpoint', 'tp', 'teleport']);
 // where a ray first enters a box, or Infinity

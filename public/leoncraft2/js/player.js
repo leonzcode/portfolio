@@ -39,9 +39,9 @@
    at the first one in the way. Walking into something up to 0.6 high steps
    up onto it, which is how stairs and slabs are climbed.
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=61';
-import { collisionBoxes, selectionBoxes } from './models.js?v=61';
-import { LEVEL, FALLING } from './world-const.js?v=61';
+import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=62';
+import { collisionBoxes, selectionBoxes } from './models.js?v=62';
+import { LEVEL, FALLING } from './world-const.js?v=62';
 const THREE = window.THREE;
 
 const W = 0.3, HT = 1.8, STEP = 0.6;
@@ -73,6 +73,7 @@ export class Player {
     this.onGround = false; this.inWater = false; this.eyeInWater = false; this.inLava = false;
     this.flying = false; this.sprinting = false; this.sneaking = false;
     this.swimming = false; this.pose = 'stand'; this.h = HT;
+    this.scale = 1; this.halfW = W;     // (half size in Leon Network's Chameleon: setScale)
     this.eyeH = 1.62; this.prevEyeH = 1.62;
     this.waterDepth = -1; this.lavaDepth = -1;
     this.hCollide = false; this.minorCollide = false; this.moved = [0, 0, 0];
@@ -100,6 +101,12 @@ export class Player {
      before, so a tap shorter than a tick is never lost. Double taps (Space
      to fly, forward to sprint) are counted in ticks, as the game counts
      them. */
+  // a player made smaller or bigger (Leon Network's Chameleon plays at half size): the box, the eyes and the height all follow
+  setScale(k) {
+    if (!(k > 0) || k === this.scale) return;
+    this.scale = k; this.halfW = W * k;
+    this.h = POSE[this.pose][0] * k; this.eyeH = this.prevEyeH = POSE[this.pose][1] * k;
+  }
   setKey(k, on) {
     // a press in the air with an elytra on starts a glide (tick())
     if (k === ' ' && on && !this.keys[' '] && !this.onGround && !this.flying) this.wantGlide = true;
@@ -153,7 +160,7 @@ export class Player {
   }
   // the move itself: y, x, z, then the same again lifted by a step if that gets further
   slide(px, py, pz, dx, dy, dz, bx) {
-    let x0 = px - W, y0 = py, z0 = pz - W, x1 = px + W, y1 = py + this.h, z1 = pz + W;
+    let x0 = px - this.halfW, y0 = py, z0 = pz - this.halfW, x1 = px + this.halfW, y1 = py + this.h, z1 = pz + this.halfW;
     const my = this.clip(bx, 1, dy, x0, y0, z0, x1, y1, z1); y0 += my; y1 += my;
     const mx = this.clip(bx, 0, dx, x0, y0, z0, x1, y1, z1); x0 += mx; x1 += mx;
     const mz = this.clip(bx, 2, dz, x0, y0, z0, x1, y1, z1); z0 += mz; z1 += mz;
@@ -172,7 +179,7 @@ export class Player {
     // sneaking keeps you on the edge of a block: no step that would leave nothing under you
     // (in 0.05 steps, and the last step of 0.05 or less stops it, as the game does; never on the way up)
     if (this.sneaking && this.onGround && !this.flying && dy <= 0) {
-      const drop = (nx, nz) => !this.boxHits(nx - W, p.y - STEP, nz - W, nx + W, p.y, nz + W);
+      const drop = (nx, nz) => !this.boxHits(nx - this.halfW, p.y - STEP, nz - this.halfW, nx + this.halfW, p.y, nz + this.halfW);
       while (dx !== 0 && drop(p.x + dx, p.z)) dx = Math.abs(dx) <= 0.05 ? 0 : dx - Math.sign(dx) * 0.05;
       while (dz !== 0 && drop(p.x, p.z + dz)) dz = Math.abs(dz) <= 0.05 ? 0 : dz - Math.sign(dz) * 0.05;
       while (dx !== 0 && dz !== 0 && drop(p.x + dx, p.z + dz)) {
@@ -181,16 +188,16 @@ export class Player {
       }
     }
     const reach = Math.max(Math.abs(dx), Math.abs(dz)) + STEP + 1;
-    const bx = this.gather(p.x - W - reach, p.y - reach, p.z - W - reach, p.x + W + reach, p.y + this.h + reach, p.z + W + reach);
+    const bx = this.gather(p.x - this.halfW - reach, p.y - reach, p.z - this.halfW - reach, p.x + this.halfW + reach, p.y + this.h + reach, p.z + this.halfW + reach);
     let [mx, my, mz] = this.slide(p.x, p.y, p.z, dx, dy, dz, bx);
     const landed = dy < 0 && my !== dy;
     // blocked sideways while on (or landing on) the ground: try it a step higher
     if ((this.onGround || landed) && !this.flying && (mx !== dx || mz !== dz)) {
-      const up = this.clip(bx, 1, STEP, p.x - W, p.y, p.z - W, p.x + W, p.y + this.h, p.z + W);
+      const up = this.clip(bx, 1, STEP, p.x - this.halfW, p.y, p.z - this.halfW, p.x + this.halfW, p.y + this.h, p.z + this.halfW);
       const [sx, , sz] = this.slide(p.x, p.y + up, p.z, dx, 0, dz, bx);
       if (sx * sx + sz * sz > mx * mx + mz * mz + 1e-9) {
         // and back down onto whatever is there
-        const down = this.clip(bx, 1, -up, p.x + sx - W, p.y + up, p.z + sz - W, p.x + sx + W, p.y + up + this.h, p.z + sz + W);
+        const down = this.clip(bx, 1, -up, p.x + sx - this.halfW, p.y + up, p.z + sz - this.halfW, p.x + sx + this.halfW, p.y + up + this.h, p.z + sz + this.halfW);
         mx = sx; mz = sz; my = up + down;
         this.stepped = (this.stepped || 0) + my;      // the camera eases up the step
       }
@@ -247,8 +254,8 @@ export class Player {
     const minY = p.y + 0.001;
     let depth = -1;
     for (let y = Math.floor(minY); y <= Math.floor(p.y + this.h - 0.001); y++)
-      for (let z = Math.floor(p.z - W + 0.001); z <= Math.floor(p.z + W - 0.001); z++)
-        for (let x = Math.floor(p.x - W + 0.001); x <= Math.floor(p.x + W - 0.001); x++) {
+      for (let z = Math.floor(p.z - this.halfW + 0.001); z <= Math.floor(p.z + this.halfW - 0.001); z++)
+        for (let x = Math.floor(p.x - this.halfW + 0.001); x <= Math.floor(p.x + this.halfW - 0.001); x++) {
           const top = this.fluidTop(x, y, z, kind);
           if (top >= minY) depth = Math.max(depth, top - minY);
         }
@@ -276,8 +283,8 @@ export class Player {
     const p = this.pos, minY = p.y + 0.001, f = this.fl || (this.fl = [0, 0]);
     let sx = 0, sz = 0, n = 0;
     for (let y = Math.floor(minY); y <= Math.floor(p.y + this.h - 0.001); y++)
-      for (let z = Math.floor(p.z - W + 0.001); z <= Math.floor(p.z + W - 0.001); z++)
-        for (let x = Math.floor(p.x - W + 0.001); x <= Math.floor(p.x + W - 0.001); x++) {
+      for (let z = Math.floor(p.z - this.halfW + 0.001); z <= Math.floor(p.z + this.halfW - 0.001); z++)
+        for (let x = Math.floor(p.x - this.halfW + 0.001); x <= Math.floor(p.x + this.halfW - 0.001); x++) {
           if (FLUID[this.w.get(x, y, z)] !== 1) continue;
           const top = this.fluidTop(x, y, z, 1);
           if (top < minY) continue;
@@ -296,7 +303,7 @@ export class Player {
   // nothing solid and no fluid in the body box moved by (dx, dy, dz): the game's isFree
   freeAt(dx, dy, dz) {
     const p = this.pos;
-    const x0 = p.x - W + dx, y0 = p.y + dy, z0 = p.z - W + dz, x1 = p.x + W + dx, y1 = p.y + this.h + dy, z1 = p.z + W + dz;
+    const x0 = p.x - this.halfW + dx, y0 = p.y + dy, z0 = p.z - this.halfW + dz, x1 = p.x + this.halfW + dx, y1 = p.y + this.h + dy, z1 = p.z + this.halfW + dz;
     if (this.boxHits(x0, y0, z0, x1, y1, z1)) return false;
     for (let y = Math.floor(y0); y < Math.ceil(y1); y++)
       for (let z = Math.floor(z0); z < Math.ceil(z1); z++)
@@ -308,18 +315,18 @@ export class Player {
   }
   // would the body fit here in a pose? (for standing up from a crouch or a crawl)
   fits(pose) {
-    const p = this.pos, h = POSE[pose][0];
-    return !this.boxHits(p.x - W + 1e-4, p.y + 1e-4, p.z - W + 1e-4, p.x + W - 1e-4, p.y + h - 1e-4, p.z + W - 1e-4);
+    const p = this.pos, h = POSE[pose][0] * this.scale;
+    return !this.boxHits(p.x - this.halfW + 1e-4, p.y + 1e-4, p.z - this.halfW + 1e-4, p.x + this.halfW - 1e-4, p.y + h - 1e-4, p.z + this.halfW - 1e-4);
   }
   /* The game's honey slide: in a honey block's cell (its box is a sixteenth in from each side, so you
      can lean into it), off the ground, falling faster than 0.08, no higher than 15/16 of it, and not
      over its top: the fall turns into a slide at 0.05 (what you had across slowed in step) and the
      fall so far is forgotten. The block slid on, or null. */
   honeySlide() {
-    const p = this.pos, v = this.vel, r = 0.4375 + W;
+    const p = this.pos, v = this.vel, r = 0.4375 + this.halfW;
     for (let y = Math.floor(p.y + 1e-7); y <= Math.floor(p.y + this.h - 1e-7); y++)
-      for (let z = Math.floor(p.z - W + 1e-7); z <= Math.floor(p.z + W - 1e-7); z++)
-        for (let x = Math.floor(p.x - W + 1e-7); x <= Math.floor(p.x + W - 1e-7); x++) {
+      for (let z = Math.floor(p.z - this.halfW + 1e-7); z <= Math.floor(p.z + this.halfW - 1e-7); z++)
+        for (let x = Math.floor(p.x - this.halfW + 1e-7); x <= Math.floor(p.x + this.halfW - 1e-7); x++) {
           if (this.w.get(x, y, z) !== HONEY || p.y > y + 0.9375 - 1e-7) continue;
           if (!(Math.abs(x + 0.5 - p.x) + 1e-7 > r || Math.abs(z + 0.5 - p.z) + 1e-7 > r)) continue;
           if (v.y < -0.13) { const d = -0.05 / v.y; v.x *= d; v.z *= d; }
@@ -334,8 +341,8 @@ export class Player {
     const p = this.pos;
     this.stuck = null;
     for (let y = Math.floor(p.y + 1e-5); y <= Math.floor(p.y + this.h - 1e-5); y++)
-      for (let z = Math.floor(p.z - W + 1e-5); z <= Math.floor(p.z + W - 1e-5); z++)
-        for (let x = Math.floor(p.x - W + 1e-5); x <= Math.floor(p.x + W - 1e-5); x++) {
+      for (let z = Math.floor(p.z - this.halfW + 1e-5); z <= Math.floor(p.z + this.halfW - 1e-5); z++)
+        for (let x = Math.floor(p.x - this.halfW + 1e-5); x <= Math.floor(p.x + this.halfW - 1e-5); x++) {
           const st = STUCK.get(this.w.get(x, y, z));
           if (st) this.stuck = st;
         }
@@ -572,8 +579,8 @@ export class Player {
        crawling would fit: it used to lie down, which put the eyes, the camera and the light the model is
        lit by 1.2 deeper in the ground, so out of spectator into the ground your skin went pitch black) */
     else if (!this.fits(pose)) pose = this.fits('crouch') ? 'crouch' : this.fits('swim') ? 'swim' : this.pose || pose;
-    this.pose = pose; this.h = POSE[pose][0];
-    this.eyeH += (POSE[pose][1] - this.eyeH) * 0.5;
+    this.pose = pose; this.h = POSE[pose][0] * this.scale;
+    this.eyeH += (POSE[pose][1] * this.scale - this.eyeH) * 0.5;
     const moved = Math.hypot(this.pos.x - was.x, this.pos.z - was.z);
     if (this.onGround) this.walkDist += moved * 0.6;
     // wading and swimming push ripples out across the water
@@ -648,10 +655,10 @@ export class Player {
   occupies(x, y, z, boxes) {
     if (boxes) {
       const p = this.pos;
-      return boxes.some(c => x + c[3] > p.x - W && x + c[0] < p.x + W && z + c[5] > p.z - W && z + c[2] < p.z + W && y + c[4] > p.y && y + c[1] < p.y + this.h);
+      return boxes.some(c => x + c[3] > p.x - this.halfW && x + c[0] < p.x + this.halfW && z + c[5] > p.z - this.halfW && z + c[2] < p.z + this.halfW && y + c[4] > p.y && y + c[1] < p.y + this.h);
     }
     const p = this.pos;
-    return x + 1 > p.x - W && x < p.x + W && z + 1 > p.z - W && z < p.z + W && y + 1 > p.y && y < p.y + this.h;
+    return x + 1 > p.x - this.halfW && x < p.x + this.halfW && z + 1 > p.z - this.halfW && z < p.z + this.halfW && y + 1 > p.y && y < p.y + this.h;
   }
 }
 

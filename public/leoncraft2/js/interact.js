@@ -34,10 +34,10 @@
      hand.useOn(hit)         right click on a block (chests, tables); true if it did something
      hand.useItem(hit)       right click with the item (eat, armour, buckets); true if it did
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=61';
-import { selectionBoxes } from './models.js?v=61';
-import { placement, use, breakAt } from './place.js?v=61';
-import { breakTime, dropOf } from './survival.js?v=61';
+import { B, BLOCKS, FLUID } from './blocks.js?v=62';
+import { selectionBoxes } from './models.js?v=62';
+import { placement, use, breakAt } from './place.js?v=62';
+import { breakTime, dropOf } from './survival.js?v=62';
 
 export class Interactor {
   constructor(o) {
@@ -46,6 +46,7 @@ export class Interactor {
     this.adventure = false;       // adventure (and spectator): nothing broken or placed (modes.js)
     this.locked = null;           // (x, y, z) -> true where nothing may be broken, placed or used: a server's spawn protection (net/net.js)
     this.mayBreak = null;         // (x, y, z) -> false where a block may not be broken (a minigame's map: net/hub.js)
+    this.adventurePlace = null;   // (id) -> true for a block adventure may place after all
     this.mayPlace = null;         // (x, y, z, id) -> false where a block may not go (outside a minigame's build space)
     this.spectator = false;       // spectator: nothing done at all
     this.attack = false; this.useHeld = false;
@@ -262,8 +263,8 @@ export class Interactor {
     // (so a chest opens rather than taking a boat on its lid, as in the game)
     if (makes()) { this.hand.swing(); return true; }
     if (this.hand.useItem && this.hand.useItem(h)) return true;
-    // adventure places nothing
-    if (this.adventure) return false;
+    // adventure places nothing (but what a server lets it: Leon Network's temporary blocks in its lobby)
+    if (this.adventure && !(this.adventurePlace && this.adventurePlace(this.hand.id()))) return false;
     const id = this.hand.id();
     if (!id || !BLOCKS[id] || BLOCKS[id].place === false) return false;
     let list = placement(this.world, h, id, this.player);
