@@ -34,11 +34,11 @@
    Drawn with the block's own model and the held-block material, so they take
    the same light and fog as the world.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=71';
-import { blockGeometry, intAttribute } from '../render/blockmesh.js?v=71';
-import { lightNear } from '../lightlevel.js?v=71';
-import { FALLS, free as fallsInto, touchesWater, concreteOf } from '../entities/fallingblock.js?v=71';
-import { H } from '../world-const.js?v=71';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=72';
+import { blockGeometry, intAttribute } from '../render/blockmesh.js?v=72';
+import { lightNear } from '../lightlevel.js?v=72';
+import { FALLS, free as fallsInto, touchesWater, concreteOf } from '../entities/fallingblock.js?v=72';
+import { H } from '../world-const.js?v=72';
 const THREE = window.THREE;
 
 /* ---- when blocks fall (the game's FallingBlock, PointedDripstoneBlock, ScaffoldingBlock, DragonEggBlock) ---- */
