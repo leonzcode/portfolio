@@ -11,13 +11,13 @@
    Written from the game's behaviour and its 26.3 worldgen data, and checked
    against chunks the real server made. Registered into FEATURES.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=71';
+import { B, BLOCKS } from '../blocks.js?v=72';
 import {
   FEATURES, strip, tag, provider, predicate, sampleInt, sampleFloat, stateFrom, placePlaced, survives, fluidOf, msin,
   NOTE_TABLES, NOTE_MOBS, NOTE_SPAWNER, longHalves,
-} from './features.js?v=71';
-import { LegacyRandom } from './random.js?v=71';
-import { Perlin } from './noise.js?v=71';
+} from './features.js?v=72';
+import { LegacyRandom } from './random.js?v=72';
+import { Perlin } from './noise.js?v=72';
 
 const MIN_Y = -64, MAX_Y = 319, SEA_LEVEL = 63;
 const F = Math.fround;

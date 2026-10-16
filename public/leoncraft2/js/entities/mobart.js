@@ -13,7 +13,7 @@
 
    Also here: the particle sheet (smoke puffs, crits, hearts, flames...).
 --------------------------------------------------------------------------- */
-import { ATLAS } from '../render/entitymesh.js?v=71';
+import { ATLAS } from '../render/entitymesh.js?v=72';
 
 /* ---- a little painting kit ---- */
 function rng(seed) {
