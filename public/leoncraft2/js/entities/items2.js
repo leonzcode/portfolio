@@ -511,6 +511,8 @@ export class Painting extends Entity {
     if (++this.checkT >= 20 && this.block) {
       this.checkT = 0;
       const [x, y, z] = this.block;
+      // (a wall in a chunk not loaded yet is not gone: one come in by a teleport, or handed over by a server, waits for it)
+      if (this.m.t.loaded && !this.m.t.loaded(x, z)) return;
       if (!SOLID[this.m.t.get(x, y, z)]) { this.m.dropAt(this, 'painting', 1); this.remove(); }
     }
   }

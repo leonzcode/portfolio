@@ -43,6 +43,8 @@ const PI = Math.PI;
 /* ------------------------------ worlds ------------------------------ */
 
 const WORLDS_KEY = 'lc2_worlds';
+// whether the first Leoncraft's solo world is in this browser (its key: lc1/spimport.js LC1_KEYS)
+function hasLc1Save() { try { const j = JSON.parse(localStorage.getItem('leoncraft_sp_world') || 'null'); return !!j && typeof j.seed === 'number'; } catch (e) { return false; } }
 export const Worlds = {
   list() {
     try { const a = JSON.parse(localStorage.getItem(WORLDS_KEY) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
@@ -239,7 +241,8 @@ export class TitleScreen extends Screen {
     const l = Math.floor(H / 4) + 48;
     // (the play buttons ask you to log in first: ui/account.js)
     this.add(new Button(W / 2 - 100, l, 200, 20, 'Singleplayer', () => withAccount(g, () => {
-      g.open(Worlds.list().length ? new SelectWorldScreen() : new CreateWorldScreen());
+      // (with no worlds yet the game goes straight to Create New World; a Leoncraft 1 world to bring over keeps the list, where its button is)
+      g.open(Worlds.list().length || hasLc1Save() ? new SelectWorldScreen() : new CreateWorldScreen());
     })));
     const mp = this.add(new Button(W / 2 - 100, l + 24, 200, 20, 'Multiplayer', () => withAccount(g, () => (this.hooks.multiplayer ? this.hooks.multiplayer() : g.open(new NoticeScreen('Multiplayer', 'Multiplayer is not available in Leoncraft 2 yet.'))))));
     // (offline, with only the kept session: no servers to reach)
@@ -385,10 +388,33 @@ export class SelectWorldScreen extends Screen {
         }));
     }));
     this.reB = this.add(new Button(W / 2 + 4, H - 28, 72, 20, 'Re-Create', () => { const w = this.sel(); if (w) g.open(new CreateWorldScreen({ from: w })); }));
+    /* The first Leoncraft's solo world, on this same site, in this browser (lc1/spimport.js): brought over as a new
+       world of its own. The search field makes room for the button only when there is one to bring over. */
+    if (hasLc1Save()) {
+      this.search.x = W / 2 - 154; this.search.w = 150;
+      this.lc1B = this.add(new Button(W / 2 + 4, 22, 150, 20, 'Import from Leoncraft 1', () => this.importLc1(),
+        'Make a new world from your Leoncraft 1 world: its builds, signs and paintings, its own terrain where you built'));
+    }
     this.add(new Button(W / 2 + 82, H - 28, 72, 20, 'Cancel', () => g.back()));
     this.refresh();
   }
   sel() { const e = this.list.selected; return e ? e.world : null; }
+  importLc1() {
+    if (this.importing) return;
+    this.importing = true; this.lc1B.active = false; this.lc1B.message = 'Importing...'; this.gui.markDirty();
+    const done = msg => { this.importing = false; if (this.lc1B) { this.lc1B.active = true; this.lc1B.message = 'Import from Leoncraft 1'; } this.gui.markDirty(); if (msg) this.gui.open(new NoticeScreen('Import from Leoncraft 1', msg)); };
+    import('../lc1/spimport.js?v=71').then(m => {
+      const saves = m.lc1Saves();
+      if (!saves.length) return done('There is no Leoncraft 1 world in this browser.');
+      return m.importLC1(saves[0].key, Worlds).then(r => {
+        this.selectedId = r.entry.id; this.refresh();
+        window.__lc2lc1 = r;
+        const hang = r.check.importer.length, old = r.check.lc1.length;
+        done("'" + r.entry.name + "' is in the list: " + (r.report.cells[0] + r.report.cells[1]) + ' blocks, ' + r.report.signs + ' signs, ' + r.report.paintings + ' paintings.'
+          + (old ? ' ' + old + ' things hang on nothing in Leoncraft 1 too.' : '') + (hang ? ' ' + hang + ' things could not be put back as they were.' : ''));
+      });
+    }).catch(e => { console.error('import from Leoncraft 1', e); done('That Leoncraft 1 world could not be read.'); });
+  }
   refresh() {
     const q = this.search.value.trim().toLowerCase();
     const worlds = Worlds.list().sort((a, b) => (b.lastPlayed || b.created || 0) - (a.lastPlayed || a.created || 0));
