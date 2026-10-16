@@ -10,9 +10,9 @@
    and the dye; the pattern item stays. A banner with six layers takes no
    more (a red cross). The sheet is ours (tools/leoncraft2/build_stations.py).
 --------------------------------------------------------------------------- */
-import { ContainerScreen, slot, range, TO_PLAYER } from './inventory.js?v=67';
-import { withCount } from '../items.js?v=67';
-import { isBanner, isDye, dyeOf, bannerColour, patternOfItem, LOOM_PATTERNS, MAX_LAYERS, drawFace } from '../banners.js?v=67';
+import { ContainerScreen, slot, range, TO_PLAYER } from './inventory.js?v=68';
+import { withCount } from '../items.js?v=68';
+import { isBanner, isDye, dyeOf, bannerColour, patternOfItem, LOOM_PATTERNS, MAX_LAYERS, drawFace } from '../banners.js?v=68';
 
 const LABEL_GREY = 0x404040, SHEET = 'container/loom';
 const MAIN = range(9, 36), HOT = range(0, 9);

@@ -32,12 +32,12 @@
      water or rain, Channeling calls lightning in a storm); the shield is up
      5 ticks after the button goes down, slowing you to a fifth from the start.
 --------------------------------------------------------------------------- */
-import { ITEMS, I, itemName, addCooldown } from '../items.js?v=67';
-import { wear } from '../ui/inventory.js?v=67';
-import { Living } from '../entities/entity.js?v=67';
-import { weaponOf, enchOf, enchantBonus, chargeTicks, wearPerHit, smashBonus, ARTHROPOD } from './weapons.js?v=67';
-import './trident.js?v=67';
-import { rayBox } from '../entities/terrain.js?v=67';
+import { ITEMS, I, itemName, addCooldown } from '../items.js?v=68';
+import { wear } from '../ui/inventory.js?v=68';
+import { Living } from '../entities/entity.js?v=68';
+import { weaponOf, enchOf, enchantBonus, chargeTicks, wearPerHit, smashBonus, ARTHROPOD } from './weapons.js?v=68';
+import './trident.js?v=68';
+import { rayBox } from '../entities/terrain.js?v=68';
 
 /* The spear's charge (the use button held), as the Spear page gives it, by
    material: [ticks before it works, then engaged, tired and disengaged
@@ -87,8 +87,9 @@ export class Combat {
      the manager counts ticks since the last swing (ticksSinceSwing; a new
      item in the hand starts it again). The game uses half a tick more than
      the indicator shows. */
-  cooldown() { return Math.max(0, Math.min(1, (this.m.ticksSinceSwing + 0.5) / chargeTicks(this.heldId()))); }
-  charge() { return Math.max(0, Math.min(1, this.m.ticksSinceSwing / chargeTicks(this.heldId()))); }
+  // (legacy: the old combat Hypixel plays with, set on Leon Network: every hit at full strength, no sweep)
+  cooldown() { return this.legacy ? 1 : Math.max(0, Math.min(1, (this.m.ticksSinceSwing + 0.5) / chargeTicks(this.heldId()))); }
+  charge() { return this.legacy ? 1 : Math.max(0, Math.min(1, this.m.ticksSinceSwing / chargeTicks(this.heldId()))); }
   /* what the crosshair's indicator shows: the charge while it is under 1,
      2 for the full one (a living thing in reach and an item slower than 4
      attacks a second), 1 for nothing */
@@ -135,7 +136,7 @@ export class Combat {
       && !P.sprinting && !lv(fx, 'blindness') && !lv(fx, 'slow_falling') && w.kind !== 'spear';
     if (crit) base *= 1.5;
     const mx = P.pos.x - P.prev.x, mz = P.pos.z - P.prev.z, slow = 0.1 * (1 + 0.2 * lv(fx, 'speed')) * 2.5;
-    const sweep = strong && !crit && !sprintHit && P.onGround && mx * mx + mz * mz < slow * slow && w.kind === 'sword' && !spin;
+    const sweep = strong && !crit && !sprintHit && P.onGround && mx * mx + mz * mz < slow * slow && w.kind === 'sword' && !spin && !this.legacy;
     const hp0 = e.health;
     const ok = e.hurt(base + bonus, src);
     if (!ok) { this.lastHit = { dmg: base + bonus, crit, sweep, knock: 0, cooldown: c, before: hp0, after: e.health, missed: true }; return false; }

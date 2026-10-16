@@ -27,18 +27,18 @@
    useExtra(manager, itemName, target, take, build) is the manager's last
    try at a right click (entities/manager.js useHeld).
 --------------------------------------------------------------------------- */
-import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=67';
-import { Projectile } from './projectiles.js?v=67';
-import { register, TYPES } from './mobs.js?v=67';
-import { model } from './mobs2.js?v=67';
-import { addArt } from './mobart.js?v=67';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=67';
-import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, maxDamage } from '../items.js?v=67';
-import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=67';
-import { LegacyRandom } from '../gen/random.js?v=67';
-import { fireworkColour } from '../crafting.js?v=67';
-import { rayBox } from './terrain.js?v=67';
-import { lootStack } from '../containers.js?v=67';
+import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=68';
+import { Projectile } from './projectiles.js?v=68';
+import { register, TYPES } from './mobs.js?v=68';
+import { model } from './mobs2.js?v=68';
+import { addArt } from './mobart.js?v=68';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=68';
+import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, maxDamage } from '../items.js?v=68';
+import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=68';
+import { LegacyRandom } from '../gen/random.js?v=68';
+import { fireworkColour } from '../crafting.js?v=68';
+import { rayBox } from './terrain.js?v=68';
+import { lootStack } from '../containers.js?v=68';
 const THREE = window.THREE;
 
 const PI = Math.PI;
@@ -74,6 +74,26 @@ export class EnderPearl extends Projectile {
   }
 }
 register('ender_pearl', EnderPearl);
+/* ---- Leon Network's Murder Mystery: the murderer's thrown knife. It flies straight (it neither falls nor slows) for
+   two seconds, about 30 blocks, drawn along its flight, and goes on the first block it meets; the first player it
+   reaches is told to the server as a thrown hit (net.js shotPlayer), which kills there. Our own model and picture. ---- */
+model('knife', [{ name: 'blade', pivot: [0, 24, 0], boxes: [[-0.5, -1, -8, 1, 2, 10, 0, 0], [-2, -0.5, 2, 4, 1, 1, 0, 14], [-0.5, -0.5, 3, 1, 1, 4, 0, 18]] }]);
+addArt('knife', [64, 32], p => { p.box(0, 0, 1, 2, 10, 0xd8dde2, 0.06); p.box(0, 14, 4, 1, 1, 0x3a3a3a, 0.08); p.box(0, 18, 1, 1, 4, 0x6a4a2a, 0.08); });
+export class Knife extends Projectile {
+  static W = 0.5; static H = 0.5; static MODEL = 'knife'; static TEX = 'knife';
+  constructor(m, type) { super(m, type); this.gravity = 0; this.drag = 1; }
+  rootPose(root, t, a) { root.multiply(t.makeRotationX(-(this.prevPitch + (this.pitch - this.prevPitch) * a))); }
+  skip(e) { return e === this.owner; }
+  tick() { super.tick(); if (this.life > 40 && !this.removed) this.remove(); }
+  hitEntity(e) {
+    const src = { type: 'thrown', attacker: this.owner, direct: this, x: this.pos.x - this.vel.x, z: this.pos.z - this.vel.z };
+    if (e.isPlayer) this.m.hurtPlayer(10, src); else e.hurt(10, src);
+    this.m.particles('crit', this.pos.x, this.pos.y, this.pos.z, 6, 0.2);
+    this.remove();
+  }
+  hitBlock() { this.m.particles('crit', this.pos.x, this.pos.y, this.pos.z, 4, 0.1); this.remove(); }
+}
+register('knife', Knife);
 addArt('ender_pearl', [64, 32], p => { p.box(0, 0, 4, 4, 4, 0x1e5a52, 0.12); p.speckle(0, 0, 16, 8, 0x3a8a7a, 0.3); });
 export class ExpBottle extends Projectile {
   static MODEL = 'ball'; static TEX = 'experience_bottle';
@@ -543,7 +563,7 @@ const pickW = list => { let t = 0; for (const [, w] of list) t += w; let r = R()
 // the enchantments random loot may carry (the table's and the treasure ones), in the game's order
 const ON_RANDOM_LOOT = ORDER.concat(['binding_curse', 'vanishing_curse', 'frost_walker', 'mending']);
 const BIOME_NAMES = [];
-import('../biomes.js?v=67').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
+import('../biomes.js?v=68').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
 export class FishingBobber extends Projectile {
   static W = 0.25; static H = 0.25; static MODEL = 'bobber'; static TEX = 'bobber';
   constructor(m, type) {

@@ -14,27 +14,27 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=67';
-import { I } from '../items.js?v=67';
-import { POTIONS } from '../brewing.js?v=67';
-import { ChestScreen } from '../ui/containers.js?v=67';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=67';
-import { RemotePlayers, playerSize, F } from './players.js?v=67';
-import { register } from '../commands.js?v=67';
-import { Sound } from '../sound/sound.js?v=67';
-import { RES_OVERRIDE } from '../explosion.js?v=67';
-import { skinUrl } from '../ui/skins.js?v=67';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=67';
-import { blockGeometry } from '../render/blockmesh.js?v=67';
-import { lightNear } from '../lightlevel.js?v=67';
-import { setSkin as setOwnSkin } from '../render/avatar.js?v=67';
+import { B, BLOCKS } from '../blocks.js?v=68';
+import { I } from '../items.js?v=68';
+import { POTIONS } from '../brewing.js?v=68';
+import { ChestScreen } from '../ui/containers.js?v=68';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=68';
+import { RemotePlayers, playerSize, F } from './players.js?v=68';
+import { register } from '../commands.js?v=68';
+import { Sound } from '../sound/sound.js?v=68';
+import { RES_OVERRIDE } from '../explosion.js?v=68';
+import { skinUrl } from '../ui/skins.js?v=68';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=68';
+import { blockGeometry } from '../render/blockmesh.js?v=68';
+import { lightNear } from '../lightlevel.js?v=68';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=68';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=67').then(m => {
+import('../adv/toast.js?v=68').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -470,7 +470,9 @@ export class Hub {
     // the people on the stands answer either button; what you hold in a lobby (the game menu, the way back) answers the right one
     const I2 = game.inter, use = I2.useWith.bind(I2), down = I2.down.bind(I2);
     I2.useWith = () => { if (this.clickNpc() || this.useHeld()) return true; return use(); };
-    I2.down = b => { if (b === 0 && this.clickNpc()) return; if (b === 0) this.seekerSwing(I2); down(b); };
+    // (a left click on a person opens their menu only when nothing nearer is under the crosshair: a player you are fighting in
+    //  front of a shop takes the hit)
+    I2.down = b => { if (b === 0 && !I2.entityTarget && this.clickNpc()) return; if (b === 0) this.seekerSwing(I2); down(b); };
     I2.mayBreak = (x, y, z) => this.mayBreak(x, y, z);
     I2.mayPlace = (x, y, z, b) => this.mayPlace(x, y, z, false, b);
     // the lobby's temporary blocks go down even in adventure
@@ -533,7 +535,9 @@ export class Hub {
         this.area = m.area; this.floor = m.floor; this.spawn = m.spawn; this.bounds = m.bounds || null;
         if (m.team) this.team = m.team;
         if (m.per) this.per = m.per;
-        this.gameKind = m.game || null; this.spill = !!m.spill; this.noBuild = !!m.noBuild; this.jumps = m.jumps | 0;
+        // the old combat everywhere on the network, as Hypixel plays: no attack cooldown, no sweep
+        { const C = g.entities && g.entities.combat; if (C) C.legacy = true; }
+        this.gameKind = m.game || null; this.modeId = m.mode || null; this.spill = !!m.spill; this.noBuild = !!m.noBuild; this.jumps = m.jumps | 0;
         this.hideNames = !!m.hideNames; this.role = m.role || null; this.hadBow = false; this.arrowT = 0;
         // a shared room: K starts it (startable); a late comer watches the round on there (watching)
         this.startable = !!m.startable; this.watching = !!m.watching;
@@ -895,6 +899,8 @@ export class Hub {
     // (a Prop Hunt hider picks a block with an empty hand too)
     const hider = this.area === 'game' && this.alive && this.hide && this.hide.kind === 'prophunt' && this.role === 'hider';
     if (!h && !hider) return false;
+    // Murder Mystery: the murderer throws the Knife with a right click; it comes back to the hand after 5 seconds
+    if (h && this.area === 'game' && this.alive && this.gameKind === 'murder' && this.role === 'murderer' && h.id === I.iron_sword) { this.throwKnife(); return true; }
     if (h && this.area === 'game' && this.alive) {
       const sp = specialOf(h);
       if (sp === 'fireball') { if (this.t - this.fireAt >= 10) { this.fireAt = this.t; this.launchFireball(); this.useOne(); } return true; }
@@ -962,6 +968,16 @@ export class Hub {
     return { eye: { x: P.pos.x, y: P.pos.y + (P.sneaking ? 1.27 : 1.62), z: P.pos.z }, d: { x: -Math.sin(P.yaw) * Math.cos(P.pitch), y: Math.sin(P.pitch), z: -Math.cos(P.yaw) * Math.cos(P.pitch) } };
   }
   // a fireball from your eyes the way you look: it breaks the blocks a player put down (not the map, not blast-proof glass) and throws people back
+  throwKnife() {
+    const E = this.game.entities, inv = this.game.inv, { eye, d } = this.look();
+    if (!E) return;
+    const k = E.spawn('knife', eye.x + d.x * 0.6, eye.y + d.y * 0.6 - 0.1, eye.z + d.z * 0.6, { natural: false });
+    if (!k) return;
+    k.owner = E.player; k.shoot(d.x, d.y, d.z, 1.6, 0);
+    this.knifeSlot = inv.selected; this.knifeBack = this.t + 100;
+    inv.slots[inv.selected] = null; if (inv.changed) inv.changed();
+    this.sound('entity.player.attack.sweep');
+  }
   launchFireball() {
     const E = this.game.entities, { eye, d } = this.look();
     if (!E) return;
@@ -1038,6 +1054,15 @@ export class Hub {
     const g = this.game;
     if (!g || !g.ready) return;
     this.t++;
+    // the thrown Knife back in the murderer's hand
+    if (this.knifeBack && this.t >= this.knifeBack) {
+      this.knifeBack = 0;
+      const inv = this.game.inv, s = this.knifeSlot | 0;
+      if (this.area === 'game' && this.alive && this.gameKind === 'murder' && this.role === 'murderer' && !inv.slots.some(x => x && x.id === I.iron_sword)) {
+        const at = inv.slots[s] ? inv.slots.findIndex((x, i) => i < 9 && !x) : s;
+        if (at >= 0) { inv.slots[at] = stack('iron_sword', 1, { name: '§cKnife' }); if (inv.changed) inv.changed(); }
+      }
+    }
     const P = g.player, sv = g.survival;
     // the lobby's temporary blocks never run out
     if (this.area === 'lobby' && this.t % 20 === 0) {
@@ -1079,6 +1104,8 @@ export class Hub {
     }
     // Spleef: nothing hurts but the void
     if (this.gameKind === 'spleef') { sv.health = sv.maxHealth; P.fallDistance = 0; }
+    // Sumo: nobody loses health, a hit only knocks (out of the ring is the only way to lose)
+    if (this.modeId === 'duels_sumo' && this.area === 'game') { sv.health = sv.maxHealth; P.fallDistance = 0; }
     // Build Battle: you stay over your own plot while building
     if (this.gameKind === 'buildbattle') {
       sv.health = sv.maxHealth;
@@ -1258,7 +1285,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=67', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=68', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1273,7 +1300,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=67', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=68', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1281,7 +1308,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=67', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=68', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 

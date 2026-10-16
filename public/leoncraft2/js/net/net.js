@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=67';
-import { idx, H } from '../world-const.js?v=67';
-import { DIMS, DIM_IDS } from '../dims.js?v=67';
-import { Save } from '../save.js?v=67';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=67';
-import { glints } from '../render/armor.js?v=67';
-import { containerKind } from '../containers.js?v=67';
-import { getSkinSettings } from '../render/avatar.js?v=67';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=67';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf } from '../commands.js?v=67';
-import { Y0 } from '../world-const.js?v=67';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=67';
-import { Projectile } from '../entities/projectiles.js?v=67';
-import { Combat } from '../combat/combat.js?v=67';
-import { Vehicles } from './vehicles.js?v=67';
-import { Mobs, Orbs } from './mobs.js?v=67';
-import { Events } from './events.js?v=67';
-import { EndSync } from './endfight.js?v=67';
-import { Hub } from './hub.js?v=67';
-import { Account, wsBase, httpBase } from './account.js?v=67';
-import { rankTag } from './players.js?v=67';
+import { B, BLOCKS } from '../blocks.js?v=68';
+import { idx, H } from '../world-const.js?v=68';
+import { DIMS, DIM_IDS } from '../dims.js?v=68';
+import { Save } from '../save.js?v=68';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=68';
+import { glints } from '../render/armor.js?v=68';
+import { containerKind } from '../containers.js?v=68';
+import { getSkinSettings } from '../render/avatar.js?v=68';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=68';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf } from '../commands.js?v=68';
+import { Y0 } from '../world-const.js?v=68';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=68';
+import { Projectile } from '../entities/projectiles.js?v=68';
+import { Combat } from '../combat/combat.js?v=68';
+import { Vehicles } from './vehicles.js?v=68';
+import { Mobs, Orbs } from './mobs.js?v=68';
+import { Events } from './events.js?v=68';
+import { EndSync } from './endfight.js?v=68';
+import { Hub } from './hub.js?v=68';
+import { Account, wsBase, httpBase } from './account.js?v=68';
+import { rankTag } from './players.js?v=68';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -958,7 +958,7 @@ export class Net {
     const crit = strong && P.fallDistance > 0 && !P.onGround && !P.climbing && !P.inWater && !(E.riding) && !P.flying && !P.sprinting && !fx.blindness && !fx.slow_falling && w.kind !== 'spear';
     if (crit) base *= 1.5;
     const mx = P.pos.x - P.prev.x, mz = P.pos.z - P.prev.z, slow = 0.1 * (1 + 0.2 * (fx.speed ? fx.speed.level || 1 : 0)) * 2.5;
-    const sweep = strong && !crit && !sprint && P.onGround && mx * mx + mz * mz < slow * slow && w.kind === 'sword' && !spin;
+    const sweep = strong && !crit && !sprint && P.onGround && mx * mx + mz * mz < slow * slow && w.kind === 'sword' && !spin && !C.legacy;
     const kb = enchOf(st, 'knockback') + (sprint ? 1 : 0);
     if (kb > 0) { P.vel.x *= 0.6; P.vel.z *= 0.6; P.sprinting = false; }
     const item = st && st.name ? String(st.name).slice(0, 50) : undefined;
