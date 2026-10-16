@@ -26,17 +26,17 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=61';
-import { Packs } from './pack.js?v=61';
-import { Account } from '../net/account.js?v=61';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=61';
-import { packArtSummary } from '../entities/packart.js?v=61';
-import { LanScreen } from './lan.js?v=61';
-import { parseSeed } from '../gen/random.js?v=61';
-import { SOUND_CREDITS } from '../sound/credits.js?v=61';
-import { SkinGalleryScreen, skinCredits } from './skins.js?v=61';
-import { FlatCustomizeScreen } from './flat.js?v=61';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=61';
+} from './gui.js?v=62';
+import { Packs } from './pack.js?v=62';
+import { Account } from '../net/account.js?v=62';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=62';
+import { packArtSummary } from '../entities/packart.js?v=62';
+import { LanScreen } from './lan.js?v=62';
+import { parseSeed } from '../gen/random.js?v=62';
+import { SOUND_CREDITS } from '../sound/credits.js?v=62';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=62';
+import { FlatCustomizeScreen } from './flat.js?v=62';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=62';
 
 const PI = Math.PI;
 
@@ -712,9 +712,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=61';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=61';
-import { minimapButtons } from './minimap.js?v=61';
+export { VideoSettingsScreen } from './video.js?v=62';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=62';
+import { minimapButtons } from './minimap.js?v=62';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -1019,7 +1019,14 @@ const CREDITS = [
   ['Leon Network\'s Prop Hunt map, Hillside: from "Hide and Seek Minigame"'], ['by Tert, GNU GPL version 3 (joined, cut and changed for the game).'],
   ['curseforge.com/minecraft/worlds/hide-and-seek-minigame', 0, 'https://www.curseforge.com/minecraft/worlds/hide-and-seek-minigame'],
   ['gnu.org/licenses/gpl-3.0', 0, 'https://www.gnu.org/licenses/gpl-3.0.html'],
-  ['Every other Leon Network map is our own.'], [''],
+  ['Leon Network\'s maps from CurseForge, cut and converted for the game:'],
+  ['Prop Hunt: Frost, End, Nether and Desert Arena, from "Prop Hunt: 4'], ['Themed Arena" by seaboiii, Public Domain.'],
+  ['Murder Mystery: Bread Hotel, from "Murder Mystery Hotel" by'], ['bread4tabread (MIT); Botello Manor, from "SoS: The Botello Manor"'],
+  ['by GreatOrator (MIT); Modern House, from "Ultra Modern House" by'], ['JobKay (Public Domain); Houseville, by noxgame1230 (ISC).'],
+  ['Chameleon: Japanese Garden by RodAnfatine (MIT); Color Run'], ['(Public Domain); Port Town, from "Medieval Port City" by'],
+  ['ForgiaDeiBuilder (MIT); Glasshouse, from "Cherry Island City Map"'], ['by ridiche, CC BY 4.0 (adapted, shared under the same licence).'],
+  ['creativecommons.org/licenses/by/4.0', 0, 'https://creativecommons.org/licenses/by/4.0/'],
+  ['The rest of Leon Network\'s maps are our own.'], [''],
   ['Code', 0xFFFF55],
   ['three.js, MIT License'],
   ['threejs.org', 0, 'https://threejs.org/'],

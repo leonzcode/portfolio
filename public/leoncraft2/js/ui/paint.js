@@ -2,16 +2,16 @@
    Leoncraft 2 - Chameleon's paint (Leon Network, net/hub.js).
 
    A hider paints their own skin to blend into the map, as in the hide and
-   seek painting games: the figure from the front and from behind, a palette,
-   a brush and a fill for a whole body part. In the world, the Colour Picker
+   seek painting games, on a figure in 3D in the first Leoncraft's skin
+   editor's way (PaintScreen). In the world, the Colour Picker
    takes a block's colour and the Block Stamp covers you in a block's own
    picture. The skin is a 64 x 64 canvas made from the one you wear (the old
    64 x 32 layout made whole, the outer layer cleared so the paint shows);
    each change is put on your model and sent to everyone as your skin for the
    game only (net.skinOverride), never kept as your skin setting.
 --------------------------------------------------------------------------- */
-import { Screen, Button, WHITE, GREY } from './gui.js?v=61';
-import { BLOCKS } from '../blocks.js?v=61';
+import { Screen, Button, WHITE, GREY } from './gui.js?v=62';
+import { BLOCKS } from '../blocks.js?v=62';
 
 // the skin's parts in the 64 x 64 layout: every face of each, base layer only
 export const PARTS = {
@@ -20,23 +20,6 @@ export const PARTS = {
 };
 // the outer layer (hat, jacket, sleeves, trousers): cleared for painting
 const OUTER = [[32, 0, 64, 16], [16, 32, 40, 48], [40, 32, 56, 48], [0, 32, 16, 48], [48, 48, 64, 64], [0, 48, 16, 64]];
-
-/* The figure as drawn on the screen, 16 x 32 a view: which skin pixel each of
-   its pixels is (front: the right arm and leg on the viewer's left; back: the
-   left ones are), and which part it belongs to. */
-function texAt(back, fx, fy) {
-  if (fy < 8) return fx >= 4 && fx < 12 ? [back ? 24 + fx - 4 : 8 + fx - 4, 8 + fy, 'head'] : null;
-  if (fy < 20) {
-    const y = fy - 8;
-    if (fx < 4) return back ? [44 + fx, 52 + y, 'larm'] : [44 + fx, 20 + y, 'rarm'];
-    if (fx < 12) return [back ? 32 + fx - 4 : 20 + fx - 4, 20 + y, 'body'];
-    return back ? [52 + fx - 12, 20 + y, 'rarm'] : [36 + fx - 12, 52 + y, 'larm'];
-  }
-  const y = fy - 20;
-  if (fx < 4 || fx >= 12) return null;
-  if (fx < 8) return back ? [28 + fx - 4, 52 + y, 'lleg'] : [4 + fx - 4, 20 + y, 'rleg'];
-  return back ? [12 + fx - 8, 20 + y, 'rleg'] : [20 + fx - 8, 52 + y, 'lleg'];
-}
 
 /* A skin (url or image) as a 64 x 64 canvas: the old layout's left arm and
    leg made from the right ones, the outer layer cleared. */
@@ -69,7 +52,7 @@ function terrain() {
   TERRAIN = { data: null };
   const im = new Image();
   im.onload = () => { const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const x = c.getContext('2d'); x.drawImage(im, 0, 0); TERRAIN.data = x.getImageData(0, 0, im.width, im.height); };
-  im.src = new URL('../../textures/terrain_albedo.png?v=61', import.meta.url).href;
+  im.src = new URL('../../textures/terrain_albedo.png?v=62', import.meta.url).href;
   return TERRAIN;
 }
 terrain();
@@ -101,21 +84,69 @@ export function faceColour(id, face) {
   return n ? (Math.round(r / n) << 16) | (Math.round(g / n) << 8) | Math.round(b / n) : null;
 }
 
-/* The painter: the canvas being painted and the colour in hand. apply() is
-   called after each change (it puts the skin on your model and sends it). */
+/* The painter: the canvas being painted, the colour in hand and the brush.
+   apply() is called after each change (it puts the skin on your model and
+   sends it). Every stroke, fill, stamp and start again can be undone. */
 export class Painter {
-  constructor(apply) { this.canvas = null; this.colour = 0x6B8E23; this.recent = []; this.apply = apply; this.base = null; }
+  constructor(apply) { this.canvas = null; this.colour = 0x6B8E23; this.recent = []; this.apply = apply; this.base = null; this.size = 1; this.grain = false; this.undos = []; }
   async start(url) { this.canvas = await loadSkin64(url); if (this.canvas) { this.base = document.createElement('canvas'); this.base.width = this.base.height = 64; this.base.getContext('2d').drawImage(this.canvas, 0, 0); this.apply(this.canvas); } }
-  ctx() { return this.canvas && this.canvas.getContext('2d'); }
+  ctx() { return this.canvas && this.canvas.getContext('2d', { willReadFrequently: true }); }
   setColour(c) { if (c === null || c === undefined) return; this.colour = c; this.recent = [c].concat(this.recent.filter(x => x !== c)).slice(0, 8); }
   css(c) { return '#' + c.toString(16).padStart(6, '0'); }
-  dot(tx, ty) { const x = this.ctx(); if (!x) return; x.fillStyle = this.css(this.colour); x.fillRect(tx, ty, 1, 1); }
-  fill(part) { const x = this.ctx(), r = PARTS[part]; if (!x || !r) return; x.fillStyle = this.css(this.colour); x.fillRect(r[0], r[1], r[2] - r[0], r[3] - r[1]); }
-  reset() { const x = this.ctx(); if (!x || !this.base) return; x.clearRect(0, 0, 64, 64); x.drawImage(this.base, 0, 0); this.apply(this.canvas); }
+  // kept before each change, 40 at most
+  snapshot() { const x = this.ctx(); if (!x) return; this.undos.push(x.getImageData(0, 0, 64, 64)); if (this.undos.length > 40) this.undos.shift(); }
+  undo() { const x = this.ctx(), u = this.undos.pop(); if (!x || !u) return false; x.putImageData(u, 0, 0); this.apply(this.canvas); return true; }
+  // the colour for one pixel: with Grain on, each a little lighter or darker, as a block's picture is
+  shade() {
+    const c = this.colour;
+    if (!this.grain) return this.css(c);
+    const d = Math.round((Math.random() * 2 - 1) * 14), j = () => Math.round((Math.random() * 2 - 1) * 4);
+    const ch = (v, k) => Math.max(0, Math.min(255, v + d + k));
+    return 'rgb(' + ch(c >> 16 & 255, j()) + ',' + ch(c >> 8 & 255, j()) + ',' + ch(c & 255, j()) + ')';
+  }
+  // the brush's square at a skin pixel, kept inside the side of the part it is on (rect: that side's [x, y, w, h])
+  dot(tx, ty, rect) {
+    const x = this.ctx(); if (!x) return;
+    const n = this.size | 0 || 1, o = Math.floor((n - 1) / 2);
+    for (let dy = 0; dy < n; dy++) for (let dx = 0; dx < n; dx++) {
+      const px = tx - o + dx, py = ty - o + dy;
+      if (rect && (px < rect[0] || py < rect[1] || px >= rect[0] + rect[2] || py >= rect[1] + rect[3])) continue;
+      x.fillStyle = this.shade(); x.fillRect(px, py, 1, 1);
+    }
+  }
+  // a whole body part (every side of it)
+  fill(part) {
+    const x = this.ctx(), r = PARTS[part]; if (!x || !r) return;
+    if (!this.grain) { x.fillStyle = this.css(this.colour); x.fillRect(r[0], r[1], r[2] - r[0], r[3] - r[1]); return; }
+    for (let y = r[1]; y < r[3]; y++) for (let xx = r[0]; xx < r[2]; xx++) { x.fillStyle = this.shade(); x.fillRect(xx, y, 1, 1); }
+  }
+  // the bucket: the touching pixels of about the clicked one's colour, on that side of the part only
+  flood(tx, ty, rect) {
+    const x = this.ctx(); if (!x || !rect) return;
+    const [rx, ry, rw, rh] = rect, img = x.getImageData(rx, ry, rw, rh), d = img.data;
+    const si = ((ty - ry) * rw + (tx - rx)) * 4, sr = d[si], sg = d[si + 1], sb = d[si + 2], sa = d[si + 3];
+    const seen = new Uint8Array(rw * rh), stack = [[tx - rx, ty - ry]], TOL = 55;
+    while (stack.length) {
+      const [qx, qy] = stack.pop();
+      if (qx < 0 || qy < 0 || qx >= rw || qy >= rh) continue;
+      const p = qy * rw + qx; if (seen[p]) continue;
+      const i = p * 4;
+      if (Math.abs(d[i] - sr) + Math.abs(d[i + 1] - sg) + Math.abs(d[i + 2] - sb) + Math.abs(d[i + 3] - sa) > TOL) continue;
+      seen[p] = 1;
+      const c = this.grain ? this.shade().match(/\d+/g).map(Number) : [this.colour >> 16 & 255, this.colour >> 8 & 255, this.colour & 255];
+      d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
+      stack.push([qx + 1, qy], [qx - 1, qy], [qx, qy + 1], [qx, qy - 1]);
+    }
+    x.putImageData(img, rx, ry);
+  }
+  // the colour of a skin pixel
+  pick(tx, ty) { const x = this.ctx(); if (!x) return null; const d = x.getImageData(tx, ty, 1, 1).data; return d[3] < 20 ? null : (d[0] << 16) | (d[1] << 8) | d[2]; }
+  reset() { const x = this.ctx(); if (!x || !this.base) return; this.snapshot(); x.clearRect(0, 0, 64, 64); x.drawImage(this.base, 0, 0); this.apply(this.canvas); }
   // the block's picture over every part, tiled from each part's corner
   stamp(id, face) {
     const px = facePixels(id, face), x = this.ctx();
     if (!px || !x) return false;
+    this.snapshot();
     const img = x.getImageData(0, 0, 64, 64);
     for (const r of Object.values(PARTS)) for (let ty = r[1]; ty < r[3]; ty++) for (let tx = r[0]; tx < r[2]; tx++) {
       const p = px[((ty - r[1]) % 16) * 16 + ((tx - r[0]) % 16)], i = (ty * 64 + tx) * 4;
@@ -128,82 +159,198 @@ export class Painter {
   }
 }
 
+/* ---- colours ---- */
 const PALETTE = [0xF9FFFE, 0x9D9D97, 0x474F52, 0x1D1D21, 0xB02E26, 0xF9801D, 0xFED83D, 0x80C71F, 0x5E7C16, 0x169C9C, 0x3AB3DA, 0x3C44AA, 0x8932B8, 0xC74EBD, 0xF38BAA, 0x835432];
+function toHsv(c) {
+  const r = (c >> 16 & 255) / 255, g = (c >> 8 & 255) / 255, b = (c & 255) / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [((h / 6) + 1) % 1, mx ? d / mx : 0, mx];
+}
+function fromHsv(h, s, v) {
+  const i = Math.floor(h * 6) % 6, f = h * 6 - Math.floor(h * 6), p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+  const [r, g, b] = [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][i];
+  return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
+}
 
+
+/* The paint screen, in the first Leoncraft's Mecha Chameleon way: you stay in
+   the world, the camera swings round you, and you paint the body you are
+   standing in against what is really behind it. A bar along the bottom holds
+   the colour wells, the tools (Brush, Bucket, Pick, Part), the brush sizes 1
+   to 3, a colour square and hue strip for any colour, Grain, Undo (or Ctrl+Z)
+   and Start Again. Left-drag on yourself paints; left-drag anywhere else, or
+   right-drag, swings the camera; the wheel (or 9 and 0) zooms. Pick takes a
+   colour from your skin or from the exact pixel of a block in the world.
+   ctx: { renderer, world, player }. */
+const TOOLS = [['brush', 'Brush', 'Drag across yourself to paint'], ['bucket', 'Bucket', 'Fill the touching pixels of one colour, on that side of a part'],
+  ['drop', 'Pick', 'Click yourself or any block to take its colour'], ['part', 'Part', 'Paint a whole body part']];
+const PART_NAMES = ['head', 'body', 'rarm', 'larm', 'rleg', 'lleg'];
 export class PaintScreen extends Screen {
-  constructor(painter) { super('Paint Yourself'); this.p = painter; this.tool = 'brush'; this.dirty = false; }
-  init() {
-    const W = this.width, H = this.height, g = this.gui;
-    this.k = Math.max(2, Math.min(5, Math.floor((H - 64) / 32)));
-    this.fy = 26; this.fx0 = Math.floor(W / 2) - 16 * this.k - 70; this.fx1 = this.fx0 + 16 * this.k + 8;
-    this.px = this.fx1 + 16 * this.k + 14;
-    const bx = this.px;
-    this.brushB = this.add(new Button(bx, this.fy + 74, 70, 20, 'Brush', () => { this.tool = 'brush'; }));
-    this.fillB = this.add(new Button(bx + 72, this.fy + 74, 70, 20, 'Fill Part', () => { this.tool = 'fill'; }, 'Click a body part to paint all of it'));
-    this.add(new Button(bx, this.fy + 98, 142, 20, 'Start Again', () => this.p.reset(), 'Back to how you looked when the game began'));
-    this.add(new Button(W / 2 - 100, H - 26, 200, 20, 'Done', () => g.back()));
+  constructor(painter, ctx) {
+    super('Paint Yourself');
+    this.p = painter; this.ctx = ctx || {}; this.tool = 'brush'; this.dirty = false; this.drag = null;
+    this.hsv = toHsv(painter.colour); this.background = 'none';
+    const A = this.A, P = this.ctx.player;
+    // the camera in front of you, a little above
+    if (A) A.orbit = { yaw: (P ? P.yaw : 0) + Math.PI, pitch: 0.18, dist: 2.8 };
   }
-  figureAt(mx, my) {
-    for (const [back, x0] of [[false, this.fx0], [true, this.fx1]]) {
-      const fx = Math.floor((mx - x0) / this.k), fy = Math.floor((my - this.fy) / this.k);
-      if (fx < 0 || fx >= 16 || fy < 0 || fy >= 32) continue;
-      return texAt(back, fx, fy);
+  get A() { return this.ctx.renderer && this.ctx.renderer.avatar; }
+  init() {
+    const W = this.width, H = this.height, g = this.gui, P = this.p;
+    // the bar: wells and the colour square on top, tools and sizes under them, then Grain, Undo, Start Again, Done
+    const BW = 300; this.bx = Math.floor((W - BW) / 2); this.by = H - 70; this.bw = BW;
+    const x0 = this.bx + 4, y1 = this.by + 22, y2 = this.by + 44;
+    this.tools = TOOLS.map(([name, label, tip], i) => { const b = this.add(new Button(x0 + 18 + i * 44, y1, 42, 18, label, () => { this.tool = name; }, tip)); b.tool = name; return b; });
+    this.sizes = [1, 2, 3].map((n, i) => { const b = this.add(new Button(x0 + 198 + i * 14, y1, 13, 18, String(n), () => { P.size = n; }, 'Brush size')); b.size = n; return b; });
+    this.grainB = this.add(new Button(x0, y2, 58, 20, 'Grain: ' + (P.grain ? 'On' : 'Off'), () => { P.grain = !P.grain; this.grainB.message = 'Grain: ' + (P.grain ? 'On' : 'Off'); }, 'Each pixel a little lighter or darker, like the pictures of blocks'));
+    this.undoB = this.add(new Button(x0 + 60, y2, 50, 20, 'Undo', () => { if (P.undo()) this.live(); }, 'Ctrl+Z'));
+    this.add(new Button(x0 + 112, y2, 72, 20, 'Start Again', () => { P.reset(); this.live(); }, 'Back to how you looked when the game began'));
+    this.add(new Button(x0 + 186, y2, 52, 20, 'Done', () => g.back()));
+  }
+  get sv() { return [this.bx + this.bw - 58, this.by + 4, 44, 62]; }
+  get hue() { return [this.bx + this.bw - 12, this.by + 4, 8, 62]; }
+  well(i) { return [this.bx + 22 + i * 11, this.by + 6, 10, 10]; }
+  inBox(r, mx, my) { return mx >= r[0] && my >= r[1] && mx < r[0] + r[2] && my < r[1] + r[3]; }
+  inBar(mx, my) { return mx >= this.bx && mx < this.bx + this.bw && my >= this.by; }
+  // the paint on your body now (the server hears of it when you let go)
+  live() { const A = this.A; if (A && this.p.canvas) A.setSkin(this.p.canvas, false); this.gui.markDirty(); }
+  ray(mx, my) {
+    const R = this.ctx.renderer, cam = R && R.camera, THREE = window.THREE;
+    if (!cam || !THREE) return null;
+    const rc = this._rc || (this._rc = new THREE.Raycaster());
+    rc.setFromCamera(new THREE.Vector2(mx / this.width * 2 - 1, -(my / this.height * 2 - 1)), cam);
+    return rc.ray;
+  }
+  bodyAt(mx, my) { const r = this.ray(mx, my), A = this.A; return r && A && A.skinHit ? A.skinHit(r.origin, r.direction) : null; }
+  // the pixel of the first block the ray meets, as the world shows it
+  blockColourAt(mx, my) {
+    const r = this.ray(mx, my), w = this.ctx.world;
+    if (!r || !w) return null;
+    const o = r.origin, d = r.direction;
+    let x = Math.floor(o.x), y = Math.floor(o.y), z = Math.floor(o.z), face = 2, t = 0;
+    const sx = d.x > 0 ? 1 : -1, sy = d.y > 0 ? 1 : -1, sz = d.z > 0 ? 1 : -1;
+    const tdx = d.x ? Math.abs(1 / d.x) : Infinity, tdy = d.y ? Math.abs(1 / d.y) : Infinity, tdz = d.z ? Math.abs(1 / d.z) : Infinity;
+    let tx = d.x ? (d.x > 0 ? x + 1 - o.x : o.x - x) * tdx : Infinity, ty = d.y ? (d.y > 0 ? y + 1 - o.y : o.y - y) * tdy : Infinity, tz = d.z ? (d.z > 0 ? z + 1 - o.z : o.z - z) * tdz : Infinity;
+    for (let n = 0; n < 200; n++) {
+      if (tx < ty && tx < tz) { x += sx; t = tx; tx += tdx; face = sx > 0 ? 1 : 0; } else if (ty < tz) { y += sy; t = ty; ty += tdy; face = sy > 0 ? 3 : 2; } else { z += sz; t = tz; tz += tdz; face = sz > 0 ? 5 : 4; }
+      const b = w.get(x, y, z);
+      if (!b || !BLOCKS[b] || BLOCKS[b].name === 'barrier') continue;
+      const px = facePixels(b, face);
+      if (!px) return faceColour(b, face);
+      const hx = o.x + d.x * t - x, hy = o.y + d.y * t - y, hz = o.z + d.z * t - z;
+      // where on the face's picture: across and down as the face is seen from outside
+      const fr = v => Math.max(0, Math.min(15, Math.floor(v * 16)));
+      const uv = face === 2 ? [hx, hz] : face === 3 ? [hx, 1 - hz] : face === 0 ? [1 - hz, 1 - hy] : face === 1 ? [hz, 1 - hy] : face === 4 ? [hx, 1 - hy] : [1 - hx, 1 - hy];
+      const q = px[fr(uv[1]) * 16 + fr(uv[0])];
+      if (q[3] < 100) return faceColour(b, face);
+      return (Math.round(q[0]) << 16) | (Math.round(q[1]) << 8) | Math.round(q[2]);
     }
     return null;
   }
-  paintAt(mx, my) {
-    const t = this.figureAt(mx, my);
-    if (!t) return false;
-    if (this.tool === 'fill') this.p.fill(t[2]); else this.p.dot(t[0], t[1]);
-    this.dirty = true; this.gui.markDirty();
-    return true;
+  pickSv(mx, my) {
+    const r = this.sv, s = Math.max(0, Math.min(1, (mx - r[0]) / (r[2] - 1))), v = Math.max(0, Math.min(1, 1 - (my - r[1]) / (r[3] - 1)));
+    this.hsv = [this.hsv[0], s, v]; this.p.colour = fromHsv(this.hsv[0], s, v); this.gui.markDirty();
   }
-  paletteAt(mx, my) {
-    const s = 14;
-    for (let i = 0; i < 16; i++) { const x = this.px + (i % 8) * s, y = this.fy + 18 + Math.floor(i / 8) * s; if (mx >= x && mx < x + s - 2 && my >= y && my < y + s - 2) return PALETTE[i]; }
-    for (let i = 0; i < this.p.recent.length; i++) { const x = this.px + i * s, y = this.fy + 54; if (mx >= x && mx < x + s - 2 && my >= y && my < y + s - 2) return this.p.recent[i]; }
-    return null;
+  pickHue(my) {
+    const r = this.hue, h = Math.max(0, Math.min(0.999, (my - r[1]) / r[3]));
+    this.hsv = [h, this.hsv[1] || 1, this.hsv[2] || 1]; this.p.colour = fromHsv(h, this.hsv[1], this.hsv[2]); this.gui.markDirty();
+  }
+  setColour(c) { if (c === null || c === undefined) return; this.p.setColour(c); this.hsv = toHsv(c); this.gui.markDirty(); }
+  // the tool at a body pixel
+  use(h, first) {
+    const P = this.p;
+    if (first) P.snapshot();
+    if (this.tool === 'bucket') { if (first) P.flood(h.tx, h.ty, h.rect); }
+    else if (this.tool === 'part') { if (first) P.fill(PART_NAMES[h.part]); }
+    else P.dot(h.tx, h.ty, h.rect);
+    this.dirty = true; this.live();
   }
   mouseClicked(mx, my, button) {
     const hit = super.mouseClicked(mx, my, button);
     if (hit) return hit;
-    const c = this.paletteAt(mx, my);
-    if (c !== null) { this.p.setColour(c); this.gui.markDirty(); return true; }
-    if (this.paintAt(mx, my)) { this.painting = true; return true; }
-    return null;
-  }
-  mouseDragged(mx, my, button) { if (this.painting && this.tool === 'brush') this.paintAt(mx, my); else super.mouseDragged(mx, my, button); }
-  mouseReleased(mx, my, button) { this.painting = false; if (this.dirty) { this.dirty = false; this.p.apply(this.p.canvas); } super.mouseReleased(mx, my, button); }
-  onClose() { if (this.dirty) { this.dirty = false; this.p.apply(this.p.canvas); } }
-  render(g, mx, my, dt) {
-    super.render(g, mx, my, dt);
-    g.centered(this.title, this.width / 2, 8, WHITE);
-    const c = g.ctx, sm = c.imageSmoothingEnabled, P = this.p, k = this.k;
-    // the two figures, pixel by pixel from the canvas
-    const img = P.canvas && P.canvas.getContext('2d').getImageData(0, 0, 64, 64).data;
-    for (const [back, x0] of [[false, this.fx0], [true, this.fx1]]) {
-      g.fill(x0 - 2, this.fy - 2, x0 + 16 * k + 2, this.fy + 32 * k + 2, 0x60000000);
-      if (!img) continue;
-      for (let fy = 0; fy < 32; fy++) for (let fx = 0; fx < 16; fx++) {
-        const t = texAt(back, fx, fy);
-        if (!t) continue;
-        const i = (t[1] * 64 + t[0]) * 4;
-        if (img[i + 3] < 20) continue;
-        c.fillStyle = 'rgb(' + img[i] + ',' + img[i + 1] + ',' + img[i + 2] + ')';
-        c.fillRect(x0 + fx * k, this.fy + fy * k, k, k);
-      }
-      g.centered(back ? 'Back' : 'Front', x0 + 8 * k, this.fy + 32 * k + 4, GREY);
+    if (button === 0) {
+      for (let i = 0; i < PALETTE.length; i++) if (this.inBox(this.well(i), mx, my)) { this.setColour(PALETTE[i]); return true; }
+      if (this.inBox(this.sv, mx, my)) { this.drag = 'sv'; this.pickSv(mx, my); return true; }
+      if (this.inBox(this.hue, mx, my)) { this.drag = 'hue'; this.pickHue(my); return true; }
     }
-    c.imageSmoothingEnabled = sm;
-    // the colour in hand, the palette, the recent colours
-    g.text('Colour', this.px, this.fy, GREY);
-    g.fill(this.px + 40, this.fy - 1, this.px + 60, this.fy + 9, 0xFF000000 | P.colour);
-    const s = 14;
-    PALETTE.forEach((col, i) => { const x = this.px + (i % 8) * s, y = this.fy + 18 + Math.floor(i / 8) * s; g.fill(x, y, x + s - 2, y + s - 2, 0xFF000000 | col); if (col === P.colour) g.fill(x, y + s - 3, x + s - 2, y + s - 2, 0xFFFFFFFF); });
-    g.text('Recent', this.px, this.fy + 46, GREY);
-    P.recent.forEach((col, i) => { const x = this.px + i * s, y = this.fy + 54; g.fill(x, y, x + s - 2, y + s - 2, 0xFF000000 | col); });
-    this.brushB.active = this.tool !== 'brush'; this.fillB.active = this.tool !== 'fill';
-    const help = ['Colour Picker: right click a block', 'to take its colour.', 'Block Stamp: right click a block', 'to cover yourself in it.'];
-    help.forEach((l, i) => g.text(l, this.px, this.fy + 124 + i * 10, GREY));
+    if (this.inBar(mx, my)) return true;
+    this.lx = mx; this.ly = my;
+    if (button !== 0) { this.drag = 'turn'; return true; }
+    const h = this.bodyAt(mx, my);
+    if (this.tool === 'drop') {
+      const c = h ? this.p.pick(h.tx, h.ty) : this.blockColourAt(mx, my);
+      if (c !== null) { this.setColour(c); this.tool = 'brush'; }
+      return true;
+    }
+    if (h) { this.drag = 'paint'; this.use(h, true); } else this.drag = 'turn';
+    return true;
+  }
+  mouseDragged(mx, my, button) {
+    if (this.drag === 'paint') { if (this.tool === 'brush') { const h = this.bodyAt(mx, my); if (h) this.use(h, false); } return; }
+    if (this.drag === 'turn') {
+      const O = this.A && this.A.orbit;
+      if (O) { O.yaw -= (mx - this.lx) * 0.02; O.pitch = Math.max(-1.2, Math.min(1.35, O.pitch + (my - this.ly) * 0.015)); }
+      this.lx = mx; this.ly = my; return;
+    }
+    if (this.drag === 'sv') { this.pickSv(mx, my); return; }
+    if (this.drag === 'hue') { this.pickHue(my); return; }
+    super.mouseDragged(mx, my, button);
+  }
+  mouseReleased(mx, my, button) {
+    if (this.drag === 'sv' || this.drag === 'hue') this.p.setColour(this.p.colour);
+    this.drag = null;
+    if (this.dirty) { this.dirty = false; this.p.apply(this.p.canvas); }
+    super.mouseReleased(mx, my, button);
+  }
+  mouseScrolled(mx, my, d) {
+    const O = this.A && this.A.orbit;
+    if (!O || this.inBar(mx, my)) return super.mouseScrolled(mx, my, d);
+    O.dist = Math.max(1.2, Math.min(7, O.dist * (d > 0 ? 1 / 1.15 : 1.15)));
+    return true;
+  }
+  keyPressed(e) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { if (this.p.undo()) this.live(); return true; }
+    // 9 and 0 zoom, as in the first Leoncraft
+    const O = this.A && this.A.orbit;
+    if (O && (e.key === '9' || e.key === '0')) { O.dist = Math.max(1.2, Math.min(7, O.dist * (e.key === '9' ? 1 / 1.15 : 1.15))); return true; }
+    return super.keyPressed(e);
+  }
+  onClose() {
+    if (this.dirty) { this.dirty = false; this.p.apply(this.p.canvas); }
+    const A = this.A;
+    if (A) A.orbit = null;
+  }
+  render(g, mx, my, dt) {
+    const c = g.ctx, P = this.p, x0 = this.bx;
+    this.animates = true;
+    for (const b of this.tools) b.active = this.tool !== b.tool;
+    for (const b of this.sizes) b.active = P.size !== b.size;
+    this.undoB.active = P.undos.length > 0;
+    // the bar
+    g.fill(x0, this.by, x0 + this.bw, this.height, 0xC80A0E0A);
+    g.fill(x0, this.by, x0 + this.bw, this.by + 1, 0x5A78C878);
+    // the colour in hand, the wells (the one in hand raised, as LC1 had it)
+    g.fill(x0 + 4, this.by + 4, x0 + 18, this.by + 18, 0xFF000000); g.fill(x0 + 5, this.by + 5, x0 + 17, this.by + 17, 0xFF000000 | P.colour);
+    PALETTE.forEach((col, i) => { const [x, y, w, h] = this.well(i), on = col === P.colour; g.fill(x, y - (on ? 3 : 0), x + w, y + h - (on ? 3 : 0), 0xFF000000 | col); if (on) g.fill(x, y + h - 2, x + w, y + h - 1, 0xFFF2E37A); });
+    // any colour: saturation across, brightness down, the hue strip beside it
+    const [sx, sy, sw, sh] = this.sv, [hx, hy, hw, hh] = this.hue, [H0, S0, V0] = this.hsv;
+    c.fillStyle = '#' + fromHsv(H0, 1, 1).toString(16).padStart(6, '0'); c.fillRect(sx, sy, sw, sh);
+    let gr = c.createLinearGradient(sx, 0, sx + sw, 0); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = gr; c.fillRect(sx, sy, sw, sh);
+    gr = c.createLinearGradient(0, sy, 0, sy + sh); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,1)'); c.fillStyle = gr; c.fillRect(sx, sy, sw, sh);
+    gr = c.createLinearGradient(0, hy, 0, hy + hh);
+    ['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ff0000'].forEach((col, i) => gr.addColorStop(i / 6, col));
+    c.fillStyle = gr; c.fillRect(hx, hy, hw, hh);
+    const kx = Math.round(sx + S0 * (sw - 1)), ky = Math.round(sy + (1 - V0) * (sh - 1));
+    g.fill(kx - 2, ky - 2, kx + 3, ky - 1, 0xFFF2E37A); g.fill(kx - 2, ky + 2, kx + 3, ky + 3, 0xFFF2E37A); g.fill(kx - 2, ky - 1, kx - 1, ky + 2, 0xFFF2E37A); g.fill(kx + 2, ky - 1, kx + 3, ky + 2, 0xFFF2E37A);
+    const hyk = Math.round(hy + H0 * hh); g.fill(hx - 1, hyk - 1, hx + hw + 1, hyk + 1, 0xFFF2E37A);
+    super.render(g, mx, my, dt);
+    g.centered('Drag on yourself to paint, beside you to turn, scroll to zoom', this.width / 2, this.by - 21, 0xCDF5CD); g.centered('Pick takes a colour from you or any block - Esc when done', this.width / 2, this.by - 11, 0xCDF5CD);
+    // the brush under the pointer, in the colour it paints (ours, so it is exactly where the paint goes)
+    if (!this.inBar(mx, my) && this.drag !== 'turn') {
+      const n = this.tool === 'brush' ? 2 + P.size * 2 : 4;
+      g.fill(mx - n - 1, my - n - 1, mx + n + 1, my + n + 1, 0xFF000000);
+      g.fill(mx - n, my - n, mx + n, my + n, this.tool === 'drop' ? 0xFFFFFFFF : 0xFF000000 | P.colour);
+    }
   }
 }

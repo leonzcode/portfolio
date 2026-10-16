@@ -44,16 +44,16 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { VANILLA, AVATAR_FS } from './vanilla.js?v=61';
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=61';
-import { lightDefines } from './materials.js?v=61';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=61';
-import { H, idx } from '../world-const.js?v=61';
-import { lightNear } from '../lightlevel.js?v=61';
-import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=61';
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=61';
-import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=61';
-import { setGlint } from './glint.js?v=61';
+import { VANILLA, AVATAR_FS } from './vanilla.js?v=62';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=62';
+import { lightDefines } from './materials.js?v=62';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=62';
+import { H, idx } from '../world-const.js?v=62';
+import { lightNear } from '../lightlevel.js?v=62';
+import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=62';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=62';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=62';
+import { setGlint } from './glint.js?v=62';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -64,7 +64,7 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=61', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=62', import.meta.url).href;
 // the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
 let defaultSkin = DEFAULT_SKIN;
 
@@ -523,7 +523,7 @@ export class Avatar {
     this.cache = new Array(9).fill(null); this.cacheX = 1e9; this.cacheZ = 1e9; this.world = null;
     // scratch
     this.m = new THREE.Matrix4(); this.t = new THREE.Matrix4(); this.root = new THREE.Matrix4();
-    this.e = new THREE.Euler(); this.handPos = new THREE.Vector3(); this.vs = new THREE.Vector3(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE);
+    this.e = new THREE.Euler(); this.handPos = new THREE.Vector3(); this.vs = new THREE.Vector3(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE); this.size = 1; this.sizeV = new THREE.Vector3(1, 1, 1);
     if (remote) this.setSkin(defaultSkin, false).catch(() => {});
     else this.setSkin(settings.skin || defaultSkin, settings.slim === null ? undefined : settings.slim).catch(() => this.setSkin(defaultSkin, false));
   }
@@ -759,7 +759,8 @@ export class Avatar {
     this.sky += (this.skyLv / 15 - this.sky) * k; this.block += ((this.burning ? 15 : this.blockLv) / 15 - this.block) * k;
     this.uLight.value.set(this.sky, this.block);
     this.posed(P, al, feet);
-    const third = this.view !== 0 && this.ready;
+    // (hidden: drawn as something else, a Prop Hunt disguise)
+    const third = (this.view !== 0 || !!this.orbit) && this.ready && !this.hidden;
     this.mesh.visible = third;
     this.shadowMesh.visible = this.ready;
     // the armour, its pictures taken up again whenever another file has landed in the sheet
@@ -774,7 +775,7 @@ export class Avatar {
     }
     // in third person the light in your hand is where the model's hand is (the renderer reads state.handPos)
     if (third && !state.handPos) state.handPos = this.handPos.set(-1, -10, 0).applyMatrix4(this.parts[2]);
-    if (this.view && cam) this.placeCamera(cam, state);
+    if ((this.view || this.orbit) && cam) this.placeCamera(cam, state);
     // a camera pulled right in to the head (a wall just behind you) would see the inside of the helmet: it is left off then
     const close = this.view !== 0 && cam && cam.position.distanceToSquared(state.eye) < 0.36;
     this.uPiece.value[0].y = this.headWorn && !close ? 1 : 0;
@@ -804,6 +805,8 @@ export class Avatar {
     }
     this.placeSwirl(root, a);
     root.scale(this.vs);
+    // (a smaller or bigger player: Leon Network's Chameleon plays at half size)
+    if (this.size && this.size !== 1) root.scale(this.sizeV.set(this.size, this.size, this.size));
     this.matrices(root, this.parts);
     for (let side = 0; side < 2; side++) {
       const h = this.held[side];
@@ -1006,6 +1009,19 @@ export class Avatar {
      back), pulled in by eight rays from just around the eye ---- */
   placeCamera(cam, state) {
     const e = state.eye;
+    // painting yourself (Leon Network's Chameleon, ui/paint.js): the camera swings round your middle at orbit's yaw, pitch and distance
+    if (this.orbit) {
+      const O = this.orbit, k = this.size || 1, cx = e.x, cy = e.y - 0.72 * k, cz = e.z, cp = Math.cos(O.pitch);
+      const fx = Math.sin(O.yaw) * cp, fy = Math.sin(O.pitch), fz = Math.cos(O.yaw) * cp;
+      let d = O.dist * k;
+      for (let i = 0; i < 8; i++) {
+        const t = this.ray(cx + (i & 1 ? 0.1 : -0.1), cy + (i & 2 ? 0.1 : -0.1), cz + (i & 4 ? 0.1 : -0.1), fx, fy, fz, d);
+        if (t < d) d = Math.max(0.6 * k, t);
+      }
+      cam.position.set(cx + fx * d, cy + fy * d, cz + fz * d);
+      cam.rotation.set(-O.pitch, O.yaw, 0, 'YXZ');
+      return;
+    }
     let yaw = state.yaw, pitch = state.pitch;
     if (this.view === 2) { yaw += PI; pitch = -pitch; }
     const cp = Math.cos(pitch);
@@ -1017,6 +1033,42 @@ export class Avatar {
     }
     cam.position.set(e.x - fx * d, e.y - fy * d, e.z - fz * d);
     cam.rotation.set(pitch, yaw, 0, 'YXZ');
+  }
+  /* the skin pixel a ray (world space) meets on your body, nearest first: { tx, ty, rect [x, y, w, h], part, t },
+     or null. The base layer's boxes, through each part's matrix as the model was last drawn. */
+  skinHit(o, d) {
+    const inv = this._inv || (this._inv = new THREE.Matrix4()), a = this._ha || (this._ha = new THREE.Vector3()), b = this._hb || (this._hb = new THREE.Vector3());
+    let best = null;
+    for (const [part, layer, c, size, uv] of boxList(this.slim)) {
+      if (layer !== 0) continue;
+      inv.copy(this.parts[part]).invert();
+      a.set(o.x, o.y, o.z).applyMatrix4(inv); b.set(o.x + d.x, o.y + d.y, o.z + d.z).applyMatrix4(inv).sub(a);
+      const h = [size[0] / 2, size[1] / 2, size[2] / 2], lo = [c[0] - h[0], c[1] - h[1], c[2] - h[2]], hi = [c[0] + h[0], c[1] + h[1], c[2] + h[2]];
+      const A = [a.x, a.y, a.z], D = [b.x, b.y, b.z];
+      let t0 = -Infinity, t1 = Infinity, ax = -1, sg = 0;
+      for (let i = 0; i < 3; i++) {
+        if (Math.abs(D[i]) < 1e-9) { if (A[i] < lo[i] || A[i] > hi[i]) { t0 = Infinity; break; } continue; }
+        let u = (lo[i] - A[i]) / D[i], v = (hi[i] - A[i]) / D[i], s0 = -1;
+        if (u > v) { const w = u; u = v; v = w; s0 = 1; }
+        if (u > t0) { t0 = u; ax = i; sg = s0; }
+        if (v < t1) t1 = v;
+      }
+      if (!(t0 <= t1) || t0 < 0 || ax < 0 || (best && t0 >= best.t)) continue;
+      // which side: the normal along ax, pointing back at the ray
+      const n = [0, 0, 0]; n[ax] = sg;
+      const F = faceList(uv[0], uv[1], size[0], size[1], size[2]).find(f => f[0][0] === n[0] && f[0][1] === n[1] && f[0][2] === n[2]);
+      if (!F) continue;
+      const P = [A[0] + D[0] * t0, A[1] + D[1] * t0, A[2] + D[2] * t0];
+      const at = k => [c[0] + F[1][k][0] * h[0], c[1] + F[1][k][1] * h[1], c[2] + F[1][k][2] * h[2]];
+      const tl = at(0), tr = at(1), bl = at(3), r = F[2];
+      const ux = [tr[0] - tl[0], tr[1] - tl[1], tr[2] - tl[2]], vy = [bl[0] - tl[0], bl[1] - tl[1], bl[2] - tl[2]], q = [P[0] - tl[0], P[1] - tl[1], P[2] - tl[2]];
+      const fu = (q[0] * ux[0] + q[1] * ux[1] + q[2] * ux[2]) / (ux[0] * ux[0] + ux[1] * ux[1] + ux[2] * ux[2]);
+      const fv = (q[0] * vy[0] + q[1] * vy[1] + q[2] * vy[2]) / (vy[0] * vy[0] + vy[1] * vy[1] + vy[2] * vy[2]);
+      const W = r[2] - r[0], Hh = r[3] - r[1];
+      best = { t: t0, part, rect: [r[0], r[1], W, Hh],
+        tx: r[0] + Math.max(0, Math.min(W - 1, Math.floor(fu * W))), ty: r[1] + Math.max(0, Math.min(Hh - 1, Math.floor(fv * Hh))) };
+    }
+    return best;
   }
   // a voxel walk; the distance to the first block that stops the camera (the starting one does not count)
   ray(ox, oy, oz, dx, dy, dz, max) {

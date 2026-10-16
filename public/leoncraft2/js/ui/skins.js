@@ -10,7 +10,7 @@
    licences are in textures/skin/gallery/gallery.json, textures/LICENSE.txt
    and the Credits screen (SKIN_CREDITS).
 --------------------------------------------------------------------------- */
-import { Screen, Button, WHITE, GREY } from './gui.js?v=61';
+import { Screen, Button, WHITE, GREY } from './gui.js?v=62';
 
 // [file, name, author, licence, number in the database]
 export const SKINS = [
@@ -43,7 +43,7 @@ export const SKINS = [
   ['ghost', 'Ghost', 'BlockMen', 'CC BY-SA 4.0', 1969],
   ['camouflaged_wizard', 'Camouflaged Wizard', 'nm0i', 'CC BY-SA 4.0', 696],
 ];
-export const skinUrl = file => new URL('../../textures/skin/gallery/' + file + '.png?v=61', import.meta.url).href;
+export const skinUrl = file => new URL('../../textures/skin/gallery/' + file + '.png?v=62', import.meta.url).href;
 
 // the Credits screen's lines for them
 export function skinCredits() {

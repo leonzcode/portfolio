@@ -14,32 +14,34 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=61';
-import { I } from '../items.js?v=61';
-import { POTIONS } from '../brewing.js?v=61';
-import { ChestScreen } from '../ui/containers.js?v=61';
-import { RemotePlayers } from './players.js?v=61';
-import { register } from '../commands.js?v=61';
-import { Sound } from '../sound/sound.js?v=61';
-import { RES_OVERRIDE } from '../explosion.js?v=61';
-import { skinUrl } from '../ui/skins.js?v=61';
-import { Painter, PaintScreen, faceColour, faceOfNormal } from '../ui/paint.js?v=61';
-import { blockGeometry } from '../render/blockmesh.js?v=61';
-import { lightNear } from '../lightlevel.js?v=61';
-import { setSkin as setOwnSkin } from '../render/avatar.js?v=61';
+import { B, BLOCKS } from '../blocks.js?v=62';
+import { I } from '../items.js?v=62';
+import { POTIONS } from '../brewing.js?v=62';
+import { ChestScreen } from '../ui/containers.js?v=62';
+import { RemotePlayers, playerSize } from './players.js?v=62';
+import { register } from '../commands.js?v=62';
+import { Sound } from '../sound/sound.js?v=62';
+import { RES_OVERRIDE } from '../explosion.js?v=62';
+import { skinUrl } from '../ui/skins.js?v=62';
+import { Painter, PaintScreen, faceColour, faceOfNormal } from '../ui/paint.js?v=62';
+import { blockGeometry } from '../render/blockmesh.js?v=62';
+import { lightNear } from '../lightlevel.js?v=62';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=62';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=61').then(m => {
+import('../adv/toast.js?v=62').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
 }).catch(() => {});
 
 const idOf = name => (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
+// the lobby's temporary blocks: place them anywhere in the lobby, the server takes them away again after 5 s
+const TEMP_BLOCK = 'white_wool', TEMP_NAME = '§bTemporary Blocks §7- Place them, they vanish after 5 seconds';
 const stack = (name, count = 1, extra) => { const id = idOf(name); return id ? Object.assign({ id, count }, extra || null) : null; };
 const CURRENCY = { iron: { item: 'iron_ingot', name: 'Iron', code: '§f' }, gold: { item: 'gold_ingot', name: 'Gold', code: '§6' }, diamond: { item: 'diamond', name: 'Diamond', code: '§b' }, emerald: { item: 'emerald', name: 'Emerald', code: '§2' } };
 const RESOURCES = ['iron_ingot', 'gold_ingot', 'diamond', 'emerald'];
@@ -269,6 +271,7 @@ class GameMenu extends MenuScreen {
     }
     const g = (hub.games || []).find(x => x.id === this.only) || {};
     const modes = (hub.modes || []).filter(m => (m.menu || m.game) === this.only);
+    if ((hub.editable || []).indexOf(this.only) >= 0) editorEntry(this, hub, this.only, 49);
     const first = modes.slice(0, 7), more = modes.slice(7);
     [first, more].forEach((list, row) => {
       const start = (2 + row) * 9 + Math.max(1, Math.floor((9 - list.length) / 2));
@@ -279,6 +282,44 @@ class GameMenu extends MenuScreen {
         const n = hub.counts ? hub.counts[m.id] | 0 : null;
         this.put(start + i, st, ['§a' + m.name, '§7' + (g.blurb || ''), '', n === null ? '' : '§7' + n + ' currently playing!', '§eClick to play!'].filter((l, j) => l || j !== 3), () => { hub.send({ k: 'play', mode: m.id }); hub.closeScreens(); });
       });
+    });
+  }
+}
+// the Map Editor, in Prop Hunt's and Chameleon's menus: open to mods and admins, a locked door to everyone else
+function editorEntry(menu, hub, game, slot) {
+  const ok = !!hub.staff, st = stack(ok ? 'writable_book' : 'barrier');
+  if (!st) return;
+  st.name = (ok ? '§a' : '§c') + 'Map Editor';
+  menu.put(slot, st, ok ? ['§aMap Editor', '§7Change this game\'s maps, or make', '§7new ones. Every change is saved', '§7and used by the next game.', '', '§eClick to open!']
+    : ['§cMap Editor §7(Locked)', '§7Change this game\'s maps, or make', '§7new ones.', '', '§cYou need §2[MOD] §cor §c[ADMIN]', '§cto use this.'],
+  () => { if (!hub.staff) { hub.ctx.chat.add('§cYou need §2[MOD] §cor §c[ADMIN] §cto use the Map Editor.', 0xFFFFFF); hub.sound('block.note_block.bass'); return; } hub.send({ k: 'editor', game }); });
+}
+class EditorMenu extends MenuScreen {
+  constructor(hub, game, maps) { super(hub, 'Map Editor'); this.game = game; this.maps = maps || []; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); }
+  fillBox() {
+    const hub = this.hub, maps = this.maps || [];
+    maps.slice(0, 27).forEach((m, i) => {
+      const st = stack(m.custom ? 'map' : 'filled_map') || stack('paper');
+      if (!st) return;
+      st.name = '§a' + m.name;
+      this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, ['§a' + m.name, m.by ? '§7by ' + m.by : '§7Leon Network\'s own', m.custom ? '§7Made in the editor' : '', '', '§eClick to edit!'].filter((l, j) => l || j !== 2),
+        () => { hub.send({ k: 'edit', game: this.game, id: m.id }); hub.closeScreens(); });
+    });
+    const nw = stack('anvil');
+    if (nw) { nw.name = '§aCreate New Map'; this.put(49, nw, ['§aCreate New Map', '§7Starts as a flat field of grass.', '§7Rename it with §f/mapname <name>§7.', '', '§eClick to make one!'], () => { hub.send({ k: 'newmap', game: this.game }); hub.closeScreens(); }); }
+  }
+}
+class VoteMenu extends MenuScreen {
+  constructor(hub) { super(hub, 'Map Vote'); }
+  fillBox() {
+    const hub = this.hub, V = hub.votes || { maps: [] };
+    (V.maps || []).slice(0, 21).forEach((m, i) => {
+      const mine = V.mine === m.id, st = stack(mine ? 'filled_map' : 'map') || stack('paper');
+      if (!st) return;
+      st.name = (mine ? '§a§l' : '§a') + m.name;
+      if (mine) st.ench = { unbreaking: 1 };
+      this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, ['§a' + m.name, m.by ? '§7by ' + m.by : '§7Leon Network\'s own', '', '§7Votes: §e' + m.v, '', mine ? '§aYou voted for this map!' : '§eClick to vote!'],
+        () => { hub.send({ k: 'mapvote', id: m.id }); });
     });
   }
 }
@@ -342,8 +383,10 @@ export class Hub {
     I2.useWith = () => { if (this.clickNpc() || this.useHeld()) return true; return use(); };
     I2.down = b => { if (b === 0 && this.clickNpc()) return; if (b === 0) this.seekerSwing(I2); down(b); };
     I2.mayBreak = (x, y, z) => this.mayBreak(x, y, z);
-    I2.mayPlace = (x, y, z) => this.mayPlace(x, y, z);
-    this.unhook = () => { I2.useWith = use; I2.down = down; I2.mayBreak = null; I2.mayPlace = null; };
+    I2.mayPlace = (x, y, z, b) => this.mayPlace(x, y, z, false, b);
+    // the lobby's temporary blocks go down even in adventure
+    I2.adventurePlace = id => this.area === 'lobby' && id === idOf(TEMP_BLOCK);
+    this.unhook = () => { I2.useWith = use; I2.down = down; I2.mayBreak = null; I2.mayPlace = null; I2.adventurePlace = null; };
     // every change seen while a game is on (yours and everyone's): those may be broken again, the map may not
     const net = this.net, blocks = net.blocks.bind(net), local = net.local.bind(net);
     net.blocks = (d, e) => { if (this.area === 'game') for (let i = 0; i + 4 < e.length; i += 5) this.changed.add(e[i] + ',' + e[i + 1] + ',' + e[i + 2]); return blocks(d, e); };
@@ -364,6 +407,7 @@ export class Hub {
   }
   detach() {
     if (active === this) active = null;
+    this.area = null; this.applySize();
     if (this.overlay) { const o = this.ctx.gui.overlays, i = o.indexOf(this.overlay); if (i >= 0) o.splice(i, 1); }
     if (this.npcs) { this.npcs.dispose(); this.npcs = null; }
     this.clearProps(); this.unpaint();
@@ -381,7 +425,9 @@ export class Hub {
     const g = this.game;
     if (!g) return;
     switch (m.k) {
-      case 'hello': this.modes = m.modes || []; this.games = m.games || []; return;
+      case 'hello': this.modes = m.modes || []; this.games = m.games || []; this.staff = !!m.staff; this.editable = m.editable || []; return;
+      case 'votes': this.votes = m; this.refreshScreen(); return;
+      case 'editmaps': this.closeScreens(); this.openScreen(new EditorMenu(this, m.game, m.maps)); return;
       case 'where': {
         this.area = m.area; this.floor = m.floor; this.spawn = m.spawn; this.bounds = m.bounds || null;
         if (m.team) this.team = m.team;
@@ -400,6 +446,7 @@ export class Hub {
         this.setNpcs(m.npcs || []);
         this.setGens(m.gens || []);
         this.closeScreens();
+        this.applySize();
         return;
       }
       case 'start': this.changed.clear(); this.kit = { armor: 0, pick: 0, axe: 0, shears: false }; this.up = {}; this.traps = []; return;
@@ -450,9 +497,14 @@ export class Hub {
       case 'paint': this.paintOn = !!m.on; if (!m.on) this.closeScreens(); return;
       case 'role': this.role = m.role || null; if (this.role === 'seeker') this.unpaint(); return;
       case 'fx': {
-        try { Sound.play(m.s || 'entity.firework_rocket.blast', +m.x, +m.y, +m.z, 1.5, 1, 'player'); } catch (e) { /* no sound yet */ }
+        // (a whistle: its notes one after another, each [ms later, pitch])
+        const notes = Array.isArray(m.notes) ? m.notes : [[0, 1]];
+        for (const [ms, pitch] of notes) setTimeout(() => { try { Sound.play(m.s || 'entity.firework_rocket.blast', +m.x, +m.y, +m.z, m.kind === 'whistle' ? 3 : 1.5, +pitch || 1, 'player'); } catch (e) { /* no sound yet */ } }, ms | 0);
         const E = g.entities;
-        if (E && E.particles) { E.particles('sparkle', +m.x, +m.y + 0.5, +m.z, 30, 0.6, [1, 0.85, 0.2]); E.particles('crit', +m.x, +m.y + 0.5, +m.z, 20, 0.6); }
+        if (E && E.particles) {
+          if (m.kind === 'whistle') E.particles('crit', +m.x, +m.y + 1.2, +m.z, 8, 0.25);
+          else { E.particles('sparkle', +m.x, +m.y + 0.5, +m.z, 30, 0.6, [1, 0.85, 0.2]); E.particles('crit', +m.x, +m.y + 0.5, +m.z, 20, 0.6); }
+        }
         return;
       }
     }
@@ -467,8 +519,12 @@ export class Hub {
     g.survival.health = g.survival.maxHealth; g.survival.food = 20; g.survival.saturation = 5;
     if (kind === 'lobby') {
       inv.slots[0] = stack('compass', 1, { name: '§aGame Menu §7(Right Click)' });
-    } else if (kind === 'wait') {
+      inv.slots[1] = stack(TEMP_BLOCK, 64, { name: TEMP_NAME });
+    } else if (kind === 'wait' || kind === 'wait_vote') {
       inv.slots[8] = stack('red_bed', 1, { name: '§c§lReturn to Lobby §7(Right Click)' });
+      if (kind === 'wait_vote') inv.slots[0] = stack('filled_map', 1, { name: '§aMap Vote §7- Right Click to choose the map' }) || stack('paper', 1, { name: '§aMap Vote §7- Right Click to choose the map' });
+    } else if (kind === 'edit') {
+      this.alive = true;
     } else if (kind === 'empty') {
       this.alive = true;
     } else if (kind === 'mm_murderer') {
@@ -501,8 +557,8 @@ export class Hub {
     } else if (kind === 'ph_hider') {
       this.alive = true;
       // (an empty hand to pick a block with; the taunt at the end of the bar)
-      inv.slots[7] = stack('paper', 1, { name: '§eRight click any block to become it' });
-      inv.slots[8] = stack('firework_star', 1, { name: '§aTaunt §7(Right Click)' });
+      inv.slots[7] = stack('paper', 1, { name: '§eDisguise §7- Right Click any block to become it' });
+      inv.slots[8] = stack('firework_star', 1, { name: '§aTaunt §7- Right Click to make a bang (+2 points)' });
       inv.select(0);
     } else if (kind === 'ph_seeker') {
       this.alive = true;
@@ -510,13 +566,15 @@ export class Hub {
       inv.select(0);
     } else if (kind === 'ch_hider') {
       this.alive = true;
-      inv.slots[0] = stack('brush', 1, { name: '§aPaint Brush §7(Right Click)' }) || stack('feather', 1, { name: '§aPaint Brush §7(Right Click)' });
-      inv.slots[1] = stack('spyglass', 1, { name: '§bColour Picker §7(Right Click a block)' }) || stack('stick', 1, { name: '§bColour Picker §7(Right Click a block)' });
-      inv.slots[2] = stack('paper', 1, { name: '§dBlock Stamp §7(Right Click a block)' });
+      const named = (items, name) => { for (const it of items) { const st = stack(it, 1, { name }); if (st) return st; } return null; };
+      inv.slots[0] = named(['brush', 'feather'], '§aPaint Brush §7- Right Click to paint your skin');
+      inv.slots[1] = named(['spyglass', 'stick'], '§bColour Picker §7- Right Click a block to copy its colour');
+      inv.slots[2] = stack('paper', 1, { name: '§dBlock Stamp §7- Right Click a block to wear its picture' });
+      inv.slots[8] = named(['goat_horn', 'note_block'], '§eWhistle §7- Right Click to whistle (+2 points)');
       inv.select(0);
     } else if (kind === 'ch_seeker' || kind === 'ch_hunter') {
       this.alive = true;
-      inv.slots[0] = stack('stick', 1, { name: '§cSpotter §7(one hit finds)' });
+      inv.slots[0] = stack('stick', 1, { name: '§cTag Stick §7- Hit a hider once to find them' });
       inv.select(0);
     } else if (kind === 'game') {
       if (fresh) this.kit = { armor: 0, pick: 0, axe: 0, shears: false };
@@ -633,7 +691,7 @@ export class Hub {
   /* ---- what may be broken and built ---- */
   inPlot(x, y, z) { const p = this.plot; return !!p && x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1 && y >= p.y0 && y <= p.y1; }
   mayBreak(x, y, z) {
-    if (this.building) return true;
+    if (this.building || this.area === 'edit') return true;
     if (this.area !== 'game' || !this.alive || this.noBuild) return false;
     if (this.gameKind === 'buildbattle') return !this.vote && this.inPlot(x, y, z);
     if (this.dig) { const b = this.game.world.get(x, y, z); return !!BLOCKS[b] && BLOCKS[b].name === this.dig; }
@@ -644,8 +702,10 @@ export class Hub {
     if (d && d.shape === 'bed') return !this.team || d.name !== this.team.wool.replace('_wool', '_bed');
     return this.changed.has(x + ',' + y + ',' + z);
   }
-  mayPlace(x, y, z, quiet) {
-    if (this.building) return true;
+  mayPlace(x, y, z, quiet, id) {
+    if (this.building || this.area === 'edit') return true;
+    // the lobby: only a temporary block, only into the air (the server takes it away again)
+    if (this.area === 'lobby') return id === idOf(TEMP_BLOCK) && !this.game.world.get(x, y, z);
     if (this.area !== 'game' || !this.alive || this.noBuild || this.dig) return false;
     if (this.gameKind === 'buildbattle') { if (this.vote || !this.inPlot(x, y, z)) { if (quiet !== true && !this.vote) this.ctx.chat.add('§cYou can only build on your own plot!', 0xFF5555); return false; } return true; }
     if (this.noPlace) for (const q of this.noPlace) if (x + 0.5 >= q[0] && x + 0.5 <= q[3] && z + 0.5 >= q[2] && z + 0.5 <= q[5]) { if (quiet !== true) this.ctx.chat.add('§cYou can\'t place blocks there!', 0xFF5555); return false; }
@@ -729,10 +789,12 @@ export class Hub {
       if (vi >= 0) { this.send({ k: 'vote', v: vi + 1 }); this.sound('block.note_block.pling'); return true; }
       // Prop Hunt: a taunt
       if (this.hide && this.hide.kind === 'prophunt' && /^Taunt/.test(nm)) { this.send({ k: 'taunt' }); return true; }
+      // Chameleon: a whistle, heard by everyone near (the server keeps its wait)
+      if (this.hide && this.hide.kind === 'chameleon' && /^Whistle/.test(nm)) { this.send({ k: 'whistle' }); return true; }
       // Chameleon: the brush, the picker and the stamp
       if (this.hide && this.hide.kind === 'chameleon' && this.painter) {
         const T = this.game.inter.target;
-        if (/^Paint Brush/.test(nm)) { if (this.paintOn) this.openScreen(new PaintScreen(this.painter)); else this.ctx.chat.add('§cThe time to paint is over!', 0xFF5555); return true; }
+        if (/^Paint Brush/.test(nm)) { if (this.paintOn) this.openScreen(new PaintScreen(this.painter, { renderer: this.ctx.renderer, world: this.game.world, player: this.game.player })); else this.ctx.chat.add('§cThe time to paint is over!', 0xFF5555); return true; }
         if (/^Colour Picker/.test(nm)) { if (T) { const c = faceColour(T.b || this.game.world.get(T.x, T.y, T.z), faceOfNormal(T.face)); if (c !== null) { this.painter.setColour(c); this.ctx.chat.add('§bPicked a colour: §f#' + c.toString(16).padStart(6, '0') + ' §7(paint with it in the Paint Brush)', 0xFFFFFF); this.sound('block.note_block.hat'); } } return true; }
         if (/^Block Stamp/.test(nm)) { if (!this.paintOn) { this.ctx.chat.add('§cThe time to paint is over!', 0xFF5555); return true; } if (T && this.painter.stamp(T.b || this.game.world.get(T.x, T.y, T.z), faceOfNormal(T.face))) { this.ctx.chat.add('§dYou are covered in ' + ((BLOCKS[T.b || this.game.world.get(T.x, T.y, T.z)] || {}).display || 'that block') + '!', 0xFFFFFF); this.sound('block.wool.place'); } return true; }
       }
@@ -742,7 +804,12 @@ export class Hub {
       const T = this.game.inter.target;
       if (T) {
         const d = BLOCKS[T.b || this.game.world.get(T.x, T.y, T.z)];
-        if (d && (this.hide.props || []).indexOf(d.name) >= 0) { this.send({ k: 'disguise', b: d.name }); this.disguise = d.name; this.ctx.chat.add('§aYou are now disguised as §e' + (d.display || d.name) + '§a! Stand still to lock in place.', 0xFFFFFF); this.sound('entity.chicken.egg'); }
+        if (d && (this.hide.props || []).indexOf(d.name) >= 0) {
+          this.send({ k: 'disguise', b: d.name }); this.disguise = d.name;
+          // seen from behind, so you see what you have become (F5 still changes it)
+          const A = this.ctx.renderer.avatar;
+          if (A && A.view === 0) { this.viewBefore = 0; A.setView(1); }
+          this.ctx.chat.add('§aYou are now disguised as §e' + (d.display || d.name) + '§a! Stand still to lock in place.', 0xFFFFFF); this.sound('entity.chicken.egg'); }
         else this.ctx.chat.add('§cYou can\'t disguise as that block.', 0xFF5555);
         return true;
       }
@@ -750,6 +817,7 @@ export class Hub {
     if (!h) return false;
     if (this.area === 'lobby' && h.id === idOf('compass')) { this.openScreen(new GameMenu(this)); return true; }
     if (this.area === 'wait' && h.id === idOf('red_bed')) { this.send({ k: 'lobby' }); return true; }
+    if (this.area === 'wait' && h.name && /^Map Vote/.test(h.name.replace(/\u00a7./g, ''))) { this.openScreen(new VoteMenu(this)); return true; }
     return false;
   }
   useOne() { const inv = this.game.inv, h = inv.slots[inv.selected]; if (!h) return; if (--h.count <= 0) inv.slots[inv.selected] = null; inv.changed(); }
@@ -800,6 +868,7 @@ export class Hub {
   // (for tests: window.__lc2hub)
   openShop() { this.openScreen(new ShopScreen(this)); }
   openUpgrades() { this.openScreen(new UpgradeScreen(this)); }
+  openGame(g) { this.openScreen(new GameMenu(this, g)); }
   openMenu() { this.openScreen(new GameMenu(this)); }
 
   /* ---- the floating words ---- */
@@ -834,6 +903,13 @@ export class Hub {
     if (!g || !g.ready) return;
     this.t++;
     const P = g.player, sv = g.survival;
+    // the lobby's temporary blocks never run out
+    if (this.area === 'lobby' && this.t % 20 === 0) {
+      const inv = g.inv, tb = idOf(TEMP_BLOCK);
+      let s = inv.slots.find(x => x && x.id === tb);
+      if (!s && !inv.slots[1]) { inv.slots[1] = stack(TEMP_BLOCK, 64, { name: TEMP_NAME }); inv.changed(); }
+      else if (s && s.count < 64) { s.count = 64; inv.changed(); }
+    }
     for (const n of this.npcList) this.feed(n);
     // no hunger anywhere on the network
     sv.food = 20;
@@ -956,15 +1032,20 @@ export class Hub {
      (or in the cell they locked into); their own model is not drawn. */
   drawProps() {
     const R = this.ctx.renderer, players = this.net.players, w = this.game.world;
+    // you, in your own disguise: your body hidden, the block where you stand (seen in third person)
+    const me = this.net.id, A = R.avatar, mine = this.props.get(me) || (this.disguise ? { b: this.disguise, lock: this.lockAt } : null);
+    if (A) A.hidden = !!mine;
+    const all = new Map(this.props);
+    if (mine) all.set(me, mine); else all.delete(me);
     for (const [id, m] of this.propMeshes) {
-      const pr = this.props.get(id);
+      const pr = all.get(id);
       if (!pr || pr.b !== m.b || m.mats !== R.mats) { this.group.remove(m.mesh); m.mesh.geometry.dispose(); this.propMeshes.delete(id); }
     }
-    if (!this.props.size || !players) return;
-    for (const [id, pr] of this.props) {
-      if (id === this.net.id) continue;
-      const r = players.list.get(id);
-      if (!r || !r.feet) continue;
+    if (!all.size) return;
+    for (const [id, pr] of all) {
+      let r;
+      if (id === me) { const P = this.game.player; r = { feet: P.pos, av: null }; }
+      else { r = players && players.list.get(id); if (!r || !r.feet) continue; }
       const av = r.av;
       if (av) { av.mesh.visible = av.armor.visible = false; for (const h of av.held) if (h) h.mesh.visible = false; if (av.headItem) av.headItem.mesh.visible = false; }
       if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
@@ -987,8 +1068,19 @@ export class Hub {
       if (lv !== m.lv) { m.lv = lv; const L = m.mesh.geometry.attributes.aL; if (L) { for (let i = 0; i < L.count; i++) { L.array[i * 4] = lv >> 8; L.array[i * 4 + 1] = lv & 255; } L.needsUpdate = true; } }
     }
   }
+  // Chameleon is played at half size: you (your box, eyes and body) and everyone you see
+  applySize() {
+    const k = this.area === 'game' && this.gameKind === 'chameleon' ? 0.5 : 1, g = this.game;
+    playerSize.k = k;
+    if (g && g.player && g.player.setScale) g.player.setScale(k);
+    const A = this.ctx && this.ctx.renderer && this.ctx.renderer.avatar;
+    if (A) A.size = k;
+  }
   clearProps() {
     this.props = new Map(); this.disguise = null; this.lockAt = null; this.still = 0;
+    // your body back, and the view you had before you disguised
+    const A = this.ctx && this.ctx.renderer && this.ctx.renderer.avatar;
+    if (A) { A.hidden = false; if (this.viewBefore !== undefined) { A.setView(this.viewBefore); this.viewBefore = undefined; } }
     for (const [, m] of this.propMeshes) { if (this.group) this.group.remove(m.mesh); m.mesh.geometry.dispose(); }
     this.propMeshes = new Map();
   }
@@ -1007,7 +1099,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=61', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=62', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1022,7 +1114,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=61', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=62', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -1072,6 +1164,9 @@ register('play', {
   run(args, ctx) { onHub(ctx, h => h.send({ k: 'play', mode: args[0] || 'bw_solo' })); },
 });
 register('start', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'start' })); } });
+// the Map Editor's own: a name for a map made there, or the map gone
+register('mapname', { always: true, usage: '<name>', run(args, ctx) { onHub(ctx, h => h.send({ k: 'mapname', name: args.join(' ') })); } });
+register('mapdelete', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'mapdelete' })); } });
 register('shout', { always: true, usage: '<message>', run(args, ctx) { onHub(ctx, h => h.send({ k: 'shout', text: args.join(' ') })); } });
 register('hubbuild', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'build' })); } });
 // parties, as the network has them: /party invite <player> (or just /party <player>), accept, leave, list, kick, transfer, disband; /pc talks to it

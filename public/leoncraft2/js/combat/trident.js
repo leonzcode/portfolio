@@ -10,13 +10,13 @@
    picked up. Channeling in a thunderstorm calls lightning down on the mob
    it hits (or a lightning rod) if the sky is open above.
 --------------------------------------------------------------------------- */
-import { Projectile } from '../entities/projectiles.js?v=61';
-import { register } from '../entities/mobs.js?v=61';
-import { model } from '../entities/mobs2.js?v=61';
-import { addArt } from '../entities/mobart.js?v=61';
-import { B } from '../blocks.js?v=61';
-import { I } from '../items.js?v=61';
-import { enchantBonus, enchOf } from './weapons.js?v=61';
+import { Projectile } from '../entities/projectiles.js?v=62';
+import { register } from '../entities/mobs.js?v=62';
+import { model } from '../entities/mobs2.js?v=62';
+import { addArt } from '../entities/mobart.js?v=62';
+import { B } from '../blocks.js?v=62';
+import { I } from '../items.js?v=62';
+import { enchantBonus, enchOf } from './weapons.js?v=62';
 
 /* ---- the shape: a long pole with three prongs, pointing along -z ---- */
 model('trident', [
