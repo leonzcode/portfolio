@@ -14,27 +14,27 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=69';
-import { I } from '../items.js?v=69';
-import { POTIONS } from '../brewing.js?v=69';
-import { ChestScreen } from '../ui/containers.js?v=69';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=69';
-import { RemotePlayers, playerSize, F } from './players.js?v=69';
-import { register } from '../commands.js?v=69';
-import { Sound } from '../sound/sound.js?v=69';
-import { RES_OVERRIDE } from '../explosion.js?v=69';
-import { skinUrl } from '../ui/skins.js?v=69';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=69';
-import { blockGeometry } from '../render/blockmesh.js?v=69';
-import { lightNear } from '../lightlevel.js?v=69';
-import { setSkin as setOwnSkin } from '../render/avatar.js?v=69';
+import { B, BLOCKS } from '../blocks.js?v=70';
+import { I } from '../items.js?v=70';
+import { POTIONS } from '../brewing.js?v=70';
+import { ChestScreen } from '../ui/containers.js?v=70';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=70';
+import { RemotePlayers, playerSize, F } from './players.js?v=70';
+import { register } from '../commands.js?v=70';
+import { Sound } from '../sound/sound.js?v=70';
+import { RES_OVERRIDE } from '../explosion.js?v=70';
+import { skinUrl } from '../ui/skins.js?v=70';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=70';
+import { blockGeometry } from '../render/blockmesh.js?v=70';
+import { lightNear } from '../lightlevel.js?v=70';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=70';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=69').then(m => {
+import('../adv/toast.js?v=70').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -921,6 +921,11 @@ export class Hub {
     if (!h && !hider) return false;
     // Murder Mystery: the murderer throws the Knife with a right click; it comes back to the hand after 5 seconds
     if (h && this.area === 'game' && this.alive && this.gameKind === 'murder' && this.role === 'murderer' && h.id === I.iron_sword) { this.throwKnife(); return true; }
+    // Build Battle: a vote (whatever the page thinks of being alive, which a teleport between builds can upset)
+    if (h && this.area === 'game' && this.vote) {
+      const nm = h.name ? h.name.replace(/§./g, '') : '', vi = VOTES.findIndex(v => v[0] === nm);
+      if (vi >= 0) { this.send({ k: 'vote', v: vi + 1, owner: this.owner || '' }); this.sound('block.note_block.pling'); return true; }
+    }
     if (h && this.area === 'game' && this.alive) {
       const sp = specialOf(h);
       if (sp === 'fireball') { if (this.t - this.fireAt >= 10) { this.fireAt = this.t; this.launchFireball(); this.useOne(); } return true; }
@@ -936,9 +941,6 @@ export class Hub {
     }
     if (h && this.area === 'game' && this.alive) {
       const nm = h.name ? h.name.replace(/\u00a7./g, '') : '';
-      // Build Battle: a vote
-      const vi = this.vote ? VOTES.findIndex(v => v[0] === nm) : -1;
-      if (vi >= 0) { this.send({ k: 'vote', v: vi + 1 }); this.sound('block.note_block.pling'); return true; }
       // Prop Hunt: a taunt
       if (this.hide && this.hide.kind === 'prophunt' && /^Taunt/.test(nm)) { this.send({ k: 'taunt' }); return true; }
       // Chameleon: a whistle, heard by everyone near (the server keeps its wait)
@@ -1305,7 +1307,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=69', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=70', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1320,7 +1322,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=69', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=70', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1328,7 +1330,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=69', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=70', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
