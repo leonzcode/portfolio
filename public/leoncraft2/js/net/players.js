@@ -26,11 +26,11 @@
    can give themselves one; it shows over their head, in the Tab list and in
    their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar } from '../render/avatar.js?v=67';
-import { pieceLook, armorSheet } from '../render/armor.js?v=67';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=67';
-import { DRAW, I, stackFromJSON } from '../items.js?v=67';
-import { B, BLOCKS } from '../blocks.js?v=67';
+import { Avatar } from '../render/avatar.js?v=68';
+import { pieceLook, armorSheet } from '../render/armor.js?v=68';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=68';
+import { DRAW, I, stackFromJSON } from '../items.js?v=68';
+import { B, BLOCKS } from '../blocks.js?v=68';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -41,7 +41,8 @@ const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
 const idOf = name => !name ? 0 : (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
 // the rank tag before a name, in colour codes (the name after it goes back to the line's own colour)
 const RANKS = { admin: '\u00a7c[ADMIN] \u00a7r', mod: '\u00a72[MOD] \u00a7r', owner: '\u00a76[OWNER] \u00a7r', builder: '\u00a7b[BUILDER] \u00a7r' };   // (builder: Leon Network's, the maker of the map being played and their building team)
-export const rankTag = tag => RANKS[tag] || '';
+// (Leon Network's team tag, 'team:<colour code>:<letter>': the letter in bold and the name in the team's colour)
+export const rankTag = tag => RANKS[tag] || (typeof tag === 'string' && /^team:[0-9a-f]:[A-Z]$/.test(tag) ? '§' + tag[5] + '§l' + tag[7] + ' §r§' + tag[5] : '');
 
 // the flags each position carries (net/net.js sends them)
 export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024, SPEC: 2048, INVIS: 4096, FIRE: 8192, SPIN: 16384 };
@@ -161,7 +162,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=67', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=68', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
   }
   equip(r) {
@@ -384,7 +385,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=67', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=68', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;

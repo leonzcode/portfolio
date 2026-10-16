@@ -19,10 +19,10 @@
    made and every tick after), so a piece falling into a dark hole darkens
    and dust kicked up by a torch is lit by it.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, SOLID } from '../blocks.js?v=67';
-import { VANILLA } from './vanilla.js?v=67';
-import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=67';
-import { Terrain } from '../entities/terrain.js?v=67';
+import { BLOCKS, B, SOLID } from '../blocks.js?v=68';
+import { VANILLA } from './vanilla.js?v=68';
+import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=68';
+import { Terrain } from '../entities/terrain.js?v=68';
 const THREE = window.THREE;
 
 const MAX = 1500;
