@@ -7,10 +7,10 @@
    out of range, and takes edits: a changed block remeshes its column, and
    the neighbouring one too when it sits on an edge.
 --------------------------------------------------------------------------- */
-import { CH, H, idx } from './world-const.js?v=70';
-import { BLOCKS, FLUID } from './blocks.js?v=70';
-import { searchSpawn } from './spawn.js?v=70';
-import { settleEdges } from './edgevines.js?v=70';
+import { CH, H, idx } from './world-const.js?v=71';
+import { BLOCKS, FLUID } from './blocks.js?v=71';
+import { searchSpawn } from './spawn.js?v=71';
+import { settleEdges } from './edgevines.js?v=71';
 
 /* ---- the workers, kept for the whole visit ----
    A new worker is slow for its first seconds: its code is fetched, compiled
@@ -21,7 +21,7 @@ import { settleEdges } from './edgevines.js?v=70';
 const GEN_N = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 const POOL = [];
 function newWorker() {
-  const w = new Worker(new URL('./worker.js?v=70', import.meta.url), { type: 'module' });
+  const w = new Worker(new URL('./worker.js?v=71', import.meta.url), { type: 'module' });
   w.onerror = e => console.error('worker', e.message || e);
   return w;
 }
@@ -223,6 +223,8 @@ export class World {
     this.generator = opts.generator || 'classic';    // 'vanilla' (Minecraft's own worlds) or 'classic' (the first generator)
     this.dim = opts.dim || 'overworld';        // js/dims.js: which generator the workers run
     this.structures = opts.structures !== false;   // Generate Structures (Create World): off, the workers build none
+    // a world brought over from the first Leoncraft: its seed and the chunks made by its own generator (lc1/mixed.js)
+    this.lc1 = opts.lc1 && opts.lc1.key ? opts.lc1 : null;
     this.noSky = this.dim === 'the_nether';     // no sky light at all there
     this.renderDist = opts.renderDist;
     this.chunks = new Map();          // "cx,cz" -> chunk
@@ -256,7 +258,7 @@ export class World {
     this.stageIn = new Set();          // chunk numbers * 4 + stage (1 terrain, 2 features) asked of a worker
     this.thrown = new Map();           // the same, -> times a piece came in too far away to keep since you last crossed a chunk (onStage)
     // (a world without structures is kept apart, and never takes chunks practised with them)
-    const name = this.genName = this.dim + '|' + this.generator + '|' + this.seed + (this.structures ? '' : '|ns');
+    const name = this.genName = this.dim + '|' + this.generator + '|' + this.seed + (this.structures ? '' : '|ns') + (this.lc1 ? '|' + this.lc1.key : '');
     // where this world's chunks are kept (opts.cache false: never)
     this.cacheKey = opts.cache === false ? null : CACHE + '|' + name;
     /* A world just created (opts.fresh), or one with nothing kept, has nothing
@@ -285,6 +287,7 @@ export class World {
     let first;
     this.ready = new Promise(res => { first = res; });
     this.initMsg = { type: 'init', seed: this.seed, generator: this.generator, dim: this.dim, structures: this.structures, manifest: opts.manifest, colours: opts.colours, cache: this.cacheKey, tag: this.tag };
+    if (this.lc1) this.initMsg.lc1 = this.lc1;
     /* Every job out, with when it went and to which worker ('g' and 'm' + "cx,cz"
        for a chunk and a mesh, 't' and 'd' + its number for a terrain and its
        features): one never answered is asked again (audit). */

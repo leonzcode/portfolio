@@ -52,7 +52,7 @@
    textures/gui/. The pack leaves button interiors see-through, so a
    translucent fill goes under them for legible text over the world.
 --------------------------------------------------------------------------- */
-import { Font, cssRGB } from './font.js?v=70';
+import { Font, cssRGB } from './font.js?v=71';
 
 /* ------------------------------ options ------------------------------ */
 
@@ -301,7 +301,7 @@ export class Gui {
     this.ctx = canvas.getContext('2d');
     this.base = base || new URL('../../textures/gui/', import.meta.url).href;
     if (!this.base.endsWith('/')) this.base += '/';
-    this.version = version || '?v=70';
+    this.version = version || '?v=71';
     this.options = options || new Options();
     this.hooks = hooks || {};
     this.sheets = new Map();
@@ -345,6 +345,14 @@ export class Gui {
     inp.addEventListener('select', sync);
     document.addEventListener('selectionchange', sync);
     inp.addEventListener('blur', () => { if (this.textFocus && !this._refocusing) this.dirty = true; });
+    // Ctrl+V: the paste event brings the text (no clipboard permission asked), put in the box with its rules
+    document.addEventListener('paste', e => {
+      if (!this.textFocus) return;
+      e.preventDefault();
+      this._pasteWait = 0;
+      const d = e.clipboardData;
+      this.insertText(d ? d.getData('text/plain') || d.getData('text') : '');
+    }, true);
 
     this._bind();
     this.resize();
@@ -531,9 +539,76 @@ export class Gui {
       const s = this.screen;
       if (!s) return;
       e.stopImmediatePropagation();
+      if (this.textFocus && this._editKey(e)) { this.dirty = true; return; }
+      // (Ctrl+A with no box to type in would select the whole page)
+      if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyA' || e.key === 'a' || e.key === 'A')) e.preventDefault();
       if (s.keyPressed(e)) e.preventDefault();
       this.dirty = true;
     }, true);
+  }
+  /* Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V in the focused box, as the game's edit box has them (Cmd on a Mac).
+     Copy goes through navigator.clipboard (the old copy command where there is none); paste is left to the
+     browser's paste event (above), and if none comes (nothing focused to paste into) the clipboard is read.
+     A password box copies nothing. Shift with the arrows, Home and End, and typing over a selection are the
+     hidden input's own. */
+  _editKey(e) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return false;
+    const is = (code, ch) => e.code === code || (e.key || '').toLowerCase() === ch;
+    const f = this.textFocus, inp = this.input;
+    const a = Math.min(f.cursor, f.selEnd), b = Math.max(f.cursor, f.selEnd);
+    if (document.activeElement !== inp) inp.focus({ preventScroll: true });
+    if (is('KeyA', 'a')) {
+      e.preventDefault();
+      try { inp.setSelectionRange(0, f.value.length, 'forward'); } catch (err) { /* hidden */ }
+      f._syncFrom(inp);
+      return true;
+    }
+    if (is('KeyC', 'c') || is('KeyX', 'x')) {
+      e.preventDefault();
+      if (b > a && !f.password) {
+        this.copyText(f.value.slice(a, b));
+        if (is('KeyX', 'x')) this.insertText('', true);
+      }
+      return true;
+    }
+    if (is('KeyV', 'v')) {
+      // (not prevented: the browser's paste event is what brings the text)
+      const id = this._pasteWait = (this._pasteWait | 0) + 1;
+      setTimeout(() => {
+        if (this._pasteWait !== id) return;
+        this._pasteWait = 0;
+        const c = navigator.clipboard;
+        if (c && c.readText) c.readText().then(t => this.insertText(t), () => {});
+      }, 80);
+      return true;
+    }
+    return false;
+  }
+  copyText(t) {
+    const old = () => {
+      const put = ev => { ev.clipboardData.setData('text/plain', t); ev.preventDefault(); };
+      document.addEventListener('copy', put, true);
+      try { document.execCommand('copy'); } catch (err) { /* not allowed */ }
+      document.removeEventListener('copy', put, true);
+    };
+    const c = navigator.clipboard;
+    if (c && c.writeText) c.writeText(t).catch(old); else old();
+  }
+  // text put in the focused box over its selection: one line, no control characters, as much as fits
+  insertText(t, cut) {
+    const f = this.textFocus;
+    if (!f || (!t && !cut)) return;
+    t = String(t || '').replace(/\r\n?|\n/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '');
+    const a = Math.min(f.cursor, f.selEnd), b = Math.max(f.cursor, f.selEnd);
+    t = t.slice(0, Math.max(0, f.maxLength - (f.value.length - (b - a))));
+    if (!t && !cut) return;
+    const inp = this.input;
+    // (from the hidden input's own text, which a box may keep in its own form: the book's line breaks)
+    const base = inp.value.length === f.value.length ? inp.value : f.value;
+    inp.value = base.slice(0, a) + t + base.slice(b);
+    try { inp.setSelectionRange(a + t.length, a + t.length); } catch (err) { /* hidden */ }
+    f._syncFrom(inp);
+    this.dirty = true;
   }
   _press(mx, my, button) {
     const s = this.screen;

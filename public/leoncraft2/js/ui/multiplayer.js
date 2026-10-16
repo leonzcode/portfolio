@@ -15,24 +15,52 @@
    that turns you away or a connection that drops says why, with Back to
    server list.
 
+   Over the list a search box looks through the names, descriptions and
+   owners. Each row has a pin (pinned servers go to the top) and, on hover,
+   arrows to move it up or down (Shift + Up / Down too); the pins and the
+   order are kept on your account, so they follow you to any browser.
+
    You play as your account (net/account.js): the server takes your name
    from your session, so the button where the game has Direct Connection
    shows your account (change the password, log out). The owner of a server
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=70';
-import { ConfirmScreen } from './menus.js?v=70';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=70';
-import { Account } from '../net/account.js?v=70';
-import { LoginScreen, AccountScreen } from './account.js?v=70';
-import { parseSeed } from '../gen/random.js?v=70';
-import { MapRequestsScreen } from './maprequests.js?v=70';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=71';
+import { ConfirmScreen } from './menus.js?v=71';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=71';
+import { Account } from '../net/account.js?v=71';
+import { LoginScreen, AccountScreen } from './account.js?v=71';
+import { parseSeed } from '../gen/random.js?v=71';
+import { MapRequestsScreen } from './maprequests.js?v=71';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
 const keepPassword = (id, pw) => { try { if (pw) localStorage.setItem(PW_KEY + id, pw); else localStorage.removeItem(PW_KEY + id); } catch (e) {} };
 const MODE_NAMES = { survival: 'Survival', creative: 'Creative', adventure: 'Adventure' };
+
+/* ---- the list as you keep it: pinned servers at the top in their own order, then the rest in yours. Kept on your
+   account (mlhub lc2accounts.js /account/servers), so it follows you to any browser; a guest's stays in this one. ---- */
+const LIST_KEY = 'lc2_list';
+const cleanPrefs = j => ({ pins: j && Array.isArray(j.pins) ? j.pins.filter(x => typeof x === 'string') : [], order: j && Array.isArray(j.order) ? j.order.filter(x => typeof x === 'string') : [] });
+function keptPrefs() { try { return cleanPrefs(JSON.parse(localStorage.getItem(LIST_KEY) || 'null')); } catch (e) { return cleanPrefs(null); } }
+async function accountPrefs() {
+  if (Account.guest || !Account.token) return null;
+  const r = await Account.post('/lc2/account/servers', {});
+  return r && r.ok ? cleanPrefs(r) : null;
+}
+function savePrefs(p) {
+  try { localStorage.setItem(LIST_KEY, JSON.stringify(p)); } catch (e) {}
+  if (!Account.guest && Account.token) Account.post('/lc2/account/servers', { pins: p.pins, order: p.order });
+}
+// the small pushpin and the move arrows on a row, drawn in the game's flat pixels
+function drawPin(g, x, y, colour) {
+  g.fill(x + 1, y, x + 6, y + 1, colour); g.fill(x + 2, y + 1, x + 5, y + 4, colour);
+  g.fill(x, y + 4, x + 7, y + 5, colour); g.fill(x + 3, y + 5, x + 4, y + 9, colour);
+}
+function drawArrow(g, x, y, up, colour) {
+  for (let r = 0; r < 4; r++) { const w = up ? r : 3 - r; g.fill(x + 3 - w, y + r, x + 4 + w, y + r + 1, colour); }
+}
 
 /* ---- a server's own picture (Server Settings' Icon...): data URLs made into images once ---- */
 const ICONS = new Map();
@@ -68,13 +96,23 @@ function pickIcon() {
 /* ---- one server in the list ---- */
 class ServerEntry {
   constructor(s, screen) { this.s = s; this.screen = screen; }
+  // the pin (right of the middle line) and the move arrows (the right edge, middle and bottom line)
+  spots(top, left, width) {
+    return { pin: [left + width - 27, top + 12, 11, 12], up: [left + width - 13, top + 11, 11, 8], down: [left + width - 13, top + 21, 11, 8] };
+  }
   render(g, list, i, top, left, width, h, mx, my, hovered) {
     const s = this.s, ping = this.screen.ping;
+    const sp = this.spots(top, left, width), inside = r => mx >= r[0] && mx < r[0] + r[2] && my >= r[1] && my < r[1] + r[3];
+    const pinned = this.screen.pinned(s.id);
+    if (pinned || hovered) drawPin(g, sp.pin[0] + 2, sp.pin[1] + 1, hovered && inside(sp.pin) ? 0xFFFFFFFF : pinned ? 0xFFFFAA00 : 0xFF707070);
+    if (hovered && inside(sp.pin)) g.setTooltip(pinned ? 'Unpin' : 'Pin to the top');
+    if (hovered && this.screen.canMove(s, -1)) { drawArrow(g, sp.up[0] + 2, sp.up[1] + 2, true, inside(sp.up) ? 0xFFFFFFFF : 0xFFA0A0A0); if (inside(sp.up)) g.setTooltip('Move up'); }
+    if (hovered && this.screen.canMove(s, 1)) { drawArrow(g, sp.down[0] + 2, sp.down[1] + 2, false, inside(sp.down) ? 0xFFFFFFFF : 0xFFA0A0A0); if (inside(sp.down)) g.setTooltip('Move down'); }
     g.text(g.font.trim(s.name, width - 80), left + 35, top + 1, WHITE, false);
     const line1 = s.motd || (s.kind === 'private' ? 'A private server' : 'A public server');
-    g.text(g.font.trim(line1, width - 40), left + 35, top + 12, 0x808080, false);
+    g.text(g.font.trim(line1, width - 66), left + 35, top + 12, 0x808080, false);
     const line2 = (MODE_NAMES[s.mode] || 'Survival') + ' Mode' + (s.cheats ? ', Commands' : '') + (s.kind === 'private' ? (s.settings && s.settings.password ? ', Password: ' + s.settings.password : ', Password') : '') + (s.mine ? ', yours' : s.owner ? ', ' + s.owner + "'s" : '');
-    g.text(g.font.trim(line2, width - 40), left + 35, top + 21, 0x808080, false);
+    g.text(g.font.trim(line2, width - 66), left + 35, top + 21, 0x808080, false);
     // the player count and the signal bars, top right
     const count = s.players + '/' + s.max, cw = g.textWidth(count);
     g.text(count, left + width - cw - 17, top + 1, 0x808080, false);
@@ -106,7 +144,12 @@ class ServerEntry {
     }
   }
   mouseClicked(mx, my, button, list) {
-    if (button === 0 && mx - list.rowLeft < 32 && list.onActivate) { list.setSelected(this); list.onActivate(this); return true; }
+    if (button !== 0) return false;
+    const sp = this.spots(list.rowTop(list.entries.indexOf(this)), list.rowLeft, list.rowWidth), inside = r => mx >= r[0] && mx < r[0] + r[2] && my >= r[1] && my < r[1] + r[3];
+    if (inside(sp.pin)) { list.setSelected(this); this.screen.togglePin(this.s); return true; }
+    if (inside(sp.up) && this.screen.canMove(this.s, -1)) { list.setSelected(this); this.screen.move(this.s, -1); return true; }
+    if (inside(sp.down) && this.screen.canMove(this.s, 1)) { list.setSelected(this); this.screen.move(this.s, 1); return true; }
+    if (mx - list.rowLeft < 32 && list.onActivate) { list.setSelected(this); list.onActivate(this); return true; }
     return false;
   }
 }
@@ -116,10 +159,14 @@ export class MultiplayerScreen extends Screen {
     super('Play Multiplayer');
     this.servers = []; this.ping = -1; this.status = 'Pinging...'; this.message = message || '';
     this.selectedId = null;
+    this.query = '';
+    this.prefs = keptPrefs();
   }
   init() {
     const W = this.width, H = this.height, g = this.gui;
-    this.list = this.add(new ScrollList(0, 32, W, H - 64 - 32, 36, {
+    // a search over the servers' names, descriptions and owners
+    this.search = this.add(new TextField(W / 2 - 100, 31, 200, 16, { value: this.query, maxLength: 48, hint: 'Search servers...', onChange: v => { this.query = v; this.fill(); } }));
+    this.list = this.add(new ScrollList(0, 52, W, H - 64 - 52, 36, {
       rowWidth: 305, selectable: true,
       onSelect: e => { this.selectedId = e ? e.s.id : null; this.updateButtons(); },
       onActivate: e => this.join(e.s),
@@ -149,8 +196,52 @@ export class MultiplayerScreen extends Screen {
     this.delB.active = !!(s && s.canEdit && s.id !== 'main');
     this.editB.tooltip = this.delB.tooltip = s && !s.canEdit ? 'Only the owner of a server can change it' : null;
   }
+  pinned(id) { return this.prefs.pins.includes(id); }
+  // every server in your order: the pinned ones first as you pinned or moved them, then the rest as you moved them,
+  // then any you have not placed yet, in the server's own order
+  arranged() {
+    const P = this.prefs, pin = new Map(P.pins.map((id, i) => [id, i])), ord = new Map(P.order.map((id, i) => [id, i]));
+    const base = new Map(this.servers.map((s, i) => [s.id, i]));
+    const at = id => ord.has(id) ? ord.get(id) : 1e9 + base.get(id);
+    return this.servers.slice().sort((a, b) => {
+      const pa = pin.has(a.id), pb = pin.has(b.id);
+      if (pa !== pb) return pa ? -1 : 1;
+      return pa ? pin.get(a.id) - pin.get(b.id) : at(a.id) - at(b.id);
+    });
+  }
+  shown() {
+    const q = this.query.trim().toLowerCase(), all = this.arranged();
+    return q ? all.filter(s => [s.name, s.motd, s.owner].some(t => t && String(t).toLowerCase().includes(q))) : all;
+  }
+  // a move is one place up or down among the pinned or among the rest (not while searching: the neighbours are hidden)
+  canMove(s, d) {
+    if (this.query.trim()) return false;
+    const all = this.arranged(), i = all.findIndex(x => x.id === s.id), j = i + d;
+    return i >= 0 && j >= 0 && j < all.length && this.pinned(all[j].id) === this.pinned(s.id);
+  }
+  move(s, d) {
+    if (!this.canMove(s, d)) return;
+    const all = this.arranged(), i = all.findIndex(x => x.id === s.id);
+    [all[i], all[i + d]] = [all[i + d], all[i]];
+    this.keep(all);
+    this.selectedId = s.id; this.fill();
+    const e = this.list.entries.find(x => x.s.id === s.id); if (e) this.list.ensureVisible(e);
+  }
+  togglePin(s) {
+    const all = this.arranged().filter(x => x.id !== s.id), np = all.filter(x => this.pinned(x.id)).length;
+    // (pinned: the last of the pinned; unpinned: the first of the rest)
+    if (this.pinned(s.id)) { this.prefs.pins = this.prefs.pins.filter(id => id !== s.id); all.splice(np, 0, s); }
+    else { this.prefs.pins.push(s.id); all.splice(np, 0, s); }
+    this.keep(all);
+    this.selectedId = s.id; this.fill();
+  }
+  keep(all) {
+    const pins = new Set(this.prefs.pins);
+    this.prefs = { pins: all.filter(x => pins.has(x.id)).map(x => x.id), order: all.filter(x => !pins.has(x.id)).map(x => x.id) };
+    savePrefs(this.prefs);
+  }
   fill() {
-    this.list.entries = this.servers.map(s => new ServerEntry(s, this));
+    this.list.entries = this.shown().map(s => new ServerEntry(s, this));
     this.list.selected = this.list.entries.find(e => e.s.id === this.selectedId) || null;
     this.list.setScroll(this.list.scroll);
     this.updateButtons();
@@ -161,8 +252,9 @@ export class MultiplayerScreen extends Screen {
     if (this.gui) this.gui.markDirty();
     this.status2 = '';
     try {
-      const r = await listServers();
+      const [r, p] = await Promise.all([listServers(), accountPrefs().catch(() => null)]);
       this.servers = r.servers; this.ping = r.ping; this.status = '';
+      if (p) { this.prefs = p; try { localStorage.setItem(LIST_KEY, JSON.stringify(p)); } catch (e) {} }
     } catch (e) {
       // nothing answering, or an mc server without Leoncraft 2 on it yet: said plainly (net.js FAIL_TEXT)
       const t = FAIL_TEXT[(e && e.kind) || SERVER_DOWN] || FAIL_TEXT.down;
@@ -204,8 +296,9 @@ export class MultiplayerScreen extends Screen {
   render(g, mx, my, dt) {
     super.render(g, mx, my, dt);
     g.centered(this.title, this.width / 2, 20, WHITE);
+    if (!this.status && this.query.trim() && !this.list.entries.length) g.centered('No servers match "' + this.query.trim() + '"', this.width / 2, 52 + Math.floor((this.height - 116) / 2) - 4, GREY);
     if (this.status) {
-      const y = 32 + Math.floor((this.height - 96) / 2) - 4;
+      const y = 52 + Math.floor((this.height - 116) / 2) - 4;
       // (a server that cannot be reached is said in the game's dark red, with why under it)
       g.centered(this.status, this.width / 2, y - (this.status2 ? 5 : 0), this.status2 ? 0xAA0000 : GREY);
       if (this.status2) for (const [i, l] of g.font.wrap(this.status2, this.width - 50).entries()) g.centered(l, this.width / 2, y + 6 + i * 10, GREY);
@@ -218,6 +311,8 @@ export class MultiplayerScreen extends Screen {
     if (e.key === 'F5') { this.refresh(); return true; }
     if (!n) return false;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      // (Shift moves the chosen server up or down, as the game's list does)
+      if (e.shiftKey && L.selected) { this.move(L.selected.s, e.key === 'ArrowDown' ? 1 : -1); return true; }
       let i = L.entries.indexOf(L.selected);
       i = e.key === 'ArrowDown' ? Math.min(n - 1, i + 1) : Math.max(0, i < 0 ? 0 : i - 1);
       L.setSelected(L.entries[i]); L.ensureVisible(L.entries[i]);

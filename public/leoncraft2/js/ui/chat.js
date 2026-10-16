@@ -5,12 +5,14 @@
    fading out ten seconds after it arrived (the last second a fade), the
    last ten shown while you play and the last twenty with chat open. T opens
    it, / opens it with a slash already typed; Enter sends, Esc closes, Up and
-   Down walk back through what you sent, Tab finishes a command's name.
+   Down walk back through what you sent. A command gets the game's
+   suggestions as it is typed (ChatScreen).
 --------------------------------------------------------------------------- */
-import { Screen } from './gui.js?v=70';
-import { execute, complete } from '../commands.js?v=70';
+import { Screen, TextField } from './gui.js?v=71';
+import { execute, suggestions, commandDef } from '../commands.js?v=71';
 
 const LINE = 9, KEEP = 100, WIDTH = 320;
+const ROWS = 10;           // suggestions shown at once (the list scrolls past that)
 
 export class Chat {
   constructor() {
@@ -123,66 +125,168 @@ export class Chat {
 }
 
 /* The open chat: the line you are typing at the very bottom, the game still
-   running behind it (no menu background). */
+   running behind it (no menu background).
+
+   A command gets the game's suggestions (1.13+): a box over the line from
+   the word being typed, the chosen one yellow and the rest grey, ten at a
+   time, with a row of dots when more are above or below; what the chosen one
+   would add shows in dark grey after the cursor. Tab puts the chosen one in
+   (again: the next one, Shift+Tab the one before), Up and Down choose, the
+   wheel scrolls, a click puts one in, Esc hides the box (a second Esc closes
+   chat). A line from the history keeps the box shut, so Up goes on walking
+   back. With nothing to suggest, the command's usage shows instead. */
 export class ChatScreen extends Screen {
   constructor(chat, ctxOf, start = '') {
     super('Chat');
     this.chat = chat; this.ctxOf = ctxOf;
     this.background = 'none';
     this.value = start;
+    this.cursor = start.length;
     this.histAt = chat.sent.length;
-    this.suggestions = [];
+    this.sugg = null;        // { start, list, sel, top, orig, at }: at is where the cursor was in orig
+    this.hidden = false;     // Esc or the history put the box away until the next edit
+    this.cycling = false;    // Tab already put one in: the next Tab moves on
+    this.keep = false;
+    this.usage = '';
     this.animates = true;
   }
   init() {
     const g = this.gui, inp = g.input;
     this.chat.open = true;
-    // the hidden input does the typing, as for the game's other text boxes
-    this.field = { maxLength: 256, value: this.value, cursor: this.value.length, selEnd: this.value.length, focused: true, focusTime: performance.now(),
-      _syncFrom: i => { this.value = i.value.slice(0, 256); this.field.value = this.value; this.field.cursor = i.selectionEnd ?? this.value.length; this.suggest(); g.dirty = true; },
-      keyPressed: () => false, isMouseOver: () => true };
+    // the game's edit box, drawn here as the chat's line (the hidden input does the typing, selection and clipboard)
+    const fl = this.field = new TextField(0, this.height - 12, this.width - 4, 10, { value: this.value, maxLength: 256 });
+    fl.gui = g;
+    fl.cursor = fl.selEnd = Math.min(this.cursor, this.value.length);
+    // (a click anywhere keeps the line's focus, as the game's chat does)
+    fl.isMouseOver = () => true;
+    const sync = fl._syncFrom.bind(fl);
+    fl._syncFrom = i => {
+      const v0 = fl.value, c0 = fl.cursor;
+      sync(i);
+      this.value = fl.value; this.cursor = fl.cursor;
+      if (fl.value !== v0 || fl.cursor !== c0) this.edited(fl.value !== v0);
+    };
     g.textFocus = null;
-    g.focusText(this.field);
+    g.focusText(fl);
     inp.value = this.value;
-    try { inp.setSelectionRange(this.value.length, this.value.length); } catch (e) { /* hidden */ }
-    this.suggest();
+    try { inp.setSelectionRange(fl.cursor, fl.cursor); } catch (e) { /* hidden */ }
+    this.refresh();
   }
-  suggest() {
+  // the line changed (or the cursor moved): suggestions for where it is now
+  edited(typed) {
+    if (this.keep) return;
+    this.cycling = false;
+    if (typed) this.hidden = false;
+    this.refresh();
+  }
+  refresh() {
+    this.sugg = null; this.usage = '';
+    const v = this.value;
+    if (!v.startsWith('/')) return;
     let ctx = null;
-    try { ctx = this.value.includes(' ') ? this.ctxOf() : null; } catch (e) { ctx = null; }
-    this.suggestions = this.value.startsWith('/') ? complete(this.value, ctx).slice(0, 10) : [];
+    try { ctx = this.ctxOf(); } catch (e) { ctx = null; }
+    let r;
+    try { r = suggestions(v, this.cursor, ctx); } catch (e) { console.error(e); return; }
+    if (r.list.length && !this.hidden) this.sugg = { start: r.start, list: r.list, sel: 0, top: 0, orig: v, at: this.cursor };
+    else if (!r.list.length && v.includes(' ')) {
+      const name = v.slice(1).split(' ')[0], d = commandDef(name);
+      if (d && d.usage) this.usage = '/' + name + ' ' + d.usage;
+    }
+    if (this.gui) this.gui.dirty = true;
   }
-  // a click on a part of a line that runs a command (a teleport request's /tpaccept): chat closes and it runs
+  // what the chosen suggestion would make of the line
+  applied(i = this.sugg.sel) { const s = this.sugg; return s.orig.slice(0, s.start) + s.list[i] + s.orig.slice(s.at); }
+  choose(d) {
+    const s = this.sugg, n = s.list.length;
+    s.sel = ((s.sel + d) % n + n) % n;
+    if (s.sel < s.top) s.top = s.sel;
+    if (s.sel >= s.top + ROWS) s.top = s.sel - ROWS + 1;
+    this.gui.dirty = true;
+  }
+  // put the chosen one in; the box stays (Tab again moves on), unless it ends in a space (a whole position): then the next word's
+  use() {
+    const s = this.sugg, word = s.list[s.sel];
+    this.keep = true;
+    this.setValue(this.applied(), s.start + word.length);
+    this.keep = false;
+    this.cycling = true;
+    if (word.endsWith(' ')) { this.cycling = false; this.refresh(); }
+  }
+  // a click on a suggestion puts it in; on a part of a line that runs a command (a teleport request's /tpaccept), chat closes and it runs
   mouseClicked(mx, my, button) {
+    const row = this.rowAt(mx, my);
+    if (row >= 0 && button === 0) { this.sugg.sel = row; this.use(); return this.field; }
     if (button === 0) {
       const run = this.chat.clickAt(this.gui, mx, my);
       if (run) { this.gui.back(); execute(run, this.ctxOf()); return true; }
     }
-    return super.mouseClicked(mx, my, button);
+    // (the caret goes under a click on the line)
+    if (my >= this.height - 14 && this.field.mouseClicked(mx, my, button)) return this.field;
+    return null;
   }
-  setValue(v) {
-    this.value = v; this.field.value = v; this.field.cursor = v.length;
+  mouseScrolled(mx, my, d) {
+    const s = this.sugg;
+    if (!s || s.list.length <= ROWS) return false;
+    s.top = Math.max(0, Math.min(s.list.length - ROWS, s.top - Math.sign(d)));
+    this.gui.dirty = true;
+    return true;
+  }
+  // the box: where it is (x, y of its top, width, rows shown)
+  box() {
+    const s = this.sugg;
+    if (!s) return null;
+    const f = this.gui.font, fl = this.field, inner = this.width - 12;
+    const w = Math.max(...s.list.map(t => f.width(t))) + 1;
+    const n = Math.min(ROWS, s.list.length);
+    const at = 4 + (s.start >= fl.first ? f.width(fl.value.slice(fl.first, s.start)) : 0);
+    const x = Math.max(1, Math.min(at, 4 + inner - w)) - 1;
+    return { x, y: this.height - 15 - n * 12, w: w + 1, n };
+  }
+  // which suggestion the mouse is on (-1 for none)
+  rowAt(mx, my) {
+    const b = this.box();
+    if (!b || mx < b.x || mx >= b.x + b.w || my < b.y || my >= b.y + b.n * 12) return -1;
+    return this.sugg.top + Math.floor((my - b.y) / 12);
+  }
+  setValue(v, cursor = v.length) {
+    v = v.slice(0, 256);
+    this.value = v; this.cursor = Math.min(cursor, v.length);
+    const fl = this.field;
+    fl.value = v; fl.cursor = fl.selEnd = this.cursor; fl.focusTime = performance.now();
     const inp = this.gui.input; inp.value = v;
-    try { inp.setSelectionRange(v.length, v.length); } catch (e) { /* hidden */ }
-    this.suggest();
+    try { inp.setSelectionRange(this.cursor, this.cursor); } catch (e) { /* hidden */ }
+    if (!this.keep) { this.cycling = false; this.refresh(); }
     this.gui.dirty = true;
   }
   keyPressed(e) {
-    if (e.key === 'Escape') { this.gui.back(); return true; }
+    const s = this.sugg;
+    if (e.key === 'Escape') {
+      if (s) { this.sugg = null; this.hidden = true; this.gui.dirty = true; return true; }
+      this.gui.back(); return true;
+    }
     if (e.key === 'Enter') {
       const v = this.value.trim();
       this.gui.back();
       if (v) this.send(v);
       return true;
     }
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      const s = this.chat.sent;
-      this.histAt = Math.max(0, Math.min(s.length, this.histAt + (e.key === 'ArrowUp' ? -1 : 1)));
-      this.setValue(this.histAt < s.length ? s[this.histAt] : '');
+    if (e.key === 'Tab') {
+      if (!this.sugg) { this.hidden = false; this.refresh(); }
+      if (!this.sugg) return true;
+      if (this.cycling) this.choose(e.shiftKey ? -1 : 1);
+      this.use();
       return true;
     }
-    if (e.key === 'Tab') {
-      if (this.suggestions.length) this.setValue(this.suggestions[0] + (this.suggestions.length === 1 ? ' ' : ''));
+    if (s && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      this.choose(e.key === 'ArrowUp' ? -1 : 1);
+      this.cycling = false;
+      return true;
+    }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const h = this.chat.sent;
+      this.histAt = Math.max(0, Math.min(h.length, this.histAt + (e.key === 'ArrowUp' ? -1 : 1)));
+      this.hidden = true;
+      this.setValue(this.histAt < h.length ? h[this.histAt] : '');
       return true;
     }
     return false;
@@ -197,21 +301,54 @@ export class ChatScreen extends Screen {
   }
   onClose() { this.chat.open = false; this.chat.tip = null; this.chat.dirty = true; this.gui._blurText && this.gui._blurText(); }
   render(g, mx, my, dt) {
-    const W = this.width, H = this.height, f = g.font;
+    const W = this.width, H = this.height, f = g.font, fl = this.field, val = fl.value;
     g.fill(2, H - 14, W - 2, H - 2, 0x80000000);
     const tip = this.chat.hoverAt && this.chat.hoverAt(g, mx, my);
     this.chat.tip = tip ? { lines: tip, x: mx, y: my } : null;
-    const shown = f.trim(this.value, W - 12, true);
-    const x = g.text(shown, 4, H - 12, 0xFFFFFF);
-    if ((((g.now - this.field.focusTime) / 300) | 0) % 2 === 0) g.text('_', x, H - 12, 0xFFFFFF);
-    // what Tab would finish, listed above the line
-    if (this.suggestions.length > 1 || (this.suggestions.length === 1 && this.suggestions[0] !== this.value.trim())) {
-      const w = Math.max(...this.suggestions.map(s => f.width(s))) + 4;
-      let y = H - 16 - this.suggestions.length * 12;
-      for (let i = 0; i < this.suggestions.length; i++, y += 12) {
-        g.fill(2, y, 2 + w, y + 12, 0xD0000000);
-        g.text(this.suggestions[i], 4, y + 2, i === 0 ? 0xFFFF55 : 0xAAAAAA);
+    // the part of the line that fits, the cursor always in it
+    const inner = W - 12, tx = 4, ty = H - 12;
+    if (fl.cursor < fl.first) fl.first = fl.cursor;
+    while (fl.first < fl.cursor && f.width(val.slice(fl.first, fl.cursor)) > inner) fl.first++;
+    const shown = f.trim(val.slice(fl.first), inner);
+    const end = g.text(shown, tx, ty, 0xFFFFFF);
+    // what is selected (Shift with the arrows, Home or End, Ctrl+A), as the game's edit box shows it
+    if (fl.selEnd !== fl.cursor) {
+      const s0 = Math.max(fl.first, Math.min(fl.cursor, fl.selEnd)), s1 = Math.min(fl.first + shown.length, Math.max(fl.cursor, fl.selEnd));
+      if (s1 > s0) {
+        const a = tx + f.width(val.slice(fl.first, s0)), b = tx + f.width(val.slice(fl.first, s1));
+        g.ctx.globalCompositeOperation = 'difference';
+        g.fill(a, ty - 1, b, ty + 9, 0xFFFFFFFF);
+        g.ctx.globalCompositeOperation = 'source-over';
       }
+    }
+    const s = this.sugg;
+    // the rest of the chosen suggestion, after the cursor at the end of the line
+    if (s && fl.cursor === val.length && fl.first + shown.length === val.length) {
+      const a = this.applied();
+      if (a.length > val.length && a.startsWith(val)) g.text(f.trim(a.slice(val.length), Math.max(0, W - 4 - end)), end, ty, 0x808080);
+    }
+    if ((((g.now - fl.focusTime) / 300) | 0) % 2 === 0) {
+      const cx = tx + f.width(val.slice(fl.first, fl.cursor));
+      if (fl.cursor < val.length) g.fill(cx, ty - 1, cx + 1, ty + 9, 0xFFD0D0D0);
+      else g.text('_', cx, ty, 0xFFFFFF);
+    }
+    if (s) {
+      const b = this.box();
+      // (the mouse moving onto a row chooses it, as in the game)
+      const over = this.rowAt(mx, my);
+      if (over >= 0 && (mx !== this.lastMx || my !== this.lastMy)) s.sel = over;
+      this.lastMx = mx; this.lastMy = my;
+      g.fill(b.x, b.y, b.x + b.w, b.y + b.n * 12, 0xD0000000);
+      if (s.top > 0) for (let k = 0; k < b.w; k += 2) g.fill(b.x + k, b.y - 1, b.x + k + 1, b.y, 0xFFFFFFFF);
+      if (s.top + ROWS < s.list.length) for (let k = 0; k < b.w; k += 2) g.fill(b.x + k, b.y + b.n * 12, b.x + k + 1, b.y + b.n * 12 + 1, 0xFFFFFFFF);
+      for (let r = 0; r < b.n; r++) {
+        const i = s.top + r;
+        g.text(s.list[i], b.x + 1, b.y + 2 + r * 12, i === s.sel ? 0xFFFF00 : 0xAAAAAA);
+      }
+    } else if (this.usage) {
+      const t = f.trim(this.usage, W - 8), w = f.width(t) + 2;
+      g.fill(3, H - 27, 3 + w, H - 15, 0xD0000000);
+      g.text(t, 4, H - 25, 0xAAAAAA);
     }
   }
 }
