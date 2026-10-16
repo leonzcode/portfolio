@@ -14,19 +14,19 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Interaction } from './interaction.js?v=65';
-import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=65';
-import { makeNoise2D } from './noisetex.js?v=65';
-import { Avatar } from './avatar.js?v=65';
-import { Held } from './held.js?v=65';
-import { Figure } from './figure.js?v=65';
-import { PumpkinView } from './pumpkin.js?v=65';
-import { glints, pieceLook } from './armor.js?v=65';
-import { dimLook } from '../dim/look.js?v=65';
-import { blockGeometry, intAttribute } from './blockmesh.js?v=65';
-import { applyLook, looked, passMaterials } from './looks.js?v=65';
-import { screenFx } from './screenfx.js?v=65';
-import { endFlash } from './endflash.js?v=65';
+import { Interaction } from './interaction.js?v=66';
+import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=66';
+import { makeNoise2D } from './noisetex.js?v=66';
+import { Avatar } from './avatar.js?v=66';
+import { Held } from './held.js?v=66';
+import { Figure } from './figure.js?v=66';
+import { PumpkinView } from './pumpkin.js?v=66';
+import { glints, pieceLook } from './armor.js?v=66';
+import { dimLook } from '../dim/look.js?v=66';
+import { blockGeometry, intAttribute } from './blockmesh.js?v=66';
+import { applyLook, looked, passMaterials } from './looks.js?v=66';
+import { screenFx } from './screenfx.js?v=66';
+import { endFlash } from './endflash.js?v=66';
 const THREE = window.THREE;
 // a column's distance from (ex, ez), squared, in whole blocks; and nearest first
 const distTo = (col, ex, ez) => { const dx = col.cx * 16 + 8 - ex, dz = col.cz * 16 + 8 - ez; return (dx * dx + dz * dz) | 0; };
@@ -53,7 +53,9 @@ export class Renderer {
   constructor(canvas, textures, opts) {
     this.opts = Object.assign({ renderDist: 10, shadowRes: 2048, shadowDist: 112, scale: 1, shadows: 2, ldr: false }, opts || {});
     const ldr = this.ldr = !!this.opts.ldr;
-    const r = this.r = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: true });
+    // (a stencil buffer asked for so the depth buffer comes as 24 bits with it: some machines give a lone depth buffer 16 bits, and a
+    // carpet or a painting a sixteenth off what is behind it flickered through it there)
+    const r = this.r = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: true, depth: true });
     r.setPixelRatio(1);
     r.autoClear = false;
     r.outputColorSpace = THREE.LinearSRGBColorSpace;
