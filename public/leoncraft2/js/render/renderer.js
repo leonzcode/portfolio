@@ -14,19 +14,19 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Interaction } from './interaction.js?v=68';
-import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=68';
-import { makeNoise2D } from './noisetex.js?v=68';
-import { Avatar } from './avatar.js?v=68';
-import { Held } from './held.js?v=68';
-import { Figure } from './figure.js?v=68';
-import { PumpkinView } from './pumpkin.js?v=68';
-import { glints, pieceLook } from './armor.js?v=68';
-import { dimLook } from '../dim/look.js?v=68';
-import { blockGeometry, intAttribute } from './blockmesh.js?v=68';
-import { applyLook, looked, passMaterials } from './looks.js?v=68';
-import { screenFx } from './screenfx.js?v=68';
-import { endFlash } from './endflash.js?v=68';
+import { Interaction } from './interaction.js?v=69';
+import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=69';
+import { makeNoise2D } from './noisetex.js?v=69';
+import { Avatar } from './avatar.js?v=69';
+import { Held } from './held.js?v=69';
+import { Figure } from './figure.js?v=69';
+import { PumpkinView } from './pumpkin.js?v=69';
+import { glints, pieceLook } from './armor.js?v=69';
+import { dimLook } from '../dim/look.js?v=69';
+import { blockGeometry, intAttribute } from './blockmesh.js?v=69';
+import { applyLook, looked, passMaterials } from './looks.js?v=69';
+import { screenFx } from './screenfx.js?v=69';
+import { endFlash } from './endflash.js?v=69';
 const THREE = window.THREE;
 // a column's distance from (ex, ez), squared, in whole blocks; and nearest first
 const distTo = (col, ex, ez) => { const dx = col.cx * 16 + 8 - ex, dz = col.cz * 16 + 8 - ez; return (dx * dx + dz * dz) | 0; };
