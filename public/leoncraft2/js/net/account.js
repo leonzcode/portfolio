@@ -64,6 +64,7 @@ export const Account = {
   get name() { return this.session ? this.session.name : ''; },
   get token() { return this.session ? this.session.token : ''; },
   get admin() { return !!(this.session && this.session.admin); },
+  get mod() { return !!(this.session && this.session.mod); },
   // playing as a guest: no account, a name of Guest_ and four digits (a server may give another if that one is in use)
   get guest() { return !!(this.session && this.session.guest); },
   playAsGuest() {
@@ -78,7 +79,7 @@ export const Account = {
   onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   changed() { for (const fn of listeners) { try { fn(this); } catch (e) { console.error(e); } } },
   keep(r) {
-    this.session = { name: r.name, token: r.token, admin: !!r.admin, at: Date.now() };
+    this.session = { name: r.name, token: r.token, admin: !!r.admin, mod: !!r.mod, at: Date.now() };
     write(this.session); this.checked = true; this.offline = false; this.changed();
   },
   forget() { this.session = null; write(null); this.checked = false; this.offline = false; this.changed(); },
@@ -97,7 +98,7 @@ export const Account = {
     if (!s) { this.checked = false; this.changed(); return false; }
     if (s.guest) { this.checked = true; this.offline = false; this.changed(); return true; }
     const r = await call('/lc2/account/me', { token: s.token });
-    if (r.ok) { this.session = Object.assign({}, s, { name: r.name, admin: !!r.admin }); write(this.session); this.checked = true; this.offline = false; this.changed(); return true; }
+    if (r.ok) { this.session = Object.assign({}, s, { name: r.name, admin: !!r.admin, mod: !!r.mod }); write(this.session); this.checked = true; this.offline = false; this.changed(); return true; }
     if (r.code === 'down') { this.offline = true; this.changed(); return 'offline'; }
     // stale, forged, banned or deleted: log in again (a ban is said on the login screen)
     this.forget();

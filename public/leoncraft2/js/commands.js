@@ -10,9 +10,10 @@
    Each command gets a context: ctx.game (the world being played), and
    ctx.say(text, colour) for the reply.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=64';
-import { Y0 } from './world-const.js?v=64';
-import { ENCHANTS } from './itemdata.js?v=64';
+import { B, BLOCKS, FLUID } from './blocks.js?v=65';
+import { Y0 } from './world-const.js?v=65';
+import { ENCHANTS } from './itemdata.js?v=65';
+import { stateOf } from './gen/states.js?v=65';
 
 const REG = new Map();
 export function register(name, def) { REG.set(name, def); for (const a of def.aliases || []) REG.set(a, def); }
@@ -85,13 +86,17 @@ export function execute(line, ctx) {
   if (!ctx.cheats && !def.always) { ctx.say('You do not have permission to use this command', RED); return false; }
   // (the name as typed, for the help that names it: /removehome, not /delhome)
   ctx.label = name;
-  try {
-    def.run(args, ctx);
-    return true;
-  } catch (e) {
+  const report = e => {
     if (e instanceof CommandError) ctx.say(e.message, RED);
     else { console.error(e); ctx.say('An unexpected error occurred trying to execute that command', RED); }
     return false;
+  };
+  try {
+    const r = def.run(args, ctx);
+    if (r && typeof r.then === 'function') r.catch(report);
+    return true;
+  } catch (e) {
+    return report(e);
   }
 }
 // what Tab offers for the word being typed (ctx: the chat's command context, for what depends on the world: your homes)
@@ -229,46 +234,210 @@ register('seed', {
   always: true,
   run(args, ctx) { ctx.say(`Seed: [${ctx.seed()}]`, 0x55FF55); },
 });
+/* ---- block arguments, as the game reads them ----
+   A block: name[state=value,...]{nbt} (the nbt is read past). The state gives
+   the meta byte the way js/models.js reads it: gen/states.js for facing, axis,
+   layers and a door's half, then stairs upside down, slabs' halves, doors,
+   trapdoors, gates, beds, lanterns, and wall torches, ladders and wall signs
+   by the side they hang from. A filter (for /fill ... replace) is a block or
+   a #tag, and its states only have to match the ones written. */
+const FACE4 = { north: 0, east: 1, south: 2, west: 3 }, FACING_FACE = [5, 0, 4, 1];
+// a word with brackets or braces that the chat split at spaces, put back together
+function joinArgs(args) {
+  const out = [];
+  for (const a of args) { if (out.length && depth(out[out.length - 1]) > 0) out[out.length - 1] += ' ' + a; else out.push(a); }
+  return out;
+}
+function propsOf(s, text) {
+  const props = {};
+  const body = s.trim();
+  if (!body) return props;
+  for (const kv of body.split(',')) {
+    const i = kv.indexOf('=');
+    if (i < 0) fail(`Expected value for property '${kv.trim()}' on block ${text}`);
+    const k = kv.slice(0, i).trim(), v = kv.slice(i + 1).trim();
+    if (!k) fail(`Expected value for property on block ${text}`);
+    if (/\s/.test(k) || /\s/.test(v)) fail(`Expected closing ] for block state properties`);
+    if (props[k] !== undefined) fail(`Property '${k}' can only be set once for block ${text}`);
+    props[k] = v;
+  }
+  return props;
+}
+function metaFor(id, props) {
+  const d = BLOCKS[id];
+  if (!d || !props) return 0;
+  const base = stateOf({ Name: 'minecraft:' + d.name, Properties: Object.keys(props).length ? props : null }).meta | 0;
+  const f = FACE4[props.facing] !== undefined ? FACE4[props.facing] : base & 3;
+  switch (d.shape) {
+    case 'stairs': return f | (props.half === 'top' ? 4 : 0);
+    case 'slab': return /_slab$/.test(d.name) ? (props.type === 'double' ? 2 : props.type === 'top' ? 1 : 0) : base;
+    case 'door': return f | (props.open === 'true' ? 4 : 0) | (props.half === 'upper' ? 8 : 0) | (props.hinge === 'right' ? 16 : 0);
+    case 'trapdoor': return f | (props.open === 'true' ? 4 : 0) | (props.half === 'top' ? 8 : 0);
+    case 'gate': return f | (props.open === 'true' ? 4 : 0);
+    case 'bed': return f | (props.part === 'head' ? 8 : 0);
+    case 'lantern': return props.hanging === 'true' ? 1 : 0;
+    case 'wall_torch': case 'ladder': case 'wall_sign': return props.facing ? FACING_FACE[(f + 2) & 3] : base;
+  }
+  return base;
+}
+const AIRS = new Set(['air', 'cave_air', 'void_air']);
+function blockArg(s) {
+  if (!s) fail('Incomplete command');
+  const m = /^(?:minecraft:)?([a-z0-9_]+)(?:\[([^\]]*)\])?(\{.*\})?$/.exec(s);
+  if (!m) fail(`Unknown block type '${s}'`);
+  const name = m[1];
+  const props = m[2] !== undefined ? propsOf(m[2], 'minecraft:' + name) : null;
+  if (AIRS.has(name)) return { id: 0, meta: 0, props };
+  const id = B[name];
+  if (id === undefined) fail(`Unknown block type 'minecraft:${name}'`);
+  return { id, meta: metaFor(id, props), props };
+}
+// the block tags, from the generator's data (loaded only when a tag is asked for)
+let TAGS = null;
+const loadTags = () => import('./gen/vdata.js?v=65').then(m => { TAGS = m.VDATA.block_tags || {}; });
+function tagIds(name, seen = new Set()) {
+  const key = name.replace(/^minecraft:/, '');
+  const list = TAGS[key];
+  if (!list) fail(`Unknown block tag 'minecraft:${key}'`);
+  const out = new Set();
+  if (seen.has(key)) return out;
+  seen.add(key);
+  for (const e of list) {
+    const v = typeof e === 'string' ? e : e.id;
+    if (!v) continue;
+    if (v.startsWith('#')) { try { for (const i of tagIds(v.slice(1), seen)) out.add(i); } catch (err) { if (!(typeof e === 'object' && e.required === false)) throw err; } }
+    else { const n = v.replace(/^minecraft:/, ''); if (AIRS.has(n)) out.add(0); else if (B[n] !== undefined) out.add(B[n]); }
+  }
+  return out;
+}
+const VOCAB = {
+  facing: ['north', 'east', 'south', 'west', 'up', 'down'], half: ['top', 'bottom', 'upper', 'lower'], type: ['top', 'bottom', 'double'],
+  axis: ['x', 'y', 'z'], hinge: ['left', 'right'], part: ['head', 'foot'], layers: ['1', '2', '3', '4', '5', '6', '7', '8'],
+  open: ['true', 'false'], hanging: ['true', 'false'], berries: ['true', 'false'],
+};
+// a filter: test(id, meta). Its states are matched on the meta bits they set (a state this game does not keep matches anything)
+function filterArg(s) {
+  if (!s) fail('Incomplete command');
+  if (s.startsWith('#')) {
+    const m = /^#((?:minecraft:)?[a-z0-9_/]+)(?:\[([^\]]*)\])?(\{.*\})?$/.exec(s);
+    if (!m) fail(`Unknown block tag '${s}'`);
+    const ids = tagIds(m[1]);
+    const props = m[2] !== undefined ? propsOf(m[2], s) : null;
+    return (id, meta) => ids.has(id) && (!props || matchProps(id, meta, props));
+  }
+  const bl = blockArg(s);
+  return (id, meta) => id === bl.id && (!bl.props || matchProps(id, meta, bl.props));
+}
+function matchProps(id, meta, props) {
+  if (!id) return true;
+  const want = metaFor(id, props);
+  let mask = 0;
+  for (const k in props) for (const v of VOCAB[k] || []) mask |= metaFor(id, Object.assign({}, props, { [k]: v })) ^ want;
+  return (meta & mask) === (want & mask);
+}
+const blockNames = () => ['air'].concat(BLOCKS.filter(d => d && d.name && d.id).map(d => d.name));
+function inWorld(y) { if (y < Y0 || y >= Y0 + 384) fail('That position is out of this world!'); }
+function loaded(w, x, z) { if (w.chunkAt && !w.chunkAt(x, z)) fail('That position is not loaded'); }
+// one block changed for a command: replace, destroy (what was there drops, as broken by the world), strict (nothing told)
+function putBlock(ctx, x, y, z, bl, how) {
+  const g = ctx.game, w = g.world, sim = g.sim;
+  let broke = false;
+  if (how === 'destroy' && w.get(x, y, z)) {
+    if (sim) sim.destroy(x, y, z, true); else w.set(x, y, z, 0, 0);
+    broke = true;
+  }
+  if (w.get(x, y, z) === bl.id && w.meta(x, y, z) === bl.meta) return broke;
+  if (how === 'strict' && sim) { sim.silentSet(x, y, z, bl.id, bl.meta); return true; }
+  w.set(x, y, z, bl.id, bl.meta);
+  return true;
+}
+const SET_MODES = ['destroy', 'keep', 'replace', 'strict'];
 register('setblock', {
-  usage: '<x> <y> <z> <block>',
-  run(args, ctx) {
+  usage: '<pos> <block> [destroy|keep|replace|strict]',
+  suggest: (i, w) => i < 3 ? ['~'] : i === 3 ? blockNames() : i === 4 ? SET_MODES : [],
+  run(args0, ctx) {
+    const args = joinArgs(args0);
     const [x, y, z] = blockPos(args, 0, ctx.game.player);
-    const id = blockId(args[3]);
-    if (y < Y0 || y >= Y0 + 384) fail('Cannot place block outside of the world');
+    const bl = blockArg(args[3]);
+    const mode = args[4] || 'replace';
+    if (!SET_MODES.includes(mode)) fail('Incorrect argument for command');
+    if (args.length > 5) fail('Incorrect argument for command');
+    inWorld(y);
     const w = ctx.game.world;
-    if (w.get(x, y - Y0, z) === id) fail('Could not set the block');
-    w.set(x, y - Y0, z, id, 0);
-    if (ctx.game.fluids) ctx.game.fluids.around(x, y - Y0, z);     // water and lava next to it (or put down) flow, as after any block change
-    ctx.blockChanged(x, y - Y0, z);
+    loaded(w, x, z);
+    const yy = y - Y0;
+    if (mode === 'keep' && w.get(x, yy, z)) fail('Could not set the block');
+    if (!putBlock(ctx, x, yy, z, bl, mode)) fail('Could not set the block');
+    if (mode !== 'strict' && ctx.game.fluids) ctx.game.fluids.around(x, yy, z);     // water and lava next to it (or put down) flow, as after any block change
+    ctx.blockChanged(x, yy, z);
     ctx.say(`Changed the block at ${x}, ${y}, ${z}`);
   },
 });
+/* /fill <from> <to> <block> [destroy|hollow|keep|outline|replace|strict]
+   /fill <from> <to> <block> replace <filter> [destroy|hollow|outline|strict]
+   As the game: replace (the default) sets every block, air too; destroy breaks
+   what was there first, so it drops; hollow puts the block round the outside
+   and air inside; outline only the outside, the inside left alone; keep only
+   where there was air; strict sets them without telling any neighbour
+   (nothing falls, flows or pops off). A filter only changes the blocks it
+   matches. At most commandModificationBlockLimit blocks (32768). */
+const FILL_MODES = ['destroy', 'hollow', 'keep', 'outline', 'replace', 'strict'];
+const FILTER_MODES = ['destroy', 'hollow', 'outline', 'strict'];
 register('fill', {
-  usage: '<from> <to> <block>',
-  run(args, ctx) {
+  usage: '<from> <to> <block> [destroy|hollow|keep|outline|replace|strict]',
+  suggest: (i, w) => {
+    if (i < 6) return ['~'];
+    if (i === 6) return blockNames();
+    if (i === 7) return FILL_MODES;
+    if (i === 8 && w[7] === 'replace') return blockNames();
+    if (i === 9 && w[7] === 'replace') return FILTER_MODES;
+    return [];
+  },
+  run(args0, ctx) {
+    const args = joinArgs(args0);
+    // a #tag in the filter waits for the tag table once
+    if (!TAGS && args[7] === 'replace' && args[8] && args[8].startsWith('#')) return loadTags().then(() => this.run(args0, ctx));
     const p = ctx.game.player;
+    if (args.length < 7) fail('Incomplete command');
     const a = blockPos(args, 0, p), b = blockPos(args, 3, p);
-    const id = blockId(args[6]);
-    const mode = args[7] || 'replace';
-    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.max(Y0, Math.min(a[1], b[1])), y1 = Math.min(Y0 + 383, Math.max(a[1], b[1])), z0 = Math.min(a[2], b[2]), z1 = Math.max(a[2], b[2]);
-    const vol = (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1);
-    if (vol > 32768) fail(`Too many blocks in the specified area (maximum 32768, specified ${vol})`);
-    const w = ctx.game.world;
-    let n = 0;
-    for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
-      const edge = x === x0 || x === x1 || y === y0 || y === y1 || z === z0 || z === z1;
-      let want = id;
-      if (mode === 'hollow') want = edge ? id : 0;
-      else if (mode === 'outline') { if (!edge) continue; }
-      else if (mode === 'keep') { if (w.get(x, y - Y0, z)) continue; }
-      if (w.get(x, y - Y0, z) === want) continue;
-      w.set(x, y - Y0, z, want, 0);
-      if (ctx.game.fluids && (FLUID[want] || edge)) ctx.game.fluids.around(x, y - Y0, z);
-      n++;
+    const bl = blockArg(args[6]);
+    let mode = 'replace', filter = null;
+    if (args[7] !== undefined) {
+      if (!FILL_MODES.includes(args[7])) fail('Incorrect argument for command');
+      mode = args[7];
+      if (mode === 'replace' && args[8] !== undefined) {
+        if (FILTER_MODES.includes(args[8])) fail('Incorrect argument for command');
+        filter = filterArg(args[8]);
+        if (args[9] !== undefined) { if (!FILTER_MODES.includes(args[9])) fail('Incorrect argument for command'); mode = args[9]; }
+        if (args.length > 10) fail('Incorrect argument for command');
+      } else if (args.length > 8) fail('Incorrect argument for command');
     }
-    if (!n) fail('No blocks were filled');
+    inWorld(a[1]); inWorld(b[1]);
+    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]), z0 = Math.min(a[2], b[2]), z1 = Math.max(a[2], b[2]);
+    const vol = (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1);
+    const limit = gameRule(ctx.game, 'commandModificationBlockLimit');
+    if (vol > limit) fail(`Too many blocks in the specified area (maximum ${limit}, specified ${vol})`);
+    const w = ctx.game.world;
+    for (let cx = x0 >> 4; cx <= x1 >> 4; cx++) for (let cz = z0 >> 4; cz <= z1 >> 4; cz++) loaded(w, cx * 16, cz * 16);
+    const AIR = { id: 0, meta: 0 };
+    const changed = [];
+    for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+      const yy = y - Y0;
+      const edge = x === x0 || x === x1 || y === y0 || y === y1 || z === z0 || z === z1;
+      if (filter && !filter(w.get(x, yy, z), w.meta(x, yy, z))) continue;
+      let want = bl;
+      if (mode === 'hollow') want = edge ? bl : AIR;
+      else if (mode === 'outline') { if (!edge) continue; }
+      else if (mode === 'keep') { if (w.get(x, yy, z)) continue; }
+      if (putBlock(ctx, x, yy, z, want, mode)) changed.push(x, yy, z, edge ? 1 : 0);
+    }
+    if (!changed.length) fail('No blocks were filled');
+    // then the water and lava round what changed flow, as after any block change (not for strict)
+    if (mode !== 'strict' && ctx.game.fluids) for (let i = 0; i < changed.length; i += 4) {
+      if (changed[i + 3] || FLUID[bl.id]) ctx.game.fluids.around(changed[i], changed[i + 1], changed[i + 2]);
+    }
     ctx.blockChanged(x0, y0 - Y0, z0);
-    ctx.say(`Successfully filled ${n} block(s)`);
+    ctx.say(`Successfully filled ${changed.length / 4} block(s)`);
   },
 });
 register('weather', {
@@ -316,7 +485,7 @@ const RULES = {
   doDaylightCycle: true, doWeatherCycle: true, keepInventory: false, doMobSpawning: true, mobGriefing: true, doFireTick: true,
   doImmediateRespawn: false, naturalRegeneration: true, fallDamage: true, drowningDamage: true, fireDamage: true, freezeDamage: true,
   doTileDrops: true, doMobLoot: true, doEntityDrops: true, randomTickSpeed: 3, spawnRadius: 10, playersSleepingPercentage: 100,
-  showDeathMessages: true, announceAdvancements: true, doInsomnia: true, doPatrolSpawning: true, doTraderSpawning: true, maxEntityCramming: 24,
+  showDeathMessages: true, announceAdvancements: true, doInsomnia: true, doPatrolSpawning: true, doTraderSpawning: true, maxEntityCramming: 24, commandModificationBlockLimit: 32768,
 };
 // for commands other parts register (enchanting.js /enchant): the same errors and arguments
 export { fail, int, self };

@@ -23,7 +23,7 @@
    forest into a desert lets the forest's track finish). Music at 0% plays
    nothing.
 --------------------------------------------------------------------------- */
-import { Sound } from './sound.js?v=64';
+import { Sound } from './sound.js?v=65';
 
 const NONE = null;
 const KINDS = {
