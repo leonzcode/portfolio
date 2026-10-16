@@ -14,27 +14,27 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=68';
-import { I } from '../items.js?v=68';
-import { POTIONS } from '../brewing.js?v=68';
-import { ChestScreen } from '../ui/containers.js?v=68';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=68';
-import { RemotePlayers, playerSize, F } from './players.js?v=68';
-import { register } from '../commands.js?v=68';
-import { Sound } from '../sound/sound.js?v=68';
-import { RES_OVERRIDE } from '../explosion.js?v=68';
-import { skinUrl } from '../ui/skins.js?v=68';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=68';
-import { blockGeometry } from '../render/blockmesh.js?v=68';
-import { lightNear } from '../lightlevel.js?v=68';
-import { setSkin as setOwnSkin } from '../render/avatar.js?v=68';
+import { B, BLOCKS } from '../blocks.js?v=69';
+import { I } from '../items.js?v=69';
+import { POTIONS } from '../brewing.js?v=69';
+import { ChestScreen } from '../ui/containers.js?v=69';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=69';
+import { RemotePlayers, playerSize, F } from './players.js?v=69';
+import { register } from '../commands.js?v=69';
+import { Sound } from '../sound/sound.js?v=69';
+import { RES_OVERRIDE } from '../explosion.js?v=69';
+import { skinUrl } from '../ui/skins.js?v=69';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=69';
+import { blockGeometry } from '../render/blockmesh.js?v=69';
+import { lightNear } from '../lightlevel.js?v=69';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=69';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=68').then(m => {
+import('../adv/toast.js?v=69').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -412,6 +412,26 @@ class MapSettingsScreen extends Screen {
     else if (!I.mine) g.centered('§7Only the map\'s maker can change these.', W / 2, this.height - 44, WHITE);
   }
 }
+/* Chameleon's poses (the Pose item cycles them; everyone sees them through the server's 'poses'):
+   each bends the parts of the model as the game's model space has them (S: head, body, right arm,
+   left arm, right leg, left leg; x right, y down, angles in radians). */
+const HALF = Math.PI / 2;
+const POSES = [
+  ['Standing', null],
+  ['T-Pose', S => { S[2].rx = S[3].rx = 0; S[2].ry = S[3].ry = 0; S[2].rz = HALF; S[3].rz = -HALF; }],
+  ['Arms Up', S => { S[2].rx = S[3].rx = -Math.PI; S[2].rz = 0.12; S[3].rz = -0.12; }],
+  ['Zombie', S => { S[2].rx = S[3].rx = -HALF; S[2].ry = S[3].ry = 0; S[2].rz = S[3].rz = 0; }],
+  ['Sitting', S => { for (const q of S) q.y += 10; S[4].rx = S[5].rx = -HALF; S[4].ry = 0.15; S[5].ry = -0.15; S[2].rx = S[3].rx = -0.4; }],
+  ['Star', S => { S[2].rx = S[3].rx = 0; S[2].rz = 2.3; S[3].rz = -2.3; S[4].rx = S[5].rx = 0; S[4].rz = 0.45; S[5].rz = -0.45; }],
+  ['Waving', S => { S[2].rx = -2.9; S[2].rz = 0.35; S[3].rx = 0; S[3].rz = -0.1; }],
+];
+// a seeker crouching: down on one knee's lean, both arms out along the look as if sighting down a rifle
+const SNIPE = (S, sneak) => {
+  const head = S[0];
+  S[2].rx = -HALF + head.rx; S[2].ry = -0.1 + head.ry; S[2].rz = 0;
+  S[3].rx = -HALF + head.rx - 0.15; S[3].ry = 0.55 + head.ry; S[3].rz = 0;
+  if (sneak) { S[0].rz = 0.12; }
+};
 // Build Battle's votes, as the hotbar holds them
 const VOTES = [['Super Poop', '§4', 'red_terracotta'], ['Poop', '§c', 'pink_terracotta'], ['OK', '§a', 'lime_terracotta'], ['Good', '§2', 'green_terracotta'], ['Epic', '§5', 'purple_terracotta'], ['Legendary', '§6', 'yellow_terracotta']];
 
@@ -1285,7 +1305,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=68', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=69', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1300,7 +1320,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=68', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=69', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1308,7 +1328,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=68', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=69', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
