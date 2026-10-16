@@ -14,26 +14,26 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=62';
-import { I } from '../items.js?v=62';
-import { POTIONS } from '../brewing.js?v=62';
-import { ChestScreen } from '../ui/containers.js?v=62';
-import { RemotePlayers, playerSize } from './players.js?v=62';
-import { register } from '../commands.js?v=62';
-import { Sound } from '../sound/sound.js?v=62';
-import { RES_OVERRIDE } from '../explosion.js?v=62';
-import { skinUrl } from '../ui/skins.js?v=62';
-import { Painter, PaintScreen, faceColour, faceOfNormal } from '../ui/paint.js?v=62';
-import { blockGeometry } from '../render/blockmesh.js?v=62';
-import { lightNear } from '../lightlevel.js?v=62';
-import { setSkin as setOwnSkin } from '../render/avatar.js?v=62';
+import { B, BLOCKS } from '../blocks.js?v=63';
+import { I } from '../items.js?v=63';
+import { POTIONS } from '../brewing.js?v=63';
+import { ChestScreen } from '../ui/containers.js?v=63';
+import { RemotePlayers, playerSize } from './players.js?v=63';
+import { register } from '../commands.js?v=63';
+import { Sound } from '../sound/sound.js?v=63';
+import { RES_OVERRIDE } from '../explosion.js?v=63';
+import { skinUrl } from '../ui/skins.js?v=63';
+import { Painter, PaintScreen, faceColour, faceOfNormal } from '../ui/paint.js?v=63';
+import { blockGeometry } from '../render/blockmesh.js?v=63';
+import { lightNear } from '../lightlevel.js?v=63';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=63';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=62').then(m => {
+import('../adv/toast.js?v=63').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -1073,6 +1073,8 @@ export class Hub {
     const k = this.area === 'game' && this.gameKind === 'chameleon' ? 0.5 : 1, g = this.game;
     playerSize.k = k;
     if (g && g.player && g.player.setScale) g.player.setScale(k);
+    // (and nobody in it is hurt by a block at the eyes: half-size players squeeze into places, and paint against walls)
+    if (g && g.survival) g.survival.noSuffocate = k !== 1;
     const A = this.ctx && this.ctx.renderer && this.ctx.renderer.avatar;
     if (A) A.size = k;
   }
@@ -1099,7 +1101,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=62', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=63', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1114,7 +1116,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=62', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=63', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 

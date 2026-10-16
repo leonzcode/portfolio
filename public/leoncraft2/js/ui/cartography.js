@@ -11,9 +11,9 @@
    The middle shows the map as it will be. The sheet is ours
    (tools/leoncraft2/build_stations.py), the maps js/maps.js.
 --------------------------------------------------------------------------- */
-import { ContainerScreen, slot, range, TO_PLAYER } from './inventory.js?v=62';
-import { ITEMS, withCount } from '../items.js?v=62';
-import { MAPS, isFilledMap, drawMap } from '../maps.js?v=62';
+import { ContainerScreen, slot, range, TO_PLAYER } from './inventory.js?v=63';
+import { ITEMS, withCount } from '../items.js?v=63';
+import { MAPS, isFilledMap, drawMap } from '../maps.js?v=63';
 
 const LABEL_GREY = 0x404040, SHEET = 'container/cartography_table';
 const MAIN = range(9, 36), HOT = range(0, 9);

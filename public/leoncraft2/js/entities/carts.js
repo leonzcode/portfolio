@@ -29,15 +29,15 @@
                an operator in creative sets the command with a click
                (ui/commandcart.js); it keeps what the command said last
 --------------------------------------------------------------------------- */
-import { Minecart } from './minecart.js?v=62';
-import { register } from './mobs.js?v=62';
-import { MODELS } from './mobmodels.js?v=62';
-import { addArt } from './mobart.js?v=62';
-import { B } from '../blocks.js?v=62';
-import { stackToJSON, stackFromJSON, maxStack } from '../items.js?v=62';
-import { spill, lootStack } from '../containers.js?v=62';
-import { ChestScreen, HopperScreen } from '../ui/containers.js?v=62';
-import { CommandCartScreen } from '../ui/commandcart.js?v=62';
+import { Minecart } from './minecart.js?v=63';
+import { register } from './mobs.js?v=63';
+import { MODELS } from './mobmodels.js?v=63';
+import { addArt } from './mobart.js?v=63';
+import { B } from '../blocks.js?v=63';
+import { stackToJSON, stackFromJSON, maxStack } from '../items.js?v=63';
+import { spill, lootStack } from '../containers.js?v=63';
+import { ChestScreen, HopperScreen } from '../ui/containers.js?v=63';
+import { CommandCartScreen } from '../ui/commandcart.js?v=63';
 
 const R = () => Math.random(), RI = n => Math.floor(Math.random() * n);
 
@@ -147,7 +147,7 @@ class ChestCart extends BlockCart {
     const L = this.loot;
     if (!L) return Promise.resolve();
     this.loot = null;
-    return import('../struct/loot.js?v=62').then(mod => {
+    return import('../struct/loot.js?v=63').then(mod => {
       for (const e of mod.rollLoot(L.table, L.seed, { size: this.slots.length })) {
         const st = lootStack(e);
         if (st && e.slot >= 0 && e.slot < this.slots.length && !this.slots[e.slot]) this.slots[e.slot] = st;
@@ -340,7 +340,7 @@ class CommandCart extends BlockCart {
     ctx.cheats = true;
     ctx.say = (t, c) => said.push([String(t), c]);
     ctx.playerName = '@';
-    import('../commands.js?v=62').then(mod => {
+    import('../commands.js?v=63').then(mod => {
       if (this.removed) return;
       // the player stands where the cart is for the command, and back after (unless it moved them)
       const was = P.pos.clone(), at = this.pos.clone();

@@ -10,9 +10,9 @@
    Each command gets a context: ctx.game (the world being played), and
    ctx.say(text, colour) for the reply.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=62';
-import { Y0 } from './world-const.js?v=62';
-import { ENCHANTS } from './itemdata.js?v=62';
+import { B, BLOCKS, FLUID } from './blocks.js?v=63';
+import { Y0 } from './world-const.js?v=63';
+import { ENCHANTS } from './itemdata.js?v=63';
 
 const REG = new Map();
 export function register(name, def) { REG.set(name, def); for (const a of def.aliases || []) REG.set(a, def); }
