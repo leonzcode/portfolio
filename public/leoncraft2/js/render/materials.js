@@ -16,7 +16,7 @@
    Detailed draws the terrain with lighter shaders that light per vertex
    (LEAN_VS / LEAN_FS below); the rest is the full chain's.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS, FILTER } from './glsl.js?v=66';
+import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS, FILTER } from './glsl.js?v=67';
 const THREE = window.THREE;
 
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray; precision highp sampler2DShadow;\n`;
@@ -129,6 +129,11 @@ void main() {
   // keep thin leaves and grass blades from vanishing in the distance
   float a = (alb.a - 0.5) / max(fwidth(alb.a), 1e-4) + 0.5;
   if (a < 0.5) discard;
+#ifndef HAND
+  // a box's face shows from its front only, as the game draws it: two faces back to back (a banner's, a lantern's, two
+  // leaves side by side) lay in one place and flickered through each other; sheets and plants (flag 32) show both sides
+  if (!gl_FrontFacing && (vFlags & 32) == 0) discard;
+#endif
 #endif
   vec3 albedo = alb.rgb;
   if (overlay) {
@@ -468,6 +473,11 @@ void main() {
   // keep thin leaves and grass blades from vanishing in the distance
   float a = (alb.a - 0.5) / max(fwidth(alb.a), 1e-4) + 0.5;
   if (a < 0.5) discard;
+#ifndef HAND
+  // a box's face shows from its front only, as the game draws it: two faces back to back (a banner's, a lantern's, two
+  // leaves side by side) lay in one place and flickered through each other; sheets and plants (flag 32) show both sides
+  if (!gl_FrontFacing && (vFlags & 32) == 0) discard;
+#endif
 #endif
 #ifdef DEPTH_ONLY
   outColor = vec4(0.0);

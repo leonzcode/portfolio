@@ -32,8 +32,8 @@
    Fences, walls, panes, rails and redstone work out their shape from their
    neighbours, as Minecraft does when it draws them.
 --------------------------------------------------------------------------- */
-import { burnable } from './flame.js?v=66';
-import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=66';
+import { burnable } from './flame.js?v=67';
+import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=67';
 
 const box = (x0, y0, z0, x1, y1, z1, extra) => {
   const b = { f: [x0, y0, z0], t: [x1, y1, z1] };
@@ -390,7 +390,7 @@ function bars(d, n) {
     box(7, 0, 0, 9, 16, 0, { skip: only(5), uv: [null, null, null, null, null, [7, 0, 9, 16]] }),
     sheet([7, 0.001, 0], [9, 0.001, 7], 2, [7, 0, 9, 7], L), sheet([7, 15.999, 0], [9, 15.999, 7], 2, [7, 0, 9, 7], L)];
   const sideAlt = () => [sheet([8, 0, 8], [8, 16, 16], 1, [8, 0, 0, 16], L),
-    box(7, 0, 9, 9, 16, 16, { skip: 3 | 32, uv: [null, null, [7, 9, 9, 16], [9, 9, 7, 16], [7, 0, 9, 16], null] }),
+    box(7, 0, 9, 9, 16, 16, { skip: 3 | 4 | 8 | 32, uv: [null, null, [7, 9, 9, 16], [9, 9, 7, 16], [7, 0, 9, 16], null] }),     // (its top and bottom are the sheets)
     sheet([7, 0.001, 9], [9, 0.001, 16], 2, [7, 9, 9, 16], L), sheet([7, 15.999, 9], [9, 15.999, 16], 2, [7, 9, 9, 16], L)];
   const cap = () => [sheet([8, 0, 8], [8, 16, 9], 1, [8, 0, 7, 16], L), sheet([7, 0, 9], [9, 16, 9], 5, [9, 0, 7, 16], L)];
   const capAlt = () => [sheet([8, 0, 7], [8, 16, 8], 1, [8, 0, 9, 16], L), sheet([7, 0, 7], [9, 16, 7], 5, [7, 0, 9, 16], L)];
@@ -844,8 +844,10 @@ SHAPES.wire = function (d, m, nb) {
     const [x0, z0, x1, z1] = halves[k];
     const vertical = !(k & 1);
     const uv = vertical ? [0, z0, 16, z1] : [0, x0, 16, x1];
-    const q = { q: [[x0, y, z1], [x1, y, z1], [x1, y, z0], [x0, y, z0]], uv, layer: line, up: true };
-    if (!vertical) q.q = [[x0, y, z1], [x0, y, z0], [x1, y, z0], [x1, y, z1]];
+    // (a half step above the dot: the mesh keeps heights in half pixels, and in one plane the two flickered)
+    const yl = y + (k & 1 ? 1 : 0.5);      // (east and west a step over north and south, which they cross)
+    const q = { q: [[x0, yl, z1], [x1, yl, z1], [x1, yl, z0], [x0, yl, z0]], uv, layer: line, up: true };
+    if (!vertical) q.q = [[x0, yl, z1], [x0, yl, z0], [x1, yl, z0], [x1, yl, z1]];
     r.push(q);
   });
   return r;

@@ -28,12 +28,12 @@
    flags: bits 0-1 ambient occlusion, 2-3 texture rotation, 4 overlay
    (grass block sides), 5 plant, 6 tinted.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=66';
-import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=66';
-import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=66';
-import { hash3 } from './noise.js?v=66';
-import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=66';
-import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=66';
+import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=67';
+import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=67';
+import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=67';
+import { hash3 } from './noise.js?v=67';
+import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=67';
+import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=67';
 
 const W = 48, A = W * W;          // the region: three chunks a side
 let colours = null;               // biome colours, set once at start
@@ -470,6 +470,12 @@ function build(job, ny, c0, c1, base) {
       L[k * 4] = Math.round(ls * 17); L[k * 4 + 1] = Math.round(lb * 17); L[k * 4 + 2] = wd * 17; L[k * 4 + 3] = rnd;
       C[k * 4] = tint >> 16; C[k * 4 + 1] = (tint >> 8) & 255; C[k * 4 + 2] = tint & 255; C[k * 4 + 3] = 255;
     }
+    /* a box given from a far corner to a near one along an odd number of axes (a door hung on its other side, a
+       turned model) has its faces wound inside out: the second and fourth corners swapped, it faces out again
+       (the cut-out passes show a box's faces from the front only) */
+    if ((b1[0] - b0[0]) * (b1[1] - b0[1]) * (b1[2] - b0[2]) < 0) {
+      for (const a of buf.arrs) { const p = (v0 + 1) * 4, q = (v0 + 3) * 4; for (let j = 0; j < 4; j++) { const t = a[p + j]; a[p + j] = a[q + j]; a[q + j] = t; } }
+    }
     buf.quad(v0, a0 + a2 < a1 + a3);
   }
   const QP = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], QUV = [[0, 0], [0, 0], [0, 0], [0, 0]];
@@ -499,6 +505,12 @@ function build(job, ny, c0, c1, base) {
         const uv = bx.uv;
         QUV[0][0] = uv[0]; QUV[0][1] = uv[3]; QUV[1][0] = uv[2]; QUV[1][1] = uv[3];
         QUV[2][0] = uv[2]; QUV[2][1] = uv[1]; QUV[3][0] = uv[0]; QUV[3][1] = uv[1];
+        // a quad lying flat shows from above only, so its corners must turn that way (redstone dust's and
+        // tripwire's were laid the other way round, which only drawing both sides hid)
+        if (bx.up) {
+          const ax = QP[1][0] - QP[0][0], az = QP[1][2] - QP[0][2], bx2 = QP[2][0] - QP[0][0], bz = QP[2][2] - QP[0][2];
+          if (az * bx2 - ax * bz < 0) { let t = QP[1]; QP[1] = QP[3]; QP[3] = t; t = QUV[1]; QUV[1] = QUV[3]; QUV[3] = t; }
+        }
         quad(small ? out.plants : out.cutout, QP, QUV, bx.layer, 2, (bx.up ? 0 : 32) | (bx.plain ? 0 : tinted), tint, d.wave || 0, rnd, sky[i], blk[i], waterDepth(i, y));
         continue;
       }

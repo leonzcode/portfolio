@@ -25,10 +25,10 @@
    No shadow map, no post-processing, drawn straight to the screen at full
    resolution with nearest-neighbour textures.
 --------------------------------------------------------------------------- */
-import { COMMON, FILTER } from './glsl.js?v=66';
-import { FullScreen, VS_FULL } from './sky.js?v=66';
-import { BlockClouds } from './clouds.js?v=66';
-import { END_FLASH_GLSL, END_FLASH_COLOUR } from './endflash.js?v=66';
+import { COMMON, FILTER } from './glsl.js?v=67';
+import { FullScreen, VS_FULL } from './sky.js?v=67';
+import { BlockClouds } from './clouds.js?v=67';
+import { END_FLASH_GLSL, END_FLASH_COLOUR } from './endflash.js?v=67';
 const THREE = window.THREE;
 
 // the game's rain and thunder colour shift: towards a grey of the colour's own brightness times k
@@ -125,6 +125,11 @@ void main() {
   vec4 alb = texFiltered(uAlbedo, vec3(uv, layer));
 #ifdef CUTOUT
   if (alb.a < (plant ? 0.1 : 0.5)) discard;
+#ifndef HAND
+  // a box's face shows from its front only, as the game draws it: two faces back to back (a banner's, a lantern's, two
+  // leaves side by side) lay in one place and flickered through each other; sheets and plants (flag 32) show both sides
+  if (!gl_FrontFacing && (vFlags & 32) == 0) discard;
+#endif
 #endif
 #ifdef DEPTH_ONLY
   outColor = vec4(0.0);
