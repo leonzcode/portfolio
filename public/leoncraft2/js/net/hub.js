@@ -14,26 +14,26 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=60';
-import { I } from '../items.js?v=60';
-import { POTIONS } from '../brewing.js?v=60';
-import { ChestScreen } from '../ui/containers.js?v=60';
-import { RemotePlayers } from './players.js?v=60';
-import { register } from '../commands.js?v=60';
-import { Sound } from '../sound/sound.js?v=60';
-import { RES_OVERRIDE } from '../explosion.js?v=60';
-import { skinUrl } from '../ui/skins.js?v=60';
-import { Painter, PaintScreen, faceColour, faceOfNormal } from '../ui/paint.js?v=60';
-import { blockGeometry } from '../render/blockmesh.js?v=60';
-import { lightNear } from '../lightlevel.js?v=60';
-import { setSkin as setOwnSkin } from '../render/avatar.js?v=60';
+import { B, BLOCKS } from '../blocks.js?v=61';
+import { I } from '../items.js?v=61';
+import { POTIONS } from '../brewing.js?v=61';
+import { ChestScreen } from '../ui/containers.js?v=61';
+import { RemotePlayers } from './players.js?v=61';
+import { register } from '../commands.js?v=61';
+import { Sound } from '../sound/sound.js?v=61';
+import { RES_OVERRIDE } from '../explosion.js?v=61';
+import { skinUrl } from '../ui/skins.js?v=61';
+import { Painter, PaintScreen, faceColour, faceOfNormal } from '../ui/paint.js?v=61';
+import { blockGeometry } from '../render/blockmesh.js?v=61';
+import { lightNear } from '../lightlevel.js?v=61';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=61';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=60').then(m => {
+import('../adv/toast.js?v=61').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -251,7 +251,7 @@ const MODE_ICON = { bw_solo: 'red_bed', bw_doubles: 'blue_bed', bw_3s: 'lime_bed
 const GAME_ICON = { bedwars: 'red_bed', skywars: 'ender_eye', duels: 'iron_sword', tntrun: 'tnt', murder: 'bow', buildbattle: 'bricks', spleef: 'diamond_shovel', prophunt: 'oak_leaves', chameleon: 'brush' };
 // the lobby compass shows every game (a click opens that game's own menu); a person on the stand shows their game's modes
 class GameMenu extends MenuScreen {
-  constructor(hub, game) { const g = game && (hub.games || []).find(x => x.id === game); super(hub, g ? g.name : 'Game Menu'); this.only = game || null; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); }
+  constructor(hub, game) { const g = game && (hub.games || []).find(x => x.id === game); super(hub, g ? g.name : 'Game Menu'); this.only = game || null; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); hub.send({ k: 'counts' }); }
   fillBox() {
     const hub = this.hub;
     if (!this.only) {
@@ -262,7 +262,8 @@ class GameMenu extends MenuScreen {
         const st = stack(GAME_ICON[g.id] || 'paper');
         if (!st || slots[i] === undefined) return;
         st.name = '§a' + g.name;
-        this.put(slots[i], st, ['§a' + g.name, '§7' + (g.blurb || ''), '', '§eClick to browse!'], () => { setTimeout(() => hub.openScreen(new GameMenu(hub, g.id)), 0); });
+        const n = hub.gameCounts ? hub.gameCounts[g.id] | 0 : null;
+        this.put(slots[i], st, ['§a' + g.name, '§7' + (g.blurb || ''), '', n === null ? '' : '§7' + n + ' currently playing!', '§eClick to browse!'].filter((l, j) => l || j !== 3), () => { setTimeout(() => hub.openScreen(new GameMenu(hub, g.id)), 0); });
       });
       return;
     }
@@ -275,7 +276,8 @@ class GameMenu extends MenuScreen {
         const st = stack(MODE_ICON[m.id] || 'paper');
         if (!st) return;
         st.name = '§a' + m.name;
-        this.put(start + i, st, ['§a' + m.name, '§7' + (g.blurb || ''), '', '§eClick to play!'], () => { hub.send({ k: 'play', mode: m.id }); hub.closeScreens(); });
+        const n = hub.counts ? hub.counts[m.id] | 0 : null;
+        this.put(start + i, st, ['§a' + m.name, '§7' + (g.blurb || ''), '', n === null ? '' : '§7' + n + ' currently playing!', '§eClick to play!'].filter((l, j) => l || j !== 3), () => { hub.send({ k: 'play', mode: m.id }); hub.closeScreens(); });
       });
     });
   }
@@ -352,6 +354,13 @@ export class Hub {
     // the shop's glass stands any explosion
     for (const n of ['red', 'blue', 'lime', 'yellow', 'cyan', 'white', 'pink', 'gray']) if (B[n + '_stained_glass'] !== undefined) RES_OVERRIDE.set(B[n + '_stained_glass'], 3600000);
     this.unwrapNet = () => { net.blocks = blocks; net.local = local; };
+    // K in a shared waiting room starts the game (never while a screen or the chat is open)
+    this.onKey = e => {
+      if (e.code !== 'KeyK' || e.repeat || e.ctrlKey || e.altKey || e.metaKey || ctx.gui.screen) return;
+      if (this.area === 'wait' && this.startable) this.send({ k: 'start' });
+      else if (this.area === 'wait' && this.watching) this.ctx.chat.add('§cA game is already on here. You will play in the next round.', 0xFFFFFF);
+    };
+    window.addEventListener('keydown', this.onKey);
   }
   detach() {
     if (active === this) active = null;
@@ -362,6 +371,7 @@ export class Hub {
     if (this.group && this.group.parent) this.group.parent.remove(this.group);
     if (this.unhook) this.unhook();
     if (this.unwrapNet) this.unwrapNet();
+    if (this.onKey) window.removeEventListener('keydown', this.onKey);
     RES_OVERRIDE.clear();
     this.game = null;
   }
@@ -378,6 +388,8 @@ export class Hub {
         if (m.per) this.per = m.per;
         this.gameKind = m.game || null; this.spill = !!m.spill; this.noBuild = !!m.noBuild; this.jumps = m.jumps | 0;
         this.hideNames = !!m.hideNames; this.role = m.role || null; this.hadBow = false; this.arrowT = 0;
+        // a shared room: K starts it (startable); a late comer watches the round on there (watching)
+        this.startable = !!m.startable; this.watching = !!m.watching;
         // the new games: The Bridge's goals (no building there), a Build Battle plot and its vote, Spleef's snow, hiding
         this.noPlace = m.noPlace || null; this.plot = m.plot || null; this.vote = !!m.vote; this.theme = m.theme || ''; this.owner = m.owner || ''; this.dig = m.dig || null;
         this.hide = m.hide || null; this.paintOn = !!(m.hide && m.hide.paint);
@@ -401,6 +413,7 @@ export class Hub {
         return;
       }
       case 'spec': this.alive = false; return;
+      case 'counts': this.counts = m.c || {}; this.gameCounts = m.g || {}; this.refreshScreen(); return;
       case 'mode': if (m.m && g.mode !== m.m) this.ctx.commandCtx().setMode(m.m); return;
       // (Murder Mystery: you shot an innocent)
       case 'kill': if (this.alive && !g.survival.dead) g.survival.hurt(3.4e38, 'generic_kill'); return;
@@ -994,7 +1007,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=60', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=61', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1009,7 +1022,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=60', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=61', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -1026,6 +1039,13 @@ export class Hub {
       g.fill(left - 2, top - 1, right, bottom, 0x4C000000);
       g.centered(B2.title, Math.floor((left + right) / 2), top - 9, 0xFFFFFF, false);
       lines.forEach((l, i) => g.text(l, left, top + i * 9, 0xFFFFFF, false));
+    }
+    // what K does, over the hotbar while you wait (and that you are watching, while you watch)
+    if (this.area === 'wait' && (this.startable || this.watching) && !(this.game && this.game.hideHud)) {
+      const msg = this.watching ? '§eSpectating §7- you will play in the next round' : '§ePress §a§lK §eto start the game';
+      const x = Math.floor(g.width / 2), y = g.height - 72, w = g.textWidth(msg);
+      g.fill(x - Math.ceil(w / 2) - 4, y - 3, x + Math.ceil(w / 2) + 4, y + 11, 0x66000000);
+      g.centered(msg, x, y, 0xFFFFFF, true);
     }
     const T = this.titleT;
     if (T) {

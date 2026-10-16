@@ -17,8 +17,8 @@
    Tool, armour, food and fuel numbers are the Minecraft Wiki's (Java Edition,
    October 2026); the list itself is minecraft-data's (js/itemdata.js).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from './blocks.js?v=60';
-import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=60';
+import { B, BLOCKS, MAX_ID } from './blocks.js?v=61';
+import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=61';
 
 export const ITEM_BASE = MAX_ID;          // 4096: the first id that is not a block
 export const ITEMS = [];
@@ -193,6 +193,15 @@ export function setItemLayers(first) {
 
 // the texture layer of a picture in the item strip by name ('xp_orb_3'), or -1 before the textures land
 export function textureLayer(name) { const i = texIndex.get(name); return texFirst < 0 || i === undefined ? -1 : texFirst + i; }
+// the same picture's layer in the texture array, for drawing in the world: the frames are not there, save the bow's
+// and crossbow's, which sit straight after the items (itemtex.js); -1 for any other frame
+const FIRST_FRAME = ITEM_TEX.findIndex(n => n.startsWith('frame_')), HELD_FRAME = ITEM_TEX.indexOf('frame_bow_pulling_0');
+export function gpuLayer(name) {
+  const i = texIndex.get(name);
+  if (texFirst < 0 || i === undefined) return -1;
+  if (FIRST_FRAME >= 0 && i >= FIRST_FRAME) return HELD_FRAME >= 0 && i >= HELD_FRAME ? texFirst + FIRST_FRAME + (i - HELD_FRAME) : -1;
+  return texFirst + i;
+}
 
 /* ---- reading ---- */
 export const itemOf = id => ITEMS[id] || null;
