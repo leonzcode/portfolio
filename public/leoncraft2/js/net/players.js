@@ -26,11 +26,11 @@
    can give themselves one; it shows over their head, in the Tab list and in
    their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar } from '../render/avatar.js?v=60';
-import { pieceLook, armorSheet } from '../render/armor.js?v=60';
-import { setLight as setLightOf, loadedLook } from '../render/held.js?v=60';
-import { DRAW, I, stackFromJSON } from '../items.js?v=60';
-import { B, BLOCKS } from '../blocks.js?v=60';
+import { Avatar } from '../render/avatar.js?v=61';
+import { pieceLook, armorSheet } from '../render/armor.js?v=61';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=61';
+import { DRAW, I, stackFromJSON } from '../items.js?v=61';
+import { B, BLOCKS } from '../blocks.js?v=61';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -158,7 +158,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=60', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=61', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
   }
   equip(r) {
@@ -166,8 +166,8 @@ export class RemotePlayers {
     const h = idOf(eq.h), o = idOf(eq.o);
     // (a loaded crossbow in its loaded picture, as held.js shows yours)
     const hk = h + (eq.hc || ''), ok = o + (eq.oc || '');
-    if (r.heldKey !== hk) { r.heldKey = hk; r.heldId = h; av.setHeld(0, loadedLook(DRAW[h], eq.hc) || null); }
-    if (r.offKey !== ok) { r.offKey = ok; r.offId = o; av.setHeld(1, loadedLook(DRAW[o], eq.oc) || null); }
+    if (r.heldKey !== hk) { r.heldKey = hk; r.heldId = h; r.pullK = r.pullSide = undefined; av.setHeld(0, loadedLook(DRAW[h], eq.hc) || null); }
+    if (r.offKey !== ok) { r.offKey = ok; r.offId = o; r.pullK = r.pullSide = undefined; av.setHeld(1, loadedLook(DRAW[o], eq.oc) || null); }
     av.glintHeld(0, !!eq.hg); av.glintHeld(1, !!eq.og);
     const armor = [0, 1, 2, 3].map(i => (eq.a && eq.a[i] ? stackFromJSON(eq.a[i]) : null));
     av.setArmor(armor);
@@ -255,6 +255,16 @@ export class RemotePlayers {
       const U = p.u ? (r.use || (r.use = {})) : null;
       if (U) { U.kind = USE_KINDS[(p.u & 15) - 1] || 'eat'; U.side = p.u & 16 ? 1 : 0; U.t = p.ut || 0; U.total = p.uT || 0; }
       r.useNow = U;
+      // a bow being drawn shows its drawn-back picture in their hand, as held.js shows yours
+      const bs = U && U.kind === 'bow' ? U.side : -1, bid = bs === 1 ? r.offId : r.heldId;
+      const pull = bs >= 0 && DRAW[bid] && DRAW[bid].name === 'bow' ? (U.t / 20 >= 0.9 ? 2 : U.t / 20 >= 0.65 ? 1 : 0) : -1;
+      if (pull !== (r.pullK === undefined ? -1 : r.pullK) || (pull >= 0 && bs !== r.pullSide)) {
+        const eq = r.eq || {};
+        if (r.pullSide !== undefined && r.pullSide !== bs) av.setHeld(r.pullSide, loadedLook(DRAW[r.pullSide ? r.offId : r.heldId], r.pullSide ? eq.oc : eq.hc) || null);
+        if (pull >= 0) av.setHeld(bs, pulledLook(DRAW[bid], pull));
+        else if (r.pullSide !== undefined) av.setHeld(r.pullSide, loadedLook(DRAW[r.pullSide ? r.offId : r.heldId], r.pullSide ? eq.oc : eq.hc) || null);
+        r.pullK = pull; r.pullSide = pull >= 0 ? bs : undefined;
+      }
       // the limbs: a game tick of movement at a time, as for you
       if (!av.started) { av.started = true; P.pos.set(p.x, p.y, p.z); P.prev.copy(P.pos); P.yaw = p.yaw; av.body = av.oBody = p.yaw; r.acc = 0; }
       r.acc += dt;
@@ -370,7 +380,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=60', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=61', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;

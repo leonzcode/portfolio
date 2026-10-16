@@ -26,17 +26,17 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=60';
-import { Packs } from './pack.js?v=60';
-import { Account } from '../net/account.js?v=60';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=60';
-import { packArtSummary } from '../entities/packart.js?v=60';
-import { LanScreen } from './lan.js?v=60';
-import { parseSeed } from '../gen/random.js?v=60';
-import { SOUND_CREDITS } from '../sound/credits.js?v=60';
-import { SkinGalleryScreen, skinCredits } from './skins.js?v=60';
-import { FlatCustomizeScreen } from './flat.js?v=60';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=60';
+} from './gui.js?v=61';
+import { Packs } from './pack.js?v=61';
+import { Account } from '../net/account.js?v=61';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=61';
+import { packArtSummary } from '../entities/packart.js?v=61';
+import { LanScreen } from './lan.js?v=61';
+import { parseSeed } from '../gen/random.js?v=61';
+import { SOUND_CREDITS } from '../sound/credits.js?v=61';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=61';
+import { FlatCustomizeScreen } from './flat.js?v=61';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=61';
 
 const PI = Math.PI;
 
@@ -712,9 +712,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=60';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=60';
-import { minimapButtons } from './minimap.js?v=60';
+export { VideoSettingsScreen } from './video.js?v=61';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=61';
+import { minimapButtons } from './minimap.js?v=61';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }

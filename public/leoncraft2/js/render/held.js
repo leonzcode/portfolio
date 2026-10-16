@@ -23,9 +23,9 @@
    The item model numbers (where and how far round each kind sits) are the
    game's display settings for its block, flat, handheld and rod items.
 --------------------------------------------------------------------------- */
-import { blockGeometry, isFlatItem, shieldGeometry, tridentGeometry } from './blockmesh.js?v=60';
-import { setGlint } from './glint.js?v=60';
-import { textureLayer, DRAW, itemId } from '../items.js?v=60';
+import { blockGeometry, isFlatItem, shieldGeometry, tridentGeometry } from './blockmesh.js?v=61';
+import { setGlint } from './glint.js?v=61';
+import { gpuLayer as textureLayer, DRAW, itemId } from '../items.js?v=61';
 const THREE = window.THREE;
 const PI = Math.PI, DEG = PI / 180;
 const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
@@ -165,7 +165,13 @@ let shieldLayers = null, tridentLayers = null;
    rocket), for another player's hand; anything else as it is */
 export function loadedLook(d, c) {
   if (!d || !c || d.name !== 'crossbow') return d;
-  const L = textureLayer(c === 'r' ? 'crossbow_firework' : 'crossbow_arrow');
+  const L = textureLayer(c === 'r' ? 'frame_crossbow_firework' : 'frame_crossbow_arrow');
+  return L >= 0 ? Object.assign({}, d, { iconLayer: L, faces: [L, L, L, L, L, L] }) : d;
+}
+/* A bow's draw data in its drawn-back picture (stage 0, 1 or 2), for another player's hand */
+export function pulledLook(d, stage) {
+  if (!d || d.name !== 'bow' || stage < 0) return d;
+  const L = textureLayer('frame_bow_pulling_' + stage);
   return L >= 0 ? Object.assign({}, d, { iconLayer: L, faces: [L, L, L, L, L, L] }) : d;
 }
 export function heldGeometry(d) {
@@ -282,11 +288,11 @@ export class Held {
     let name = null;
     if (n === 'bow' && use && use.kind === 'bow') {
       const p = use.t / 20;
-      name = p >= 0.9 ? 'bow_pulling_2' : p >= 0.65 ? 'bow_pulling_1' : 'bow_pulling_0';
+      name = p >= 0.9 ? 'frame_bow_pulling_2' : p >= 0.65 ? 'frame_bow_pulling_1' : 'frame_bow_pulling_0';
     } else if (n === 'crossbow' && use && use.kind === 'crossbow') {
       const p = use.t / use.total;
-      name = p >= 1 ? 'crossbow_pulling_2' : p >= 0.58 ? 'crossbow_pulling_1' : 'crossbow_pulling_0';
-    } else if (n === 'crossbow' && H.loaded) name = H.loaded === 'rocket' ? 'crossbow_firework' : 'crossbow_arrow';
+      name = p >= 1 ? 'frame_crossbow_pulling_2' : p >= 0.58 ? 'frame_crossbow_pulling_1' : 'frame_crossbow_pulling_0';
+    } else if (n === 'crossbow' && H.loaded) name = H.loaded === 'rocket' ? 'frame_crossbow_firework' : 'frame_crossbow_arrow';
     return name ? textureLayer(name) : -1;
   }
 

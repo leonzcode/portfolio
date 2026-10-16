@@ -8,7 +8,7 @@
    or a door: the albedo from the strip, a flat normal map and a plain
    material map. The terrain files themselves are never changed.
 
-     const items = await loadItemStrip(base, '?v=60');
+     const items = await loadItemStrip(base, '?v=61');
      addItemPieces(items, manifest.layers, albPieces, nrmPieces, spcPieces);
      setItemLayers(manifest.layers);        // js/items.js
 
@@ -19,11 +19,14 @@
    dimensions' art and every frame together would pass that, leaving the
    whole array unmade and the world black.
 --------------------------------------------------------------------------- */
-import { ITEM_TEX } from './itemdata.js?v=60';
+import { ITEM_TEX } from './itemdata.js?v=61';
 const RAW = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
 const PIECE = 128;
 // how many pictures of the strip go into the texture array: everything before the first frame
 const FIRST_FRAME = ITEM_TEX.findIndex(n => n.startsWith('frame_'));
+// ...and, after them, the bow's and crossbow's own pictures (drawn back, loaded), which a hand in the world shows:
+// the last of the strip, eight layers (items.js gpuLayer finds them there)
+const HELD_FRAME = ITEM_TEX.indexOf('frame_bow_pulling_0');
 
 export async function loadItemStrip(base, ver) {
   try {
@@ -59,5 +62,11 @@ export async function addItemPieces(strip, first, alb, nrm, spc) {
     if (nrm) nrm.push([first + z, n, plain(n, [128, 128, 255, 255])]);
     if (spc) spc.push([first + z, n, plain(n, [40, 10, 0, 0])]);
   }
-  return total;
+  const held = HELD_FRAME >= 0 && strip.gpu !== undefined && strip.layers > HELD_FRAME ? strip.layers - HELD_FRAME : 0;
+  if (held) {
+    alb.push([first + total, held, await createImageBitmap(strip.bmp, 0, HELD_FRAME * 16, 16, held * 16, RAW)]);
+    if (nrm) nrm.push([first + total, held, plain(held, [128, 128, 255, 255])]);
+    if (spc) spc.push([first + total, held, plain(held, [40, 10, 0, 0])]);
+  }
+  return total + held;
 }

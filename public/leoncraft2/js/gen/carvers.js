@@ -13,7 +13,7 @@
    server made), with Minecraft's own sine table, float maths and random
    call order, since all three decide where a tunnel goes.
 --------------------------------------------------------------------------- */
-import { LegacyRandom } from './random.js?v=60';
+import { LegacyRandom } from './random.js?v=61';
 
 const F = Math.fround;
 // Mth.sin / Mth.cos: a 65536-entry table of floats

@@ -15,8 +15,8 @@
    The path is then walked by Navigation: towards the next node's centre
    until within reach of it, re-planned when the mob is stuck.
 --------------------------------------------------------------------------- */
-import { BLOCKS, SOLID, FLUID, B } from '../blocks.js?v=60';
-import { collisionBoxes } from '../models.js?v=60';
+import { BLOCKS, SOLID, FLUID, B } from '../blocks.js?v=61';
+import { collisionBoxes } from '../models.js?v=61';
 
 const BLOCKED = -1;
 // what a cell is, for a walker (a cost, or BLOCKED)
