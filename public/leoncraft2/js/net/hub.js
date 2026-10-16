@@ -14,27 +14,27 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=65';
-import { I } from '../items.js?v=65';
-import { POTIONS } from '../brewing.js?v=65';
-import { ChestScreen } from '../ui/containers.js?v=65';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=65';
-import { RemotePlayers, playerSize, F } from './players.js?v=65';
-import { register } from '../commands.js?v=65';
-import { Sound } from '../sound/sound.js?v=65';
-import { RES_OVERRIDE } from '../explosion.js?v=65';
-import { skinUrl } from '../ui/skins.js?v=65';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=65';
-import { blockGeometry } from '../render/blockmesh.js?v=65';
-import { lightNear } from '../lightlevel.js?v=65';
-import { setSkin as setOwnSkin } from '../render/avatar.js?v=65';
+import { B, BLOCKS } from '../blocks.js?v=66';
+import { I } from '../items.js?v=66';
+import { POTIONS } from '../brewing.js?v=66';
+import { ChestScreen } from '../ui/containers.js?v=66';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=66';
+import { RemotePlayers, playerSize, F } from './players.js?v=66';
+import { register } from '../commands.js?v=66';
+import { Sound } from '../sound/sound.js?v=66';
+import { RES_OVERRIDE } from '../explosion.js?v=66';
+import { skinUrl } from '../ui/skins.js?v=66';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=66';
+import { blockGeometry } from '../render/blockmesh.js?v=66';
+import { lightNear } from '../lightlevel.js?v=66';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=66';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=65').then(m => {
+import('../adv/toast.js?v=66').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -1258,7 +1258,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=65', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=66', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1273,7 +1273,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=65', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=66', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1281,7 +1281,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=65', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=66', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 

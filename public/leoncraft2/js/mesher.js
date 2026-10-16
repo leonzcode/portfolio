@@ -28,12 +28,12 @@
    flags: bits 0-1 ambient occlusion, 2-3 texture rotation, 4 overlay
    (grass block sides), 5 plant, 6 tinted.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=65';
-import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=65';
-import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=65';
-import { hash3 } from './noise.js?v=65';
-import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=65';
-import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=65';
+import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=66';
+import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=66';
+import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=66';
+import { hash3 } from './noise.js?v=66';
+import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=66';
+import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=66';
 
 const W = 48, A = W * W;          // the region: three chunks a side
 let colours = null;               // biome colours, set once at start
@@ -164,6 +164,11 @@ const SHADE = FACES.map(F => CORNERS.map(([u, v]) => {
 }));
 const NSTEP = FACES.map(F => step(F.n));
 const FACING_FACE = [5, 0, 4, 1];                    // north, east, south, west -> the face it points out of
+// blocks lying on the whole top of the block under them (snow layers, carpets): that top is never seen, so it is
+// left out, as the game leaves it out. Drawn, it lay a sixteenth or an eighth under them and the two flickered
+// through each other wherever the depth buffer is coarse.
+const COVER = new Uint8Array(MAX_ID + 1);
+for (const d of BLOCKS) if (d && (d.shape === 'snow' || (d.shape === 'thin' && /carpet$/.test(d.name)))) COVER[d.id] = 1;
 
 /* Lookup tables over every block, made once (after the textures are known). */
 let TABLES = null;
@@ -504,7 +509,7 @@ function build(job, ny, c0, c1, base) {
         let ax = 0; for (let k = 0; k < 3; k++) if (F.n[k]) ax = k;
         const edge = F.n[ax] > 0 ? bx.t[ax] >= 16 : bx.f[ax] <= 0;
         // on the block's edge against a full cube: never seen
-        if (edge && OPAQUE[rb[i + NSTEP[f]]]) continue;
+        if (edge && (OPAQUE[rb[i + NSTEP[f]]] || (f === 2 && COVER[rb[i + NSTEP[f]]]))) continue;
         // (a box marked plain keeps its own colour in a tinted block: the cauldron round its water)
         boxFace(small ? out.plants : buf, f, x, y, z, i, bx, faces[f], bx.uv ? bx.uv[f] : null, bx.plain ? 0 : tinted, tint, rnd, edge);
       }
@@ -626,9 +631,15 @@ function build(job, ny, c0, c1, base) {
           const look = LOOK[b] ? cubeLook(d, rm[i]) : null;
           for (let f = 0; f < 6; f++) {
             const nb = rb[i + NSTEP[f]];
-            if (box && box.h !== undefined) { if (f === 3 && OPAQUE[nb]) continue; if (f !== 2 && f !== 3 && (OPAQUE[nb] || (d.flat && nb === b))) continue; }
+            if (box && box.h !== undefined) {
+              if (f === 3 && OPAQUE[nb]) continue;
+              if (f !== 2 && f !== 3 && (OPAQUE[nb] || (d.flat && nb === b))) continue;
+              // a snow layer's side against snow as tall or taller is never seen (the two sides lay on each other)
+              if (f !== 2 && f !== 3 && d.shape === 'snow' && nb === b && (rm[i + NSTEP[f]] & 7) >= (rm[i] & 7)) continue;
+            }
             else {
               if (OPAQUE[nb]) continue;
+              if (f === 2 && COVER[nb]) continue;
               if (fastLeaf && LEAF[nb]) continue;
               if (d.leaves && LEAF[nb] && !onSurface(i) && !onSurface(i + NSTEP[f])) continue;
               if (nb === b && d.pass !== 'cutout') continue;            // glass to glass, ice to ice

@@ -27,18 +27,18 @@
    useExtra(manager, itemName, target, take, build) is the manager's last
    try at a right click (entities/manager.js useHeld).
 --------------------------------------------------------------------------- */
-import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=65';
-import { Projectile } from './projectiles.js?v=65';
-import { register, TYPES } from './mobs.js?v=65';
-import { model } from './mobs2.js?v=65';
-import { addArt } from './mobart.js?v=65';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=65';
-import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, maxDamage } from '../items.js?v=65';
-import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=65';
-import { LegacyRandom } from '../gen/random.js?v=65';
-import { fireworkColour } from '../crafting.js?v=65';
-import { rayBox } from './terrain.js?v=65';
-import { lootStack } from '../containers.js?v=65';
+import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=66';
+import { Projectile } from './projectiles.js?v=66';
+import { register, TYPES } from './mobs.js?v=66';
+import { model } from './mobs2.js?v=66';
+import { addArt } from './mobart.js?v=66';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=66';
+import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, maxDamage } from '../items.js?v=66';
+import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=66';
+import { LegacyRandom } from '../gen/random.js?v=66';
+import { fireworkColour } from '../crafting.js?v=66';
+import { rayBox } from './terrain.js?v=66';
+import { lootStack } from '../containers.js?v=66';
 const THREE = window.THREE;
 
 const PI = Math.PI;
@@ -460,7 +460,8 @@ for (const s of sizes) {
   const [w, h] = s.split('x').map(Number), W = w * 16, H = h * 16;
   // the back: a wooden board a pixel thick; the picture: a plane on its front
   model('painting_' + s, [{ name: 'board', pivot: [0, 24, 0], boxes: [[-W / 2, -H, 0, W, H, 1, 0, 0]] }]);
-  model('painting_' + s + '_face', [{ name: 'board', pivot: [0, 24, 0], boxes: [[-W / 2, -H, -0.01, W, H, 0, 0, 0]] }]);
+  // (the picture a tenth of a pixel off the board: a hundredth of one flickered through it from a few blocks away)
+  model('painting_' + s + '_face', [{ name: 'board', pivot: [0, 24, 0], boxes: [[-W / 2, -H, -0.1, W, H, 0, 0, 0]] }]);
 }
 addArt('painting_back', [64, 64], p => { p.fill(0, 0, 64, 64, 0x8a6a40, 0.1); for (let y = 0; y < 64; y += 4) p.fill(0, y, 64, 1, 0x6a4e2e); });
 for (const [n, w, h] of PAINTINGS) addArt('painting_' + n, [Math.max(64, w * 32), Math.max(64, h * 16)], p => { p.clear(0, 0, w * 32, h * 16); paintPicture(p, n, w, h); });
@@ -542,7 +543,7 @@ const pickW = list => { let t = 0; for (const [, w] of list) t += w; let r = R()
 // the enchantments random loot may carry (the table's and the treasure ones), in the game's order
 const ON_RANDOM_LOOT = ORDER.concat(['binding_curse', 'vanishing_curse', 'frost_walker', 'mending']);
 const BIOME_NAMES = [];
-import('../biomes.js?v=65').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
+import('../biomes.js?v=66').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
 export class FishingBobber extends Projectile {
   static W = 0.25; static H = 0.25; static MODEL = 'bobber'; static TEX = 'bobber';
   constructor(m, type) {

@@ -17,7 +17,7 @@
    Durability: a sword, trident, mace or spear wears 1 a hit, the other
    tools 2.
 --------------------------------------------------------------------------- */
-import { ITEMS } from '../items.js?v=65';
+import { ITEMS } from '../items.js?v=66';
 
 // the kinds of mob some enchantments care about, by entity type
 export const UNDEAD = new Set(['zombie', 'husk', 'drowned', 'zombie_villager', 'skeleton', 'stray', 'wither_skeleton', 'bogged', 'parched',

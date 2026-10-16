@@ -25,10 +25,10 @@
      m && m.result                   // { id, count, ... }
      consumeGrid(grid, giveBack, m)  // after the result is taken
 --------------------------------------------------------------------------- */
-import { SETS, CRAFTING, TRANSMUTE, SPECIAL, COOKING, CUTTING } from './recipedata.js?v=65';
-import { I, ITEMS, maxDamage, withCount, STEW_EFFECTS } from './items.js?v=65';
-import { BLOCKS } from './blocks.js?v=65';
-import { RECIPES, ING } from './itemdata.js?v=65';
+import { SETS, CRAFTING, TRANSMUTE, SPECIAL, COOKING, CUTTING } from './recipedata.js?v=66';
+import { I, ITEMS, maxDamage, withCount, STEW_EFFECTS } from './items.js?v=66';
+import { BLOCKS } from './blocks.js?v=66';
+import { RECIPES, ING } from './itemdata.js?v=66';
 
 // ingredient sets as sets of item ids (an item this game does not have is left out)
 const S = SETS.map(names => { const s = new Set(); for (const n of names) if (I[n] !== undefined) s.add(I[n]); return s; });
