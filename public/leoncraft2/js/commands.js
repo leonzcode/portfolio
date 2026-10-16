@@ -10,10 +10,10 @@
    Each command gets a context: ctx.game (the world being played), and
    ctx.say(text, colour) for the reply.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=66';
-import { Y0 } from './world-const.js?v=66';
-import { ENCHANTS } from './itemdata.js?v=66';
-import { stateOf } from './gen/states.js?v=66';
+import { B, BLOCKS, FLUID } from './blocks.js?v=67';
+import { Y0 } from './world-const.js?v=67';
+import { ENCHANTS } from './itemdata.js?v=67';
+import { stateOf } from './gen/states.js?v=67';
 
 const REG = new Map();
 export function register(name, def) { REG.set(name, def); for (const a of def.aliases || []) REG.set(a, def); }
@@ -151,17 +151,126 @@ register('time', {
     } else fail('Incomplete command');
   },
 });
+/* /tp and /teleport, as the game has them:
+     /tp <destination>                      you, to a player
+     /tp <location>                         you, to x y z
+     /tp <targets> <destination>            them, to a player (taking that player's facing)
+     /tp <targets> <location> [<yaw> <pitch>]
+     /tp <targets> <location> facing <x y z>
+     /tp <targets> <location> facing entity <player> [eyes|feet]
+   Coordinates and a ~ facing are worked out from you, who typed it, whoever goes; a place is in your dimension,
+   a player wherever they are. Facing as the game counts it (yaw 0 south, 90 west; pitch down positive), which is
+   180 minus ours. Who can be named comes from ctx.tpWorld (a server's players, net/net.js) or just you. Two
+   tokens only a server sends on (another player's page runs the line): #in=<dimension> and #q (say nothing). */
+const isCoord = a => a !== undefined && /^([~^]|[-+]?(\d|\.\d))/.test(a);
+const gameYaw = r => { let d = (180 - r * 180 / Math.PI) % 360; if (d < -180) d += 360; if (d >= 180) d -= 360; return d; };
+const ourYaw = d => (180 - d) * Math.PI / 180;
+const fmt = v => v.toFixed(6);
+function rotation(s, base, isPitch) {
+  if (s === undefined) fail('Incomplete command');
+  const v = s.startsWith('~') ? base + (s.length > 1 ? num(s.slice(1)) : 0) : num(s);
+  return isPitch ? Math.max(-90, Math.min(90, v)) : v;
+}
+// you alone: single player (any selector or your own name)
+function soloWorld(ctx) {
+  const P = ctx.game.player;
+  return {
+    list(sel) {
+      if (sel === undefined) fail('Incomplete command');
+      if (sel.startsWith('@') || sel.toLowerCase() === ctx.playerName.toLowerCase()) return [ctx.playerName];
+      fail('No entity was found');
+    },
+    where() { return { name: ctx.playerName, x: P.pos.x, y: P.pos.y, z: P.pos.z, dim: ctx.game.dim, yaw: P.yaw, pitch: P.pitch, eye: P.eyeHeight || 1.62 }; },
+    move(name, d) { moveSelf(ctx, d); },
+  };
+}
+// you, somewhere: near at once, another dimension through the loading screen; yaw and pitch kept when not given
+export function moveSelf(ctx, d) {
+  const g = ctx.game, P = g.player;
+  if (d.dim && d.dim !== g.dim && ctx.goTo) { ctx.goTo(d.dim, d.x, d.y, d.z, d.yaw, d.pitch); return; }
+  ctx.teleport(d.x, d.y, d.z);
+  if (Number.isFinite(d.yaw)) P.yaw = d.yaw;
+  if (Number.isFinite(d.pitch)) P.pitch = d.pitch;
+}
 register('tp', {
-  usage: '<x> <y> <z>', aliases: ['teleport'],
-  run(args, ctx) {
-    const p = ctx.game.player;
-    if (args.length === 4 || (args.length === 1 && args[0].startsWith('@'))) { self(args[0], ctx); args = args.slice(1); }
-    if (args.length < 3) fail('Incomplete command');
-    const [x, y, z] = position(args, 0, p);
-    ctx.teleport(x, y - Y0, z);
-    if (args[3] !== undefined) p.yaw = -num(args[3]) * Math.PI / 180;
-    if (args[4] !== undefined) p.pitch = -num(args[4]) * Math.PI / 180;
-    ctx.say(`Teleported ${ctx.playerName} to ${x.toFixed(6)}, ${y.toFixed(6)}, ${z.toFixed(6)}`);
+  usage: '<targets> <location|destination> [yaw pitch | facing ...]', aliases: ['teleport'],
+  suggest: (i, w, ctx) => {
+    const names = (ctx && ctx.tpNames ? ctx.tpNames() : []).concat(['@s', '@a', '@p', '@r']);
+    if (i === 0) return posSuggest(0, ctx).concat(names);
+    // where the place starts: at once (/tp x y z) or after the targets (/tp Bob x y z)
+    const lead = isCoord(w[0]) ? 0 : 1;
+    if (lead === 1 && i === 1) return posSuggest(0, ctx).concat(names);
+    if (!isCoord(w[lead])) return [];
+    const k = i - lead;
+    if (k < 3) return posSuggest(k, ctx);
+    if (k === 3) return ['facing', '~ ~'];
+    if (w[lead + 3] !== 'facing') return [];
+    if (k === 4) return ['entity'].concat(posSuggest(0, ctx));
+    if (w[lead + 4] === 'entity') return k === 5 ? names : k === 6 ? ['eyes', 'feet'] : [];
+    return k < 7 ? posSuggest(k - 4, ctx) : [];
+  },
+  run(args0, ctx) {
+    let args = joinArgs(args0);
+    // (the server's tokens: another player's page moving them)
+    let inDim = null, quiet = false;
+    while (args.length && args[args.length - 1].startsWith('#')) {
+      const t = args.pop();
+      if (t === '#q') quiet = true; else if (t.startsWith('#in=')) inDim = t.slice(4);
+    }
+    const say = t => { if (!quiet) ctx.say(t); };
+    const W = ctx.tpWorld || soloWorld(ctx), P = ctx.game.player, me = ctx.playerName;
+    if (!args.length) fail('Incomplete command');
+    const one = sel => { const l = W.list(sel); if (l.length > 1) fail('Only one entity is allowed, but the provided selector allows more than one'); return l[0]; };
+    const who = list => list.length === 1 ? list[0] : `${list.length} entities`;
+    // /tp <destination>
+    if (args.length === 1 && !isCoord(args[0])) {
+      const d = W.where(one(args[0]));
+      W.move(me, { x: d.x, y: d.y, z: d.z, dim: d.dim, yaw: d.yaw, pitch: d.pitch });
+      say(`Teleported ${me} to ${d.name}`);
+      return;
+    }
+    let targets, i;
+    if (isCoord(args[0])) { targets = [me]; i = 0; }
+    else { targets = W.list(args[0]); i = 1; }
+    // /tp <targets> <destination>
+    if (!isCoord(args[i])) {
+      if (args.length !== i + 1) fail('Incorrect argument for command');
+      const d = W.where(one(args[i]));
+      for (const t of targets) W.move(t, { x: d.x, y: d.y, z: d.z, dim: d.dim, yaw: d.yaw, pitch: d.pitch });
+      say(`Teleported ${who(targets)} to ${d.name}`);
+      return;
+    }
+    // a place, from where you are (and in your dimension)
+    if (args.length < i + 3) fail('Incomplete command');
+    const [x, yw, z] = position(args, i, P);
+    if (yw < Y0 - 512 || yw > Y0 + 384 + 512 || !Number.isFinite(x + yw + z) || Math.abs(x) > 3e7 || Math.abs(z) > 3e7) fail('Invalid position for teleport');
+    const y = yw - Y0, dim = inDim || ctx.game.dim;
+    let yaw, pitch, face = null;
+    const k = i + 3;
+    if (args[k] === 'facing') {
+      if (args[k + 1] === 'entity') {
+        if (args[k + 2] === undefined) fail('Incomplete command');
+        const anchor = args[k + 3] || 'feet';
+        if (anchor !== 'eyes' && anchor !== 'feet') fail('Incorrect argument for command');
+        if (args.length > k + 4) fail('Incorrect argument for command');
+        const e = W.where(one(args[k + 2]));
+        face = [e.x, e.y + (anchor === 'eyes' ? e.eye || 1.62 : 0), e.z];
+      } else {
+        if (args.length !== k + 4) fail(args.length < k + 4 ? 'Incomplete command' : 'Incorrect argument for command');
+        const f = position(args, k + 1, P);
+        face = [f[0], f[1] - Y0, f[2]];
+      }
+    } else if (args[k] !== undefined) {
+      if (args.length !== k + 2) fail(args.length < k + 2 ? 'Incomplete command' : 'Incorrect argument for command');
+      yaw = ourYaw(rotation(args[k], gameYaw(P.yaw), false));
+      pitch = -rotation(args[k + 1], -P.pitch * 180 / Math.PI, true) * Math.PI / 180;
+    }
+    if (face) {
+      const dx = face[0] - x, dy = face[1] - (y + 1.62), dz = face[2] - z;
+      yaw = Math.atan2(-dx, -dz); pitch = Math.atan2(dy, Math.hypot(dx, dz));
+    }
+    for (const t of targets) W.move(t, { x, y, z, dim, yaw, pitch });
+    say(`Teleported ${who(targets)} to ${fmt(x)}, ${fmt(yw)}, ${fmt(z)}`);
   },
 });
 register('give', {
@@ -294,7 +403,7 @@ function blockArg(s) {
 }
 // the block tags, from the generator's data (loaded only when a tag is asked for)
 let TAGS = null;
-const loadTags = () => import('./gen/vdata.js?v=66').then(m => { TAGS = m.VDATA.block_tags || {}; });
+const loadTags = () => import('./gen/vdata.js?v=67').then(m => { TAGS = m.VDATA.block_tags || {}; });
 function tagIds(name, seen = new Set()) {
   const key = name.replace(/^minecraft:/, '');
   const list = TAGS[key];
@@ -351,10 +460,20 @@ function putBlock(ctx, x, y, z, bl, how) {
   w.set(x, y, z, bl.id, bl.meta);
   return true;
 }
+/* Tab on a position: the block you are looking at (the outlined one), as the game suggests it, the rest of the
+   three numbers first (and a space after, so the next Tab goes on to the next word), then fewer; ~ with nothing
+   in reach. k: which of the three this word is (0 x, 1 y, 2 z). */
+function posSuggest(k, ctx) {
+  const g = ctx && ctx.game, t = g && g.inter && g.inter.target;
+  const v = t && Number.isFinite(t.x) ? [String(t.x), String(t.y + Y0), String(t.z)] : ['~', '~', '~'];
+  const rest = v.slice(k), out = [rest.join(' ') + ' '];
+  for (let n = rest.length - 1; n >= 1; n--) out.push(rest.slice(0, n).join(' '));
+  return out;
+}
 const SET_MODES = ['destroy', 'keep', 'replace', 'strict'];
 register('setblock', {
   usage: '<pos> <block> [destroy|keep|replace|strict]',
-  suggest: (i, w) => i < 3 ? ['~'] : i === 3 ? blockNames() : i === 4 ? SET_MODES : [],
+  suggest: (i, w, ctx) => i < 3 ? posSuggest(i, ctx) : i === 3 ? blockNames() : i === 4 ? SET_MODES : [],
   run(args0, ctx) {
     const args = joinArgs(args0);
     const [x, y, z] = blockPos(args, 0, ctx.game.player);
@@ -385,8 +504,8 @@ const FILL_MODES = ['destroy', 'hollow', 'keep', 'outline', 'replace', 'strict']
 const FILTER_MODES = ['destroy', 'hollow', 'outline', 'strict'];
 register('fill', {
   usage: '<from> <to> <block> [destroy|hollow|keep|outline|replace|strict]',
-  suggest: (i, w) => {
-    if (i < 6) return ['~'];
+  suggest: (i, w, ctx) => {
+    if (i < 6) return posSuggest(i % 3, ctx);
     if (i === 6) return blockNames();
     if (i === 7) return FILL_MODES;
     if (i === 8 && w[7] === 'replace') return blockNames();

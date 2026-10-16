@@ -50,8 +50,8 @@
                                    it may unlock it), unlocking, throwing out its reward (details.js)
      comparator output             kept in the simulation's state, not the meta
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from '../blocks.js?v=66';
-import { SHAPES, MODEL_SHAPES, turn, rotate, faceUV, sheet, buttonModel, element } from '../models.js?v=66';
+import { B, BLOCKS, MAX_ID } from '../blocks.js?v=67';
+import { SHAPES, MODEL_SHAPES, turn, rotate, faceUV, sheet, buttonModel, element } from '../models.js?v=67';
 
 export const STATEFUL = new Uint8Array(MAX_ID);    // its look depends on its meta
 export const SLIGHT = new Uint8Array(MAX_ID);      // so does its light
@@ -380,8 +380,10 @@ SHAPES.wire = function (d, m, nb) {
     for (let k = 0; k < 4; k++) {
       if (!c[k]) continue;
       const [x0, z0, x1, z1] = halves[k];
-      if (!(k & 1)) r.push({ q: [[x0, y, z1], [x1, y, z1], [x1, y, z0], [x0, y, z0]], uv: [0, z0, 16, z1], layer: line, up: true });
-      else r.push({ q: [[x0, y, z1], [x0, y, z0], [x1, y, z0], [x1, y, z1]], uv: [0, x0, 16, x1], layer: line, up: true });
+      // (a half step above the dot: the mesh keeps heights in half pixels, and in one plane the two flickered)
+      const yl = y + (k & 1 ? 1 : 0.5);      // (east and west a step over north and south, which they cross)
+      if (!(k & 1)) r.push({ q: [[x0, yl, z1], [x1, yl, z1], [x1, yl, z0], [x0, yl, z0]], uv: [0, z0, 16, z1], layer: line, up: true });
+      else r.push({ q: [[x0, yl, z1], [x0, yl, z0], [x1, yl, z0], [x1, yl, z1]], uv: [0, x0, 16, x1], layer: line, up: true });
     }
   }
   // up the side of the block it climbs

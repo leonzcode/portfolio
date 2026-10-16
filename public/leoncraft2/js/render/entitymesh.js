@@ -17,10 +17,10 @@
    and the particles (smoke puffs, crits, hearts, flames, explosions), each
    one instanced draw.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=66';
-import { VANILLA } from './vanilla.js?v=66';
-import { lightDefines } from './materials.js?v=66';
-import { GLINT } from './armor.js?v=66';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=67';
+import { VANILLA } from './vanilla.js?v=67';
+import { lightDefines } from './materials.js?v=67';
+import { GLINT } from './armor.js?v=67';
 const THREE = window.THREE;
 
 export const ATLAS = 2048;           // the mob texture atlas, in pixels a side (2048: room for every mob of the game)
@@ -284,16 +284,18 @@ export function modelGeometry(model) {
   const P = [], N = [], T = [], A = [], I = [];
   model.parts.forEach((part, pi) => {
     for (const bx of part.boxes) {
-      // [x, y, z, w, h, d, u, v, inflate, mirror, tinted]
+      // [x, y, z, w, h, d, u, v, inflate, mirror, tinted, front only]
       const [x0, y0, z0, w, h, d, u, v] = bx;
-      const inf = bx[8] || 0, mirror = !!bx[9], tint = bx[10] ? 1 : 0;
+      const inf = bx[8] || 0, mirror = !!bx[9], tint = bx[10] ? 1 : 0, frontOnly = !!bx[11];
       // the box's centre in the turned space (y and z flip)
       const cx = x0 + w / 2, cy = -(y0 + h / 2), cz = -(z0 + d / 2);
       const hx = w / 2 + inf, hy = h / 2 + inf, hz = d / 2 + inf;
       const faces = faceList(u, v, w, h, d);
       if (mirror) { const t = faces[2][2]; faces[2][2] = faces[3][2]; faces[3][2] = t; }
       for (const [n, corners, r] of faces) {
-        if (w === 0 && n[0] === 0 || h === 0 && n[1] === 0 && false) { /* keep */ }
+        /* a flat box drawn two-sided has its front and back in one place with different pictures, and which of
+           them shows changed as the camera turned (a painting's picture flickered): front only, where asked */
+        if (frontOnly && n[2] !== 1) continue;
         const v0 = P.length / 3;
         let UV = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
         if (mirror) UV = [UV[1], UV[0], UV[3], UV[2]];

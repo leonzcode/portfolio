@@ -61,26 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=66';
-import { idx, H } from '../world-const.js?v=66';
-import { DIMS, DIM_IDS } from '../dims.js?v=66';
-import { Save } from '../save.js?v=66';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=66';
-import { glints } from '../render/armor.js?v=66';
-import { containerKind } from '../containers.js?v=66';
-import { getSkinSettings } from '../render/avatar.js?v=66';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=66';
-import { register, commandDef, execute, gameRule, homeBed } from '../commands.js?v=66';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=66';
-import { Projectile } from '../entities/projectiles.js?v=66';
-import { Combat } from '../combat/combat.js?v=66';
-import { Vehicles } from './vehicles.js?v=66';
-import { Mobs, Orbs } from './mobs.js?v=66';
-import { Events } from './events.js?v=66';
-import { EndSync } from './endfight.js?v=66';
-import { Hub } from './hub.js?v=66';
-import { Account, wsBase, httpBase } from './account.js?v=66';
-import { rankTag } from './players.js?v=66';
+import { B, BLOCKS } from '../blocks.js?v=67';
+import { idx, H } from '../world-const.js?v=67';
+import { DIMS, DIM_IDS } from '../dims.js?v=67';
+import { Save } from '../save.js?v=67';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=67';
+import { glints } from '../render/armor.js?v=67';
+import { containerKind } from '../containers.js?v=67';
+import { getSkinSettings } from '../render/avatar.js?v=67';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=67';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf } from '../commands.js?v=67';
+import { Y0 } from '../world-const.js?v=67';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=67';
+import { Projectile } from '../entities/projectiles.js?v=67';
+import { Combat } from '../combat/combat.js?v=67';
+import { Vehicles } from './vehicles.js?v=67';
+import { Mobs, Orbs } from './mobs.js?v=67';
+import { Events } from './events.js?v=67';
+import { EndSync } from './endfight.js?v=67';
+import { Hub } from './hub.js?v=67';
+import { Account, wsBase, httpBase } from './account.js?v=67';
+import { rankTag } from './players.js?v=67';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -273,34 +274,44 @@ for (const [name, def] of [['me', meDef], ['say', sayDef]]) {
     },
   }));
 }
-// /tp <player>, /tp <player> <player>: to where another player is
+/* /tp on a server: the same command (commands.js) told who is on. Another player is moved by their own page:
+   the line goes to them with the place worked out here (your ~ and your dimension, or the player they go to,
+   wherever that is) as `tp @s x y z yaw pitch #in=<dimension> #q`, ~ ~ keeping their own facing; this page
+   says the game's one line for all of them. */
+const dimName = code => Object.keys(DIMS).find(k => DIMS[k].code === code) || 'overworld';
+function netWorld(net, ctx) {
+  const me = ctx.playerName, low = s => String(s).toLowerCase();
+  const others = () => (net.players ? [...net.players.list.values()] : []);
+  return {
+    list(sel) {
+      if (sel === undefined) fail('Incomplete command');
+      const t = targetsOf(net, ctx, sel);
+      if (t === null) { if (sel.startsWith('@') && !/^@[sp](\[|$)/.test(sel) && /^@[ae]/.test(sel)) return [me].concat(others().map(r => r.name)); return [me]; }
+      if (!t.length) fail('No entity was found');
+      return t;
+    },
+    where(name) {
+      const P = ctx.game.player;
+      if (low(name) === low(me)) return { name: me, x: P.pos.x, y: P.pos.y, z: P.pos.z, dim: ctx.game.dim, yaw: P.yaw, pitch: P.pitch, eye: 1.62 };
+      const r = others().find(q => low(q.name) === low(name)), s = r && r.st;
+      if (!s) fail('No entity was found');
+      return { name: r.name, x: s.x, y: s.y, z: s.z, dim: dimName(s.d), yaw: s.yaw, pitch: s.pitch, eye: 1.62 };
+    },
+    move(name, d) {
+      if (low(name) === low(me)) { moveSelf(ctx, d); return; }
+      const deg = v => (Number.isFinite(v) ? v : null);
+      const yaw = deg(d.yaw) === null ? '~' : String(+(((180 - d.yaw * 180 / Math.PI) % 360 + 540) % 360 - 180).toFixed(3));
+      const pitch = deg(d.pitch) === null ? '~' : String(+(-d.pitch * 180 / Math.PI).toFixed(3));
+      net.send({ t: 'as', to: [name], line: `tp @s ${+d.x.toFixed(4)} ${+(d.y + Y0).toFixed(4)} ${+d.z.toFixed(4)} ${yaw} ${pitch} #in=${d.dim || ctx.game.dim} #q` });
+    },
+  };
+}
 if (tpDef) {
   register('tp', Object.assign({}, tpDef, {
+    suggest: (i, w, ctx) => tpDef.suggest(i, w, Object.assign({}, ctx, { tpNames: () => onlineNames().filter(n => !ctx || n !== ctx.playerName) })),
     run(args, ctx) {
       const net = ctx.game && ctx.game.net;
-      const isName = a => a && !/^[~^@0-9.+-]/.test(a);
-      const last = args[args.length - 1];
-      // someone else moved (/tp Bob Cara, /tp Bob 0 64 0, /tp @a ~ ~ ~): their own game moves them
-      if (net && (args.length === 2 || args.length === 4) && args[0] !== '@s' && args[0].toLowerCase() !== ctx.playerName.toLowerCase()) {
-        const list = targetsOf(net, ctx, args[0]);
-        if (list && !list.length) { ctx.say('No player was found', 0xFF5555); return; }
-        if (list) {
-          const rest = list.filter(n => n.toLowerCase() !== ctx.playerName.toLowerCase());
-          if (rest.length) net.send({ t: 'as', to: rest, line: 'tp @s ' + args.slice(1).join(' ') });
-          if (rest.length === list.length) return;
-          args = ['@s'].concat(args.slice(1));
-        }
-      }
-      if (net && (args.length === 1 || args.length === 2) && isName(last) && last.toLowerCase() !== ctx.playerName.toLowerCase()) {
-        const r = net.players && [...net.players.list.values()].find(q => q.name.toLowerCase() === last.toLowerCase());
-        const s = r && r.st;
-        if (!s) { ctx.say('No player was found', 0xFF5555); return; }
-        if (s.d !== dimCode(ctx.game.dim)) { ctx.say(`${r.name} is in another dimension`, 0xFF5555); return; }
-        ctx.teleport(s.x, s.y, s.z);
-        ctx.game.player.yaw = s.yaw; ctx.game.player.pitch = s.pitch;
-        ctx.say(`Teleported ${ctx.playerName} to ${r.name}`);
-        return;
-      }
+      if (net) ctx.tpWorld = netWorld(net, ctx);
       return tpDef.run(args, ctx);
     },
   }));
