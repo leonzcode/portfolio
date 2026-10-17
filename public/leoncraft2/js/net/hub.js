@@ -14,23 +14,23 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=82';
-import { I, ITEMS, maxStack } from '../items.js?v=82';
-import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=82';
-import { POTIONS } from '../brewing.js?v=82';
-import { creativeItems, entryId } from '../ui/inventory.js?v=82';
-import { DIM_IDS } from '../dims.js?v=82';
-import { ChestScreen } from '../ui/containers.js?v=82';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=82';
-import { RemotePlayers, playerSize, F } from './players.js?v=82';
-import { register } from '../commands.js?v=82';
-import { Sound } from '../sound/sound.js?v=82';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=82';
-import { skinUrl } from '../ui/skins.js?v=82';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=82';
-import { blockGeometry } from '../render/blockmesh.js?v=82';
-import { lightNear } from '../lightlevel.js?v=82';
-import { setSkin as setOwnSkin, invisLook, capeRule } from '../render/avatar.js?v=82';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=83';
+import { I, ITEMS, maxStack } from '../items.js?v=83';
+import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=83';
+import { POTIONS } from '../brewing.js?v=83';
+import { creativeItems, entryId } from '../ui/inventory.js?v=83';
+import { DIM_IDS } from '../dims.js?v=83';
+import { ChestScreen } from '../ui/containers.js?v=83';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=83';
+import { RemotePlayers, playerSize, F } from './players.js?v=83';
+import { register } from '../commands.js?v=83';
+import { Sound } from '../sound/sound.js?v=83';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=83';
+import { skinUrl } from '../ui/skins.js?v=83';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=83';
+import { blockGeometry } from '../render/blockmesh.js?v=83';
+import { lightNear } from '../lightlevel.js?v=83';
+import { setSkin as setOwnSkin, invisLook, capeRule } from '../render/avatar.js?v=83';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard',
   pillars: 'king_gerold', deathswap: 'explorer', bridger: 'rpg_kid' };
@@ -38,7 +38,7 @@ const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tnt
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=82').then(m => {
+import('../adv/toast.js?v=83').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -309,8 +309,31 @@ const MODE_BLURB = {
 let PROFILE = null;
 const shopAll = hub => { const items = shopItems(hub.team || { wool: 'white_wool', clay: 'white_terracotta', glass: 'white_stained_glass' }), all = {}; for (const k in items) for (const it of items[k]) { all[it.id] = it; it.cat = k; } return all; };
 const profileMenus = () => PROFILE || (PROFILE = makeProfile({ MenuScreen, stack, ITEMS, QUICK, GRID, allShopItems: shopAll }));
+// Bridging's replays: the ghost's number among the NPCs, and the menu of runs (your best and the board's top ten)
+const REPLAY_ID = -3000;
+class ReplayMenu extends MenuScreen {
+  constructor(hub, m) { super(hub, 'Bridging Replays'); this.runs = m; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); }
+  fillBox() {
+    const hub = this.hub, D = this.runs;
+    if (!D) return;
+    const t = ms => (ms / 1000).toFixed(3) + 's';
+    const watch = k => () => { hub.send({ k: 'brreplay', who: k }); hub.closeScreens(); };
+    const mine = stack('player_head', 1) || stack('name_tag', 1);
+    if (mine) {
+      mine.name = D.mine ? '§aYour Best Run' : '§7No run of yours yet';
+      this.put(4, mine, D.mine ? [mine.name, '§e' + t(D.mine.ms), '', '§eClick to watch it!'] : [mine.name, '§7Set a personal best and', '§7it is kept here to watch.'], D.mine ? watch(D.mine.k) : null);
+    }
+    (D.top || []).forEach((e, i) => {
+      const st = stack(i === 0 ? 'gold_block' : i === 1 ? 'iron_block' : i === 2 ? 'copper_block' : 'sandstone', 1) || stack('paper', 1);
+      if (!st) return;
+      st.name = (i === 0 ? '§6' : i === 1 ? '§h' : i === 2 ? '§g' : '§e') + '#' + (i + 1) + ' §f' + e.name;
+      this.put(19 + (i % 7) + Math.floor(i / 7) * 9, st, [st.name, '§e' + t(e.ms), '', e.has ? '§eClick to watch it!' : '§7No replay of this run.'], e.has ? watch(e.k) : null);
+    });
+    if (!(D.top || []).length) { const st = stack('barrier', 1); if (st) { st.name = '§7Nobody has a time yet'; this.put(22, st, [st.name], null); } }
+  }
+}
 // the lobby's launch pad: its throw, out and up (blocks a tick), landing a few blocks short of the games' people
-const PAD_OUT = 0.85, PAD_UP = 0.85;
+const PAD_OUT = 0.7, PAD_UP = 0.85;
 // the lobby compass shows every game (a click opens that game's own menu); a person on the stand shows their game's modes
 class GameMenu extends MenuScreen {
   constructor(hub, game) { const g = game && (hub.games || []).find(x => x.id === game); super(hub, g ? g.name : 'Game Menu'); this.only = game || null; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); hub.send({ k: 'counts' }); }
@@ -673,7 +696,7 @@ export class Hub {
     // no dropping things anywhere on the network (but the Map Editor and /hubbuild): Q does nothing, and what is thrown
     // out of a screen goes back into the inventory (an inventory that is full still spills what it cannot hold)
     const H = game.hands, dropSel = H.dropSelected.bind(H), throwSt = H.throwStack.bind(H);
-    const noDrop = () => this.area !== 'edit' && this.area !== 'ds' && !this.building, said = () => { if (this.t - (this.dropSaid === undefined ? -99 : this.dropSaid) > 20) { this.dropSaid = this.t; this.ctx.chat.add("§cYou can't drop items here!", 0xFF5555); } };
+    const noDrop = () => this.area !== 'edit' && this.area !== 'ds' && !this.building && !(this.area === 'game' && this.gameKind === 'pillars'), said = () => { if (this.t - (this.dropSaid === undefined ? -99 : this.dropSaid) > 20) { this.dropSaid = this.t; this.ctx.chat.add("§cYou can't drop items here!", 0xFF5555); } };
     let giving = false;
     H.dropSelected = all => { if (noDrop()) { said(); return; } dropSel(all); };
     H.throwStack = st => {
@@ -701,6 +724,9 @@ export class Hub {
     net.blocks = (d, e) => { if (this.area === 'game') for (let i = 0; i + 4 < e.length; i += 5) this.changed.add(e[i] + ',' + e[i + 1] + ',' + e[i + 2]); return blocks(d, e); };
     net.local = (w, x, y, z, b, m, prev) => {
       if (this.area === 'game') { this.changed.add(x + ',' + y + ',' + z); if (b === B.tnt && this.alive) this.tnt.push([x, y, z]); }
+      // (Bridging: a block put down during a run, into its recording by name)
+      const RR = this.br && this.br.rec;
+      if (RR && b && this.br.t0 && !this.br.done && RR.b.length < 1200) { const d = BLOCKS[b]; if (d) RR.b.push([RR.f.length, x - RR.o[0], y - RR.o[1], z - RR.o[2], d.name, m | 0]); }
       return local(w, x, y, z, b, m, prev);
     };
     // the shop's glass stands any explosion
@@ -774,6 +800,7 @@ export class Hub {
         // Death Swap's world (area ds), and Bridging's lane
         if (m.area === 'ds') { this.alive = !m.watching; this.dsHold = null; RES_OVERRIDE.clear(); }
         this.br = m.bridger ? { start: m.bridger.start, end: m.bridger.end, box: m.bridger.box, y: m.bridger.y, t0: 0, done: false, last: 0 } : null;
+        if (!m.bridger) this.stopReplay();
         this.setNpcs(m.npcs || []);
         this.setGens(m.gens || []);
         // (the lobby's slime launch pads)
@@ -813,6 +840,9 @@ export class Hub {
       case 'swapto': this.dsGoto(m); return;
       // Bridging: back at the start (a fall, Reset, or after a run)
       case 'breset': this.brReset(false); return;
+      // Bridging's replays: the list to pick from, and one to watch
+      case 'brlist': this.openScreen(new ReplayMenu(this, m)); return;
+      case 'brplay': this.playReplay(m); return;
       case 'go': {
         const c = this.ctx.commandCtx(), sv = g.survival;
         if (sv.dead) sv.respawn(true);
@@ -975,6 +1005,7 @@ export class Hub {
       this.alive = true;
       inv.slots[0] = stack(BR_BLOCK, 64);
       inv.slots[7] = stack('clock', 1, { name: '§cReset §7- Right Click to go back to the start' });
+      inv.slots[4] = stack('ender_eye', 1, { name: '§bReplays §7- Right Click to watch the fastest bridges' });
       inv.slots[8] = stack('red_bed', 1, { name: '§c§lReturn to Lobby §7(Right Click)' });
       inv.select(0);
     } else if (kind === 'edit') {
@@ -1355,6 +1386,7 @@ export class Hub {
     if (!h) return false;
     if (this.area === 'lobby' && h.id === idOf('compass')) { this.openScreen(new GameMenu(this)); return true; }
     if (this.br && h.name && /^Reset/.test(h.name.replace(/\u00a7./g, ''))) { this.brReset(true); return true; }
+    if (this.br && h.name && /^Replays/.test(h.name.replace(/\u00a7./g, ''))) { this.send({ k: 'brreplays' }); return true; }
     if (this.br && h.id === idOf('red_bed')) { this.send({ k: 'lobby' }); return true; }
     if (this.area === 'lobby' && h.name && /^Profile/.test(h.name.replace(/\u00a7./g, ''))) { this.swKit = this.swKit || swKitId(); this.wantProfile = true; this.send({ k: 'profile' }); return true; }
     if (this.area === 'wait' && h.id === idOf('red_bed')) { this.send({ k: 'lobby' }); return true; }
@@ -1770,7 +1802,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=82', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=83', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1785,7 +1817,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=82', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=83', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1793,7 +1825,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=82', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=83', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -1804,7 +1836,7 @@ export class Hub {
     this.moving = true;
     const gui = this.ctx.gui, hooks = gui.hooks || {};
     this.ctx.chat.add('§7Sending you to ' + (id === 'hub' ? 'Leonpixel' : 'the game world') + '...', 0xFFFFFF);
-    const go = () => import('../ui/multiplayer.js?v=82').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
+    const go = () => import('../ui/multiplayer.js?v=83').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
     Promise.resolve(hooks.quitToTitle ? hooks.quitToTitle() : null).then(go, go);
   }
 
@@ -1887,6 +1919,7 @@ export class Hub {
   /* ---- Bridging on this page: the run's timer (to the tick), a fall, Reset ---- */
   brTick() {
     const g = this.game, P = g.player, sv = g.survival, R = this.br, inv = g.inv;
+    this.replayTick();
     sv.health = sv.maxHealth; P.fallDistance = 0;
     // the blocks never run out
     if (this.t % 4 === 0) {
@@ -1898,18 +1931,69 @@ export class Hub {
     if (R.done) return;
     const onStart = P.pos.x <= R.start[2] + 1 && P.pos.y >= R.y - 0.1;
     if (!R.t0 && !onStart) { R.t0 = performance.now(); this.overlay.animates = true; this.ctx.gui.markDirty(); }
-    else if (R.t0 && onStart && P.onGround) R.t0 = 0;
+    else if (R.t0 && onStart && P.onGround) { R.t0 = 0; R.rec = null; }
+    // the run's recording: where you are and look, a frame a tick, from the lane's start (watched again from Replays)
+    if (R.t0 && !R.done) {
+      if (!R.rec) R.rec = { o: [R.start[0], R.y, R.start[1]], f: [], b: [] };
+      const o = R.rec.o, av = this.ctx.renderer.avatar, fl = (P.sneaking ? 1 : 0) | (P.onGround ? 2 : 0) | (av && av.swinging ? 4 : 0);
+      if (R.rec.f.length < 2400) R.rec.f.push([Math.round((P.pos.x - o[0]) * 100), Math.round((P.pos.y - o[1]) * 100), Math.round((P.pos.z - o[2]) * 100), Math.round(P.yaw * 100), Math.round(P.pitch * 100), fl]);
+    }
     // on the end island: the time, sent to be checked and kept
     if (R.t0 && P.onGround && P.pos.x >= R.end[0] && P.pos.x <= R.end[2] + 1 && P.pos.z >= R.end[1] && P.pos.z <= R.end[3] + 1 && P.pos.y >= R.y - 0.1) {
       R.last = Math.round(performance.now() - R.t0); R.done = true;
-      this.send({ k: 'brun', ms: R.last });
+      this.send({ k: 'brun', ms: R.last, rec: R.rec || null });
+      R.rec = null;
     }
+  }
+  /* A Bridging replay: the run's player as a ghost in your own lane (its frames from your lane's start), a tick a
+     frame, the blocks it put down appearing as it did (drawn only here, nothing to stand on), gone two seconds after */
+  playReplay(m) {
+    this.stopReplay();
+    const R = this.br;
+    if (!R || !m.rec || !Array.isArray(m.rec.f) || !m.rec.f.length) return;
+    const o = [R.start[0], R.y, R.start[1]];
+    this.npcs.add({ id: REPLAY_ID, name: '', skin: m.skin || '', slim: !!m.slim });
+    this.replay = { f: m.rec.f, b: Array.isArray(m.rec.b) ? m.rec.b : [], i: 0, bi: 0, o, meshes: [], name: m.name };
+    this.holo('replay', o[0] + 2.5, o[1] + 3.4, o[2] + 2.5, ['§b§lREPLAY', '§f' + m.name + ' §7- §e' + (m.ms / 1000).toFixed(3) + 's']);
+    this.ctx.chat.add('§bWatching §f' + m.name + '§b\'s run §7(' + (m.ms / 1000).toFixed(3) + 's)', 0xFFFFFF);
+  }
+  replayTick() {
+    const Rp = this.replay;
+    if (!Rp) return;
+    const i = Rp.i++, o = Rp.o, now = performance.now();
+    if (i < Rp.f.length) {
+      const fr = Rp.f[i];
+      this.npcs.state(REPLAY_ID, { ts: now, x: o[0] + fr[0] / 100, y: o[1] + fr[1] / 100, z: o[2] + fr[2] / 100, yaw: fr[3] / 100, pitch: fr[4] / 100, f: (fr[5] & 1 ? F.SNEAK : 0) | (fr[5] & 2 ? F.GROUND : 0), d: 0 }, now);
+    }
+    const Rn = this.ctx.renderer, w = this.game.world;
+    while (Rp.bi < Rp.b.length && Rp.b[Rp.bi][0] <= i) {
+      const b = Rp.b[Rp.bi++], d = BLOCKS[B[b[4]]];
+      if (!d) continue;
+      let geo;
+      try { geo = blockGeometry(d, b[5] | 0); } catch (e) { continue; }
+      const mesh = new THREE.Mesh(geo.geometry, geo.cutout ? Rn.mats.cutout : Rn.mats.opaque), x = o[0] + b[1], y = o[1] + b[2], z = o[2] + b[3];
+      mesh.frustumCulled = false; mesh.matrixAutoUpdate = false;
+      // (a block mesh's own height runs 0.5 to 1.5: blockmesh.js packs y + 1 and the shader takes none of it off)
+      mesh.matrix.makeTranslation(x + 0.5, y - 0.5, z + 0.5); mesh.matrixWorldNeedsUpdate = true;
+      const v = lightNear(w, x, y + 1, z, !!w.noSky), lv = (Math.round((v >> 4) / 15 * 255) << 8) | Math.round((v & 15) / 15 * 255), L = mesh.geometry.attributes.aL;
+      if (L) { for (let k = 0; k < L.count; k++) { L.array[k * 4] = lv >> 8; L.array[k * 4 + 1] = lv & 255; } L.needsUpdate = true; }
+      this.group.add(mesh); Rp.meshes.push(mesh); this.lastGhost = [x, y, z];
+    }
+    if (i > Rp.f.length + 40) this.stopReplay();
+  }
+  stopReplay() {
+    const Rp = this.replay;
+    if (!Rp) return;
+    this.replay = null;
+    if (this.npcs) this.npcs.remove(REPLAY_ID);
+    for (const m of Rp.meshes) { this.group.remove(m); m.geometry.dispose(); }
+    this.dropHolo('replay');
   }
   // back at the start of your lane (told: a fall or Reset, which the server clears the blocks for)
   brReset(tell) {
     const R = this.br, g = this.game;
     if (!R || !g) return;
-    R.t0 = 0; R.done = false;
+    R.t0 = 0; R.done = false; R.rec = null;
     if (tell) {
       this.send({ k: 'brfall' });
       const P = g.player, s = this.spawn;

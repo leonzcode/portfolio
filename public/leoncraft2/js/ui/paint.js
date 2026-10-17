@@ -10,8 +10,8 @@
    each change is put on your model and sent to everyone as your skin for the
    game only (net.skinOverride), never kept as your skin setting.
 --------------------------------------------------------------------------- */
-import { Screen, Button, WHITE, GREY } from './gui.js?v=82';
-import { BLOCKS } from '../blocks.js?v=82';
+import { Screen, Button, WHITE, GREY } from './gui.js?v=83';
+import { BLOCKS } from '../blocks.js?v=83';
 
 // the skin's parts in the 64 x 64 layout: every face of each, base layer only
 export const PARTS = {
@@ -52,7 +52,7 @@ function terrain() {
   TERRAIN = { data: null };
   const im = new Image();
   im.onload = () => { const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const x = c.getContext('2d'); x.drawImage(im, 0, 0); TERRAIN.data = x.getImageData(0, 0, im.width, im.height); };
-  im.src = new URL('../../textures/terrain_albedo.png?v=82', import.meta.url).href;
+  im.src = new URL('../../textures/terrain_albedo.png?v=83', import.meta.url).href;
   return TERRAIN;
 }
 terrain();

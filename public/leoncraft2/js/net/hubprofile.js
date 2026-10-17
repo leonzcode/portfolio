@@ -75,7 +75,7 @@ export function makeProfile(K) {
     constructor(hub) { super(hub, 'Titles'); }
     fillBox() {
       const hub = this.hub, P = hub.profile || {}, list = P.titles || [];
-      if (!list.length) {
+      if (!list.length && !P.rank) {
         const st = named(['barrier'], '§cNo titles yet');
         if (st) this.put(22, st, ['§cNo titles yet', '§7Get into the top three of a', '§7leaderboard in the lobby to', '§7earn its title.'], null);
       }
@@ -83,10 +83,17 @@ export function makeProfile(K) {
         const on = P.chosen === t.key, st = named([t.place === 1 ? 'gold_ingot' : t.place === 2 ? 'iron_ingot' : 'copper_ingot', 'brick'], t.text);
         if (!st) return;
         if (on) st.ench = { unbreaking: 1 };
-        this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, [t.text, '§7Shown before your name', '§7in chat and over your head.', '', on ? '§aYou are wearing this title!' : '§eClick to wear it!'], () => hub.send({ k: 'title', key: on ? '' : t.key }));
+        this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, [t.text, '§7Shown before your name', '§7in chat and over your head' + (P.rank ? ',' : '.'), ...(P.rank ? ['§7instead of your rank.'] : []), '', on ? '§aYou are wearing this title!' : '§eClick to wear it!'], () => hub.send({ k: 'title', key: on ? '' : t.key }));
       });
-      const off = named(['barrier'], '§cWear No Title');
-      if (off && list.length) this.put(49, off, ['§cWear No Title', '§7Take your title off.', '', P.chosen ? '§eClick to take it off!' : '§aYou wear no title.'], () => hub.send({ k: 'title', key: '' }));
+      // a rank counts as one of the choices: shown when no title is worn (one or the other, never both)
+      const RANK = { admin: '§c[ADMIN]', mod: '§2[MOD]' }[P.rank];
+      if (RANK) {
+        const st = named(['nether_star', 'name_tag'], '§fShow Your Rank: ' + RANK);
+        if (st) { if (!P.chosen) st.ench = { unbreaking: 1 }; this.put(49, st, ['§fShow Your Rank: ' + RANK, '§7Your rank before your name', '§7instead of a title.', '', !P.chosen ? '§aYou are showing your rank!' : '§eClick to show it!'], () => hub.send({ k: 'title', key: '' })); }
+      } else {
+        const off = named(['barrier'], '§cWear No Title');
+        if (off && list.length) this.put(49, off, ['§cWear No Title', '§7Take your title off.', '', P.chosen ? '§eClick to take it off!' : '§aYou wear no title.'], () => hub.send({ k: 'title', key: '' }));
+      }
       back(this, 45, PROFILE);
     }
   }
