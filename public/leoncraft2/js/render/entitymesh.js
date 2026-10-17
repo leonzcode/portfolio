@@ -17,10 +17,10 @@
    and the particles (smoke puffs, crits, hearts, flames, explosions), each
    one instanced draw.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=72';
-import { VANILLA } from './vanilla.js?v=72';
-import { lightDefines } from './materials.js?v=72';
-import { GLINT } from './armor.js?v=72';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=73';
+import { VANILLA } from './vanilla.js?v=73';
+import { lightDefines } from './materials.js?v=73';
+import { GLINT } from './armor.js?v=73';
 const THREE = window.THREE;
 
 export const ATLAS = 2048;           // the mob texture atlas, in pixels a side (2048: room for every mob of the game)
@@ -29,6 +29,7 @@ const BONE_W = 256;                  // matrices per row of the bone texture
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow;\n`;
 const VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
+uniform vec3 cameraPosition;
 uniform highp sampler2D uBones;
 in vec3 position; in vec3 normal; in vec2 uv; in vec2 aPart;
 in vec4 aI0;   // first bone, atlas offset u, v, enchantment glint (armour: render/armor.js)
@@ -38,7 +39,6 @@ out vec3 vWorld; out vec3 vN; out vec2 vUv; out vec4 vL; out vec3 vTint; out vec
 #ifdef FOG_V
 // Detailed: the fog worked out per vertex (glsl.js fogTerms), as the blocks do
 uniform sampler2D uView, uAmbient;
-uniform vec3 cameraPosition;
 uniform float uEyeInWater;
 out vec3 vKeep; out vec3 vAdd;
 #endif
@@ -57,7 +57,8 @@ void main() {
   vL = aI1;
   // a tinted part (wool, a collar) takes the instance colour
   vTint = aPart.y > 0.5 ? aI2.rgb : vec3(1.0);
-  gl_Position = projectionMatrix * viewMatrix * w;
+  // (from the eye, never viewMatrix on the place in the world: vanilla.js TERRAIN_VS)
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (w.xyz - cameraPosition), 1.0);
 #ifdef FOG_V
   fogTerms(w.xyz, vKeep, vAdd);
 #endif
@@ -181,6 +182,7 @@ void main() {
 /* ---- the round shadow under a mob ---- */
 const BLOB_VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
+uniform vec3 cameraPosition;
 in vec3 position; in vec4 aB;   // centre x, y, z, radius
 in float aA;                    // darkness
 out vec2 vP; out float vA;
@@ -188,7 +190,7 @@ void main() {
   vP = position.xz;
   vA = aA;
   vec3 w = aB.xyz + vec3(position.x * aB.w, 0.0, position.z * aB.w);
-  gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (w - cameraPosition), 1.0);
 }`;
 const BLOB_FS = /* glsl */`
 in vec2 vP; in float vA;
@@ -205,13 +207,14 @@ void main() {
 /* ---- the patch over a boat's inside: depth only, so the water under it is not drawn there ---- */
 const MASK_VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
+uniform vec3 cameraPosition;
 in vec3 position; in vec4 aM;   // x, y, z, yaw
 in vec2 aS;                     // half size across, along
 void main() {
   float c = cos(aM.w), s = sin(aM.w);
   vec2 q = position.xz * aS;
   vec3 w = aM.xyz + vec3(q.x * c + q.y * s, 0.0, -q.x * s + q.y * c);
-  gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (w - cameraPosition), 1.0);
 }`;
 const MASK_FS = /* glsl */`
 layout(location = 0) out vec4 outColor;
@@ -220,12 +223,13 @@ void main() { outColor = vec4(0.0); }`;
 /* ---- particles: camera-facing squares out of a small sheet ---- */
 const PART_VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
+uniform vec3 cameraPosition;
 in vec3 position; in vec4 aP;   // x, y, z, size
 in vec4 aC;                     // colour rgb, alpha
 in vec4 aT;                     // frame, sky light (0..1; 1 glows), spin, block light (0..1)
 out vec2 vUv; out vec4 vC; out float vLight; out float vBlock;
 void main() {
-  vec4 v = viewMatrix * vec4(aP.xyz, 1.0);
+  vec4 v = vec4(mat3(viewMatrix) * (aP.xyz - cameraPosition), 1.0);
   float c = cos(aT.z), s = sin(aT.z);
   vec2 q = vec2(position.x * c - position.y * s, position.x * s + position.y * c);
   v.xy += q * aP.w;

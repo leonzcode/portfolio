@@ -13,7 +13,7 @@
    material maker (the colour and fog are theirs: render/vanilla.js for Fast,
    renderer.js for Detailed); the geometry has a position and a face shade.
 --------------------------------------------------------------------------- */
-import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=72';
+import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=73';
 const THREE = window.THREE;
 export const CLOUD_H = 192, CLOUD_S = 12;
 
@@ -38,7 +38,9 @@ vec3 skyDir(vec3 d) {
 }
 void main() {
   vec4 w = modelMatrix * vec4(position, 1.0);
-  gl_Position = projectionMatrix * viewMatrix * w;
+  // (from the eye, never viewMatrix on the place in the world: vanilla.js TERRAIN_VS; the depth pass and the colour pass
+  // came out a little apart far from the middle of the world, and the clouds flickered as the view turned)
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (w.xyz - cameraPosition), 1.0);
   vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
   vec3 c = 0.85 * (sunC * (0.2 + 0.45 * sat(uLightDir.y)) + amb * (1.3 / PI)) * shade;
   vec3 rel = w.xyz - cameraPosition;

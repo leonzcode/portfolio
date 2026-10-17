@@ -32,8 +32,8 @@
    Fences, walls, panes, rails and redstone work out their shape from their
    neighbours, as Minecraft does when it draws them.
 --------------------------------------------------------------------------- */
-import { burnable } from './flame.js?v=72';
-import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=72';
+import { burnable } from './flame.js?v=73';
+import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=73';
 
 const box = (x0, y0, z0, x1, y1, z1, extra) => {
   const b = { f: [x0, y0, z0], t: [x1, y1, z1] };
@@ -384,14 +384,18 @@ function shrieker(d, m) {
    when they join on one side only ---- */
 function bars(d, n) {
   const L = d.faces[0], none = 63, only = f => none & ~(1 << f);
+  /* the strips along the bottom and top (0.001 and 15.999, a nudge the mesh's half-pixel grid rounds away, so they lie
+     on the face of the block under or over): left out against a full block there, as the game's cullface does, and
+     the top ones where more bars stand on these (the bottom ones of those are the same strip) (mesher.js drawList) */
+  const lo = s => Object.assign(s, { cull: 3 }), hi = s => Object.assign(s, { cull: 2 });
   const end = y => sheet([7, y, 7], [9, y, 9], 2, [7, 7, 9, 9], L);
-  const r = [end(0.001), end(15.999)];
+  const r = [lo(end(0.001)), hi(end(15.999))];
   const side = () => [sheet([8, 0, 0], [8, 16, 8], 1, [16, 0, 8, 16], L),
     box(7, 0, 0, 9, 16, 0, { skip: only(5), uv: [null, null, null, null, null, [7, 0, 9, 16]] }),
-    sheet([7, 0.001, 0], [9, 0.001, 7], 2, [7, 0, 9, 7], L), sheet([7, 15.999, 0], [9, 15.999, 7], 2, [7, 0, 9, 7], L)];
+    lo(sheet([7, 0.001, 0], [9, 0.001, 7], 2, [7, 0, 9, 7], L)), hi(sheet([7, 15.999, 0], [9, 15.999, 7], 2, [7, 0, 9, 7], L))];
   const sideAlt = () => [sheet([8, 0, 8], [8, 16, 16], 1, [8, 0, 0, 16], L),
     box(7, 0, 9, 9, 16, 16, { skip: 3 | 4 | 8 | 32, uv: [null, null, [7, 9, 9, 16], [9, 9, 7, 16], [7, 0, 9, 16], null] }),     // (its top and bottom are the sheets)
-    sheet([7, 0.001, 9], [9, 0.001, 16], 2, [7, 9, 9, 16], L), sheet([7, 15.999, 9], [9, 15.999, 16], 2, [7, 9, 9, 16], L)];
+    lo(sheet([7, 0.001, 9], [9, 0.001, 16], 2, [7, 9, 9, 16], L)), hi(sheet([7, 15.999, 9], [9, 15.999, 16], 2, [7, 9, 9, 16], L))];
   const cap = () => [sheet([8, 0, 8], [8, 16, 9], 1, [8, 0, 7, 16], L), sheet([7, 0, 9], [9, 16, 9], 5, [9, 0, 7, 16], L)];
   const capAlt = () => [sheet([8, 0, 7], [8, 16, 8], 1, [8, 0, 9, 16], L), sheet([7, 0, 7], [9, 16, 7], 5, [7, 0, 9, 16], L)];
   const count = n.filter(Boolean).length;

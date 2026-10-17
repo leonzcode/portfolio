@@ -20,13 +20,14 @@
    down the sides, each running through its own frames) at full light, the
    same colour by day and night and wherever the eye has adapted to.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, WIND, WAVES, TONEMAP, LDR, LIGHTS } from './glsl.js?v=72';
-import { lightDefines } from './materials.js?v=72';
+import { COMMON, SHADOW, WIND, WAVES, TONEMAP, LDR, LIGHTS } from './glsl.js?v=73';
+import { lightDefines } from './materials.js?v=73';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray; precision highp sampler2DShadow;\n`;
 
 const VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
+uniform vec3 cameraPosition;
 uniform float uMeshTime, uClock;
 layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA; layout(location = 2) in ivec4 aF; layout(location = 3) in uvec4 aC;
 #define aPos vec4(aPos)
@@ -39,7 +40,6 @@ flat out int vNormal; flat out int vFlags; flat out float vLayer;
 #ifdef LDR
 // Detailed: the fog worked out per vertex (glsl.js fogTerms), as the blocks do
 uniform sampler2D uView, uAmbient;
-uniform vec3 cameraPosition;
 uniform float uEyeInWater;
 out vec3 vKeep; out vec3 vAdd;
 #endif
@@ -68,7 +68,8 @@ void main() {
   vLight = vec4(sky, aA.w / 255.0, 0.0, 0.0);
   vCol = aC / 255.0;
   vLayer = aPos.w;
-  gl_Position = projectionMatrix * viewMatrix * world;
+  // (from the eye, as the blocks: vanilla.js TERRAIN_VS)
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (world.xyz - cameraPosition), 1.0);
 #ifdef LDR
   fogTerms(world.xyz, vKeep, vAdd);
 #endif

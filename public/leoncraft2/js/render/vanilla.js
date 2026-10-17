@@ -25,10 +25,10 @@
    No shadow map, no post-processing, drawn straight to the screen at full
    resolution with nearest-neighbour textures.
 --------------------------------------------------------------------------- */
-import { COMMON, FILTER } from './glsl.js?v=72';
-import { FullScreen, VS_FULL } from './sky.js?v=72';
-import { BlockClouds } from './clouds.js?v=72';
-import { END_FLASH_GLSL, END_FLASH_COLOUR } from './endflash.js?v=72';
+import { COMMON, FILTER } from './glsl.js?v=73';
+import { FullScreen, VS_FULL } from './sky.js?v=73';
+import { BlockClouds } from './clouds.js?v=73';
+import { END_FLASH_GLSL, END_FLASH_COLOUR } from './endflash.js?v=73';
 const THREE = window.THREE;
 
 // the game's rain and thunder colour shift: towards a grey of the colour's own brightness times k
@@ -95,7 +95,12 @@ void main() {
   vLayer = aPos.w;
   vFlags = flags;
   vFogD = fogDistance(world.xyz - cameraPosition);
-  gl_Position = projectionMatrix * viewMatrix * world;
+  /* the camera's turn on the point's place from the eye, never viewMatrix on the place in the world: far from
+     the middle of the world (a few thousand blocks out) viewMatrix's big shift and the big place cancel, and what
+     is left was rounded differently for every corner and every turn of the camera, so faces a sixteenth apart
+     (a wall's arm in its post, a button on its block, a step's side) took turns in front as the view turned.
+     The place from the eye is worked out exactly (both on the same 1/32 grid, near each other) */
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (world.xyz - cameraPosition), 1.0);
 }`;
 
 const TERRAIN_FS = /* glsl */`
@@ -177,7 +182,8 @@ void main() {
   vFlow = aF.xy / 127.0;
   vLayer = aPos.w;
   vFogD = fogDistance(world.xyz - cameraPosition);
-  gl_Position = projectionMatrix * viewMatrix * world;
+  // (from the eye, as the blocks: TERRAIN_VS)
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (world.xyz - cameraPosition), 1.0);
 }`;
 
 const FLUID_FS = /* glsl */`
@@ -330,7 +336,8 @@ void main() {
   vShade = shade;
   vec3 rel = w.xyz - cameraPosition;
   vFogD = length(rel.xz);
-  gl_Position = projectionMatrix * viewMatrix * w;
+  // (from the eye: TERRAIN_VS)
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * rel, 1.0);
 }`;
 const CLOUD_FS = /* glsl */`
 uniform vec3 uCloudColor, uFogColor;

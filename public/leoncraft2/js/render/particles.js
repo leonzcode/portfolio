@@ -19,10 +19,10 @@
    made and every tick after), so a piece falling into a dark hole darkens
    and dust kicked up by a torch is lit by it.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, SOLID } from '../blocks.js?v=72';
-import { VANILLA } from './vanilla.js?v=72';
-import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=72';
-import { Terrain } from '../entities/terrain.js?v=72';
+import { BLOCKS, B, SOLID } from '../blocks.js?v=73';
+import { VANILLA } from './vanilla.js?v=73';
+import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=73';
+import { Terrain } from '../entities/terrain.js?v=73';
 const THREE = window.THREE;
 
 const MAX = 1500;
@@ -30,13 +30,13 @@ const HEAD = `precision highp float; precision highp int; precision highp sample
 
 const VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
+uniform vec3 cameraPosition;
 in vec3 position; in vec3 aUv; in vec3 aCol;
 in vec2 aLv;                    // the sky and block light where the particle is (0..1)
 out vec3 vUv; out vec3 vCol; out vec3 vWorld; out vec2 vLv;
 #ifdef LIT
 // Shaders ON: the light where it is and (one pass) the fog, per corner (a piece is a few pixels across)
 uniform sampler2D uAmbient, uNoise, uView;
-uniform vec3 cameraPosition;
 uniform float uEyeInWater;
 uniform vec3 uDimAmb;           // the Nether's and the End's own light (js/dim/look.js)
 out vec3 vLight; out vec3 vKeep; out vec3 vAdd;
@@ -44,7 +44,7 @@ out vec3 vLight; out vec3 vKeep; out vec3 vAdd;
 LIGHTS_HERE
 void main() {
   vUv = aUv; vCol = aCol; vWorld = position; vLv = aLv;
-  gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (position - cameraPosition), 1.0);
 #ifdef LIT
   float sky = aLv.x, block = aLv.y;
   vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
