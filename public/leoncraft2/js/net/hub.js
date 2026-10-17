@@ -14,23 +14,23 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=84';
-import { I, ITEMS, maxStack } from '../items.js?v=84';
-import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=84';
-import { POTIONS } from '../brewing.js?v=84';
-import { creativeItems, entryId } from '../ui/inventory.js?v=84';
-import { DIM_IDS } from '../dims.js?v=84';
-import { ChestScreen } from '../ui/containers.js?v=84';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=84';
-import { RemotePlayers, playerSize, F } from './players.js?v=84';
-import { register } from '../commands.js?v=84';
-import { Sound } from '../sound/sound.js?v=84';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=84';
-import { skinUrl } from '../ui/skins.js?v=84';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=84';
-import { blockGeometry } from '../render/blockmesh.js?v=84';
-import { lightNear } from '../lightlevel.js?v=84';
-import { setSkin as setOwnSkin, invisLook, capeRule } from '../render/avatar.js?v=84';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=85';
+import { I, ITEMS, maxStack } from '../items.js?v=85';
+import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=85';
+import { POTIONS } from '../brewing.js?v=85';
+import { creativeItems, entryId } from '../ui/inventory.js?v=85';
+import { DIM_IDS } from '../dims.js?v=85';
+import { ChestScreen } from '../ui/containers.js?v=85';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=85';
+import { RemotePlayers, playerSize, F } from './players.js?v=85';
+import { register } from '../commands.js?v=85';
+import { Sound } from '../sound/sound.js?v=85';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=85';
+import { skinUrl } from '../ui/skins.js?v=85';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=85';
+import { blockGeometry } from '../render/blockmesh.js?v=85';
+import { lightNear } from '../lightlevel.js?v=85';
+import { setSkin as setOwnSkin, invisLook, capeRule } from '../render/avatar.js?v=85';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard',
   pillars: 'king_gerold', deathswap: 'explorer', bridger: 'rpg_kid' };
@@ -38,7 +38,7 @@ const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tnt
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=84').then(m => {
+import('../adv/toast.js?v=85').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -777,6 +777,11 @@ export class Hub {
       case 'editmaps': { const cur = this.ctx.gui.screen, E = new EditorMenu(this, m.game, m.maps, m.staff, m.canMake); if (cur instanceof MenuScreen) { E.hub = this; this.ctx.gui.replace(E); } else this.openScreen(E); return; }
       case 'where': {
         this.area = m.area; this.floor = m.floor; this.spawn = m.spawn; this.bounds = m.bounds || null;
+        // (told where we are while the world is still loading, coming back from Death Swap's world say, far from where
+        // this page thought it was: go there at once, so the loading carries on round the right place; the server's
+        // own move after it is then a short one, never a second long trip racing the first)
+        { const P = g.player, sc = this.ctx.gui.screen, sp = m.spawn;
+          if (sp && P && sc && /Loading/.test(sc.constructor.name) && Math.hypot(sp.x - P.pos.x, sp.z - P.pos.z) > 48) { P.pos.set(+sp.x, +sp.y, +sp.z); if (P.prev) P.prev.copy(P.pos); P.vel.set(0, 0, 0); P.fallDistance = 0; } }
         if (m.team) this.team = m.team;
         if (m.per) this.per = m.per;
         // the old combat everywhere on the network, as Hypixel plays: no attack cooldown, no sweep
@@ -1219,7 +1224,8 @@ export class Hub {
   }
 
   /* ---- what may be broken and built ---- */
-  inLane(x, y, z) { const b = this.br && this.br.box; return !!b && x >= b[0] && x <= b[3] && y >= b[1] && y <= b[4] && z >= b[2] && z <= b[5]; }
+  // (Bridging: inside your lane's sides and over its floor, as high as you like)
+  inLane(x, y, z) { const b = this.br && this.br.box; return !!b && x >= b[0] && x <= b[3] && y >= b[1] && z >= b[2] && z <= b[5]; }
   inPlot(x, y, z) { const p = this.plot; return !!p && x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1 && y >= p.y0 && y <= p.y1; }
   mayBreak(x, y, z) {
     if (this.building || this.area === 'edit' || this.area === 'ds') return true;
@@ -1802,7 +1808,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=84', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=85', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1817,7 +1823,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=84', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=85', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1825,7 +1831,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=84', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=85', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -1836,7 +1842,7 @@ export class Hub {
     this.moving = true;
     const gui = this.ctx.gui, hooks = gui.hooks || {};
     this.ctx.chat.add('§7Sending you to ' + (id === 'hub' ? 'Leonpixel' : 'the game world') + '...', 0xFFFFFF);
-    const go = () => import('../ui/multiplayer.js?v=84').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
+    const go = () => import('../ui/multiplayer.js?v=85').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
     Promise.resolve(hooks.quitToTitle ? hooks.quitToTitle() : null).then(go, go);
   }
 
@@ -1926,6 +1932,10 @@ export class Hub {
       const id = idOf(BR_BLOCK), s = inv.slots.find(x => x && x.id === id);
       if (!s) { const i = inv.slots.findIndex((x, j) => j < 9 && !x); if (i >= 0) { inv.slots[i] = stack(BR_BLOCK, 64); inv.changed(); } }
       else if (s.count < 64) { s.count = 64; inv.changed(); }
+      // (and Replays and Reset are always there: put back in their slots if anything took them)
+      const has = re => inv.slots.some(x => x && x.name && re.test(x.name.replace(/§./g, '')));
+      if (!has(/^Replays/)) { const i = !inv.slots[4] ? 4 : inv.slots.findIndex((x, j) => j < 9 && !x); if (i >= 0) { inv.slots[i] = stack('ender_eye', 1, { name: '§bReplays §7- Right Click to watch the fastest bridges' }); inv.changed(); } }
+      if (!has(/^Reset/)) { const i = !inv.slots[7] ? 7 : inv.slots.findIndex((x, j) => j < 9 && !x); if (i >= 0) { inv.slots[i] = stack('clock', 1, { name: '§cReset §7- Right Click to go back to the start' }); inv.changed(); } }
     }
     if (P.pos.y < this.floor) { this.brReset(true); return; }
     if (R.done) return;

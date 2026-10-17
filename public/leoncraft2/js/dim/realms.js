@@ -24,15 +24,15 @@
    after travelling, kept topped up while you stand in a portal; end portals
    and gateways at once.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=84';
-import { Y0 } from '../world-const.js?v=84';
-import { DIMS } from '../dims.js?v=84';
-import { explode } from '../explosion.js?v=84';
-import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=84';
-import { EndFight, gatewayBlocks } from './endfight.js?v=84';
-import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=84';
-import { mix32, rng } from '../noise.js?v=84';
-import { portalSwirl } from './art.js?v=84';
+import { B, BLOCKS } from '../blocks.js?v=85';
+import { Y0 } from '../world-const.js?v=85';
+import { DIMS } from '../dims.js?v=85';
+import { explode } from '../explosion.js?v=85';
+import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=85';
+import { EndFight, gatewayBlocks } from './endfight.js?v=85';
+import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=85';
+import { mix32, rng } from '../noise.js?v=85';
+import { portalSwirl } from './art.js?v=85';
 const THREE = window.THREE;
 
 const E = y => y - Y0;                     // world y -> engine y
