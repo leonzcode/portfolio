@@ -26,11 +26,11 @@
    can give themselves one; it shows over their head, in the Tab list and in
    their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar } from '../render/avatar.js?v=73';
-import { pieceLook, armorSheet } from '../render/armor.js?v=73';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=73';
-import { DRAW, I, stackFromJSON } from '../items.js?v=73';
-import { B, BLOCKS } from '../blocks.js?v=73';
+import { Avatar } from '../render/avatar.js?v=74';
+import { pieceLook, armorSheet } from '../render/armor.js?v=74';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=74';
+import { DRAW, I, stackFromJSON } from '../items.js?v=74';
+import { B, BLOCKS } from '../blocks.js?v=74';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -53,8 +53,8 @@ const SEAT = { yaw: 0 };
 // a bed's facing bits (sim/beds.js): north, east, south, west, the way from its foot to its head
 const BED_DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
-// everyone else's size here (Leon Network's Chameleon plays at half size: net/hub.js sets it)
-export const playerSize = { k: 1 };
+// everyone else's size here (Leon Network's Chameleon plays at half size: net/hub.js sets it; its seekers, in full, stay full size)
+export const playerSize = { k: 1, full: new Set(), of(id) { return this.full.has(id) ? 1 : this.k; } };
 
 export class RemotePlayers {
   constructor(renderer, font) {
@@ -162,7 +162,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=73', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=74', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
   }
   equip(r) {
@@ -271,7 +271,7 @@ export class RemotePlayers {
       }
       // the limbs: a game tick of movement at a time, as for you
       if (!av.started) { av.started = true; P.pos.set(p.x, p.y, p.z); P.prev.copy(P.pos); P.yaw = p.yaw; av.body = av.oBody = p.yaw; r.acc = 0; }
-      av.size = this.sized ? playerSize.k : 1;
+      av.size = this.sized ? playerSize.of(r.id) : 1;
       r.acc += dt;
       let n = 0;
       while (r.acc >= 0.05 && n++ < 5) {
@@ -385,7 +385,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=73', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=74', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;

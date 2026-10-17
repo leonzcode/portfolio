@@ -14,10 +14,10 @@
    it is there: names are looked up through window.__lc2.itemName / itemId if
    they exist, else as block names, so this works on its own too.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=73';
-import { isDirt } from './plants.js?v=73';
-import { boneMeal as bambooBoneMeal, placed as bambooPlaced, bambooMeta, SMALL as BAMBOO_SMALL } from './bamboo.js?v=73';
-import { I, itemName as itemNameOf } from '../items.js?v=73';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=74';
+import { isDirt } from './plants.js?v=74';
+import { boneMeal as bambooBoneMeal, placed as bambooPlaced, bambooMeta, SMALL as BAMBOO_SMALL } from './bamboo.js?v=74';
+import { I, itemName as itemNameOf } from '../items.js?v=74';
 
 const RI = (sim, n) => Math.floor(sim.rng() * n);
 const binom = (sim, n, p) => { let k = 0; for (let i = 0; i < n; i++) if (sim.rng() < p) k++; return k; };

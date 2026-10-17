@@ -25,7 +25,7 @@
    Fire (beds, respawn anchors, fireballs): each destroyed cell that is air
    afterwards, with a solid block under it, catches fire one time in three.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=73';
+import { B, BLOCKS, FLUID } from './blocks.js?v=74';
 
 /* Blast resistance from the wiki where it is not the block's hardness. Worked out the first time it
    is wanted, or when the page is next idle: its 34 passes over every block took 11-15 ms here, and
@@ -125,6 +125,10 @@ function clear(world, x0, y0, z0, x1, y1, z1) {
   return true;
 }
 
+// what an explosion may break, when something says (Leon Network: only what players put down in a game, never the map):
+// BLAST_FILTER.fn(x, y, z) false stops the blast there, as a block nothing breaks would
+// and BLAST_FILTER.noDrops() true: what it breaks drops nothing (Bed Wars' wool and wood go, as on the network)
+export const BLAST_FILTER = { fn: null, noDrops: null };
 export function explode(world, x, y, z, power, o) {
   o = o || {};
   const sim = o.sim || (window.__lc2 && window.__lc2.sim) || null;
@@ -143,6 +147,7 @@ export function explode(world, x, y, z, power, o) {
         const bx = Math.floor(px), by = Math.floor(py), bz = Math.floor(pz);
         if (by < 0 || by >= 384) break;
         const b = world.get(bx, by, bz);
+        if (b && BLAST_FILTER.fn && !BLAST_FILTER.fn(bx, by, bz)) break;
         if (b) h -= (resistance(b) + 0.3) * 0.3;
         if (h > 0 && b) {
           const k = bx + ',' + by + ',' + bz;
@@ -211,7 +216,7 @@ export function explode(world, x, y, z, power, o) {
     if (sim) {
       const h = sim.beh[b];
       if (h && h.exploded) { h.exploded(sim, bx, by, bz, world.meta(bx, by, bz)); continue; }
-      sim.destroy(bx, by, bz, true, chance);
+      sim.destroy(bx, by, bz, !(BLAST_FILTER.noDrops && BLAST_FILTER.noDrops()), chance);
     } else world.set(bx, by, bz, 0, 0);
   }
   if (sim && sim.fluids) for (const [bx, by, bz] of cells) sim.fluids.around(bx, by, bz);

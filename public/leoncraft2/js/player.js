@@ -39,9 +39,9 @@
    at the first one in the way. Walking into something up to 0.6 high steps
    up onto it, which is how stairs and slabs are climbed.
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=73';
-import { collisionBoxes, selectionBoxes } from './models.js?v=73';
-import { LEVEL, FALLING } from './world-const.js?v=73';
+import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=74';
+import { collisionBoxes, selectionBoxes } from './models.js?v=74';
+import { LEVEL, FALLING } from './world-const.js?v=74';
 const THREE = window.THREE;
 
 const W = 0.3, HT = 1.8, STEP = 0.6;
@@ -347,8 +347,14 @@ export class Player {
           if (st) this.stuck = st;
         }
     this.climbing = CLIMB.has(this.w.get(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)));
-    // a wall as a ladder (Leon Network's Chameleon, as the first Leoncraft's Mecha had it): pressed against one, holding jump
-    if (!this.climbing && this.wallClimb && this.keys[' '] && !this.flying && this.onWall()) this.climbing = true;
+    // a wall as a ladder (Leon Network's Chameleon, as the first Leoncraft's Mecha had it): pressed against one, holding jump.
+    // Once on it you stay put when jump is let go (wallHold), until Shift lets you drop or you move off the wall
+    this.wallHold = false;
+    if (this.climbing || !this.wallClimb || this.flying || this.onGround || !this.onWall()) this.wallClung = false;
+    else if (this.keys[' ']) this.climbing = this.wallClung = true;
+    else if (this.keys.shift) this.wallClung = false;
+    else if (this.wallClung) this.climbing = this.wallHold = true;
+    if (!this.climbing && this.wallClimb && this.keys[' '] && !this.flying && this.onWall()) this.climbing = this.wallClung = true;
   }
   // touching a solid block's side (a shade past your own box); barriers only when noBarrierClimb is off (hiders cannot see them)
   onWall() {
@@ -512,6 +518,8 @@ export class Player {
       this.vel.y = Math.max(-0.15, this.vel.y);
       // (but sneaking in scaffolding is how you go down it)
       if (this.vel.y < 0 && this.sneaking && this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y), Math.floor(this.pos.z)) !== SCAFFOLD) this.vel.y = 0;
+      // (held on a wall: no sliding down)
+      if (this.wallHold && this.vel.y < 0) this.vel.y = 0;
     }
     if (this.inWater && !this.flying) this.pushByWater();
     const was = this.pos.clone(), startY = this.pos.y, vy0 = this.vel.y;
@@ -531,7 +539,7 @@ export class Player {
       if (d4 > 1e-5 && d5 > 1e-5) this.minorCollide = Math.acos(Math.max(-1, Math.min(1, (ix * mx + iz * mz) / Math.sqrt(d4 * d5)))) < 0.13962634;
     }
     // climbing: pushing into the ladder, or Space, goes up
-    if (this.climbing && !this.flying && (this.hCollide || k[' '])) this.vel.y = 0.2;
+    if (this.climbing && !this.flying && ((this.hCollide && !this.wallHold) || k[' '])) this.vel.y = 0.2;
     // pressed into a honey block's side on the way down: a slow, safe slide
     this.slidingOn = !this.flying && !this.onGround && this.vel.y < -0.08 ? this.honeySlide() : null;
     // drag and gravity

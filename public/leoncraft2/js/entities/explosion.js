@@ -15,11 +15,12 @@
    (impact^2 + impact) / 2 x 7 x 2 x power + 1, and it is pushed away from
    the centre by the impact (towards its eyes, for the living).
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, B } from '../blocks.js?v=73';
-import { blastResistance } from './terrain.js?v=73';
-import { breakAt } from '../place.js?v=73';
-import { dropOf } from '../survival.js?v=73';
-import { Living } from './entity.js?v=73';
+import { BLOCKS, FLUID, B } from '../blocks.js?v=74';
+import { blastResistance } from './terrain.js?v=74';
+import { breakAt } from '../place.js?v=74';
+import { BLAST_FILTER } from '../explosion.js?v=74';
+import { dropOf } from '../survival.js?v=74';
+import { Living } from './entity.js?v=74';
 
 const R = () => Math.random();
 // the 1352 ray directions, made once
@@ -60,6 +61,8 @@ export function explode(m, cx, cy, cz, power, source, o = {}) {
         const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
         if (!T.loaded(bx, bz)) break;
         const b = T.get(bx, by, bz);
+        // (what a minigame keeps: the blast stops there, explosion.js BLAST_FILTER)
+        if (b && BLAST_FILTER.fn && !BLAST_FILTER.fn(bx, by, bz)) break;
         if (b) {
           s -= (blastResistance(b) + 0.3) * 0.3;
           if (s > 0 && !FLUID[b]) hit.set(bx + ',' + by + ',' + bz, [bx, by, bz]);
@@ -109,7 +112,7 @@ export function explode(m, cx, cy, cz, power, source, o = {}) {
     for (const [gx, gy, gz] of breakAt(W, x, y, z)) {
       const gb = W.get(gx, gy, gz);
       if (!gb) continue;
-      if (R() < chance && o.drops !== false) { const d = dropOf(gb); if (d && BLOCKS[d]) m.dropItemAt(gx + 0.5, gy + 0.5, gz + 0.5, BLOCKS[d].name, 1, true); }
+      if (R() < chance && o.drops !== false && !(BLAST_FILTER.noDrops && BLAST_FILTER.noDrops())) { const d = dropOf(gb); if (d && BLOCKS[d]) m.dropItemAt(gx + 0.5, gy + 0.5, gz + 0.5, BLOCKS[d].name, 1, true); }
       W.set(gx, gy, gz, 0, 0);
       if (BLOCKS[gb] && BLOCKS[gb].waterlogged) W.set(gx, gy, gz, B.water, 0);
       if (m.fluids) m.fluids.around(gx, gy, gz);

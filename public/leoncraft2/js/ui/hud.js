@@ -19,11 +19,11 @@
      hud.setDebug(leftLines, rightLines); // or hud.setDebug(null) to hide F3
      hud.crosshair = false;               // third person
 --------------------------------------------------------------------------- */
-import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=73';
-import { drawBossBar } from '../dim/bossbar.js?v=73';
-import { BLOCKS, B } from '../blocks.js?v=73';
-import { I } from '../items.js?v=73';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET } from '../effects.js?v=73';
+import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=74';
+import { drawBossBar } from '../dim/bossbar.js?v=74';
+import { BLOCKS, B } from '../blocks.js?v=74';
+import { I } from '../items.js?v=74';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET } from '../effects.js?v=74';
 
 const TICK = 50;
 
@@ -46,11 +46,12 @@ export class Hud {
     this._checkHeld(true);
   }
 
-  // a different block in the hand shows its name again; the same one does not
+  // a different block in the hand shows its name again; the same one does not (an item given its own name, as Leon
+  // Network's Tagger or Paint Brush, shows that name, as the game shows a renamed item's)
   _checkHeld(quiet) {
-    const id = this.inv.heldId();
-    if (id === this._hlId) return;
-    this._hlId = id;
+    const id = this.inv.heldId(), s = this.inv.slots[this.inv.selected], nm = s && typeof s.name === 'string' && s.name ? s.name : '';
+    if (id === this._hlId && nm === this._hlName) return;
+    this._hlId = id; this._hlName = nm;
     this._hlUntil = id && !quiet ? performance.now() + 2000 : 0;
     this._dirty = true;
   }
@@ -151,7 +152,7 @@ export class Hud {
     if (this._hlId && now < this._hlUntil) {
       const left = this._hlUntil - now;
       const a = Math.min(1, left / 500);
-      const name = displayName(this._hlId);
+      const name = this._hlName || displayName(this._hlId);
       const y = H - 59 + (survival ? 0 : 14);
       g.ctx.globalAlpha = a;
       g.centered(name, cx, y, 0xFFFFFF, true);
