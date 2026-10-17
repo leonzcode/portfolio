@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=79';
-import { idx, H } from '../world-const.js?v=79';
-import { DIMS, DIM_IDS } from '../dims.js?v=79';
-import { Save } from '../save.js?v=79';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=79';
-import { glints } from '../render/armor.js?v=79';
-import { containerKind } from '../containers.js?v=79';
-import { getSkinSettings } from '../render/avatar.js?v=79';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=79';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=79';
-import { Y0 } from '../world-const.js?v=79';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=79';
-import { Projectile } from '../entities/projectiles.js?v=79';
-import { Combat } from '../combat/combat.js?v=79';
-import { Vehicles } from './vehicles.js?v=79';
-import { Mobs, Orbs } from './mobs.js?v=79';
-import { Events } from './events.js?v=79';
-import { EndSync } from './endfight.js?v=79';
-import { Hub } from './hub.js?v=79';
-import { Account, wsBase, httpBase } from './account.js?v=79';
-import { rankTag } from './players.js?v=79';
+import { B, BLOCKS } from '../blocks.js?v=80';
+import { idx, H } from '../world-const.js?v=80';
+import { DIMS, DIM_IDS } from '../dims.js?v=80';
+import { Save } from '../save.js?v=80';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=80';
+import { glints } from '../render/armor.js?v=80';
+import { containerKind } from '../containers.js?v=80';
+import { getSkinSettings } from '../render/avatar.js?v=80';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=80';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=80';
+import { Y0 } from '../world-const.js?v=80';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=80';
+import { Projectile } from '../entities/projectiles.js?v=80';
+import { Combat } from '../combat/combat.js?v=80';
+import { Vehicles } from './vehicles.js?v=80';
+import { Mobs, Orbs } from './mobs.js?v=80';
+import { Events } from './events.js?v=80';
+import { EndSync } from './endfight.js?v=80';
+import { Hub } from './hub.js?v=80';
+import { Account, wsBase, httpBase } from './account.js?v=80';
+import { rankTag } from './players.js?v=80';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -670,7 +670,7 @@ export class Net {
       case 'join': if (this.players) { this.players.add(m.p); } else this.initPlayers.push(m.p); return;
       case 'v=': case 'v+': case 'vs': case 'vc': case 'vr': case 'vj': case 'v-': this.veh.receive(m); return;
       case 'leave': this.veh.left(m.id); this.events.left(m.id); this.bases.delete(m.id); if (this.players) this.players.remove(m.id); else this.initPlayers = this.initPlayers.filter(p => p.id !== m.id); return;
-      case 'skin': if (this.players) this.players.setSkin(m.id, m.skin, m.slim); else this.early(m); return;
+      case 'skin': if (this.players) this.players.setSkin(m.id, m.skin, m.slim, m.cape); else this.early(m); return;
       case 'eq': if (this.players) this.players.setEquip(m.id, m.eq); else this.early(m); return;
       case 'sw': if (this.players) this.players.swing(m.id, m.h); return;
       case 'hurt': if (this.players) this.players.hurt(m.id); return;
@@ -696,7 +696,7 @@ export class Net {
   early(m) {
     const p = this.initPlayers && this.initPlayers.find(q => q.id === m.id);
     if (!p) return;
-    if (m.t === 'p') p.st = m; else if (m.t === 'skin') { p.skin = m.skin; p.slim = m.slim; } else if (m.t === 'eq') p.eq = m.eq;
+    if (m.t === 'p') p.st = m; else if (m.t === 'skin') { p.skin = m.skin; p.slim = m.slim; p.cape = m.cape; } else if (m.t === 'eq') p.eq = m.eq;
   }
 
   /* ---- each game tick (main.js, at the end of the tick, with the tick's time) ---- */
@@ -1277,10 +1277,12 @@ export class Net {
     // (Chameleon's painted skin stands in for yours while the game lasts: net/hub.js)
     const own = this.skinOverride || (typeof s.skin === 'string' && s.skin.startsWith('data:image/png') ? s.skin : '');
     const skin = own, slim = this.skinOverride ? false : !!s.slim;
-    const sig = skin.length + ':' + skin.slice(-64) + slim;
+    // the cape (none while a game paints you over: it would give you away)
+    const cape = !this.skinOverride && typeof s.cape === 'string' && s.cape.startsWith('data:image/png') && s.cape.length <= 16000 ? s.cape : '';
+    const sig = skin.length + ':' + skin.slice(-64) + slim + ':' + cape.length + cape.slice(-48);
     if (sig === this.skinSig) return;
     this.skinSig = sig;
-    this.send({ t: 'skin', skin: skin.length <= 24000 ? skin : '', slim });
+    this.send({ t: 'skin', skin: skin.length <= 24000 ? skin : '', slim, cape });
   }
 
   /* ---- the server's news that changes the world, on a tick ---- */

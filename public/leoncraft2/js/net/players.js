@@ -26,11 +26,11 @@
    can give themselves one; it shows over their head, in the Tab list and in
    their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar, invisLook } from '../render/avatar.js?v=79';
-import { pieceLook, armorSheet } from '../render/armor.js?v=79';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=79';
-import { DRAW, I, stackFromJSON } from '../items.js?v=79';
-import { B, BLOCKS } from '../blocks.js?v=79';
+import { Avatar, invisLook } from '../render/avatar.js?v=80';
+import { pieceLook, armorSheet } from '../render/armor.js?v=80';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=80';
+import { DRAW, I, stackFromJSON } from '../items.js?v=80';
+import { B, BLOCKS } from '../blocks.js?v=80';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -42,7 +42,20 @@ const idOf = name => !name ? 0 : (I[name] !== undefined ? I[name] : B[name] !== 
 // the rank tag before a name, in colour codes (the name after it goes back to the line's own colour)
 const RANKS = { admin: '\u00a7c[ADMIN] \u00a7r', mod: '\u00a72[MOD] \u00a7r', owner: '\u00a76[OWNER] \u00a7r', builder: '\u00a7b[BUILDER] \u00a7r' };   // (builder: Leon Network's, the maker of the map being played and their building team)
 // (Leon Network's team tag, 'team:<colour code>:<letter>': the letter in bold and the name in the team's colour)
-export const rankTag = tag => RANKS[tag] || (typeof tag === 'string' && /^team:[0-9a-f]:[A-Z]$/.test(tag) ? '§' + tag[5] + '§l' + tag[7] + ' §r§' + tag[5] : '');
+const baseTag = tag => RANKS[tag] || (typeof tag === 'string' && /^team:[0-9a-f]:[A-Z]$/.test(tag) ? '§' + tag[5] + '§l' + tag[7] + ' §r§' + tag[5] : '');
+// a Leonpixel leaderboard title worn, after a "|" in the tag ("admin|bedwars:1"): [Bed Wars #1] in gold, #2 silver, #3 bronze
+const TITLE_NAMES = { overall: 'Overall', bedwars: 'Bed Wars', skywars: 'SkyWars', duels: 'Duels', tntrun: 'TNT Run', murder: 'Murder Mystery',
+  buildbattle: 'Build Battle', spleef: 'Spleef', prophunt: 'Prop Hunt', chameleon: 'Chameleon', pillars: 'Pillars of Fortune', deathswap: 'Death Swap', bridger: 'Bridging' };
+function titleTag(key) {
+  const m = /^([a-z0-9_]{1,30}):([123])$/.exec(key || '');
+  if (!m) return '';
+  const name = TITLE_NAMES[m[1]] || m[1].replace(/_/g, ' ').replace(/\b[a-z]/g, c => c.toUpperCase()), c = m[2] === '1' ? '§6' : m[2] === '2' ? '§h' : '§g';
+  return c + '[' + name + ' #' + m[2] + '] §r';
+}
+export const rankTag = tag => {
+  if (typeof tag === 'string' && tag.indexOf('|') >= 0) { const i = tag.indexOf('|'); return titleTag(tag.slice(i + 1)) + baseTag(tag.slice(0, i)); }
+  return baseTag(tag);
+};
 
 // the flags each position carries (net/net.js sends them)
 export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024, SPEC: 2048, INVIS: 4096, FIRE: 8192, SPIN: 16384, GLOW: 32768 };
@@ -85,7 +98,7 @@ export class RemotePlayers {
     if (p.st) this.state(p.id, p.st, null);
     // (dead already when you came: no dying to watch)
     if (p.st && (p.st.f & F.DEAD)) r.deadAt = -1e9;
-    r.skinUrl = p.skin || ''; r.slim = !!p.slim;
+    r.skinUrl = p.skin || ''; r.slim = !!p.slim; r.capeUrl = p.cape || '';
     if (p.eq) r.eq = p.eq;
     return r;
   }
@@ -97,6 +110,7 @@ export class RemotePlayers {
       av.dropSwirl();
       av.mesh.geometry.dispose(); av.arm.geometry.dispose(); av.glowRim.geometry.dispose(); av.glowBehind.geometry.dispose();
       av.glowRim.material.dispose(); av.glowBehind.material.dispose();
+      R.scene.remove(av.capeMesh); av.capeMesh.geometry.dispose(); av.capeMat.dispose(); av.capeShadowMat.dispose(); av.capeTex.dispose();
       for (let s = 0; s < 2; s++) av.setHeld(s, null);
       av.setHeadItem(null);
       av.tex.dispose(); av.armorTex.dispose();
@@ -131,7 +145,7 @@ export class RemotePlayers {
     const late = off - r.est;
     if (late > r.late) r.late = late;
   }
-  setSkin(id, skin, slim) { const r = this.list.get(id); if (!r) return; r.skinUrl = skin || ''; r.slim = !!slim; if (r.av) this.skinOf(r); }
+  setSkin(id, skin, slim, cape) { const r = this.list.get(id); if (!r) return; r.skinUrl = skin || ''; r.slim = !!slim; r.capeUrl = cape || ''; if (r.av) this.skinOf(r); }
   setEquip(id, eq) { const r = this.list.get(id); if (!r) return; r.eq = eq; if (r.av) this.equip(r); }
   swing(id, hand) { const r = this.list.get(id); if (r && r.av && !hand) r.av.startSwing(); }
   hurt(id) { const r = this.list.get(id); if (r) r.hurtUntil = performance.now() + 500; }
@@ -163,8 +177,9 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=79', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=80', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
+    av.setCape(r.capeUrl || '').catch(() => {});
   }
   equip(r) {
     const av = r.av, eq = r.eq || {}, R = this.R;
@@ -303,7 +318,7 @@ export class RemotePlayers {
   }
   hide(r) {
     const av = r.av;
-    av.mesh.visible = av.armor.visible = av.glowRim.visible = av.glowBehind.visible = false;
+    av.mesh.visible = av.armor.visible = av.glowRim.visible = av.glowBehind.visible = av.capeMesh.visible = false;
     for (const h of av.held) if (h) h.mesh.visible = false;
     if (av.headItem) av.headItem.mesh.visible = false;
     if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
@@ -367,6 +382,9 @@ export class RemotePlayers {
     av.armor.visible = on && av.wearing && !(r.invis && invisLook.hideArmor);
     // Glowing: the outline, through walls too (shown even on someone invisible, as in the game)
     av.glowRim.visible = av.glowBehind.visible = on && !!r.glow;
+    // their cape (they send none while it is switched off), not while invisible or in an elytra
+    av.invisible = !!r.invis;
+    av.capeMesh.visible = av.capeShows(on);
     // the armour's pictures taken up again whenever another file has landed in the sheet
     if (av.wearing) { const sh = armorSheet(); if (sh.version !== av.armorV) { av.armorV = sh.version; av.armorTex.needsUpdate = true; } }
     av.uPiece.value[0].y = av.headWorn ? 1 : 0;
@@ -388,7 +406,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=79', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=80', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;

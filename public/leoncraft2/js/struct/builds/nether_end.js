@@ -3,8 +3,8 @@
    own designs. Each is drawn in its own file next to this one (end_city.js,
    bastion.js); this one gathers their plans.
 --------------------------------------------------------------------------- */
-import { endCity } from './end_city.js?v=79';
-import { PLANS as BASTION } from './bastion.js?v=79';
+import { endCity } from './end_city.js?v=80';
+import { PLANS as BASTION } from './bastion.js?v=80';
 
 export const PLANS = {};
 

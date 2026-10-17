@@ -18,12 +18,12 @@
    Layouts are the game's (176 wide, the smithing table's since 1.20); the
    sheets are our own (tools/leoncraft2/build_stations.py).
 --------------------------------------------------------------------------- */
-import { ContainerScreen, SearchField, slot, range, TO_PLAYER, TO_PLAYER_REVERSED, stackTooltip, drawOutline } from './inventory.js?v=79';
-import { I, ITEMS, withCount, displayName } from '../items.js?v=79';
-import { tableOffers3, anvilResult, grindResult, grindable, enchName, enchantability } from '../enchanting.js?v=79';
-import { isPotion, potionName } from '../brewing.js?v=79';
-import { stonecutterRecipes } from '../crafting.js?v=79';
-import { LegacyRandom } from '../gen/random.js?v=79';
+import { ContainerScreen, SearchField, slot, range, TO_PLAYER, TO_PLAYER_REVERSED, stackTooltip, drawOutline } from './inventory.js?v=80';
+import { I, ITEMS, withCount, displayName } from '../items.js?v=80';
+import { tableOffers3, anvilResult, grindResult, grindable, enchName, enchantability } from '../enchanting.js?v=80';
+import { isPotion, potionName } from '../brewing.js?v=80';
+import { stonecutterRecipes } from '../crafting.js?v=80';
+import { LegacyRandom } from '../gen/random.js?v=80';
 
 const LABEL_GREY = 0x404040;
 const MAIN = range(9, 36), HOT = range(0, 9);
