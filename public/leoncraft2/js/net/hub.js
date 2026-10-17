@@ -14,23 +14,23 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=81';
-import { I, ITEMS, maxStack } from '../items.js?v=81';
-import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=81';
-import { POTIONS } from '../brewing.js?v=81';
-import { creativeItems, entryId } from '../ui/inventory.js?v=81';
-import { DIM_IDS } from '../dims.js?v=81';
-import { ChestScreen } from '../ui/containers.js?v=81';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=81';
-import { RemotePlayers, playerSize, F } from './players.js?v=81';
-import { register } from '../commands.js?v=81';
-import { Sound } from '../sound/sound.js?v=81';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=81';
-import { skinUrl } from '../ui/skins.js?v=81';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=81';
-import { blockGeometry } from '../render/blockmesh.js?v=81';
-import { lightNear } from '../lightlevel.js?v=81';
-import { setSkin as setOwnSkin, invisLook, capeRule } from '../render/avatar.js?v=81';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=82';
+import { I, ITEMS, maxStack } from '../items.js?v=82';
+import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=82';
+import { POTIONS } from '../brewing.js?v=82';
+import { creativeItems, entryId } from '../ui/inventory.js?v=82';
+import { DIM_IDS } from '../dims.js?v=82';
+import { ChestScreen } from '../ui/containers.js?v=82';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=82';
+import { RemotePlayers, playerSize, F } from './players.js?v=82';
+import { register } from '../commands.js?v=82';
+import { Sound } from '../sound/sound.js?v=82';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=82';
+import { skinUrl } from '../ui/skins.js?v=82';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=82';
+import { blockGeometry } from '../render/blockmesh.js?v=82';
+import { lightNear } from '../lightlevel.js?v=82';
+import { setSkin as setOwnSkin, invisLook, capeRule } from '../render/avatar.js?v=82';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard',
   pillars: 'king_gerold', deathswap: 'explorer', bridger: 'rpg_kid' };
@@ -38,7 +38,7 @@ const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tnt
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=81').then(m => {
+import('../adv/toast.js?v=82').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -310,7 +310,7 @@ let PROFILE = null;
 const shopAll = hub => { const items = shopItems(hub.team || { wool: 'white_wool', clay: 'white_terracotta', glass: 'white_stained_glass' }), all = {}; for (const k in items) for (const it of items[k]) { all[it.id] = it; it.cat = k; } return all; };
 const profileMenus = () => PROFILE || (PROFILE = makeProfile({ MenuScreen, stack, ITEMS, QUICK, GRID, allShopItems: shopAll }));
 // the lobby's launch pad: its throw, out and up (blocks a tick), landing a few blocks short of the games' people
-const PAD_OUT = 1.25, PAD_UP = 0.85;
+const PAD_OUT = 0.85, PAD_UP = 0.85;
 // the lobby compass shows every game (a click opens that game's own menu); a person on the stand shows their game's modes
 class GameMenu extends MenuScreen {
   constructor(hub, game) { const g = game && (hub.games || []).find(x => x.id === game); super(hub, g ? g.name : 'Game Menu'); this.only = game || null; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); hub.send({ k: 'counts' }); }
@@ -1770,7 +1770,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=81', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=82', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1785,7 +1785,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=81', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=82', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1793,7 +1793,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=81', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=82', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -1804,7 +1804,7 @@ export class Hub {
     this.moving = true;
     const gui = this.ctx.gui, hooks = gui.hooks || {};
     this.ctx.chat.add('§7Sending you to ' + (id === 'hub' ? 'Leonpixel' : 'the game world') + '...', 0xFFFFFF);
-    const go = () => import('../ui/multiplayer.js?v=81').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
+    const go = () => import('../ui/multiplayer.js?v=82').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
     Promise.resolve(hooks.quitToTitle ? hooks.quitToTitle() : null).then(go, go);
   }
 
