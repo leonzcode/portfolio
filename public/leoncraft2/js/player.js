@@ -39,9 +39,9 @@
    at the first one in the way. Walking into something up to 0.6 high steps
    up onto it, which is how stairs and slabs are climbed.
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=75';
-import { collisionBoxes, selectionBoxes } from './models.js?v=75';
-import { LEVEL, FALLING } from './world-const.js?v=75';
+import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=76';
+import { collisionBoxes, selectionBoxes } from './models.js?v=76';
+import { LEVEL, FALLING } from './world-const.js?v=76';
 const THREE = window.THREE;
 
 const W = 0.3, HT = 1.8, STEP = 0.6;
@@ -104,8 +104,11 @@ export class Player {
   // a player made smaller or bigger (Leon Network's Chameleon plays at half size): the box, the eyes and the height all follow
   setScale(k) {
     if (!(k > 0) || k === this.scale) return;
+    const grew = k > this.scale;
     this.scale = k; this.halfW = W * k;
     this.h = POSE[this.pose][0] * k; this.eyeH = this.prevEyeH = POSE[this.pose][1] * k;
+    // (growing back inside something would wedge you: lifted until clear, as the first Leoncraft does)
+    if (grew && this.w) { const p = this.pos; for (let i = 0; i < 4 && this.boxHits(p.x - this.halfW, p.y, p.z - this.halfW, p.x + this.halfW, p.y + this.h, p.z + this.halfW); i++) p.y += 1; }
   }
   setKey(k, on) {
     // a press in the air with an elytra on starts a glide (tick())
@@ -347,14 +350,8 @@ export class Player {
           if (st) this.stuck = st;
         }
     this.climbing = CLIMB.has(this.w.get(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)));
-    // a wall as a ladder (Leon Network's Chameleon, as the first Leoncraft's Mecha had it): pressed against one, holding jump.
-    // Once on it you stay put when jump is let go (wallHold), until Shift lets you drop or you move off the wall
-    this.wallHold = false;
-    if (this.climbing || !this.wallClimb || this.flying || this.onGround || !this.onWall()) this.wallClung = false;
-    else if (this.keys[' ']) this.climbing = this.wallClung = true;
-    else if (this.keys.shift) this.wallClung = false;
-    else if (this.wallClung) this.climbing = this.wallHold = true;
-    if (!this.climbing && this.wallClimb && this.keys[' '] && !this.flying && this.onWall()) this.climbing = this.wallClung = true;
+    // a wall is a ladder you brought with you (Leon Network's Chameleon, as the first Leoncraft's Mecha has it: mcOnWall)
+    this.onWallNow = !this.climbing && !!this.wallClimb && !this.flying && !this.gliding && this.onWall();
   }
   // touching a solid block's side (a shade past your own box); barriers only when noBarrierClimb is off (hiders cannot see them)
   onWall() {
@@ -450,7 +447,7 @@ export class Player {
     else if (this.swimming) this.swimming = this.sprinting && this.inWater;
     else this.swimming = this.sprinting && this.eyeInWater && isWater(this.w.get(ex, Math.floor(this.pos.y), ez));
     this.insideBlocks();
-    if (this.climbing || this.stuck || this.flying) this.fallDistance = 0;
+    if (this.climbing || this.onWallNow || this.stuck || this.flying) this.fallDistance = 0;
 
     /* The ground as the tick starts decides both the push and the friction
        after the move, as in the game: the tick of a jump still slides like
@@ -518,8 +515,14 @@ export class Player {
       this.vel.y = Math.max(-0.15, this.vel.y);
       // (but sneaking in scaffolding is how you go down it)
       if (this.vel.y < 0 && this.sneaking && this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y), Math.floor(this.pos.z)) !== SCAFFOLD) this.vel.y = 0;
-      // (held on a wall: no sliding down)
-      if (this.wallHold && this.vel.y < 0) this.vel.y = 0;
+    }
+    // on a wall (Chameleon): jump goes up it at the first Leoncraft's 3.2 blocks a second, Shift in the air comes down at the
+    // same pace, and otherwise you hold where you are, still or moving along it, until you come off the wall
+    if (this.onWallNow) {
+      if (k[' ']) this.vel.y = 0.16;
+      // (in the air, by what is under your feet: holding a wall counts as standing for the rest of the game)
+      else if (k.shift && !this.boxHits(this.pos.x - this.halfW, this.pos.y - 0.06, this.pos.z - this.halfW, this.pos.x + this.halfW, this.pos.y, this.pos.z + this.halfW)) this.vel.y = -0.16;
+      else this.vel.y = Math.max(this.vel.y, 0);
     }
     if (this.inWater && !this.flying) this.pushByWater();
     const was = this.pos.clone(), startY = this.pos.y, vy0 = this.vel.y;
@@ -539,7 +542,7 @@ export class Player {
       if (d4 > 1e-5 && d5 > 1e-5) this.minorCollide = Math.acos(Math.max(-1, Math.min(1, (ix * mx + iz * mz) / Math.sqrt(d4 * d5)))) < 0.13962634;
     }
     // climbing: pushing into the ladder, or Space, goes up
-    if (this.climbing && !this.flying && ((this.hCollide && !this.wallHold) || k[' '])) this.vel.y = 0.2;
+    if (this.climbing && !this.flying && (this.hCollide || k[' '])) this.vel.y = 0.2;
     // pressed into a honey block's side on the way down: a slow, safe slide
     this.slidingOn = !this.flying && !this.onGround && this.vel.y < -0.08 ? this.honeySlide() : null;
     // drag and gravity

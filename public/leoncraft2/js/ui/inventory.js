@@ -34,17 +34,17 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=75';
-import { Screen, TextField, WHITE } from './gui.js?v=75';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=75';
-import { matchGrid, consumeGrid } from '../crafting.js?v=75';
-import { enchName, ENCH } from '../enchanting.js?v=75';
-import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=75';
-import { patternLines, drawBannerIcon } from '../banners.js?v=75';
-import { mapLines } from '../maps.js?v=75';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=75';
-import { dialPicture, usePicture } from '../dials.js?v=75';
-import { RecipeBook } from './recipebook.js?v=75';
+import { BLOCKS, B } from '../blocks.js?v=76';
+import { Screen, TextField, WHITE } from './gui.js?v=76';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=76';
+import { matchGrid, consumeGrid } from '../crafting.js?v=76';
+import { enchName, ENCH } from '../enchanting.js?v=76';
+import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=76';
+import { patternLines, drawBannerIcon } from '../banners.js?v=76';
+import { mapLines } from '../maps.js?v=76';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=76';
+import { dialPicture, usePicture } from '../dials.js?v=76';
+import { RecipeBook } from './recipebook.js?v=76';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -471,7 +471,9 @@ function hsv(h, s, v) {
 // stew's effect (only there: in survival you cannot tell what flower went in)
 export function stackTooltip(st, advanced, creative) {
   const it = ITEMS[st.id];
-  const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) || (isTipped(st) && st.potion) ? potionName(st) : st.lodestone ? 'Lodestone Compass' : st.title && st.map !== undefined ? st.title : displayName(st.id))];
+  const lines = [(st.ench ? '§b' : '') + (st.name ? (st.plain ? '' : '§o') + st.name : isPotion(st) || (isTipped(st) && st.potion) ? potionName(st) : st.lodestone ? 'Lodestone Compass' : st.title && st.map !== undefined ? st.title : displayName(st.id))];
+  // (a minigame's own item: what it does, in grey under its name)
+  if (Array.isArray(st.lore)) for (const l of st.lore.slice(0, 4)) lines.push('§7' + String(l));
   if (isPotion(st) || (st.potion && isTipped(st))) lines.push(...potionLines(st));
   if (creative && st.stew) { const sw = stewEffect(st); if (sw) lines.push(...effectLines([[sw[0], 1, sw[1]]])); }
   const title = n => n.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());

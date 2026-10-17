@@ -14,27 +14,27 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=75';
-import { I } from '../items.js?v=75';
-import { POTIONS } from '../brewing.js?v=75';
-import { ChestScreen } from '../ui/containers.js?v=75';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=75';
-import { RemotePlayers, playerSize, F } from './players.js?v=75';
-import { register } from '../commands.js?v=75';
-import { Sound } from '../sound/sound.js?v=75';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=75';
-import { skinUrl } from '../ui/skins.js?v=75';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=75';
-import { blockGeometry } from '../render/blockmesh.js?v=75';
-import { lightNear } from '../lightlevel.js?v=75';
-import { setSkin as setOwnSkin } from '../render/avatar.js?v=75';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=76';
+import { I } from '../items.js?v=76';
+import { POTIONS } from '../brewing.js?v=76';
+import { ChestScreen } from '../ui/containers.js?v=76';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=76';
+import { RemotePlayers, playerSize, F } from './players.js?v=76';
+import { register } from '../commands.js?v=76';
+import { Sound } from '../sound/sound.js?v=76';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=76';
+import { skinUrl } from '../ui/skins.js?v=76';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=76';
+import { blockGeometry } from '../render/blockmesh.js?v=76';
+import { lightNear } from '../lightlevel.js?v=76';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=76';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=75').then(m => {
+import('../adv/toast.js?v=76').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -43,7 +43,20 @@ import('../adv/toast.js?v=75').then(m => {
 const idOf = name => (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
 // the lobby's temporary blocks: place them anywhere in the lobby, the server takes them away again after 5 s
 const TEMP_BLOCK = 'white_wool', TEMP_NAME = '§bTemporary Blocks §7- Place them, they vanish after 5 seconds';
-const stack = (name, count = 1, extra) => { const id = idOf(name); return id ? Object.assign({ id, count }, extra || null) : null; };
+// a stack of the network's: a name of its own is the thing it stands for ("Tag Stick", "Rifle", "Game Menu"), shown over
+// the hotbar and at the top of the tooltip without the italics of a renamed item, and what it does ("- Right Click to ...")
+// goes on a grey line under it (lore)
+const stack = (name, count = 1, extra) => {
+  const id = idOf(name);
+  if (!id) return null;
+  const s = Object.assign({ id, count }, extra || null);
+  if (typeof s.name === 'string') {
+    const m = s.name.match(/^(.*?) §7(?:- )?(.+)$/);
+    if (m) { s.name = m[1]; s.lore = [m[2].replace(/^\((.*)\)$/, '$1')]; }
+    s.plain = true;
+  }
+  return s;
+};
 const CURRENCY = { iron: { item: 'iron_ingot', name: 'Iron', code: '§f' }, gold: { item: 'gold_ingot', name: 'Gold', code: '§6' }, diamond: { item: 'diamond', name: 'Diamond', code: '§b' }, emerald: { item: 'emerald', name: 'Emerald', code: '§2' } };
 const RESOURCES = ['iron_ingot', 'gold_ingot', 'diamond', 'emerald'];
 const roman = n => ['', 'I', 'II', 'III', 'IV', 'V'][n] || String(n);
@@ -643,7 +656,7 @@ export class Hub {
         this.setNpcs(m.npcs || []);
         this.setGens(m.gens || []);
         this.closeScreens();
-        if (m.area !== 'game' || this.gameKind !== 'chameleon') { this.poses = new Map(); this.seekerIds = new Set(); this.myPose = 0; }
+        if ((m.area !== 'game' && !m.watching) || this.gameKind !== 'chameleon') { this.poses = new Map(); this.seekerIds = new Set(); this.myPose = 0; }
         else if (this.role !== 'hider') this.myPose = 0;
         this.applySize();
         return;
@@ -1426,15 +1439,16 @@ export class Hub {
   }
   // Chameleon's hiders are played at half size: you (your box, eyes and body) and everyone you see; its seekers stay full size
   applySize() {
-    const on = this.area === 'game' && this.gameKind === 'chameleon', g = this.game;
-    const k = on && this.role !== 'seeker' ? 0.5 : 1;
+    // (someone watching a round from its waiting room sees it as it is played, at full size themselves)
+    const on = this.gameKind === 'chameleon' && (this.area === 'game' || this.watching), g = this.game;
+    const k = on && this.area === 'game' && this.role !== 'seeker' ? 0.5 : 1;
     playerSize.k = on ? 0.5 : 1;
     playerSize.full = on && this.seekerIds ? this.seekerIds : new Set();
     if (g && g.player && g.player.setScale) g.player.setScale(k);
     // (and nobody in it is hurt by a block at the eyes: half-size players squeeze into places, and paint against walls)
     if (g && g.survival) g.survival.noSuffocate = on;
     // and everyone in it climbs walls by holding jump against them (never the barriers round the map, or anyone could climb out)
-    if (g && g.player) { g.player.wallClimb = on; g.player.noBarrierClimb = true; }
+    if (g && g.player) { g.player.wallClimb = on && this.area === 'game'; g.player.noBarrierClimb = true; }
     const A = this.ctx && this.ctx.renderer && this.ctx.renderer.avatar;
     if (A) A.size = k;
   }
@@ -1488,7 +1502,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=75', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=76', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1503,7 +1517,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=75', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=76', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1511,7 +1525,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=75', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=76', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
