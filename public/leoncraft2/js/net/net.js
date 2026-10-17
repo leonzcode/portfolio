@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=77';
-import { idx, H } from '../world-const.js?v=77';
-import { DIMS, DIM_IDS } from '../dims.js?v=77';
-import { Save } from '../save.js?v=77';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=77';
-import { glints } from '../render/armor.js?v=77';
-import { containerKind } from '../containers.js?v=77';
-import { getSkinSettings } from '../render/avatar.js?v=77';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=77';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=77';
-import { Y0 } from '../world-const.js?v=77';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=77';
-import { Projectile } from '../entities/projectiles.js?v=77';
-import { Combat } from '../combat/combat.js?v=77';
-import { Vehicles } from './vehicles.js?v=77';
-import { Mobs, Orbs } from './mobs.js?v=77';
-import { Events } from './events.js?v=77';
-import { EndSync } from './endfight.js?v=77';
-import { Hub } from './hub.js?v=77';
-import { Account, wsBase, httpBase } from './account.js?v=77';
-import { rankTag } from './players.js?v=77';
+import { B, BLOCKS } from '../blocks.js?v=78';
+import { idx, H } from '../world-const.js?v=78';
+import { DIMS, DIM_IDS } from '../dims.js?v=78';
+import { Save } from '../save.js?v=78';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=78';
+import { glints } from '../render/armor.js?v=78';
+import { containerKind } from '../containers.js?v=78';
+import { getSkinSettings } from '../render/avatar.js?v=78';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=78';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=78';
+import { Y0 } from '../world-const.js?v=78';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=78';
+import { Projectile } from '../entities/projectiles.js?v=78';
+import { Combat } from '../combat/combat.js?v=78';
+import { Vehicles } from './vehicles.js?v=78';
+import { Mobs, Orbs } from './mobs.js?v=78';
+import { Events } from './events.js?v=78';
+import { EndSync } from './endfight.js?v=78';
+import { Hub } from './hub.js?v=78';
+import { Account, wsBase, httpBase } from './account.js?v=78';
+import { rankTag } from './players.js?v=78';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -1205,7 +1205,7 @@ export class Net {
     const fx = sv && sv.effects;
     const f = (P.sneaking ? F.SNEAK : 0) | (P.sprinting ? F.SPRINT : 0) | (P.flying ? F.FLY : 0) | (P.pose === 'swim' ? F.SWIM : 0) |
       (P.onGround ? F.GROUND : 0) | (g.sim && g.sim.sleeping ? F.SLEEP | (g.sim.sleeping.t >= 100 ? F.SLEPT : 0) : 0) | (dead ? F.DEAD : 0) | (P.gliding ? F.GLIDE : 0) | (P.riding ? F.RIDE : 0) |
-      (g.mode === 'spectator' ? F.SPEC : 0) | (fx && fx.invisibility ? F.INVIS : 0) | (g.entities && g.entities.pFire > 0 && !dead ? F.FIRE : 0) | (P.spinning && !dead ? F.SPIN : 0);
+      (g.mode === 'spectator' ? F.SPEC : 0) | (fx && fx.invisibility ? F.INVIS : 0) | (fx && fx.glowing ? F.GLOW : 0) | (g.entities && g.entities.pFire > 0 && !dead ? F.FIRE : 0) | (P.spinning && !dead ? F.SPIN : 0);
     const d = dimCode(g.dim);
     // (a millimetre and a twentieth of a degree: finer than any screen shows, in fewer characters)
     const r3 = v => Math.round(v * 1000) / 1000;

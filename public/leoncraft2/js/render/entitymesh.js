@@ -17,10 +17,10 @@
    and the particles (smoke puffs, crits, hearts, flames, explosions), each
    one instanced draw.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=77';
-import { VANILLA } from './vanilla.js?v=77';
-import { lightDefines } from './materials.js?v=77';
-import { GLINT } from './armor.js?v=77';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=78';
+import { VANILLA } from './vanilla.js?v=78';
+import { lightDefines } from './materials.js?v=78';
+import { GLINT } from './armor.js?v=78';
 const THREE = window.THREE;
 
 export const ATLAS = 2048;           // the mob texture atlas, in pixels a side (2048: room for every mob of the game)
@@ -34,7 +34,7 @@ uniform highp sampler2D uBones;
 in vec3 position; in vec3 normal; in vec2 uv; in vec2 aPart;
 in vec4 aI0;   // first bone, atlas offset u, v, enchantment glint (armour: render/armor.js)
 in vec4 aI1;   // sky, block light (0..1), hurt red, white flash
-in vec4 aI2;   // tint colour (rgb), (unused)
+in vec4 aI2;   // tint colour (rgb), Glowing (1 none, 2 glowing, 3 glowing and invisible: only the outline)
 out vec3 vWorld; out vec3 vN; out vec2 vUv; out vec4 vL; out vec3 vTint; out vec3 vG;
 #ifdef FOG_V
 // Detailed: the fog worked out per vertex (glsl.js fogTerms), as the blocks do
@@ -48,6 +48,7 @@ mat4 bone(int i) {
   return mat4(texelFetch(uBones, p, 0), texelFetch(uBones, p + ivec2(1, 0), 0), texelFetch(uBones, p + ivec2(2, 0), 0), texelFetch(uBones, p + ivec2(3, 0), 0));
 }
 void main() {
+  if (aI2.w > 2.5) { vWorld = vec3(0.0); vN = vec3(0.0, 1.0, 0.0); vUv = vec2(0.0); vL = vec4(0.0); vTint = vec3(1.0); vG = vec3(0.0); gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
   mat4 M = bone(int(aI0.x + 0.5) + int(aPart.x + 0.5));
   vec4 w = M * vec4(position, 1.0);
   vWorld = w.xyz;
@@ -63,6 +64,30 @@ void main() {
   fogTerms(w.xyz, vKeep, vAdd);
 #endif
 }`;
+/* Glowing on a mob (a spectral arrow): as the player's (render/avatar.js), the mob's shape marked in the stencil through
+   everything, then its faces pushed out a little drawn in white only outside the mark. Only instances flagged glowing. */
+const GLOW_VS = /* glsl */`
+uniform mat4 viewMatrix, projectionMatrix;
+uniform vec3 cameraPosition;
+uniform highp sampler2D uBones;
+uniform float uPush;
+in vec3 position; in vec3 normal; in vec2 aPart;
+in vec4 aI0; in vec4 aI2;
+mat4 bone(int i) {
+  ivec2 p = ivec2((i % ${BONE_W}) * 4, i / ${BONE_W});
+  return mat4(texelFetch(uBones, p, 0), texelFetch(uBones, p + ivec2(1, 0), 0), texelFetch(uBones, p + ivec2(2, 0), 0), texelFetch(uBones, p + ivec2(3, 0), 0));
+}
+void main() {
+  if (aI2.w < 1.5) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+  mat4 M = bone(int(aI0.x + 0.5) + int(aPart.x + 0.5));
+  vec4 w = M * vec4(position, 1.0);
+  w.xyz += normalize(mat3(M) * normal) * uPush;
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (w.xyz - cameraPosition), 1.0);
+}`;
+const GLOW_FS = /* glsl */`
+uniform vec4 uGlow;
+out vec4 o;
+void main() { o = uGlow; }`;
 const FS = /* glsl */`
 uniform sampler2D uAtlas, uAmbient;
 uniform vec3 cameraPosition, uLightDir;
@@ -398,6 +423,22 @@ export class EntityMeshes {
     this.mask.frustumCulled = false; this.mask.renderOrder = 4;
     this.group.add(this.mask);
     this.tmp = new THREE.Matrix4(); this.tmp2 = new THREE.Matrix4(); this.e = new THREE.Euler();
+    // Glowing: the flag the next add() writes (1 none, 2 glowing, 3 glowing and invisible), and the two materials
+    this.glowNow = 1;
+    this.uGlow = { value: new THREE.Vector4(1, 1, 1, 1) };
+    let cleared = -1;
+    const gmat = (push, extra) => new THREE.RawShaderMaterial(Object.assign({ glslVersion: THREE.GLSL3, vertexShader: HEAD + GLOW_VS, fragmentShader: HEAD + GLOW_FS,
+      uniforms: { uBones: this.uBones, uPush: { value: push }, uGlow: this.uGlow }, side: THREE.DoubleSide, depthTest: false, depthWrite: false, transparent: true, stencilWrite: true }, extra));
+    this.glowMaskMat = gmat(0, { colorWrite: false, stencilRef: 1, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp, stencilZFail: THREE.ReplaceStencilOp });
+    this.glowRimMat = gmat(0.07, { stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilWriteMask: 0, stencilZPass: THREE.KeepStencilOp });
+    // (the stencil cleared once a frame, before the first mob's mark; the players' outlines clear their own after)
+    this.glowClear = r => {
+      const f = r.info.render.frame;
+      if (f === cleared) return;
+      cleared = f; r.state.buffers.stencil.setMask(0xff); r.clearStencil();
+      const t = r.getRenderTarget(), lit = t && !t.stencilBuffer;
+      this.uGlow.value.set(lit ? 3 : 1, lit ? 3 : 1, lit ? 3 : 1, lit ? 0.7 : 1);
+    };
   }
   makeBoneTex() {
     const t = new THREE.DataTexture(this.bones, BONE_W * 4, this.boneRows, THREE.RGBAFormat, THREE.FloatType);
@@ -450,7 +491,8 @@ export class EntityMeshes {
   }
 
   begin() {
-    for (const m of this.models.values()) m.n = 0;
+    for (const m of this.models.values()) { m.n = 0; m.glows = false; }
+    this.glowNow = 1;
     this.nBones = 0; this.blobN = 0; this.partN = 0; this.maskN = 0;
   }
   // room for n more matrices; returns the first one's index
@@ -479,7 +521,17 @@ export class EntityMeshes {
     const a0 = m.aI0.array, a1 = m.aI1.array, a2 = m.aI2.array;
     a0[o] = bone; a0[o + 1] = u; a0[o + 2] = v; a0[o + 3] = glint || 0;
     a1[o] = sky; a1[o + 1] = block; a1[o + 2] = hurt; a1[o + 3] = white;
-    a2[o] = r; a2[o + 1] = g; a2[o + 2] = b; a2[o + 3] = 1;
+    a2[o] = r; a2[o + 1] = g; a2[o + 2] = b; a2[o + 3] = this.glowNow;
+    if (this.glowNow > 1) {
+      if (!m.glowMask) {
+        m.glowMask = new THREE.Mesh(m.geo, this.glowMaskMat); m.glowRim = new THREE.Mesh(m.geo, this.glowRimMat);
+        for (const q of [m.glowMask, m.glowRim]) { q.frustumCulled = false; q.matrixAutoUpdate = false; this.group.add(q); }
+        // every mob's mark before any mob's outline, all before the players' (render/avatar.js, 100000 up)
+        m.glowMask.renderOrder = 99990; m.glowRim.renderOrder = 99991;
+        m.glowMask.onBeforeRender = this.glowClear;
+      }
+      m.glows = true;
+    }
     m.n++;
   }
   blobAt(x, y, z, r, a) {
@@ -519,6 +571,7 @@ export class EntityMeshes {
     for (const m of this.models.values()) {
       m.geo.instanceCount = m.n;
       m.mesh.visible = m.n > 0;
+      if (m.glowMask) m.glowMask.visible = m.glowRim.visible = m.n > 0 && !!m.glows;
       if (m.n) for (const k of ['aI0', 'aI1', 'aI2']) { const at = m[k]; at.needsUpdate = true; at.clearUpdateRanges && at.clearUpdateRanges(); at.addUpdateRange && at.addUpdateRange(0, m.n * 4); }
     }
     if (this.nBones) {
