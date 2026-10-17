@@ -11,9 +11,9 @@
    does: the ground's height at the column and, when asked, its biome (the
    vanilla generator's biome number, or the first generator's climate).
 --------------------------------------------------------------------------- */
-import { SEA } from './world-const.js?v=79';
-import { BIOMES } from './biomes.js?v=79';
-import { pickBiome } from './worldgen.js?v=79';
+import { SEA } from './world-const.js?v=80';
+import { BIOMES } from './biomes.js?v=80';
+import { pickBiome } from './worldgen.js?v=80';
 
 const GOOD = ['plains', 'forest', 'birch_forest', 'flower_forest', 'meadow', 'cherry_grove', 'sunflower_plains', 'taiga', 'dark_forest', 'old_growth_birch_forest', 'savanna', 'jungle', 'sparse_jungle'];
 export async function searchSpawn(ask) {

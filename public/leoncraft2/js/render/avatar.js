@@ -44,16 +44,16 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { VANILLA, AVATAR_FS } from './vanilla.js?v=79';
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=79';
-import { lightDefines } from './materials.js?v=79';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=79';
-import { H, idx } from '../world-const.js?v=79';
-import { lightNear } from '../lightlevel.js?v=79';
-import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=79';
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=79';
-import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=79';
-import { setGlint } from './glint.js?v=79';
+import { VANILLA, AVATAR_FS } from './vanilla.js?v=80';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=80';
+import { lightDefines } from './materials.js?v=80';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=80';
+import { H, idx } from '../world-const.js?v=80';
+import { lightNear } from '../lightlevel.js?v=80';
+import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=80';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=80';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=80';
+import { setGlint } from './glint.js?v=80';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -64,14 +64,14 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=79', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=80', import.meta.url).href;
 // the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
 let defaultSkin = DEFAULT_SKIN;
 
 /* ---- what the player chose, kept in the browser ---- */
 const KEY = 'lc2_skin';
 const settings = (() => {
-  const s = { skin: null, slim: null, show: 0x7f };
+  const s = { skin: null, slim: null, show: 0x7f, cape: '', capeShown: true };
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
   return s;
 })();
@@ -92,7 +92,14 @@ export function useDefaultSkin(url) {
   if (current && !settings.skin) return current.setSkin(defaultSkin, false);
   return Promise.resolve();
 }
+// the cape worn: a 64 x 32 picture's data URL (or any image URL), or '' for none
+export function setCape(url) {
+  settings.cape = typeof url === 'string' ? url : ''; saveSettings();
+  if (current) return current.setCape(settings.capeShown !== false ? settings.cape : '');
+  return Promise.resolve();
+}
 export function setSkinPart(name, on) {
+  if (name === 'cape') { settings.capeShown = !!on; saveSettings(); if (current) current.setCape(on ? settings.cape : ''); return; }
   const names = name === 'sleeves' ? ['leftSleeve', 'rightSleeve'] : name === 'pants' ? ['leftPants', 'rightPants'] : [name];
   for (const n of names) {
     if (!BIT[n]) continue;
@@ -107,7 +114,7 @@ export function getSkinParts() {
   for (const n of SKIN_PARTS) o[n] = !!(settings.show & (1 << BIT[n]));
   return o;
 }
-export function getSkinSettings() { return { skin: settings.skin || defaultSkin, slim: !!settings.slim, parts: getSkinParts() }; }
+export function getSkinSettings() { return { skin: settings.skin || defaultSkin, slim: !!settings.slim, parts: getSkinParts(), cape: settings.capeShown !== false && typeof settings.cape === 'string' ? settings.cape : '' }; }
 
 /* ---- the geometry ----
    Each box: [part, layer bit, centre from the part's pivot (model pixels, y up,
@@ -133,6 +140,32 @@ function faceList(u, v, w, h, d) {
     [[0, 1, 0], [[-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]], [u + d, v, u + d + w, v + d]],                         // top
     [[0, -1, 0], [[-1, -1, 1], [1, -1, 1], [1, -1, -1], [-1, -1, -1]], [u + d + w, v, u + d + 2 * w, v + d]],             // bottom
   ];
+}
+/* The cape: the game's cloak, a 10 x 16 x 1 box hanging from its top edge (the pivot), laid out as any box is in a
+   64 x 32 picture (its outside at 1,1, its inside at 12,1). Built in this model's frame, before the cape's own turn. */
+function capeGeometry() {
+  const P = [], N = [], T = [], A = [], I = [];
+  const c = [0, -8, 0.5], hx = 5, hy = 8, hz = 0.5;
+  for (const [n, corners, r] of faceList(0, 0, 10, 16, 1)) {
+    const v0 = P.length / 3;
+    const UV = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
+    for (let k = 0; k < 4; k++) {
+      const s = corners[k];
+      P.push(c[0] + s[0] * hx, c[1] + s[1] * hy, c[2] + s[2] * hz);
+      N.push(n[0], n[1], n[2]);
+      T.push(UV[k][0] / 64, UV[k][1] / 32);
+      A.push(0, 0);
+    }
+    I.push(v0, v0 + 2, v0 + 1, v0, v0 + 3, v0 + 2);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(T, 2));
+  g.setAttribute('aPart', new THREE.Float32BufferAttribute(A, 2));
+  g.setIndex(I);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 64);
+  return g;
 }
 // grow: the boxes of the skin's first layer only, each grown by that many pixels every way (the Glowing outline's shell)
 function buildGeometry(slim, onlyParts, grow) {
@@ -265,6 +298,8 @@ const GLOW_MASK = 1.1, GLOW_GROW = 1.9;
 let glowSeq = 0;
 // Leon Network hides an invisible player's armour too, as the Hypixel games do (net/hub.js sets it while you are there)
 export const invisLook = { hideArmor: false };
+// no capes drawn while this is on (Chameleon on Leonpixel: a cape would give a painted hider away; net/hub.js sets it)
+export const capeRule = { off: false };
 const FS = /* glsl */`
 uniform sampler2D uSkin, uAmbient;
 uniform vec3 cameraPosition, uLightDir;
@@ -527,6 +562,23 @@ export class Avatar {
     this.armorShadow = new THREE.Mesh(ageo, this.armorShadowMat);
     this.wearing = false;
     // Glowing's outline and silhouette (set glowing to show them; invisible hides the body, as the game does)
+    // the cape: its picture (64 x 32), its one matrix, a mesh drawn with the body's shader and a shadow
+    this.capeCanvas = document.createElement('canvas');
+    this.capeCanvas.width = 64; this.capeCanvas.height = 32;
+    const ctex = this.capeTex = new THREE.Texture(this.capeCanvas);
+    ctex.magFilter = ctex.minFilter = THREE.NearestFilter; ctex.generateMipmaps = false; ctex.flipY = false;
+    this.capeParts = Array.from({ length: 6 }, () => new THREE.Matrix4());
+    const cuni = Object.assign({}, uni, { uSkin: { value: ctex }, uParts: { value: this.capeParts }, uShow: { value: 1 } });
+    this.capeMat = mk(VS, FS, cuni);
+    this.capeShadowMat = new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: HEAD + SHADOW_VS, fragmentShader: HEAD + SHADOW_FS, uniforms: cuni, side: THREE.DoubleSide });
+    const cgeo = capeGeometry();
+    this.capeMesh = new THREE.Mesh(cgeo, this.capeMat);
+    this.capeShadow = new THREE.Mesh(cgeo, this.capeShadowMat);
+    this.capeOn = false;
+    // where the cape's free end is (the game's xCloak: it chases the player a quarter of the way each tick), the bob and walk
+    this.cloak = new THREE.Vector3(); this.cloakO = new THREE.Vector3(); this.cloakSet = false;
+    this.bob = 0; this.oBob = 0; this.walkDist = 0; this.walkDistO = 0;
+    this.tA = new THREE.Matrix4(); this.tB = new THREE.Matrix4();
     this.uGlow = { value: new THREE.Vector4(1, 1, 1, 1) };
     const gmat = extra => new THREE.RawShaderMaterial(Object.assign({ glslVersion: THREE.GLSL3, vertexShader: HEAD + GLOW_VS, fragmentShader: HEAD + GLOW_FS,
       uniforms: { uParts: { value: this.parts }, uGlow: this.uGlow }, side: THREE.FrontSide, depthTest: false, depthWrite: false, transparent: true, stencilWrite: true }, extra));
@@ -541,15 +593,17 @@ export class Avatar {
       this.uGlow.value.set(lit ? 3 : 1, lit ? 3 : 1, lit ? 3 : 1, lit ? 0.7 : 1);
     };
     this.glowing = false; this.invisible = false;
-    for (const m of [this.mesh, this.shadowMesh, this.arm, this.armor, this.armorShadow, this.glowRim, this.glowBehind]) { m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false; }
+    for (const m of [this.mesh, this.shadowMesh, this.arm, this.armor, this.armorShadow, this.glowRim, this.glowBehind, this.capeMesh, this.capeShadow]) { m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false; }
     renderer.scene.add(this.mesh);
     renderer.scene.add(this.armor);
-    renderer.scene.add(this.glowRim); renderer.scene.add(this.glowBehind);
+    renderer.scene.add(this.glowRim); renderer.scene.add(this.glowBehind); renderer.scene.add(this.capeMesh);
     // (only drawn while there are shadows: render/shadows.js; another player's model has no first-person arm)
-    if (!remote) { renderer.shadowScene.add(this.shadowMesh); renderer.shadowScene.add(this.armorShadow); renderer.handScene.add(this.arm); }
+    if (!remote) { renderer.shadowScene.add(this.shadowMesh); renderer.shadowScene.add(this.armorShadow); renderer.shadowScene.add(this.capeShadow); renderer.handScene.add(this.arm); }
     // what is in each hand (0 main, 1 off), in the model's hand in third person
     this.held = [null, null];
     this.heldGlint = [false, false];
+    // your own cape, as you left it
+    if (!remote && settings.cape && settings.capeShown !== false) this.setCape(settings.cape);
     this.heldRot = new THREE.Matrix3();
     // pose state, per tick (o... is the tick before)
     this.started = false;
@@ -573,6 +627,19 @@ export class Avatar {
   /* ---- skins ----
      urlOrImage: a URL (data: and blob: too), an Image, an ImageBitmap or a canvas.
      slim: true for 3 pixel arms, false for 4, left out to tell from the skin. */
+  async setCape(url) {
+    if (!url) { this.capeOn = false; return; }
+    let img;
+    try { img = await loadImage(url); } catch (e) { this.capeOn = false; return; }
+    const g = this.capeCanvas.getContext('2d');
+    g.clearRect(0, 0, 64, 32);
+    g.imageSmoothingEnabled = false;
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    if (w * 17 === h * 22) g.drawImage(img, 0, 0, 22, 17);       // only the cape's own corner, in its own size
+    else g.drawImage(img, 0, 0, 64, 32);
+    this.capeTex.needsUpdate = true;
+    this.capeOn = true;
+  }
   async setSkin(urlOrImage, slim) {
     const img = typeof urlOrImage === 'string' ? await loadImage(urlOrImage) : urlOrImage;
     drawSkin(this.canvas, img);
@@ -707,6 +774,17 @@ export class Avatar {
     this.glide = P.gliding ? this.glide + 1 : 0;
     this.spin = P.spinning && !P.gliding ? (this.spin || 0) + 1 : 0;
     this.wingTick(P);
+    // the cape's free end chases where you are, a quarter of the way a tick (straight there after a jump of over 10)
+    this.cloakO.copy(this.cloak);
+    if (!this.cloakSet) { this.cloak.copy(P.pos); this.cloakO.copy(P.pos); this.cloakSet = true; }
+    for (const k of ['x', 'y', 'z']) {
+      const d = P.pos[k] - this.cloak[k];
+      if (Math.abs(d) > 10) { this.cloak[k] = P.pos[k]; this.cloakO[k] = P.pos[k]; }
+      else this.cloak[k] += d * 0.25;
+    }
+    this.oBob = this.bob;
+    this.bob += ((P.onGround && P.pose !== 'swim' && !(P.dying > 0) ? Math.min(0.1, Math.sqrt(d2)) : 0) - this.bob) * 0.4;
+    this.walkDistO = this.walkDist; this.walkDist += Math.sqrt(d2) * 0.6;
     this.age++;
   }
 
@@ -810,6 +888,8 @@ export class Avatar {
     this.mesh.visible = third && !this.invisible;
     this.shadowMesh.visible = this.ready && !this.invisible;
     this.glowRim.visible = this.glowBehind.visible = third && this.glowing;
+    this.capeMesh.visible = this.capeShows(third);
+    this.capeShadow.visible = this.capeShows(this.ready && !this.hidden);
     // the armour, its pictures taken up again whenever another file has landed in the sheet
     this.armor.visible = third && armorShows;
     this.armorShadow.visible = this.ready && armorShows;
@@ -855,6 +935,7 @@ export class Avatar {
     // (a smaller or bigger player: Leon Network's Chameleon plays at half size)
     if (this.size && this.size !== 1) root.scale(this.sizeV.set(this.size, this.size, this.size));
     this.matrices(root, this.parts);
+    if (this.capeOn) this.placeCape(root, a, feet, bodyYaw);
     for (let side = 0; side < 2; side++) {
       const h = this.held[side];
       if (!h) continue;
@@ -991,6 +1072,29 @@ export class Avatar {
     if (this.poseOverride) this.poseOverride(S, sneak);
   }
   // the parts' matrices from the pose, under a root (the model's own space to the world's)
+  /* The game's cape layer: 2 pixels behind the neck (1.1 more and 0.85 up over a chestplate), lifted 6 degrees, then
+     more the faster its free end trails behind (up to 150 / 2), up and down with your vertical speed and the walk's
+     bob, 25 more sneaking, and swung sideways (up to 20 / 2) as you turn or strafe. */
+  placeCape(root, a, feet, bodyYaw) {
+    const c = this.cloak, o = this.cloakO, S = this.pose[1];
+    const d0 = o.x + (c.x - o.x) * a - feet.x, d1 = o.y + (c.y - o.y) * a - feet.y, d2 = o.z + (c.z - o.z) * a - feet.z;
+    const sb = Math.sin(bodyYaw), cb = Math.cos(bodyYaw);
+    let f1 = Math.max(-6, Math.min(32, d1 * 10));
+    const f2 = Math.max(0, Math.min(150, (d0 * sb + d2 * cb) * 100));
+    const f3 = Math.max(-20, Math.min(20, (d0 * cb - d2 * sb) * 100));
+    const bob = this.oBob + (this.bob - this.oBob) * a, walk = this.walkDistO + (this.walkDist - this.walkDistO) * a;
+    f1 += Math.sin(walk * 6) * 32 * bob;
+    if (this.cur.sneak) f1 += 25;
+    const chest = this.uPiece.value[1].y > 0.5;
+    const m = this.capeParts[0];
+    m.makeTranslation(S.x, 24 - S.y + (chest ? 0.85 : 0), -S.z - 2 - (chest ? 1.1 : 0));
+    m.multiply(this.tA.makeRotationX((6 + f2 / 2 + f1) * DEG));
+    m.multiply(this.tA.makeRotationZ(-(f3 / 2) * DEG));
+    m.multiply(this.tA.makeRotationY((f3 / 2 - 180) * DEG));
+    m.premultiply(root);
+  }
+  // shown in third person with a cape on, not while invisible, hidden (a disguise) or wearing an elytra (as in the game)
+  capeShows(third) { return third && this.capeOn && !this.invisible && !capeRule.off && this.uPiece.value[4].y < 0.5; }
   matrices(root, out) {
     const S = this.pose;
     for (let i = 0; i < 6; i++) {

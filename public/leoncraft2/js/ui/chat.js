@@ -8,8 +8,8 @@
    Down walk back through what you sent. A command gets the game's
    suggestions as it is typed (ChatScreen).
 --------------------------------------------------------------------------- */
-import { Screen, TextField } from './gui.js?v=79';
-import { execute, suggestions, commandDef } from '../commands.js?v=79';
+import { Screen, TextField } from './gui.js?v=80';
+import { execute, suggestions, commandDef } from '../commands.js?v=80';
 
 const LINE = 9, KEEP = 100, WIDTH = 320;
 const ROWS = 10;           // suggestions shown at once (the list scrolls past that)
@@ -37,7 +37,7 @@ export class Chat {
     let code = '';
     return parts.map((p, i) => {
       const row = i && code && !p.startsWith('§') ? code + p : p;
-      const m = p.match(/§[0-9a-fr]/gi);
+      const m = p.match(/§[0-9a-hr]/gi);
       if (m) code = m[m.length - 1].toLowerCase() === '§r' ? '' : m[m.length - 1];
       return row;
     });

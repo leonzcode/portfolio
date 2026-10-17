@@ -52,7 +52,7 @@
    textures/gui/. The pack leaves button interiors see-through, so a
    translucent fill goes under them for legible text over the world.
 --------------------------------------------------------------------------- */
-import { Font, cssRGB } from './font.js?v=79';
+import { Font, cssRGB } from './font.js?v=80';
 
 /* ------------------------------ options ------------------------------ */
 
@@ -138,7 +138,9 @@ export const DEFAULT_OPTIONS = {
   skin: 'default',         // or a 64 x 64 PNG data URL
   skinModel: 'classic',    // classic slim
   skinName: '',            // the Skin Gallery's name for the skin in use ('' for the default or a file of your own)
-  skinParts: { hat: true, jacket: true, leftSleeve: true, rightSleeve: true, leftPants: true, rightPants: true },
+  skinParts: { hat: true, jacket: true, leftSleeve: true, rightSleeve: true, leftPants: true, rightPants: true, cape: true },
+  cape: '',                // a 64 x 32 PNG data URL of the cape worn, or '' for none
+  capeName: '',            // its name (one of ours, a player's from a username search, or '' for one of your own)
   keys: DEFAULT_KEYS,
   keys2: DEFAULT_KEYS2,
   // Music & Sounds (js/sound): each category's slider (0-1, 1 where unset), Closed Captions, Directional Audio (HRTF),
@@ -301,7 +303,7 @@ export class Gui {
     this.ctx = canvas.getContext('2d');
     this.base = base || new URL('../../textures/gui/', import.meta.url).href;
     if (!this.base.endsWith('/')) this.base += '/';
-    this.version = version || '?v=79';
+    this.version = version || '?v=80';
     this.options = options || new Options();
     this.hooks = hooks || {};
     this.sheets = new Map();

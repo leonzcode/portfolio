@@ -26,17 +26,18 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=79';
-import { Packs } from './pack.js?v=79';
-import { Account } from '../net/account.js?v=79';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=79';
-import { packArtSummary } from '../entities/packart.js?v=79';
-import { LanScreen } from './lan.js?v=79';
-import { parseSeed } from '../gen/random.js?v=79';
-import { SOUND_CREDITS } from '../sound/credits.js?v=79';
-import { SkinGalleryScreen, skinCredits } from './skins.js?v=79';
-import { FlatCustomizeScreen } from './flat.js?v=79';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=79';
+} from './gui.js?v=80';
+import { Packs } from './pack.js?v=80';
+import { Account } from '../net/account.js?v=80';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=80';
+import { packArtSummary } from '../entities/packart.js?v=80';
+import { LanScreen } from './lan.js?v=80';
+import { parseSeed } from '../gen/random.js?v=80';
+import { SOUND_CREDITS } from '../sound/credits.js?v=80';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=80';
+import { SkinsScreen } from './skinmenu.js?v=80';
+import { FlatCustomizeScreen } from './flat.js?v=80';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=80';
 
 const PI = Math.PI;
 
@@ -259,7 +260,9 @@ export class TitleScreen extends Screen {
       this.add(new Button(W - 64, 4, 60, 20, 'Log Out', () => logOut(g)));
       if (Account.admin) this.add(new Button(W - 128, 4, 60, 20, 'Admin', () => withAccount(g, () => g.open(new AdminScreen()))));
     }
-    const realms = this.add(new Button(W / 2 - 100, l + 48, 200, 20, 'Leoncraft Realms', null, 'Not available in Leoncraft'));
+    // (Skins beside Realms: what you wear, any time, no account needed)
+    this.add(new Button(W / 2 - 100, l + 48, 98, 20, 'Skins', () => g.open(new SkinsScreen()), 'Change your skin and cape'));
+    const realms = this.add(new Button(W / 2 + 2, l + 48, 98, 20, 'Leoncraft Realms', null, 'Not available in Leoncraft'));
     realms.active = false;
     this.add(new IconButton(W / 2 - 124, l + 84, 'language', () => g.open(new LanguageScreen()), 'Language'));
     this.add(new Button(W / 2 - 100, l + 84, 98, 20, 'Options...', () => g.open(new OptionsScreen())));
@@ -403,7 +406,7 @@ export class SelectWorldScreen extends Screen {
     if (this.importing) return;
     this.importing = true; this.lc1B.active = false; this.lc1B.message = 'Importing...'; this.gui.markDirty();
     const done = msg => { this.importing = false; if (this.lc1B) { this.lc1B.active = true; this.lc1B.message = 'Import from Leoncraft 1'; } this.gui.markDirty(); if (msg) this.gui.open(new NoticeScreen('Import from Leoncraft 1', msg)); };
-    import('../lc1/spimport.js?v=79').then(m => {
+    import('../lc1/spimport.js?v=80').then(m => {
       const saves = m.lc1Saves();
       if (!saves.length) return done('There is no Leoncraft 1 world in this browser.');
       return m.importLC1(saves[0].key, Worlds).then(r => {
@@ -738,9 +741,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=79';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=79';
-import { minimapButtons } from './minimap.js?v=79';
+export { VideoSettingsScreen } from './video.js?v=80';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=80';
+import { minimapButtons } from './minimap.js?v=80';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -860,11 +863,13 @@ export class SkinCustomizationScreen extends OptionsListScreen {
     const reset = new Button(0, 0, 150, 20, 'Reset to Default', () => { o.set('skin', 'default'); o.set('skinModel', 'classic'); o.set('skinName', ''); g._initScreen(this); });
     const gallery = new Button(0, 0, 310, 20, 'Skin Gallery...', () => g.open(new SkinGalleryScreen()));
     gallery.tooltip = 'Skins other players drew and shared, to wear';
+    const skins = new Button(0, 0, 150, 20, 'Skins...', () => g.open(new SkinsScreen()), 'Upload, edit or search for a skin, and pick a cape');
     reset.active = o.get('skin') !== 'default';
     list.entries = [
       new WidgetRow(part('hat', 'Hat'), part('jacket', 'Jacket')),
       new WidgetRow(part('leftSleeve', 'Left Sleeve'), part('rightSleeve', 'Right Sleeve')),
       new WidgetRow(part('leftPants', 'Left Pants Leg'), part('rightPants', 'Right Pants Leg')),
+      new WidgetRow(part('cape', 'Cape'), skins),
       new WidgetRow(hand, model),
       new WidgetRow(gallery),
       new WidgetRow(choose, reset),
@@ -1060,6 +1065,7 @@ const CREDITS = [
   ['Block list and hardness: minecraft-data, MIT License'],
   ['github.com/PrismarineJS/minecraft-data', 0, 'https://github.com/PrismarineJS/minecraft-data'],
   ['The player skin, the grey buttons, the effect pictures, the frost'], ['and a few textures are original drawings.'],
+  ['The capes in the Capes menu are our own, drawn in code.'],
   ['Everything else: written for Leoncraft by Leon Zhao.'], [''],
   ['Not an official Minecraft product.', 0xA0A0A0],
   ['Not approved by or associated with Mojang or Microsoft.', 0xA0A0A0],

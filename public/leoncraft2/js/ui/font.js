@@ -21,7 +21,10 @@ const CP437_HI =
 export const FORMAT_COLOURS = [
   0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA,
   0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF,
+  // two of our own after the game's sixteen: g bronze and h silver (Leonpixel's leaderboard titles)
+  0xCD7F32, 0xC9D1DA,
 ];
+const CODES = '0123456789abcdefgh';
 
 const cssCache = new Map();
 export function cssRGB(rgb) {
@@ -106,7 +109,7 @@ export class Font {
       const code = str.charCodeAt(i);
       if (code === 0xa7 && i + 1 < str.length) {
         const f = str[++i].toLowerCase();
-        if (f === 'l') bold = true; else if (f === 'r' || '0123456789abcdef'.indexOf(f) >= 0) bold = false;
+        if (f === 'l') bold = true; else if (f === 'r' || CODES.indexOf(f) >= 0) bold = false;
         continue;
       }
       w += this.adv[this.glyph(code)] + (bold ? 1 : 0);
@@ -161,7 +164,7 @@ export class Font {
       const code = str.charCodeAt(i);
       if (code === 0xa7 && i + 1 < str.length) {
         const f = str[++i].toLowerCase();
-        const k = '0123456789abcdef'.indexOf(f);
+        const k = CODES.indexOf(f);
         if (k >= 0) { colour = FORMAT_COLOURS[k]; bold = false; under = false; }
         else if (f === 'r') { colour = rgb; bold = false; under = false; }
         else if (f === 'l') bold = true;

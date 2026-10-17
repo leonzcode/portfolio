@@ -14,27 +14,31 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=79';
-import { I } from '../items.js?v=79';
-import { POTIONS } from '../brewing.js?v=79';
-import { ChestScreen } from '../ui/containers.js?v=79';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=79';
-import { RemotePlayers, playerSize, F } from './players.js?v=79';
-import { register } from '../commands.js?v=79';
-import { Sound } from '../sound/sound.js?v=79';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=79';
-import { skinUrl } from '../ui/skins.js?v=79';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=79';
-import { blockGeometry } from '../render/blockmesh.js?v=79';
-import { lightNear } from '../lightlevel.js?v=79';
-import { setSkin as setOwnSkin, invisLook } from '../render/avatar.js?v=79';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=80';
+import { I, ITEMS, maxStack } from '../items.js?v=80';
+import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=80';
+import { POTIONS } from '../brewing.js?v=80';
+import { creativeItems, entryId } from '../ui/inventory.js?v=80';
+import { DIM_IDS } from '../dims.js?v=80';
+import { ChestScreen } from '../ui/containers.js?v=80';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=80';
+import { RemotePlayers, playerSize, F } from './players.js?v=80';
+import { register } from '../commands.js?v=80';
+import { Sound } from '../sound/sound.js?v=80';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=80';
+import { skinUrl } from '../ui/skins.js?v=80';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=80';
+import { blockGeometry } from '../render/blockmesh.js?v=80';
+import { lightNear } from '../lightlevel.js?v=80';
+import { setSkin as setOwnSkin, invisLook, capeRule } from '../render/avatar.js?v=80';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
-const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
+const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard',
+  pillars: 'king_gerold', deathswap: 'explorer', bridger: 'rpg_kid' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=79').then(m => {
+import('../adv/toast.js?v=80').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -193,8 +197,9 @@ class ShopScreen extends MenuScreen {
     });
     this.put(8, null, null, null); this.put(17, stack('gray_stained_glass_pane'), ['§8↑ Categories', '§8↓ Items'], null);
     const all = {}; for (const k in items) for (const it of items[k]) all[it.id] = it;
-    const list = cat === 'quick' ? QUICK.map(id => all[id]).filter(Boolean) : items[cat] || [];
-    list.forEach((it, n) => { if (n < GRID.length) this.offer(GRID[n], it); });
+    const mine = hub.layouts && hub.layouts['bw:quick'] && Array.isArray(hub.layouts['bw:quick'].s) ? hub.layouts['bw:quick'].s : null;
+    if (cat === 'quick') (mine || QUICK).forEach((id, n) => { if (all[id] && n < GRID.length) this.offer(GRID[n], all[id]); });
+    else (items[cat] || []).forEach((it, n) => { if (n < GRID.length) this.offer(GRID[n], it); });
   }
   offer(slot, it) {
     const hub = this.hub;
@@ -263,8 +268,9 @@ class UpgradeScreen extends MenuScreen {
 }
 
 const MODE_ICON = { bw_solo: 'red_bed', bw_doubles: 'blue_bed', bw_3s: 'lime_bed', bw_4s: 'yellow_bed', sw_solo: 'ender_eye', sw_doubles: 'ender_pearl', duels_classic: 'iron_sword', duels_sumo: 'slime_ball', tntrun: 'tnt', murder: 'iron_sword',
-  duels_bridge: 'blue_terracotta', duels_bedwars: 'red_bed', duels_skywars: 'ender_eye', buildbattle: 'bricks', spleef: 'diamond_shovel', prophunt: 'oak_leaves', ch_classic: 'brush', ch_infection: 'rotten_flesh', ch_double: 'ender_pearl' };
-const GAME_ICON = { bedwars: 'red_bed', skywars: 'ender_eye', duels: 'iron_sword', tntrun: 'tnt', murder: 'bow', buildbattle: 'bricks', spleef: 'diamond_shovel', prophunt: 'oak_leaves', chameleon: 'brush' };
+  duels_bridge: 'blue_terracotta', duels_bedwars: 'red_bed', duels_skywars: 'ender_eye', buildbattle: 'bricks', spleef: 'diamond_shovel', prophunt: 'oak_leaves', ch_classic: 'brush', ch_infection: 'rotten_flesh', ch_double: 'ender_pearl',
+  pillars: 'bedrock', deathswap: 'ender_pearl', bridger: 'sandstone' };
+const GAME_ICON = { bedwars: 'red_bed', skywars: 'ender_eye', duels: 'iron_sword', tntrun: 'tnt', murder: 'bow', buildbattle: 'bricks', spleef: 'diamond_shovel', prophunt: 'oak_leaves', chameleon: 'brush', pillars: 'bedrock', deathswap: 'ender_pearl', bridger: 'sandstone' };
 // Quick Play, at the top of the compass and of every game's menu: into the mode with the most people in it (of that game,
 // or of every game from the compass), so you meet others; with nobody about anywhere, a mode at random
 function quickPlay(menu, hub, game) {
@@ -295,7 +301,16 @@ const MODE_BLURB = {
   ch_classic: ['Hiders paint themselves to blend', 'into the map, then the seekers', 'come out. One hit finds a hider,', 'and a found hider is out.'],
   ch_infection: ['Hiders paint themselves to blend', 'in. A found hider becomes a', 'seeker, so the hunt grows', 'until nobody is left hidden.'],
   ch_double: ['Everyone paints and hides, then', 'everyone hunts everyone.', 'One hit finds someone, and the', 'last one still hidden wins.'],
+  pillars: ['Everyone starts on a bedrock', 'pillar over the void and gets a', 'random item every 5 seconds.', 'Build, fight, and be the last', 'one standing.'],
+  deathswap: ['Survival in a new random world.', 'At a random time everyone', 'swaps places. Set traps so', 'the one who lands in your spot', 'dies. Last one alive wins.'],
+  bridger: ['Bridge 50 blocks to the end', 'island on a lane of your own.', 'Your fastest time goes on', 'the leaderboard.'],
 };
+// the Profile item's menus (net/hubprofile.js), made with this file's MenuScreen and helpers when first wanted
+let PROFILE = null;
+const shopAll = hub => { const items = shopItems(hub.team || { wool: 'white_wool', clay: 'white_terracotta', glass: 'white_stained_glass' }), all = {}; for (const k in items) for (const it of items[k]) { all[it.id] = it; it.cat = k; } return all; };
+const profileMenus = () => PROFILE || (PROFILE = makeProfile({ MenuScreen, stack, ITEMS, QUICK, GRID, allShopItems: shopAll }));
+// the lobby's launch pad: its throw, out and up (blocks a tick), landing a few blocks short of the games' people
+const PAD_OUT = 1.25, PAD_UP = 0.85;
 // the lobby compass shows every game (a click opens that game's own menu); a person on the stand shows their game's modes
 class GameMenu extends MenuScreen {
   constructor(hub, game) { const g = game && (hub.games || []).find(x => x.id === game); super(hub, g ? g.name : 'Game Menu'); this.only = game || null; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); hub.send({ k: 'counts' }); }
@@ -570,6 +585,54 @@ function holoSprites(font, lines) {
   return out;
 }
 
+/* Pillars of Fortune's random items: anything in the game's own list (the creative tabs, every block and item a player
+   can have) but what would break the game or the network: operator blocks, the unbreakable and the unseen, portals, the
+   bosses' and the worst mobs' spawn eggs, and the like. Potions, books and the rest come in each of their kinds, as the
+   creative list has them. */
+const POF_SKIP = /command_block|structure_|jigsaw|barrier|^light$|bedrock|debug_stick|end_portal|end_gateway|nether_portal|^portal$|spawner|vault$|knowledge_book|petrified|moving_piston|piston_head|^air$|cave_air|void_air|^water$|^lava$|bubble_column|^fire$|soul_fire|frosted_ice|reinforced_deepslate|^test_|dragon_egg|budding_amethyst|creaking_heart|wither_skeleton_skull|wither_skeleton_wall_skull|^player_head$|written_book|filled_map|^map$|(wither|ender_dragon|warden|elder_guardian|ghast|happy_ghast|giant|illusioner|ravager|evoker|vex|phantom|shulker|guardian|blaze|creaking|breeze|iron_golem|snow_golem|wither_skeleton|piglin_brute|hoglin|zoglin)_spawn_egg/;
+let pofPool = null;
+function pofItem() {
+  if (!pofPool) {
+    pofPool = [];
+    const all = creativeItems().all || [];
+    for (const e of all) {
+      const id = entryId(e), d = ITEMS[id] || BLOCKS[id], name = d && d.name;
+      if (!name || POF_SKIP.test(name)) continue;
+      pofPool.push(e);
+    }
+  }
+  if (!pofPool.length) return null;
+  const e = pofPool[Math.floor(Math.random() * pofPool.length)];
+  return typeof e === 'number' ? { id: e, count: 1 } : Object.assign({}, e, { count: 1, ench: e.ench ? Object.assign({}, e.ench) : e.ench });
+}
+// Bridging's block, which never runs out
+const BR_BLOCK = 'sandstone';
+/* Death Swap: somewhere to stand round a spot, as the game finds a spawn: down a column to the first block with a full
+   top (leaves and logs count, never a fluid), two clear over it, the nearest such column out to 48 blocks; none (the
+   sea): the top of the water there, and wet */
+function dsStandY(w, x, z) {
+  for (let y = 383; y > 0; y--) {
+    const b = w.get(x, y, z);
+    if (!b) continue;
+    const d = BLOCKS[b];
+    if (!d) return -1;
+    // (water, and the plants that stand in it: seagrass, kelp, anything waterlogged)
+    if (d.fluid || d.waterlogged || /seagrass|kelp/.test(d.name)) return -1;
+    if (d.solid && d.shape === 'cube') return y + 1;
+  }
+  return -1;
+}
+function dsSpot(w, x, z) {
+  const free = (xx, yy, zz) => { const b = w.get(xx, yy, zz); return !b || !BLOCKS[b] || !BLOCKS[b].solid; };
+  for (let r = 0; r <= 48; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+    if (Math.max(Math.abs(dx), Math.abs(dz)) !== r || !w.loaded(x + dx, z + dz)) continue;
+    const y = dsStandY(w, x + dx, z + dz);
+    if (y > 0 && free(x + dx, y, z + dz) && free(x + dx, y + 1, z + dz)) return { x: x + dx + 0.5, y, z: z + dz + 0.5 };
+  }
+  for (let y = 383; y > 0; y--) if (w.get(x, y, z)) return { x: x + 0.5, y: y + 1, z: z + 0.5, wet: true };
+  return { x: x + 0.5, y: 140, z: z + 0.5, wet: true };
+}
+
 export class Hub {
   constructor(net) {
     this.net = net;
@@ -599,7 +662,7 @@ export class Hub {
     ctx.renderer.scene.add(this.group);
     // a death is the minigame's: the server is told, you are made whole where you are, and it moves you on
     const hooks = game.survival.hooks;
-    hooks.onDeath = (message, src) => this.died(src);
+    hooks.onDeath = (message, src) => this.died(src, message);
     // the people on the stands answer either button; what you hold in a lobby (the game menu, the way back) answers the right one
     const I2 = game.inter, use = I2.useWith.bind(I2), down = I2.down.bind(I2);
     I2.useWith = () => { if (this.clickNpc() || this.useHeld()) return true; return use(); };
@@ -610,7 +673,7 @@ export class Hub {
     // no dropping things anywhere on the network (but the Map Editor and /hubbuild): Q does nothing, and what is thrown
     // out of a screen goes back into the inventory (an inventory that is full still spills what it cannot hold)
     const H = game.hands, dropSel = H.dropSelected.bind(H), throwSt = H.throwStack.bind(H);
-    const noDrop = () => this.area !== 'edit' && !this.building, said = () => { if (this.t - (this.dropSaid === undefined ? -99 : this.dropSaid) > 20) { this.dropSaid = this.t; this.ctx.chat.add("§cYou can't drop items here!", 0xFF5555); } };
+    const noDrop = () => this.area !== 'edit' && this.area !== 'ds' && !this.building, said = () => { if (this.t - (this.dropSaid === undefined ? -99 : this.dropSaid) > 20) { this.dropSaid = this.t; this.ctx.chat.add("§cYou can't drop items here!", 0xFF5555); } };
     let giving = false;
     H.dropSelected = all => { if (noDrop()) { said(); return; } dropSel(all); };
     H.throwStack = st => {
@@ -662,7 +725,7 @@ export class Hub {
     if (this.unhook) this.unhook();
     if (this.unwrapNet) this.unwrapNet();
     if (this.onKey) window.removeEventListener('keydown', this.onKey);
-    RES_OVERRIDE.clear(); BLAST_FILTER.fn = null; BLAST_FILTER.noDrops = null; invisLook.hideArmor = false;
+    RES_OVERRIDE.clear(); BLAST_FILTER.fn = null; BLAST_FILTER.noDrops = null; invisLook.hideArmor = false; capeRule.off = false;
     this.game = null;
   }
 
@@ -691,7 +754,8 @@ export class Hub {
         if (m.team) this.team = m.team;
         if (m.per) this.per = m.per;
         // the old combat everywhere on the network, as Hypixel plays: no attack cooldown, no sweep
-        { const C = g.entities && g.entities.combat; if (C) C.legacy = true; }
+        // (but Death Swap, which is the game's own survival)
+        { const C = g.entities && g.entities.combat; if (C) C.legacy = m.area !== 'ds'; }
         this.gameKind = m.game || null; this.modeId = m.mode || null; this.spill = !!m.spill; this.noBuild = !!m.noBuild; this.jumps = m.jumps | 0;
         this.hideNames = !!m.hideNames; this.role = m.role || null; this.hadBow = false; this.arrowT = 0;
         // a shared room: K starts it (startable); a late comer watches the round on there (watching)
@@ -707,14 +771,30 @@ export class Hub {
         if (this.paintOn && !this.painter) this.startPaint();
         if (m.area === 'game' && this.hide && this.hide.kind === 'prophunt' && this.hide.as && this.role === 'hider') this.disguiseAs(this.hide.as);
         if (m.area !== 'game') { this.team = null; this.alive = false; }
+        // Death Swap's world (area ds), and Bridging's lane
+        if (m.area === 'ds') { this.alive = !m.watching; this.dsHold = null; RES_OVERRIDE.clear(); }
+        this.br = m.bridger ? { start: m.bridger.start, end: m.bridger.end, box: m.bridger.box, y: m.bridger.y, t0: 0, done: false, last: 0 } : null;
         this.setNpcs(m.npcs || []);
         this.setGens(m.gens || []);
+        // (the lobby's slime launch pads)
+        this.pads = m.area === 'lobby' && Array.isArray(m.pads) ? m.pads : [];
         this.closeScreens();
         if ((m.area !== 'game' && !m.watching) || this.gameKind !== 'chameleon') { this.poses = new Map(); this.seekerIds = new Set(); this.myPose = 0; }
         else if (this.role !== 'hider') this.myPose = 0;
         this.applySize();
         return;
       }
+      // the lobby's leaderboard walls: each board's words floating in front of the wall
+      case 'lb':
+        for (const k of [...this.holos.keys()]) if (k.startsWith('lb:')) this.dropHolo(k);
+        for (const b of m.list || []) this.holo('lb:' + b.id, +b.x, +b.y, +b.z, b.lines || []);
+        return;
+      case 'layouts': this.layouts = m.all && typeof m.all === 'object' ? m.all : {}; return;
+      case 'profile':
+        this.profile = m;
+        if (this.wantProfile) { this.wantProfile = false; this.openScreen(new (profileMenus().ProfileMenu)(this)); }
+        else this.refreshScreen();
+        return;
       case 'themes': this.themes = { list: m.list || [], mine: m.mine || '' }; this.refreshScreen(); return;
       case 'teamout': if (this.outTeams) this.outTeams.add(m.t | 0); return;
       case 'start':
@@ -722,6 +802,17 @@ export class Hub {
         if (this.gameKind === 'bedwars' && g.hands && Array.isArray(g.hands.ender)) g.hands.ender.fill(null);
         this.rated = false; this.changed.clear(); this.kit = { armor: 0, pick: 0, axe: 0, shears: false }; this.up = {}; this.traps = []; return;
       case 'kit': this.giveKit(m.kind, m.fresh); return;
+      // off to another of the network's servers (a Death Swap world, or back to Leonpixel)
+      case 'transfer': this.transfer(String(m.server || 'hub')); return;
+      // Pillars of Fortune: the next random item(s); the void rising
+      case 'pof_item': if (this.area === 'game' && this.alive) this.pofItems(Math.max(1, Math.min(5, m.n | 0))); return;
+      case 'floor': if (this.area === 'game') this.floor = +m.y; return;
+      // Death Swap: where to start (find ground round it), let go, and a swap
+      case 'spread': this.dsSpread(m); return;
+      case 'dsgo': this.dsHold = null; return;
+      case 'swapto': this.dsGoto(m); return;
+      // Bridging: back at the start (a fall, Reset, or after a run)
+      case 'breset': this.brReset(false); return;
       case 'go': {
         const c = this.ctx.commandCtx(), sv = g.survival;
         if (sv.dead) sv.respawn(true);
@@ -830,6 +921,23 @@ export class Hub {
     }
     return busy;
   }
+  // the launch pad's throw: up and out towards the middle of the games' people (or straight ahead with none)
+  launchPad() {
+    const P = this.game.player, list = this.npcList || [];
+    let dx = -Math.sin(P.yaw), dz = -Math.cos(P.yaw);
+    if (list.length) {
+      let x = 0, z = 0;
+      for (const n of list) { x += n.x; z += n.z; }
+      dx = x / list.length - P.pos.x; dz = z / list.length - P.pos.z;
+    }
+    const l = Math.hypot(dx, dz) || 1;
+    P.vel.x = dx / l * PAD_OUT; P.vel.z = dz / l * PAD_OUT; P.vel.y = PAD_UP;
+    P.onGround = false;
+    this.padAt = this.t + 20; this.padFlying = true;
+    this.sound('entity.slime.jump');
+    const E = this.game.entities;
+    if (E && E.particles) E.particles('cloud', P.pos.x, P.pos.y + 0.1, P.pos.z, 12, 0.4);
+  }
   sound(name) { try { const L = Sound.listener; Sound.play(name, L.x, L.y, L.z, 1, 1, 'player'); } catch (e) { /* no sound yet */ } }
 
   /* ---- the kit ---- */
@@ -841,6 +949,7 @@ export class Hub {
     if (kind === 'lobby') {
       inv.slots[0] = stack('compass', 1, { name: '§aGame Menu §7(Right Click)' });
       inv.slots[1] = stack(TEMP_BLOCK, 64, { name: TEMP_NAME });
+      inv.slots[4] = stack('player_head', 1, { name: '§aProfile §7- Right Click for your stats, titles and item layouts' }) || stack('name_tag', 1, { name: '§aProfile §7- Right Click for your stats, titles and item layouts' });
     } else if (kind === 'wait' || kind === 'wait_vote' || kind === 'wait_theme') {
       if (kind === 'wait_theme') inv.slots[0] = stack('writable_book', 1, { name: '§aTheme Vote §7- Right Click to vote for the theme' });
       inv.slots[8] = stack('red_bed', 1, { name: '§c§lReturn to Lobby §7(Right Click)' });
@@ -853,6 +962,21 @@ export class Hub {
       for (const [slot, name] of Object.entries(k.armor || {})) { const st = stack(name); if (st) inv.armor[slot | 0] = st; }
       inv.select(0);
       this.ctx.chat.add('§aYou got the §e' + k.name + ' §akit! §7(choose another with the Kit Selector before a game)', 0xFFFFFF);
+    } else if (kind === 'pof') {
+      // Pillars of Fortune: nothing but what the game gives you
+      this.alive = true;
+    } else if (kind === 'ds') {
+      // Death Swap: a fresh start in survival, as in a new world
+      this.alive = true;
+    } else if (kind === 'ds_watch') {
+      this.alive = false;
+    } else if (kind === 'bridger') {
+      // Bridging: blocks that never run out, Reset, and the way back
+      this.alive = true;
+      inv.slots[0] = stack(BR_BLOCK, 64);
+      inv.slots[7] = stack('clock', 1, { name: '§cReset §7- Right Click to go back to the start' });
+      inv.slots[8] = stack('red_bed', 1, { name: '§c§lReturn to Lobby §7(Right Click)' });
+      inv.select(0);
     } else if (kind === 'edit') {
       this.alive = true;
       inv.slots[8] = stack('writable_book', 1, { name: '§6Map Settings §7- Right Click: name, building team, approval' });
@@ -924,6 +1048,7 @@ export class Hub {
       this.dressUp();
       inv.select(0);
     }
+    if (!this.previewing && this.layouts) applyLayout(inv, this.layouts[layoutKey(kind, this.swKit || swKitId())], ITEMS);
     this.giveRating();
     inv.changed();
   }
@@ -974,7 +1099,7 @@ export class Hub {
     if (it.armor !== undefined && this.kit.armor >= it.armor) return;
     this.take(cur.item, price[1]);
     // (what does not fit is dropped at your feet, as the game drops a full inventory's overflow)
-    if (it.give) for (const st of it.give()) if (st) { const left = g.inv.addStack(st); if (left > 0) g.inv.emit('drop', Object.assign({}, st, { count: left })); }
+    if (it.give) for (const st of it.give()) if (st) { const left = this.placeBought(st, it); if (left > 0) g.inv.emit('drop', Object.assign({}, st, { count: left })); }
     if (it.sword !== undefined) {
       // a better sword takes the wooden one's place
       const inv = g.inv, wood = idOf('wooden_sword'), st = stack(SWORDS[it.sword]);
@@ -988,6 +1113,18 @@ export class Hub {
     g.inv.changed();
     this.ctx.chat.add('§aYou purchased §6' + name, 0xFFFFFF);
     this.sound('block.note_block.pling');
+  }
+  // a bought item: into the first hotbar slot the Hotbar Manager keeps for its kind (if free, or the same item with
+  // room), else wherever it fits
+  placeBought(st, it) {
+    const inv = this.game.inv, lay = this.layouts && this.layouts['bw:hotbar'], cat = shopAll(this)[it.id] ? shopAll(this)[it.id].cat : '';
+    if (lay && Array.isArray(lay.s) && cat) for (let i = 0; i < 9; i++) {
+      if (lay.s[i] !== cat) continue;
+      const s = inv.slots[i];
+      if (!s) { inv.slots[i] = st; return 0; }
+      if (s.id === st.id && (s.name || '') === (st.name || '') && !s.ench && s.count + st.count <= maxStack(s.id)) { s.count += st.count; return 0; }
+    }
+    return inv.addStack(st);
   }
   upgrade(k, id, price, name) {
     if (this.count('diamond') < price) { this.ctx.chat.add('§cYou don\'t have enough Diamonds!', 0xFF5555); return; }
@@ -1017,8 +1154,17 @@ export class Hub {
   closeScreens() { const s = this.ctx.gui.screen; if (s instanceof MenuScreen) this.ctx.gui.back(); }
 
   /* ---- dying ---- */
-  died(src) {
+  died(src, message) {
     const g = this.game, sv = g.survival;
+    // Death Swap: the game's own death (what you had falls where you died), then you watch
+    if (this.area === 'ds') {
+      if (this.alive) { this.alive = false; this.send({ k: 'died', text: this.net && this.net.deathText ? this.net.deathText(message || '', src) : message || '' }); }
+      if (g.hands && g.hands.spillAll) { try { g.hands.spillAll(); } catch (e) { /* nothing to spill */ } }
+      sv.respawn(true); sv.attacker = null;
+      const inv = g.inv; inv.slots.fill(null); inv.armor.fill(null); inv.offhand = null; inv.carried = null; inv.changed();
+      g.player.vel.set(0, 0, 0); g.player.fallDistance = 0;
+      return;
+    }
     const killer = sv.attacker && sv.attacker.remotePlayer && sv.age - sv.attackerAge <= 200 ? sv.attacker.customName : '';
     const res = RESOURCES.map(n => [n, this.count(n)]).filter(e => e[1] > 0);
     const type = src && src.type || '';
@@ -1042,9 +1188,11 @@ export class Hub {
   }
 
   /* ---- what may be broken and built ---- */
+  inLane(x, y, z) { const b = this.br && this.br.box; return !!b && x >= b[0] && x <= b[3] && y >= b[1] && y <= b[4] && z >= b[2] && z <= b[5]; }
   inPlot(x, y, z) { const p = this.plot; return !!p && x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1 && y >= p.y0 && y <= p.y1; }
   mayBreak(x, y, z) {
-    if (this.building || this.area === 'edit') return true;
+    if (this.building || this.area === 'edit' || this.area === 'ds') return true;
+    if (this.br) return this.alive && this.inLane(x, y, z) && this.changed.has(x + ',' + y + ',' + z);
     if (this.area !== 'game' || !this.alive || this.noBuild) return false;
     if (this.gameKind === 'buildbattle') return !this.vote && this.inPlot(x, y, z);
     if (this.dig) { const b = this.game.world.get(x, y, z); return !!BLOCKS[b] && BLOCKS[b].name === this.dig; }
@@ -1056,7 +1204,7 @@ export class Hub {
     return this.changed.has(x + ',' + y + ',' + z);
   }
   blastBreaks(x, y, z) {
-    if (this.building || this.area === 'edit') return true;
+    if (this.building || this.area === 'edit' || this.area === 'ds') return true;
     if (this.area !== 'game' || this.noBuild || this.dig || this.gameKind === 'buildbattle') return false;
     if (this.gameKind === 'skywars') { const b = this.bounds; return !b || (Math.abs(x + 0.5 - b.x) <= b.reach && Math.abs(z + 0.5 - b.z) <= b.reach && y <= b.top && y >= b.bottom); }
     const d = BLOCKS[this.game.world.get(x, y, z)];
@@ -1064,7 +1212,8 @@ export class Hub {
     return this.changed.has(x + ',' + y + ',' + z);
   }
   mayPlace(x, y, z, quiet, id) {
-    if (this.building || this.area === 'edit') return true;
+    if (this.building || this.area === 'edit' || this.area === 'ds') return true;
+    if (this.br) { if (this.alive && this.inLane(x, y, z)) return true; if (quiet !== true) this.ctx.chat.add('§cYou can only build in your own lane!', 0xFF5555); return false; }
     // the lobby: only a temporary block, only into the air (the server takes it away again)
     if (this.area === 'lobby') {
       if (id !== idOf(TEMP_BLOCK) || this.game.world.get(x, y, z)) return false;
@@ -1205,6 +1354,9 @@ export class Hub {
     }
     if (!h) return false;
     if (this.area === 'lobby' && h.id === idOf('compass')) { this.openScreen(new GameMenu(this)); return true; }
+    if (this.br && h.name && /^Reset/.test(h.name.replace(/\u00a7./g, ''))) { this.brReset(true); return true; }
+    if (this.br && h.id === idOf('red_bed')) { this.send({ k: 'lobby' }); return true; }
+    if (this.area === 'lobby' && h.name && /^Profile/.test(h.name.replace(/\u00a7./g, ''))) { this.swKit = this.swKit || swKitId(); this.wantProfile = true; this.send({ k: 'profile' }); return true; }
     if (this.area === 'wait' && h.id === idOf('red_bed')) { this.send({ k: 'lobby' }); return true; }
     if (this.area === 'wait' && h.name && /^Map Vote/.test(h.name.replace(/\u00a7./g, ''))) { this.openScreen(new VoteMenu(this)); return true; }
     if (this.area === 'wait' && h.name && /^Kit Selector/.test(h.name.replace(/\u00a7./g, ''))) { this.openScreen(new KitMenu(this)); return true; }
@@ -1315,6 +1467,16 @@ export class Hub {
       }
     }
     const P = g.player, sv = g.survival;
+    // a Death Swap world is survival as the game plays it: nothing of the network's here
+    if (this.area === 'ds') { this.dsTick(); return; }
+    // the lobby's slime launch pad: stepping onto it throws you out towards the games' people, and the landing never hurts
+    if (this.area === 'lobby' && this.pads && this.pads.length) {
+      if (P.onGround && this.t >= (this.padAt || 0)) {
+        const bx = Math.floor(P.pos.x), by = Math.floor(P.pos.y - 0.2), bz = Math.floor(P.pos.z);
+        if (this.pads.some(q => q[0] === bx && q[1] === by && q[2] === bz)) this.launchPad();
+      }
+      if (this.padFlying) { P.fallDistance = 0; if (P.onGround && this.t > this.padAt - 15) this.padFlying = false; }
+    }
     // the lobby's temporary blocks never run out
     if (this.area === 'lobby' && this.t % 20 === 0) {
       const inv = g.inv, tb = idOf(TEMP_BLOCK);
@@ -1333,6 +1495,8 @@ export class Hub {
     }
     this.items();
     if (!this.alive) return;
+    // Bridging: the run's timer, a fall starting you again, blocks that never run out
+    if (this.br) { this.brTick(); return; }
     // the void takes you at once
     if (P.pos.y < this.floor && !sv.dead) { this.voided = true; sv.hurt(3.4e38, 'out_of_world'); return; }
     // Murder Mystery: ten gold makes a bow and an arrow; the detective's arrow comes back; a bow picked up is told to the server
@@ -1545,6 +1709,8 @@ export class Hub {
     const on = this.gameKind === 'chameleon' && (this.area === 'game' || this.watching), g = this.game;
     const k = on && this.area === 'game' && this.role !== 'seeker' ? 0.5 : 1;
     playerSize.k = on ? 0.5 : 1;
+    // (no capes in Chameleon: one would give a painted hider away)
+    capeRule.off = on;
     playerSize.full = on && this.seekerIds ? this.seekerIds : new Set();
     if (g && g.player && g.player.setScale) g.player.setScale(k);
     // (and nobody in it is hurt by a block at the eyes: half-size players squeeze into places, and paint against walls)
@@ -1604,7 +1770,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=79', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=80', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1619,7 +1785,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=79', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=80', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1627,8 +1793,118 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=79', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=80', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
+  }
+
+  /* ---- another of the network's servers: a Death Swap world, or back to Leonpixel ----
+     Out of this world to the title (as Disconnect does), then straight onto that server (ui/multiplayer.js rejoin). */
+  transfer(id) {
+    if (this.moving) return;
+    this.moving = true;
+    const gui = this.ctx.gui, hooks = gui.hooks || {};
+    this.ctx.chat.add('§7Sending you to ' + (id === 'hub' ? 'Leonpixel' : 'the game world') + '...', 0xFFFFFF);
+    const go = () => import('../ui/multiplayer.js?v=80').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
+    Promise.resolve(hooks.quitToTitle ? hooks.quitToTitle() : null).then(go, go);
+  }
+
+  /* ---- Pillars of Fortune: the random items ---- */
+  pofItems(n) {
+    const inv = this.game.inv;
+    let got = null;
+    for (let i = 0; i < n; i++) { const st = pofItem(); if (st) { inv.addStack(st); got = st; } }
+    if (!got) return;
+    inv.changed();
+    this.sound('entity.item.pickup');
+  }
+
+  /* ---- Death Swap on this page ----
+     Where to start: the spot the server gives (far from everyone else), ground found round it once its terrain is made
+     (through the loading screen, as a long teleport goes); in the sea, further on, up to five times. Held there,
+     whole and fed, until everyone stands somewhere and the server lets go (dsgo). */
+  dsSpread(m) {
+    const g = this.game, T = window.__lc2 && window.__lc2.travel;
+    let x = Math.floor(+m.x) || 0, z = Math.floor(+m.z) || 0, tries = 0, spot = null;
+    this.dsHold = null;
+    const done = () => {
+      if (!this.game) return;
+      const P = this.game.player;
+      this.dsHold = { x: P.pos.x, y: P.pos.y, z: P.pos.z };
+      this.send({ k: 'placed' });
+    };
+    const go = busy => {
+      if (!this.game || this.area !== 'ds') return;
+      if (!T) { this.ctx.commandCtx().goTo('overworld', x + 0.5, 200, z + 0.5); setTimeout(done, 4000); return; }
+      T('overworld', w => (spot = dsSpot(w, x, z)), { x, z }).then(ok => {
+        if (!ok) { if (busy < 40) setTimeout(() => go(busy + 1), 250); else done(); return; }
+        // (in the sea: on round the way you were going, further each time, five times before swimming it)
+        if (spot && spot.wet && ++tries < 6) { const a = Math.atan2(z, x) + tries * 1.1; x += Math.round(Math.cos(a) * (120 + tries * 60)); z += Math.round(Math.sin(a) * (120 + tries * 60)); go(0); return; }
+        done();
+      }, () => done());
+    };
+    if (g) go(0);
+  }
+  // a swap: to where another player stood, in whichever dimension (a watcher: to someone still in)
+  dsGoto(m) {
+    const g = this.game;
+    if (!g) return;
+    const dim = DIM_IDS[m.d | 0] || 'overworld', x = +m.x, y = +m.y, z = +m.z, P = g.player;
+    if (![x, y, z].every(Number.isFinite)) return;
+    this.dsHold = null;
+    if (g.entities && g.entities.riding) g.entities.dismount();
+    const face = () => { if (Number.isFinite(+m.yaw)) P.yaw = +m.yaw; if (Number.isFinite(+m.pitch)) P.pitch = +m.pitch; };
+    if (g.dim === dim && Math.hypot(x - P.pos.x, z - P.pos.z) < 96 && g.world.loaded(x, z)) {
+      P.pos.set(x, y, z); P.prev.copy(P.pos); P.vel.set(0, 0, 0); P.fallDistance = 0; face();
+      return;
+    }
+    const T = window.__lc2 && window.__lc2.travel, at = { x, y, z, yaw: Number.isFinite(+m.yaw) ? +m.yaw : undefined };
+    // (a travel already under way, through a portal say, is waited for: the swap still happens)
+    const go = n => {
+      if (!this.game || this.area !== 'ds') return;
+      if (!T) { this.ctx.commandCtx().goTo(dim, x, y, z, +m.yaw, +m.pitch); return; }
+      T(dim, () => at, { x, z }).then(ok => { if (!ok && n < 40) setTimeout(() => go(n + 1), 250); else if (ok) face(); }, () => {});
+    };
+    go(0);
+  }
+  dsTick() {
+    const g = this.game, P = g.player, sv = g.survival, H = this.dsHold;
+    if (!H) return;
+    P.pos.set(H.x, H.y, H.z); if (P.prev) P.prev.copy(P.pos); P.vel.set(0, 0, 0); P.fallDistance = 0;
+    sv.health = sv.maxHealth; sv.food = 20;
+  }
+
+  /* ---- Bridging on this page: the run's timer (to the tick), a fall, Reset ---- */
+  brTick() {
+    const g = this.game, P = g.player, sv = g.survival, R = this.br, inv = g.inv;
+    sv.health = sv.maxHealth; P.fallDistance = 0;
+    // the blocks never run out
+    if (this.t % 4 === 0) {
+      const id = idOf(BR_BLOCK), s = inv.slots.find(x => x && x.id === id);
+      if (!s) { const i = inv.slots.findIndex((x, j) => j < 9 && !x); if (i >= 0) { inv.slots[i] = stack(BR_BLOCK, 64); inv.changed(); } }
+      else if (s.count < 64) { s.count = 64; inv.changed(); }
+    }
+    if (P.pos.y < this.floor) { this.brReset(true); return; }
+    if (R.done) return;
+    const onStart = P.pos.x <= R.start[2] + 1 && P.pos.y >= R.y - 0.1;
+    if (!R.t0 && !onStart) { R.t0 = performance.now(); this.overlay.animates = true; this.ctx.gui.markDirty(); }
+    else if (R.t0 && onStart && P.onGround) R.t0 = 0;
+    // on the end island: the time, sent to be checked and kept
+    if (R.t0 && P.onGround && P.pos.x >= R.end[0] && P.pos.x <= R.end[2] + 1 && P.pos.z >= R.end[1] && P.pos.z <= R.end[3] + 1 && P.pos.y >= R.y - 0.1) {
+      R.last = Math.round(performance.now() - R.t0); R.done = true;
+      this.send({ k: 'brun', ms: R.last });
+    }
+  }
+  // back at the start of your lane (told: a fall or Reset, which the server clears the blocks for)
+  brReset(tell) {
+    const R = this.br, g = this.game;
+    if (!R || !g) return;
+    R.t0 = 0; R.done = false;
+    if (tell) {
+      this.send({ k: 'brfall' });
+      const P = g.player, s = this.spawn;
+      if (s) { P.pos.set(s.x, s.y, s.z); P.prev.copy(P.pos); P.vel.set(0, 0, 0); P.fallDistance = 0; if (Number.isFinite(s.yaw)) P.yaw = s.yaw; }
+    }
+    this.ctx.gui.markDirty();
   }
 
   /* ---- the sidebar and the titles ---- */
@@ -1652,12 +1928,21 @@ export class Hub {
       g.fill(x - Math.ceil(w / 2) - 4, y - 3, x + Math.ceil(w / 2) + 4, y + 11, 0x66000000);
       g.centered(msg, x, y, 0xFFFFFF, true);
     }
+    // Bridging: the run's time over the hotbar while it runs (and the last one, still, after)
+    if (this.br && this.area === 'game' && !(this.game && this.game.hideHud)) {
+      const R = this.br, ms = R.t0 ? (R.done ? R.last : performance.now() - R.t0) : 0;
+      const msg = R.t0 ? (R.done ? '§a' : '§e') + (ms / 1000).toFixed(3) + 's' : '§7Leave the start to begin the timer';
+      const x = Math.floor(g.width / 2), y = g.height - 72, w = g.textWidth(msg);
+      g.fill(x - Math.ceil(w / 2) - 4, y - 3, x + Math.ceil(w / 2) + 4, y + 11, 0x66000000);
+      g.centered(msg, x, y, 0xFFFFFF, true);
+    }
     const whistling = !(this.game && this.game.hideHud) && this.drawWhistle(g);
     const T = this.titleT;
-    if (!T) this.overlay.animates = whistling;
+    const timing = !!(this.br && this.br.t0 && !this.br.done);
+    if (!T) this.overlay.animates = whistling || timing;
     if (T) {
       const t = (performance.now() - T.at) / 50, total = T.fi + T.st + T.fo;
-      if (t >= total) { this.titleT = null; this.overlay.animates = whistling; return; }
+      if (t >= total) { this.titleT = null; this.overlay.animates = whistling || timing; return; }
       const a = t < T.fi ? t / Math.max(1, T.fi) : t < T.fi + T.st ? 1 : 1 - (t - T.fi - T.st) / Math.max(1, T.fo);
       const c = g.ctx;
       c.save();
@@ -1673,7 +1958,7 @@ export class Hub {
 /* ---- the network's commands (each answers only on its server) ---- */
 const onHub = (ctx, fn) => { if (!active || active.game !== ctx.game) { ctx.say('That command only works on Leonpixel.', 0xFF5555); return; } fn(active); };
 register('lobby', { always: true, aliases: ['l', 'hub', 'leave'], usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'lobby' })); } });
-const MODE_IDS = ['bw_solo', 'bw_doubles', 'bw_3s', 'bw_4s', 'sw_solo', 'sw_doubles', 'duels_classic', 'duels_sumo', 'duels_bridge', 'duels_bedwars', 'duels_skywars', 'tntrun', 'murder', 'buildbattle', 'spleef', 'prophunt', 'ch_classic', 'ch_infection', 'ch_double'];
+const MODE_IDS = ['bw_solo', 'bw_doubles', 'bw_3s', 'bw_4s', 'sw_solo', 'sw_doubles', 'duels_classic', 'duels_sumo', 'duels_bridge', 'duels_bedwars', 'duels_skywars', 'tntrun', 'murder', 'buildbattle', 'spleef', 'prophunt', 'ch_classic', 'ch_infection', 'ch_double', 'pillars', 'deathswap', 'bridger'];
 register('play', {
   always: true, usage: '<mode>', suggest: i => (i === 0 ? (active && active.modes && active.modes.length ? active.modes.map(m => m.id) : MODE_IDS) : []),
   run(args, ctx) { onHub(ctx, h => h.send({ k: 'play', mode: args[0] || 'bw_solo' })); },
