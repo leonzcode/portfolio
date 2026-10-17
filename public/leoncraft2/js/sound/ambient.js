@@ -39,10 +39,10 @@
    The cost: about 340 block reads a tick (a quarter of the game's samples,
    each four times as likely to sound), a tenth of a millisecond.
 --------------------------------------------------------------------------- */
-import { Sound } from './sound.js?v=76';
-import { B, BLOCKS, FLUID } from '../blocks.js?v=76';
-import { LEVEL, FALLING } from '../world-const.js?v=76';
-import { BIOMES } from '../biomes.js?v=76';
+import { Sound } from './sound.js?v=77';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=77';
+import { LEVEL, FALLING } from '../world-const.js?v=77';
+import { BIOMES } from '../biomes.js?v=77';
 
 const R = Math.random;
 // a quick random number for the block sampling (xorshift: Math.random a few thousand times a tick is slow)
