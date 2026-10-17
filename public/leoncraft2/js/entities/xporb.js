@@ -8,8 +8,8 @@
    up (one every two ticks) and its value goes to the game's experience
    (hooks.giveXp). Five minutes on the ground and it is gone.
 --------------------------------------------------------------------------- */
-import { Entity } from './entity.js?v=78';
-import { register } from './mobs.js?v=78';
+import { Entity } from './entity.js?v=79';
+import { register } from './mobs.js?v=79';
 
 const SIZES = [2477, 1237, 617, 307, 149, 73, 37, 17, 7, 3, 1];
 // how many of the game's orb picture's 16 pixels each of its eleven sizes of ball fills

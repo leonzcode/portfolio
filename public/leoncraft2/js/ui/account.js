@@ -13,8 +13,8 @@
    Admin (admin accounts only): every account (ban and unban, reset a
    password, delete) and every server (give it to another owner, delete it).
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, ScrollList, WHITE, GREY } from './gui.js?v=78';
-import { Account, NO_CONNECTION } from '../net/account.js?v=78';
+import { Screen, Button, TextField, ScrollList, WHITE, GREY } from './gui.js?v=79';
+import { Account, NO_CONNECTION } from '../net/account.js?v=79';
 
 const RED = 0xFF5555;
 const fmtDate = t => { if (!t) return 'never'; const d = new Date(t); return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
@@ -234,7 +234,7 @@ export class AdminScreen extends Screen {
     // (only the Leon account makes and removes mods: the server checks it too)
     this.modB = null;
     if (this.tab === 'accounts' && String(Account.name || '').toLowerCase() === 'leon') {
-      this.modB = this.add(new Button(W / 2 - 154, H - 28, 100, 20, 'Make Mod', () => this.mod(), 'A mod sees and joins every server, private ones and Leon Network too, without a password'));
+      this.modB = this.add(new Button(W / 2 - 154, H - 28, 100, 20, 'Make Mod', () => this.mod(), 'A mod sees and joins every server, private ones and Leonpixel too, without a password'));
       this.add(new Button(W / 2 - 50, H - 28, 100, 20, 'Refresh', () => this.refresh()));
       this.add(new Button(W / 2 + 54, H - 28, 100, 20, 'Done', () => g.back()));
     } else {
