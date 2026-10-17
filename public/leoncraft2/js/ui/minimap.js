@@ -77,13 +77,13 @@
    minimapNorth, minimapCoords, minimapEntities, minimapCave, minimapBiome,
    minimapLighting.
 --------------------------------------------------------------------------- */
-import { MAP_RGB, mapColourOf } from '../maps.js?v=73';
-import { FLUID, BLOCKS, SOLID, OPACITY, EMIT, MAX_ID } from '../blocks.js?v=73';
-import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from '../biomes.js?v=73';
-import { H, Y0 } from '../world-const.js?v=73';
-import { lightLevel } from '../lightlevel.js?v=73';
-import { skyLightFactor } from '../render/vanilla.js?v=73';
-import { Button, CycleButton, WidgetRow, OptionsListScreen, onOff } from './gui.js?v=73';
+import { MAP_RGB, mapColourOf } from '../maps.js?v=74';
+import { FLUID, BLOCKS, SOLID, OPACITY, EMIT, MAX_ID } from '../blocks.js?v=74';
+import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from '../biomes.js?v=74';
+import { H, Y0 } from '../world-const.js?v=74';
+import { lightLevel } from '../lightlevel.js?v=74';
+import { skyLightFactor } from '../render/vanilla.js?v=74';
+import { Button, CycleButton, WidgetRow, OptionsListScreen, onOff } from './gui.js?v=74';
 
 const N = 64, S = N * 16;          // the ring: chunks across, and pixels
 const MASK = N - 1;

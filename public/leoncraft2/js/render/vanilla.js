@@ -25,10 +25,10 @@
    No shadow map, no post-processing, drawn straight to the screen at full
    resolution with nearest-neighbour textures.
 --------------------------------------------------------------------------- */
-import { COMMON, FILTER } from './glsl.js?v=73';
-import { FullScreen, VS_FULL } from './sky.js?v=73';
-import { BlockClouds } from './clouds.js?v=73';
-import { END_FLASH_GLSL, END_FLASH_COLOUR } from './endflash.js?v=73';
+import { COMMON, FILTER } from './glsl.js?v=74';
+import { FullScreen, VS_FULL } from './sky.js?v=74';
+import { BlockClouds } from './clouds.js?v=74';
+import { END_FLASH_GLSL, END_FLASH_COLOUR } from './endflash.js?v=74';
 const THREE = window.THREE;
 
 // the game's rain and thunder colour shift: towards a grey of the colour's own brightness times k

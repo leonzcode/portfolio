@@ -33,12 +33,12 @@
    (half of an instant one) at most once a second, and each use takes 0.5
    off the radius. Under 0.5 it is gone.
 --------------------------------------------------------------------------- */
-import { Living, Entity, r3 } from './entity.js?v=73';
-import { register, TYPES } from './mobs.js?v=73';
-import { POTIONS } from '../brewing.js?v=73';
-import { EFFECTS, effectId } from '../effects.js?v=73';
-import { UNDEAD } from '../combat/weapons.js?v=73';
-import { B } from '../blocks.js?v=73';
+import { Living, Entity, r3 } from './entity.js?v=74';
+import { register, TYPES } from './mobs.js?v=74';
+import { POTIONS } from '../brewing.js?v=74';
+import { EFFECTS, effectId } from '../effects.js?v=74';
+import { UNDEAD } from '../combat/weapons.js?v=74';
+import { B } from '../blocks.js?v=74';
 
 const R = () => Math.random();
 const RI = n => Math.floor(Math.random() * n);

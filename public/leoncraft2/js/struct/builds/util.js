@@ -12,8 +12,8 @@
    Drawing: doors and beds are two blocks, a gable roof is rows of stairs
    meeting at a ridge, and the rest are tiny conveniences used everywhere.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=73';
-import { JRand } from '../rand.js?v=73';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=74';
+import { JRand } from '../rand.js?v=74';
 
 export { Build, NORTH, EAST, SOUTH, WEST, JRand };
 

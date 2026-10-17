@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=73';
-import { idx, H } from '../world-const.js?v=73';
-import { DIMS, DIM_IDS } from '../dims.js?v=73';
-import { Save } from '../save.js?v=73';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=73';
-import { glints } from '../render/armor.js?v=73';
-import { containerKind } from '../containers.js?v=73';
-import { getSkinSettings } from '../render/avatar.js?v=73';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=73';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=73';
-import { Y0 } from '../world-const.js?v=73';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=73';
-import { Projectile } from '../entities/projectiles.js?v=73';
-import { Combat } from '../combat/combat.js?v=73';
-import { Vehicles } from './vehicles.js?v=73';
-import { Mobs, Orbs } from './mobs.js?v=73';
-import { Events } from './events.js?v=73';
-import { EndSync } from './endfight.js?v=73';
-import { Hub } from './hub.js?v=73';
-import { Account, wsBase, httpBase } from './account.js?v=73';
-import { rankTag } from './players.js?v=73';
+import { B, BLOCKS } from '../blocks.js?v=74';
+import { idx, H } from '../world-const.js?v=74';
+import { DIMS, DIM_IDS } from '../dims.js?v=74';
+import { Save } from '../save.js?v=74';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=74';
+import { glints } from '../render/armor.js?v=74';
+import { containerKind } from '../containers.js?v=74';
+import { getSkinSettings } from '../render/avatar.js?v=74';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=74';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=74';
+import { Y0 } from '../world-const.js?v=74';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=74';
+import { Projectile } from '../entities/projectiles.js?v=74';
+import { Combat } from '../combat/combat.js?v=74';
+import { Vehicles } from './vehicles.js?v=74';
+import { Mobs, Orbs } from './mobs.js?v=74';
+import { Events } from './events.js?v=74';
+import { EndSync } from './endfight.js?v=74';
+import { Hub } from './hub.js?v=74';
+import { Account, wsBase, httpBase } from './account.js?v=74';
+import { rankTag } from './players.js?v=74';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -909,8 +909,8 @@ export class Net {
     let best = null;
     for (const r of this.players.list.values()) {
       if (!this.hittable(r, D)) continue;
-      const f = r.feet, h = heightOf(r.st);
-      const hw = 0.3 * playerSize.k, t = rayBox(eye.x, eye.y, eye.z, dx, dy, dz, f.x - hw, f.y, f.z - hw, f.x + hw, f.y + h, f.z + hw);
+      const f = r.feet, h = heightOf(r.st, r.id);
+      const hw = 0.3 * playerSize.of(r.id), t = rayBox(eye.x, eye.y, eye.z, dx, dy, dz, f.x - hw, f.y, f.z - hw, f.x + hw, f.y + h, f.z + hw);
       if (t < lim) { lim = t; best = r; }
     }
     return best ? this.proxyOf(best) : found;
@@ -925,10 +925,10 @@ export class Net {
      hurt(), which works out the hit as the game does and sends it. (No
      customName: their name is drawn over them already, players.js.) */
   proxyOf(r) {
-    if (r.proxy) { r.proxy.name = r.name; r.proxy.h = heightOf(r.st); return r.proxy; }
+    if (r.proxy) { r.proxy.name = r.name; r.proxy.h = heightOf(r.st, r.id); return r.proxy; }
     const net = this;
     r.proxy = {
-      remotePlayer: true, type: 'player', id: 'p' + r.id, name: r.name, get pos() { return r.feet; }, get hw() { return 0.3 * playerSize.k; }, get w() { return 0.6 * playerSize.k; }, h: heightOf(r.st),
+      remotePlayer: true, type: 'player', id: 'p' + r.id, name: r.name, get pos() { return r.feet; }, get hw() { return 0.3 * playerSize.of(r.id); }, get w() { return 0.6 * playerSize.of(r.id); }, h: heightOf(r.st, r.id),
       removed: false, dead: false, vel: { x: 0, y: 0, z: 0 }, fire: 0, kbResist: 0,
       dist2(x, y, z) { const f = r.feet; return (f.x - x) ** 2 + (f.y - y) ** 2 + (f.z - z) ** 2; },
       hurt(amount, src, info) { return src && (src.type === 'arrow' || src.type === 'trident' || src.type === 'thrown' || src.type === 'wind_charge') ? net.shotPlayer(r, amount, src) : net.hitPlayer(r, amount, info); },
@@ -976,7 +976,7 @@ export class Net {
       for (const q of this.players.list.values()) {
         if (q === r || !this.hittable(q, D)) continue;
         const o = q.feet;
-        if (Math.abs(o.x - f.x) > 1.6 || Math.abs(o.z - f.z) > 1.6 || o.y + heightOf(q.st) < f.y - 0.25 || o.y > f.y + pr.h + 0.25) continue;
+        if (Math.abs(o.x - f.x) > 1.6 || Math.abs(o.z - f.z) > 1.6 || o.y + heightOf(q.st, q.id) < f.y - 0.25 || o.y > f.y + pr.h + 0.25) continue;
         if ((o.x - P.pos.x) ** 2 + (o.y - P.pos.y) ** 2 + (o.z - P.pos.z) ** 2 >= 9) continue;
         this.send({ t: 'hit', id: q.id, k: 'sweep', dmg: Math.round((1 + ratio * info.base + enchantBonus(st, null)) * c * 1000) / 1000, kb: 0.8, item });
       }
@@ -1107,11 +1107,12 @@ export class Net {
   pushTick() {
     const g = this.game, P = g.player, E = g.entities;
     if (!this.players || P.flying || g.mode === 'spectator' || (g.survival && g.survival.dead) || P.riding || (E && E.riding) || (g.sim && g.sim.sleeping)) return;
-    const D = dimCode(g.dim), myH = P.h || 1.8, near = 0.6 * playerSize.k;
+    const D = dimCode(g.dim), myH = P.h || 1.8;
     for (const r of this.players.list.values()) {
+      const near = (P.halfW || 0.3) + 0.3 * playerSize.of(r.id);
       const s = r.st, f = r.feet;
       if (!s || !f || s.d !== D || (s.f & (F.DEAD | F.SPEC | F.SLEEP | F.RIDE))) continue;
-      if (Math.abs(f.x - P.pos.x) >= near || Math.abs(f.z - P.pos.z) >= near || f.y >= P.pos.y + myH || f.y + heightOf(s) <= P.pos.y) continue;
+      if (Math.abs(f.x - P.pos.x) >= near || Math.abs(f.z - P.pos.z) >= near || f.y >= P.pos.y + myH || f.y + heightOf(s, r.id) <= P.pos.y) continue;
       // (the game's Entity.push: along the larger of the two gaps, 0.05 a tick, harder the closer)
       let dx = f.x - P.pos.x, dz = f.z - P.pos.z, d = Math.max(Math.abs(dx), Math.abs(dz));
       if (d < 0.01) continue;
@@ -1593,7 +1594,7 @@ export class Net {
   }
 }
 // a player's height by their pose: 1.8, 1.5 sneaking, 0.6 swimming or crawling
-const heightOf = s => (s && s.f & F.SNEAK ? 1.5 : s && s.f & F.SWIM ? 0.6 : 1.8) * playerSize.k;
+const heightOf = (s, id) => (s && s.f & F.SNEAK ? 1.5 : s && s.f & F.SWIM ? 0.6 : 1.8) * playerSize.of(id);
 // the commands an operator's /command <you> runs on your machine (ranAs)
 const AS_OK = new Set(['gamemode', 'give', 'clear', 'kill', 'xp', 'experience', 'effect', 'enchant', 'spawnpoint', 'tp', 'teleport']);
 // where a ray first enters a box, or Infinity

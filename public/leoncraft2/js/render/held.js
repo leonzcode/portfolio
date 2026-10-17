@@ -23,9 +23,9 @@
    The item model numbers (where and how far round each kind sits) are the
    game's display settings for its block, flat, handheld and rod items.
 --------------------------------------------------------------------------- */
-import { blockGeometry, isFlatItem, shieldGeometry, tridentGeometry } from './blockmesh.js?v=73';
-import { setGlint } from './glint.js?v=73';
-import { gpuLayer as textureLayer, DRAW, itemId } from '../items.js?v=73';
+import { blockGeometry, isFlatItem, shieldGeometry, tridentGeometry } from './blockmesh.js?v=74';
+import { setGlint } from './glint.js?v=74';
+import { gpuLayer as textureLayer, DRAW, itemId } from '../items.js?v=74';
 const THREE = window.THREE;
 const PI = Math.PI, DEG = PI / 180;
 const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
@@ -342,7 +342,10 @@ export class Held {
   /* how high each hand is: the game lowers it while what it shows is not what
      it should hold, swaps at the bottom, and raises it again (0.4 a tick);
      the main hand also follows the cube of the attack cooldown */
+  // a gun's kick (Leon Network's Rifle): the main hand's item jumps back and up, then settles over a fifth of a second
+  recoil(n) { this.kick = Math.max(this.kick || 0, n || 1); }
   step(dt, cool) {
+    if (this.kick) this.kick = Math.max(0, this.kick - dt * 5);
     const k = Math.min(1, dt * 8);
     for (const H of this.hands) {
       const same = H.showId === H.wantId;
@@ -445,6 +448,8 @@ export class Held {
       // (a held model, the trident, turns about the hand that holds it)
       const about = kind === 'trident' ? this.c.copy(C.fist) : this.c.set(0, 1, 0).applyMatrix4(C.K);
       if (use && kind !== 'shieldBlock' && this.useMove(this.u, use, f, about)) M.premultiply(this.u);
+      // (a gun's kick: back towards you and tipped up, sharp at first and easing out)
+      if (side === 0 && this.kick > 0) { const e = this.kick * this.kick; M.premultiply(t.makeTranslation(0, 0.04 * e, 0.22 * e)); M.multiply(this.u.makeRotationX(0.5 * e)); }
       // the picture for it (a bow drawn back), when the pack has one
       const pl = this.pictureFor(H, use);
       if (pl >= 0) { m.visible = false; m = this.variant(H, pl); }

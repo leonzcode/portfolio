@@ -14,27 +14,27 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS } from '../blocks.js?v=73';
-import { I } from '../items.js?v=73';
-import { POTIONS } from '../brewing.js?v=73';
-import { ChestScreen } from '../ui/containers.js?v=73';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=73';
-import { RemotePlayers, playerSize, F } from './players.js?v=73';
-import { register } from '../commands.js?v=73';
-import { Sound } from '../sound/sound.js?v=73';
-import { RES_OVERRIDE } from '../explosion.js?v=73';
-import { skinUrl } from '../ui/skins.js?v=73';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=73';
-import { blockGeometry } from '../render/blockmesh.js?v=73';
-import { lightNear } from '../lightlevel.js?v=73';
-import { setSkin as setOwnSkin } from '../render/avatar.js?v=73';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=74';
+import { I } from '../items.js?v=74';
+import { POTIONS } from '../brewing.js?v=74';
+import { ChestScreen } from '../ui/containers.js?v=74';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=74';
+import { RemotePlayers, playerSize, F } from './players.js?v=74';
+import { register } from '../commands.js?v=74';
+import { Sound } from '../sound/sound.js?v=74';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=74';
+import { skinUrl } from '../ui/skins.js?v=74';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=74';
+import { blockGeometry } from '../render/blockmesh.js?v=74';
+import { lightNear } from '../lightlevel.js?v=74';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=74';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=73').then(m => {
+import('../adv/toast.js?v=74').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -350,6 +350,52 @@ class BrowseMenu extends MenuScreen {
     sortButton(this, 49);
   }
 }
+/* SkyWars kits: picked in the waiting room with the Kit Selector, kept in this browser (localStorage lc2_swkit), given
+   in the cage as the round starts. Each is a small head start, as the network's are. */
+const SW_KITS = [
+  { id: 'default', name: 'Default', icon: 'wooden_pickaxe', lore: ['A wooden pickaxe, axe and shovel.'], give: () => [stack('wooden_pickaxe'), stack('wooden_axe'), stack('wooden_shovel')] },
+  { id: 'armorer', name: 'Armorer', icon: 'golden_chestplate', lore: ['A gold chestplate, leggings and boots.'], armor: { 1: 'golden_chestplate', 2: 'golden_leggings', 3: 'golden_boots' } },
+  { id: 'knight', name: 'Knight', icon: 'stone_sword', lore: ['A Sharpness I stone sword', 'and a gold helmet.'], give: () => [stack('stone_sword', 1, { ench: { sharpness: 1 } })], armor: { 0: 'golden_helmet' } },
+  { id: 'archer', name: 'Archer', icon: 'bow', lore: ['A bow and 16 arrows.'], give: () => [stack('bow'), stack('arrow', 16)] },
+  { id: 'builder', name: 'Builder', icon: 'bricks', lore: ['64 bricks and a stone pickaxe.'], give: () => [stack('bricks', 64), stack('stone_pickaxe')] },
+  { id: 'healer', name: 'Healer', icon: 'golden_apple', lore: ['3 golden apples and a', 'potion of Regeneration.'], give: () => [stack('golden_apple', 3), stack('potion', 1, { potion: 'regeneration' })] },
+  { id: 'enderman', name: 'Enderman', icon: 'ender_pearl', lore: ['2 ender pearls.'], give: () => [stack('ender_pearl', 2)] },
+  { id: 'fisherman', name: 'Fisherman', icon: 'fishing_rod', lore: ['A fishing rod and 8 cooked cod.'], give: () => [stack('fishing_rod'), stack('cooked_cod', 8)] },
+  { id: 'scout', name: 'Scout', icon: 'feather', lore: ['2 potions of Swiftness.'], give: () => [stack('potion', 2, { potion: 'swiftness' })] },
+];
+const swKitId = () => { try { const v = localStorage.getItem('lc2_swkit'); return SW_KITS.some(k => k.id === v) ? v : 'default'; } catch (e) { return 'default'; } };
+class KitMenu extends MenuScreen {
+  constructor(hub) { super(hub, 'SkyWars Kits'); }
+  fillBox() {
+    const cur = swKitId();
+    SW_KITS.forEach((k, i) => {
+      const on = k.id === cur, st = stack(k.icon) || stack('chest');
+      if (!st) return;
+      st.name = (on ? '§a§l' : '§a') + k.name;
+      if (on) st.ench = { unbreaking: 1 };
+      this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, ['§a' + k.name, ...k.lore.map(l => '§7' + l), '', on ? '§aSelected!' : '§eClick to select!'], () => {
+        try { localStorage.setItem('lc2_swkit', k.id); } catch (e) { /* kept for this visit only */ }
+        this.hub.swKit = k.id;
+        this.hub.ctx.chat.add('§aYou selected the §e' + k.name + ' §akit!', 0xFFFFFF);
+        this.hub.sound('block.note_block.pling');
+      });
+    });
+  }
+}
+// Build Battle's theme vote, from the item in the waiting room: the round's six themes and their votes
+class ThemeMenu extends MenuScreen {
+  constructor(hub) { super(hub, 'Theme Vote'); }
+  fillBox() {
+    const hub = this.hub, T = hub.themes || { list: [] };
+    (T.list || []).forEach(([name, n], i) => {
+      const mine = T.mine === name, st = stack(mine ? 'writable_book' : 'paper') || stack('paper');
+      if (!st) return;
+      st.name = (mine ? '§a§l' : '§a') + name;
+      if (mine) st.ench = { unbreaking: 1 };
+      this.put(11 + i + (i >= 5 ? 4 : 0), st, ['§a' + name, '', '§7Votes: §e' + n, '', mine ? '§aYou voted for this theme!' : '§eClick to vote!'], () => { hub.send({ k: 'themevote', theme: name }); });
+    });
+  }
+}
 class VoteMenu extends MenuScreen {
   constructor(hub) { super(hub, 'Map Vote'); }
   fillBox() {
@@ -494,10 +540,20 @@ export class Hub {
     //  front of a shop takes the hit)
     I2.down = b => { if (b === 0 && !I2.entityTarget && this.clickNpc()) return; if (b === 0) this.seekerSwing(I2); down(b); };
     I2.mayBreak = (x, y, z) => this.mayBreak(x, y, z);
+    // TNT and fireballs break only what players put down (and SkyWars' map): the map's own blocks stand, so none drop
+    BLAST_FILTER.fn = (x, y, z) => this.blastBreaks(x, y, z);
+    BLAST_FILTER.noDrops = () => this.area === 'game' && this.gameKind !== 'skywars';
+    const brk = I2._breakTarget.bind(I2);
+    I2._breakTarget = () => {
+      const T = I2.target, before = T && this.dig ? game.world.get(T.x, T.y, T.z) : 0;
+      const out = brk();
+      if (before && this.area === 'game' && !game.world.get(T.x, T.y, T.z) && game.inv.count(idOf('snowball')) < 64) game.inv.add(idOf('snowball'), 1);
+      return out;
+    };
     I2.mayPlace = (x, y, z, b) => this.mayPlace(x, y, z, false, b);
     // the lobby's temporary blocks go down even in adventure
     I2.adventurePlace = id => this.area === 'lobby' && id === idOf(TEMP_BLOCK);
-    this.unhook = () => { I2.useWith = use; I2.down = down; I2.mayBreak = null; I2.mayPlace = null; I2.adventurePlace = null; };
+    this.unhook = () => { I2.useWith = use; I2.down = down; I2._breakTarget = brk; I2.mayBreak = null; I2.mayPlace = null; I2.adventurePlace = null; };
     // every change seen while a game is on (yours and everyone's): those may be broken again, the map may not
     const net = this.net, blocks = net.blocks.bind(net), local = net.local.bind(net);
     net.blocks = (d, e) => { if (this.area === 'game') for (let i = 0; i + 4 < e.length; i += 5) this.changed.add(e[i] + ',' + e[i + 1] + ',' + e[i + 2]); return blocks(d, e); };
@@ -527,7 +583,7 @@ export class Hub {
     if (this.unhook) this.unhook();
     if (this.unwrapNet) this.unwrapNet();
     if (this.onKey) window.removeEventListener('keydown', this.onKey);
-    RES_OVERRIDE.clear();
+    RES_OVERRIDE.clear(); BLAST_FILTER.fn = null; BLAST_FILTER.noDrops = null;
     this.game = null;
   }
 
@@ -547,7 +603,7 @@ export class Hub {
       case 'browsemaps': { const cur = this.ctx.gui.screen, M = new BrowseMenu(this, m.game, m.maps); if (cur instanceof MenuScreen) this.ctx.gui.replace(M); else this.openScreen(M); return; }
       case 'mapinfo': { const cur = this.ctx.gui.screen; if (cur instanceof MapSettingsScreen) cur.set(m); else if (!m.refresh) this.openScreen(new MapSettingsScreen(this, m)); return; }
       case 'rated': this.rated = true; this.dropRating(); return;
-      case 'poses': this.poses = new Map(m.list || []); this.seekerIds = new Set(m.seekers || []); return;
+      case 'poses': this.poses = new Map(m.list || []); this.seekerIds = new Set(m.seekers || []); this.applySize(); return;
       // (the menu it was asked from is swapped for the list in one step: closing it first would hand the game the mouse,
       // and its pointer lock lands after the list opens, hiding the cursor over a menu nobody can click)
       case 'editmaps': { const cur = this.ctx.gui.screen, E = new EditorMenu(this, m.game, m.maps, m.staff, m.canMake); if (cur instanceof MenuScreen) { E.hub = this; this.ctx.gui.replace(E); } else this.openScreen(E); return; }
@@ -564,20 +620,28 @@ export class Hub {
         // the new games: The Bridge's goals (no building there), a Build Battle plot and its vote, Spleef's snow, hiding
         this.noPlace = m.noPlace || null; this.plot = m.plot || null; this.vote = !!m.vote; this.theme = m.theme || ''; this.owner = m.owner || ''; this.dig = m.dig || null;
         this.hide = m.hide || null; this.paintOn = !!(m.hide && m.hide.paint);
+        // Bed Wars: each island's team chest (only your own opens, or one whose team is out)
+        if (m.teamChests || m.area !== 'game') { this.teamChests = m.teamChests || []; this.outTeams = new Set(m.outTeams || []); }
         if (!this.hide || this.hide.kind !== 'prophunt') this.clearProps();
         if (!this.hide || this.hide.kind !== 'chameleon' || this.role === 'seeker') this.unpaint();
         if (this.hide && this.hide.kind === 'chameleon' && this.role === 'seeker' && m.area === 'game') this.wearSeeker();
         if (this.paintOn && !this.painter) this.startPaint();
+        if (m.area === 'game' && this.hide && this.hide.kind === 'prophunt' && this.hide.as && this.role === 'hider') this.disguiseAs(this.hide.as);
         if (m.area !== 'game') { this.team = null; this.alive = false; }
         this.setNpcs(m.npcs || []);
         this.setGens(m.gens || []);
         this.closeScreens();
-        this.applySize();
         if (m.area !== 'game' || this.gameKind !== 'chameleon') { this.poses = new Map(); this.seekerIds = new Set(); this.myPose = 0; }
         else if (this.role !== 'hider') this.myPose = 0;
+        this.applySize();
         return;
       }
-      case 'start': this.rated = false; this.changed.clear(); this.kit = { armor: 0, pick: 0, axe: 0, shears: false }; this.up = {}; this.traps = []; return;
+      case 'themes': this.themes = { list: m.list || [], mine: m.mine || '' }; this.refreshScreen(); return;
+      case 'teamout': if (this.outTeams) this.outTeams.add(m.t | 0); return;
+      case 'start':
+        // (Bed Wars: your ender chest starts each game empty, as the network's does)
+        if (this.gameKind === 'bedwars' && g.hands && Array.isArray(g.hands.ender)) g.hands.ender.fill(null);
+        this.rated = false; this.changed.clear(); this.kit = { armor: 0, pick: 0, axe: 0, shears: false }; this.up = {}; this.traps = []; return;
       case 'kit': this.giveKit(m.kind, m.fresh); return;
       case 'go': {
         const c = this.ctx.commandCtx(), sv = g.survival;
@@ -621,16 +685,17 @@ export class Hub {
       case 'build': this.building = !!m.on; return;
       // Prop Hunt: every disguise, and where it is locked
       case 'props': this.props = new Map((m.list || []).map(e => [e[0], { b: e[1], lock: e[2] || null }])); return;
-      // Chameleon: the time to paint is over, or you were found and seek now
+      // Chameleon: painting on or off (off only at the round's end now)
       case 'paint': this.paintOn = !!m.on; if (!m.on) this.closeScreens(); return;
-      case 'role': this.role = m.role || null; if (this.role === 'seeker') { this.unpaint(); if (this.hide && this.hide.kind === 'chameleon') this.wearSeeker(); } return;
+      case 'role': this.role = m.role || null; if (this.role === 'seeker') { this.unpaint(); if (this.hide && this.hide.kind === 'chameleon') this.wearSeeker(); } this.applySize(); return;
       case 'fx': {
         // (a whistle: its notes one after another, each [ms later, pitch])
         const notes = Array.isArray(m.notes) ? m.notes : [[0, 1]];
         for (const [ms, pitch] of notes) setTimeout(() => { try { Sound.play(m.s || 'entity.firework_rocket.blast', +m.x, +m.y, +m.z, m.kind === 'whistle' ? 3 : 1.5, +pitch || 1, 'player'); } catch (e) { /* no sound yet */ } }, ms | 0);
         const E = g.entities;
         if (E && E.particles) {
-          if (m.kind === 'whistle') E.particles('crit', +m.x, +m.y + 1.2, +m.z, 8, 0.25);
+          if (m.kind === 'shot') this.tracer(+m.x, +m.y, +m.z, m.to);
+          else if (m.kind === 'whistle') E.particles('crit', +m.x, +m.y + 1.2, +m.z, 8, 0.25);
           else { E.particles('sparkle', +m.x, +m.y + 0.5, +m.z, 30, 0.6, [1, 0.85, 0.2]); E.particles('crit', +m.x, +m.y + 0.5, +m.z, 20, 0.6); }
         }
         return;
@@ -648,9 +713,18 @@ export class Hub {
     if (kind === 'lobby') {
       inv.slots[0] = stack('compass', 1, { name: '§aGame Menu §7(Right Click)' });
       inv.slots[1] = stack(TEMP_BLOCK, 64, { name: TEMP_NAME });
-    } else if (kind === 'wait' || kind === 'wait_vote') {
+    } else if (kind === 'wait' || kind === 'wait_vote' || kind === 'wait_theme') {
+      if (kind === 'wait_theme') inv.slots[0] = stack('writable_book', 1, { name: '§aTheme Vote §7- Right Click to vote for the theme' });
       inv.slots[8] = stack('red_bed', 1, { name: '§c§lReturn to Lobby §7(Right Click)' });
       if (kind === 'wait_vote') inv.slots[0] = stack('filled_map', 1, { name: '§aMap Vote §7- Right Click to choose the map' }) || stack('paper', 1, { name: '§aMap Vote §7- Right Click to choose the map' });
+      if (this.gameKind === 'skywars') inv.slots[0] = stack('bow', 1, { name: '§aKit Selector §7- Right Click to choose a kit' });
+    } else if (kind === 'sw') {
+      // SkyWars: the kit you picked, in your cage
+      const k = SW_KITS.find(q => q.id === (this.swKit || swKitId())) || SW_KITS[0];
+      for (const st of k.give ? k.give() : []) if (st) inv.addStack(st);
+      for (const [slot, name] of Object.entries(k.armor || {})) { const st = stack(name); if (st) inv.armor[slot | 0] = st; }
+      inv.select(0);
+      this.ctx.chat.add('§aYou got the §e' + k.name + ' §akit! §7(choose another with the Kit Selector before a game)', 0xFFFFFF);
     } else if (kind === 'edit') {
       this.alive = true;
       inv.slots[8] = stack('writable_book', 1, { name: '§6Map Settings §7- Right Click: name, building team, approval' });
@@ -681,6 +755,12 @@ export class Hub {
     } else if (kind === 'spleef') {
       this.alive = true;
       inv.slots[0] = stack('diamond_shovel', 1, { name: '§bSpleef Shovel', ench: { efficiency: 5, unbreaking: 3 } });
+      inv.slots[1] = stack('snowball', 16);
+      inv.select(0);
+    } else if (kind === 'tntrun') {
+      // (snowballs to knock the others off: one more every two seconds, up to 16)
+      this.alive = true;
+      inv.slots[0] = stack('snowball', 16);
       inv.select(0);
     } else if (kind === 'bb_vote') {
       VOTES.forEach((v, i) => { inv.slots[i + 1] = stack(v[2], 1, { name: v[1] + '§l' + v[0] }); });
@@ -707,6 +787,7 @@ export class Hub {
     } else if (kind === 'ch_seeker' || kind === 'ch_hunter') {
       this.alive = true;
       inv.slots[0] = stack('stick', 1, { name: '§cTag Stick §7- Hit a hider once to find them' });
+      inv.slots[1] = stack('crossbow', 1, { name: '§6Rifle §7- Right Click to shoot (one hit finds)' });
       inv.select(0);
     } else if (kind === 'game') {
       if (fresh) this.kit = { armor: 0, pick: 0, axe: 0, shears: false };
@@ -847,6 +928,14 @@ export class Hub {
     if (d && d.shape === 'bed') return !this.team || d.name !== this.team.wool.replace('_wool', '_bed');
     return this.changed.has(x + ',' + y + ',' + z);
   }
+  blastBreaks(x, y, z) {
+    if (this.building || this.area === 'edit') return true;
+    if (this.area !== 'game' || this.noBuild || this.dig || this.gameKind === 'buildbattle') return false;
+    if (this.gameKind === 'skywars') { const b = this.bounds; return !b || (Math.abs(x + 0.5 - b.x) <= b.reach && Math.abs(z + 0.5 - b.z) <= b.reach && y <= b.top && y >= b.bottom); }
+    const d = BLOCKS[this.game.world.get(x, y, z)];
+    if (d && d.shape === 'bed') return false;
+    return this.changed.has(x + ',' + y + ',' + z);
+  }
   mayPlace(x, y, z, quiet, id) {
     if (this.building || this.area === 'edit') return true;
     // the lobby: only a temporary block, only into the air (the server takes it away again)
@@ -916,9 +1005,21 @@ export class Hub {
   }
   useHeld() {
     const inv = this.game.inv, h = inv.slots[inv.selected];
+    // Bed Wars: another team's chest stays shut while that team is still in the game
+    if (this.area === 'game' && this.gameKind === 'bedwars' && this.teamChests && this.teamChests.length ) {
+      const T = this.game.inter.target, mine = this.team ? this.team.i : -1;
+      const c = T && this.teamChests.find(q => q[0] === T.x && q[1] === T.y && q[2] === T.z);
+      if (c && c[3] !== mine && !this.outTeams.has(c[3])) { this.ctx.chat.add('§cYou cannot open another team\'s chest while they are still alive!', 0xFF5555); return true; }
+    }
     // (a Prop Hunt hider picks a block with an empty hand too)
     const hider = this.area === 'game' && this.alive && this.hide && this.hide.kind === 'prophunt' && this.role === 'hider';
     if (!h && !hider) return false;
+    // a door, trapdoor or gate in a game's map opens on a right click whatever you hold (sneak to disguise as one, or to paint
+    // from one with the Colour Picker or the Block Stamp)
+    if (this.area === 'game' && !this.game.player.sneaking && this.opensAtTarget()) {
+      const nm = h && h.name ? h.name.replace(/§./g, '') : '';
+      if (!/^(Colour Picker|Block Stamp)/.test(nm)) return false;
+    }
     // Murder Mystery: the murderer throws the Knife with a right click; it comes back to the hand after 5 seconds
     if (h && this.area === 'game' && this.alive && this.gameKind === 'murder' && this.role === 'murderer' && h.id === I.iron_sword) { this.throwKnife(); return true; }
     // Build Battle: a vote (whatever the page thinks of being alive, which a teleport between builds can upset)
@@ -943,6 +1044,8 @@ export class Hub {
       const nm = h.name ? h.name.replace(/\u00a7./g, '') : '';
       // Prop Hunt: a taunt
       if (this.hide && this.hide.kind === 'prophunt' && /^Taunt/.test(nm)) { this.send({ k: 'taunt' }); return true; }
+      // Chameleon: the seekers' Rifle
+      if (this.hide && this.hide.kind === 'chameleon' && /^Rifle/.test(nm)) { this.shoot(); return true; }
       // Chameleon: a whistle, heard by everyone near (the server keeps its wait)
       if (this.hide && this.hide.kind === 'chameleon' && /^Whistle/.test(nm)) { this.send({ k: 'whistle' }); return true; }
       // Chameleon: the next pose (as LC1's Mecha had them), told to everyone through the server
@@ -956,23 +1059,20 @@ export class Hub {
       // Chameleon: the brush, the picker and the stamp
       if (this.hide && this.hide.kind === 'chameleon' && this.painter) {
         const T = this.game.inter.target;
-        if (/^Paint Brush/.test(nm)) { if (this.paintOn) this.openScreen(new PaintScreen(this.painter, { renderer: this.ctx.renderer, world: this.game.world, player: this.game.player })); else this.ctx.chat.add('§cThe time to paint is over!', 0xFF5555); return true; }
+        if (/^Paint Brush/.test(nm)) { if (this.mayPaint()) this.openScreen(new PaintScreen(this.painter, { renderer: this.ctx.renderer, world: this.game.world, player: this.game.player })); return true; }
         if (/^Colour Picker/.test(nm)) { if (T) { const c = faceColour(T.b || this.game.world.get(T.x, T.y, T.z), faceOfNormal(T.face)); if (c !== null) { this.painter.setColour(c); this.ctx.chat.add('§bPicked a colour: §f#' + c.toString(16).padStart(6, '0') + ' §7(paint with it in the Paint Brush)', 0xFFFFFF); this.sound('block.note_block.hat'); } } return true; }
-        if (/^Block Stamp/.test(nm)) { if (!this.paintOn) { this.ctx.chat.add('§cThe time to paint is over!', 0xFF5555); return true; } if (T && this.painter.stamp(T.b || this.game.world.get(T.x, T.y, T.z), faceOfNormal(T.face))) { this.ctx.chat.add('§dYou are covered in ' + ((BLOCKS[T.b || this.game.world.get(T.x, T.y, T.z)] || {}).display || 'that block') + '!', 0xFFFFFF); this.sound('block.wool.place'); } return true; }
+        if (/^Block Stamp/.test(nm)) { if (!this.mayPaint()) return true; if (T && this.painter.stamp(T.b || this.game.world.get(T.x, T.y, T.z), faceOfNormal(T.face))) { this.ctx.chat.add('§dYou are covered in ' + ((BLOCKS[T.b || this.game.world.get(T.x, T.y, T.z)] || {}).display || 'that block') + '!', 0xFFFFFF); this.sound('block.wool.place'); } return true; }
       }
     }
-    // Prop Hunt: a hider's right click on any block of the map makes them it
-    if (hider) {
+    // Prop Hunt: every hider is the round's one block from the start (the server's hide.as); a right click on one of those
+    // blocks makes you it again if you are not
+    if (hider && !this.disguise) {
       const T = this.game.inter.target;
       if (T) {
         const d = BLOCKS[T.b || this.game.world.get(T.x, T.y, T.z)];
         if (d && (this.hide.props || []).indexOf(d.name) >= 0) {
-          this.send({ k: 'disguise', b: d.name }); this.disguise = d.name;
-          // seen from behind, so you see what you have become (F5 still changes it)
-          const A = this.ctx.renderer.avatar;
-          if (A && A.view === 0) { this.viewBefore = 0; A.setView(1); }
-          this.ctx.chat.add('§aYou are now disguised as §e' + (d.display || d.name) + '§a! Stand still to lock in place.', 0xFFFFFF); this.sound('entity.chicken.egg'); }
-        else this.ctx.chat.add('§cYou can\'t disguise as that block.', 0xFF5555);
+          this.send({ k: 'disguise', b: d.name }); this.disguiseAs(d.name); }
+        else this.ctx.chat.add('§cThis round every hider is ' + this.propTitle() + '!', 0xFF5555);
         return true;
       }
     }
@@ -980,6 +1080,8 @@ export class Hub {
     if (this.area === 'lobby' && h.id === idOf('compass')) { this.openScreen(new GameMenu(this)); return true; }
     if (this.area === 'wait' && h.id === idOf('red_bed')) { this.send({ k: 'lobby' }); return true; }
     if (this.area === 'wait' && h.name && /^Map Vote/.test(h.name.replace(/\u00a7./g, ''))) { this.openScreen(new VoteMenu(this)); return true; }
+    if (this.area === 'wait' && h.name && /^Kit Selector/.test(h.name.replace(/\u00a7./g, ''))) { this.openScreen(new KitMenu(this)); return true; }
+    if (this.area === 'wait' && h.name && /^Theme Vote/.test(h.name.replace(/\u00a7./g, ''))) { this.openScreen(new ThemeMenu(this)); return true; }
     if (this.area === 'edit' && h.name && /^Map Settings/.test(h.name.replace(/\u00a7./g, ''))) { this.send({ k: 'mapinfo' }); return true; }
     if (this.area === 'game' && h.name && /this map/.test(h.name)) { this.send({ k: 'maprate', v: /^.?.?Like/.test(h.name.replace(/\u00a7./g, '')) ? 1 : -1 }); return true; }
     return false;
@@ -1153,6 +1255,7 @@ export class Hub {
     // plain jump. Nothing hurts but the void
     if (this.gameKind === 'tntrun') {
       sv.health = sv.maxHealth; P.fallDistance = 0;
+      if (this.area === 'game' && this.alive && this.t % 40 === 0 && g.inv.count(idOf('snowball')) < 16) g.inv.add(idOf('snowball'), 1);
       const down = !!P.keys[' '], pressed = down && !this.jumpHeld, quick = pressed && this.t - (this.jumpAt || -99) <= 6;
       if (pressed) this.jumpAt = this.t;
       if (quick && !P.onGround && !P.flying && this.jumps > 0) {
@@ -1257,15 +1360,69 @@ export class Hub {
       if (lv !== m.lv) { m.lv = lv; const L = m.mesh.geometry.attributes.aL; if (L) { for (let i = 0; i < L.count; i++) { L.array[i * 4] = lv >> 8; L.array[i * 4 + 1] = lv & 255; } L.needsUpdate = true; } }
     }
   }
-  // Chameleon is played at half size: you (your box, eyes and body) and everyone you see
+  // the block under the crosshair opens by hand: a wooden door, trapdoor or fence gate (iron ones need redstone)
+  opensAtTarget() {
+    const T = this.game.inter.target, d = T && BLOCKS[T.b || this.game.world.get(T.x, T.y, T.z)];
+    return !!d && /(_door|_trapdoor|fence_gate)$/.test(d.name) && !/^iron_/.test(d.name);
+  }
+  /* Chameleon: the Rifle. A shot every 0.8 s along where you look, up to 60 blocks, stopped by the first solid block; the
+     first player in the way is hit (sent as an arrow's hit named by the Rifle, which the server lets one hit find with).
+     The kick in the hand (render/held.js recoil), a flash at the muzzle, a trail of sparks and the bang; everyone else
+     sees the trail and hears the bang through the server. */
+  shoot() {
+    if (this.t - (this.shotAt === undefined ? -99 : this.shotAt) < 16) return;
+    this.shotAt = this.t;
+    const g = this.game, P = g.player, w = g.world, net = this.net;
+    const eye = { x: P.pos.x, y: P.pos.y + (P.eyeH || 1.62), z: P.pos.z };
+    const dx = -Math.sin(P.yaw) * Math.cos(P.pitch), dy = Math.sin(P.pitch), dz = -Math.cos(P.yaw) * Math.cos(P.pitch);
+    // the first solid block in the way, a tenth of a block at a time
+    let lim = 60;
+    for (let t = 0.2; t < lim; t += 0.1) { const b = w.get(Math.floor(eye.x + dx * t), Math.floor(eye.y + dy * t), Math.floor(eye.z + dz * t)); if (b && SOLID[b]) { lim = t; break; } }
+    // the first player before it
+    let best = null;
+    if (net && net.players) for (const r of net.players.list.values()) {
+      if (!net.hittable(r, (r.st || {}).d)) continue;
+      const f = r.feet, k = playerSize.of(r.id), hw = 0.3 * k + 0.1, h = (r.st && r.st.f & F.SNEAK ? 1.5 : 1.8) * k;
+      const t = rayBox(eye.x, eye.y, eye.z, dx, dy, dz, f.x - hw, f.y, f.z - hw, f.x + hw, f.y + h, f.z + hw);
+      if (t < lim) { lim = t; best = r; }
+    }
+    const to = [eye.x + dx * lim, eye.y + dy * lim, eye.z + dz * lim], r3 = v => Math.round(v * 1000) / 1000;
+    if (best && net.send) net.send({ t: 'hit', id: best.id, k: 'arrow', dmg: 1, dir: [r3(dx * 3), r3(dy * 3), r3(dz * 3)], at: to.map(r3), item: 'Rifle' });
+    this.send({ k: 'shot', to: to.map(r3) });
+    // the kick, the flash, the trail and the bang here
+    const held = this.ctx.renderer && this.ctx.renderer.held;
+    if (held && held.recoil) held.recoil(1);
+    const E = g.entities;
+    if (E && E.particles) E.particles('sparkle', eye.x + dx * 0.9 - Math.cos(P.yaw) * 0.25, eye.y + dy * 0.9 - 0.15, eye.z + dz * 0.9 + Math.sin(P.yaw) * 0.25, 6, 0.05, [1, 0.8, 0.3]);
+    this.tracer(eye.x + dx * 1.2, eye.y + dy * 1.2 - 0.1, eye.z + dz * 1.2, to);
+    try { Sound.play('entity.firework_rocket.blast', eye.x, eye.y, eye.z, 1.2, 1.7, 'player'); } catch (e) { /* no sound yet */ }
+    if (best) this.sound('entity.arrow.hit_player');
+  }
+  // a shot's trail: sparks from the muzzle to where it stopped, and a puff there
+  tracer(x, y, z, to) {
+    const E = this.game.entities;
+    if (!E || !E.particles || !Array.isArray(to) || to.length !== 3) return;
+    const ex = +to[0], ey = +to[1], ez = +to[2], d = Math.hypot(ex - x, ey - y, ez - z), n = Math.min(80, Math.ceil(d / 0.6));
+    for (let i = 1; i <= n; i++) { const f = i / n; E.particles('crit', x + (ex - x) * f, y + (ey - y) * f, z + (ez - z) * f, 1, 0.01); }
+    E.particles('poof', ex, ey, ez, 5, 0.08, [0.6, 0.6, 0.6]);
+  }
+  // a hider paints whenever they like, all round long (only being a seeker, or the round's end, takes the brush away)
+  mayPaint() {
+    if (this.painter && this.paintOn && this.role !== 'seeker') return true;
+    if (this.role === 'seeker') this.ctx.chat.add('§cSeekers cannot paint!', 0xFF5555);
+    return false;
+  }
+  // Chameleon's hiders are played at half size: you (your box, eyes and body) and everyone you see; its seekers stay full size
   applySize() {
-    const k = this.area === 'game' && this.gameKind === 'chameleon' ? 0.5 : 1, g = this.game;
-    playerSize.k = k;
+    const on = this.area === 'game' && this.gameKind === 'chameleon', g = this.game;
+    const k = on && this.role !== 'seeker' ? 0.5 : 1;
+    playerSize.k = on ? 0.5 : 1;
+    playerSize.full = on && this.seekerIds ? this.seekerIds : new Set();
     if (g && g.player && g.player.setScale) g.player.setScale(k);
     // (and nobody in it is hurt by a block at the eyes: half-size players squeeze into places, and paint against walls)
-    if (g && g.survival) g.survival.noSuffocate = k !== 1;
+    if (g && g.survival) g.survival.noSuffocate = on;
     // and everyone in it climbs walls by holding jump against them (never the barriers round the map, or anyone could climb out)
-    if (g && g.player) { g.player.wallClimb = k !== 1; g.player.noBarrierClimb = true; }
+    if (g && g.player) { g.player.wallClimb = on; g.player.noBarrierClimb = true; }
     const A = this.ctx && this.ctx.renderer && this.ctx.renderer.avatar;
     if (A) A.size = k;
   }
@@ -1283,6 +1440,18 @@ export class Hub {
       const pz = this.poses && this.poses.get(id);
       r.av.poseOverride = pz ? (POSES[pz] || POSES[0])[1] : this.seekerIds && this.seekerIds.has(id) && r.st && (r.st.f & F.SNEAK) ? SNIPE : null;
     }
+  }
+  // Prop Hunt: you as a block, seen from behind so you see what you have become (F5 still changes it)
+  disguiseAs(name) {
+    this.disguise = name; this.lockAt = null; this.still = 0;
+    const A = this.ctx.renderer.avatar;
+    if (A && A.view === 0) { this.viewBefore = 0; A.setView(1); }
+    this.ctx.chat.add('§aYou are disguised as §e' + this.propTitle() + '§a, as every hider is this round! Stand still to lock in place.', 0xFFFFFF);
+    this.sound('entity.chicken.egg');
+  }
+  propTitle() {
+    const n = this.disguise || (this.hide && this.hide.as) || (this.hide && this.hide.props && this.hide.props[0]) || '', d = BLOCKS[B[n]];
+    return (d && d.display) || n.replace(/_/g, ' ');
   }
   clearProps() {
     this.props = new Map(); this.disguise = null; this.lockAt = null; this.still = 0;
@@ -1307,7 +1476,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=73', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=74', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1322,7 +1491,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=73', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=74', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1330,7 +1499,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=73', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=74', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -1391,11 +1560,24 @@ register('mapapprove', { always: true, usage: '', run(args, ctx) { onHub(ctx, h 
 register('mapdeny', { always: true, usage: '[reason]', run(args, ctx) { onHub(ctx, h => h.send({ k: 'mapreview', ok: false, why: args.join(' ') })); } });
 register('shout', { always: true, usage: '<message>', run(args, ctx) { onHub(ctx, h => h.send({ k: 'shout', text: args.join(' ') })); } });
 register('hubbuild', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'build' })); } });
-// parties, as the network has them: /party invite <player> (or just /party <player>), accept, leave, list, kick, transfer, disband; /pc talks to it
-const PARTY_SUBS = ['invite', 'accept', 'leave', 'list', 'kick', 'transfer', 'disband', 'help'];
+// parties, as the network has them: /party invite <player> (or just /party <player>), accept, leave, list, kick, transfer, warp, disband; /pc talks to it
+const PARTY_SUBS = ['invite', 'accept', 'leave', 'list', 'kick', 'transfer', 'warp', 'disband', 'help'];
 register('party', {
-  always: true, aliases: ['p'], usage: '<invite|accept|leave|list|kick|transfer|disband> [player]',
+  always: true, aliases: ['p'], usage: '<invite|accept|leave|list|kick|transfer|warp|disband> [player]',
   suggest: (i, w, ctx) => (i === 0 ? PARTY_SUBS : i === 1 && active && active.net && active.net.players ? [...active.net.players.list.values()].map(r => r.name) : []),
   run(args, ctx) { onHub(ctx, h => h.send({ k: 'party', a: args })); },
 });
 register('pc', { always: true, aliases: ['partychat'], usage: '<message>', run(args, ctx) { onHub(ctx, h => { if (args.length) h.send({ k: 'pchat', text: args.join(' ') }); else ctx.say('Usage: /pc <message>', 0xFF5555); }); } });
+
+// how far along a ray it first meets a box (Infinity when it misses it)
+function rayBox(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
+  let t0 = 0, t1 = Infinity;
+  for (const [o, d, a, b] of [[ox, dx, x0, x1], [oy, dy, y0, y1], [oz, dz, z0, z1]]) {
+    if (Math.abs(d) < 1e-9) { if (o < a || o > b) return Infinity; continue; }
+    let ta = (a - o) / d, tb = (b - o) / d;
+    if (ta > tb) { const q = ta; ta = tb; tb = q; }
+    t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
+    if (t0 > t1) return Infinity;
+  }
+  return t0;
+}
