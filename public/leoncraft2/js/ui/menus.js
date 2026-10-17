@@ -26,17 +26,17 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=78';
-import { Packs } from './pack.js?v=78';
-import { Account } from '../net/account.js?v=78';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=78';
-import { packArtSummary } from '../entities/packart.js?v=78';
-import { LanScreen } from './lan.js?v=78';
-import { parseSeed } from '../gen/random.js?v=78';
-import { SOUND_CREDITS } from '../sound/credits.js?v=78';
-import { SkinGalleryScreen, skinCredits } from './skins.js?v=78';
-import { FlatCustomizeScreen } from './flat.js?v=78';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=78';
+} from './gui.js?v=79';
+import { Packs } from './pack.js?v=79';
+import { Account } from '../net/account.js?v=79';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=79';
+import { packArtSummary } from '../entities/packart.js?v=79';
+import { LanScreen } from './lan.js?v=79';
+import { parseSeed } from '../gen/random.js?v=79';
+import { SOUND_CREDITS } from '../sound/credits.js?v=79';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=79';
+import { FlatCustomizeScreen } from './flat.js?v=79';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=79';
 
 const PI = Math.PI;
 
@@ -403,7 +403,7 @@ export class SelectWorldScreen extends Screen {
     if (this.importing) return;
     this.importing = true; this.lc1B.active = false; this.lc1B.message = 'Importing...'; this.gui.markDirty();
     const done = msg => { this.importing = false; if (this.lc1B) { this.lc1B.active = true; this.lc1B.message = 'Import from Leoncraft 1'; } this.gui.markDirty(); if (msg) this.gui.open(new NoticeScreen('Import from Leoncraft 1', msg)); };
-    import('../lc1/spimport.js?v=78').then(m => {
+    import('../lc1/spimport.js?v=79').then(m => {
       const saves = m.lc1Saves();
       if (!saves.length) return done('There is no Leoncraft 1 world in this browser.');
       return m.importLC1(saves[0].key, Worlds).then(r => {
@@ -738,9 +738,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=78';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=78';
-import { minimapButtons } from './minimap.js?v=78';
+export { VideoSettingsScreen } from './video.js?v=79';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=79';
+import { minimapButtons } from './minimap.js?v=79';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -1042,16 +1042,16 @@ const CREDITS = [
   ['@sounds'],
   ['@skins'],
   ['Maps', 0xFFFF55],
-  ['Leon Network\'s Prop Hunt map, Hillside: from "Hide and Seek Minigame"'], ['by Tert, GNU GPL version 3 (joined, cut and changed for the game).'],
+  ['Leonpixel\'s Prop Hunt map, Hillside: from "Hide and Seek Minigame"'], ['by Tert, GNU GPL version 3 (joined, cut and changed for the game).'],
   ['curseforge.com/minecraft/worlds/hide-and-seek-minigame', 0, 'https://www.curseforge.com/minecraft/worlds/hide-and-seek-minigame'],
   ['gnu.org/licenses/gpl-3.0', 0, 'https://www.gnu.org/licenses/gpl-3.0.html'],
-  ['Leon Network\'s maps from CurseForge, cut and converted for the game:'],
+  ['Leonpixel\'s maps from CurseForge, cut and converted for the game:'],
   ['Prop Hunt: Frost, End, Nether and Desert Arena, from "Prop Hunt: 4'], ['Themed Arena" by seaboiii, Public Domain.'],
   ['Murder Mystery: Bread Hotel, from "Murder Mystery Hotel" by'], ['bread4tabread (MIT); Botello Manor, from "SoS: The Botello Manor"'],
   ['by GreatOrator (MIT); Modern House, from "Ultra Modern House" by'], ['JobKay (Public Domain); Houseville, by noxgame1230 (ISC).'],
   ['The lobby, from "Floating Island Server Spawn" by mrmagicblox'], ['(Public Domain), with our own sign and pedestals.'],
   ['Chameleon plays on the first Leoncraft’s Mecha maps (Purpular, Fortress and Classroom by carver and Leon, the rest by Leon).'],
-  ['The rest of Leon Network\'s maps are our own.'], [''],
+  ['The rest of Leonpixel\'s maps are our own.'], [''],
   ['Code', 0xFFFF55],
   ['three.js, MIT License'],
   ['threejs.org', 0, 'https://threejs.org/'],

@@ -26,18 +26,29 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=78';
-import { ConfirmScreen } from './menus.js?v=78';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=78';
-import { Account } from '../net/account.js?v=78';
-import { LoginScreen, AccountScreen } from './account.js?v=78';
-import { parseSeed } from '../gen/random.js?v=78';
-import { MapRequestsScreen } from './maprequests.js?v=78';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=79';
+import { ConfirmScreen } from './menus.js?v=79';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=79';
+import { Account } from '../net/account.js?v=79';
+import { LoginScreen, AccountScreen } from './account.js?v=79';
+import { parseSeed } from '../gen/random.js?v=79';
+import { MapRequestsScreen } from './maprequests.js?v=79';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
 const keepPassword = (id, pw) => { try { if (pw) localStorage.setItem(PW_KEY + id, pw); else localStorage.removeItem(PW_KEY + id); } catch (e) {} };
 const MODE_NAMES = { survival: 'Survival', creative: 'Creative', adventure: 'Adventure' };
+/* The list's orders (the Sort button cycles them, kept in this browser): your own, the most players on, names A to Z
+   and Z to A, newest and oldest. Pinned servers stay on top in their own order whatever the sort. */
+const SORT_KEY = 'lc2_sort';
+const LIST_SORTS = [['yours', 'Your Order'], ['players', 'Most Players'], ['az', 'A to Z'], ['za', 'Z to A'], ['newest', 'Newest'], ['oldest', 'Oldest']];
+const byName = (a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' });
+const LIST_ORDER = {
+  players: (a, b) => (b.players | 0) - (a.players | 0) || byName(a, b),
+  az: byName, za: (a, b) => byName(b, a),
+  newest: (a, b) => (b.createdAt || 0) - (a.createdAt || 0), oldest: (a, b) => (a.createdAt || 0) - (b.createdAt || 0),
+};
+function keptSort() { try { const v = localStorage.getItem(SORT_KEY); return LIST_SORTS.some(s => s[0] === v) ? v : 'yours'; } catch (e) { return 'yours'; } }
 
 /* ---- the list as you keep it: pinned servers at the top in their own order, then the rest in yours. Kept on your
    account (mlhub lc2accounts.js /account/servers), so it follows you to any browser; a guest's stays in this one. ---- */
@@ -104,14 +115,14 @@ class ServerEntry {
     const s = this.s, ping = this.screen.ping;
     const sp = this.spots(top, left, width), inside = r => mx >= r[0] && mx < r[0] + r[2] && my >= r[1] && my < r[1] + r[3];
     const pinned = this.screen.pinned(s.id);
-    if (pinned || hovered) drawPin(g, sp.pin[0] + 2, sp.pin[1] + 1, hovered && inside(sp.pin) ? 0xFFFFFFFF : pinned ? 0xFFFFAA00 : 0xFF707070);
-    if (hovered && inside(sp.pin)) g.setTooltip(pinned ? 'Unpin' : 'Pin to the top');
+    if (pinned || hovered) drawPin(g, sp.pin[0] + 2, sp.pin[1] + 1, hovered && inside(sp.pin) && !s.always ? 0xFFFFFFFF : pinned ? 0xFFFFAA00 : 0xFF707070);
+    if (hovered && inside(sp.pin)) g.setTooltip(s.always ? 'Pinned for everyone' : pinned ? 'Unpin' : 'Pin to the top');
     if (hovered && this.screen.canMove(s, -1)) { drawArrow(g, sp.up[0] + 2, sp.up[1] + 2, true, inside(sp.up) ? 0xFFFFFFFF : 0xFFA0A0A0); if (inside(sp.up)) g.setTooltip('Move up'); }
     if (hovered && this.screen.canMove(s, 1)) { drawArrow(g, sp.down[0] + 2, sp.down[1] + 2, false, inside(sp.down) ? 0xFFFFFFFF : 0xFFA0A0A0); if (inside(sp.down)) g.setTooltip('Move down'); }
     g.text(g.font.trim(s.name, width - 80), left + 35, top + 1, WHITE, false);
     const line1 = s.motd || (s.kind === 'private' ? 'A private server' : 'A public server');
     g.text(g.font.trim(line1, width - 66), left + 35, top + 12, 0x808080, false);
-    const line2 = (MODE_NAMES[s.mode] || 'Survival') + ' Mode' + (s.cheats ? ', Commands' : '') + (s.kind === 'private' ? (s.settings && s.settings.password ? ', Password: ' + s.settings.password : ', Password') : '') + (s.mine ? ', yours' : s.owner ? ', ' + s.owner + "'s" : '');
+    const line2 = s.hub ? 'Minigame Network' : (MODE_NAMES[s.mode] || 'Survival') + ' Mode' + (s.cheats ? ', Commands' : '') + (s.kind === 'private' ? (s.settings && s.settings.password ? ', Password: ' + s.settings.password : ', Password') : '') + (s.mine ? ', yours' : s.owner ? ', ' + s.owner + "'s" : '');
     g.text(g.font.trim(line2, width - 66), left + 35, top + 21, 0x808080, false);
     // the player count and the signal bars, top right
     const count = s.players + '/' + s.max, cw = g.textWidth(count);
@@ -146,7 +157,7 @@ class ServerEntry {
   mouseClicked(mx, my, button, list) {
     if (button !== 0) return false;
     const sp = this.spots(list.rowTop(list.entries.indexOf(this)), list.rowLeft, list.rowWidth), inside = r => mx >= r[0] && mx < r[0] + r[2] && my >= r[1] && my < r[1] + r[3];
-    if (inside(sp.pin)) { list.setSelected(this); this.screen.togglePin(this.s); return true; }
+    if (inside(sp.pin)) { list.setSelected(this); if (!this.s.always) this.screen.togglePin(this.s); return true; }
     if (inside(sp.up) && this.screen.canMove(this.s, -1)) { list.setSelected(this); this.screen.move(this.s, -1); return true; }
     if (inside(sp.down) && this.screen.canMove(this.s, 1)) { list.setSelected(this); this.screen.move(this.s, 1); return true; }
     if (mx - list.rowLeft < 32 && list.onActivate) { list.setSelected(this); list.onActivate(this); return true; }
@@ -161,11 +172,19 @@ export class MultiplayerScreen extends Screen {
     this.selectedId = null;
     this.query = '';
     this.prefs = keptPrefs();
+    this.sort = keptSort();
   }
   init() {
     const W = this.width, H = this.height, g = this.gui;
     // a search over the servers' names, descriptions and owners
-    this.search = this.add(new TextField(W / 2 - 100, 31, 200, 16, { value: this.query, maxLength: 48, hint: 'Search servers...', onChange: v => { this.query = v; this.fill(); } }));
+    this.search = this.add(new TextField(W / 2 - 154, 31, 200, 16, { value: this.query, maxLength: 48, hint: 'Search servers...', onChange: v => { this.query = v; this.fill(); } }));
+    const sortLabel = () => 'Sort: ' + (LIST_SORTS.find(s => s[0] === this.sort) || LIST_SORTS[0])[1];
+    this.sortB = this.add(new Button(W / 2 + 50, 29, 104, 20, sortLabel(), () => {
+      const i = LIST_SORTS.findIndex(s => s[0] === this.sort);
+      this.sort = LIST_SORTS[(i + 1) % LIST_SORTS.length][0];
+      try { localStorage.setItem(SORT_KEY, this.sort); } catch (e) { /* this visit only */ }
+      this.sortB.message = sortLabel(); this.fill();
+    }, 'Change the order of the servers (pinned ones stay on top)'));
     this.list = this.add(new ScrollList(0, 52, W, H - 64 - 52, 36, {
       rowWidth: 305, selectable: true,
       onSelect: e => { this.selectedId = e ? e.s.id : null; this.updateButtons(); },
@@ -184,7 +203,7 @@ export class MultiplayerScreen extends Screen {
       const hub = this.servers.find(x => x.id === 'hub');
       if (!hub) { window.__lc2HubAction = null; return; }
       g.back(); this.join(hub);
-    })), 'Maps made by players for Leon Network, waiting to be approved'));
+    })), 'Maps made by players for Leonpixel, waiting to be approved'));
     this.fill();
     if (!this.loaded) { this.loaded = true; this.refresh(); }
   }
@@ -196,17 +215,22 @@ export class MultiplayerScreen extends Screen {
     this.delB.active = !!(s && s.canEdit && s.id !== 'main');
     this.editB.tooltip = this.delB.tooltip = s && !s.canEdit ? 'Only the owner of a server can change it' : null;
   }
-  pinned(id) { return this.prefs.pins.includes(id); }
+  // (Leonpixel is pinned for everyone, at the very top: the server marks it always)
+  always(id) { const s = this.servers.find(x => x.id === id); return !!(s && s.always); }
+  pinned(id) { return this.prefs.pins.includes(id) || this.always(id); }
   // every server in your order: the pinned ones first as you pinned or moved them, then the rest as you moved them,
   // then any you have not placed yet, in the server's own order
   arranged() {
     const P = this.prefs, pin = new Map(P.pins.map((id, i) => [id, i])), ord = new Map(P.order.map((id, i) => [id, i]));
     const base = new Map(this.servers.map((s, i) => [s.id, i]));
     const at = id => ord.has(id) ? ord.get(id) : 1e9 + base.get(id);
+    const order = LIST_ORDER[this.sort];
     return this.servers.slice().sort((a, b) => {
-      const pa = pin.has(a.id), pb = pin.has(b.id);
+      if (!!a.always !== !!b.always) return a.always ? -1 : 1;
+      const pa = pin.has(a.id) || !!a.always, pb = pin.has(b.id) || !!b.always;
       if (pa !== pb) return pa ? -1 : 1;
-      return pa ? pin.get(a.id) - pin.get(b.id) : at(a.id) - at(b.id);
+      if (pa) return (pin.has(a.id) ? pin.get(a.id) : -1) - (pin.has(b.id) ? pin.get(b.id) : -1);
+      return order ? order(a, b) || at(a.id) - at(b.id) : at(a.id) - at(b.id);
     });
   }
   shown() {
@@ -214,10 +238,13 @@ export class MultiplayerScreen extends Screen {
     return q ? all.filter(s => [s.name, s.motd, s.owner].some(t => t && String(t).toLowerCase().includes(q))) : all;
   }
   // a move is one place up or down among the pinned or among the rest (not while searching: the neighbours are hidden)
+  // (nor past Leonpixel, which stays first; nor among the rest while they are sorted some other way than yours)
   canMove(s, d) {
-    if (this.query.trim()) return false;
+    if (this.query.trim() || s.always) return false;
     const all = this.arranged(), i = all.findIndex(x => x.id === s.id), j = i + d;
-    return i >= 0 && j >= 0 && j < all.length && this.pinned(all[j].id) === this.pinned(s.id);
+    if (!(i >= 0 && j >= 0 && j < all.length) || all[j].always) return false;
+    if (!this.pinned(s.id) && this.sort !== 'yours') return false;
+    return this.pinned(all[j].id) === this.pinned(s.id);
   }
   move(s, d) {
     if (!this.canMove(s, d)) return;
@@ -237,6 +264,7 @@ export class MultiplayerScreen extends Screen {
   }
   keep(all) {
     const pins = new Set(this.prefs.pins);
+    all = all.filter(x => !x.always);
     this.prefs = { pins: all.filter(x => pins.has(x.id)).map(x => x.id), order: all.filter(x => !pins.has(x.id)).map(x => x.id) };
     savePrefs(this.prefs);
   }

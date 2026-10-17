@@ -14,27 +14,27 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=78';
-import { I } from '../items.js?v=78';
-import { POTIONS } from '../brewing.js?v=78';
-import { ChestScreen } from '../ui/containers.js?v=78';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=78';
-import { RemotePlayers, playerSize, F } from './players.js?v=78';
-import { register } from '../commands.js?v=78';
-import { Sound } from '../sound/sound.js?v=78';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=78';
-import { skinUrl } from '../ui/skins.js?v=78';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=78';
-import { blockGeometry } from '../render/blockmesh.js?v=78';
-import { lightNear } from '../lightlevel.js?v=78';
-import { setSkin as setOwnSkin, invisLook } from '../render/avatar.js?v=78';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=79';
+import { I } from '../items.js?v=79';
+import { POTIONS } from '../brewing.js?v=79';
+import { ChestScreen } from '../ui/containers.js?v=79';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=79';
+import { RemotePlayers, playerSize, F } from './players.js?v=79';
+import { register } from '../commands.js?v=79';
+import { Sound } from '../sound/sound.js?v=79';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=79';
+import { skinUrl } from '../ui/skins.js?v=79';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=79';
+import { blockGeometry } from '../render/blockmesh.js?v=79';
+import { lightNear } from '../lightlevel.js?v=79';
+import { setSkin as setOwnSkin, invisLook } from '../render/avatar.js?v=79';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=78').then(m => {
+import('../adv/toast.js?v=79').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -279,6 +279,23 @@ function quickPlay(menu, hub, game) {
     hub.send({ k: 'play', mode: m.id }); hub.closeScreens();
   });
 }
+// what each mode is, in its menu (a line each in the tooltip); a mode not here shows its game's blurb
+const MODE_BLURB = {
+  bw_solo: ['Eight players, each on their', 'own island. Protect your bed', 'and break all the others.'],
+  bw_doubles: ['Eight teams of two. Protect', 'your bed and break the others.'],
+  bw_3s: ['Four teams of three. Protect', 'your bed and break the others.'],
+  bw_4s: ['Four teams of four. Protect', 'your bed and break the others.'],
+  sw_solo: ['Everyone on their own island.', 'Loot the chests, then be the', 'last one standing.'],
+  sw_doubles: ['Teams of two on each island.', 'Be the last team standing.'],
+  duels_classic: ['One against one with an iron', 'sword, a bow, a rod and', 'iron armour.'],
+  duels_sumo: ['One against one with no items.', 'Knock the other off the ring.'],
+  duels_bridge: ['One against one across a bridge.', 'Jump into their goal', 'to score.'],
+  duels_bedwars: ['Bed Wars, one against one.'],
+  duels_skywars: ['SkyWars, one against one.'],
+  ch_classic: ['Hiders paint themselves to blend', 'into the map, then the seekers', 'come out. One hit finds a hider,', 'and a found hider is out.'],
+  ch_infection: ['Hiders paint themselves to blend', 'in. A found hider becomes a', 'seeker, so the hunt grows', 'until nobody is left hidden.'],
+  ch_double: ['Everyone paints and hides, then', 'everyone hunts everyone.', 'One hit finds someone, and the', 'last one still hidden wins.'],
+};
 // the lobby compass shows every game (a click opens that game's own menu); a person on the stand shows their game's modes
 class GameMenu extends MenuScreen {
   constructor(hub, game) { const g = game && (hub.games || []).find(x => x.id === game); super(hub, g ? g.name : 'Game Menu'); this.only = game || null; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); hub.send({ k: 'counts' }); }
@@ -309,7 +326,8 @@ class GameMenu extends MenuScreen {
         if (!st) return;
         st.name = '§a' + m.name;
         const n = hub.counts ? hub.counts[m.id] | 0 : null;
-        this.put(start + i, st, ['§a' + m.name, '§7' + (g.blurb || ''), '', n === null ? '' : '§7' + n + ' currently playing!', '§eClick to play!'].filter((l, j) => l || j !== 3), () => { hub.send({ k: 'play', mode: m.id }); hub.closeScreens(); });
+        const about = (MODE_BLURB[m.id] || [g.blurb || '']).map(l => '§7' + l);
+        this.put(start + i, st, ['§a' + m.name, ...about, '', ...(n === null ? [] : ['§7' + n + ' currently playing!']), '§eClick to play!'], () => { hub.send({ k: 'play', mode: m.id }); hub.closeScreens(); });
       });
     });
   }
@@ -349,7 +367,7 @@ class EditorMenu extends MenuScreen {
       const st = stack(m.custom ? 'map' : 'filled_map') || stack('paper');
       if (!st) return;
       st.name = '§a' + m.name;
-      const tip = ['§a' + m.name, '§7by §f' + m.by, m.custom ? STATUS[m.status] || '' : '§7Leon Network\'s own (staff only)', likes(m)];
+      const tip = ['§a' + m.name, '§7by §f' + m.by, m.custom ? STATUS[m.status] || '' : '§7Leonpixel\'s own (staff only)', likes(m)];
       if (m.custom && m.editors && m.editors.length) tip.push('§7Team: §f' + m.editors.slice(0, 4).join(', ') + (m.editors.length > 4 ? '...' : ''));
       tip.push('', '§eClick to edit!');
       this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, tip, () => { hub.send({ k: 'edit', game: this.game, id: m.id }); hub.closeScreens(); });
@@ -453,7 +471,7 @@ class VoteMenu extends MenuScreen {
       if (!st) return;
       st.name = (mine ? '§a§l' : '§a') + m.name;
       if (mine) st.ench = { unbreaking: 1 };
-      this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, ['§a' + m.name, '§7by §f' + (m.by || 'Leon Network'), likes(m), '', '§7Votes: §e' + m.v, '', mine ? '§aYou voted for this map!' : '§eClick to vote!'],
+      this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, ['§a' + m.name, '§7by §f' + (m.by || 'Leonpixel'), likes(m), '', '§7Votes: §e' + m.v, '', mine ? '§aYou voted for this map!' : '§eClick to vote!'],
         () => { hub.send({ k: 'mapvote', id: m.id }); });
     });
     sortButton(this, 49);
@@ -492,7 +510,7 @@ class MapSettingsScreen extends Screen {
     super.render(g, mx, my, dt);
     const I = this.info || {}, W = this.width, x0 = Math.floor(W / 2 - 160), y0 = 40;
     g.centered(this.title, W / 2, 10, WHITE);
-    g.centered('§e' + (I.name || '') + ' §7by §f' + (I.by || '') + '   ' + (I.custom ? STATUS[I.status] || '' : '§7Leon Network\'s own') + '   ' + likes(I), W / 2, 22, WHITE);
+    g.centered('§e' + (I.name || '') + ' §7by §f' + (I.by || '') + '   ' + (I.custom ? STATUS[I.status] || '' : '§7Leonpixel\'s own') + '   ' + likes(I), W / 2, 22, WHITE);
     g.text('§7Name', x0 + 220, y0 + 31, WHITE); g.text('§7Share with', x0 + 220, y0 + 57, WHITE);
     g.text('§fBuilding team', x0, this.rowsY - 12, WHITE);
     const ed = I.editors || [];
@@ -1586,7 +1604,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=78', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=79', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1601,7 +1619,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=78', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=79', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1609,7 +1627,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=78', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=79', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -1653,7 +1671,7 @@ export class Hub {
 }
 
 /* ---- the network's commands (each answers only on its server) ---- */
-const onHub = (ctx, fn) => { if (!active || active.game !== ctx.game) { ctx.say('That command only works on Leon Network.', 0xFF5555); return; } fn(active); };
+const onHub = (ctx, fn) => { if (!active || active.game !== ctx.game) { ctx.say('That command only works on Leonpixel.', 0xFF5555); return; } fn(active); };
 register('lobby', { always: true, aliases: ['l', 'hub', 'leave'], usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'lobby' })); } });
 const MODE_IDS = ['bw_solo', 'bw_doubles', 'bw_3s', 'bw_4s', 'sw_solo', 'sw_doubles', 'duels_classic', 'duels_sumo', 'duels_bridge', 'duels_bedwars', 'duels_skywars', 'tntrun', 'murder', 'buildbattle', 'spleef', 'prophunt', 'ch_classic', 'ch_infection', 'ch_double'];
 register('play', {

@@ -9,8 +9,8 @@
    /review); Spectate joins the network with the request in hand
    (window.__lc2HubAction, sent by net/hub.js once the network says hello).
 --------------------------------------------------------------------------- */
-import { Screen, Button, WHITE, GREY } from './gui.js?v=78';
-import { mapRequests, mapReview } from '../net/net.js?v=78';
+import { Screen, Button, WHITE, GREY } from './gui.js?v=79';
+import { mapRequests, mapReview } from '../net/net.js?v=79';
 
 const PER_PAGE = 6;
 export class MapRequestsScreen extends Screen {
@@ -24,7 +24,7 @@ export class MapRequestsScreen extends Screen {
       const y = top + i * step, x = W / 2 + 10;
       const row = {
         y,
-        spec: this.add(new Button(x, y, 62, 20, 'Spectate', () => this.go(i), 'Fly round it in Leon Network, then /mapapprove or /mapdeny')),
+        spec: this.add(new Button(x, y, 62, 20, 'Spectate', () => this.go(i), 'Fly round it in Leonpixel, then /mapapprove or /mapdeny')),
         ok: this.add(new Button(x + 64, y, 56, 20, '§aApprove', () => this.decide(i, true), 'Put it in the vote')),
         no: this.add(new Button(x + 122, y, 46, 20, '§cDeny', () => this.decide(i, false), 'Send it back to its maker')),
       };
