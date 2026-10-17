@@ -32,12 +32,12 @@
      water or rain, Channeling calls lightning in a storm); the shield is up
      5 ticks after the button goes down, slowing you to a fifth from the start.
 --------------------------------------------------------------------------- */
-import { ITEMS, I, itemName, addCooldown } from '../items.js?v=74';
-import { wear } from '../ui/inventory.js?v=74';
-import { Living } from '../entities/entity.js?v=74';
-import { weaponOf, enchOf, enchantBonus, chargeTicks, wearPerHit, smashBonus, ARTHROPOD } from './weapons.js?v=74';
-import './trident.js?v=74';
-import { rayBox } from '../entities/terrain.js?v=74';
+import { ITEMS, I, itemName, addCooldown } from '../items.js?v=75';
+import { wear } from '../ui/inventory.js?v=75';
+import { Living } from '../entities/entity.js?v=75';
+import { weaponOf, enchOf, enchantBonus, chargeTicks, wearPerHit, smashBonus, ARTHROPOD } from './weapons.js?v=75';
+import './trident.js?v=75';
+import { rayBox } from '../entities/terrain.js?v=75';
 
 /* The spear's charge (the use button held), as the Spear page gives it, by
    material: [ticks before it works, then engaged, tired and disengaged
