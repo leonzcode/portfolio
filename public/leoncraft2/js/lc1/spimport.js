@@ -11,11 +11,11 @@
    that one's own generator (lc1/mixed.js, entry.lc1). The first Leoncraft's
    save is only read, never changed.
 --------------------------------------------------------------------------- */
-import './lc1gen.js?v=83';
-import './lc1convert.js?v=83';
-import { B } from '../blocks.js?v=83';
-import { Save } from '../save.js?v=83';
-import { EntityStore } from '../entities/store.js?v=83';
+import './lc1gen.js?v=84';
+import './lc1convert.js?v=84';
+import { B } from '../blocks.js?v=84';
+import { Save } from '../save.js?v=84';
+import { EntityStore } from '../entities/store.js?v=84';
 
 const C = globalThis.LC1Convert;
 // the first Leoncraft's solo save (minecraft.html SP_KEY); it never kept more than one
