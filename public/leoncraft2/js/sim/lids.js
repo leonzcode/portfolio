@@ -23,9 +23,9 @@
    lid is shut again the block takes it back, and the moving one is kept a
    few frames more, so there is never a moment with no lid.
 --------------------------------------------------------------------------- */
-import { BLOCKS } from '../blocks.js?v=80';
-import { SHAPES, chestParts, fixUV, turn, rotate } from '../models.js?v=80';
-import { intAttribute } from '../render/blockmesh.js?v=80';
+import { BLOCKS } from '../blocks.js?v=81';
+import { SHAPES, chestParts, fixUV, turn, rotate } from '../models.js?v=81';
+import { intAttribute } from '../render/blockmesh.js?v=81';
 const THREE = window.THREE;
 
 let ACTIVE = null;                 // the dimension being played (each has its own simulation)

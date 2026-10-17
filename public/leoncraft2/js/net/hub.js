@@ -14,23 +14,23 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=80';
-import { I, ITEMS, maxStack } from '../items.js?v=80';
-import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=80';
-import { POTIONS } from '../brewing.js?v=80';
-import { creativeItems, entryId } from '../ui/inventory.js?v=80';
-import { DIM_IDS } from '../dims.js?v=80';
-import { ChestScreen } from '../ui/containers.js?v=80';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=80';
-import { RemotePlayers, playerSize, F } from './players.js?v=80';
-import { register } from '../commands.js?v=80';
-import { Sound } from '../sound/sound.js?v=80';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=80';
-import { skinUrl } from '../ui/skins.js?v=80';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=80';
-import { blockGeometry } from '../render/blockmesh.js?v=80';
-import { lightNear } from '../lightlevel.js?v=80';
-import { setSkin as setOwnSkin, invisLook, capeRule } from '../render/avatar.js?v=80';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=81';
+import { I, ITEMS, maxStack } from '../items.js?v=81';
+import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=81';
+import { POTIONS } from '../brewing.js?v=81';
+import { creativeItems, entryId } from '../ui/inventory.js?v=81';
+import { DIM_IDS } from '../dims.js?v=81';
+import { ChestScreen } from '../ui/containers.js?v=81';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=81';
+import { RemotePlayers, playerSize, F } from './players.js?v=81';
+import { register } from '../commands.js?v=81';
+import { Sound } from '../sound/sound.js?v=81';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=81';
+import { skinUrl } from '../ui/skins.js?v=81';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=81';
+import { blockGeometry } from '../render/blockmesh.js?v=81';
+import { lightNear } from '../lightlevel.js?v=81';
+import { setSkin as setOwnSkin, invisLook, capeRule } from '../render/avatar.js?v=81';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard',
   pillars: 'king_gerold', deathswap: 'explorer', bridger: 'rpg_kid' };
@@ -38,7 +38,7 @@ const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tnt
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=80').then(m => {
+import('../adv/toast.js?v=81').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -1770,7 +1770,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=80', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=81', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1785,7 +1785,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=80', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=81', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1793,7 +1793,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=80', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=81', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -1804,7 +1804,7 @@ export class Hub {
     this.moving = true;
     const gui = this.ctx.gui, hooks = gui.hooks || {};
     this.ctx.chat.add('§7Sending you to ' + (id === 'hub' ? 'Leonpixel' : 'the game world') + '...', 0xFFFFFF);
-    const go = () => import('../ui/multiplayer.js?v=80').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
+    const go = () => import('../ui/multiplayer.js?v=81').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
     Promise.resolve(hooks.quitToTitle ? hooks.quitToTitle() : null).then(go, go);
   }
 
@@ -1832,6 +1832,17 @@ export class Hub {
       this.dsHold = { x: P.pos.x, y: P.pos.y, z: P.pos.z };
       this.send({ k: 'placed' });
     };
+    // everyone together where they came in (the world's spawn, already loaded): ready once standing on the ground
+    if (m.here) {
+      let n = 0;
+      const ready = () => {
+        if (!this.game || this.area !== 'ds') return;
+        const P = this.game.player;
+        if ((P.onGround || P.inWater || ++n > 40) && this.game.ready) done(); else setTimeout(ready, 250);
+      };
+      if (g) ready();
+      return;
+    }
     const go = busy => {
       if (!this.game || this.area !== 'ds') return;
       if (!T) { this.ctx.commandCtx().goTo('overworld', x + 0.5, 200, z + 0.5); setTimeout(done, 4000); return; }
