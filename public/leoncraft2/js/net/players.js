@@ -26,11 +26,11 @@
    can give themselves one; it shows over their head, in the Tab list and in
    their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar } from '../render/avatar.js?v=77';
-import { pieceLook, armorSheet } from '../render/armor.js?v=77';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=77';
-import { DRAW, I, stackFromJSON } from '../items.js?v=77';
-import { B, BLOCKS } from '../blocks.js?v=77';
+import { Avatar, invisLook } from '../render/avatar.js?v=78';
+import { pieceLook, armorSheet } from '../render/armor.js?v=78';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=78';
+import { DRAW, I, stackFromJSON } from '../items.js?v=78';
+import { B, BLOCKS } from '../blocks.js?v=78';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -45,7 +45,7 @@ const RANKS = { admin: '\u00a7c[ADMIN] \u00a7r', mod: '\u00a72[MOD] \u00a7r', ow
 export const rankTag = tag => RANKS[tag] || (typeof tag === 'string' && /^team:[0-9a-f]:[A-Z]$/.test(tag) ? '§' + tag[5] + '§l' + tag[7] + ' §r§' + tag[5] : '');
 
 // the flags each position carries (net/net.js sends them)
-export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024, SPEC: 2048, INVIS: 4096, FIRE: 8192, SPIN: 16384 };
+export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024, SPEC: 2048, INVIS: 4096, FIRE: 8192, SPIN: 16384, GLOW: 32768 };
 // what the use button can be doing with a hand (render/avatar.js useNow kinds), by number in a position
 export const USE_KINDS = ['eat', 'drink', 'horn', 'bow', 'aim', 'crossbow', 'block', 'trident', 'spear', 'spyglass'];
 // sitting on something this machine does not have (a horse): the legs sit
@@ -93,9 +93,10 @@ export class RemotePlayers {
   drop(r) {
     if (r.av) {
       const av = r.av, R = this.R;
-      for (const m of [av.mesh, av.armor]) { R.scene.remove(m); }
+      for (const m of [av.mesh, av.armor, av.glowRim, av.glowBehind]) { R.scene.remove(m); }
       av.dropSwirl();
-      av.mesh.geometry.dispose(); av.arm.geometry.dispose();
+      av.mesh.geometry.dispose(); av.arm.geometry.dispose(); av.glowRim.geometry.dispose(); av.glowBehind.geometry.dispose();
+      av.glowRim.material.dispose(); av.glowBehind.material.dispose();
       for (let s = 0; s < 2; s++) av.setHeld(s, null);
       av.setHeadItem(null);
       av.tex.dispose(); av.armorTex.dispose();
@@ -162,7 +163,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=77', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=78', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
   }
   equip(r) {
@@ -245,7 +246,7 @@ export class RemotePlayers {
       const av = this.avatarOf(r), P = r.P;
       P.w = world;
       P.dying = r.dying || 0;
-      r.invis = !!(p.f & F.INVIS);
+      r.invis = !!(p.f & F.INVIS); r.glow = !!(p.f & F.GLOW);
       P.sneaking = !!(p.f & F.SNEAK); P.flying = !!(p.f & F.FLY); P.gliding = !!(p.f & F.GLIDE); P.spinning = !!(p.f & F.SPIN);
       P.riding = p.f & F.RIDE ? (seat ? seat.v : SEAT) : null;
       P.bed = null;
@@ -302,7 +303,7 @@ export class RemotePlayers {
   }
   hide(r) {
     const av = r.av;
-    av.mesh.visible = av.armor.visible = false;
+    av.mesh.visible = av.armor.visible = av.glowRim.visible = av.glowBehind.visible = false;
     for (const h of av.held) if (h) h.mesh.visible = false;
     if (av.headItem) av.headItem.mesh.visible = false;
     if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
@@ -363,7 +364,9 @@ export class RemotePlayers {
     const on = av.ready;
     // invisible: only what they wear and hold shows, as in the game
     av.mesh.visible = on && !r.invis;
-    av.armor.visible = on && av.wearing;
+    av.armor.visible = on && av.wearing && !(r.invis && invisLook.hideArmor);
+    // Glowing: the outline, through walls too (shown even on someone invisible, as in the game)
+    av.glowRim.visible = av.glowBehind.visible = on && !!r.glow;
     // the armour's pictures taken up again whenever another file has landed in the sheet
     if (av.wearing) { const sh = armorSheet(); if (sh.version !== av.armorV) { av.armorV = sh.version; av.armorTex.needsUpdate = true; } }
     av.uPiece.value[0].y = av.headWorn ? 1 : 0;
@@ -385,7 +388,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=77', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=78', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;

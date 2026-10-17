@@ -19,45 +19,45 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=77';
-import { PathFinder, Navigation } from './path.js?v=77';
-import { Particles } from './particles.js?v=77';
-import { Ambient } from './ambient.js?v=77';
-import { Living, Mob, wrap, DEG } from './entity.js?v=77';
-import { TYPES } from './mobs.js?v=77';
-import './projectiles.js?v=77';
-import { placeBoat } from './boat.js?v=77';
-import './mobs2.js?v=77';
-import './mobs3.js?v=77';
-import './mobs4.js?v=77';
-import { wandererTick } from './merchant.js?v=77';
-import { tableBooks } from './tablebook.js?v=77';
-import { explode } from './explosion.js?v=77';
-import { splitXp } from './xporb.js?v=77';
-import { placeMinecart, isRail, Minecart } from './minecart.js?v=77';
-import { CART_ITEMS } from './carts.js?v=77';
-import { fallFrom, FALLS, free } from './fallingblock.js?v=77';
-import { Spawner, DESPAWN } from './spawner.js?v=77';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=77';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=77';
-import { EntityMeshes } from '../render/entitymesh.js?v=77';
-import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=77';
-import { lightNear } from '../lightlevel.js?v=77';
-import { activeDrops } from '../drops.js?v=77';
-import { breakAt } from '../place.js?v=77';
-import { dropOf } from '../survival.js?v=77';
-import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=77';
-import { Combat } from '../combat/combat.js?v=77';
-import './nether.js?v=77';
+import { Terrain } from './terrain.js?v=78';
+import { PathFinder, Navigation } from './path.js?v=78';
+import { Particles } from './particles.js?v=78';
+import { Ambient } from './ambient.js?v=78';
+import { Living, Mob, wrap, DEG } from './entity.js?v=78';
+import { TYPES } from './mobs.js?v=78';
+import './projectiles.js?v=78';
+import { placeBoat } from './boat.js?v=78';
+import './mobs2.js?v=78';
+import './mobs3.js?v=78';
+import './mobs4.js?v=78';
+import { wandererTick } from './merchant.js?v=78';
+import { tableBooks } from './tablebook.js?v=78';
+import { explode } from './explosion.js?v=78';
+import { splitXp } from './xporb.js?v=78';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=78';
+import { CART_ITEMS } from './carts.js?v=78';
+import { fallFrom, FALLS, free } from './fallingblock.js?v=78';
+import { Spawner, DESPAWN } from './spawner.js?v=78';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=78';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=78';
+import { EntityMeshes } from '../render/entitymesh.js?v=78';
+import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=78';
+import { lightNear } from '../lightlevel.js?v=78';
+import { activeDrops } from '../drops.js?v=78';
+import { breakAt } from '../place.js?v=78';
+import { dropOf } from '../survival.js?v=78';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=78';
+import { Combat } from '../combat/combat.js?v=78';
+import './nether.js?v=78';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
-import './mobs5.js?v=77';
-import './mobs6.js?v=77';
-import './mobs7.js?v=77';
-import { DIMS } from '../dims.js?v=77';
-import { armorLayers } from './armorlayer.js?v=77';
-import { MobHeld } from '../render/mobheld.js?v=77';
-import { setSpawnerMob } from '../struct/spawners.js?v=77';
-import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=77';
+import './mobs5.js?v=78';
+import './mobs6.js?v=78';
+import './mobs7.js?v=78';
+import { DIMS } from '../dims.js?v=78';
+import { armorLayers } from './armorlayer.js?v=78';
+import { MobHeld } from '../render/mobheld.js?v=78';
+import { setSpawnerMob } from '../struct/spawners.js?v=78';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=78';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -998,10 +998,13 @@ export class Entities {
       // the light, eased so it never pops (anything on fire is lit as by a torch at its brightest, as in the game)
       e.lS += (e.lightS / 15 - e.lS) * k; e.lB += ((e.fire > 0 ? 15 : e.lightB) / 15 - e.lB) * k;
       this.sphere.center.set(x, y + e.h / 2, z); this.sphere.radius = Math.max(e.w, e.h) + 1.5;
-      // under Invisibility a mob is not drawn, nor its shadow
-      const seen = this.frustum.intersectsSphere(this.sphere) && !(e.effects && e.effects.invisibility);
+      // under Invisibility a mob is not drawn, nor its shadow (but Glowing's outline still shows, as in the game)
+      const inView = this.frustum.intersectsSphere(this.sphere), fx = e.effects, glow = !!(fx && fx.glowing);
+      const seen = inView && !(fx && fx.invisibility);
       if (c.BLOCK) { e.draw(this.group, this.R, alpha); continue; }
-      if (seen) { if (c.PARTICLE) e.particle(this.meshes, alpha, x, y, z); else this.drawOne(e, alpha, x, y, z); }
+      this.meshes.glowNow = glow ? (seen ? 2 : 3) : 1;
+      if (seen || (inView && glow && !c.PARTICLE)) { if (c.PARTICLE) e.particle(this.meshes, alpha, x, y, z); else this.drawOne(e, alpha, x, y, z); }
+      this.meshes.glowNow = 1;
       // the game's flames round anything burning (render/particles.js burn)
       if (seen && e.fire > 0 && !c.PARTICLE && this.R.particles) this.R.particles.burn(x, y, z, e.w || 0.6, e.h || 1.8);
       // a boat keeps the water out of its inside
@@ -1032,7 +1035,11 @@ export class Entities {
       }
     }
     // (your own model is lit as by a torch at its brightest while you burn, as the game does: render/avatar.js)
-    if (this.R.avatar) this.R.avatar.burning = !!(this.survival && this.survival.onFire);
+    if (this.R.avatar) {
+      const A = this.R.avatar, fx = this.survival && this.survival.effects;
+      A.burning = !!(this.survival && this.survival.onFire);
+      A.invisible = !!(fx && fx.invisibility); A.glowing = !!(fx && fx.glowing);
+    }
     // you, burning, seen from behind or in front (F5)
     if (this.survival && this.survival.onFire && this.R.avatar && this.R.avatar.view && this.R.particles && this.mode !== 'spectator') {
       const pp = P.prev || P.pos;
@@ -1173,4 +1180,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=77';
+import { rayBox } from './terrain.js?v=78';

@@ -44,16 +44,16 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { VANILLA, AVATAR_FS } from './vanilla.js?v=77';
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=77';
-import { lightDefines } from './materials.js?v=77';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=77';
-import { H, idx } from '../world-const.js?v=77';
-import { lightNear } from '../lightlevel.js?v=77';
-import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=77';
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=77';
-import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=77';
-import { setGlint } from './glint.js?v=77';
+import { VANILLA, AVATAR_FS } from './vanilla.js?v=78';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=78';
+import { lightDefines } from './materials.js?v=78';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=78';
+import { H, idx } from '../world-const.js?v=78';
+import { lightNear } from '../lightlevel.js?v=78';
+import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=78';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=78';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=78';
+import { setGlint } from './glint.js?v=78';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -64,7 +64,7 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=77', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=78', import.meta.url).href;
 // the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
 let defaultSkin = DEFAULT_SKIN;
 
@@ -134,10 +134,13 @@ function faceList(u, v, w, h, d) {
     [[0, -1, 0], [[-1, -1, 1], [1, -1, 1], [1, -1, -1], [-1, -1, -1]], [u + d + w, v, u + d + 2 * w, v + d]],             // bottom
   ];
 }
-function buildGeometry(slim, onlyParts) {
+// grow: the boxes of the skin's first layer only, each grown by that many pixels every way (the Glowing outline's shell)
+function buildGeometry(slim, onlyParts, grow) {
   const P = [], N = [], T = [], A = [], I = [];
-  for (const [part, layer, c, size, uv, inf] of boxList(slim)) {
+  for (const [part, layer, c, size, uv, inf0] of boxList(slim)) {
     if (onlyParts && onlyParts.indexOf(part) < 0) continue;
+    if (grow && layer !== 0) continue;
+    const inf = inf0 + (grow || 0);
     const [w, h, d] = size;
     const hx = w / 2 + inf, hy = h / 2 + inf, hz = d / 2 + inf;
     for (const [n, corners, r] of faceList(uv[0], uv[1], w, h, d)) {
@@ -241,6 +244,27 @@ void main() {
   // (from the eye, never viewMatrix on the place in the world: vanilla.js TERRAIN_VS)
   gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (w.xyz - cameraPosition), 1.0);
 }`;
+/* Glowing: the game draws an outline round the body, through walls too, and nothing over the body itself. Here the body's
+   shape (its boxes grown to cover armour) is marked in the stencil, through everything, and a shell a little bigger is
+   drawn in one flat colour only outside the mark. The shader looks that draw into their own target (High, RIP Computer)
+   have no stencil there, so the shell shows as a see-through silhouette instead. */
+const GLOW_VS = /* glsl */`
+uniform mat4 viewMatrix, projectionMatrix;
+uniform vec3 cameraPosition;
+uniform mat4 uParts[6];
+in vec3 position; in vec2 aPart;
+void main() {
+  vec4 w = uParts[int(aPart.x + 0.5)] * vec4(position, 1.0);
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (w.xyz - cameraPosition), 1.0);
+}`;
+const GLOW_FS = /* glsl */`
+uniform vec4 uGlow;
+out vec4 o;
+void main() { o = uGlow; }`;
+const GLOW_MASK = 1.1, GLOW_GROW = 1.9;
+let glowSeq = 0;
+// Leon Network hides an invisible player's armour too, as the Hypixel games do (net/hub.js sets it while you are there)
+export const invisLook = { hideArmor: false };
 const FS = /* glsl */`
 uniform sampler2D uSkin, uAmbient;
 uniform vec3 cameraPosition, uLightDir;
@@ -502,9 +526,25 @@ export class Avatar {
     this.armor = new THREE.Mesh(ageo, this.armorMat);
     this.armorShadow = new THREE.Mesh(ageo, this.armorShadowMat);
     this.wearing = false;
-    for (const m of [this.mesh, this.shadowMesh, this.arm, this.armor, this.armorShadow]) { m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false; }
+    // Glowing's outline and silhouette (set glowing to show them; invisible hides the body, as the game does)
+    this.uGlow = { value: new THREE.Vector4(1, 1, 1, 1) };
+    const gmat = extra => new THREE.RawShaderMaterial(Object.assign({ glslVersion: THREE.GLSL3, vertexShader: HEAD + GLOW_VS, fragmentShader: HEAD + GLOW_FS,
+      uniforms: { uParts: { value: this.parts }, uGlow: this.uGlow }, side: THREE.FrontSide, depthTest: false, depthWrite: false, transparent: true, stencilWrite: true }, extra));
+    // the mark first, then the outline (each avatar its own pair, so one's mark never hides another's outline)
+    this.glowBehind = new THREE.Mesh(buildGeometry(this.slim, null, GLOW_MASK), gmat({ colorWrite: false, stencilRef: 1, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp, stencilZFail: THREE.ReplaceStencilOp }));
+    this.glowRim = new THREE.Mesh(buildGeometry(this.slim, null, GLOW_GROW), gmat({ stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilWriteMask: 0, stencilZPass: THREE.KeepStencilOp }));
+    this.glowBehind.renderOrder = 100000 + glowSeq; this.glowRim.renderOrder = 100001 + glowSeq; glowSeq = (glowSeq + 2) % 100000;
+    this.glowBehind.onBeforeRender = r => {
+      const S = r.state.buffers.stencil; S.setMask(0xff); r.clearStencil();
+      const t = r.getRenderTarget(), lit = t && !t.stencilBuffer;
+      // (the full chain's colours go through the eye and the tone curve after: white there comes out grey, so it is sent brighter)
+      this.uGlow.value.set(lit ? 3 : 1, lit ? 3 : 1, lit ? 3 : 1, lit ? 0.7 : 1);
+    };
+    this.glowing = false; this.invisible = false;
+    for (const m of [this.mesh, this.shadowMesh, this.arm, this.armor, this.armorShadow, this.glowRim, this.glowBehind]) { m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false; }
     renderer.scene.add(this.mesh);
     renderer.scene.add(this.armor);
+    renderer.scene.add(this.glowRim); renderer.scene.add(this.glowBehind);
     // (only drawn while there are shadows: render/shadows.js; another player's model has no first-person arm)
     if (!remote) { renderer.shadowScene.add(this.shadowMesh); renderer.shadowScene.add(this.armorShadow); renderer.handScene.add(this.arm); }
     // what is in each hand (0 main, 1 off), in the model's hand in third person
@@ -542,7 +582,9 @@ export class Avatar {
       const old = this.mesh.geometry, oldArm = this.arm.geometry;
       this.mesh.geometry = this.shadowMesh.geometry = buildGeometry(s);
       this.arm.geometry = buildGeometry(s, [2, 3]);
-      old.dispose(); oldArm.dispose();
+      const oldGlow = [this.glowRim.geometry, this.glowBehind.geometry];
+      this.glowRim.geometry = buildGeometry(s, null, GLOW_GROW); this.glowBehind.geometry = buildGeometry(s, null, GLOW_MASK);
+      old.dispose(); oldArm.dispose(); for (const g of oldGlow) g.dispose();
     }
     this.tex.needsUpdate = true;
     this.ready = true;
@@ -763,11 +805,14 @@ export class Avatar {
     this.posed(P, al, feet);
     // (hidden: drawn as something else, a Prop Hunt disguise)
     const third = (this.view !== 0 || !!this.orbit) && this.ready && !this.hidden;
-    this.mesh.visible = third;
-    this.shadowMesh.visible = this.ready;
+    // (invisible: only what you wear and hold shows, as in the game; on Leon Network not what you wear either)
+    const armorShows = this.wearing && !(this.invisible && invisLook.hideArmor);
+    this.mesh.visible = third && !this.invisible;
+    this.shadowMesh.visible = this.ready && !this.invisible;
+    this.glowRim.visible = this.glowBehind.visible = third && this.glowing;
     // the armour, its pictures taken up again whenever another file has landed in the sheet
-    this.armor.visible = third && this.wearing;
-    this.armorShadow.visible = this.ready && this.wearing;
+    this.armor.visible = third && armorShows;
+    this.armorShadow.visible = this.ready && armorShows;
     if (this.wearing) { const sh = armorSheet(); if (sh.version !== this.armorV) { this.armorV = sh.version; this.armorTex.needsUpdate = true; } this.wingPose(al); }
     const lv = (Math.round(this.sky * 255) << 8) | Math.round(this.block * 255);
     for (const h of this.held) {
