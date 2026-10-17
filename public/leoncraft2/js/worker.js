@@ -16,21 +16,21 @@
    more than half of a worker's code, so they are loaded only when a world
    first needs them: the title screen's world (the first generator) starts
    without waiting for them. */
-import { Gen, pickBiome } from './worldgen.js?v=84';
-import { FlatGen } from './gen/flat.js?v=84';
-import { meshColumn, setColours } from './mesher.js?v=84';
-import { resolveTextures, BLOCKS } from './blocks.js?v=84';
-import { forgetLooks } from './models.js?v=84';
-import { forgetStates } from './sim/states.js?v=84';
-import { biomeColours } from './biomes.js?v=84';
-import { CH } from './world-const.js?v=84';
-import { worldStructures, structureMessage } from './struct/hook.js?v=84';
-import { keepChunk, readChunks, sweepChunks, keptCount, keepMesh, readMeshes } from './chunkcache.js?v=84';
-import { lc1Mixed, lc1Suffix } from './lc1/mixed.js?v=84';
+import { Gen, pickBiome } from './worldgen.js?v=85';
+import { FlatGen } from './gen/flat.js?v=85';
+import { meshColumn, setColours } from './mesher.js?v=85';
+import { resolveTextures, BLOCKS } from './blocks.js?v=85';
+import { forgetLooks } from './models.js?v=85';
+import { forgetStates } from './sim/states.js?v=85';
+import { biomeColours } from './biomes.js?v=85';
+import { CH } from './world-const.js?v=85';
+import { worldStructures, structureMessage } from './struct/hook.js?v=85';
+import { keepChunk, readChunks, sweepChunks, keptCount, keepMesh, readMeshes } from './chunkcache.js?v=85';
+import { lc1Mixed, lc1Suffix } from './lc1/mixed.js?v=85';
 
 let G = null;                 // { VanillaGen, NetherGen, EndGen } once loaded
 let loadingG = null;
-const loadGens = () => loadingG || (loadingG = Promise.all([import('./gen/vanillagen.js?v=84'), import('./gen/nether.js?v=84'), import('./gen/end.js?v=84')])
+const loadGens = () => loadingG || (loadingG = Promise.all([import('./gen/vanillagen.js?v=85'), import('./gen/nether.js?v=85'), import('./gen/end.js?v=85')])
   .then(([v, n, e]) => { G = { VanillaGen: v.VanillaGen, NetherGen: n.NetherGen, EndGen: e.EndGen }; }));
 // whether a world (init or practice) needs one of Minecraft's generators
 const needsG = m => m.dim === 'the_nether' || m.dim === 'the_end' || m.generator === 'vanilla';
@@ -156,7 +156,7 @@ function startPre(m) {
     });
   }
   // the texture list and the biome colours, for the mesher (the page asked for all three already: they come from the browser's cache)
-  const tex = f => new URL('../textures/' + f + '?v=84', import.meta.url);
+  const tex = f => new URL('../textures/' + f + '?v=85', import.meta.url);
   const pixels = f => fetch(tex(f)).then(r => r.blob()).then(b => createImageBitmap(b)).then(img => {
     const c = new OffscreenCanvas(img.width, img.height), g = c.getContext('2d', { willReadFrequently: true });
     g.drawImage(img, 0, 0);

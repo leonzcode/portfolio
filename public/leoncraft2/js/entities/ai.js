@@ -10,8 +10,8 @@
    ticks, a skeleton's shot every 20 ticks on Hard and 40 otherwise from up
    to 15 blocks, a creeper's fuse once you are within 3 blocks.
 --------------------------------------------------------------------------- */
-import { Goal, MOVE, LOOK, JUMP, TARGET, DEG, wrap, yawTo } from './entity.js?v=84';
-import { BLOCKS, FLUID, SOLID, B } from '../blocks.js?v=84';
+import { Goal, MOVE, LOOK, JUMP, TARGET, DEG, wrap, yawTo } from './entity.js?v=85';
+import { BLOCKS, FLUID, SOLID, B } from '../blocks.js?v=85';
 
 const R = () => Math.random();
 const RI = n => Math.floor(Math.random() * n);

@@ -10,7 +10,7 @@
    sculk when there was charge enough. Our own spreading, after the wiki: the
    game's charge cursors are not copied.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=84';
+import { B, BLOCKS } from '../blocks.js?v=85';
 
 const R = Math.random;
 const REPLACEABLE = new Uint8Array(4096);

@@ -11,16 +11,16 @@
    The models follow the game's proportions; every texture is painted here,
    pixel by pixel, in our own colours.
 --------------------------------------------------------------------------- */
-import { Mob, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=84';
-import { FloatGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, MeleeAttackGoal, NearestPlayerTargetGoal, HurtByTargetGoal, SwimGoal } from './ai.js?v=84';
-import { register, Monster, DYE_RGB } from './mobs.js?v=84';
-import { model } from './mobs2.js?v=84';
-import { POSE } from './mobmodels.js?v=84';
-import { addArt, SLOTS } from './mobart.js?v=84';
-import { B, BLOCKS, FLUID, SOLID, OPAQUE } from '../blocks.js?v=84';
-import { Y0 } from '../world-const.js?v=84';
-import { breakAt } from '../place.js?v=84';
-import { dropOf } from '../survival.js?v=84';
+import { Mob, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=85';
+import { FloatGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, MeleeAttackGoal, NearestPlayerTargetGoal, HurtByTargetGoal, SwimGoal } from './ai.js?v=85';
+import { register, Monster, DYE_RGB } from './mobs.js?v=85';
+import { model } from './mobs2.js?v=85';
+import { POSE } from './mobmodels.js?v=85';
+import { addArt, SLOTS } from './mobart.js?v=85';
+import { B, BLOCKS, FLUID, SOLID, OPAQUE } from '../blocks.js?v=85';
+import { Y0 } from '../world-const.js?v=85';
+import { breakAt } from '../place.js?v=85';
+import { dropOf } from '../survival.js?v=85';
 
 const PI = Math.PI;
 const R = () => Math.random();

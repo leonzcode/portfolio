@@ -21,9 +21,9 @@
      out.items   [{ id, count }]
      out.xp      experience points
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=84';
-import { I, ITEMS } from './items.js?v=84';
-import { canHarvest } from './mining.js?v=84';
+import { B, BLOCKS, FLUID } from './blocks.js?v=85';
+import { I, ITEMS } from './items.js?v=85';
+import { canHarvest } from './mining.js?v=85';
 
 const rnd = n => Math.floor(Math.random() * n);
 const between = (a, b) => a + rnd(b - a + 1);
