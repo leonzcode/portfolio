@@ -28,12 +28,12 @@
    flags: bits 0-1 ambient occlusion, 2-3 texture rotation, 4 overlay
    (grass block sides), 5 plant, 6 tinted.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=72';
-import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=72';
-import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=72';
-import { hash3 } from './noise.js?v=72';
-import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=72';
-import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=72';
+import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=73';
+import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=73';
+import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=73';
+import { hash3 } from './noise.js?v=73';
+import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=73';
+import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=73';
 
 const W = 48, A = W * W;          // the region: three chunks a side
 let colours = null;               // biome colours, set once at start
@@ -500,6 +500,9 @@ function build(job, ny, c0, c1, base) {
     for (const bx of list) {
       if (bx.hide) continue;            // there to be picked, drawn elsewhere (item frames)
       if (bx.q) {
+        // a strip the model lays on its cell's floor or ceiling (bars, models.js): not against a full block there, nor
+        // (a ceiling one) under more of the same block, whose floor strip is the same
+        if (bx.cull !== undefined) { const nbb = rb[i + NSTEP[bx.cull]]; if (OPAQUE[nbb] || (bx.cull === 2 && nbb === rb[i])) continue; }
         // a free quad: crossed planes and things lying flat
         for (let c = 0; c < 4; c++) { QP[c][0] = x + OFX + bx.q[c][0] / 16; QP[c][1] = y + OFY + bx.q[c][1] / 16; QP[c][2] = z + OFZ + bx.q[c][2] / 16; }
         const uv = bx.uv;

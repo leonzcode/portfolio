@@ -14,12 +14,13 @@
    One material per renderer; addGlint(mesh) gives a held mesh (the vertex
    format of render/blockmesh.js) a glint child sharing its geometry.
 --------------------------------------------------------------------------- */
-import { GLINT } from './armor.js?v=72';
+import { GLINT } from './armor.js?v=73';
 const THREE = window.THREE;
 
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray;\n`;
 const VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
+uniform vec3 cameraPosition;
 uniform vec3 uChunk;
 layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA;
 #define aPos vec4(aPos)
@@ -32,7 +33,7 @@ void main() {
   // (worked out in the same order as the terrain shader does it, materials.js: in another order the rounding
   // put a framed item's shimmer behind the item itself, by more than the depth nudge, so it hardly showed)
   vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0) + uChunk, 1.0);
-  gl_Position = projectionMatrix * viewMatrix * world;
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (world.xyz - cameraPosition), 1.0);
 }`;
 const FS = /* glsl */`
 uniform sampler2DArray uAlbedo;

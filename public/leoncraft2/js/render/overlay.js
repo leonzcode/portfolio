@@ -57,12 +57,17 @@ export class Overlay {
     if (key === this.key) return;
     this.key = key;
     const n = Math.min(MAX_BOXES, boxes.length), e = 0.002;
+    /* the corners from the block's own corner, the block's place on the mesh (three.js puts the two together in
+       doubles): written out in the world's numbers, far from the middle of the world the 0.002 grow was rounded
+       away and the frame took turns with the block's faces as the view turned */
+    this.outline.position.set(x, y, z); this.crack.position.set(x, y, z);
+    this.outline.updateMatrix(); this.crack.updateMatrix();
     const P = this.linePos;
     let k = 0;
     const v = (a, b, c) => { P[k++] = a; P[k++] = b; P[k++] = c; };
     for (let i = 0; i < n; i++) {
       const [a0, b0, c0, a1, b1, c1] = boxes[i];
-      const X0 = x + a0 - e, Y0 = y + b0 - e, Z0 = z + c0 - e, X1 = x + a1 + e, Y1 = y + b1 + e, Z1 = z + c1 + e;
+      const X0 = a0 - e, Y0 = b0 - e, Z0 = c0 - e, X1 = a1 + e, Y1 = b1 + e, Z1 = c1 + e;
       // the four edges round the bottom, the four round the top, and the four uprights
       v(X0, Y0, Z0); v(X1, Y0, Z0); v(X1, Y0, Z0); v(X1, Y0, Z1); v(X1, Y0, Z1); v(X0, Y0, Z1); v(X0, Y0, Z1); v(X0, Y0, Z0);
       v(X0, Y1, Z0); v(X1, Y1, Z0); v(X1, Y1, Z0); v(X1, Y1, Z1); v(X1, Y1, Z1); v(X0, Y1, Z1); v(X0, Y1, Z1); v(X0, Y1, Z0);
@@ -80,7 +85,7 @@ export class Overlay {
     const cv = (a, b, c, s, t) => { C[p++] = a; C[p++] = b; C[p++] = c; U[u++] = s; U[u++] = 1 - t; };
     for (let i = 0; i < n; i++) {
       const [a0, b0, c0, a1, b1, c1] = boxes[i];
-      const X0 = x + a0, Y0 = y + b0, Z0 = z + c0, X1 = x + a1, Y1 = y + b1, Z1 = z + c1;
+      const X0 = a0, Y0 = b0, Z0 = c0, X1 = a1, Y1 = b1, Z1 = c1;
       // +x, -x, +y, -y, +z, -z, wound to face outwards
       cv(X1, Y0, Z1, 1 - c1, b0); cv(X1, Y0, Z0, 1 - c0, b0); cv(X1, Y1, Z0, 1 - c0, b1); cv(X1, Y1, Z1, 1 - c1, b1);
       cv(X0, Y0, Z0, c0, b0); cv(X0, Y0, Z1, c1, b0); cv(X0, Y1, Z1, c1, b1); cv(X0, Y1, Z0, c0, b1);

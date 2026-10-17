@@ -44,16 +44,16 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { VANILLA, AVATAR_FS } from './vanilla.js?v=72';
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=72';
-import { lightDefines } from './materials.js?v=72';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=72';
-import { H, idx } from '../world-const.js?v=72';
-import { lightNear } from '../lightlevel.js?v=72';
-import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=72';
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=72';
-import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=72';
-import { setGlint } from './glint.js?v=72';
+import { VANILLA, AVATAR_FS } from './vanilla.js?v=73';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=73';
+import { lightDefines } from './materials.js?v=73';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=73';
+import { H, idx } from '../world-const.js?v=73';
+import { lightNear } from '../lightlevel.js?v=73';
+import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=73';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=73';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=73';
+import { setGlint } from './glint.js?v=73';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -64,7 +64,7 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=72', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=73', import.meta.url).href;
 // the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
 let defaultSkin = DEFAULT_SKIN;
 
@@ -205,6 +205,7 @@ export { ARMOR_OVERLAY };
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow;\n`;
 const VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
+uniform vec3 cameraPosition;
 uniform mat4 uParts[6];
 uniform int uShow;
 in vec3 position; in vec3 normal; in vec2 uv; in vec2 aPart;
@@ -237,7 +238,8 @@ void main() {
   vec4 w = M * vec4(position, 1.0);
   vWorld = w.xyz;
   vN = mat3(M) * normal;
-  gl_Position = projectionMatrix * viewMatrix * w;
+  // (from the eye, never viewMatrix on the place in the world: vanilla.js TERRAIN_VS)
+  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (w.xyz - cameraPosition), 1.0);
 }`;
 const FS = /* glsl */`
 uniform sampler2D uSkin, uAmbient;
