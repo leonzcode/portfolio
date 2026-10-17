@@ -9,8 +9,8 @@
    /review); Spectate joins the network with the request in hand
    (window.__lc2HubAction, sent by net/hub.js once the network says hello).
 --------------------------------------------------------------------------- */
-import { Screen, Button, WHITE, GREY } from './gui.js?v=83';
-import { mapRequests, mapReview } from '../net/net.js?v=83';
+import { Screen, Button, WHITE, GREY } from './gui.js?v=84';
+import { mapRequests, mapReview } from '../net/net.js?v=84';
 
 const PER_PAGE = 6;
 export class MapRequestsScreen extends Screen {
