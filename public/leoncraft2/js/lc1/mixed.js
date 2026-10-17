@@ -18,10 +18,10 @@
    The world's message carries lc1 = { seed, ow, ne, key } (genInfo); its
    key is in the world's name, so its chunks are cached apart (world.js).
 --------------------------------------------------------------------------- */
-import './lc1gen.js?v=74';
-import './lc1convert.js?v=74';
-import { B } from '../blocks.js?v=74';
-import { BIO } from '../biomes.js?v=74';
+import './lc1gen.js?v=75';
+import './lc1convert.js?v=75';
+import { B } from '../blocks.js?v=75';
+import { BIO } from '../biomes.js?v=75';
 
 const C = globalThis.LC1Convert, G = globalThis.LC1Gen;
 const VOL = 384 * 256;

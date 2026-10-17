@@ -14,27 +14,27 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=74';
-import { I } from '../items.js?v=74';
-import { POTIONS } from '../brewing.js?v=74';
-import { ChestScreen } from '../ui/containers.js?v=74';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=74';
-import { RemotePlayers, playerSize, F } from './players.js?v=74';
-import { register } from '../commands.js?v=74';
-import { Sound } from '../sound/sound.js?v=74';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=74';
-import { skinUrl } from '../ui/skins.js?v=74';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=74';
-import { blockGeometry } from '../render/blockmesh.js?v=74';
-import { lightNear } from '../lightlevel.js?v=74';
-import { setSkin as setOwnSkin } from '../render/avatar.js?v=74';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=75';
+import { I } from '../items.js?v=75';
+import { POTIONS } from '../brewing.js?v=75';
+import { ChestScreen } from '../ui/containers.js?v=75';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=75';
+import { RemotePlayers, playerSize, F } from './players.js?v=75';
+import { register } from '../commands.js?v=75';
+import { Sound } from '../sound/sound.js?v=75';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=75';
+import { skinUrl } from '../ui/skins.js?v=75';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=75';
+import { blockGeometry } from '../render/blockmesh.js?v=75';
+import { lightNear } from '../lightlevel.js?v=75';
+import { setSkin as setOwnSkin } from '../render/avatar.js?v=75';
 // each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
 const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard' };
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=74').then(m => {
+import('../adv/toast.js?v=75').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -540,6 +540,18 @@ export class Hub {
     //  front of a shop takes the hit)
     I2.down = b => { if (b === 0 && !I2.entityTarget && this.clickNpc()) return; if (b === 0) this.seekerSwing(I2); down(b); };
     I2.mayBreak = (x, y, z) => this.mayBreak(x, y, z);
+    // no dropping things anywhere on the network (but the Map Editor and /hubbuild): Q does nothing, and what is thrown
+    // out of a screen goes back into the inventory (an inventory that is full still spills what it cannot hold)
+    const H = game.hands, dropSel = H.dropSelected.bind(H), throwSt = H.throwStack.bind(H);
+    const noDrop = () => this.area !== 'edit' && !this.building, said = () => { if (this.t - (this.dropSaid === undefined ? -99 : this.dropSaid) > 20) { this.dropSaid = this.t; this.ctx.chat.add("§cYou can't drop items here!", 0xFF5555); } };
+    let giving = false;
+    H.dropSelected = all => { if (noDrop()) { said(); return; } dropSel(all); };
+    H.throwStack = st => {
+      if (!st || !noDrop() || giving) return throwSt(st);
+      giving = true;
+      try { game.inv.addStack(st); if (game.inv.changed) game.inv.changed(); } finally { giving = false; }
+      said();
+    };
     // TNT and fireballs break only what players put down (and SkyWars' map): the map's own blocks stand, so none drop
     BLAST_FILTER.fn = (x, y, z) => this.blastBreaks(x, y, z);
     BLAST_FILTER.noDrops = () => this.area === 'game' && this.gameKind !== 'skywars';
@@ -553,7 +565,7 @@ export class Hub {
     I2.mayPlace = (x, y, z, b) => this.mayPlace(x, y, z, false, b);
     // the lobby's temporary blocks go down even in adventure
     I2.adventurePlace = id => this.area === 'lobby' && id === idOf(TEMP_BLOCK);
-    this.unhook = () => { I2.useWith = use; I2.down = down; I2._breakTarget = brk; I2.mayBreak = null; I2.mayPlace = null; I2.adventurePlace = null; };
+    this.unhook = () => { H.dropSelected = dropSel; H.throwStack = throwSt; I2.useWith = use; I2.down = down; I2._breakTarget = brk; I2.mayBreak = null; I2.mayPlace = null; I2.adventurePlace = null; };
     // every change seen while a game is on (yours and everyone's): those may be broken again, the map may not
     const net = this.net, blocks = net.blocks.bind(net), local = net.local.bind(net);
     net.blocks = (d, e) => { if (this.area === 'game') for (let i = 0; i + 4 < e.length; i += 5) this.changed.add(e[i] + ',' + e[i + 1] + ',' + e[i + 2]); return blocks(d, e); };
@@ -1476,7 +1488,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=74', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=75', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1491,7 +1503,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=74', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=75', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1499,7 +1511,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=74', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=75', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 

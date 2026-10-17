@@ -17,19 +17,19 @@
    Everything is played with the game's own volumes and pitches (see the
    notes at each, from the Minecraft Wiki and the game's sounds.json).
 --------------------------------------------------------------------------- */
-import { Sound } from './sound.js?v=74';
-import { SoundPacks, MinecraftPack } from './packs.js?v=74';
-import { blockSound, doorSound, voice, spread } from './sfx.js?v=74';
-import { COVERS, INSIDE } from './blocksounds.js?v=74';
-import { Music, situation } from './music.js?v=74';
-import { Ambience } from './ambient.js?v=74';
-import { MobSounds } from './mobsounds.js?v=74';
-import { Captions } from './captions.js?v=74';
-import { MusicToast } from './toast.js?v=74';
-import { B, BLOCKS, FLUID } from '../blocks.js?v=74';
-import { ITEMS } from '../items.js?v=74';
-import { BIOMES } from '../biomes.js?v=74';
-import { setUiSound } from '../ui/gui.js?v=74';
+import { Sound } from './sound.js?v=75';
+import { SoundPacks, MinecraftPack } from './packs.js?v=75';
+import { blockSound, doorSound, voice, spread } from './sfx.js?v=75';
+import { COVERS, INSIDE } from './blocksounds.js?v=75';
+import { Music, situation } from './music.js?v=75';
+import { Ambience } from './ambient.js?v=75';
+import { MobSounds } from './mobsounds.js?v=75';
+import { Captions } from './captions.js?v=75';
+import { MusicToast } from './toast.js?v=75';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=75';
+import { ITEMS } from '../items.js?v=75';
+import { BIOMES } from '../biomes.js?v=75';
+import { setUiSound } from '../ui/gui.js?v=75';
 
 const R = Math.random;
 const amb = new Ambience();
