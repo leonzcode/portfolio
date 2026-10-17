@@ -20,16 +20,16 @@
 
    The player is the only owner there can be, so "tamed" means "yours".
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=81';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=82';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=81';
-import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=81';
-import { model } from './mobs2.js?v=81';
-import { addArt } from './mobart.js?v=81';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=81';
-import { use as useBlock } from '../place.js?v=81';
-import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf, STEW_EFFECTS } from '../items.js?v=81';
-import { MountScreen } from '../ui/containers.js?v=81';
+  MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=82';
+import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=82';
+import { model } from './mobs2.js?v=82';
+import { addArt } from './mobart.js?v=82';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=82';
+import { use as useBlock } from '../place.js?v=82';
+import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf, STEW_EFFECTS } from '../items.js?v=82';
+import { MountScreen } from '../ui/containers.js?v=82';
 
 // the stack in the player's hand (a mob's interact is told only the item's name), and a stack dropped where a mob is
 const heldStack = m => (m.inv && m.inv.slots[m.inv.selected]) || null;
