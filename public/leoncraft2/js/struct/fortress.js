@@ -11,8 +11,8 @@
    It is generated as data here; the Nether's generator calls applyPieces
    for its chunks once the dimension exists.
 --------------------------------------------------------------------------- */
-import { Box, Piece, Pieces, NORTH, EAST, SOUTH, WEST, HORIZONTAL } from './piece.js?v=75';
-import { largeFeature, JRand } from './rand.js?v=75';
+import { Box, Piece, Pieces, NORTH, EAST, SOUTH, WEST, HORIZONTAL } from './piece.js?v=76';
+import { largeFeature, JRand } from './rand.js?v=76';
 
 const NB = 'nether_bricks', FENCE = 'nether_brick_fence', AIR = 'air';
 const okBox = b => b && b.y0 > 10;
