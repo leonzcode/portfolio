@@ -28,12 +28,12 @@
    flags: bits 0-1 ambient occlusion, 2-3 texture rotation, 4 overlay
    (grass block sides), 5 plant, 6 tinted.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=97';
-import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=97';
-import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=97';
-import { hash3 } from './noise.js?v=97';
-import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=97';
-import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=97';
+import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=98';
+import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=98';
+import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=98';
+import { hash3 } from './noise.js?v=98';
+import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=98';
+import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=98';
 
 const W = 48, A = W * W;          // the region: three chunks a side
 let colours = null;               // biome colours, set once at start
@@ -402,15 +402,17 @@ function build(job, ny, c0, c1, base) {
     buf.quad(v0, flip);
   }
 
-  /* ---- a free quad (plants, torches, pads): corners given outright ---- */
-  function quad(buf, pts, uvs, layer, nIdx, flags, tint, wave, rnd, sl, bl, wd) {
+  /* ---- a free quad (plants, torches, pads): corners given outright ----
+     ex goes in the tint's alpha, free otherwise (255): what RIP Computer's shaders need of a block beyond its random
+     number (a hanging plant: how many blocks of it hang above, blocks.js hang) */
+  function quad(buf, pts, uvs, layer, nIdx, flags, tint, wave, rnd, sl, bl, wd, ex = 255) {
     const v0 = buf.n;
     for (let c = 0; c < 4; c++) {
       const k = buf.vert(), ar = buf.arrs, P = ar[0], Aa = ar[1], L = ar[2], C = ar[3];
       P[k * 4] = Math.round((pts[c][0] + 8) * 32); P[k * 4 + 1] = Math.round(pts[c][1] * 32); P[k * 4 + 2] = Math.round((pts[c][2] + 8) * 32); P[k * 4 + 3] = layer;
       Aa[k * 4] = uvs[c][0]; Aa[k * 4 + 1] = uvs[c][1]; Aa[k * 4 + 2] = nIdx + wave * 8; Aa[k * 4 + 3] = 3 | flags;
       L[k * 4] = sl * 17; L[k * 4 + 1] = bl * 17; L[k * 4 + 2] = wd * 17; L[k * 4 + 3] = rnd;
-      C[k * 4] = tint >> 16; C[k * 4 + 1] = (tint >> 8) & 255; C[k * 4 + 2] = tint & 255; C[k * 4 + 3] = 255;
+      C[k * 4] = tint >> 16; C[k * 4 + 1] = (tint >> 8) & 255; C[k * 4 + 2] = tint & 255; C[k * 4 + 3] = ex;
     }
     buf.quad(v0, false);
   }
@@ -423,6 +425,10 @@ function build(job, ny, c0, c1, base) {
   const BAO = [0, 0, 0, 0], BLS = [0, 0, 0, 0], BLB = [0, 0, 0, 0], PB = [0, 0, 0];
   // a model block the game moves about in its block (models.js blockOffset): set by drawModel while it draws
   let OFX = 0, OFY = 0, OFZ = 0;
+  /* what RIP Computer moves of a model's boxes, set by drawList for each box: BW its wave (a hanging lantern 16, a
+     banner's flag 17; 0 for the rest, as every box face had); FLAG the flag's box, whose corners carry how far below
+     its top they are in sixteenths, + 32 when it faces north or south (FLAGZ), + 64 */
+  let BW = 0, FLAG = null, FLAGZ = 0;
   function boxFace(buf, f, x, y, z, i, bx, layer, uvr, flags, tint, rnd, edge) {
     const F = FACES[f];
     const fi = edge ? i + NSTEP[f] : i;
@@ -466,9 +472,10 @@ function build(job, ny, c0, c1, base) {
       if (c === 0) a0 = aq; else if (c === 1) a1 = aq; else if (c === 2) a2 = aq; else a3 = aq;
       const k = buf.vert(), ar = buf.arrs, P = ar[0], Aa = ar[1], L = ar[2], C = ar[3];
       P[k * 4] = Math.round((x + OFX + PB[0] / 16 + 8) * 32); P[k * 4 + 1] = Math.round((y + OFY + PB[1] / 16) * 32); P[k * 4 + 2] = Math.round((z + OFZ + PB[2] / 16 + 8) * 32); P[k * 4 + 3] = layer;
-      Aa[k * 4] = tu; Aa[k * 4 + 1] = tv; Aa[k * 4 + 2] = f; Aa[k * 4 + 3] = aq | flags;
+      Aa[k * 4] = tu; Aa[k * 4 + 1] = tv; Aa[k * 4 + 2] = f + BW * 8; Aa[k * 4 + 3] = aq | flags;
       L[k * 4] = Math.round(ls * 17); L[k * 4 + 1] = Math.round(lb * 17); L[k * 4 + 2] = wd * 17; L[k * 4 + 3] = rnd;
-      C[k * 4] = tint >> 16; C[k * 4 + 1] = (tint >> 8) & 255; C[k * 4 + 2] = tint & 255; C[k * 4 + 3] = 255;
+      C[k * 4] = tint >> 16; C[k * 4 + 1] = (tint >> 8) & 255; C[k * 4 + 2] = tint & 255;
+      C[k * 4 + 3] = FLAG ? (Math.max(0, Math.min(31, Math.round(FLAG.t[1] - PB[1]))) | FLAGZ | 64) : 255;
     }
     /* a box given from a far corner to a near one along an odd number of axes (a door hung on its other side, a
        turned model) has its faces wound inside out: the second and fourth corners swapped, it faces out again
@@ -491,14 +498,18 @@ function build(job, ny, c0, c1, base) {
     if (!list) return;
     const off = d.offset ? blockOffset(d, wx0 + x, wz0 + z) : null;
     if (off) { OFX = off[0]; OFY = off[1]; OFZ = off[2]; }
-    try { drawList(list, x, y, z, i, d, k2, rnd); } finally { OFX = OFY = OFZ = 0; }
+    try { drawList(list, x, y, z, i, d, k2, rnd); } finally { OFX = OFY = OFZ = 0; BW = 0; FLAG = null; }
   }
   function drawList(list, x, y, z, i, d, k2, rnd) {
     const tint = tintFor(d, k2), tinted = d.tint ? 64 : 0;
     const buf = d.pass === 'translucent' ? out.translucent : d.pass === 'opaque' ? out.opaque : out.cutout;
     const small = SMALL[d.id];
+    // (RIP Computer: a lantern hanging from the block above swings about where it hangs, blocks.js swing)
+    const swing = d.swing && (rm[i] & 1) ? 16 : 0;
     for (const bx of list) {
       if (bx.hide) continue;            // there to be picked, drawn elsewhere (item frames)
+      BW = swing || (bx.sway ? 17 : 0); FLAG = bx.sway ? bx : null;
+      if (FLAG) FLAGZ = Math.abs(bx.t[2] - bx.f[2]) < Math.abs(bx.t[0] - bx.f[0]) ? 32 : 0;
       if (bx.q) {
         // a strip the model lays on its cell's floor or ceiling (bars, models.js): not against a full block there, nor
         // (a ceiling one) under more of the same block, whose floor strip is the same
@@ -514,7 +525,7 @@ function build(job, ny, c0, c1, base) {
           const ax = QP[1][0] - QP[0][0], az = QP[1][2] - QP[0][2], bx2 = QP[2][0] - QP[0][0], bz = QP[2][2] - QP[0][2];
           if (az * bx2 - ax * bz < 0) { let t = QP[1]; QP[1] = QP[3]; QP[3] = t; t = QUV[1]; QUV[1] = QUV[3]; QUV[3] = t; }
         }
-        quad(small ? out.plants : out.cutout, QP, QUV, bx.layer, 2, (bx.up ? 0 : 32) | (bx.plain ? 0 : tinted), tint, d.wave || 0, rnd, sky[i], blk[i], waterDepth(i, y));
+        quad(small ? out.plants : out.cutout, QP, QUV, bx.layer, 2, (bx.up ? 0 : 32) | (bx.plain ? 0 : tinted), tint, swing || d.wave || 0, rnd, sky[i], blk[i], waterDepth(i, y));
         continue;
       }
       const faces = bx.faces || d.faces;
@@ -721,8 +732,16 @@ function build(job, ny, c0, c1, base) {
             r = 0;
             while (r < 40 && y - r > 0 && (BLOCKS[at(y - r - 1)] || {}).stalk === d.stalk) r++;
           }
-          quad(out.plants, pts1, uvs, layer, 2, 32 | tinted, tint, wave, r, sl, bl, wd);
-          quad(out.plants, pts2, uvs, layer, 2, 32 | tinted, tint, wave, r, sl, bl, wd);
+          // (a hanging plant's block carries how many blocks of the same strand hang above it, so the shaders swing the
+          // whole strand from where it hangs: blocks.js hang; read from the chunk itself, which has every row)
+          let ex = 255;
+          if (d.hang) {
+            const cb = chunks[4] && chunks[4].blocks, at = yy => (cb ? cb[(yy << 8) | k2] : rb[yy * A + (16 + z) * W + 16 + x]);
+            ex = 0;
+            while (ex < 40 && y + ex + 1 < ny && (BLOCKS[at(y + ex + 1)] || {}).hang === d.hang) ex++;
+          }
+          quad(out.plants, pts1, uvs, layer, 2, 32 | tinted, tint, wave, r, sl, bl, wd, ex);
+          quad(out.plants, pts2, uvs, layer, 2, 32 | tinted, tint, wave, r, sl, bl, wd, ex);
           continue;
         }
         if (d.shape === 'torch') {

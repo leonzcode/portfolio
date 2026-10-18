@@ -14,23 +14,23 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=97';
-import { I, ITEMS, maxStack } from '../items.js?v=97';
-import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=97';
-import { makeLobbyCos } from './lobbycos.js?v=97';
-import { POTIONS } from '../brewing.js?v=97';
-import { creativeItems, entryId, HEADS } from '../ui/inventory.js?v=97';
-import { DIM_IDS } from '../dims.js?v=97';
-import { ChestScreen } from '../ui/containers.js?v=97';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=97';
-import { RemotePlayers, playerSize, F } from './players.js?v=97';
-import { register } from '../commands.js?v=97';
-import { Sound } from '../sound/sound.js?v=97';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=97';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64, pickAtCentre } from '../ui/paint.js?v=97';
-import { blockGeometry } from '../render/blockmesh.js?v=97';
-import { lightNear } from '../lightlevel.js?v=97';
-import { setSkin as setOwnSkin, invisLook, capeRule, getSkinSettings } from '../render/avatar.js?v=97';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=98';
+import { I, ITEMS, maxStack } from '../items.js?v=98';
+import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=98';
+import { makeLobbyCos } from './lobbycos.js?v=98';
+import { POTIONS } from '../brewing.js?v=98';
+import { creativeItems, entryId, HEADS } from '../ui/inventory.js?v=98';
+import { DIM_IDS } from '../dims.js?v=98';
+import { ChestScreen } from '../ui/containers.js?v=98';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=98';
+import { RemotePlayers, playerSize, F } from './players.js?v=98';
+import { register, commandDef } from '../commands.js?v=98';
+import { Sound } from '../sound/sound.js?v=98';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=98';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64, pickAtCentre } from '../ui/paint.js?v=98';
+import { blockGeometry } from '../render/blockmesh.js?v=98';
+import { lightNear } from '../lightlevel.js?v=98';
+import { setSkin as setOwnSkin, invisLook, capeRule, getSkinSettings } from '../render/avatar.js?v=98';
 // the Profile item's head wears your own skin (ui/inventory.js drawHead)
 HEADS.self = () => getSkinSettings().skin;
 // each game's person on the stand wears its own skin for the game: our own 64 x 64 skins, drawn in code by
@@ -38,12 +38,12 @@ HEADS.self = () => getSkinSettings().skin;
 // a hider's own body while they watch (watchFrame), drawn on their page as a stand-in; the Spectate item's name
 const SPEC_BODY = -3001, WATCH_NAME = '§dSpectate §7- Right Click (or L) to leave your body and watch the others';
 const NPC_SKIN = new Set(['chameleon', 'pillars', 'bedwars', 'skywars', 'deathswap', 'duels', 'prophunt', 'murder', 'tntrun', 'spleef', 'bridger', 'buildbattle']);
-const npcSkinUrl = game => new URL('../../textures/skin/npc/' + game + '.png?v=97', import.meta.url).href;
+const npcSkinUrl = game => new URL('../../textures/skin/npc/' + game + '.png?v=98', import.meta.url).href;
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=97').then(m => {
+import('../adv/toast.js?v=98').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -177,7 +177,7 @@ class MenuScreen extends ChestScreen {
     const s = this.slotAt(mx, my);
     if (s && s.kind === 'box') {
       const act = this.acts[s.i];
-      if (act && !this.inv.carried) { act(); this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); this.inv.changed(); }
+      if (act && !this.inv.carried) { act(button); this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); this.inv.changed(); }
       return true;
     }
     return super.mouseClicked(mx, my, button);
@@ -406,21 +406,54 @@ function editorEntry(menu, hub, game, slot) {
   st.name = '§aMap Editor';
   menu.put(slot, st, ['§aMap Editor', '§7Make your own maps for this game,', '§7share them with your building team,', '§7and send them to be approved', '§7for the vote.', '', '§eClick to open!'], () => hub.send({ k: 'editor', game }));
 }
+// a time gone by, short: just now, 12 min ago, 3 h ago, 2 days ago
+const ago = t => { const s = Math.max(0, (Date.now() - t) / 1000); return s < 90 ? 'just now' : s < 5400 ? Math.round(s / 60) + ' min ago' : s < 129600 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' days ago'; };
+// a list of maps 28 to a page, with arrows in the bottom corners when there is more than one page
+function mapPage(menu, maps) {
+  const pages = Math.max(1, Math.ceil(maps.length / 28));
+  menu.page = Math.max(0, Math.min(pages - 1, menu.page | 0));
+  const prev = stack('arrow'), next = stack('arrow');
+  if (prev && menu.page > 0) { prev.name = '§aPrevious Page'; menu.put(45, prev, ['§aPrevious Page', '§7Page ' + menu.page + ' of ' + pages], () => { menu.page--; }); }
+  if (next && menu.page < pages - 1) { next.name = '§aNext Page'; menu.put(53, next, ['§aNext Page', '§7Page ' + (menu.page + 2) + ' of ' + pages], () => { menu.page++; }); }
+  return maps.slice(menu.page * 28, menu.page * 28 + 28);
+}
+// a map being built: one not in the vote yet (a draft, waiting or denied), or one somebody is in the editor on now
+const beingBuilt = m => (m.now && m.now.length > 0) || (m.custom && m.status !== 'approved');
 class EditorMenu extends MenuScreen {
   constructor(hub, game, maps, staffList, canMake) { super(hub, 'Map Editor'); this.game = game; this.maps = maps || []; this.staffList = !!staffList; this.canMake = canMake !== false; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); }
   fillBox() {
-    const hub = this.hub, maps = sortMaps(this.maps || [], hub.sortMode);
-    maps.slice(0, 28).forEach((m, i) => {
+    const hub = this.hub, all = sortMaps(this.maps || [], hub.sortMode);
+    // (staff see every map, the ones being built first, unapproved and in progress, each part in the chosen order;
+    //  or only those)
+    const built = this.staffList ? all.filter(beingBuilt) : [], only = this.staffList && hub.editOnly;
+    const maps = !this.staffList ? all : only ? built : built.concat(all.filter(m => !beingBuilt(m)));
+    mapPage(this, maps).forEach((m, i) => {
       const st = stack(m.custom ? 'map' : 'filled_map') || stack('paper');
       if (!st) return;
       st.name = '§a' + m.name;
       const tip = ['§a' + m.name, '§7by §f' + m.by, m.custom ? STATUS[m.status] || '' : '§7Leonpixel\'s own (staff only)', likes(m)];
       if (m.custom && m.editors && m.editors.length) tip.push('§7Team: §f' + m.editors.slice(0, 4).join(', ') + (m.editors.length > 4 ? '...' : ''));
+      if (m.now && m.now.length) { st.ench = { unbreaking: 1 }; tip.push('§aBuilding now: §f' + m.now.slice(0, 4).join(', ') + (m.now.length > 4 ? '...' : '')); }
+      if (m.custom && m.changed) tip.push('§7Last changed ' + ago(m.changed));
       tip.push('', '§eClick to edit!');
-      this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, tip, () => { hub.send({ k: 'edit', game: this.game, id: m.id }); hub.closeScreens(); });
+      if (this.staffList) tip.push('§eRight Click to look round it!');
+      this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, tip, b => {
+        hub.send({ k: b === 2 && this.staffList ? 'mapspectate' : 'edit', game: this.game, id: m.id }); hub.closeScreens();
+      });
     });
-    if (!maps.length) { const st = stack('barrier'); if (st) { st.name = '§7No maps yet'; this.put(22, st, ['§7No maps yet', '§7Make one with Create New Map,', '§7or ask to help build someone else\'s.'], null); } }
+    if (!maps.length) {
+      const st = stack('barrier');
+      if (st) { st.name = only ? '§7No maps being built' : '§7No maps yet'; this.put(22, st, only ? ['§7No maps being built', '§7Every players\' map is in the vote,', '§7and nobody is building one now.'] : ['§7No maps yet', '§7Make one with Create New Map,', '§7or ask to help build someone else\'s.'], null); }
+    }
     sortButton(this, 47);
+    if (this.staffList) {
+      const f = stack(only ? 'brick' : 'bricks');
+      if (f) {
+        const n = built.length;
+        f.name = '§eShow: §f' + (only ? 'Being Built' : 'All Maps');
+        this.put(48, f, ['§eShow: §f' + (only ? 'Being Built' : 'All Maps'), '', (only ? '§7  ' : '§a▶ ') + 'All Maps §8(' + all.length + ')', (only ? '§a▶ ' : '§7  ') + 'Being Built §8(' + n + ')', '§8Drafts, waiting, denied, and any', '§8map someone is in the editor on now.', '', '§eClick to change!'], () => { hub.editOnly = !only; this.page = 0; });
+      }
+    }
     const nw = stack('anvil');
     if (nw && this.canMake) { nw.name = '§aCreate New Map'; this.put(49, nw, ['§aCreate New Map', '§7Starts as a flat field of grass.', '§7A mod or an admin approves it', '§7before it goes in the vote.', '', '§eClick to make one!'], () => { hub.send({ k: 'newmap', game: this.game }); hub.closeScreens(); }); }
     const ob = stack('compass');
@@ -432,7 +465,7 @@ class BrowseMenu extends MenuScreen {
   constructor(hub, game, maps) { super(hub, 'Other Players\' Maps'); this.game = game; this.maps = maps || []; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); }
   fillBox() {
     const hub = this.hub, maps = sortMaps(this.maps || [], hub.sortMode);
-    maps.slice(0, 28).forEach((m, i) => {
+    mapPage(this, maps).forEach((m, i) => {
       const st = stack('map') || stack('paper');
       if (!st) return;
       st.name = '§a' + m.name;
@@ -910,6 +943,8 @@ export class Hub {
       case 'editmaps': { const cur = this.ctx.gui.screen, E = new EditorMenu(this, m.game, m.maps, m.staff, m.canMake); if (cur instanceof MenuScreen) { E.hub = this; this.ctx.gui.replace(E); } else this.openScreen(E); return; }
       case 'where': {
         this.area = m.area; this.floor = m.floor; this.spawn = m.spawn; this.bounds = m.bounds || null;
+        // (the Map Editor: whether you may /fill there, the map's maker and staff only)
+        this.mayFill = m.area === 'edit' && !!m.fill;
         // (told where we are while the world is still loading, coming back from Death Swap's world say, far from where
         // this page thought it was: go there at once, so the loading carries on round the right place; the server's
         // own move after it is then a short one, never a second long trip racing the first)
@@ -2139,7 +2174,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=97', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=98', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -2154,7 +2189,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=97', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=98', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -2162,7 +2197,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=97', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=98', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -2173,7 +2208,7 @@ export class Hub {
     this.moving = true;
     const gui = this.ctx.gui, hooks = gui.hooks || {};
     this.ctx.chat.add('§7Sending you to ' + (id === 'hub' ? 'Leonpixel' : 'the game world') + '...', 0xFFFFFF);
-    const go = () => import('../ui/multiplayer.js?v=97').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
+    const go = () => import('../ui/multiplayer.js?v=98').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
     Promise.resolve(hooks.quitToTitle ? hooks.quitToTitle() : null).then(go, go);
   }
 
@@ -2428,6 +2463,23 @@ register('mapapprove', { always: true, usage: '', run(args, ctx) { onHub(ctx, h 
 register('mapdeny', { always: true, usage: '[reason]', run(args, ctx) { onHub(ctx, h => h.send({ k: 'mapreview', ok: false, why: args.join(' ') })); } });
 register('shout', { always: true, usage: '<message>', run(args, ctx) { onHub(ctx, h => h.send({ k: 'shout', text: args.join(' ') })); } });
 register('hubbuild', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'build' })); } });
+/* /fill: anyone with commands as before; on Leonpixel also the maker of the map open in the Map Editor (and staff),
+   only inside that map's plot (the server says who may, where.fill, and takes the changes as it takes any there) */
+const FILL = commandDef('fill');
+const fillHere = ctx => !!(active && active.game === ctx.game && active.area === 'edit' && active.mayFill && active.bounds);
+if (FILL) register('fill', Object.assign({}, FILL, {
+  always: true,
+  run(args, ctx) {
+    if (ctx.cheats) return FILL.run(args, ctx);
+    if (!fillHere(ctx)) { ctx.say('You do not have permission to use this command', 0xFF5555); return; }
+    const b = active.bounds, c = Object.create(ctx);
+    c.fillLimit = (x0, y0, z0, x1, y1, z1) => {
+      const inX = Math.abs(x0 + 0.5 - b.x) <= b.reach && Math.abs(x1 + 0.5 - b.x) <= b.reach, inZ = Math.abs(z0 + 0.5 - b.z) <= b.reach && Math.abs(z1 + 0.5 - b.z) <= b.reach;
+      return inX && inZ && y0 >= b.bottom && y1 <= b.top ? '' : 'That area is outside your map. You can only fill inside its plot';
+    };
+    return FILL.run(args, c);
+  },
+}));
 // parties, as the network has them: /party invite <player> (or just /party <player>), accept, leave, list, kick, transfer, warp, disband; /pc talks to it
 const PARTY_SUBS = ['invite', 'accept', 'leave', 'list', 'kick', 'transfer', 'warp', 'disband', 'help'];
 register('party', {

@@ -15,10 +15,10 @@
      light   block light it gives off (0-15)
      opacity how much sky light it takes away (15 = all, leaves and water 1)
 --------------------------------------------------------------------------- */
-import { DATA } from './blockdata.js?v=97';
-import { MODEL_SHAPES, OFFSET_XZ, OFFSET_XYZ } from './models.js?v=97';
-import { SHELF_TEX } from './shelfmushroom.js?v=97';
-import { dimBlocks } from './dim/blocks.js?v=97';
+import { DATA } from './blockdata.js?v=98';
+import { MODEL_SHAPES, OFFSET_XZ, OFFSET_XYZ } from './models.js?v=98';
+import { SHELF_TEX } from './shelfmushroom.js?v=98';
+import { dimBlocks } from './dim/blocks.js?v=98';
 
 export const AIR = 0;
 export const MAX_ID = 4096;   // block ids are 16-bit in the world; this many fit the lookup tables
@@ -217,6 +217,20 @@ for (const [n, k] of [['kelp', 1], ['kelp_plant', 1], ['seagrass', 2], ['tall_se
   if (B[n] !== undefined) BLOCKS[B[n]].stalk = k;
 if (B.sugar_cane !== undefined) BLOCKS[B.sugar_cane].wave = 9;
 if (B.cobweb !== undefined) BLOCKS[B.cobweb].wave = 10;
+/* And the rest that gives way to a body there, each still at the other levels as before: hanging plants swing from
+   where they hang (11; hang: which kind, the mesher counting how many blocks of it hang above each block, so a whole
+   strand swings from its top; at the other levels 11 is the leaves' old sway, as these had), a dead bush (13) and
+   mushrooms (14) give a little, twisting vines bend from their foot (15, a stalk), hanging lanterns swing about
+   where they hang (swing: the mesher gives a hanging one 16), banners' flags wave (models.js sway, 17) and azaleas
+   rustle like leaves (18). */
+for (const [n, k] of [['weeping_vines', 1], ['weeping_vines_plant', 1], ['cave_vines', 2], ['cave_vines_plant', 2], ['hanging_roots', 3], ['pale_hanging_moss', 4], ['spore_blossom', 5]])
+  if (B[n] !== undefined) Object.assign(BLOCKS[B[n]], { wave: 11, hang: k });
+for (const n of ['twisting_vines', 'twisting_vines_plant']) if (B[n] !== undefined) Object.assign(BLOCKS[B[n]], { wave: 15, stalk: 4 });
+if (B.dead_bush !== undefined) BLOCKS[B.dead_bush].wave = 13;
+for (const n of ['brown_mushroom', 'red_mushroom']) if (B[n] !== undefined) BLOCKS[B[n]].wave = 14;
+for (const n of ['azalea', 'flowering_azalea']) if (B[n] !== undefined) BLOCKS[B[n]].wave = 18;
+// (by name too: the bell has the lantern's shape until its own model is given it further down)
+for (const d of BLOCKS) if (d && d.shape === 'lantern' && /lantern$/.test(d.name)) d.swing = 1;
 for (const d of BLOCKS) {
   if (!d) continue;
   if (d.display === undefined) d.display = d.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());

@@ -248,12 +248,54 @@ vec2 swimPush(vec3 p, float h) {
   }
   return off;
 }
-vec3 windOffset(vec3 p, int wave, float v, float sky, float rnd) {
+/* RIP Computer: a body's push on a point of a plant, as pushAway but from the line up the middle of the body, from its
+   feet to about its head (uPush is at the knees), so a tall plant's stem is parted by the legs and a sunflower's head
+   by the hips */
+vec2 bodyPush(vec3 p) {
+  vec2 off = vec2(0.0);
+  for (int i = 0; i < 8; i++) {
+    vec4 P = uPush[i];
+    if (P.w <= 0.0) continue;
+    float s = min(P.w, 1.2);
+    vec3 d = vec3(p.x - P.x, p.y - clamp(p.y, P.y - 0.45 * s, P.y + 1.35 * s), p.z - P.z) / P.w;
+    off += 6.0 * P.w * d.xz * exp2(-length(d * vec3(6.0, 2.0, 6.0)));
+  }
+  return off;
+}
+// how near the nearest body is (1 touching, about half at reach blocks further off)
+float bodyNear(vec3 p, float reach) {
+  float n = 0.0;
+  for (int i = 0; i < 8; i++) {
+    vec4 P = uPush[i];
+    if (P.w <= 0.0) continue;
+    float s = min(P.w, 1.2);
+    vec3 d = vec3(p.x - P.x, p.y - clamp(p.y, P.y - 0.45 * s, P.y + 1.35 * s), p.z - P.z);
+    float r = max(0.0, length(d) - 0.3 * P.w) / reach;
+    n = max(n, exp2(-r * r));
+  }
+  return n;
+}
+// leaves shaken by a body brushing them: a quick small tremble of each corner (the same at a corner two blocks share)
+vec3 rustle(vec3 p, float near) {
+  float t = uTime;
+  return vec3(sin(t * 13.0 + dot(p, vec3(7.1, 5.3, 6.7))), 0.5 * sin(t * 11.0 + dot(p, vec3(4.3, 8.9, 3.1))), cos(t * 12.0 + dot(p, vec3(6.1, 3.7, 7.9)))) * 0.035 * near;
+}
+// the trampled field's lean at a point: pressed away from where it was trodden, and swung back past upright after
+vec2 trampleLean(vec3 p) {
+  float tr = trampleAt(p.xz);
+  if (abs(tr) < 0.01) return vec2(0.0);
+  float e = 0.35;
+  vec2 grad = vec2(trampleAt(p.xz + vec2(e, 0.0)) - trampleAt(p.xz - vec2(e, 0.0)), trampleAt(p.xz + vec2(0.0, e)) - trampleAt(p.xz - vec2(0.0, e)));
+  return -grad * sign(tr) / max(length(grad), 0.05) * tr;
+}
+// ex: what the mesher puts in the tint's alpha (255: nothing; a hanging plant: how many blocks of it hang above; a
+// banner's flag: how far below its top, in sixteenths, + 32 facing north or south, + 64)
+vec3 windOffset(vec3 p, int wave, float v, float sky, float rnd, float ex) {
 #ifdef NO_WIND
   return vec3(0.0);
 #else
   if (wave == 0) return vec3(0.0);
-  float amp = wave == 2 ? uWave.y : uWave.x;
+  float amp = wave == 2 || wave == 11 || wave == 18 ? uWave.y : uWave.x;
   if (amp <= 0.0) return vec3(0.0);
   float w;
   if (wave == 1 || wave == 4) w = 1.0 - v;
@@ -269,8 +311,57 @@ vec3 windOffset(vec3 p, int wave, float v, float sky, float rnd) {
   vec3 q = p * 1.3 + t * vec3(2.1, 2.7, 1.9) + rnd * TAU;
   vec3 flutter = vec3(sin(q.x) + 0.5 * sin(2.1 * q.z + 1.0), sin(q.y * 1.3) * 0.5, sin(q.z) + 0.5 * sin(1.9 * q.x));
   vec3 off;
-  if (wave == 2) {
+  if (wave == 2 || (wave == 11 && uRealWind <= 0.0) || wave == 18) {
+    // (18, an azalea, moves only in RIP Computer; 11, a hanging plant, has the leaves' sway elsewhere, as it had)
+    if (uRealWind <= 0.0 && wave == 18) return vec3(0.0);
     off = uRealWind > 0.0 ? photonWind(p, strength * 0.25 * uRealWind * 0.5, false) : (vec3(wd.x, 0.0, wd.y) * g * 0.07 + flutter * 0.035) * strength;
+    // RIP Computer: leaves and wall vines (and an azalea) shaken by anyone brushing past, and giving a little
+    if (uRealWind > 0.0) { float n = bodyNear(p, 1.1); if (n > 0.01) off += rustle(p, n) + vec3(bodyPush(p), 0.0).xzy * 0.12; }
+  } else if (wave == 11) {
+    // RIP Computer: a hanging plant (weeping and cave vines, hanging roots, pale hanging moss, a spore blossom), fixed
+    // where it hangs and freer the further down (h: blocks below the block it hangs from), swinging in the wind and
+    // pushed aside by anyone walking into it
+    float h = (ex < 254.5 ? ex : 0.0) + v;
+    float bend = 1.0 - exp(-h / 1.4);
+    off = photonWind(p, strength * 0.25 * uRealWind * 0.5, false) * bend * 1.6;
+    off.xz += bodyPush(p) * bend * 1.1;
+    off += rustle(p, bodyNear(p, 0.8)) * bend;
+  } else if (wave == 13 || wave == 14) {
+    // RIP Computer: a dead bush (13) and a mushroom (14), stiffer than grass: rooted at the bottom, giving a little to
+    // a body or a foot, the bush in the wind too
+    if (uRealWind <= 0.0) return vec3(0.0);
+    float w1 = 1.0 - v, k = wave == 13 ? 0.5 : 0.22;
+    off = wave == 13 ? photonWind(p, strength * 0.25 * uRealWind, false) * w1 * 0.5 : vec3(0.0);
+    off.xz += (bodyPush(p) + trampleLean(p) * 0.42) * w1 * k;
+  } else if (wave == 15) {
+    // RIP Computer: twisting vines, a strand standing up from its foot (rnd: how many blocks of it are under this one),
+    // bending from there in the wind and away from a body
+    if (uRealWind <= 0.0) return vec3(0.0);
+    float h = rnd * 255.0 + 1.0 - v;
+    float bend = 1.0 - exp(-h / 1.8);
+    off = photonWind(p, strength * 0.25 * uRealWind, false) * bend;
+    off.xz += bodyPush(p) * bend * 0.9;
+  } else if (wave == 16) {
+    // RIP Computer: a lantern hanging from the block above swings about where it hangs, as one piece: nudged by the
+    // wind, pushed away by a body brushing it, set swinging by anyone walking under it (the trampled field springs back
+    // past upright, and the lantern with it)
+    if (uRealWind <= 0.0) return vec3(0.0);
+    vec3 c = vec3(floor(p.x) + 0.5, floor(p.y - 0.001) + 0.5, floor(p.z) + 0.5);
+    float dep = c.y + 0.5 - p.y;
+    vec2 tilt = photonWind(c, strength * 0.25 * uRealWind, false).xz * 0.6 + bodyPush(c) * 0.5;
+    if (abs(c.y - uPush[0].y) < 2.5) tilt += trampleLean(c) * 0.3;
+    off = vec3(tilt.x * dep, -0.5 * dot(tilt, tilt) * dep, tilt.y * dep);
+  } else if (wave == 17) {
+    // RIP Computer: a banner's flag, hanging from its bar: waving along its face's normal, more the further down, with a
+    // ripple running down it, and pushed by anyone brushing it (ex: how far below the bar, see above)
+    if (uRealWind <= 0.0) return vec3(0.0);
+    int e = int(ex + 0.5);
+    float dep = float(e & 31) / 16.0, k = min(dep / 1.67, 1.0);
+    vec3 n = (e & 32) != 0 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    float c = columnHash(p);
+    float wv = dot(photonWind(p + vec3(0.0, dep, 0.0), strength * 0.25 * uRealWind, true), n) * 1.5
+      + sin(t * 2.6 - dep * 3.0 + c * 6.28) * 0.045 * strength * (0.5 + 0.5 * uRealWind);
+    off = n * (wv + dot(vec3(bodyPush(p), 0.0).xzy, n) * 0.9) * k;
   } else if (wave == 4) {
     // kelp and seagrass (rnd: how many blocks of the stalk are under this one)
     float h = rnd * 255.0 + 1.0 - v;
@@ -307,6 +398,9 @@ vec3 windOffset(vec3 p, int wave, float v, float sky, float rnd) {
     // RIP Computer: a cobweb's threads trembling in the air that reaches it
     if (uRealWind <= 0.0) return vec3(0.0);
     off = vec3(sin(t * 2.3 + p.x * 3.1 + p.y * 2.0), 0.3 * sin(t * 1.7 + p.z * 2.7), cos(t * 2.1 + p.z * 3.3 + p.y * 1.4)) * 0.022 * strength * (0.4 + uRealWind * 0.3);
+    // and shaken by whoever is caught in it or brushes it
+    float n = bodyNear(p, 0.9);
+    if (n > 0.01) off += rustle(p, n) * 1.2 + vec3(bodyPush(p), 0.0).xzy * 0.15;
   } else if (wave == 5) {
     off = vec3(0.0, sin(t * 1.6 + p.x * 0.7 + p.z * 0.9) * 0.012, 0.0);
     if (uRealWind > 0.0) {
@@ -337,8 +431,8 @@ vec3 windOffset(vec3 p, int wave, float v, float sky, float rnd) {
       off.y -= max(tr, 0.0) * 0.35 * w;
     }
     if (uPush[0].w > 0.0) {
-      // realism: everyone close by parts the plants round their legs
-      off.xz += pushAway(p) * w;
+      // realism: everyone close by parts the plants round their legs (and a tall one's top round their hips)
+      off.xz += bodyPush(p) * w;
     } else {
       // and right where you stand, pushed hard away from your legs
       vec3 tp = p - uPlayer;
