@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=86';
-import { idx, H } from '../world-const.js?v=86';
-import { DIMS, DIM_IDS } from '../dims.js?v=86';
-import { Save } from '../save.js?v=86';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=86';
-import { glints } from '../render/armor.js?v=86';
-import { containerKind } from '../containers.js?v=86';
-import { getSkinSettings } from '../render/avatar.js?v=86';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=86';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=86';
-import { Y0 } from '../world-const.js?v=86';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=86';
-import { Projectile } from '../entities/projectiles.js?v=86';
-import { Combat } from '../combat/combat.js?v=86';
-import { Vehicles } from './vehicles.js?v=86';
-import { Mobs, Orbs } from './mobs.js?v=86';
-import { Events } from './events.js?v=86';
-import { EndSync } from './endfight.js?v=86';
-import { Hub } from './hub.js?v=86';
-import { Account, wsBase, httpBase } from './account.js?v=86';
-import { rankTag } from './players.js?v=86';
+import { B, BLOCKS } from '../blocks.js?v=87';
+import { idx, H } from '../world-const.js?v=87';
+import { DIMS, DIM_IDS } from '../dims.js?v=87';
+import { Save } from '../save.js?v=87';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=87';
+import { glints } from '../render/armor.js?v=87';
+import { containerKind } from '../containers.js?v=87';
+import { getSkinSettings } from '../render/avatar.js?v=87';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize } from './players.js?v=87';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=87';
+import { Y0 } from '../world-const.js?v=87';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=87';
+import { Projectile } from '../entities/projectiles.js?v=87';
+import { Combat } from '../combat/combat.js?v=87';
+import { Vehicles } from './vehicles.js?v=87';
+import { Mobs, Orbs } from './mobs.js?v=87';
+import { Events } from './events.js?v=87';
+import { EndSync } from './endfight.js?v=87';
+import { Hub } from './hub.js?v=87';
+import { Account, wsBase, httpBase } from './account.js?v=87';
+import { rankTag } from './players.js?v=87';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -1203,13 +1203,16 @@ export class Net {
     const g = this.game, P = g.player, S = this.sent;
     const sv = g.survival, dead = !!(sv && sv.dead);
     const fx = sv && sv.effects;
-    const f = (P.sneaking ? F.SNEAK : 0) | (P.sprinting ? F.SPRINT : 0) | (P.flying ? F.FLY : 0) | (P.pose === 'swim' ? F.SWIM : 0) |
+    let f = (P.sneaking ? F.SNEAK : 0) | (P.sprinting ? F.SPRINT : 0) | (P.flying ? F.FLY : 0) | (P.pose === 'swim' ? F.SWIM : 0) |
       (P.onGround ? F.GROUND : 0) | (g.sim && g.sim.sleeping ? F.SLEEP | (g.sim.sleeping.t >= 100 ? F.SLEPT : 0) : 0) | (dead ? F.DEAD : 0) | (P.gliding ? F.GLIDE : 0) | (P.riding ? F.RIDE : 0) |
       (g.mode === 'spectator' ? F.SPEC : 0) | (fx && fx.invisibility ? F.INVIS : 0) | (fx && fx.glowing ? F.GLOW : 0) | (g.entities && g.entities.pFire > 0 && !dead ? F.FIRE : 0) | (P.spinning && !dead ? F.SPIN : 0);
     const d = dimCode(g.dim);
     // (a millimetre and a twentieth of a degree: finer than any screen shows, in fewer characters)
     const r3 = v => Math.round(v * 1000) / 1000;
-    const x = r3(P.pos.x), y = r3(P.pos.y), z = r3(P.pos.z), yaw = r3(P.yaw), pitch = r3(P.pitch);
+    // (a Leonpixel hider watching the others: the body they left is what everyone sees and hits, standing on its spot)
+    const B = this.bodyAt;
+    if (B) f = (f & ~(F.FLY | F.SNEAK | F.SPRINT | F.SWIM)) | F.GROUND;
+    const x = r3(B ? B.x : P.pos.x), y = r3(B ? B.y : P.pos.y), z = r3(B ? B.z : P.pos.z), yaw = r3(B ? B.yaw : P.yaw), pitch = r3(B ? B.pitch : P.pitch);
     // what the use button is doing with your hands (render/avatar.js useNow): a bow drawn, food, a shield up
     const U = this.ctx.renderer.avatar.useNow, k = U ? USE_KINDS.indexOf(U.kind) : -1;
     const u = k >= 0 ? (k + 1) | ((U.side | 0) ? 16 : 0) : 0, ut = u ? Math.round((U.t || 0) * 10) / 10 : 0, uT = u ? U.total | 0 : 0;

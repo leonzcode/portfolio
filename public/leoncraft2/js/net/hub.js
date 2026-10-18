@@ -14,33 +14,35 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=86';
-import { I, ITEMS, maxStack } from '../items.js?v=86';
-import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=86';
-import { POTIONS } from '../brewing.js?v=86';
-import { creativeItems, entryId, HEADS } from '../ui/inventory.js?v=86';
-import { DIM_IDS } from '../dims.js?v=86';
-import { ChestScreen } from '../ui/containers.js?v=86';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=86';
-import { RemotePlayers, playerSize, F } from './players.js?v=86';
-import { register } from '../commands.js?v=86';
-import { Sound } from '../sound/sound.js?v=86';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=86';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64, pickAtCentre } from '../ui/paint.js?v=86';
-import { blockGeometry } from '../render/blockmesh.js?v=86';
-import { lightNear } from '../lightlevel.js?v=86';
-import { setSkin as setOwnSkin, invisLook, capeRule, getSkinSettings } from '../render/avatar.js?v=86';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=87';
+import { I, ITEMS, maxStack } from '../items.js?v=87';
+import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=87';
+import { POTIONS } from '../brewing.js?v=87';
+import { creativeItems, entryId, HEADS } from '../ui/inventory.js?v=87';
+import { DIM_IDS } from '../dims.js?v=87';
+import { ChestScreen } from '../ui/containers.js?v=87';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=87';
+import { RemotePlayers, playerSize, F } from './players.js?v=87';
+import { register } from '../commands.js?v=87';
+import { Sound } from '../sound/sound.js?v=87';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=87';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64, pickAtCentre } from '../ui/paint.js?v=87';
+import { blockGeometry } from '../render/blockmesh.js?v=87';
+import { lightNear } from '../lightlevel.js?v=87';
+import { setSkin as setOwnSkin, invisLook, capeRule, getSkinSettings } from '../render/avatar.js?v=87';
 // the Profile item's head wears your own skin (ui/inventory.js drawHead)
 HEADS.self = () => getSkinSettings().skin;
 // each game's person on the stand wears its own skin for the game: our own 64 x 64 skins, drawn in code by
 // tools/leoncraft2/build_npc_skins.py into textures/skin/npc/<game>.png (a game not listed gets the default skin)
+// a hider's own body while they watch (watchFrame), drawn on their page as a stand-in; the Spectate item's name
+const SPEC_BODY = -3001, WATCH_NAME = '§dSpectate §7- Right Click (or L) to leave your body and watch the others';
 const NPC_SKIN = new Set(['chameleon', 'pillars', 'bedwars', 'skywars', 'deathswap', 'duels', 'prophunt', 'murder', 'tntrun', 'spleef', 'bridger', 'buildbattle']);
-const npcSkinUrl = game => new URL('../../textures/skin/npc/' + game + '.png?v=86', import.meta.url).href;
+const npcSkinUrl = game => new URL('../../textures/skin/npc/' + game + '.png?v=87', import.meta.url).href;
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=86').then(m => {
+import('../adv/toast.js?v=87').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -708,6 +710,9 @@ export class Hub {
     this.overlay = { under: true, animates: false, draw: g => this.draw(g) };
     ctx.gui.overlays.push(this.overlay);
     this.npcs = new RemotePlayers(ctx.renderer, ctx.gui.font);
+    // (sized as the players are: a Chameleon hider's own body, left standing while they watch, is half size; everyone on
+    //  the stands and the Bridging ghost are full size, playerSize.k being 1 outside Chameleon)
+    this.npcs.sized = true;
     this.group = new THREE.Group(); this.group.name = 'hub-holograms';
     ctx.renderer.scene.add(this.group);
     // a death is the minigame's: the server is told, you are made whole where you are, and it moves you on
@@ -715,10 +720,10 @@ export class Hub {
     hooks.onDeath = (message, src) => this.died(src, message);
     // the people on the stands answer either button; what you hold in a lobby (the game menu, the way back) answers the right one
     const I2 = game.inter, use = I2.useWith.bind(I2), down = I2.down.bind(I2);
-    I2.useWith = () => { if (this.clickNpc() || this.useHeld()) return true; return use(); };
+    I2.useWith = () => { if (this.spec) { this.useHeld(); return true; } if (this.clickNpc() || this.useHeld()) return true; return use(); };
     // (a left click on a person opens their menu only when nothing nearer is under the crosshair: a player you are fighting in
     //  front of a shop takes the hit)
-    I2.down = b => { if (b === 0 && !I2.entityTarget && this.clickNpc()) return; if (b === 0) this.seekerSwing(I2); down(b); };
+    I2.down = b => { if (this.spec) return; if (b === 0 && !I2.entityTarget && this.clickNpc()) return; if (b === 0) this.seekerSwing(I2); down(b); };
     I2.mayBreak = (x, y, z) => this.mayBreak(x, y, z);
     // no dropping things anywhere on the network (but the Map Editor and /hubbuild): Q does nothing, and what is thrown
     // out of a screen goes back into the inventory (an inventory that is full still spills what it cannot hold)
@@ -771,6 +776,17 @@ export class Hub {
       else if (this.area === 'wait' && this.watching) this.ctx.chat.add('§cA game is already on here. You will play in the next round.', 0xFFFFFF);
     };
     window.addEventListener('keydown', this.onKey);
+    // a hider's L leaves the body and comes back to it, Left and Right ride round the others (the first Leoncraft's keys); caught
+    // before the game's own listeners, so L does not open Advancements then
+    this.onWatchKey = e => {
+      if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || ctx.gui.screen) return;
+      const k = e.code;
+      if (k === 'KeyL' && (this.spec || this.canWatch())) this.toggleWatch();
+      else if ((k === 'ArrowLeft' || k === 'ArrowRight') && this.spec) this.watchNext(k === 'ArrowRight' ? 1 : -1);
+      else return;
+      e.preventDefault(); e.stopImmediatePropagation();
+    };
+    window.addEventListener('keydown', this.onWatchKey, true);
   }
   detach() {
     if (active === this) active = null;
@@ -783,6 +799,8 @@ export class Hub {
     if (this.unhook) this.unhook();
     if (this.unwrapNet) this.unwrapNet();
     if (this.onKey) window.removeEventListener('keydown', this.onKey);
+    if (this.onWatchKey) window.removeEventListener('keydown', this.onWatchKey, true);
+    if (this.spec) this.endWatch(true);
     RES_OVERRIDE.clear(); BLAST_FILTER.fn = null; BLAST_FILTER.noDrops = null; invisLook.hideArmor = false; capeRule.off = false;
     this.game = null;
   }
@@ -791,6 +809,8 @@ export class Hub {
   receive(m) {
     const g = this.game;
     if (!g) return;
+    // moved by the server (a new round, the lobby, being found): back in the body first, so its move is the one that lands
+    if (this.spec && (m.k === 'where' || m.k === 'go' || m.k === 'kit')) this.endWatch(false);
     switch (m.k) {
       case 'hello': {
         this.modes = m.modes || []; this.games = m.games || []; this.staff = !!m.staff; this.editable = m.editable || [];
@@ -1088,6 +1108,7 @@ export class Hub {
     } else if (kind === 'ph_hider') {
       this.alive = true;
       // (an empty hand to pick a block with; the taunt at the end of the bar)
+      inv.slots[6] = stack('ender_eye', 1, { name: WATCH_NAME });
       inv.slots[7] = stack('paper', 1, { name: '§eDisguise §7- Right Click to choose which block to be' });
       inv.slots[8] = stack('firework_star', 1, { name: '§aTaunt §7- Right Click to make a bang (+2 points)' });
       inv.select(0);
@@ -1101,6 +1122,7 @@ export class Hub {
       inv.slots[0] = named(['brush', 'feather'], '§aPaint Brush §7- Right Click (or B) to paint your skin');
       inv.slots[1] = named(['spyglass', 'stick'], '§bColour Picker §7- Right Click a block to copy its colour');
       inv.slots[2] = named(['armor_stand', 'oak_fence'], '§6Pose §7- Right Click (or V) to change your pose');
+      inv.slots[7] = named(['ender_eye', 'spyglass'], WATCH_NAME);
       inv.slots[8] = named(['goat_horn', 'note_block'], '§eWhistle §7- Right Click to whistle (+2 points)');
       inv.select(0);
     } else if (kind === 'ch_seeker' || kind === 'ch_hunter') {
@@ -1223,6 +1245,7 @@ export class Hub {
 
   /* ---- dying ---- */
   died(src, message) {
+    if (this.spec) this.endWatch(true);
     const g = this.game, sv = g.survival;
     // Death Swap: the game's own death (what you had falls where you died), then you watch
     if (this.area === 'ds') {
@@ -1349,6 +1372,12 @@ export class Hub {
     return best;
   }
   useHeld() {
+    // watching while you hide: the Spectate item leaves the body and comes back; nothing else does anything meanwhile
+    if (this.spec || this.canWatch()) {
+      const h0 = this.game.inv.slots[this.game.inv.selected];
+      if (h0 && /^Spectate/.test((h0.name || '').replace(/\u00a7./g, ''))) { this.toggleWatch(); return true; }
+      if (this.spec) return true;
+    }
     const inv = this.game.inv, h = inv.slots[inv.selected];
     // Bed Wars: another team's chest stays shut while that team is still in the game
     if (this.area === 'game' && this.gameKind === 'bedwars' && this.teamChests && this.teamChests.length ) {
@@ -1597,7 +1626,7 @@ export class Hub {
       }
     }
     // Prop Hunt: a hider standing still for two seconds locks into the block grid; moving off unlocks
-    if (this.hide && this.hide.kind === 'prophunt' && this.role === 'hider' && this.disguise) {
+    if (this.hide && this.hide.kind === 'prophunt' && this.role === 'hider' && this.disguise && !this.spec) {
       const moving = Math.hypot(P.vel.x, P.vel.z) > 0.01 || !P.onGround;
       if (this.lockAt) { if (Math.hypot(P.pos.x - (this.lockAt[0] + 0.5), P.pos.z - (this.lockAt[2] + 0.5)) > 0.35 || Math.abs(P.pos.y - this.lockAt[1]) > 0.6) { this.lockAt = null; this.send({ k: 'lock', at: null }); } }
       else if (moving) this.still = 0;
@@ -1676,6 +1705,100 @@ export class Hub {
     if (this.hideNames && this.area === 'game' && this.net.players) for (const r of this.net.players.list.values()) if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
     this.drawProps();
     this.applyPoses();
+    this.watchFrame();
+  }
+
+  /* ---- watching while you hide (Chameleon and Prop Hunt; the first Leoncraft's L) ----
+     Your body stays where it is, in its pose or its block: the page goes on sending that place (net.bodyAt), so everyone,
+     the seekers too, sees it there and can hit it there. Your eyes fly off (with your own box: walls and the map's barriers
+     still stop them), or ride along with anyone still in the round, from their eyes (Left / Right; one past either end is
+     your own camera again). L, or the Spectate item, puts you back in your body where you left it. */
+  canWatch() {
+    const g = this.game;
+    return !!g && this.area === 'game' && this.alive && this.role === 'hider' && !!this.hide && (this.hide.kind === 'chameleon' || this.hide.kind === 'prophunt') && !(g.survival && g.survival.dead);
+  }
+  toggleWatch() { if (this.spec) this.endWatch(true); else this.startWatch(); }
+  startWatch() {
+    if (this.spec || !this.canWatch() || this.ctx.gui.screen) return;
+    const g = this.game, P = g.player, A = this.ctx.renderer.avatar;
+    // Prop Hunt: the block locks into its cell first, as standing still would have done
+    if (this.hide.kind === 'prophunt' && this.disguise && !this.lockAt) {
+      this.lockAt = [Math.floor(P.pos.x), Math.floor(P.pos.y + 0.01), Math.floor(P.pos.z)];
+      P.pos.x = this.lockAt[0] + 0.5; P.pos.z = this.lockAt[2] + 0.5; if (P.prev) { P.prev.x = P.pos.x; P.prev.z = P.pos.z; }
+      this.send({ k: 'lock', at: this.lockAt });
+    }
+    const at = { x: P.pos.x, y: P.pos.y, z: P.pos.z, yaw: P.yaw, pitch: P.pitch };
+    this.spec = { at, id: null, canFly: P.canFly, view: A ? A.view : 0 };
+    this.net.bodyAt = at;
+    // (no hand in the corner while you watch: main.js showHand)
+    g.noHand = true;
+    P.canFly = true; P.flying = true; P.vel.set(0, 0, 0);
+    if (A && A.view !== 0) A.setView(0);
+    // your body as this page draws it (every other page draws it from the place it is sent): Chameleon's painted figure in
+    // its pose; Prop Hunt's block is drawn in its locked cell already (drawProps)
+    if (this.hide.kind === 'chameleon') {
+      let sk = '';
+      try { sk = this.painter && this.painter.canvas ? this.painter.canvas.toDataURL('image/png') : ''; } catch (e) { sk = ''; }
+      this.npcs.add({ id: SPEC_BODY, name: '', skin: sk });
+      this.feed({ nid: SPEC_BODY, x: at.x, y: at.y, z: at.z, yaw: at.yaw });
+    }
+    this.ctx.chat.add('§dYou left your body. §7Fly about, or §eLeft§7/§eRight §7to watch the others; §eL §7to step back in.', 0xFFFFFF);
+    this.sound('entity.enderman.teleport');
+    this.ctx.gui.markDirty();
+  }
+  endWatch(back) {
+    const S = this.spec;
+    if (!S) return;
+    this.spec = null;
+    if (this.net) this.net.bodyAt = null;
+    if (this.npcs) this.npcs.remove(SPEC_BODY);
+    const g = this.game, P = g && g.player, A = this.ctx.renderer.avatar;
+    if (g) g.noHand = false;
+    if (P) {
+      P.canFly = S.canFly; if (!P.canFly) P.flying = false;
+      if (back) { P.pos.set(S.at.x, S.at.y, S.at.z); if (P.prev) P.prev.copy(P.pos); P.vel.set(0, 0, 0); P.yaw = S.at.yaw; P.pitch = S.at.pitch; P.fallDistance = 0; }
+    }
+    if (A) { A.hidden = false; if (S.view && A.view !== S.view) A.setView(S.view); }
+    if (back) { this.ctx.chat.add('§aBack in your body.', 0xFFFFFF); this.sound('entity.enderman.teleport'); }
+    this.ctx.gui.markDirty();
+  }
+  // everyone still in the round near your body, in a fixed order (so Left and Right are opposites)
+  watchTargets() {
+    const S = this.spec, L = this.net.players ? [...this.net.players.list.entries()] : [];
+    return L.filter(([, r]) => r.feet && r.st && !(r.st.f & (F.SPEC | F.DEAD)) && Math.hypot(r.feet.x - S.at.x, r.feet.z - S.at.z) < 400)
+      .map(([id]) => id).sort((a, b) => a - b);
+  }
+  watchNext(dir) {
+    const S = this.spec;
+    if (!S) return;
+    const list = this.watchTargets();
+    const i = list.indexOf(S.id);
+    let j = i < 0 ? (dir > 0 ? 0 : list.length - 1) : i + dir;
+    if (j >= list.length || j < 0) j = -1;
+    S.id = j < 0 ? null : list[j];
+    this.sound('ui.button.click');
+    this.ctx.gui.markDirty();
+  }
+  watchFrame() {
+    const S = this.spec;
+    if (!S) return;
+    if (!this.canWatch()) { this.endWatch(true); return; }
+    const A = this.ctx.renderer.avatar;
+    if (A) A.hidden = true;
+    const b = this.npcs.list.get(SPEC_BODY);
+    if (b) { this.feed({ nid: SPEC_BODY, x: S.at.x, y: S.at.y, z: S.at.z, yaw: S.at.yaw }); if (b.av) b.av.poseOverride = (POSES[this.myPose | 0] || POSES[0])[1]; }
+    // (the game ends a flight on touching the ground: the camera keeps flying, Space up and Shift down)
+    if (!this.game.player.flying) this.game.player.flying = true;
+    if (S.id === null) return;
+    const r = this.net.players && this.net.players.list.get(S.id);
+    if (!r || !r.feet || (r.st && (r.st.f & (F.SPEC | F.DEAD)))) { S.id = null; this.ctx.gui.markDirty(); return; }
+    // from their eyes, looking where they look; their own model is not drawn for you meanwhile
+    const P = this.game.player, eye = (r.P && r.P.sneaking ? 1.27 : 1.62) * playerSize.of(S.id);
+    P.pos.set(r.feet.x, r.feet.y + eye - P.eyeH, r.feet.z); if (P.prev) P.prev.copy(P.pos); P.vel.set(0, 0, 0);
+    if (r.P) { P.yaw = r.P.yaw; P.pitch = r.P.pitch; }
+    const av = r.av;
+    if (av) { av.mesh.visible = av.armor.visible = av.capeMesh.visible = av.glowRim.visible = av.glowBehind.visible = false; for (const h of av.held) if (h) h.mesh.visible = false; if (av.headItem) av.headItem.mesh.visible = false; }
+    if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
   }
   /* Prop Hunt: each disguised hider is drawn as their block, where they are
      (or in the cell they locked into); their own model is not drawn. */
@@ -1772,6 +1895,7 @@ export class Hub {
     this.sound('block.wood.place');
   }
   openBrush() {
+    if (this.spec) { this.ctx.chat.add('§cStep back into your body first §7(L)', 0xFF5555); return; }
     if (this.painter && this.mayPaint()) this.openScreen(new PaintScreen(this.painter, { renderer: this.ctx.renderer, world: this.game.world, player: this.game.player }));
   }
   mayPaint() {
@@ -1849,7 +1973,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=86', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=87', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1864,7 +1988,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=86', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=87', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1872,7 +1996,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=86', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=87', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -1883,7 +2007,7 @@ export class Hub {
     this.moving = true;
     const gui = this.ctx.gui, hooks = gui.hooks || {};
     this.ctx.chat.add('§7Sending you to ' + (id === 'hub' ? 'Leonpixel' : 'the game world') + '...', 0xFFFFFF);
-    const go = () => import('../ui/multiplayer.js?v=86').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
+    const go = () => import('../ui/multiplayer.js?v=87').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
     Promise.resolve(hooks.quitToTitle ? hooks.quitToTitle() : null).then(go, go);
   }
 
@@ -2070,6 +2194,14 @@ export class Hub {
     // what K does, over the hotbar while you wait (and that you are watching, while you watch)
     if (this.area === 'wait' && (this.startable || this.watching) && !(this.game && this.game.hideHud)) {
       const msg = this.watching ? '§eSpectating §7- you will play in the next round' : '§ePress §a§lK §eto start the game';
+      const x = Math.floor(g.width / 2), y = g.height - 72, w = g.textWidth(msg);
+      g.fill(x - Math.ceil(w / 2) - 4, y - 3, x + Math.ceil(w / 2) + 4, y + 11, 0x66000000);
+      g.centered(msg, x, y, 0xFFFFFF, true);
+    }
+    // watching while you hide: whose eyes, and the keys
+    if (this.spec && !(this.game && this.game.hideHud)) {
+      const r = this.spec.id !== null && this.net.players ? this.net.players.list.get(this.spec.id) : null;
+      const msg = (r ? '§dWatching §f' + (r.name || 'a player') : '§dFree camera §7- fly about') + ' §7| §eLeft§7/§eRight §7players | §eL §7back to your body';
       const x = Math.floor(g.width / 2), y = g.height - 72, w = g.textWidth(msg);
       g.fill(x - Math.ceil(w / 2) - 4, y - 3, x + Math.ceil(w / 2) + 4, y + 11, 0x66000000);
       g.centered(msg, x, y, 0xFFFFFF, true);

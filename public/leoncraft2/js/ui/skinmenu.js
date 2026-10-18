@@ -17,12 +17,12 @@
    skinParts.cape); the game puts what they hold on the player and tells the
    server. A skin is kept as a PNG data URL, a cape as a 64 x 32 one.
 --------------------------------------------------------------------------- */
-import { Screen, Button, CycleButton, TextField, WHITE, GREY } from './gui.js?v=86';
-import { SkinGalleryScreen } from './skins.js?v=86';
-import { httpBase } from '../net/account.js?v=86';
-import { CAPES, capeDataUrl, paintCape } from '../capes.js?v=86';
+import { Screen, Button, CycleButton, TextField, WHITE, GREY } from './gui.js?v=87';
+import { SkinGalleryScreen } from './skins.js?v=87';
+import { httpBase } from '../net/account.js?v=87';
+import { CAPES, capeDataUrl, paintCape } from '../capes.js?v=87';
 
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=86', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=87', import.meta.url).href;
 const RED = 0xFF5555, GREEN = 0x55FF55;
 
 /* ------------------------------ pictures ------------------------------ */
