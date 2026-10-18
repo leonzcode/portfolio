@@ -31,15 +31,15 @@
      dropItem(world, x, y, z, 'diamond', 2)     from anywhere (mob loot...)
      giveXp(x, y, z, 7)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=95';
-import { collisionBoxes } from './models.js?v=95';
-import { LEVEL, FALLING } from './world-const.js?v=95';
-import { lightNear } from './lightlevel.js?v=95';
-import { glints } from './render/armor.js?v=95';
-import { setGlint } from './render/glint.js?v=95';
-import { DIMS } from './dims.js?v=95';
-import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=95';
-import { blockGeometry, intAttribute } from './render/blockmesh.js?v=95';
+import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=96';
+import { collisionBoxes } from './models.js?v=96';
+import { LEVEL, FALLING } from './world-const.js?v=96';
+import { lightNear } from './lightlevel.js?v=96';
+import { glints } from './render/armor.js?v=96';
+import { setGlint } from './render/glint.js?v=96';
+import { DIMS } from './dims.js?v=96';
+import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=96';
+import { blockGeometry, intAttribute } from './render/blockmesh.js?v=96';
 const THREE = window.THREE;
 
 const ITEM_W = 0.125, ITEM_H = 0.25;           // half width, height

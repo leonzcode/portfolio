@@ -26,8 +26,8 @@
    back to a Loyalty thrower. A lead put on, tied to a fence, let go or
    snapping (past 10 blocks) is heard; bees buzz while they fly near.
 --------------------------------------------------------------------------- */
-import { Sound } from './sound.js?v=95';
-import { blockSound, voice, spread } from './sfx.js?v=95';
+import { Sound } from './sound.js?v=96';
+import { blockSound, voice, spread } from './sfx.js?v=96';
 
 const R = Math.random;
 // the mobs that sound as another does (the game's own sounds.json has no events of their own)
