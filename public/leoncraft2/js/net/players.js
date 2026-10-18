@@ -26,12 +26,12 @@
    can give themselves one; it shows over their head, in the Tab list and in
    their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar, invisLook } from '../render/avatar.js?v=92';
-import { pieceLook, armorSheet } from '../render/armor.js?v=92';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=92';
-import { DRAW, I, stackFromJSON } from '../items.js?v=92';
-import { B, BLOCKS } from '../blocks.js?v=92';
-import { walkers } from '../render/realism.js?v=92';
+import { Avatar, invisLook } from '../render/avatar.js?v=93';
+import { pieceLook, armorSheet } from '../render/armor.js?v=93';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=93';
+import { DRAW, I, stackFromJSON } from '../items.js?v=93';
+import { B, BLOCKS } from '../blocks.js?v=93';
+import { walkers } from '../render/realism.js?v=93';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -181,7 +181,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=92', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=93', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
     av.setCape(r.capeUrl || '').catch(() => {});
   }
@@ -414,7 +414,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=92', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=93', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;

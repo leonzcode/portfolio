@@ -18,10 +18,10 @@
    made here with Web Audio (a soft swish in and out, a short rising
    fanfare), since Leoncraft's own sound banks have none.
 --------------------------------------------------------------------------- */
-import { Sound } from '../sound/sound.js?v=92';
-import { itemId } from '../items.js?v=92';
-import { B, BLOCKS } from '../blocks.js?v=92';
-import { drawStack } from '../ui/inventory.js?v=92';
+import { Sound } from '../sound/sound.js?v=93';
+import { itemId } from '../items.js?v=93';
+import { B, BLOCKS } from '../blocks.js?v=93';
+import { drawStack } from '../ui/inventory.js?v=93';
 
 const W = 160, H = 32, SLIDE = 600, SHOW = 5000, SLOTS = 5;
 const HEAD = { task: 'Advancement Made!', goal: 'Goal Reached!', challenge: 'Challenge Complete!' };

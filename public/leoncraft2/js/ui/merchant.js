@@ -21,9 +21,9 @@
 
    The screen closes if the villager is hurt, dies or is left behind.
 --------------------------------------------------------------------------- */
-import { ContainerScreen, slot, range, TO_PLAYER_REVERSED, drawStack, stackTooltip } from './inventory.js?v=92';
-import { withCount, sameItem, maxStack } from '../items.js?v=92';
-import * as T from '../trading.js?v=92';
+import { ContainerScreen, slot, range, TO_PLAYER_REVERSED, drawStack, stackTooltip } from './inventory.js?v=93';
+import { withCount, sameItem, maxStack } from '../items.js?v=93';
+import * as T from '../trading.js?v=93';
 
 const LABEL_GREY = 0x404040;
 const SHEET = 'container/villager';
