@@ -14,22 +14,22 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=88';
-import { I, ITEMS, maxStack } from '../items.js?v=88';
-import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=88';
-import { POTIONS } from '../brewing.js?v=88';
-import { creativeItems, entryId, HEADS } from '../ui/inventory.js?v=88';
-import { DIM_IDS } from '../dims.js?v=88';
-import { ChestScreen } from '../ui/containers.js?v=88';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=88';
-import { RemotePlayers, playerSize, F } from './players.js?v=88';
-import { register } from '../commands.js?v=88';
-import { Sound } from '../sound/sound.js?v=88';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=88';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64, pickAtCentre } from '../ui/paint.js?v=88';
-import { blockGeometry } from '../render/blockmesh.js?v=88';
-import { lightNear } from '../lightlevel.js?v=88';
-import { setSkin as setOwnSkin, invisLook, capeRule, getSkinSettings } from '../render/avatar.js?v=88';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=89';
+import { I, ITEMS, maxStack } from '../items.js?v=89';
+import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=89';
+import { POTIONS } from '../brewing.js?v=89';
+import { creativeItems, entryId, HEADS } from '../ui/inventory.js?v=89';
+import { DIM_IDS } from '../dims.js?v=89';
+import { ChestScreen } from '../ui/containers.js?v=89';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=89';
+import { RemotePlayers, playerSize, F } from './players.js?v=89';
+import { register } from '../commands.js?v=89';
+import { Sound } from '../sound/sound.js?v=89';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=89';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64, pickAtCentre } from '../ui/paint.js?v=89';
+import { blockGeometry } from '../render/blockmesh.js?v=89';
+import { lightNear } from '../lightlevel.js?v=89';
+import { setSkin as setOwnSkin, invisLook, capeRule, getSkinSettings } from '../render/avatar.js?v=89';
 // the Profile item's head wears your own skin (ui/inventory.js drawHead)
 HEADS.self = () => getSkinSettings().skin;
 // each game's person on the stand wears its own skin for the game: our own 64 x 64 skins, drawn in code by
@@ -37,12 +37,12 @@ HEADS.self = () => getSkinSettings().skin;
 // a hider's own body while they watch (watchFrame), drawn on their page as a stand-in; the Spectate item's name
 const SPEC_BODY = -3001, WATCH_NAME = '§dSpectate §7- Right Click (or L) to leave your body and watch the others';
 const NPC_SKIN = new Set(['chameleon', 'pillars', 'bedwars', 'skywars', 'deathswap', 'duels', 'prophunt', 'murder', 'tntrun', 'spleef', 'bridger', 'buildbattle']);
-const npcSkinUrl = game => new URL('../../textures/skin/npc/' + game + '.png?v=88', import.meta.url).href;
+const npcSkinUrl = game => new URL('../../textures/skin/npc/' + game + '.png?v=89', import.meta.url).href;
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=88').then(m => {
+import('../adv/toast.js?v=89').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -1523,7 +1523,7 @@ export class Hub {
   holo(key, x, y, z, lines) {
     this.dropHolo(key);
     const sprites = holoSprites(this.ctx.gui.font, lines);
-    sprites.forEach((s, i) => { if (!s) return; s.position.set(x, y + (lines.length - 1 - i) * 0.27, z); this.group.add(s); });
+    sprites.forEach((s, i) => { if (!s) return; s.position.set(x, y + (lines.length - 1 - i) * 0.27, z); s.visible = !this.holoHidden; this.group.add(s); });
     this.holos.set(key, { sprites, lines: lines.slice(), x, y, z });
   }
   dropHolo(key) {
@@ -1706,6 +1706,9 @@ export class Hub {
     this.drawProps();
     this.applyPoses();
     this.watchFrame();
+    // F1: the words floating in the world (the people's lines, the leaderboards, the generators) go with the HUD
+    const hideText = !!this.ctx.gui.hideHud;
+    if (hideText !== !!this.holoHidden) { this.holoHidden = hideText; for (const h of this.holos.values()) for (const s of h.sprites) if (s) s.visible = !hideText; }
   }
 
   /* ---- watching while you hide (Chameleon and Prop Hunt; the first Leoncraft's L) ----
@@ -1973,7 +1976,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=88', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=89', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1988,7 +1991,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=88', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=89', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1996,7 +1999,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=88', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=89', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -2007,7 +2010,7 @@ export class Hub {
     this.moving = true;
     const gui = this.ctx.gui, hooks = gui.hooks || {};
     this.ctx.chat.add('§7Sending you to ' + (id === 'hub' ? 'Leonpixel' : 'the game world') + '...', 0xFFFFFF);
-    const go = () => import('../ui/multiplayer.js?v=88').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
+    const go = () => import('../ui/multiplayer.js?v=89').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
     Promise.resolve(hooks.quitToTitle ? hooks.quitToTitle() : null).then(go, go);
   }
 
@@ -2180,7 +2183,7 @@ export class Hub {
   /* ---- the sidebar and the titles ---- */
   draw(g) {
     const B2 = this.board;
-    if (B2 && B2.lines.length && !(this.game && this.game.hideHud)) {
+    if (B2 && B2.lines.length && !this.ctx.gui.hideHud) {
       const lines = B2.lines;
       let w = g.textWidth(B2.title);
       for (const l of lines) w = Math.max(w, g.textWidth(l) + 6);
@@ -2192,14 +2195,14 @@ export class Hub {
       lines.forEach((l, i) => g.text(l, left, top + i * 9, 0xFFFFFF, false));
     }
     // what K does, over the hotbar while you wait (and that you are watching, while you watch)
-    if (this.area === 'wait' && (this.startable || this.watching) && !(this.game && this.game.hideHud)) {
+    if (this.area === 'wait' && (this.startable || this.watching) && !this.ctx.gui.hideHud) {
       const msg = this.watching ? '§eSpectating §7- you will play in the next round' : '§ePress §a§lK §eto start the game';
       const x = Math.floor(g.width / 2), y = g.height - 72, w = g.textWidth(msg);
       g.fill(x - Math.ceil(w / 2) - 4, y - 3, x + Math.ceil(w / 2) + 4, y + 11, 0x66000000);
       g.centered(msg, x, y, 0xFFFFFF, true);
     }
     // watching while you hide: whose eyes, and the keys
-    if (this.spec && !(this.game && this.game.hideHud)) {
+    if (this.spec && !this.ctx.gui.hideHud) {
       const r = this.spec.id !== null && this.net.players ? this.net.players.list.get(this.spec.id) : null;
       const msg = (r ? '§dWatching §f' + (r.name || 'a player') : '§dFree camera §7- fly about') + ' §7| §eLeft§7/§eRight §7players | §eL §7back to your body';
       const x = Math.floor(g.width / 2), y = g.height - 72, w = g.textWidth(msg);
@@ -2207,20 +2210,21 @@ export class Hub {
       g.centered(msg, x, y, 0xFFFFFF, true);
     }
     // Bridging: the run's time over the hotbar while it runs (and the last one, still, after)
-    if (this.br && this.area === 'game' && !(this.game && this.game.hideHud)) {
+    if (this.br && this.area === 'game' && !this.ctx.gui.hideHud) {
       const R = this.br, ms = R.t0 ? (R.done ? R.last : performance.now() - R.t0) : 0;
       const msg = R.t0 ? (R.done ? '§a' : '§e') + (ms / 1000).toFixed(3) + 's' : '§7Leave the start to begin the timer';
       const x = Math.floor(g.width / 2), y = g.height - 72, w = g.textWidth(msg);
       g.fill(x - Math.ceil(w / 2) - 4, y - 3, x + Math.ceil(w / 2) + 4, y + 11, 0x66000000);
       g.centered(msg, x, y, 0xFFFFFF, true);
     }
-    const whistling = !(this.game && this.game.hideHud) && this.drawWhistle(g);
+    const whistling = !this.ctx.gui.hideHud && this.drawWhistle(g);
     const T = this.titleT;
     const timing = !!(this.br && this.br.t0 && !this.br.done);
     if (!T) this.overlay.animates = whistling || timing;
     if (T) {
       const t = (performance.now() - T.at) / 50, total = T.fi + T.st + T.fo;
       if (t >= total) { this.titleT = null; this.overlay.animates = whistling || timing; return; }
+      if (this.ctx.gui.hideHud) return;
       const a = t < T.fi ? t / Math.max(1, T.fi) : t < T.fi + T.st ? 1 : 1 - (t - T.fi - T.st) / Math.max(1, T.fo);
       const c = g.ctx;
       c.save();

@@ -61,16 +61,16 @@
    What it remembers (sign text, food on campfires, framed items, discs, vaults, what pots, shelves and lecterns
    hold) is kept per dimension (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=88';
-import { lightNear } from './lightlevel.js?v=88';
-import { glints } from './render/armor.js?v=88';
-import { setGlint } from './render/glint.js?v=88';
-import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=88';
-import { potWobbled } from './sim/lids.js?v=88';
-import { BookScreen } from './ui/book.js?v=88';
-import { wantBook } from './entities/tablebook.js?v=88';
-import { cookingRecipe } from './crafting.js?v=88';
-import { hiveUse } from './entities/hives.js?v=88';
+import { B, BLOCKS } from './blocks.js?v=89';
+import { lightNear } from './lightlevel.js?v=89';
+import { glints } from './render/armor.js?v=89';
+import { setGlint } from './render/glint.js?v=89';
+import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=89';
+import { potWobbled } from './sim/lids.js?v=89';
+import { BookScreen } from './ui/book.js?v=89';
+import { wantBook } from './entities/tablebook.js?v=89';
+import { cookingRecipe } from './crafting.js?v=89';
+import { hiveUse } from './entities/hives.js?v=89';
 
 /* Other modules keep state of their own with a dimension's block entities (struct/trials.js: a trial
    spawner's cooldown): registerExtra(k, { save(details) -> entries with that k, load(details, entry), reset(details) }). */
@@ -258,7 +258,7 @@ export class Details {
     if (e.rewarded || e.queue.length) return false;
     e.rewarded = true; e.at = this.ticks + 14; e.unlockUntil = e.at;
     if (!h.creative) h.inv.takeSelected(1);
-    import('./struct/loot.js?v=88').then(L => import('./containers.js?v=88').then(C => {
+    import('./struct/loot.js?v=89').then(L => import('./containers.js?v=89').then(C => {
       const table = 'trial_chambers/' + (ominous ? 'reward_ominous' : 'reward');
       // (the game's getRandomItems: the stacks as drawn, one thrown out at a time, never shuffled or split as a chest's are)
       for (const r of L.rollItems(table, (Math.random() * 2147483647) | 0)) { const st = C.lootStack(r); if (st) e.queue.push(st); }
