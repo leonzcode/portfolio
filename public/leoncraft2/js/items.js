@@ -17,8 +17,8 @@
    Tool, armour, food and fuel numbers are the Minecraft Wiki's (Java Edition,
    October 2026); the list itself is minecraft-data's (js/itemdata.js).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from './blocks.js?v=97';
-import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=97';
+import { B, BLOCKS, MAX_ID } from './blocks.js?v=98';
+import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=98';
 
 export const ITEM_BASE = MAX_ID;          // 4096: the first id that is not a block
 export const ITEMS = [];
@@ -288,7 +288,8 @@ export const SONGS = {
    holds 64 sixty-fourths: each item takes 64 / its stack size of them (a
    sword a whole bundle, an ender pearl four), a bundle inside one 4 and what
    it holds, a hive with bees in it the lot. Shulker boxes never go in. */
-export const isBundle = st => !!st && /^(\w+_)?bundle$/.test(itemName(st.id));
+// (a lobby cosmetic drawn as a bundle, Leonpixel's Backpack, is no bundle: nothing goes into it or comes out by the bundle's rules)
+export const isBundle = st => !!st && !st.cos && /^(\w+_)?bundle$/.test(itemName(st.id));
 function weightOf(s) {
   const n = itemName(s.id);
   if (/^(\w+_)?bundle$/.test(n)) return 4 + bundleWeight(s);

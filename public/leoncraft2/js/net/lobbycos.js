@@ -23,11 +23,11 @@
    Made by net/hub.js with its own pieces (makeLobbyCos(K)), as the Profile
    menus are, so this file imports nothing of hub.js.
 --------------------------------------------------------------------------- */
-import { COS, COSMETICS, HATS, AURAS, TRAILS, GADGETS, RARITY, CATS } from './cosdata.js?v=97';
-import { B, BLOCKS, SOLID } from '../blocks.js?v=97';
-import { Sound } from '../sound/sound.js?v=97';
-import { F } from './players.js?v=97';
-import { blockGeometry } from '../render/blockmesh.js?v=97';
+import { COS, COSMETICS, HATS, AURAS, TRAILS, GADGETS, RARITY, CATS } from './cosdata.js?v=98';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=98';
+import { Sound } from '../sound/sound.js?v=98';
+import { F } from './players.js?v=98';
+import { blockGeometry } from '../render/blockmesh.js?v=98';
 
 const THREE = window.THREE;
 const FIXED = ['compass', 'temp', 'profile'];
@@ -147,12 +147,13 @@ export function makeLobbyCos(K) {
       const cos = this.cos, p = this.page;
       if (!cos) return;
       this.box.fill(null); this.tips.fill(null); this.acts.fill(null);
-      for (let i = 0; i < PACK_PAGE; i++) { const id = cos.pack[p * PACK_PAGE + i]; this.box[i] = id ? cosStack(id, cos.isWorn(id)) : null; }
+      cos.freeBackpack();
+      for (let i = 0; i < PACK_PAGE; i++) { const id = cos.pack[p * PACK_PAGE + i]; this.box[i] = id && id !== 'backpack' ? cosStack(id, cos.isWorn(id)) : null; }
       this.bar();
     }
     store() {
       const cos = this.cos, p = this.page;
-      for (let i = 0; i < PACK_PAGE; i++) { const st = this.box[i]; cos.pack[p * PACK_PAGE + i] = st && st.cos ? st.cos : ''; }
+      for (let i = 0; i < PACK_PAGE; i++) { const st = this.box[i]; cos.pack[p * PACK_PAGE + i] = st && st.cos && st.cos !== 'backpack' ? st.cos : ''; }
     }
     bar() {
       const cos = this.cos, p = this.page;
@@ -174,12 +175,13 @@ export function makeLobbyCos(K) {
     }
     // (a stack carried onto a place lands on the release, so the page is taken down again then)
     mouseReleased(mx, my, button) { const out = ChestScreen.prototype.mouseReleased.call(this, mx, my, button); this.store(); this.cos.dirty = true; return out; }
-    mayPlace(s, st) { if (s.kind === 'box') return s.i < PACK_PAGE && !!(st && st.cos); return ChestScreen.prototype.mayPlace.call(this, s, st); }
+    // (cosmetics only, and never the Backpack inside itself)
+    mayPlace(s, st) { if (s.kind === 'box') return s.i < PACK_PAGE && !!(st && st.cos) && st.cos !== 'backpack'; return ChestScreen.prototype.mayPlace.call(this, s, st); }
     quickMove(s) {
       const st = this.getStack(s);
       if (!st) return;
       if (s.kind === 'box') { if (s.i < PACK_PAGE) ChestScreen.prototype.quickMove.call(this, s); }
-      else if (st.cos) {
+      else if (st.cos && st.cos !== 'backpack') {
         // (into this page if it has room, else the first page that does)
         const i = this.box.findIndex((x, k) => k < PACK_PAGE && !x);
         if (i >= 0) { this.box[i] = st; this.setStack(s, null); }
@@ -307,9 +309,18 @@ export function makeLobbyCos(K) {
       });
       // the fixed things not placed go where they always were, or the first free place
       FIXED.forEach((k, i) => { if (!placed.has(k) && fixed[k]) { const at = !slots[i] ? i : slots.findIndex(x => !x); if (at >= 0) slots[at] = fixed[k]; placed.add(k); } });
-      // the Backpack goes in the hotbar's last place by default
+      // the Backpack goes in the hotbar's last place by default (never inside itself: one put there before that was
+      // refused comes out, in place of a cosmetic that goes into the Backpack if the inventory is full)
+      this.pack = this.pack.map(id => (id === 'backpack' ? '' : id));
       const inPack = new Set(this.pack.filter(Boolean));
-      if (this.own.has('backpack') && !placed.has('c:backpack')) { const at = !slots[8] ? 8 : slots.findIndex(x => !x); if (at >= 0) { slots[at] = cosStack('backpack'); placed.add('c:backpack'); } }
+      if (this.own.has('backpack') && !placed.has('c:backpack')) {
+        const at = this.backpackSpot(slots);
+        if (at >= 0) {
+          const old = slots[at];
+          if (old && old.cos) { placed.delete('c:' + old.cos); this.toPack(old.cos); inPack.add(old.cos); }
+          slots[at] = cosStack('backpack'); placed.add('c:backpack');
+        }
+      }
       // anything owned and nowhere: the first free place, else the Backpack
       for (const c of COSMETICS) {
         const id = c[0], k = 'c:' + id;
@@ -339,9 +350,34 @@ export function makeLobbyCos(K) {
         ch = true;
       }
       if (ch) { inv.changed(); this.dirty = true; }
+      if (this.loaded && this.hub.area === 'lobby' && this.freeBackpack()) ch = true;
       return ch;
     }
     toPack(id) { const i = this.pack.findIndex(x => !x); if (i >= 0) this.pack[i] = id; else if (this.pack.length < PACK_PAGE * PACK_PAGES) this.pack.push(id); }
+    // where the Backpack goes: the hotbar's last place if free, else the first free place, else in place of a
+    // cosmetic (that last place first, then from the inventory's end), -1 if there is none
+    backpackSpot(slots) {
+      if (!slots[8]) return 8;
+      const free = slots.findIndex((x, i) => i < 36 && !x);
+      if (free >= 0) return free;
+      if (slots[8] && slots[8].cos) return 8;
+      for (let i = 35; i >= 0; i--) if (slots[i] && slots[i].cos) return i;
+      return -1;
+    }
+    /* The Backpack inside the Backpack (it could be put there before that was refused, and then could not be opened):
+       taken out into the inventory, a cosmetic going into the Backpack in its place if the inventory is full */
+    freeBackpack() {
+      const bi = this.pack.indexOf('backpack');
+      if (bi < 0) return false;
+      while (this.pack.indexOf('backpack') >= 0) this.pack[this.pack.indexOf('backpack')] = '';
+      const inv = this.game.inv;
+      if (this.own.has('backpack') && !inv.slots.some(x => x && x.cos === 'backpack')) {
+        const at = this.backpackSpot(inv.slots);
+        if (at >= 0) { const old = inv.slots[at]; if (old && old.cos) this.toPack(old.cos); inv.slots[at] = cosStack('backpack'); inv.changed(); }
+      }
+      this.dirty = true;
+      return true;
+    }
     // a cosmetic just found: into the first free place, else the Backpack
     place(id) {
       const inv = this.game.inv;

@@ -10,10 +10,10 @@
    Each command gets a context: ctx.game (the world being played), and
    ctx.say(text, colour) for the reply.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=97';
-import { Y0 } from './world-const.js?v=97';
-import { ENCHANTS } from './itemdata.js?v=97';
-import { stateOf } from './gen/states.js?v=97';
+import { B, BLOCKS, FLUID } from './blocks.js?v=98';
+import { Y0 } from './world-const.js?v=98';
+import { ENCHANTS } from './itemdata.js?v=98';
+import { stateOf } from './gen/states.js?v=98';
 
 const REG = new Map();
 export function register(name, def) { REG.set(name, def); for (const a of def.aliases || []) REG.set(a, def); }
@@ -461,7 +461,7 @@ function blockArg(s) {
 }
 // the block tags, from the generator's data (loaded only when a tag is asked for)
 let TAGS = null;
-const loadTags = () => import('./gen/vdata.js?v=97').then(m => { TAGS = m.VDATA.block_tags || {}; });
+const loadTags = () => import('./gen/vdata.js?v=98').then(m => { TAGS = m.VDATA.block_tags || {}; });
 function tagIds(name, seen = new Set()) {
   const key = name.replace(/^minecraft:/, '');
   const list = TAGS[key];
@@ -594,6 +594,8 @@ register('fill', {
     const vol = (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1);
     const limit = gameRule(ctx.game, 'commandModificationBlockLimit');
     if (vol > limit) fail(`Too many blocks in the specified area (maximum ${limit}, specified ${vol})`);
+    // (where a place lets someone fill only part of the world, net/hub.js's Map Editor: its reason not to, or nothing)
+    if (ctx.fillLimit) { const why = ctx.fillLimit(x0, y0 - Y0, z0, x1, y1 - Y0, z1, vol); if (why) fail(why); }
     const w = ctx.game.world;
     for (let cx = x0 >> 4; cx <= x1 >> 4; cx++) for (let cz = z0 >> 4; cz <= z1 >> 4; cz++) loaded(w, cx * 16, cz * 16);
     const AIR = { id: 0, meta: 0 };

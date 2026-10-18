@@ -16,7 +16,7 @@
    Detailed draws the terrain with lighter shaders that light per vertex
    (LEAN_VS / LEAN_FS below); the rest is the full chain's.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS, FILTER } from './glsl.js?v=97';
+import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS, FILTER } from './glsl.js?v=98';
 const THREE = window.THREE;
 
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray; precision highp sampler2DShadow;\n`;
@@ -39,7 +39,7 @@ void main() {
   int flags = int(aA.w + 0.5);
   int wave = nw >> 3;
   vec4 L = aL / 255.0;
-  world.xyz += windOffset(world.xyz, wave, aA.y / 16.0, L.x, L.w);
+  world.xyz += windOffset(world.xyz, wave, aA.y / 16.0, L.x, L.w, aC.w);
   vWorld = world.xyz;
   vUv = aA.xy / 16.0;
   vLayer = aPos.w;
@@ -410,7 +410,7 @@ void main() {
   int nw = int(aA.z + 0.5);
   int flags = int(aA.w + 0.5);
   vec4 L = aL / 255.0;
-  world.xyz += windOffset(world.xyz, nw >> 3, aA.y / 16.0, L.x, L.w);
+  world.xyz += windOffset(world.xyz, nw >> 3, aA.y / 16.0, L.x, L.w, aC.w);
   // (from the eye, never viewMatrix on the place in the world: vanilla.js TERRAIN_VS)
   gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * (world.xyz - cameraPosition), 1.0);
   vUv = aA.xy / 16.0;

@@ -32,8 +32,8 @@
    Fences, walls, panes, rails and redstone work out their shape from their
    neighbours, as Minecraft does when it draws them.
 --------------------------------------------------------------------------- */
-import { burnable } from './flame.js?v=97';
-import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=97';
+import { burnable } from './flame.js?v=98';
+import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=98';
 
 const box = (x0, y0, z0, x1, y1, z1, extra) => {
   const b = { f: [x0, y0, z0], t: [x1, y1, z1] };
@@ -788,9 +788,10 @@ export const SHAPES = {
 function bannerModel(d, wall) {
   const W = d.faces[0], P = d.L && d.L.pole !== undefined ? d.L.pole : W;
   const pole = [P, P, P, P, P, P], flagUV = [[0, 0, 1, 16], [0, 0, 1, 16], [0, 0, 16, 1], [0, 0, 16, 1], [0, 0, 16, 16], [0, 0, 16, 16]];
-  if (wall) return [box(1.33, 23, 0.33, 14.67, 24.33, 1.67, { faces: pole }), box(1.33, -2.33, 1.67, 14.67, 24.33, 2.33, { uv: flagUV })];
+  // (sway: the flag, which RIP Computer's shaders wave from its top, mesher.js drawList)
+  if (wall) return [box(1.33, 23, 0.33, 14.67, 24.33, 1.67, { faces: pole }), box(1.33, -2.33, 1.67, 14.67, 24.33, 2.33, { uv: flagUV, sway: true })];
   return [box(7.33, 0, 7.33, 8.67, 28, 8.67, { faces: pole }), box(1.33, 28, 7.33, 14.67, 29.33, 8.67, { faces: pole }),
-    box(1.33, 2.67, 6.67, 14.67, 29.33, 7.33, { uv: flagUV })];
+    box(1.33, 2.67, 6.67, 14.67, 29.33, 7.33, { uv: flagUV, sway: true })];
 }
 // the chains a hanging sign hangs from: a pair of crossed strips at each of two spots along the board
 function signChains(d, at, along, top = 16) {
