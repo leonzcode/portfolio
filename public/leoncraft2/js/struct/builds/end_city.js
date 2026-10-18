@@ -21,8 +21,8 @@
    that would run into another piece or out of reach is left out), and no
    draw function takes from g.r, so every chunk builds the same city.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=91';
-import { DX, DZ, opp } from './util.js?v=91';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=92';
+import { DX, DZ, opp } from './util.js?v=92';
 
 const PUR = 'purpur_block', PIL = 'purpur_pillar', ST = 'purpur_stairs', SL = 'purpur_slab';
 const ESB = 'end_stone_bricks', GL = 'magenta_stained_glass', ROD = 'end_rod';
