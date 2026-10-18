@@ -26,6 +26,7 @@
    afterwards, with a solid block under it, catches fire one time in three.
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID } from './blocks.js?v=91';
+import { WORLD_FX } from './world.js?v=91';
 
 /* Blast resistance from the wiki where it is not the block's hardness. Worked out the first time it
    is wanted, or when the page is next idle: its 34 passes over every block took 11-15 ms here, and
@@ -197,6 +198,8 @@ export function explode(world, x, y, z, power, o) {
   if (L && L.entities && typeof L.entities.explosion === 'function') L.entities.explosion(x, y, z, power, o);
 
   /* ---- the blocks go ---- */
+  // (RIP Computer: the flash and the smoke, and each block below bursting into pieces as it goes: render/realism.js)
+  if (WORLD_FX.blast) WORLD_FX.blast(x, y, z, power);
   const decay = o.decay !== undefined ? o.decay : true;
   const cells = [...hit.values()];
   // shuffled, as the game does, so drops and chains do not come out in ray order
