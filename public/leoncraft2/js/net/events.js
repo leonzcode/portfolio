@@ -509,10 +509,13 @@ export class Events {
       if (s && f && s.f & F.FIRE && r.av && r.av.mesh.visible && !(s.f & F.INVIS)) Pb.burn(f.x, f.y, f.z, 0.6, s.f & F.SNEAK ? 1.5 : s.f & F.SWIM ? 0.6 : 1.8);
     }
     // their fishing lines, every frame (a line seen while its player is not drawn is hidden)
+    const cam = net.ctx.renderer.camera;
     for (const [pid, b] of this.bobs) {
       const r = list.get(pid), on = !!(r && r.st && r.feet && r.av && r.av.mesh.visible);
       if (on) this.fishing(r, b, r.st);
       if (b.line) b.line.visible = b.mesh.visible = on;
+      // their bobber hooked on you sits inside your own head: unseen from your eyes (it filled the view with a red bar)
+      if (on && b.mesh && cam && b.mesh.position.distanceToSquared(cam.position) < 0.36) b.mesh.visible = false;
     }
     this.acc = (this.acc || 0) + dt;
     if (this.acc < 0.05) return;

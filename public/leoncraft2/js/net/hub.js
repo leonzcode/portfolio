@@ -83,7 +83,8 @@ const SWORDS = ['wooden_sword', 'stone_sword', 'iron_sword', 'diamond_sword'];
 
 /* ---- the item shop: [id, shown, price [currency, n], what it gives] by category ---- */
 const C = (cur, n) => [cur, n];
-function shopItems(team) {
+// (big: three and four a team, where TNT costs twice as much, as in the mode's own shop)
+function shopItems(team, big) {
   return {
     blocks: [
       { id: 'wool', name: 'Wool', price: C('iron', 4), give: () => [stack(team.wool, 16)], icon: team.wool, n: 16, lore: ['Great for bridging across', 'islands. Turns into your team\'s', 'colour.'] },
@@ -123,7 +124,7 @@ function shopItems(team) {
     ],
     utility: [
       { id: 'gapple', name: 'Golden Apple', price: C('gold', 3), give: () => [stack('golden_apple')], icon: 'golden_apple', lore: ['Well-rounded healing.'] },
-      { id: 'tnt', name: 'TNT', price: C('gold', 4), give: () => [stack('tnt')], icon: 'tnt', lore: ['Instantly ignites, appropriate', 'to explode things!'] },
+      { id: 'tnt', name: 'TNT', price: C('gold', big ? 8 : 4), give: () => [stack('tnt')], icon: 'tnt', lore: ['Instantly ignites, appropriate', 'to explode things!'] },
       { id: 'pearl', name: 'Ender Pearl', price: C('emerald', 4), give: () => [stack('ender_pearl')], icon: 'ender_pearl', lore: ['The quickest way to invade', 'enemy bases.'] },
       { id: 'water', name: 'Water Bucket', price: C('gold', 3), give: () => [stack('water_bucket')], icon: 'water_bucket', lore: ['Great to slow down', 'approaching enemies. Can also', 'protect against TNT.'] },
       { id: 'sponge', name: 'Sponge', price: C('gold', 3), give: () => [stack('sponge', 4)], icon: 'sponge', n: 4, lore: ['Great for soaking up water.'] },
@@ -192,7 +193,7 @@ class ShopScreen extends MenuScreen {
   constructor(hub) { super(hub, 'Item Shop'); }
   fillBox() {
     const hub = this.hub, cat = hub.shopCat || 'quick';
-    const items = shopItems(hub.team || { wool: 'white_wool', clay: 'white_terracotta', glass: 'white_stained_glass' });
+    const items = shopItems(hub.team || { wool: 'white_wool', clay: 'white_terracotta', glass: 'white_stained_glass' }, hub.prices | 0);
     CATEGORIES.forEach((c, i) => {
       const st = stack(c.icon); if (!st) return;
       st.name = '§a' + c.name;
@@ -851,6 +852,9 @@ export class Hub {
       const k = e.code;
       if (k === 'KeyL' && (this.spec || this.canWatch())) this.toggleWatch();
       else if ((k === 'ArrowLeft' || k === 'ArrowRight') && this.spec) this.watchNext(k === 'ArrowRight' ? 1 : -1);
+      // out of a round (or come late to it) and watching: Left and Right go to the players still in it, as Hypixel's
+      // spectators' Teleporter does
+      else if ((k === 'ArrowLeft' || k === 'ArrowRight') && this.deadWatch()) this.teleportNext(k === 'ArrowRight' ? 1 : -1);
       else return;
       e.preventDefault(); e.stopImmediatePropagation();
     };
@@ -1122,7 +1126,8 @@ export class Hub {
       if (kind === 'wait_vote') inv.slots[0] = stack('filled_map', 1, { name: '§aMap Vote §7- Right Click to choose the map' }) || stack('paper', 1, { name: '§aMap Vote §7- Right Click to choose the map' });
       if (this.gameKind === 'skywars') inv.slots[0] = stack('bow', 1, { name: '§aKit Selector §7- Right Click to choose a kit' });
     } else if (kind === 'sw') {
-      // SkyWars: the kit you picked, in your cage (and you are playing: without it nothing could be built or broken)
+      // SkyWars: the kit you picked, in your cage (alive: without it nothing could be broken or built, and a death
+      // was never told to the server, so nobody ever lost)
       this.alive = true;
       const k = SW_KITS.find(q => q.id === (this.swKit || swKitId())) || SW_KITS[0];
       for (const st of k.give ? k.give() : []) if (st) inv.addStack(st);
@@ -1762,6 +1767,8 @@ export class Hub {
       this.jumpHeld = down;
     }
     if (this.gameKind !== 'bedwars') return;
+    // a potion drunk leaves no bottle behind, as the mode has it
+    { const inv = g.inv, gb = idOf('glass_bottle'); if (gb) for (let i = 0; i < 36; i++) { const s = inv.slots[i]; if (s && s.id === gb) { inv.slots[i] = null; inv.changed(); } } }
     if (this.t % 10 === 0) this.applyUpgrades(false);
     if (this.t % 20 === 0) {
       const up = this.up || {};
@@ -1880,6 +1887,23 @@ export class Hub {
     const S = this.spec, L = this.net.players ? [...this.net.players.list.entries()] : [];
     return L.filter(([, r]) => r.feet && r.st && !(r.st.f & (F.SPEC | F.DEAD)) && Math.hypot(r.feet.x - S.at.x, r.feet.z - S.at.z) < 400)
       .map(([id]) => id).sort((a, b) => a - b);
+  }
+  // watching a round from spectator, out of it or come late (not a hider out of their body)
+  deadWatch() { const g = this.game; return !!g && !this.spec && g.mode === 'spectator' && ((this.area === 'game' && !this.alive) || (this.area === 'wait' && !!this.watching)); }
+  // the next player still in the round, in turn: put 4 behind them and 2 up, looking at them
+  teleportNext(dir) {
+    const g = this.game, P = g.player, L = this.net.players ? [...this.net.players.list.entries()] : [];
+    // (where each last said they are: r.feet is only kept up for those near enough to be drawn)
+    const list = L.filter(([, r]) => r.st && !(r.st.f & (F.SPEC | F.DEAD)) && Math.hypot(r.st.x - P.pos.x, r.st.z - P.pos.z) < 400).sort((a, b) => a[0] - b[0]);
+    if (!list.length) { this.ctx.chat.add('§cNobody to watch here.', 0xFF5555); return; }
+    const i = list.findIndex(e => e[0] === this.tpWatch);
+    const [id, r] = list[(i < 0 ? (dir > 0 ? 0 : list.length - 1) : (i + dir + list.length) % list.length)];
+    this.tpWatch = id;
+    const s = r.st, yaw = s.yaw || 0, x = s.x + Math.sin(yaw) * 4, z = s.z + Math.cos(yaw) * 4, y = s.y + 2;
+    P.pos.set(x, y, z); if (P.prev) P.prev.copy(P.pos); P.vel.set(0, 0, 0); P.flying = true;
+    P.yaw = Math.atan2(-(s.x - x), -(s.z - z)); P.pitch = Math.atan2(s.y + 1.2 - (y + 1.62), 4);
+    this.ctx.chat.add('§7Watching §f' + (r.name || 'a player'), 0xFFFFFF);
+    this.sound('ui.button.click');
   }
   watchNext(dir) {
     const S = this.spec;
@@ -2335,6 +2359,12 @@ export class Hub {
       const r = this.spec.id !== null && this.net.players ? this.net.players.list.get(this.spec.id) : null;
       const msg = (r ? '§dWatching §f' + (r.name || 'a player') : '§dFree camera §7- fly about') + ' §7| §eLeft§7/§eRight §7players | §eL §7back to your body';
       const x = Math.floor(g.width / 2), y = g.height - 72, w = g.textWidth(msg);
+      g.fill(x - Math.ceil(w / 2) - 4, y - 3, x + Math.ceil(w / 2) + 4, y + 11, 0x66000000);
+      g.centered(msg, x, y, 0xFFFFFF, true);
+    } else if (!this.ctx.gui.hideHud && this.deadWatch()) {
+      // out of the round: how to get about (a spectator has no hotbar for Hypixel's Teleporter and bed)
+      const msg = '§7Spectating §8| §eLeft§7/§eRight §7go to a player §8| §e/lobby §7to leave';
+      const x = Math.floor(g.width / 2), y = g.height - 40, w = g.textWidth(msg);
       g.fill(x - Math.ceil(w / 2) - 4, y - 3, x + Math.ceil(w / 2) + 4, y + 11, 0x66000000);
       g.centered(msg, x, y, 0xFFFFFF, true);
     }
