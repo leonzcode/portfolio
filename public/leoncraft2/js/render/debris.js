@@ -74,8 +74,9 @@ out vec4 o;
 LIGHTS_HERE
 void main() {
   vec4 t = texture(uAlbedo, vUv);
-  // (a cut through a see-through part of the texture still shows: the piece is solid)
-  vec3 albedo = toLinear((t.a < 0.1 ? vec3(0.45) : t.rgb) * vCol);
+  // (the see-through parts of leaves and glass stay see-through: clumps of leaves, shards of glass)
+  if (t.a < 0.1) discard;
+  vec3 albedo = toLinear(t.rgb * vCol);
   vec3 n = normalize(vN);
   float sky = vLv.x, block = vLv.y;
   vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb;
@@ -98,9 +99,10 @@ in vec3 vUv; in vec3 vCol; in vec3 vN; in vec3 vWorld; in vec2 vLv;
 out vec4 o;
 void main() {
   vec4 t = texture(uAlbedo, vUv);
+  if (t.a < 0.1) discard;
   vec3 n = abs(normalize(vN));
   float shade = n.y > 0.5 ? 1.0 : n.x > n.z ? 0.6 : 0.8;
-  vec3 c = (t.a < 0.1 ? vec3(0.45) : t.rgb) * vCol * shade * lightmapAt(vLv.x, vLv.y);
+  vec3 c = t.rgb * vCol * shade * lightmapAt(vLv.x, vLv.y);
   o = vec4(linearFog(c, fogDistance(vWorld - cameraPosition)), 1.0);
 }`;
 
@@ -165,7 +167,8 @@ export class Debris {
   // what a block's pieces look like: the layers of its six faces, which take the tint, and the tint
   look(b, x, z) {
     let d = BLOCKS[b];
-    if (!d || !d.faces || d.shape === 'none' || d.shape === 'fluid') return null;
+    // (only what is solid splits into pieces: grass, flowers, torches and the like just go)
+    if (!d || !d.faces || !d.solid || d.shape === 'none' || d.shape === 'fluid' || d.shape === 'cross') return null;
     let faces = d.faces.slice(), mask = 0, tint = 0xffffff;
     // a grass block (and its kind) is dirt under a grassy top
     if (d.name === 'grass_block') { const dirt = BLOCKS[B.dirt].faces[0]; faces = [dirt, dirt, d.faces[2], dirt, dirt, dirt]; mask = 4; }
@@ -175,8 +178,8 @@ export class Debris {
       const c = this.R.colours, bi = this.world.biomeAt(x, z);
       if (c) tint = d.tint === 'grass' || d.name === 'grass_block' ? c.grass[bi] : d.tint === 'foliage' ? c.leaf[bi] : d.tint === 'spruce' ? 0x619961 : d.tint === 'birch' ? 0x80a755 : d.tint === 'water' ? c.water[bi] : 0xffffff;
     }
-    // (a plant or a flat thing has one picture: it goes on every face of its pieces)
-    if (d.shape !== 'cube' && d.shape !== 'snow') { const l = d.faces[2] || d.faces[0]; faces = [l, l, l, l, l, l]; }
+    // (a slab, stair, fence or the like: its side picture on every face of its pieces)
+    if (d.shape !== 'cube' && d.shape !== 'snow') { const l = d.faces[0] || d.faces[2]; faces = [l, l, l, l, l, l]; }
     return { faces, mask, r: ((tint >> 16) & 255) / 255, g: ((tint >> 8) & 255) / 255, b: (tint & 255) / 255 };
   }
   // one piece: where, its size, its push (blocks a tick) and its spin (radians a tick about each axis)

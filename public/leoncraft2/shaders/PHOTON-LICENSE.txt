@@ -1,0 +1,44 @@
+Leoncraft 2 - code from Photon Shaders
+
+Leoncraft 2's RIP Computer shader level ports three parts of Photon Shaders
+by SixthSurge (https://github.com/sixthsurge/photon, downloaded October 2026)
+to its own WebGL pipeline, changed to fit it:
+
+- the wind on plants and leaves: gusts read from a noise texture drifting with
+  the wind and a wobble of three harmonics at each vertex's own phase, stronger
+  in rain (include/vertex/displacement.glsl, get_wind_displacement; here
+  js/render/glsl.js photonWind)
+- plants pushed away from the player (animate_vertex), here given to everyone
+  walking near (js/render/glsl.js pushAway)
+- puddles and wet ground in the rain: puddles where a noise is high on flat
+  open ground, darker and mirror smooth, the rain's ripples from three taps of
+  a scrolling noise (include/surface/rain_puddles.glsl; here
+  js/render/materials.js PUDDLES, with their reflections in
+  js/render/post.js puddleLook)
+
+Photon Shaders is shared under the licence below, which allows redistributing
+modified portions, except on platforms that pay creators (such as Modrinth or
+CurseForge) and except for money. Leoncraft 2 is free and is not distributed
+on such a platform. The licence follows unchanged.
+
+----------------------------------------------------------------------------
+
+Photon Shaders License Agreement 
+
+Copyright © 2021-2025 Benjamin Stott ("SixthSurge")
+
+All rights reserved unless otherwise explicitly stated.
+
+Any person obtaining a copy of this software package ("Photon Shaders") may:
+- Use Photon Shaders, including for commercially published screenshots and videos.
+- Modify Photon Shaders for personal use.
+- Examine and learn from Photon Shaders's source code.
+- Redistribute modified or unmodified portions of Photon Shaders with the following exceptions:
+    - You may not redistribute Photon Shaders or derivative works on platforms that provide direct or indirect monetary compensation to creators (e.g. Modrinth, CurseForge) without my explicit written permission.
+    - You may not demand money in exchange for copies of Photon Shaders or derivative works without my explicit written permission.
+- Redistribute Photon Shaders as part of a (commercial) Modpack.
+
+This license document is to be included in all substantial copies of Photon Shaders.
+
+PHOTON SHADERS IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH PHOTON SHADERS OR THE USE OR OTHER DEALINGS IN PHOTON SHADERS.
+
