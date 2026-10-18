@@ -42,11 +42,11 @@
    A trade gives the player 3 to 6 experience (5 more when the villager
    levels up) and the villager the trade's experience.
 --------------------------------------------------------------------------- */
-import { I, maxStack, withCount, stackToJSON, stackFromJSON } from './items.js?v=92';
-import { B } from './blocks.js?v=92';
-import { ENCH, ORDER, selectEnchants } from './enchanting.js?v=92';
-import { BREWABLE } from './brewing.js?v=92';
-import { dyeColour, mixColours } from './crafting.js?v=92';
+import { I, maxStack, withCount, stackToJSON, stackFromJSON } from './items.js?v=93';
+import { B } from './blocks.js?v=93';
+import { ENCH, ORDER, selectEnchants } from './enchanting.js?v=93';
+import { BREWABLE } from './brewing.js?v=93';
+import { dyeColour, mixColours } from './crafting.js?v=93';
 
 export const LEVEL_XP = [0, 10, 70, 150, 250];
 export const LEVEL_NAMES = ['Novice', 'Apprentice', 'Journeyman', 'Expert', 'Master'];
@@ -282,7 +282,7 @@ function mapOffer(t) {
   if (!target || a === undefined || out === undefined || (t.want[1] && b === undefined)) return null;
   const o = { a: { id: a, count: t.want[0][1] }, b: t.want[1] ? { id: b, count: t.want[1][1] } : null, out: { id: out, count: 1 },
     uses: 0, maxUses: t.uses, xp: t.xp, mult: t.mult, demand: 0, special: 0 };
-  Promise.all([import('./containers.js?v=92'), import('./maps.js?v=92')]).then(([C, M]) => {
+  Promise.all([import('./containers.js?v=93'), import('./maps.js?v=93')]).then(([C, M]) => {
     const L = typeof window !== 'undefined' ? window.__lc2 : null, S = L && L.structures;
     o.out.title = C.MAP_TITLE[target[0]] || 'Explorer Map';
     if (!S || !S.locate) { o.uses = o.maxUses; return; }

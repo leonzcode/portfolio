@@ -26,18 +26,18 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=92';
-import { Packs } from './pack.js?v=92';
-import { Account } from '../net/account.js?v=92';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=92';
-import { packArtSummary } from '../entities/packart.js?v=92';
-import { LanScreen } from './lan.js?v=92';
-import { parseSeed } from '../gen/random.js?v=92';
-import { SOUND_CREDITS } from '../sound/credits.js?v=92';
-import { SkinGalleryScreen, skinCredits } from './skins.js?v=92';
-import { SkinsScreen } from './skinmenu.js?v=92';
-import { FlatCustomizeScreen } from './flat.js?v=92';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=92';
+} from './gui.js?v=93';
+import { Packs } from './pack.js?v=93';
+import { Account } from '../net/account.js?v=93';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=93';
+import { packArtSummary } from '../entities/packart.js?v=93';
+import { LanScreen } from './lan.js?v=93';
+import { parseSeed } from '../gen/random.js?v=93';
+import { SOUND_CREDITS } from '../sound/credits.js?v=93';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=93';
+import { SkinsScreen } from './skinmenu.js?v=93';
+import { FlatCustomizeScreen } from './flat.js?v=93';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=93';
 
 const PI = Math.PI;
 
@@ -406,7 +406,7 @@ export class SelectWorldScreen extends Screen {
     if (this.importing) return;
     this.importing = true; this.lc1B.active = false; this.lc1B.message = 'Importing...'; this.gui.markDirty();
     const done = msg => { this.importing = false; if (this.lc1B) { this.lc1B.active = true; this.lc1B.message = 'Import from Leoncraft 1'; } this.gui.markDirty(); if (msg) this.gui.open(new NoticeScreen('Import from Leoncraft 1', msg)); };
-    import('../lc1/spimport.js?v=92').then(m => {
+    import('../lc1/spimport.js?v=93').then(m => {
       const saves = m.lc1Saves();
       if (!saves.length) return done('There is no Leoncraft 1 world in this browser.');
       return m.importLC1(saves[0].key, Worlds).then(r => {
@@ -741,9 +741,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=92';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=92';
-import { minimapButtons } from './minimap.js?v=92';
+export { VideoSettingsScreen } from './video.js?v=93';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=93';
+import { minimapButtons } from './minimap.js?v=93';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -1055,6 +1055,12 @@ const CREDITS = [
   ['Murder Mystery: Bread Hotel, from "Murder Mystery Hotel" by'], ['bread4tabread (MIT); Botello Manor, from "SoS: The Botello Manor"'],
   ['by GreatOrator (MIT); Modern House, from "Ultra Modern House" by'], ['JobKay (Public Domain); Houseville, by noxgame1230 (ISC).'],
   ['The lobby, from "Floating Island Server Spawn" by mrmagicblox'], ['(Public Domain), with our own sign and pedestals.'],
+  ['Bed Wars and SkyWars maps by the NetherGames Network (CC BY 4.0), cut'], ['and converted for the game, our own waiting room over each:'],
+  ['Bed Wars: Amarris, Utopia (Chr7st, epicniklas10 & SrySkillaura), Castaway'], ['(CloudySheets & LargeKnome), Sandy, Oblivion (iPyro15), Fungal (Pwetster),'],
+  ['Harmony (LargeKnome), Elementar, Giants, Cytree and Town. SkyWars:'], ['Lighthouse and Pollution (JangoMango), Saga (Epicniklas10), Morass'],
+  ['(Bdoggy617), Seafloor, Scaffolds and Buried (Prop11th), Toys, Town, Narra'], ['(TheLaoring). NetherGames does not endorse Leonpixel.'],
+  ['github.com/NetherGamesMC/assets', 0, 'https://github.com/NetherGamesMC/assets'],
+  ['creativecommons.org/licenses/by/4.0', 0, 'https://creativecommons.org/licenses/by/4.0/'],
   ['Meccha Chameleon plays on the first Leoncraft’s Mecha maps (Purpular, Fortress and Classroom by carver and Leon, the rest by Leon).'],
   ['The rest of Leonpixel\'s maps are our own.'], [''],
   ['Code', 0xFFFF55],
