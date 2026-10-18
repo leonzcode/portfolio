@@ -9,20 +9,20 @@
    main.js imports the modules below one at a time first, in this order
    (PART_STEPS, with a frame between): a line added here goes there too.
 --------------------------------------------------------------------------- */
-export { enchantDebug } from './enchanting.js?v=94';
-export { Survival } from './survival.js?v=94';
-export { survivalHooks, respawnPlayer, respawnSpot } from './life.js?v=94';
-export { Drops, dropItem, giveXp } from './drops.js?v=94';
-export { Containers } from './containers.js?v=94';
-export { Hands } from './hands.js?v=94';
-export { Entities } from './entities/manager.js?v=94';
-export { Sim } from './sim/sim.js?v=94';
-export { Realms } from './dim/realms.js?v=94';
-export { structuresApi } from './struct/spawners.js?v=94';
-export { Details, isSign } from './details.js?v=94';
-export { SignEditScreen } from './ui/sign.js?v=94';
-export { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=94';
-export { MultiplayerScreen, DisconnectedScreen, rejoin } from './ui/multiplayer.js?v=94';
-export { advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements } from './adv/game.js?v=94';
-export { statsWorld, statsTick, statsState, statsQuit, statsLeave, openStatistics } from './stats.js?v=94';
-export { recipesWorld, recipesTick, recipesState, recipesLeave } from './recipes.js?v=94';
+export { enchantDebug } from './enchanting.js?v=95';
+export { Survival } from './survival.js?v=95';
+export { survivalHooks, respawnPlayer, respawnSpot } from './life.js?v=95';
+export { Drops, dropItem, giveXp } from './drops.js?v=95';
+export { Containers } from './containers.js?v=95';
+export { Hands } from './hands.js?v=95';
+export { Entities } from './entities/manager.js?v=95';
+export { Sim } from './sim/sim.js?v=95';
+export { Realms } from './dim/realms.js?v=95';
+export { structuresApi } from './struct/spawners.js?v=95';
+export { Details, isSign } from './details.js?v=95';
+export { SignEditScreen } from './ui/sign.js?v=95';
+export { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=95';
+export { MultiplayerScreen, DisconnectedScreen, rejoin } from './ui/multiplayer.js?v=95';
+export { advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements } from './adv/game.js?v=95';
+export { statsWorld, statsTick, statsState, statsQuit, statsLeave, openStatistics } from './stats.js?v=95';
+export { recipesWorld, recipesTick, recipesState, recipesLeave } from './recipes.js?v=95';

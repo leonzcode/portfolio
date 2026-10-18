@@ -16,13 +16,13 @@
    is pluggable (makeSource): with the vanilla generator plugged in, the
    answers are the real game's.
 --------------------------------------------------------------------------- */
-import { SETS, BIOMES_OF, STRONGHOLD_BIASED, MONUMENT_SURROUNDING, SET_OF, FAMILY, potentialChunk, isStructureChunk, heightOf, SEA_LEVEL } from './placement.js?v=94';
-import { JRand, toLong, largeFeature } from './rand.js?v=94';
-import { strongholdPieces } from './stronghold.js?v=94';
-import { fortressPieces } from './fortress.js?v=94';
-import { mineshaftPieces } from './mineshaft.js?v=94';
-import { ChunkWriter } from './piece.js?v=94';
-import { PLANS } from './builds/index.js?v=94';
+import { SETS, BIOMES_OF, STRONGHOLD_BIASED, MONUMENT_SURROUNDING, SET_OF, FAMILY, potentialChunk, isStructureChunk, heightOf, SEA_LEVEL } from './placement.js?v=95';
+import { JRand, toLong, largeFeature } from './rand.js?v=95';
+import { strongholdPieces } from './stronghold.js?v=95';
+import { fortressPieces } from './fortress.js?v=95';
+import { mineshaftPieces } from './mineshaft.js?v=95';
+import { ChunkWriter } from './piece.js?v=95';
+import { PLANS } from './builds/index.js?v=95';
 
 // how far (in chunks) a structure's pieces can reach from its start chunk
 const REACH = {
@@ -260,6 +260,9 @@ export class Structures {
   /* ---- strongholds ---- */
   ringTries() {
     if (this.ring) return this.ring;
+    // (a Superflat world whose preset has no strongholds has none at all: they skip point(), so the check is here;
+    //  without it The Void, Leonpixel's world, had strongholds hanging in the air beside the arenas)
+    if (this.src.allow && !this.src.allow.has('stronghold')) return (this.ring = []);
     const { distance, spread: s0, count } = SETS.strongholds.rings;
     const r = new JRand(this.seed);
     let a = r.nextDouble() * Math.PI * 2;

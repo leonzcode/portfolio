@@ -23,11 +23,11 @@
    Made by net/hub.js with its own pieces (makeLobbyCos(K)), as the Profile
    menus are, so this file imports nothing of hub.js.
 --------------------------------------------------------------------------- */
-import { COS, COSMETICS, HATS, AURAS, TRAILS, GADGETS, RARITY, CATS } from './cosdata.js?v=94';
-import { B, BLOCKS, SOLID } from '../blocks.js?v=94';
-import { Sound } from '../sound/sound.js?v=94';
-import { F } from './players.js?v=94';
-import { blockGeometry } from '../render/blockmesh.js?v=94';
+import { COS, COSMETICS, HATS, AURAS, TRAILS, GADGETS, RARITY, CATS } from './cosdata.js?v=95';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=95';
+import { Sound } from '../sound/sound.js?v=95';
+import { F } from './players.js?v=95';
+import { blockGeometry } from '../render/blockmesh.js?v=95';
 
 const THREE = window.THREE;
 const FIXED = ['compass', 'temp', 'profile'];
@@ -98,6 +98,8 @@ function ridePose(h) {
     S[4].rx = -1.35; S[4].rz = 0.3; S[5].rx = -1.35; S[5].rz = -0.3;
   };
 }
+
+let BY_NAME = null;                 // a cosmetic's item name -> its id (for repair)
 
 export function makeLobbyCos(K) {
   const { MenuScreen, ChestScreen, stack, idOf } = K;
@@ -170,6 +172,8 @@ export function makeLobbyCos(K) {
       this.store(); this.cos.dirty = true;
       return out;
     }
+    // (a stack carried onto a place lands on the release, so the page is taken down again then)
+    mouseReleased(mx, my, button) { const out = ChestScreen.prototype.mouseReleased.call(this, mx, my, button); this.store(); this.cos.dirty = true; return out; }
     mayPlace(s, st) { if (s.kind === 'box') return s.i < PACK_PAGE && !!(st && st.cos); return ChestScreen.prototype.mayPlace.call(this, s, st); }
     quickMove(s) {
       const st = this.getStack(s);
@@ -317,6 +321,25 @@ export function makeLobbyCos(K) {
       // the Backpack only holds what is owned and not carried
       this.pack = this.pack.map(id => (id && this.own.has(id) && !placed.has('c:' + id) ? id : ''));
       this.savedSig = this.sig(inv);
+    }
+    /* A cosmetic copied by a move before items.js withCount kept its id (taking one out of the Backpack did that) is
+       a plain item with the cosmetic's name that does nothing: made the cosmetic again, or taken away if the real one
+       is somewhere else too */
+    repair() {
+      const inv = this.game.inv;
+      if (!BY_NAME) { BY_NAME = new Map(); for (const c of COSMETICS) { const st = cosStack(c[0], false); if (st) BY_NAME.set(st.name, c[0]); } }
+      let ch = false;
+      const has = id => inv.slots.some(x => x && x.cos === id) || this.pack.includes(id);
+      for (let i = 0; i < 36; i++) {
+        const s = inv.slots[i];
+        if (!s || s.cos || !s.name) continue;
+        const id = BY_NAME.get(s.name);
+        if (!id) continue;
+        inv.slots[i] = this.own.has(id) && !has(id) ? cosStack(id, this.isWorn(id)) : null;
+        ch = true;
+      }
+      if (ch) { inv.changed(); this.dirty = true; }
+      return ch;
     }
     toPack(id) { const i = this.pack.findIndex(x => !x); if (i >= 0) this.pack[i] = id; else if (this.pack.length < PACK_PAGE * PACK_PAGES) this.pack.push(id); }
     // a cosmetic just found: into the first free place, else the Backpack
@@ -667,6 +690,7 @@ export function makeLobbyCos(K) {
       if (wantBoots && !hasBoots) { const b = stack('golden_boots', 1, { name: '§6Double Jump Boots' }); if (b) { b.cosBoots = true; inv.armor[3] = b; moved = true; } }
       else if (!wantBoots && hasBoots) { inv.armor[3] = null; moved = true; }
       if (moved) inv.changed();
+      if (t % 20 === 0) this.repair();
       // (the save of where things are: two seconds after the last change)
       const sig = this.sig(inv);
       if (sig !== this.savedSig) { if (!this.dirty) { this.dirty = true; this.saveAt = t + 40; } else if (t >= this.saveAt) this.save(false); }
