@@ -15,12 +15,13 @@
    (impact^2 + impact) / 2 x 7 x 2 x power + 1, and it is pushed away from
    the centre by the impact (towards its eyes, for the living).
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, B } from '../blocks.js?v=91';
-import { blastResistance } from './terrain.js?v=91';
-import { breakAt } from '../place.js?v=91';
-import { BLAST_FILTER } from '../explosion.js?v=91';
-import { dropOf } from '../survival.js?v=91';
-import { Living } from './entity.js?v=91';
+import { BLOCKS, FLUID, B } from '../blocks.js?v=92';
+import { blastResistance } from './terrain.js?v=92';
+import { breakAt } from '../place.js?v=92';
+import { BLAST_FILTER } from '../explosion.js?v=92';
+import { WORLD_FX } from '../world.js?v=92';
+import { dropOf } from '../survival.js?v=92';
+import { Living } from './entity.js?v=92';
 
 const R = () => Math.random();
 // the 1352 ray directions, made once
@@ -98,7 +99,8 @@ export function explode(m, cx, cy, cz, power, source, o = {}) {
   };
   if (P && P.alive() && !P.creative()) push(P, true);
   m.forNear(cx, cz, r2 + 2, e => { if (!e.removed && e !== (source && source.attacker)) push(e, false); });
-  // the blocks go, some dropping
+  // the blocks go, some dropping (RIP Computer: bursting into pieces, with a flash and smoke: render/realism.js)
+  if (WORLD_FX.blast) WORLD_FX.blast(cx, cy, cz, power);
   const chance = source && source.mob ? 1 / power : 1;
   /* TNT in the blast is lit with a short fuse (the game's TntBlock.wasExploded: 10 to 29 ticks), owned by the
      blast's indirect source as ServerExplosion.getIndirectSourceEntity has it: the creeper or the wither itself,

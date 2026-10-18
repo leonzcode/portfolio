@@ -30,9 +30,9 @@
    walks out of everyone's reach is put away on the server, as the game
    keeps the mobs of unloaded chunks, and comes back with its ground.
 --------------------------------------------------------------------------- */
-import { Living, wrap } from '../entities/entity.js?v=91';
-import { TYPES } from '../entities/mobs.js?v=91';
-import { F } from './players.js?v=91';
+import { Living, wrap } from '../entities/entity.js?v=92';
+import { TYPES } from '../entities/mobs.js?v=92';
+import { F } from './players.js?v=92';
 
 const THREE = window.THREE;
 // besides the living (animals, monsters, villagers, golems, armour stands): paintings, the knots of leads, sand and gravel falling, fireworks,
@@ -495,7 +495,8 @@ export class Mobs {
           const e = rec.e;
           if (!e || e.removed) continue;
           // killed: the puff of smoke as it goes (a despawn, or one gone out of sight, just goes)
-          if (e.dead && !m.far && this.E) this.E.poof(e);
+          // (RIP Computer: its body lies here a while instead: entities/manager.js corpse)
+          if (e.dead && !m.far && this.E && !(this.E.corpse && this.E.corpse(e))) this.E.poof(e);
           // a firework gone off: its sparks here too (what it hurt is the business of the machine it flew on)
           if (e.type === 'firework_rocket' && !m.far && e.burst) {
             const real = e.m;

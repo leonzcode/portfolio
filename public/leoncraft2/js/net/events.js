@@ -43,18 +43,19 @@
                    fishing (their line, from the rod in their hand to the
                    bobber where it floats)
 --------------------------------------------------------------------------- */
-import { Sound } from '../sound/sound.js?v=91';
-import { MobSounds } from '../sound/mobsounds.js?v=91';
-import { Ambience } from '../sound/ambient.js?v=91';
-import { B, BLOCKS } from '../blocks.js?v=91';
-import { selectionBoxes } from '../models.js?v=91';
-import { exposure } from '../explosion.js?v=91';
-import { Overlay } from '../render/overlay.js?v=91';
-import { F } from './players.js?v=91';
-import { Potion } from '../entities/projectiles.js?v=91';
-import { splashPotion, lingeringPotion } from '../entities/mobfx.js?v=91';
-import { POTIONS } from '../brewing.js?v=91';
-import { EFFECTS } from '../effects.js?v=91';
+import { Sound } from '../sound/sound.js?v=92';
+import { MobSounds } from '../sound/mobsounds.js?v=92';
+import { Ambience } from '../sound/ambient.js?v=92';
+import { B, BLOCKS } from '../blocks.js?v=92';
+import { selectionBoxes } from '../models.js?v=92';
+import { exposure } from '../explosion.js?v=92';
+import { WORLD_FX } from '../world.js?v=92';
+import { Overlay } from '../render/overlay.js?v=92';
+import { F } from './players.js?v=92';
+import { Potion } from '../entities/projectiles.js?v=92';
+import { splashPotion, lingeringPotion } from '../entities/mobfx.js?v=92';
+import { POTIONS } from '../brewing.js?v=92';
+import { EFFECTS } from '../effects.js?v=92';
 const THREE = window.THREE;
 
 let active = null, quiet = 0;
@@ -394,6 +395,8 @@ export class Events {
       E.particles(power >= 2 ? 'explosion_big' : 'explosion', x, y, z, 1, 0);
       E.particles('explosion', x, y, z, Math.round(power * 4), power * 0.6);
     }
+    // (RIP Computer: its flash and smoke, and the blocks it took bursting into pieces here too: render/realism.js)
+    if (WORLD_FX.blast) WORLD_FX.blast(x, y, z, power);
     if (!E || g.mode === 'creative' || g.mode === 'spectator' || (g.survival && g.survival.dead)) return;
     const reach = power * 2, p = P.pos;
     const dist = Math.sqrt((p.x - x) ** 2 + (p.y - y) ** 2 + (p.z - z) ** 2) / reach;
@@ -509,10 +512,13 @@ export class Events {
       if (s && f && s.f & F.FIRE && r.av && r.av.mesh.visible && !(s.f & F.INVIS)) Pb.burn(f.x, f.y, f.z, 0.6, s.f & F.SNEAK ? 1.5 : s.f & F.SWIM ? 0.6 : 1.8);
     }
     // their fishing lines, every frame (a line seen while its player is not drawn is hidden)
+    const cam = net.ctx.renderer.camera;
     for (const [pid, b] of this.bobs) {
       const r = list.get(pid), on = !!(r && r.st && r.feet && r.av && r.av.mesh.visible);
       if (on) this.fishing(r, b, r.st);
       if (b.line) b.line.visible = b.mesh.visible = on;
+      // their bobber hooked on you sits inside your own head: unseen from your eyes (it filled the view with a red bar)
+      if (on && b.mesh && cam && b.mesh.position.distanceToSquared(cam.position) < 0.36) b.mesh.visible = false;
     }
     this.acc = (this.acc || 0) + dt;
     if (this.acc < 0.05) return;

@@ -7,10 +7,14 @@
    out of range, and takes edits: a changed block remeshes its column, and
    the neighbouring one too when it sits on an edge.
 --------------------------------------------------------------------------- */
-import { CH, H, idx } from './world-const.js?v=91';
-import { BLOCKS, FLUID } from './blocks.js?v=91';
-import { searchSpawn } from './spawn.js?v=91';
-import { settleEdges } from './edgevines.js?v=91';
+import { CH, H, idx } from './world-const.js?v=92';
+import { BLOCKS, FLUID } from './blocks.js?v=92';
+import { searchSpawn } from './spawn.js?v=92';
+import { settleEdges } from './edgevines.js?v=92';
+
+/* RIP Computer's realism (render/realism.js) hears of every block taken away (gone: the world, where, what it was,
+   what is there now) and every explosion (blast: where, its power; explosion.js, entities/explosion.js, net/events.js) */
+export const WORLD_FX = { gone: null, blast: null };
 
 /* ---- the workers, kept for the whole visit ----
    A new worker is slow for its first seconds: its code is fetched, compiled
@@ -21,7 +25,7 @@ import { settleEdges } from './edgevines.js?v=91';
 const GEN_N = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 const POOL = [];
 function newWorker() {
-  const w = new Worker(new URL('./worker.js?v=91', import.meta.url), { type: 'module' });
+  const w = new Worker(new URL('./worker.js?v=92', import.meta.url), { type: 'module' });
   w.onerror = e => console.error('worker', e.message || e);
   return w;
 }
@@ -1017,6 +1021,7 @@ export class World {
     // redstone, what grows) and the mobs (js/entities: falling sand and the like)
     if (this.onSet) this.onSet(x, y, z, was, wasM, b, m || 0);
     if (this.onSetE) this.onSetE(x, y, z, b);
+    if (WORLD_FX.gone && was && was !== b) WORLD_FX.gone(this, x, y, z, was, b);
     return true;
   }
   // a block's moving part is drawn elsewhere from now on (on), or back in the block's own mesh (off)

@@ -22,8 +22,8 @@
    highest. Randomness comes from ctx.r in the plan and from a hash of the
    frame position in drawing, so chunks agree; g.r is left to the chests.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=91';
-import { hash32 } from '../rand.js?v=91';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=92';
+import { hash32 } from '../rand.js?v=92';
 
 export const PLANS = {};
 

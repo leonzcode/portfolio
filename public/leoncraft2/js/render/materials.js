@@ -16,7 +16,7 @@
    Detailed draws the terrain with lighter shaders that light per vertex
    (LEAN_VS / LEAN_FS below); the rest is the full chain's.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS, FILTER } from './glsl.js?v=91';
+import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS, FILTER } from './glsl.js?v=92';
 const THREE = window.THREE;
 
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray; precision highp sampler2DShadow;\n`;
@@ -71,6 +71,34 @@ uniform mat3 uFaceRot;
 uniform float uDim;             // 0 the Overworld, 1 the Nether, 2 the End (js/dims.js)
 #define HAS_DIM
 uniform vec3 uDimAmb;           // the light everything gets there instead of the sky's
+#if defined(REALISM) && !defined(HAND) && !defined(CUTOUT) && !defined(TRANSLUCENT)
+#define PUDDLES
+/* RIP Computer: wet ground and puddles in the rain, after Photon Shaders' include/surface/rain_puddles.glsl
+   (Photon Shaders by SixthSurge, under the Photon Shaders License: shaders/PHOTON-LICENSE.txt): puddles where a
+   noise is high on flat open ground, mirror smooth, rippled while it rains (the world and the sky in them are put in
+   by the composite, post.js puddleLook, from the mark left in the alpha); everything the rain falls on darker and shinier */
+uniform float uRain;            // how hard it is raining here (realism.js)
+float rippleHeight(vec2 c) {
+  const vec2 d0 = vec2(3.0, 4.0) / 5.0, d1 = vec2(-5.0, -12.0) / 13.0;
+  float a = textureLod(uNoise, c * 0.3 + uTime * 0.1 * d0, 0.0).y;
+  float b = textureLod(uNoise, c * 0.3 + uTime * 0.1 * d1, 0.0).y;
+  return mix(a, b, 0.5);
+}
+// (ours) raindrops landing in a puddle: a ring spreading from each, in two layers of cells, one drop a cell at a time
+vec2 cellRand(vec2 c) { return fract(sin(vec2(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)))) * 43758.5453); }
+vec2 dropRings(vec2 p) {
+  vec2 n = vec2(0.0);
+  for (int k = 0; k < 2; k++) {
+    vec2 q = p * (k == 0 ? 1.6 : 2.35) + float(k) * 17.3;
+    vec2 cell = floor(q), f = fract(q), h = cellRand(cell);
+    float t = fract(uTime * (0.8 + h.x * 0.7) + h.y);
+    vec2 d = f - (0.3 + 0.4 * cellRand(cell + 5.17));
+    float r = length(d), w = (r - t * 0.3) * 22.0;
+    if (abs(w) < 3.14159) n += d / max(r, 1e-3) * sin(w) * (1.0 - t) * (1.0 - t);
+  }
+  return n;
+}
+#endif
 in vec3 vWorld; in vec2 vUv; in vec4 vLight; in vec3 vTint; in float vRnd;
 flat in float vLayer; flat in int vNormal; flat in int vFlags;
 layout(location = 0) out vec4 outColor;
@@ -93,6 +121,11 @@ vec4 tex(sampler2DArray s, vec2 uv, float layer, vec4 info) {
   if (t > 0.0) c = mix(c, texture(s, vec3(uv, lb)), t);
   return c;
 }
+#ifdef PUDDLES
+#define puddleK() puddle
+#else
+#define puddleK() 0.0
+#endif
 float ggx(float NoH, float a) { float a2 = a * a; float d = NoH * NoH * (a2 - 1.0) + 1.0; return a2 / (PI * d * d); }
 float smithV(float NoV, float NoL, float a) {
   float a2 = a * a;
@@ -216,6 +249,33 @@ void main() {
     direct *= tr * caustics(vWorld);
   }
 
+#ifdef PUDDLES
+  float puddle = 0.0;
+  if (uWet > 0.0 && !plant && uDim < 0.5 && wd < 0.5) {
+    // only under the open sky (and not by a torch: under a roof, as Photon tells)
+    float open = smoothstep(14.0 / 15.0, 1.0, sky) * (1.0 - block * block * block);
+    float wetK = uWet * open * (Ng.y > 0.5 ? 1.0 : 0.45);
+    // (fewer on grass, whose blades stand up through the water)
+    if (Ng.y > 0.99) puddle = smoothstep(0.56, 0.64, textureLod(uNoise, vWorld.xz * 0.025, 0.0).a) * uWet * open * (tinted ? 0.55 : 1.0);
+    albedo *= 1.0 - 0.42 * wetK;
+    albedo *= 1.0 - 0.55 * puddle;
+    sp.r = mix(sp.r, max(sp.r, 0.74), wetK);
+    if (puddle > 0.0) {
+      sp.r = mix(sp.r, 0.995, puddle); sp.g = max(sp.g, 0.02);
+      // the rain's ripples on them (Photon's three taps of a scrolling noise)
+      const float h = 0.1;
+      float r0 = rippleHeight(vWorld.xz), r1 = rippleHeight(vWorld.xz + vec2(h, 0.0)), r2 = rippleHeight(vWorld.xz + vec2(0.0, h));
+      vec3 rn = vec3(r1 - r0, r2 - r0, h);
+      rn.xy *= 0.05 * smoothstep(0.0, 0.1, abs(dot(Ng, -V)));
+      rn = normalize(rn).xzy;
+      vec2 ring = dropRings(vWorld.xz) * uRain;
+      rn = normalize(rn + vec3(ring.x, 0.0, ring.y) * 0.45);
+      N = normalize(mix(N, Ng, puddle));
+      N = normalize(mix(N, rn, puddle * max(uRain, 0.15)));
+      NoL = dot(N, L);
+    }
+  }
+#endif
   float smoothness = sp.r, f0r = sp.g, sss = sp.b, emit = sp.a;
   float rough = max(0.03, sqr(1.0 - smoothness));
   bool metal = f0r > 0.89;
@@ -273,7 +333,7 @@ void main() {
   if (smoothness > 0.6 && uDim < 0.5) {
     float NoV = sat(dot(N, V));
     vec3 F = F0 + (1.0 - F0) * pow(1.0 - NoV, 5.0);
-    col += ambientAt(reflect(-V, N)) / PI * F * skyAmt * smoothness * 0.6;
+    col += ambientAt(reflect(-V, N)) / PI * F * skyAmt * smoothness * 0.6 * (1.0 - puddleK());
   }
 #endif
   // light of its own
@@ -284,6 +344,9 @@ void main() {
 #ifdef TRANSLUCENT
   float fres = pow(1.0 - sat(dot(N, V)), 5.0);
   outColor = vec4(col, mix(max(alb.a, 0.35), 1.0, fres * 0.6));
+#elif defined(PUDDLES)
+  // (a puddle is marked in the alpha, 1 to 1.45: the composite puts the world and the sky in it, post.js puddleLook)
+  outColor = vec4(col, 1.0 + 0.45 * puddle);
 #else
   outColor = vec4(col, 1.0);
 #endif
@@ -658,6 +721,8 @@ export function makeMaterials(shared, q) {
   if (q.wind === false) base.NO_WIND = 1;
   if (q.rgss) base.RGSS = 1;
   if (q.ldr) { base.LDR = 1; base.TONE_LUT = 1; }
+  // RIP Computer's puddles and wet ground (the full chain only)
+  if (q.realism && !q.ldr) base.REALISM = 1;
   Object.assign(base, lightDefines(q));
   // Detailed (one pass to the screen) lights per vertex; the full chain per pixel
   const vs = q.ldr ? HEAD + COMMON + WIND + TONEMAP + LEAN_VS : HEAD + COMMON + WIND + TERRAIN_VS;

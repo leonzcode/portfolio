@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=91';
-import { idx, H } from '../world-const.js?v=91';
-import { DIMS, DIM_IDS } from '../dims.js?v=91';
-import { Save } from '../save.js?v=91';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=91';
-import { glints } from '../render/armor.js?v=91';
-import { containerKind } from '../containers.js?v=91';
-import { getSkinSettings } from '../render/avatar.js?v=91';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=91';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=91';
-import { Y0 } from '../world-const.js?v=91';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=91';
-import { Projectile } from '../entities/projectiles.js?v=91';
-import { Combat } from '../combat/combat.js?v=91';
-import { Vehicles } from './vehicles.js?v=91';
-import { Mobs, Orbs } from './mobs.js?v=91';
-import { Events } from './events.js?v=91';
-import { EndSync } from './endfight.js?v=91';
-import { Hub } from './hub.js?v=91';
-import { Account, wsBase, httpBase } from './account.js?v=91';
-import { rankTag } from './players.js?v=91';
+import { B, BLOCKS } from '../blocks.js?v=92';
+import { idx, H } from '../world-const.js?v=92';
+import { DIMS, DIM_IDS } from '../dims.js?v=92';
+import { Save } from '../save.js?v=92';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=92';
+import { glints } from '../render/armor.js?v=92';
+import { containerKind } from '../containers.js?v=92';
+import { getSkinSettings } from '../render/avatar.js?v=92';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=92';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=92';
+import { Y0 } from '../world-const.js?v=92';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=92';
+import { Projectile } from '../entities/projectiles.js?v=92';
+import { Combat } from '../combat/combat.js?v=92';
+import { Vehicles } from './vehicles.js?v=92';
+import { Mobs, Orbs } from './mobs.js?v=92';
+import { Events } from './events.js?v=92';
+import { EndSync } from './endfight.js?v=92';
+import { Hub } from './hub.js?v=92';
+import { Account, wsBase, httpBase } from './account.js?v=92';
+import { rankTag } from './players.js?v=92';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -1151,12 +1151,16 @@ export class Net {
   }
 
   /* ---- your changes, sent at the end of the frame ---- */
+  /* (a block you put down or broke yourself goes at once, when what the click did is done, not at the end of the
+     frame: interact.js marks the world urgent while it works; the game's client sends the packet in the tick of the
+     click. The whole click goes in one message: both halves of a door or a bed, a chest and its contents.) */
   local(w, x, y, z, b, m, prev) {
     const d = dimCode(w.dim), k = d + ':' + key3(x, y, z);
     const p = this.pending.get(k);
     this.pending.set(k, { s: this.seq + 1, prev: p ? p.prev : prev });
     const name = BLOCKS[b] ? BLOCKS[b].name : 'air';
     this.outB[d].push(x, y, z, name, m & 255);
+    if (w.urgent && !this.flushSoon) { this.flushSoon = true; queueMicrotask(() => { this.flushSoon = false; if (this.ws && this.game) this.flush(); }); }
   }
   queueC(x, y, z, c) {
     const d = dimCode(this.game.dim), k = d + ':' + key3(x, y, z);
@@ -1456,6 +1460,8 @@ export class Net {
       const dx = Math.abs(e.pos.x - P.x), dz = Math.abs(e.pos.z - P.z);
       if (!(dx < 0.3 + 1 + 0.125 && dz < 0.3 + 1 + 0.125 && e.pos.y + 0.25 > P.y - 0.5 && e.pos.y < P.y + 1.8 + 0.5)) continue;
       if (collector.inv.roomFor(e.stack) <= 0) continue;
+      // (a minigame may keep something out of a player's hands: Murder Mystery's murderer never takes up a bow, net/hub.js)
+      if (this.mayTake && !this.mayTake(e.stack)) continue;
       e.asked = now;
       this.send({ t: 'it-', id: e.nid, take: 1 });
     }
@@ -1514,6 +1520,12 @@ export class Net {
   blocks(d, e) {
     const g = this.game, w = g.world, here = dimCode(g.dim) === d && w && !w.dead;
     const C = here ? g.containers : null;
+    /* Another player's few blocks next to you (a bridge, a wall going up, a bed broken) are made again and drawn at
+       once, as your own are: the columns round you to the edit worker straight away, rather than at the end of the
+       frame in turn with everything else, and each block drawn on its own until its column's mesh is in
+       (quickblocks.js). A big change (TNT, a /fill, a map put back) goes the usual way. */
+    const quick = here && e.length <= 5 * 48 && w.near ? w.quick : null;
+    let urgent = false;
     for (let i = 0; i < e.length; i += 5) {
       const x = e[i], y = e[i + 1], z = e[i + 2], b = B[e[i + 3]], m = e[i + 4] & 255;
       if (b === undefined || y < 0 || y >= H) continue;
@@ -1521,7 +1533,10 @@ export class Net {
       if (this.pending.has(d + ':' + key3(x, y, z))) continue;
       if (here && w.loaded(x, z)) {
         const ob = w.get(x, y, z);
-        this.put(w, x, y, z, b, m);
+        const near = !!quick && w.near(Math.floor(x / 16), Math.floor(z / 16));
+        if (near) { w.urgent = true; urgent = true; }
+        try { this.put(w, x, y, z, b, m); } finally { if (near) w.urgent = false; }
+        if (near) quick.put(x, y, z, w.get(x, y, z), w.meta(x, y, z));
         // a chest or furnace that went with its block, without spilling (whoever broke it has the items)
         if (C && ob !== b && containerKind(ob) && containerKind(b) !== containerKind(ob)) dropContainer(C, x, y, z);
       } else {
@@ -1531,6 +1546,7 @@ export class Net {
         mm.set(idx(x & 15, y, z & 15), b * 256 + m);
       }
     }
+    if (urgent && w.flushUrgent) w.flushUrgent();
   }
   // the server turned changes down (past the border, a full world): back as they were
   rejected(d, e) {
@@ -1539,7 +1555,7 @@ export class Net {
       const x = e[i], y = e[i + 1], z = e[i + 2], k = d + ':' + key3(x, y, z), p = this.pending.get(k);
       if (!p) continue;
       this.pending.delete(k);
-      if (here && w.loaded(x, z)) this.put(w, x, y, z, p.prev >> 8, p.prev & 255);
+      if (here && w.loaded(x, z)) { this.put(w, x, y, z, p.prev >> 8, p.prev & 255); if (w.quick) w.quick.put(x, y, z, w.get(x, y, z), w.meta(x, y, z)); }
     }
     if (!this.warnedRej) { this.warnedRej = true; this.ctx.chat.add('The server could not keep some of your changes.', 0xFF5555); }
   }
