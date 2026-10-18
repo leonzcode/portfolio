@@ -385,7 +385,7 @@ export function makeLobbyCos(K) {
     // a cosmetic in the hand
     use(st) {
       const id = st.cos, c = COS.get(id);
-      if (!c || !this.own.has(id)) return true;
+      if (!c || !this.own.has(id) || !this.inLobby) return true;
       if (c.cat === 'special') { this.hub.openScreen(new BackpackMenu(this)); this.sound('item.armor.equip_leather'); return true; }
       if (c.cat === 'hat' || c.cat === 'aura' || c.cat === 'trail') { this.setWear(c.cat, this.wear[c.cat] === id ? null : id); return true; }
       this.gadget(id);
@@ -405,7 +405,8 @@ export function makeLobbyCos(K) {
     /* ---- gadgets ---- */
     gadget(id) {
       const G = GADGETS[id];
-      if (!G) return;
+      // (a gadget is the lobby's only: nothing of one may reach a game, however it was called)
+      if (!G || !this.inLobby) return;
       const t = this.t, held = !!G.hold;
       if (!held && (this.cd[id] || 0) > t) { const s = Math.ceil((this.cd[id] - t) / 20); this.say('§cYou can use this again in ' + s + ' second' + (s === 1 ? '' : 's')); return; }
       this.cd[id] = t + (G.cd || 0);
@@ -651,6 +652,8 @@ export function makeLobbyCos(K) {
       if (L) for (const r of L.list.values()) if (r.av && r.av.setHat) r.av.setHat(null);
       const P = this.game && this.game.player;
       if (P) P.gravityScale = 1;
+      // (a gadget's lift or slow fall still to come stays in the lobby)
+      this.slowFallAt = 0; this.jetUntil = 0; this.floatUntil = 0;
     }
     tick() {
       this.t++;
