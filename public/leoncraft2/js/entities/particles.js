@@ -23,7 +23,7 @@
    block light where it is now (looked up each tick), so torch smoke is lit
    by the torch and campfire smoke darkens as it rises at night.
 --------------------------------------------------------------------------- */
-import { keepParticle } from '../render/particles.js?v=91';
+import { keepParticle } from '../render/particles.js?v=92';
 const N = 4096;
 const R = () => Math.random();
 
@@ -60,6 +60,11 @@ const KINDS = {
   rain: { f0: 28, f1: 28, pick: 4, size: 0.3, life: [8, 40], g: 0.06, drag: 0.98, col: [1, 1, 1], spread: 0, drop: true },
   campfire: { f0: 2, f1: 2, size: 0.5, life: [280, 330], g: -0.000003, drag: 1, col: [0.85, 0.85, 0.85], spread: 0 },
   campfire_signal: { f0: 1, f1: 1, size: 0.5, life: [400, 460], g: -0.000003, drag: 1, col: [0.85, 0.85, 0.85], spread: 0 },
+  // Leonpixel's lobby cosmetics (net/lobbycos.js): glowing specks of any colour, snowflakes, petals, bubbles in the air
+  glowdust: { f0: 22, f1: 22, size: 0.1, life: [18, 34], g: -0.001, drag: 0.93, col: [1, 1, 1], spread: 0.05, glow: true },
+  snowflake: { f0: 21, f1: 21, size: 0.09, life: [30, 50], g: 0.0025, drag: 0.94, col: [1, 1, 1], spread: 0.05 },
+  petal: { f0: 22, f1: 22, size: 0.11, life: [40, 70], g: 0.0015, drag: 0.92, col: [1, 0.75, 0.85], spread: 0.05 },
+  airbubble: { f0: 13, f1: 13, size: 0.16, life: [20, 40], g: -0.004, drag: 0.9, col: [1, 1, 1], spread: 0.05 },
 };
 
 export class Particles {
@@ -125,6 +130,15 @@ export class Particles {
       this.info[I + 5] = K.glow ? 1 : light === undefined ? 1 : light;
       this.spin[i] = kind === 'sweep' ? R() * 6.28 : 0;
     }
+  }
+  // one particle with its own push (the lobby's auras and gadgets); life in ticks if given
+  addV(kind, x, y, z, vx, vy, vz, col, life) {
+    const n = this.n;
+    this.add(kind, x, y, z, 1, 0, col);
+    if (this.n === n) return;
+    const o = n * 3;
+    this.vel[o] = vx; this.vel[o + 1] = vy; this.vel[o + 2] = vz;
+    if (life) this.life[n * 2 + 1] = life;
   }
   tick() {
     if (this.emitters.length) this.emitTick();

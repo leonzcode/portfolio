@@ -11,7 +11,7 @@ export const LAYOUT_KITS = [
   ['game', 'Bed Wars', 'red_bed'], ['sw', 'SkyWars (your kit)', 'ender_eye'], ['duel_classic', 'Classic Duel', 'iron_sword'],
   ['bridge', 'The Bridge', 'blue_terracotta'], ['mm_murderer', 'Murder Mystery: Murderer', 'iron_sword'], ['mm_detective', 'Murder Mystery: Detective', 'bow'],
   ['spleef', 'Spleef', 'diamond_shovel'], ['tntrun', 'TNT Run', 'tnt'], ['ph_hider', 'Prop Hunt: Hider', 'oak_leaves'], ['ph_seeker', 'Prop Hunt: Seeker', 'iron_sword'],
-  ['ch_hider', 'Meccha Chameleon: Hider', 'brush'], ['ch_seeker', 'Meccha Chameleon: Seeker', 'crossbow'], ['lobby', 'Lobby', 'compass'],
+  ['ch_hider', 'Meccha Chameleon: Hider', 'brush'], ['ch_seeker', 'Meccha Chameleon: Seeker', 'crossbow'],
 ];
 // Bed Wars' Hotbar Manager: the kinds of item a hotbar slot may be kept for (the shop's own categories)
 export const HOTBAR_CATS = [['', 'None', 'light_gray_stained_glass_pane'], ['melee', 'Melee', 'golden_sword'], ['blocks', 'Blocks', 'terracotta'],
@@ -65,6 +65,9 @@ export function makeProfile(K) {
       if (l) this.put(31, l, ['§aItem Layouts', '§7Choose where each game puts', '§7its items in your inventory.', '', '§eClick to edit!'], () => hub.ctx.gui.replace(new LayoutsMenu(hub)));
       const q = named(['nether_star'], '§aBed Wars Quick Buy');
       if (q) this.put(33, q, ['§aBed Wars Quick Buy', '§7Choose what the Quick Buy', '§7page of the Item Shop sells.', '', '§eClick to edit!'], () => hub.ctx.gui.replace(new QuickBuyEditor(hub)));
+      // the lobby's hidden cosmetics: how many found, and which (net/lobbycos.js)
+      const col = hub.cos && named(['bundle', 'chest'], '§6Lobby Collection');
+      if (col) this.put(22, col, ['§6Lobby Collection', '§7Hats, auras, trails and gadgets', '§7hidden in chests round the lobby.', '', '§7Found: §e' + hub.cos.own.size + '§7 of §e' + hub.cos.total(), '', '§eClick to see them!'], () => hub.ctx.gui.replace(hub.cos.collection()));
       const h = named(['blaze_rod', 'stick'], '§aBed Wars Hotbar Manager');
       if (h) this.put(35, h, ['§aBed Wars Hotbar Manager', '§7Choose which hotbar slot each', '§7kind of item you buy goes to.', '', '§eClick to edit!'], () => hub.ctx.gui.replace(new HotbarManager(hub)));
     }

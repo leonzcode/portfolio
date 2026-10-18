@@ -26,11 +26,12 @@
    can give themselves one; it shows over their head, in the Tab list and in
    their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar, invisLook } from '../render/avatar.js?v=91';
-import { pieceLook, armorSheet } from '../render/armor.js?v=91';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=91';
-import { DRAW, I, stackFromJSON } from '../items.js?v=91';
-import { B, BLOCKS } from '../blocks.js?v=91';
+import { Avatar, invisLook } from '../render/avatar.js?v=92';
+import { pieceLook, armorSheet } from '../render/armor.js?v=92';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=92';
+import { DRAW, I, stackFromJSON } from '../items.js?v=92';
+import { B, BLOCKS } from '../blocks.js?v=92';
+import { walkers } from '../render/realism.js?v=92';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -113,6 +114,7 @@ export class RemotePlayers {
       av.mesh.geometry.dispose(); av.arm.geometry.dispose(); av.glowRim.geometry.dispose(); av.glowBehind.geometry.dispose();
       av.glowRim.material.dispose(); av.glowBehind.material.dispose();
       R.scene.remove(av.capeMesh); av.capeMesh.geometry.dispose(); av.capeMat.dispose(); av.capeShadowMat.dispose(); av.capeTex.dispose();
+      R.scene.remove(av.hatMesh); av.hatMesh.geometry.dispose(); av.hatMat.dispose(); av.hatShadowMat.dispose(); av.hatTex.dispose();
       for (let s = 0; s < 2; s++) av.setHeld(s, null);
       av.setHeadItem(null);
       av.tex.dispose(); av.armorTex.dispose();
@@ -179,7 +181,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=91', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=92', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
     av.setCape(r.capeUrl || '').catch(() => {});
   }
@@ -305,6 +307,8 @@ export class RemotePlayers {
       P.yaw = p.yaw;
       const feet = r.feet || (r.feet = new THREE.Vector3());
       feet.set(p.x, p.y, p.z);
+      // (RIP Computer: walking through the grass parts it: render/realism.js)
+      if (!(p.f & (F.FLY | F.DEAD))) walkers.add(p.x, p.y, p.z, av.size || 1, true);
       this.draw(r, av, P, feet, Math.min(1, r.acc / 0.05), dt, now);
       /* the name, its top half a block over the head (lower when they sneak),
          within 64 blocks; a player sneaking shows only the faint layer, and
@@ -320,7 +324,7 @@ export class RemotePlayers {
   }
   hide(r) {
     const av = r.av;
-    av.mesh.visible = av.armor.visible = av.glowRim.visible = av.glowBehind.visible = av.capeMesh.visible = false;
+    av.mesh.visible = av.armor.visible = av.glowRim.visible = av.glowBehind.visible = av.capeMesh.visible = av.hatMesh.visible = false;
     for (const h of av.held) if (h) h.mesh.visible = false;
     if (av.headItem) av.headItem.mesh.visible = false;
     if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
@@ -387,6 +391,8 @@ export class RemotePlayers {
     // their cape (they send none while it is switched off), not while invisible or in an elytra
     av.invisible = !!r.invis;
     av.capeMesh.visible = av.capeShows(on);
+    // a lobby hat (net/lobbycos.js sets it), not while invisible
+    av.hatMesh.visible = on && av.hatOn && !r.invis;
     // the armour's pictures taken up again whenever another file has landed in the sheet
     if (av.wearing) { const sh = armorSheet(); if (sh.version !== av.armorV) { av.armorV = sh.version; av.armorTex.needsUpdate = true; } }
     av.uPiece.value[0].y = av.headWorn ? 1 : 0;
@@ -408,7 +414,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=91', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=92', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;

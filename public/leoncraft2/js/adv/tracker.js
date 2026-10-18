@@ -22,8 +22,8 @@
    through grant / revoke (the /advancement command). Whoever wants to know
    (the toast, the chat line, the reward) listens with onMade.
 --------------------------------------------------------------------------- */
-import { ADVANCEMENTS } from './advdata.js?v=91';
-import { test } from './match.js?v=91';
+import { ADVANCEMENTS } from './advdata.js?v=92';
+import { test } from './match.js?v=92';
 
 export const ADV = new Map();
 for (const a of ADVANCEMENTS) { a.children = []; a.tab = a.id.split('/')[0]; ADV.set(a.id, a); }

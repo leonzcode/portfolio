@@ -164,17 +164,52 @@ float phaseHG(float c, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * P
 vec2 transUV(float h, float mu) { return vec2(mu * 0.5 + 0.5, sqrt(sat(h / (RT - RG)))); }
 `;
 
-/* ---- wind, and plants leaning away from where you walked ------------------ */
+/* ---- wind, and plants leaning away from where you walked ------------------
+   RIP Computer (realism) adds two things, both off while their uniforms are 0:
+   the wind of Photon Shaders (Photon Shaders by SixthSurge, from its
+   include/vertex/displacement.glsl get_wind_displacement and animate_vertex,
+   ported to this pipeline under the Photon Shaders License, which is kept in
+   shaders/PHOTON-LICENSE.txt): gusts read from a noise texture drifting with
+   the wind and a wobble of three harmonics at each vertex's own phase, all
+   stronger in rain; and Photon's displacement of plants close to the player
+   given to everyone walking near (uPush: you, other players, mobs), so grass
+   and flowers part round legs and stand back up behind them. */
 export const WIND = /* glsl */`
 uniform float uTime;
-uniform sampler2D uInteract;   // r: water height, g: previous, b: trampled grass
+uniform sampler2D uInteract;   // r: water height, g: previous, b: trampled grass, a: how fast it is standing back up (realism)
 uniform vec4 uInteractRect;    // world xz of the map's corner, and its size
 uniform vec3 uPlayer;          // the player's feet
 uniform vec2 uWave;            // how far plants (x) and leaves (y) move (Shader Options: Waving Plants, Waving Leaves)
+uniform vec4 uPush[8];         // realism: the knees of everyone walking near (xyz) and how wide they are (w; 0: none)
+uniform float uRealWind;       // realism: 0 the old wind, else Photon's, this windy (0.5 + the weather's windiness)
+uniform sampler2D uGust;       // realism: the noise the gusts come from (uNoise's texture)
 float trampleAt(vec2 xz) {
   vec2 uv = (xz - uInteractRect.xy) / uInteractRect.zw;
   if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0;
   return textureLod(uInteract, uv, 0.0).b;
+}
+// Photon's gust and wobble (see above); tallTop: the top half of a tall plant, which sways further and wobbles less
+vec3 photonWind(vec3 p, float strength, bool tallTop) {
+  const vec2 wd = vec2(0.8660254, 0.5);
+  float t = 0.3 * uTime;
+  float gust = textureLod(uGust, (p.xz + wd * uTime * 1.5) / 160.0, 0.0).y;
+  gust = sat(gust * 1.6 - 0.3); gust *= gust;
+  vec3 g = vec3(wd.x * gust, 0.1 * gust, wd.y * gust);
+  vec3 q = 32.0 * p + 3.0 * t + vec3(0.0, 2.39996, 4.79993);
+  vec3 wobble = sin(q) + 0.5 * sin(2.0 * q) + 0.25 * sin(4.0 * q);
+  if (tallTop) { g *= 2.0; wobble *= 0.5; }
+  return strength * (g + 0.1 * wobble);
+}
+// Photon's push away from a body, given to each one walking near (w: half its width over the player's 0.3)
+vec2 pushAway(vec3 p) {
+  vec2 off = vec2(0.0);
+  for (int i = 0; i < 8; i++) {
+    vec4 P = uPush[i];
+    if (P.w <= 0.0) continue;
+    vec3 d = (p - P.xyz) / P.w;
+    off += 6.0 * P.w * d.xz * exp2(-length(d * vec3(6.0, 2.0, 6.0)));
+  }
+  return off;
 }
 vec3 windOffset(vec3 p, int wave, float v, float sky, float rnd) {
 #ifdef NO_WIND
@@ -198,28 +233,36 @@ vec3 windOffset(vec3 p, int wave, float v, float sky, float rnd) {
   vec3 flutter = vec3(sin(q.x) + 0.5 * sin(2.1 * q.z + 1.0), sin(q.y * 1.3) * 0.5, sin(q.z) + 0.5 * sin(1.9 * q.x));
   vec3 off;
   if (wave == 2) {
-    off = (vec3(wd.x, 0.0, wd.y) * g * 0.07 + flutter * 0.035) * strength;
+    off = uRealWind > 0.0 ? photonWind(p, strength * 0.25 * uRealWind * 0.5, false) : (vec3(wd.x, 0.0, wd.y) * g * 0.07 + flutter * 0.035) * strength;
   } else if (wave == 4) {
     // kelp and seagrass: a slow swell, whatever the sky
     off = vec3(sin(t * 1.1 + p.x * 0.4 + rnd * 6.0), 0.0, cos(t * 0.9 + p.z * 0.4 + rnd * 5.0)) * 0.13 * w;
   } else if (wave == 5) {
     off = vec3(0.0, sin(t * 1.6 + p.x * 0.7 + p.z * 0.9) * 0.012, 0.0);
   } else {
-    off = vec3(wd.x, 0.0, wd.y) * g * 0.22 * w * strength + vec3(flutter.x, 0.0, flutter.z) * 0.045 * w * strength;
-    // pushed aside where you walk, and slow to stand back up
+    if (uRealWind > 0.0) off = photonWind(p, strength * 0.25 * uRealWind, wave == 3 && v < 0.5) * w;
+    else off = vec3(wd.x, 0.0, wd.y) * g * 0.22 * w * strength + vec3(flutter.x, 0.0, flutter.z) * 0.045 * w * strength;
+    // pushed aside where you walk, and slow to stand back up (realism: springing back past upright, then settling)
     float tr = trampleAt(p.xz);
-    if (tr > 0.01) {
+    if (abs(tr) > 0.01) {
       float e = 0.35;
       vec2 grad = vec2(trampleAt(p.xz + vec2(e, 0.0)) - trampleAt(p.xz - vec2(e, 0.0)),
                        trampleAt(p.xz + vec2(0.0, e)) - trampleAt(p.xz - vec2(0.0, e)));
-      vec2 away = -grad / max(length(grad), 0.05);
+      // (away from where it was pressed; swung back past upright, tr is below 0 and the field upside down: the same
+      // way away, so the plant leans back the other way)
+      vec2 away = -grad * sign(tr) / max(length(grad), 0.05);
       off.xz += away * tr * 0.42 * w;
-      off.y -= tr * 0.35 * w;
+      off.y -= max(tr, 0.0) * 0.35 * w;
     }
-    // and right where you stand, pushed hard away from your legs
-    vec3 tp = p - uPlayer;
-    float d = length(tp.xz);
-    if (d < 1.0 && tp.y > -0.5 && tp.y < 2.0) off.xz += normalize(tp.xz + 1e-4) * (1.0 - d) * 0.5 * w;
+    if (uPush[0].w > 0.0) {
+      // realism: everyone close by parts the plants round their legs
+      off.xz += pushAway(p) * w;
+    } else {
+      // and right where you stand, pushed hard away from your legs
+      vec3 tp = p - uPlayer;
+      float d = length(tp.xz);
+      if (d < 1.0 && tp.y > -0.5 && tp.y < 2.0) off.xz += normalize(tp.xz + 1e-4) * (1.0 - d) * 0.5 * w;
+    }
   }
   return off * amp;
 #endif
@@ -305,13 +348,20 @@ export const LIGHTS = /* glsl */`
 #endif
 uniform float uHeldLight, uFlicker, uCloudShadow, uCover;
 uniform vec3 uHeldPos;
+uniform vec4 uFlash;            // RIP Computer: an explosion's flash, where (xyz) and its light level (w; render/realism.js)
 // the light in your hand at p (0..1, like the vertex block light): one less a
-// block, as the game spreads it, and a little brighter on what faces it
+// block, as the game spreads it, and a little brighter on what faces it (and an explosion's flash the same way)
 float heldLight(vec3 p, vec3 n) {
-  if (uHeldLight <= 0.0) return 0.0;
+  float f = 0.0;
+  if (uFlash.w > 0.0) {
+    vec3 d = uFlash.xyz - p;
+    float l = length(d);
+    f = sat((uFlash.w - l) / 15.0) * (0.6 + 0.4 * sat(dot(n, d / max(l, 1e-3))));
+  }
+  if (uHeldLight <= 0.0) return f;
   vec3 d = uHeldPos - p;
   float l = length(d);
-  return sat((uHeldLight - l) / 15.0) * (0.8 + 0.2 * dot(n, d / max(l, 1e-3)));
+  return max(f, sat((uHeldLight - l) / 15.0) * (0.8 + 0.2 * dot(n, d / max(l, 1e-3))));
 }
 // block light at level s (0..1): dim and deep orange far out, pale yellow at the
 // source, a slow flicker, and washed out by full daylight on open ground

@@ -16,9 +16,9 @@
      exposure    the scene's average brightness, adapted to over a second
      final       AgX tone mapping, a little vignette, sRGB, then FXAA
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS, TONE_CURVES, VOID } from './glsl.js?v=91';
-import { FullScreen, rawMat, floatTarget } from './sky.js?v=91';
-import { END_FLASH_GLSL } from './endflash.js?v=91';
+import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS, TONE_CURVES, VOID } from './glsl.js?v=92';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=92';
+import { END_FLASH_GLSL } from './endflash.js?v=92';
 const THREE = window.THREE;
 /* How much brighter the day sky is drawn than the eye has it (on top of 1): at noon our sky, exposed for
    the land, was a grey blue about half as bright on the screen as the game's light blue (FS_FINAL) */
@@ -209,7 +209,55 @@ uniform vec2 uDimFogRange;
 uniform sampler2D uEndSky;
 uniform float uFogMul;          // the fog's thickness (Shader Options: Fog)
 uniform vec3 uShut;             // Blindness and Darkness: a black fog from x to y blocks, z its strength (vanilla.js shutFog)
+uniform mat4 uVPNow;            // this frame's view and projection (RIP Computer's puddles)
+uniform sampler2D uNoise;
+uniform float uRain;
 in vec2 vUv; out vec4 o;
+/* RIP Computer's puddles (materials.js PUDDLES marks them in the alpha): what is round them and the sky, seen in
+   water, with the rain's rings on it. A ray off the water marched across the depth, as the water's own is (water.js
+   ssr), the sky where it finds nothing; then mixed in by the water's Fresnel, before the fog. */
+vec2 pudRand(vec2 c) { return fract(sin(vec2(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)))) * 43758.5453); }
+vec2 pudRings(vec2 p) {
+  vec2 n = vec2(0.0);
+  for (int k = 0; k < 2; k++) {
+    vec2 q = p * (k == 0 ? 1.6 : 2.35) + float(k) * 17.3;
+    vec2 cell = floor(q), f = fract(q), h = pudRand(cell);
+    float t = fract(uTime * (0.8 + h.x * 0.7) + h.y);
+    vec2 d = f - (0.3 + 0.4 * pudRand(cell + 5.17));
+    float r = length(d), w = (r - t * 0.3) * 22.0;
+    if (abs(w) < 3.14159) n += d / max(r, 1e-3) * sin(w) * (1.0 - t) * (1.0 - t);
+  }
+  return n;
+}
+vec2 pudUV(vec3 p, out float w) { vec4 c = uVPNow * vec4(p, 1.0); w = c.w; return c.xy / c.w * 0.5 + 0.5; }
+vec3 puddleLook(vec3 col, vec3 wp, vec3 rd, float dist, float k) {
+  vec2 ring = pudRings(wp.xz) * uRain;
+  float n0 = textureLod(uNoise, wp.xz * 0.3 + uTime * 0.03, 0.0).y - 0.5;
+  vec3 n = normalize(vec3(ring.x * 0.4 + n0 * 0.05, 1.0, ring.y * 0.4 + n0 * 0.05));
+  vec3 R = reflect(rd, n);
+  // (a little more than water's own 2 per cent head on: a puddle reads as one from a few blocks away, as it does outside)
+  float F = 0.07 + 0.93 * pow(1.0 - sat(-dot(rd, n)), 4.0);
+  vec3 refl = skyRadiance(normalize(vec3(R.x, max(R.y, 0.0), R.z)));
+  float stepLen = 0.2 + dist * 0.012, w;
+  vec3 p = wp + n * 0.04, prev = p;
+  for (int i = 0; i < 28; i++) {
+    prev = p; p += R * stepLen; stepLen *= 1.18;
+    vec2 uv = pudUV(p, w);
+    if (w <= uNear || uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) break;
+    float sl = linearize(textureLod(uDepth, uv, 0.0).r);
+    if (w > sl && w - sl < stepLen * 2.5 + 0.3) {
+      vec3 a = prev, b = p;
+      for (int j = 0; j < 5; j++) { vec3 m = (a + b) * 0.5; float mw; vec2 muv = pudUV(m, mw); if (mw > linearize(textureLod(uDepth, muv, 0.0).r)) b = m; else a = m; }
+      float bw; vec2 huv = pudUV(b, bw);
+      if (textureLod(uDepth, huv, 0.0).r >= 1.0) break;    // that was the sky
+      vec2 e = abs(huv * 2.0 - 1.0);
+      float fade = (1.0 - pow(max(e.x, e.y), 8.0)) * sat(1.0 - float(i) / 28.0 * 0.5);
+      refl = mix(refl, textureLod(uColor, huv, 0.0).rgb, fade);
+      break;
+    }
+  }
+  return mix(col, refl, F * k);
+}
 float shutAt(float dist, float d) { return uShut.z > 0.0 ? uShut.z * (d >= 1.0 ? 1.0 : smoothstep(uShut.x, uShut.y, dist)) : 0.0; }
 vec3 stars(vec3 d) {
   vec3 p = d * 220.0;
@@ -229,6 +277,7 @@ void main() {
   vec3 rd = normalize(wp - uCamPos);
   float dist = length(wp - uCamPos);
   vec3 col = base.rgb;
+  if (base.a > 1.0005 && base.a < 1.5 && d < 1.0 && uDim < 0.5) col = puddleLook(col, wp, rd, dist, sat((base.a - 1.0) / 0.45));
   if (uDim > 0.5) {
     // no atmosphere: the Nether's sky is its fog, the End's a dark violet grain on a box; fog closes in linearly.
     // Both come out on the screen the colour the game shows them (as lava does: water.js), worked back
@@ -509,6 +558,8 @@ export class Post {
       uEV: { value: 1 }, uSat: { value: 1 }, uContrast: { value: 1 }, uCurve: { value: 0 },
       // Light Shafts: Low or High (render/looks.js)
       uVLK: { value: 1 },
+      // this frame's view and projection, for RIP Computer's puddles (FS_COMP puddleLook)
+      uVPNow: { value: new THREE.Matrix4() },
     };
     const U = Object.assign({}, shared, this.u);
     // the same objects, so a value set here is seen by every pass
@@ -636,9 +687,12 @@ export class Post {
       this.cloudHist = 1 - ci;
     }
     u.uPrevViewProj.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    u.uVPNow.value.copy(u.uPrevViewProj.value);
     // the composite
     u.uColor.value = main.texture; u.uVL.value = this.vl.texture; u.uClouds.value = this.clouds[this.cloudHist].texture;
     this.run(this.mComp, this.comp);
+    // (RIP Computer's soft smoke goes in here, over the sky and lit like the rest: render/smoke.js)
+    if (this.afterComp) this.afterComp(this.comp, main, camera);
     // bloom: down, then back up
     let src = this.comp.texture, sw = this.w, sh = this.h;
     let upSrc = this.comp.texture;

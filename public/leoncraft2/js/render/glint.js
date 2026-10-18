@@ -14,7 +14,7 @@
    One material per renderer; addGlint(mesh) gives a held mesh (the vertex
    format of render/blockmesh.js) a glint child sharing its geometry.
 --------------------------------------------------------------------------- */
-import { GLINT } from './armor.js?v=91';
+import { GLINT } from './armor.js?v=92';
 const THREE = window.THREE;
 
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray;\n`;
