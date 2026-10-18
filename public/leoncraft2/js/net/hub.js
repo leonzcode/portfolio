@@ -1057,7 +1057,8 @@ export class Hub {
       if (kind === 'wait_vote') inv.slots[0] = stack('filled_map', 1, { name: '§aMap Vote §7- Right Click to choose the map' }) || stack('paper', 1, { name: '§aMap Vote §7- Right Click to choose the map' });
       if (this.gameKind === 'skywars') inv.slots[0] = stack('bow', 1, { name: '§aKit Selector §7- Right Click to choose a kit' });
     } else if (kind === 'sw') {
-      // SkyWars: the kit you picked, in your cage
+      // SkyWars: the kit you picked, in your cage (and you are playing: without it nothing could be built or broken)
+      this.alive = true;
       const k = SW_KITS.find(q => q.id === (this.swKit || swKitId())) || SW_KITS[0];
       for (const st of k.give ? k.give() : []) if (st) inv.addStack(st);
       for (const [slot, name] of Object.entries(k.armor || {})) { const st = stack(name); if (st) inv.armor[slot | 0] = st; }
