@@ -17,8 +17,8 @@
    Tool, armour, food and fuel numbers are the Minecraft Wiki's (Java Edition,
    October 2026); the list itself is minecraft-data's (js/itemdata.js).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from './blocks.js?v=87';
-import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=87';
+import { B, BLOCKS, MAX_ID } from './blocks.js?v=88';
+import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=88';
 
 export const ITEM_BASE = MAX_ID;          // 4096: the first id that is not a block
 export const ITEMS = [];

@@ -26,11 +26,11 @@
    can give themselves one; it shows over their head, in the Tab list and in
    their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar, invisLook } from '../render/avatar.js?v=87';
-import { pieceLook, armorSheet } from '../render/armor.js?v=87';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=87';
-import { DRAW, I, stackFromJSON } from '../items.js?v=87';
-import { B, BLOCKS } from '../blocks.js?v=87';
+import { Avatar, invisLook } from '../render/avatar.js?v=88';
+import { pieceLook, armorSheet } from '../render/armor.js?v=88';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=88';
+import { DRAW, I, stackFromJSON } from '../items.js?v=88';
+import { B, BLOCKS } from '../blocks.js?v=88';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -45,7 +45,7 @@ const RANKS = { admin: '\u00a7c[ADMIN] \u00a7r', mod: '\u00a72[MOD] \u00a7r', ow
 const baseTag = tag => RANKS[tag] || (typeof tag === 'string' && /^team:[0-9a-f]:[A-Z]$/.test(tag) ? '§' + tag[5] + '§l' + tag[7] + ' §r§' + tag[5] : '');
 // a Leonpixel leaderboard title worn, after a "|" in the tag ("admin|bedwars:1"): [Bed Wars #1] in gold, #2 silver, #3 bronze
 const TITLE_NAMES = { overall: 'Overall', bedwars: 'Bed Wars', skywars: 'SkyWars', duels: 'Duels', tntrun: 'TNT Run', murder: 'Murder Mystery',
-  buildbattle: 'Build Battle', spleef: 'Spleef', prophunt: 'Prop Hunt', chameleon: 'Chameleon', pillars: 'Pillars of Fortune', deathswap: 'Death Swap', bridger: 'Bridging' };
+  buildbattle: 'Build Battle', spleef: 'Spleef', prophunt: 'Prop Hunt', chameleon: 'Meccha Chameleon', pillars: 'Pillars of Fortune', deathswap: 'Death Swap', bridger: 'Bridging' };
 function titleTag(key) {
   const m = /^([a-z0-9_]{1,30}):([123])$/.exec(key || '');
   if (!m) return '';
@@ -177,7 +177,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=87', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=88', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
     av.setCape(r.capeUrl || '').catch(() => {});
   }
@@ -406,7 +406,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=87', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=88', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;

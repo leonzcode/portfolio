@@ -11,7 +11,7 @@ export const LAYOUT_KITS = [
   ['game', 'Bed Wars', 'red_bed'], ['sw', 'SkyWars (your kit)', 'ender_eye'], ['duel_classic', 'Classic Duel', 'iron_sword'],
   ['bridge', 'The Bridge', 'blue_terracotta'], ['mm_murderer', 'Murder Mystery: Murderer', 'iron_sword'], ['mm_detective', 'Murder Mystery: Detective', 'bow'],
   ['spleef', 'Spleef', 'diamond_shovel'], ['tntrun', 'TNT Run', 'tnt'], ['ph_hider', 'Prop Hunt: Hider', 'oak_leaves'], ['ph_seeker', 'Prop Hunt: Seeker', 'iron_sword'],
-  ['ch_hider', 'Chameleon: Hider', 'brush'], ['ch_seeker', 'Chameleon: Seeker', 'crossbow'], ['lobby', 'Lobby', 'compass'],
+  ['ch_hider', 'Meccha Chameleon: Hider', 'brush'], ['ch_seeker', 'Meccha Chameleon: Seeker', 'crossbow'], ['lobby', 'Lobby', 'compass'],
 ];
 // Bed Wars' Hotbar Manager: the kinds of item a hotbar slot may be kept for (the shop's own categories)
 export const HOTBAR_CATS = [['', 'None', 'light_gray_stained_glass_pane'], ['melee', 'Melee', 'golden_sword'], ['blocks', 'Blocks', 'terracotta'],
