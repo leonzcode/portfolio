@@ -59,6 +59,12 @@ export class Interactor {
   swing() { this.hand.swing(); this.sinceSwing = 0; }
   // held on a block: the arm swings on again once the last swing is four ticks old
   heldSwing() { if (++this.sinceSwing >= 4) this.swing(); }
+  /* Where a click and a held button look from: the eyes where the last tick
+     left you (player.pickEye), as the game's tick picks at a partial tick of 1
+     just before it handles the clicks. The frame's own look is a moment
+     behind that (between the last two ticks), which at a bridge's edge is the
+     difference between the side of the block under you and its top. */
+  tickEye() { const P = this.player; return P && P.pickEye ? P.pickEye(1) : this.lastEye; }
   // what the crosshair is on, from the eye this frame
   look(eye) {
     this.lastEye = eye;
@@ -89,8 +95,9 @@ export class Interactor {
   _down(button) {
     // while something is in use (eating, a drawn bow, a raised shield) the attack button does nothing, as in the game
     if (button === 0 && this.player.usingItem) return;
-    // what the crosshair is on now: the view may have turned since the frame was drawn
-    if (this.lastEye) this.look(this.lastEye);
+    // what the crosshair is on now, from where the last tick left you: the view may have turned since the frame was drawn
+    const eye = this.tickEye();
+    if (eye) this.look(eye);
     // an entity under the crosshair: hit it, or use it (js/entities)
     const e = this.entityTarget;
     if (e && this.entities) {
@@ -132,8 +139,8 @@ export class Interactor {
   tick() {
     // with a button held, what the crosshair is on is looked at again first, as the game picks again each tick: a block
     // just broken (or placed) is not left as the target until the next frame, which in a slow frame comes after a tick or
-    // two, and those ticks would not count towards the delay
-    if ((this.attack || this.useHeld) && this.lastEye) this.look(this.lastEye);
+    // two, and those ticks would not count towards the delay (from this tick's eyes, as the game picks each tick)
+    if (this.attack || this.useHeld) { const eye = this.tickEye(); if (eye) this.look(eye); }
     if (this.attack) {
       if (this.creative) this.creativeTick();
       else this.mineTick();
@@ -216,6 +223,8 @@ export class Interactor {
         else { const drop = dropOf(b); if (drop) this.hand.got(drop); }
       }
       w.set(x, y, z, replace && x === h.x && y === h.y && z === h.z ? replace : 0, 0);
+      // (a block put down a moment ago and drawn on its own: gone with it)
+      if (w.quick) w.quick.put(x, y, z, w.get(x, y, z), w.meta(x, y, z));
       if (this.onBroken) this.onBroken(x, y, z, b);
       // a water plant leaves its water behind
       if (d && d.waterlogged) w.set(x, y, z, B.water, 0);
@@ -275,6 +284,8 @@ export class Interactor {
     for (const [x, y, z, b, m] of list) {
       const cur = this.world.get(x, y, z);
       this.world.set(x, y, z, b, m);
+      // drawn in the very next frame, before the workers have its column's new mesh (quickblocks.js)
+      if (this.world.quick) this.world.quick.put(x, y, z, this.world.get(x, y, z), this.world.meta(x, y, z));
       if (FLUID[cur] === 1 && this.onSplash) this.onSplash(x + 0.5, z + 0.5);
       this.fluids.around(x, y, z);
     }
