@@ -495,7 +495,8 @@ export class Mobs {
           const e = rec.e;
           if (!e || e.removed) continue;
           // killed: the puff of smoke as it goes (a despawn, or one gone out of sight, just goes)
-          if (e.dead && !m.far && this.E) this.E.poof(e);
+          // (RIP Computer: its body lies here a while instead: entities/manager.js corpse)
+          if (e.dead && !m.far && this.E && !(this.E.corpse && this.E.corpse(e))) this.E.poof(e);
           // a firework gone off: its sparks here too (what it hurt is the business of the machine it flew on)
           if (e.type === 'firework_rocket' && !m.far && e.burst) {
             const real = e.m;

@@ -68,6 +68,7 @@ export const SHADER_DEFAULTS = {
   heldLight: true,           // a torch in your hand lights what is round you
   antialiasing: 'off',       // off fxaa (the full chain only)
   tone: 'agx',               // agx aces reinhard: the tone curve from the scene's light to the screen
+  realism: false,            // RIP Computer's extras: plants pushed by everyone and Photon's wind, blocks blown apart, bodies left lying, puddles
 };
 /* The levels of the one Shaders button in Video Settings (Off is the game's
    own look). Low and Medium are the light pipeline; High and RIP Computer
@@ -82,7 +83,7 @@ export const LEVEL_SETTINGS = {
   high: { shadows: 'high', shadowDistance: 96, shadowSoftness: 0.6, bloom: 'low', lightShafts: 'low', clouds: 'volumetric', cloudShadows: true,
     water: 'reflections', reflections: 'low', normalMaps: true },
   rip: { shadows: 'ultra', shadowDistance: 128, shadowSoftness: 0.7, bloom: 'high', lightShafts: 'max', clouds: 'volumetric', cloudDetail: 'max', cloudShadows: true,
-    water: 'reflections', reflections: 'max', normalMaps: true },
+    water: 'reflections', reflections: 'max', normalMaps: true, realism: true },
 };
 
 // the settings of a level (Off has none: lookOf(_, false))
@@ -146,6 +147,8 @@ export function lookOf(s, on) {
     fxaa: s.antialiasing === 'fxaa',
     ao: s.ao, fog: s.fog, exposure: s.exposure, contrast: s.contrast, saturation: s.saturation, tone: s.tone || 'agx',
     sunTint: tint.map(v => v * s.sunBrightness), skyLight: s.skyLight, skySat: s.skyColour, heldLight: !!s.heldLight,
+    // (the full chain only: puddles and wet ground are worked out per pixel there)
+    realism: full && !!s.realism,
   };
 }
 
@@ -165,7 +168,7 @@ export function morph(dst, src) {
 
 // the key of everything that changes shader code: a change in any of it rebuilds the materials
 function codeKey(o) {
-  return [o.vanilla, o.ldr, o.shadows, o.shadowTaps || 4, o.normals, o.cloudShadow, o.wind, o.water, o.waves, o.ssrSteps, o.rgss, o.vlSteps > 0 ? o.vlSteps : 0, o.ldr ? 0 : o.cloudSteps || 20, !!o.improvedTransparency].join(',');
+  return [o.vanilla, o.ldr, o.shadows, o.shadowTaps || 4, o.normals, o.cloudShadow, o.wind, o.water, o.waves, o.ssrSteps, o.rgss, o.vlSteps > 0 ? o.vlSteps : 0, o.ldr ? 0 : o.cloudSteps || 20, !!o.improvedTransparency, !!o.realism].join(',');
 }
 
 /* ---- put a look into effect ----

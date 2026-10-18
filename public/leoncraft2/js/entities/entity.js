@@ -277,7 +277,8 @@ export class Living extends Entity {
     this.deathTime++;
     this.zza = this.xxa = 0; this.jumping = false;
     this.travel();
-    if (this.deathTime >= 20) { this.m.poof(this); this.m.dropXp(this); this.remove(); }
+    // (RIP Computer: the body stays lying a while instead of the puff: manager.js corpse)
+    if (this.deathTime >= 20) { if (!(this.m.corpse && this.m.corpse(this))) this.m.poof(this); this.m.dropXp(this); this.remove(); }
   }
   // the arm swing, 6 ticks
   swing() { if (!this.swinging || this.swingT >= 3 || this.swingT < 0) { this.swingT = -1; this.swinging = true; } }

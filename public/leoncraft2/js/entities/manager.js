@@ -48,6 +48,11 @@ import { breakAt } from '../place.js?v=91';
 import { dropOf } from '../survival.js?v=91';
 import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=91';
 import { Combat } from '../combat/combat.js?v=91';
+import { walkers } from '../render/realism.js?v=91';
+// RIP Computer: how long the dead lie (ticks, then a second and a half sinking), how many at once, and what never
+// lies (slimes and magma cubes split into smaller ones, the bosses have deaths of their own)
+const CORPSE_TICKS = 300, MAX_CORPSES = 40;
+const NO_CORPSE = new Set(['slime', 'magma_cube', 'ender_dragon', 'wither', 'armor_stand', 'vex', 'allay']);
 import './nether.js?v=91';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
 import './mobs5.js?v=91';
@@ -80,6 +85,7 @@ export class Entities {
     this.paths = new PathFinder(this.t);
     this.list = [];
     this.displays = [];             // mobs shown inside spawners (makeDisplay)
+    this.corpses = [];              // RIP Computer: the dead left lying a while (corpse)
     this.grid = new Map();
     this.particlesP = new Particles();
     this.particlesP.t = this.t;       // (water drops land, bubbles burst out of water)
@@ -299,6 +305,34 @@ export class Entities {
   dropDisplay(e) { const i = this.displays.indexOf(e); if (i >= 0) this.displays.splice(i, 1); }
 
   /* ---- 20 a second ---- */
+  /* RIP Computer (realism): a mob that has died stays lying where it fell for a quarter of a minute, then sinks
+     into the ground, instead of going in a puff at the end of its fall: drawn, never ticked, hit or saved (it is
+     out of the list by then). Also another machine's mob dying here (net/mobs.js). True if kept (no puff then). */
+  corpse(e) {
+    const R = this.R;
+    if (!R || !R.opts || !R.opts.realism || R.vanilla || !(e instanceof Living) || NO_CORPSE.has(e.type) || e.constructor.BLOCK || e.constructor.PARTICLE || this.gone) return false;
+    e.corpseT = 0; e.hurtTime = 0; e.deathTime = 20; e.fire = 0;
+    e.prev.copy(e.pos);
+    this.corpses.push(e);
+    if (this.corpses.length > MAX_CORPSES) this.corpses.shift();
+    return true;
+  }
+  corpseTick() {
+    const C = this.corpses;
+    if (!C.length) return;
+    // (back to another look: they go at once)
+    if (!this.R.opts.realism || this.R.vanilla) { C.length = 0; return; }
+    let n = 0;
+    for (const e of C) {
+      e.corpseT++;
+      e.prev.copy(e.pos);
+      // the ground under it gone: it drops
+      const b = this.t.get(Math.floor(e.pos.x), Math.floor(e.pos.y - 0.05), Math.floor(e.pos.z));
+      if (!(b && BLOCKS[b].solid) && e.pos.y > this.D.minY) e.pos.y -= 0.35;
+      if (e.corpseT < CORPSE_TICKS + 30) C[n++] = e;
+    }
+    C.length = n;
+  }
   tick() {
     this.age++;
     cooldownTick();
@@ -340,6 +374,7 @@ export class Entities {
     if (this.age % 20 === 0) this.chunks();
     this.ambient.tick();
     this.particlesP.tick();
+    this.corpseTick();
     this.combat.lateTick();
   }
   forget(e) {
@@ -985,6 +1020,7 @@ export class Entities {
     // Entity Distance (Video Settings): the game draws a mob out to 64 blocks for each block of its
     // average side, times the setting; Entity Shadows: the round shadows under them, or none
     const ed = 64 * (this.entityDistance === undefined ? 2.5 : this.entityDistance), blobs = this.entityShadows !== false;
+    const realOn = !!(this.R.opts && this.R.opts.realism);
     const k = 0.15;
     for (const e of this.list) {
       if (e.removed) continue;
@@ -993,6 +1029,8 @@ export class Entities {
       const x = e.prev.x + (e.pos.x - e.prev.x) * alpha, y = e.prev.y + (e.pos.y - e.prev.y) * alpha, z = e.prev.z + (e.pos.z - e.prev.z) * alpha;
       const dx = x - P.pos.x, dz = z - P.pos.z;
       if (dx * dx + dz * dz > far2) continue;
+      // (RIP Computer: walking through the grass parts it: render/realism.js)
+      if (realOn && c.MODEL && !e.dead && e.onGround && dx * dx + dz * dz < 784) walkers.add(x, y, z, (e.w || 0.6) / 0.6, true);
       const reach = ed * ((e.w || 0.6) * 2 + (e.h || 0.6)) / 3, dy = y - P.pos.y;
       if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
       // the light, eased so it never pops (anything on fire is lit as by a torch at its brightest, as in the game)
@@ -1047,6 +1085,16 @@ export class Entities {
     }
     // the mobs turning inside spawners (struct/spawners.js): drawn, never ticked or hit
     for (const e of this.displays) this.drawOne(e, alpha, e.pos.x, e.pos.y, e.pos.z);
+    // the dead lying where they fell (corpse), sinking into the ground in their last second and a half
+    for (const e of this.corpses) {
+      const x = e.prev.x + (e.pos.x - e.prev.x) * alpha, z = e.prev.z + (e.pos.z - e.prev.z) * alpha;
+      const dx = x - P.pos.x, dz = z - P.pos.z;
+      if (dx * dx + dz * dz > far2) continue;
+      const sink = Math.max(0, (e.corpseT + alpha - CORPSE_TICKS) / 30) * ((e.w || 0.6) + 0.3);
+      const y = e.prev.y + (e.pos.y - e.prev.y) * alpha - sink;
+      this.sphere.center.set(x, y + e.h / 2, z); this.sphere.radius = Math.max(e.w, e.h) + 1.5;
+      if (this.frustum.intersectsSphere(this.sphere)) this.drawOne(e, alpha, x, y, z);
+    }
     this.particlesP.draw(M, alpha);
     M.end();
     held.end();
@@ -1135,7 +1183,7 @@ export class Entities {
     if (e.equip && (e.equip.mainhand || e.equip.offhand || e.equip.head)) this.R.mobHeld.hold(e, mdl, mats, e.lS, e.lB);
     const slot = SLOTS[e.texName ? e.texName() : c.TEX] || [0, 0];
     const white = A.swell > 0 ? (Math.floor(A.swell * 10) % 2 ? Math.max(0.5, Math.min(1, A.swell)) * 0.7 : 0) : 0;
-    const hurt = e.hurtTime > 0 || (living && e.dead) ? 1 : 0;
+    const hurt = e.hurtTime > 0 || (living && e.dead && e.corpseT === undefined) ? 1 : 0;
     const tint = e.tint ? e.tint() : 0xffffff;
     M.add(M.model(name, mdl), bone, slot[0], slot[1], e.lS, e.lB, hurt, white, ((tint >> 16) & 255) / 255, ((tint >> 8) & 255) / 255, (tint & 255) / 255);
     // layers on the same bones: wool, saddles, armour ([model, texture, colour, glint, no hurt flash])
@@ -1173,6 +1221,7 @@ export class Entities {
   // leaving the world: drop everything
   dispose() {
     this.gone = true;
+    this.corpses.length = 0;
     if (this.P.extraBoxes === this.boxFn) this.P.extraBoxes = null;
     for (const e of this.list) if (e.mesh) e.remove();
     this.list.length = 0;
