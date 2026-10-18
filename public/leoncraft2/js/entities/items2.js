@@ -663,7 +663,13 @@ export class FishingBobber extends Projectile {
     if (dmg > 0) st.dmg = Math.min(dmg, maxDamage(st.id) - 1);
     return st;
   }
-  hitEntity(e) { if (e.isPlayer) return false; this.hooked = e; this.vel.set(0, 0, 0); return true; }
+  hitEntity(e) {
+    if (e.isPlayer) return false;
+    // the old combat (Leon Network's, as Hypixel plays): the hook hits another player for nothing but a knock and a
+    // flinch, as a snowball does, then holds on (the "rod" of the old fights)
+    if (e.remotePlayer && this.m.combat && this.m.combat.legacy && e.hurt) e.hurt(0.0001, { type: 'thrown', attacker: this.owner, direct: this, x: this.pos.x - this.vel.x, z: this.pos.z - this.vel.z });
+    this.hooked = e; this.vel.set(0, 0, 0); return true;
+  }
   hitBlock() { this.stuckBlock = true; this.vel.set(0, 0, 0); }
   // reeling in: a fish if one is biting, the hooked mob pulled, else nothing; the rod's wear
   reel() {
