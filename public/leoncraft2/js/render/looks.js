@@ -27,16 +27,16 @@
    make(opts) builds the material for a look, and is called again for each
    new one. renderer.onLook(fn) hears of every change.
 --------------------------------------------------------------------------- */
-import { Sky, FullScreen } from './sky.js?v=90';
-import { Post } from './post.js?v=90';
-import { makeMaterials, layerMatMaterial } from './materials.js?v=90';
-import { makeWaterMaterial } from './water.js?v=90';
-import { makeNoise3DAsync, makeNoise3DGPU } from './noisetex.js?v=90';
-import { makeLdrSky } from './ldrsky.js?v=90';
-import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=90';
-import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=90';
-import { ShadowMaps } from './shadows.js?v=90';
-import { makeToneLut } from './glsl.js?v=90';
+import { Sky, FullScreen } from './sky.js?v=91';
+import { Post } from './post.js?v=91';
+import { makeMaterials, layerMatMaterial } from './materials.js?v=91';
+import { makeWaterMaterial } from './water.js?v=91';
+import { makeNoise3DAsync, makeNoise3DGPU } from './noisetex.js?v=91';
+import { makeLdrSky } from './ldrsky.js?v=91';
+import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=91';
+import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=91';
+import { ShadowMaps } from './shadows.js?v=91';
+import { makeToneLut } from './glsl.js?v=91';
 const THREE = window.THREE;
 
 /* ---- the shader's settings ----

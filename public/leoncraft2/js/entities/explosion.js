@@ -15,12 +15,12 @@
    (impact^2 + impact) / 2 x 7 x 2 x power + 1, and it is pushed away from
    the centre by the impact (towards its eyes, for the living).
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, B } from '../blocks.js?v=90';
-import { blastResistance } from './terrain.js?v=90';
-import { breakAt } from '../place.js?v=90';
-import { BLAST_FILTER } from '../explosion.js?v=90';
-import { dropOf } from '../survival.js?v=90';
-import { Living } from './entity.js?v=90';
+import { BLOCKS, FLUID, B } from '../blocks.js?v=91';
+import { blastResistance } from './terrain.js?v=91';
+import { breakAt } from '../place.js?v=91';
+import { BLAST_FILTER } from '../explosion.js?v=91';
+import { dropOf } from '../survival.js?v=91';
+import { Living } from './entity.js?v=91';
 
 const R = () => Math.random();
 // the 1352 ray directions, made once
