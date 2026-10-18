@@ -211,6 +211,43 @@ vec2 pushAway(vec3 p) {
   }
   return off;
 }
+/* RIP Computer under water. The swell's surge rocks everything rooted on the bottom back and forth along the way the
+   waves run, with a period of about six seconds and a wavelength of about twenty blocks across the sea floor; each
+   point of a stalk lags the water at its foot by a little more the higher it is, so a kelp column waves like a ribbon
+   (h: blocks above its foot, from the mesher's stalk count; the same at a block's top and the next one's bottom, so the
+   blocks of a stalk stay joined). It bends from its foot (1 - e^(-h/1.6)), is a little lower at the top for leaning
+   over, and wanders slowly on top of the surge. flex: how far it gives (kelp and seagrass 1, coral 0.2). */
+float columnHash(vec3 p) { return fract(sin(dot(floor(p.xz), vec2(12.9898, 78.233))) * 43758.5453); }
+vec3 underwater(vec3 p, float h, float flex) {
+  const vec2 sw = vec2(0.6, 0.8);
+  float t = uTime, hash = columnHash(p);
+  float ph = dot(p.xz, sw) * 0.3 - t * 1.05 + h * 0.45 + hash * 0.8;
+  float surge = sin(ph) + 0.3 * sin(2.0 * ph + 1.3);
+  float bend = flex * (1.0 - exp(-h / 1.6));
+  vec2 drift = vec2(sin(t * 0.37 + hash * 6.28 + h * 0.6), cos(t * 0.29 + hash * 4.1 + h * 0.5));
+  vec3 off = vec3(sw.x * surge * 0.3 + drift.x * 0.1, 0.0, sw.y * surge * 0.3 + drift.y * 0.1) * bend;
+  off.y -= dot(off.xz, off.xz) * 0.4;
+  return off;
+}
+/* Pushed aside by anyone swimming through (uPush: you, other players, fish and the rest): the stalk goes with them from
+   where they touch it, less and less further above (it floats back up), and below that it bends from its foot up to
+   the touch. */
+vec2 swimPush(vec3 p, float h) {
+  vec2 off = vec2(0.0);
+  float foot = p.y - h;
+  for (int i = 0; i < 8; i++) {
+    vec4 P = uPush[i];
+    if (P.w <= 0.0) continue;
+    vec2 d = p.xz - P.xz;
+    float r = length(d) / P.w;
+    if (r > 2.5) continue;
+    float touch = P.y - foot;
+    if (touch < -0.6 || h - touch > 6.0) continue;
+    float along = h >= touch ? exp(-(h - touch) * 0.35) : h / max(touch, 0.4);
+    off += d / max(length(d), 1e-3) * 0.8 * P.w * exp2(-r * r * 2.0) * along;
+  }
+  return off;
+}
 vec3 windOffset(vec3 p, int wave, float v, float sky, float rnd) {
 #ifdef NO_WIND
   return vec3(0.0);
@@ -235,10 +272,55 @@ vec3 windOffset(vec3 p, int wave, float v, float sky, float rnd) {
   if (wave == 2) {
     off = uRealWind > 0.0 ? photonWind(p, strength * 0.25 * uRealWind * 0.5, false) : (vec3(wd.x, 0.0, wd.y) * g * 0.07 + flutter * 0.035) * strength;
   } else if (wave == 4) {
-    // kelp and seagrass: a slow swell, whatever the sky
-    off = vec3(sin(t * 1.1 + p.x * 0.4 + rnd * 6.0), 0.0, cos(t * 0.9 + p.z * 0.4 + rnd * 5.0)) * 0.13 * w;
+    // kelp and seagrass (rnd: how many blocks of the stalk are under this one)
+    float h = rnd * 255.0 + 1.0 - v;
+    if (uRealWind > 0.0) {
+      float bend = 1.0 - exp(-h / 1.6);
+      off = underwater(p, h, 1.0);
+      off.xz += swimPush(p, h);
+      // swum through: pressed aside, then springing back and settling (the interaction map), near where you swim
+      float tr = trampleAt(p.xz);
+      if (abs(tr) > 0.01 && abs(p.y - uPush[0].y) < 3.5) {
+        float e = 0.35;
+        vec2 grad = vec2(trampleAt(p.xz + vec2(e, 0.0)) - trampleAt(p.xz - vec2(e, 0.0)), trampleAt(p.xz + vec2(0.0, e)) - trampleAt(p.xz - vec2(0.0, e)));
+        off.xz += -grad * sign(tr) / max(length(grad), 0.05) * tr * 0.5 * bend * (1.0 - smoothstep(1.5, 3.5, abs(p.y - uPush[0].y)));
+      }
+    } else {
+      // a slow swell, whatever the sky (the whole stalk together)
+      float c = columnHash(p);
+      off = vec3(sin(t * 1.1 + p.x * 0.4 + c * 6.0), 0.0, cos(t * 0.9 + p.z * 0.4 + c * 5.0)) * 0.13 * min(1.0, h);
+    }
+  } else if (wave == 7) {
+    // RIP Computer: a coral or coral fan under water, rocked a little by the same surge
+    if (uRealWind <= 0.0) return vec3(0.0);
+    off = underwater(p, 1.0 - v, 0.22) + vec3(swimPush(p, 1.0 - v) * 0.3, 0.0).xzy;
+  } else if (wave == 9) {
+    // RIP Computer: sugar cane, a stalk bending from its foot like a rod held at one end (the lean grows as the square
+    // of the height), the whole stalk in the wind at its foot so it bends as one, and leaning away from legs
+    if (uRealWind <= 0.0) return vec3(0.0);
+    float h = rnd * 255.0 + 1.0 - v;
+    vec3 foot = vec3(floor(p.x) + 0.5, p.y - h, floor(p.z) + 0.5);
+    float b = min(h * h * 0.06, 1.2);
+    off = photonWind(foot, strength * 0.25 * uRealWind, false) * b * 1.6;
+    off.xz += pushAway(foot + vec3(0.0, 0.6, 0.0)) * min(h, 2.5) * 0.35;
+  } else if (wave == 10) {
+    // RIP Computer: a cobweb's threads trembling in the air that reaches it
+    if (uRealWind <= 0.0) return vec3(0.0);
+    off = vec3(sin(t * 2.3 + p.x * 3.1 + p.y * 2.0), 0.3 * sin(t * 1.7 + p.z * 2.7), cos(t * 2.1 + p.z * 3.3 + p.y * 1.4)) * 0.022 * strength * (0.4 + uRealWind * 0.3);
   } else if (wave == 5) {
     off = vec3(0.0, sin(t * 1.6 + p.x * 0.7 + p.z * 0.9) * 0.012, 0.0);
+    if (uRealWind > 0.0) {
+      // RIP Computer: a lily pad rides the ripples (as the water's surface does, water.js) and dips under whoever
+      // stands on it
+      vec2 iuv = (p.xz - uInteractRect.xy) / uInteractRect.zw;
+      if (iuv.x > 0.0 && iuv.y > 0.0 && iuv.x < 1.0 && iuv.y < 1.0) off.y += textureLod(uInteract, iuv, 0.0).r * 0.12;
+      for (int i = 0; i < 8; i++) {
+        vec4 P = uPush[i];
+        if (P.w <= 0.0 || abs(P.y - 0.45 * P.w - p.y) > 0.8) continue;
+        float r = length(p.xz - P.xz) / P.w;
+        off.y -= 0.06 * exp2(-r * r * 1.5);
+      }
+    }
   } else {
     if (uRealWind > 0.0) off = photonWind(p, strength * 0.25 * uRealWind, wave == 3 && v < 0.5) * w;
     else off = vec3(wd.x, 0.0, wd.y) * g * 0.22 * w * strength + vec3(flutter.x, 0.0, flutter.z) * 0.045 * w * strength;

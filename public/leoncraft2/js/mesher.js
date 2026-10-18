@@ -28,12 +28,12 @@
    flags: bits 0-1 ambient occlusion, 2-3 texture rotation, 4 overlay
    (grass block sides), 5 plant, 6 tinted.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=96';
-import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=96';
-import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=96';
-import { hash3 } from './noise.js?v=96';
-import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=96';
-import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=96';
+import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=97';
+import { CH, H, Y0, LEVEL, FALLING } from './world-const.js?v=97';
+import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=97';
+import { hash3 } from './noise.js?v=97';
+import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef, blockOffset, bambooVariant } from './models.js?v=97';
+import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=97';
 
 const W = 48, A = W * W;          // the region: three chunks a side
 let colours = null;               // biome colours, set once at start
@@ -712,8 +712,17 @@ function build(job, ny, c0, c1, base) {
           const pts1 = [[cx - s, ya, cz - s], [cx + s, ya, cz + s], [cx + s, yb, cz + s], [cx - s, yb, cz - s]];
           const pts2 = [[cx - s, ya, cz + s], [cx + s, ya, cz - s], [cx + s, yb, cz - s], [cx - s, yb, cz + s]];
           const uvs = [[0, 16], [16, 16], [16, 0], [0, 0]];
-          quad(out.plants, pts1, uvs, layer, 2, 32 | tinted, tint, wave, rnd, sl, bl, wd);
-          quad(out.plants, pts2, uvs, layer, 2, 32 | tinted, tint, wave, rnd, sl, bl, wd);
+          // (a stalk's block carries how many blocks of the same stalk are under it instead of its random number, so the
+          // shaders bend the whole stalk from its foot: blocks.js stalk)
+          let r = rnd;
+          if (d.stalk) {
+            // (under the rows this job filled, a part made again after a change reads the chunk itself)
+            const cb = chunks[4] && chunks[4].blocks, at = yy => (yy >= ya ? rb[yy * A + (16 + z) * W + 16 + x] : cb ? cb[(yy << 8) | k2] : 0);
+            r = 0;
+            while (r < 40 && y - r > 0 && (BLOCKS[at(y - r - 1)] || {}).stalk === d.stalk) r++;
+          }
+          quad(out.plants, pts1, uvs, layer, 2, 32 | tinted, tint, wave, r, sl, bl, wd);
+          quad(out.plants, pts2, uvs, layer, 2, 32 | tinted, tint, wave, r, sl, bl, wd);
           continue;
         }
         if (d.shape === 'torch') {

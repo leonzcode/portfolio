@@ -31,15 +31,15 @@
      dropItem(world, x, y, z, 'diamond', 2)     from anywhere (mob loot...)
      giveXp(x, y, z, 7)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=96';
-import { collisionBoxes } from './models.js?v=96';
-import { LEVEL, FALLING } from './world-const.js?v=96';
-import { lightNear } from './lightlevel.js?v=96';
-import { glints } from './render/armor.js?v=96';
-import { setGlint } from './render/glint.js?v=96';
-import { DIMS } from './dims.js?v=96';
-import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=96';
-import { blockGeometry, intAttribute } from './render/blockmesh.js?v=96';
+import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=97';
+import { collisionBoxes } from './models.js?v=97';
+import { LEVEL, FALLING } from './world-const.js?v=97';
+import { lightNear } from './lightlevel.js?v=97';
+import { glints } from './render/armor.js?v=97';
+import { setGlint } from './render/glint.js?v=97';
+import { DIMS } from './dims.js?v=97';
+import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=97';
+import { blockGeometry, intAttribute } from './render/blockmesh.js?v=97';
 const THREE = window.THREE;
 
 const ITEM_W = 0.125, ITEM_H = 0.25;           // half width, height
@@ -211,7 +211,9 @@ export class Drops {
           // (a honey block's box is a sixteenth in and 15/16 tall: models.js collisionBoxes)
           if (d.shape === 'cube' && b !== B.honey_block) { out.push(x, y, z, x + 1, y + 1, z + 1); continue; }
           const boxes = collisionBoxes(d, w.meta(x, y, z), (dx, dy, dz) => { const n = w.get(x + dx, y + dy, z + dz); return n ? { d: BLOCKS[n], m: w.meta(x + dx, y + dy, z + dz) } : null; }, x, z);
-          if (boxes) for (const c of boxes) out.push(x + c[0], y + c[1], z + c[2], x + c[3], y + c[4], z + c[5]);
+          // (a fence's, wall's or gate's box is a block and a half tall to keep players and mobs off it: what is dropped
+          // on one lies on the post, not half a block over it)
+          if (boxes) for (const c of boxes) out.push(x + c[0], y + c[1], z + c[2], x + c[3], y + Math.min(1, c[4]), z + c[5]);
         }
     return out;
   }
@@ -239,6 +241,24 @@ export class Drops {
     if (my !== v.y) e.hitY = true; else e.hitY = false;
     if (mx !== v.x) v.x = 0;
     if (mz !== v.z) v.z = 0;
+  }
+  /* Lying on the very edge of a block, its middle over nothing (a blast took the block under it, and its quarter-block
+     box still rests on the corner of the next one): it tips off, as a real thing does once its middle is past the edge,
+     instead of hanging there in the air. The boxes are the ones _move just gathered. */
+  _overEdge(e) {
+    const bx = this._bx, p = e.pos;
+    let under = false, nx = 0, nz = 0;
+    for (let i = 0; i < bx.length; i += 6) {
+      if (Math.abs(bx[i + 4] - p.y) > 1e-3) continue;
+      if (bx[i + 3] <= p.x - ITEM_W || bx[i] >= p.x + ITEM_W || bx[i + 5] <= p.z - ITEM_W || bx[i + 2] >= p.z + ITEM_W) continue;
+      if (p.x >= bx[i] && p.x <= bx[i + 3] && p.z >= bx[i + 2] && p.z <= bx[i + 5]) { under = true; break; }
+      // (away from the nearest point of what holds it up)
+      nx += p.x - Math.max(bx[i], Math.min(bx[i + 3], p.x)); nz += p.z - Math.max(bx[i + 2], Math.min(bx[i + 5], p.z));
+    }
+    if (under) return;
+    const d = Math.hypot(nx, nz);
+    if (d < 1e-6) return;
+    e.vel.x += nx / d * 0.03; e.vel.z += nz / d * 0.03;
   }
   // stuck inside a block (it was placed on top of us): out the top
   _unstick(e) {
@@ -317,6 +337,7 @@ export class Drops {
       } else e.vel.y -= 0.04;
       if (!this._unstick(e) && (!e.onGround || e.vel.x * e.vel.x + e.vel.z * e.vel.z > 1e-5 || (this.ticks + i) % 4 === 0)) {
         this._move(e, ITEM_W, ITEM_H);
+        if (e.onGround) this._overEdge(e);
         const f = e.onGround ? this._slip(e) * 0.98 : 0.98;
         e.vel.x *= f; e.vel.y *= 0.98; e.vel.z *= f;
         if (e.onGround && e.vel.y < 0) e.vel.y *= -0.5;
