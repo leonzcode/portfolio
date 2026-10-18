@@ -175,7 +175,17 @@ export function makeLobbyCos(K) {
       const st = this.getStack(s);
       if (!st) return;
       if (s.kind === 'box') { if (s.i < PACK_PAGE) ChestScreen.prototype.quickMove.call(this, s); }
-      else if (st.cos) { const i = this.box.findIndex((x, k) => k < PACK_PAGE && !x); if (i >= 0) { this.box[i] = st; this.setStack(s, null); } }
+      else if (st.cos) {
+        // (into this page if it has room, else the first page that does)
+        const i = this.box.findIndex((x, k) => k < PACK_PAGE && !x);
+        if (i >= 0) { this.box[i] = st; this.setStack(s, null); }
+        else {
+          this.store();
+          const cos = this.cos, at = cos.pack.findIndex((x, k) => !x && k < PACK_PAGE * PACK_PAGES);
+          const j = at >= 0 ? at : cos.pack.length < PACK_PAGE * PACK_PAGES ? cos.pack.length : -1;
+          if (j >= 0) { cos.pack[j] = st.cos; this.setStack(s, null); this.load(); this.cos.dirty = true; return; }
+        }
+      }
       this.store(); this.cos.dirty = true;
     }
     numberKey() {}
