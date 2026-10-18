@@ -1123,7 +1123,8 @@ export class Hub {
     } else if (kind === 'wait' || kind === 'wait_vote' || kind === 'wait_theme') {
       if (kind === 'wait_theme') inv.slots[0] = stack('writable_book', 1, { name: '§aTheme Vote §7- Right Click to vote for the theme' });
       inv.slots[8] = stack('red_bed', 1, { name: '§c§lReturn to Lobby §7(Right Click)' });
-      if (kind === 'wait_vote') inv.slots[0] = stack('filled_map', 1, { name: '§aMap Vote §7- Right Click to choose the map' }) || stack('paper', 1, { name: '§aMap Vote §7- Right Click to choose the map' });
+      // (SkyWars keeps the Kit Selector first, so its Map Vote goes beside it)
+      if (kind === 'wait_vote') inv.slots[this.gameKind === 'skywars' ? 1 : 0] = stack('filled_map', 1, { name: '§aMap Vote §7- Right Click to choose the map' }) || stack('paper', 1, { name: '§aMap Vote §7- Right Click to choose the map' });
       if (this.gameKind === 'skywars') inv.slots[0] = stack('bow', 1, { name: '§aKit Selector §7- Right Click to choose a kit' });
     } else if (kind === 'sw') {
       // SkyWars: the kit you picked, in your cage (alive: without it nothing could be broken or built, and a death
