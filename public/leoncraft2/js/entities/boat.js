@@ -45,15 +45,15 @@
    Shift gets you out: beside the boat the way you look if there is ground
    there, or on top of it (always, on water).
 --------------------------------------------------------------------------- */
-import { Entity, Living, DEG, wrap, r3 } from './entity.js?v=91';
-import { register, Animal } from './mobs.js?v=91';
-import { MODELS } from './mobmodels.js?v=91';
-import { addArt } from './mobart.js?v=91';
-import { BLOCKS, FLUID, SOLID, B } from '../blocks.js?v=91';
-import { collisionBoxes } from '../models.js?v=91';
-import { stackToJSON, stackFromJSON } from '../items.js?v=91';
-import { ChestScreen } from '../ui/containers.js?v=91';
-import { spill } from '../containers.js?v=91';
+import { Entity, Living, DEG, wrap, r3 } from './entity.js?v=92';
+import { register, Animal } from './mobs.js?v=92';
+import { MODELS } from './mobmodels.js?v=92';
+import { addArt } from './mobart.js?v=92';
+import { BLOCKS, FLUID, SOLID, B } from '../blocks.js?v=92';
+import { collisionBoxes } from '../models.js?v=92';
+import { stackToJSON, stackFromJSON } from '../items.js?v=92';
+import { ChestScreen } from '../ui/containers.js?v=92';
+import { spill } from '../containers.js?v=92';
 
 const PI = Math.PI;
 export const WOODS = { oak: 0xb8945f, spruce: 0x7a5a36, birch: 0xd8c88c, jungle: 0xb88664, acacia: 0xc06a3c, dark_oak: 0x4f3420, mangrove: 0x84403a, cherry: 0xe6b4ac, bamboo: 0xd4c05a, pale_oak: 0xe8e0d8 };

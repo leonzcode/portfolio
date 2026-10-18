@@ -15,10 +15,10 @@
    villages, pillager outposts, igloos and desert temples, and under the
    Tunnelers' Dream's 230 layers of stone its mineshafts and strongholds).
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=91';
-import { BIO } from '../biomes.js?v=91';
-import { H, Y0, VOL, idx } from '../world-const.js?v=91';
-import { stateOf } from './states.js?v=91';
+import { B } from '../blocks.js?v=92';
+import { BIO } from '../biomes.js?v=92';
+import { H, Y0, VOL, idx } from '../world-const.js?v=92';
+import { stateOf } from './states.js?v=92';
 
 export const PRESETS = [
   { name: 'Classic Flat', icon: 'grass_block', code: 'minecraft:bedrock,2*minecraft:dirt,minecraft:grass_block;minecraft:plains', structures: ['village_plains'] },
