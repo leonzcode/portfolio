@@ -27,18 +27,18 @@
    useExtra(manager, itemName, target, take, build) is the manager's last
    try at a right click (entities/manager.js useHeld).
 --------------------------------------------------------------------------- */
-import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=95';
-import { Projectile } from './projectiles.js?v=95';
-import { register, TYPES } from './mobs.js?v=95';
-import { model } from './mobs2.js?v=95';
-import { addArt } from './mobart.js?v=95';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=95';
-import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, maxDamage } from '../items.js?v=95';
-import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=95';
-import { LegacyRandom } from '../gen/random.js?v=95';
-import { fireworkColour } from '../crafting.js?v=95';
-import { rayBox } from './terrain.js?v=95';
-import { lootStack } from '../containers.js?v=95';
+import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=96';
+import { Projectile } from './projectiles.js?v=96';
+import { register, TYPES } from './mobs.js?v=96';
+import { model } from './mobs2.js?v=96';
+import { addArt } from './mobart.js?v=96';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=96';
+import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, maxDamage } from '../items.js?v=96';
+import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=96';
+import { LegacyRandom } from '../gen/random.js?v=96';
+import { fireworkColour } from '../crafting.js?v=96';
+import { rayBox } from './terrain.js?v=96';
+import { lootStack } from '../containers.js?v=96';
 const THREE = window.THREE;
 
 const PI = Math.PI;
@@ -565,7 +565,7 @@ const pickW = list => { let t = 0; for (const [, w] of list) t += w; let r = R()
 // the enchantments random loot may carry (the table's and the treasure ones), in the game's order
 const ON_RANDOM_LOOT = ORDER.concat(['binding_curse', 'vanishing_curse', 'frost_walker', 'mending']);
 const BIOME_NAMES = [];
-import('../biomes.js?v=95').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
+import('../biomes.js?v=96').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
 export class FishingBobber extends Projectile {
   static W = 0.25; static H = 0.25; static MODEL = 'bobber'; static TEX = 'bobber';
   constructor(m, type) {
@@ -664,7 +664,7 @@ export class FishingBobber extends Projectile {
     return st;
   }
   hitEntity(e) {
-    if (e.isPlayer) return false;
+    if (e.isPlayer || this.grapple) return false;
     // the old combat (Leon Network's, as Hypixel plays): the hook hits another player for nothing but a knock and a
     // flinch, as a snowball does, then holds on (the "rod" of the old fights)
     if (e.remotePlayer && this.m.combat && this.m.combat.legacy && e.hurt) e.hurt(0.0001, { type: 'thrown', attacker: this.owner, direct: this, x: this.pos.x - this.vel.x, z: this.pos.z - this.vel.z });

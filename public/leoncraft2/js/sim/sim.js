@@ -26,30 +26,30 @@
    The light the rules need (a crop wants 9) is the light the mesher worked
    out for the chunk, kept by world.js.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID, FLUID } from '../blocks.js?v=95';
-import { CH, H, idx } from '../world-const.js?v=95';
-import { BIOMES } from '../biomes.js?v=95';
-import { installPlants } from './plants.js?v=95';
-import { installFarming, resolveItem, itemName } from './farming.js?v=95';
-import { installFire } from './fire.js?v=95';
-import { Bodies } from './bodies.js?v=95';
-import { Lids } from './lids.js?v=95';
-import { Beams } from './beams.js?v=95';
-import { Beacons } from './beacon.js?v=95';
-import { Sculk } from './sculk.js?v=95';
-import { Conduits } from './conduit.js?v=95';
-import { installBeds } from './beds.js?v=95';
-import { Weather } from './weather.js?v=95';
-import { installRedstone } from './redstone.js?v=95';
-import { installParts } from './rsparts.js?v=95';
-import { installTripwire } from './tripwire.js?v=95';
-import { installPistons } from './pistons.js?v=95';
-import { installDispensers } from './dispense.js?v=95';
-import { explode } from '../explosion.js?v=95';
-import { blockDrops } from '../loot.js?v=95';
-import { itemName as itemNameOf } from '../items.js?v=95';
-import { Messages } from './messages.js?v=95';
-import { installContainers } from '../containers.js?v=95';
+import { B, BLOCKS, MAX_ID, FLUID } from '../blocks.js?v=96';
+import { CH, H, idx } from '../world-const.js?v=96';
+import { BIOMES } from '../biomes.js?v=96';
+import { installPlants } from './plants.js?v=96';
+import { installFarming, resolveItem, itemName } from './farming.js?v=96';
+import { installFire } from './fire.js?v=96';
+import { Bodies } from './bodies.js?v=96';
+import { Lids } from './lids.js?v=96';
+import { Beams } from './beams.js?v=96';
+import { Beacons } from './beacon.js?v=96';
+import { Sculk } from './sculk.js?v=96';
+import { Conduits } from './conduit.js?v=96';
+import { installBeds } from './beds.js?v=96';
+import { Weather } from './weather.js?v=96';
+import { installRedstone } from './redstone.js?v=96';
+import { installParts } from './rsparts.js?v=96';
+import { installTripwire } from './tripwire.js?v=96';
+import { installPistons } from './pistons.js?v=96';
+import { installDispensers } from './dispense.js?v=96';
+import { explode } from '../explosion.js?v=96';
+import { blockDrops } from '../loot.js?v=96';
+import { itemName as itemNameOf } from '../items.js?v=96';
+import { Messages } from './messages.js?v=96';
+import { installContainers } from '../containers.js?v=96';
 
 const SIN = new Float32Array(65536);
 for (let i = 0; i < 65536; i++) SIN[i] = Math.sin(i * Math.PI * 2 / 65536);

@@ -23,11 +23,11 @@
    Made by net/hub.js with its own pieces (makeLobbyCos(K)), as the Profile
    menus are, so this file imports nothing of hub.js.
 --------------------------------------------------------------------------- */
-import { COS, COSMETICS, HATS, AURAS, TRAILS, GADGETS, RARITY, CATS } from './cosdata.js?v=95';
-import { B, BLOCKS, SOLID } from '../blocks.js?v=95';
-import { Sound } from '../sound/sound.js?v=95';
-import { F } from './players.js?v=95';
-import { blockGeometry } from '../render/blockmesh.js?v=95';
+import { COS, COSMETICS, HATS, AURAS, TRAILS, GADGETS, RARITY, CATS } from './cosdata.js?v=96';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=96';
+import { Sound } from '../sound/sound.js?v=96';
+import { F } from './players.js?v=96';
+import { blockGeometry } from '../render/blockmesh.js?v=96';
 
 const THREE = window.THREE;
 const FIXED = ['compass', 'temp', 'profile'];
@@ -113,7 +113,7 @@ export function makeLobbyCos(K) {
     const rar = RARITY[c.rarity] || RARITY.c, cat = CATS.find(q => q[0] === c.cat) || CATS[0];
     st.name = rar[1] + c.name;
     st.plain = true;
-    const how = c.cat === 'gadget' ? (GADGETS[id] && GADGETS[id].toggle ? '§eRight Click to turn on or off' : GADGETS[id] && GADGETS[id].hold ? '§eHold Right Click to use' : '§eRight Click to use')
+    const how = c.cat === 'gadget' ? (GADGETS[id] && GADGETS[id].how ? '§e' + GADGETS[id].how : GADGETS[id] && GADGETS[id].toggle ? '§eRight Click to turn on or off' : GADGETS[id] && GADGETS[id].hold ? '§eHold Right Click to use' : '§eRight Click to use')
       : c.cat === 'special' ? '§eRight Click to open' : worn ? '§eRight Click to take off' : '§eRight Click to wear';
     st.lore = [cat[2] + cat[1].replace(/s$/, '') + ' §8- ' + rar[1] + rar[0], '§7' + c.what, worn ? '§a✔ Wearing' : '', how].filter(Boolean);
     if (worn) st.ench = { unbreaking: 1 };
@@ -409,6 +409,10 @@ export function makeLobbyCos(K) {
     use(st) {
       const id = st.cos, c = COS.get(id);
       if (!c || !this.own.has(id) || !this.inLobby) return true;
+      // one press, one use: the game repeats a held right click every four ticks, which put a hat on and took it off again
+      // in a single press (only what is meant to be held, the Jetpack and the Bubble Blower, goes on with the button)
+      const G = GADGETS[id], n = this.hub.pressN | 0;
+      if (!(G && G.hold)) { if (n === this.usedPress && this.game.inter.useHeld) return true; this.usedPress = n; }
       if (c.cat === 'special') { this.hub.openScreen(new BackpackMenu(this)); this.sound('item.armor.equip_leather'); return true; }
       if (c.cat === 'hat' || c.cat === 'aura' || c.cat === 'trail') { this.setWear(c.cat, this.wear[c.cat] === id ? null : id); return true; }
       this.gadget(id);
@@ -430,6 +434,7 @@ export function makeLobbyCos(K) {
       const G = GADGETS[id];
       // (a gadget is the lobby's only: nothing of one may reach a game, however it was called)
       if (!G || !this.inLobby) return;
+      if (id === 'gad_grapple') { this.grapple(); return; }
       const t = this.t, held = !!G.hold;
       if (!held && (this.cd[id] || 0) > t) { const s = Math.ceil((this.cd[id] - t) / 20); this.say('§cYou can use this again in ' + s + ' second' + (s === 1 ? '' : 's')); return; }
       this.cd[id] = t + (G.cd || 0);
@@ -447,15 +452,6 @@ export function makeLobbyCos(K) {
       }
       const w = this.game.world;
       switch (id) {
-        case 'gad_grapple': {
-          const h = rayHit(w, eye.x, eye.y, eye.z, dx, dy, dz, 40);
-          if (!h) { this.say('§cNothing to hook onto there.'); this.cd[id] = t + 4; return; }
-          const vx = h.px - P.pos.x, vy = h.py - P.pos.y, vz = h.pz - P.pos.z, d = Math.hypot(vx, vy, vz) || 1, k = Math.min(2.6, 0.5 + d * 0.09);
-          P.vel.x = vx / d * k; P.vel.y = Math.max(0.42, vy / d * k + 0.35); P.vel.z = vz / d * k; P.onGround = false;
-          const to = [r3(h.px), r3(h.py), r3(h.pz)];
-          this.play({ id, from: at, to }, true); send({ from: at, to });
-          return;
-        }
         case 'gad_cannon': {
           P.vel.x = dx * 2.4; P.vel.y = Math.max(0.6, dy * 2.4 + 0.5); P.vel.z = dz * 2.4; P.onGround = false;
           this.play({ id, at }, true); send({ at });
@@ -558,6 +554,48 @@ export function makeLobbyCos(K) {
       if (m.id === 'gad_freeze') { this.game.survival.addEffect('slowness', 3, 60, { ambient: true }); this.frozenUntil = this.t + 60; this.say('§bYou were frozen by §f' + (m.by || 'someone') + '§b!'); }
     }
 
+    /* The Grappling Hook, as Hypixel's: a right click casts the line (the game's own bobber, which the others see on the
+       end of your rod), the next reels it in, and a hook that landed on a block flings you there in an arc, across
+       towards it and always up, harder the further it is, worked out from the game's own drag and gravity so you come
+       down where the hook was. A hook still in the air, in water or on someone only comes back. Two seconds between
+       pulls. */
+    grapple() {
+      const E = this.E, P = this.game.player, id = 'gad_grapple', t = this.t, b = E && E.bobber;
+      if (!E || !P) return;
+      if (b && !b.removed) {
+        const landed = b.stuckBlock && !b.hooked, bx = b.pos.x, by = b.pos.y, bz = b.pos.z;
+        b.gone(); E.bobber = null;
+        this.sound('entity.fishing_bobber.retrieve', P.pos.x, P.pos.y, P.pos.z, 1, 0.9 + R() * 0.2);
+        if (!landed) return;
+        const dx = bx - P.pos.x, dy = by - P.pos.y, dz = bz - P.pos.z, d = Math.hypot(dx, dy, dz), h = Math.hypot(dx, dz);
+        // in the air for longer the further it is (so the arc rises with the distance); up and down a tick is
+        // (v - 0.08) * 0.98, which rises (v + 3.92)(1 - 0.98^n) / 0.02 - 3.92 n in n ticks; across a tick keeps 0.91,
+        // and what is left at the landing slides on about 2.2 times as far
+        const n = Math.max(6, Math.min(30, Math.round(4 + d * 0.75)));
+        const vy = (dy + 0.25 + 3.92 * n) * 0.02 / (1 - Math.pow(0.98, n)) - 3.92;
+        const vh = h / ((1 - Math.pow(0.91, n)) / 0.09 + 2.2 * Math.pow(0.91, n));
+        P.vel.x = h > 1e-6 ? dx / h * Math.min(3.5, vh) : 0; P.vel.z = h > 1e-6 ? dz / h * Math.min(3.5, vh) : 0;
+        P.vel.y = Math.max(0.1, Math.min(2.5, vy));
+        P.onGround = false; P.fallDistance = 0;
+        this.cd[id] = t + 40;
+        const to = [r3(bx), r3(by), r3(bz)];
+        this.puff('poof', bx, by, bz, 6, 0.2);
+        this.hub.send({ k: 'cosgad', id, to });
+        return;
+      }
+      if ((this.cd[id] || 0) > t) { const s = Math.ceil((this.cd[id] - t) / 20); this.say('§cYou can use this again in ' + s + ' second' + (s === 1 ? '' : 's')); return; }
+      const eye = { x: P.pos.x, y: P.pos.y + 1.62, z: P.pos.z };
+      const dx = -Math.sin(P.yaw) * Math.cos(P.pitch), dy = Math.sin(P.pitch), dz = -Math.cos(P.yaw) * Math.cos(P.pitch);
+      const e = E.spawn('fishing_bobber', eye.x, eye.y - 0.1, eye.z, { natural: false });
+      if (!e) return;
+      // (it goes past people: the hook is for blocks)
+      e.owner = E.player; e.grapple = true;
+      e.shoot(dx, dy, dz, 1.1 + R() * 0.2, 1);
+      e.vel.x += P.vel.x; e.vel.z += P.vel.z; if (!P.onGround) e.vel.y += P.vel.y;
+      E.bobber = e;
+      this.sound('entity.fishing_bobber.throw', P.pos.x, P.pos.y, P.pos.z, 0.5, 0.4 / (R() * 0.4 + 0.8));
+    }
+
     /* ---- what a gadget looks like, on every page (mine: true on the page that used it) ---- */
     play(m, mine) {
       if (!this.inLobby) return;
@@ -566,7 +604,8 @@ export function makeLobbyCos(K) {
       const at = v3(m.at), from = v3(m.from), to = v3(m.to), look = v3(m.look) || [0, 0, -1];
       const line = (a, b, kind, step, col) => { const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]), n = Math.min(120, Math.ceil(d / step)); for (let i = 0; i <= n; i++) { const f = i / n; this.puff(kind, a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, 1, 0.02, col); } };
       switch (id) {
-        case 'gad_grapple': if (from && to) { line(from, to, 'crit', 0.4, [0.8, 0.7, 0.5]); this.puff('poof', to[0], to[1], to[2], 6, 0.2); this.sound('entity.fishing_bobber.retrieve', from[0], from[1], from[2], 1, 1); } break;
+        // (the line and the hook are the game's bobber, seen as any rod's: here only the pull)
+        case 'gad_grapple': if (to) { this.puff('poof', to[0], to[1], to[2], 6, 0.2); const o = this.feetOf(m.who); if (o) this.sound('entity.fishing_bobber.retrieve', o.x, o.y, o.z, 1, 1); } break;
         case 'gad_cannon': if (at) { this.puff('explosion', at[0], at[1] - 1, at[2], 3, 0.6); this.puff('large_smoke', at[0], at[1] - 1, at[2], 12, 0.7); this.sound('entity.generic.explode', at[0], at[1], at[2], 0.7, 1.4); this.follow(m.who, 'smoke', 30, [0.6, 0.6, 0.6]); } break;
         case 'gad_rocket': if (at) { this.puff('large_smoke', at[0], at[1] - 1.4, at[2], 14, 0.6); this.sound('entity.firework_rocket.launch', at[0], at[1], at[2], 1.2, 0.8); this.follow(m.who, 'sparkle', 26, [1, 0.8, 0.4]); this.fx.push({ kind: 'burstAt', who: m.who, t: this.t + 24, until: this.t + 25 }); } break;
         case 'gad_wand': if (at) { for (let i = 0; i < 40; i++) this.spark('sparkle', at[0] + look[0], at[1] + look[1], at[2] + look[2], look[0] * 0.6 + (R() - 0.5) * 0.3, look[1] * 0.6 + (R() - 0.3) * 0.3, look[2] * 0.6 + (R() - 0.5) * 0.3, colour('confetti'), 20 + R() * 10); this.follow(m.who, 'glowdust', 30, [0.8, 0.6, 1]); this.sound('entity.illusioner.cast_spell', at[0], at[1], at[2], 0.8, 1.4); } break;
