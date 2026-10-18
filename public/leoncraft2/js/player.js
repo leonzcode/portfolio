@@ -661,6 +661,17 @@ export class Player {
     return { feet: p, eye, roll: 0, handBob, fov };
   }
 
+  /* The eyes as the game's own pick sees them: the pose's height over the
+     feet as it is now (the camera eases to it, the pick does not) and no view
+     bob. alpha 1 is where the last tick left you: the game picks from there
+     (pick at a partial tick of 1) before it handles a click, which is what
+     lets a god bridge or a telly bridge catch the side of the block under you
+     in the tick after you walk off it, before you start to fall. */
+  pickEye(alpha = 1) {
+    const p = this.pos, q = this.prev, a = alpha >= 1 ? 1 : alpha;
+    return { x: q.x + (p.x - q.x) * a, y: q.y + (p.y - q.y) * a + POSE[this.pose || 'stand'][1] * (this.scale || 1), z: q.z + (p.z - q.z) * a };
+  }
+
   /* ---- what the crosshair is on: a voxel walk along the view ray ---- */
   pick(eye, reach) {
     const dir = new THREE.Vector3(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
