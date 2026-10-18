@@ -7,10 +7,10 @@
    out of range, and takes edits: a changed block remeshes its column, and
    the neighbouring one too when it sits on an edge.
 --------------------------------------------------------------------------- */
-import { CH, H, idx } from './world-const.js?v=86';
-import { BLOCKS, FLUID } from './blocks.js?v=86';
-import { searchSpawn } from './spawn.js?v=86';
-import { settleEdges } from './edgevines.js?v=86';
+import { CH, H, idx } from './world-const.js?v=87';
+import { BLOCKS, FLUID } from './blocks.js?v=87';
+import { searchSpawn } from './spawn.js?v=87';
+import { settleEdges } from './edgevines.js?v=87';
 
 /* ---- the workers, kept for the whole visit ----
    A new worker is slow for its first seconds: its code is fetched, compiled
@@ -21,7 +21,7 @@ import { settleEdges } from './edgevines.js?v=86';
 const GEN_N = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 const POOL = [];
 function newWorker() {
-  const w = new Worker(new URL('./worker.js?v=86', import.meta.url), { type: 'module' });
+  const w = new Worker(new URL('./worker.js?v=87', import.meta.url), { type: 'module' });
   w.onerror = e => console.error('worker', e.message || e);
   return w;
 }

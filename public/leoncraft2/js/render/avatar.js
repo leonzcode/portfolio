@@ -44,16 +44,16 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { VANILLA, AVATAR_FS } from './vanilla.js?v=86';
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=86';
-import { lightDefines } from './materials.js?v=86';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=86';
-import { H, idx } from '../world-const.js?v=86';
-import { lightNear } from '../lightlevel.js?v=86';
-import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=86';
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=86';
-import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=86';
-import { setGlint } from './glint.js?v=86';
+import { VANILLA, AVATAR_FS } from './vanilla.js?v=87';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=87';
+import { lightDefines } from './materials.js?v=87';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=87';
+import { H, idx } from '../world-const.js?v=87';
+import { lightNear } from '../lightlevel.js?v=87';
+import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=87';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=87';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=87';
+import { setGlint } from './glint.js?v=87';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -64,7 +64,7 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=86', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=87', import.meta.url).href;
 // the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
 let defaultSkin = DEFAULT_SKIN;
 
@@ -1165,15 +1165,13 @@ export class Avatar {
      back), pulled in by eight rays from just around the eye ---- */
   placeCamera(cam, state) {
     const e = state.eye;
-    // painting yourself (Leon Network's Chameleon, ui/paint.js): the camera swings round your middle at orbit's yaw, pitch and distance
+    // painting yourself (Leon Network's Chameleon, ui/paint.js): the camera swings round your middle at orbit's yaw, pitch and
+    // distance, straight through whatever is in the way, as the first Leoncraft's Mecha has it (a hider paints against a
+    // wall: stopped by it, the camera sat on the wall and the wheel did nothing until you turned away)
     if (this.orbit) {
       const O = this.orbit, k = this.size || 1, cx = e.x, cy = e.y - 0.72 * k, cz = e.z, cp = Math.cos(O.pitch);
       const fx = Math.sin(O.yaw) * cp, fy = Math.sin(O.pitch), fz = Math.cos(O.yaw) * cp;
-      let d = O.dist * k;
-      for (let i = 0; i < 8; i++) {
-        const t = this.ray(cx + (i & 1 ? 0.1 : -0.1), cy + (i & 2 ? 0.1 : -0.1), cz + (i & 4 ? 0.1 : -0.1), fx, fy, fz, d);
-        if (t < d) d = Math.max(0.6 * k, t);
-      }
+      const d = O.dist * k;
       cam.position.set(cx + fx * d, cy + fy * d, cz + fz * d);
       cam.rotation.set(-O.pitch, O.yaw, 0, 'YXZ');
       return;

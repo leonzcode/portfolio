@@ -20,12 +20,12 @@
    checked against chunks the real server made. Feature kinds are
    registered in FEATURES; ones not written yet place nothing.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=86';
-import { BIO, BIOMES } from '../biomes.js?v=86';
-import { Xoroshiro, WorldgenXoroshiro, LegacyRandom, decorationSeed, featureSeed } from './random.js?v=86';
-import { Simplex, normalNoise } from './noise.js?v=86';
-import { msin, mcos } from './carvers.js?v=86';
-import { stateOf } from './states.js?v=86';
+import { B, BLOCKS } from '../blocks.js?v=87';
+import { BIO, BIOMES } from '../biomes.js?v=87';
+import { Xoroshiro, WorldgenXoroshiro, LegacyRandom, decorationSeed, featureSeed } from './random.js?v=87';
+import { Simplex, normalNoise } from './noise.js?v=87';
+import { msin, mcos } from './carvers.js?v=87';
+import { stateOf } from './states.js?v=87';
 
 const MIN_Y = -64, MAX_Y = 319, SEA_LEVEL = 63;
 export const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);
