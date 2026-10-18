@@ -823,7 +823,9 @@ export class Hub {
       Object.defineProperties(q, { pos: { get: () => ({ x: b[0] + 0.5, y: b[1], z: b[2] + 0.5 }) }, hw: { value: 0.5 }, w: { value: 1 }, h: { value: 1, writable: true } });
       return q;
     };
-    this.unwrapNet = () => { net.blocks = blocks; net.local = local; net.pickPlayer = pick0; net.proxyOf = proxy0; };
+    // Murder Mystery, as Hypixel's: the murderer cannot take up the bow the detective dropped
+    net.mayTake = st => !(this.area === 'game' && this.gameKind === 'murder' && this.role === 'murderer' && st && st.id === idOf('bow'));
+    this.unwrapNet = () => { net.blocks = blocks; net.local = local; net.pickPlayer = pick0; net.proxyOf = proxy0; net.mayTake = null; };
     // K in a shared waiting room starts the game (never while a screen or the chat is open)
     this.onKey = e => {
       if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || ctx.gui.screen) return;

@@ -1456,6 +1456,8 @@ export class Net {
       const dx = Math.abs(e.pos.x - P.x), dz = Math.abs(e.pos.z - P.z);
       if (!(dx < 0.3 + 1 + 0.125 && dz < 0.3 + 1 + 0.125 && e.pos.y + 0.25 > P.y - 0.5 && e.pos.y < P.y + 1.8 + 0.5)) continue;
       if (collector.inv.roomFor(e.stack) <= 0) continue;
+      // (a minigame may keep something out of a player's hands: Murder Mystery's murderer never takes up a bow, net/hub.js)
+      if (this.mayTake && !this.mayTake(e.stack)) continue;
       e.asked = now;
       this.send({ t: 'it-', id: e.nid, take: 1 });
     }
