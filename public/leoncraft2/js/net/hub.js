@@ -776,8 +776,21 @@ export class Hub {
     };
     net.pickPlayer = function (E, eye, blockT, found) {
       const res = pick0.call(this, E, eye, blockT, found);
-      if (!hub.props.size || !hub.hide || hub.hide.kind !== 'prophunt' || !this.players || this.game.mode === 'spectator') return res;
+      if (!hub.hide || hub.area !== 'game' || !this.players || this.game.mode === 'spectator') return res;
       const P = this.game.player, dx = -Math.sin(P.yaw) * Math.cos(P.pitch), dy = Math.sin(P.pitch), dz = -Math.cos(P.yaw) * Math.cos(P.pitch);
+      // Chameleon: the Tag Stick finds a small hider as the Rifle does, within 0.64 of their middle (their own half size box
+      // is a sliver to swing at)
+      if (hub.hide.kind === 'chameleon') {
+        let lim = Math.min(E.combat.reach(), blockT === undefined ? Infinity : blockT), best = null;
+        if (res && res.remotePlayer) { const f = res.pos; lim = Math.min(lim, Math.hypot(f.x - eye.x, f.y + res.h / 2 - eye.y, f.z - eye.z)); best = res; }
+        for (const r of this.players.list.values()) {
+          if (!this.hittable(r, r.st ? r.st.d : 0) || playerSize.of(r.id) >= 1) continue;
+          const f = r.feet, mx = f.x - eye.x, my = f.y + 0.45 - eye.y, mz = f.z - eye.z, along = mx * dx + my * dy + mz * dz;
+          if (along > 0 && along < lim && (mx * mx + my * my + mz * mz) - along * along <= 0.64 * 0.64) { lim = along; best = this.proxyOf(r); }
+        }
+        return best || res;
+      }
+      if (!hub.props.size || hub.hide.kind !== 'prophunt') return res;
       const along = (x0, y0, z0, x1, y1, z1) => {
         let t0 = 0, t1 = Infinity;
         for (const [o, d, a, b] of [[eye.x, dx, x0, x1], [eye.y, dy, y0, y1], [eye.z, dz, z0, z1]]) {
@@ -1930,6 +1943,8 @@ export class Hub {
      sees the trail and hears the bang through the server. */
   shoot() {
     if (this.t - (this.shotAt === undefined ? -99 : this.shotAt) < 16) return;
+    // (stunned after too many misses: the first Leoncraft's Mecha makes you stand still a moment)
+    if (this.t < (this.stunUntil | 0)) { this.ctx.chat.add('§cYou are stunned for ' + Math.ceil((this.stunUntil - this.t) / 20) + 's!', 0xFF5555); this.shotAt = this.t; return; }
     this.shotAt = this.t;
     const g = this.game, P = g.player, w = g.world, net = this.net;
     const eye = { x: P.pos.x, y: P.pos.y + (P.eyeH || 1.62), z: P.pos.z };
@@ -1937,13 +1952,28 @@ export class Hub {
     // the first solid block in the way, a tenth of a block at a time
     let lim = 60;
     for (let t = 0.2; t < lim; t += 0.1) { const b = w.get(Math.floor(eye.x + dx * t), Math.floor(eye.y + dy * t), Math.floor(eye.z + dz * t)); if (b && SOLID[b]) { lim = t; break; } }
-    // the first player before it
+    // the first player before it: a small hider is hit by a shot passing within 0.64 of their middle (knee high on anyone
+    // else), as the first Leoncraft's Mecha counts it (a half size figure's own box asked for more aim than a mouse gives);
+    // anyone full size by their box
     let best = null;
     if (net && net.players) for (const r of net.players.list.values()) {
       if (!net.hittable(r, (r.st || {}).d)) continue;
-      const f = r.feet, k = playerSize.of(r.id), hw = 0.3 * k + 0.1, h = (r.st && r.st.f & F.SNEAK ? 1.5 : 1.8) * k;
-      const t = rayBox(eye.x, eye.y, eye.z, dx, dy, dz, f.x - hw, f.y, f.z - hw, f.x + hw, f.y + h, f.z + hw);
+      const f = r.feet, k = playerSize.of(r.id);
+      let t;
+      if (k < 1) {
+        const mx = f.x - eye.x, my = f.y + 0.9 * k - eye.y, mz = f.z - eye.z, along = mx * dx + my * dy + mz * dz;
+        t = along > 0 && (mx * mx + my * my + mz * mz) - along * along <= 0.64 * 0.64 ? along : Infinity;
+      } else {
+        const hw = 0.3 * k + 0.1, h = (r.st && r.st.f & F.SNEAK ? 1.5 : 1.8) * k;
+        t = rayBox(eye.x, eye.y, eye.z, dx, dy, dz, f.x - hw, f.y, f.z - hw, f.x + hw, f.y + h, f.z + hw);
+      }
       if (t < lim) { lim = t; best = r; }
+    }
+    // a shot into the scenery costs the shooter (6 of LC1's 100, 1.2 of 20 here); at none left, 4 s stunned and whole again
+    if (!best) {
+      const sv = g.survival;
+      if (sv.health - 1.2 > 0.01) { sv.health -= 1.2; this.ctx.chat.add('§cMissed! §7(-1.2 health; shooting the scenery costs you)', 0xFF5555); }
+      else { sv.health = sv.maxHealth; this.stunUntil = this.t + 80; sv.addEffect('slowness', 6, 80); this.ctx.chat.add('§c§lSTUNNED! §7Too many misses: 4 seconds without the Rifle.', 0xFF5555); this.sound('entity.player.hurt'); }
     }
     const to = [eye.x + dx * lim, eye.y + dy * lim, eye.z + dz * lim], r3 = v => Math.round(v * 1000) / 1000;
     if (best && net.send) net.send({ t: 'hit', id: best.id, k: 'arrow', dmg: 1, dir: [r3(dx * 3), r3(dy * 3), r3(dz * 3)], at: to.map(r3), item: 'Rifle' });
@@ -2004,8 +2034,9 @@ export class Hub {
   }
   // Chameleon: a hider's pose, or a seeker's aim while crouching, on every body drawn (none anywhere else)
   applyPoses() {
-    // (and Prop Hunt's seekers never heal by themselves: a wrong hit's half heart stays lost)
-    if (this.game.survival) this.game.survival.noRegen = this.area === 'game' && this.gameKind === 'prophunt' && this.role === 'seeker';
+    // (Prop Hunt's seekers never heal by themselves, a wrong hit's half heart stays lost; nor does anyone in Chameleon, where
+    //  a Rifle shot into the scenery costs the shooter)
+    if (this.game.survival) this.game.survival.noRegen = this.area === 'game' && ((this.gameKind === 'prophunt' && this.role === 'seeker') || this.gameKind === 'chameleon');
     const on = this.area === 'game' && this.gameKind === 'chameleon', A = this.ctx.renderer.avatar, P = this.game.player;
     if (A) A.poseOverride = !on ? null : this.role === 'seeker' ? (P.sneaking ? SNIPE : null) : (POSES[this.myPose | 0] || POSES[0])[1];
     const players = this.net.players;
