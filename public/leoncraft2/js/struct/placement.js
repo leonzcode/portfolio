@@ -26,7 +26,7 @@
    Biomes come from a pluggable source (see makeSource): the vanilla biome
    source where there is one, else this game's own picker.
 --------------------------------------------------------------------------- */
-import { JRand, toLong, largeFeature, largeFeatureWithSalt } from './rand.js?v=85';
+import { JRand, toLong, largeFeature, largeFeatureWithSalt } from './rand.js?v=86';
 
 /* ============================================================ the data ==
    Every structure set the game ships (data/minecraft/worldgen/structure_set). */

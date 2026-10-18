@@ -10,7 +10,7 @@
    licences are in textures/skin/gallery/gallery.json, textures/LICENSE.txt
    and the Credits screen (SKIN_CREDITS).
 --------------------------------------------------------------------------- */
-import { Screen, Button, WHITE, GREY } from './gui.js?v=85';
+import { Screen, Button, WHITE, GREY } from './gui.js?v=86';
 
 // [file, name, author, licence, number in the database]
 export const SKINS = [
@@ -45,11 +45,11 @@ export const SKINS = [
   // (worn by Leon Network's Chameleon seekers)
   ['swat_agent', 'SWAT Agent', 'Rhys', 'CC BY-SA 3.0', 437],
 ];
-export const skinUrl = file => new URL('../../textures/skin/gallery/' + file + '.png?v=85', import.meta.url).href;
+export const skinUrl = file => new URL('../../textures/skin/gallery/' + file + '.png?v=86', import.meta.url).href;
 
 // the Credits screen's lines for them
 export function skinCredits() {
-  const out = [['Player Skins', 0xFFFF55], ['The Skin Gallery\'s skins and Leonpixel\'s people, from the Minetest skin database:'],
+  const out = [['Player Skins', 0xFFFF55], ['The Skin Gallery\'s skins (Chameleon\'s seekers wear one), from the Minetest skin database:'],
     ['skinsdb.terraqueststudios.net', 0, 'https://skinsdb.terraqueststudios.net/']];
   for (const [, name, by, lic, n] of SKINS) out.push(['"' + name + '" by ' + by + ', ' + lic + ' (#' + n + ')']);
   out.push(['Used unchanged. CC BY-SA 3.0: creativecommons.org/licenses/by-sa/3.0', 0, 'https://creativecommons.org/licenses/by-sa/3.0/']);

@@ -34,17 +34,17 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=85';
-import { Screen, TextField, WHITE } from './gui.js?v=85';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=85';
-import { matchGrid, consumeGrid } from '../crafting.js?v=85';
-import { enchName, ENCH } from '../enchanting.js?v=85';
-import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=85';
-import { patternLines, drawBannerIcon } from '../banners.js?v=85';
-import { mapLines } from '../maps.js?v=85';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=85';
-import { dialPicture, usePicture } from '../dials.js?v=85';
-import { RecipeBook } from './recipebook.js?v=85';
+import { BLOCKS, B } from '../blocks.js?v=86';
+import { Screen, TextField, WHITE } from './gui.js?v=86';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=86';
+import { matchGrid, consumeGrid } from '../crafting.js?v=86';
+import { enchName, ENCH } from '../enchanting.js?v=86';
+import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=86';
+import { patternLines, drawBannerIcon } from '../banners.js?v=86';
+import { mapLines } from '../maps.js?v=86';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=86';
+import { dialPicture, usePicture } from '../dials.js?v=86';
+import { RecipeBook } from './recipebook.js?v=86';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -435,7 +435,7 @@ export function drawStack(g, icons, st, x, y, countText, countColour) {
   else if (st.trim && icons.drawTrimmed) icons.drawTrimmed(g, st, x, y);
   else if ((st.potion || st.color !== undefined) && icons.drawTinted) icons.drawTinted(g, st, x, y);
   else if (st.patterns && st.patterns.length) drawBannerIcon(g, st, x, y);
-  else icons.draw(g, st.id, x, y);
+  else if (!(st.face && drawHead(g, st.face, x, y))) icons.draw(g, st.id, x, y);
   if (hasGlint(st)) drawGlint(g, icons, st, x, y);
   // a bundle with something in it: how full, in blue (red once full)
   if (st.items && isBundle(st)) {
@@ -460,6 +460,40 @@ export function drawStack(g, icons, st, x, y, countText, countColour) {
 }
 // set when a slot was drawn under a cooldown, so the HUD draws again soon (ui/hud.js)
 export const COOLING = { seen: false };
+
+/* A head with a skin on it (a stack's `face`: a skin's address, or 'self' for
+   your own skin through HEADS.self), drawn as the game draws a head in a slot:
+   a cube seen from above, the face on the left, the head's left side on the
+   right, each with its hat layer. False while the skin is still loading. */
+export const HEADS = { self: () => '' };
+const headImgs = new Map();
+const HEAD_FACES = [
+  // [base u, v, hat u, v, transform a, b, c, d, e, f (slot pixels), shade]
+  [8, 0, 40, 0, 7 / 8, 3.5 / 8, -7 / 8, 3.5 / 8, 8, 1, 0],
+  [8, 8, 40, 8, 7 / 8, 3.5 / 8, 0, 1, 1, 4.5, 0.2],
+  [16, 8, 48, 8, 7 / 8, -3.5 / 8, 0, 1, 8, 8, 0.4]
+];
+function drawHead(g, face, x, y) {
+  const url = face === 'self' ? HEADS.self() : face;
+  if (!url) return false;
+  let img = headImgs.get(url);
+  if (!img) {
+    if (headImgs.size > 16) headImgs.clear();
+    img = new Image(); img.src = url; headImgs.set(url, img);
+  }
+  if (!img.complete || !img.naturalWidth) { if (!img.complete) COOLING.seen = true; return false; }
+  const ctx = g.ctx;
+  for (const [u, v, hu, hv, a, b, c, d, e, f, shade] of HEAD_FACES) {
+    ctx.save();
+    ctx.transform(a, b, c, d, x + e, y + f);
+    // the base layer covers the whole face, so the shade over both stays inside it
+    ctx.drawImage(img, u, v, 8, 8, 0, 0, 8, 8);
+    ctx.drawImage(img, hu, hv, 8, 8, 0, 0, 8, 8);
+    if (shade) { ctx.fillStyle = 'rgba(0,0,0,' + shade + ')'; ctx.fillRect(0, 0, 8, 8); }
+    ctx.restore();
+  }
+  return true;
+}
 function hsv(h, s, v) {
   const i = Math.floor(h * 6), f = h * 6 - i, p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
   const [r, g, b] = [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][i % 6];

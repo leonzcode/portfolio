@@ -14,31 +14,33 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=85';
-import { I, ITEMS, maxStack } from '../items.js?v=85';
-import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=85';
-import { POTIONS } from '../brewing.js?v=85';
-import { creativeItems, entryId } from '../ui/inventory.js?v=85';
-import { DIM_IDS } from '../dims.js?v=85';
-import { ChestScreen } from '../ui/containers.js?v=85';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=85';
-import { RemotePlayers, playerSize, F } from './players.js?v=85';
-import { register } from '../commands.js?v=85';
-import { Sound } from '../sound/sound.js?v=85';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=85';
-import { skinUrl } from '../ui/skins.js?v=85';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64 } from '../ui/paint.js?v=85';
-import { blockGeometry } from '../render/blockmesh.js?v=85';
-import { lightNear } from '../lightlevel.js?v=85';
-import { setSkin as setOwnSkin, invisLook, capeRule } from '../render/avatar.js?v=85';
-// each game's person on the stand wears a skin for the game (from the Skin Gallery's openly licensed skins, ui/skins.js)
-const NPC_SKIN = { bedwars: 'red_knight', skywars: 'pilot', duels: 'knight', tntrun: 'blue_tnt_mouse', murder: 'shadow_ninja', prophunt: 'ghost', chameleon: 'camouflaged_wizard',
-  pillars: 'king_gerold', deathswap: 'explorer', bridger: 'rpg_kid' };
+import { B, BLOCKS, SOLID } from '../blocks.js?v=86';
+import { I, ITEMS, maxStack } from '../items.js?v=86';
+import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=86';
+import { POTIONS } from '../brewing.js?v=86';
+import { creativeItems, entryId, HEADS } from '../ui/inventory.js?v=86';
+import { DIM_IDS } from '../dims.js?v=86';
+import { ChestScreen } from '../ui/containers.js?v=86';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=86';
+import { RemotePlayers, playerSize, F } from './players.js?v=86';
+import { register } from '../commands.js?v=86';
+import { Sound } from '../sound/sound.js?v=86';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=86';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64, pickAtCentre } from '../ui/paint.js?v=86';
+import { blockGeometry } from '../render/blockmesh.js?v=86';
+import { lightNear } from '../lightlevel.js?v=86';
+import { setSkin as setOwnSkin, invisLook, capeRule, getSkinSettings } from '../render/avatar.js?v=86';
+// the Profile item's head wears your own skin (ui/inventory.js drawHead)
+HEADS.self = () => getSkinSettings().skin;
+// each game's person on the stand wears its own skin for the game: our own 64 x 64 skins, drawn in code by
+// tools/leoncraft2/build_npc_skins.py into textures/skin/npc/<game>.png (a game not listed gets the default skin)
+const NPC_SKIN = new Set(['chameleon', 'pillars', 'bedwars', 'skywars', 'deathswap', 'duels', 'prophunt', 'murder', 'tntrun', 'spleef', 'bridger', 'buildbattle']);
+const npcSkinUrl = game => new URL('../../textures/skin/npc/' + game + '.png?v=86', import.meta.url).href;
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=85').then(m => {
+import('../adv/toast.js?v=86').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -333,7 +335,7 @@ class ReplayMenu extends MenuScreen {
   }
 }
 // the lobby's launch pad: its throw, out and up (blocks a tick), landing a few blocks short of the games' people
-const PAD_OUT = 0.35, PAD_UP = 0.425;
+const PAD_OUT = 0.4375, PAD_UP = 0.53125;
 // the lobby compass shows every game (a click opens that game's own menu); a person on the stand shows their game's modes
 class GameMenu extends MenuScreen {
   constructor(hub, game) { const g = game && (hub.games || []).find(x => x.id === game); super(hub, g ? g.name : 'Game Menu'); this.only = game || null; this.box.fill(null); this.tips.fill(null); this.acts.fill(null); this.fillBox(); hub.send({ k: 'counts' }); }
@@ -562,19 +564,44 @@ class MapSettingsScreen extends Screen {
     else if (!I.mine) g.centered('§7Only the map\'s maker can change these.', W / 2, this.height - 44, WHITE);
   }
 }
-/* Chameleon's poses (the Pose item cycles them; everyone sees them through the server's 'poses'):
-   each bends the parts of the model as the game's model space has them (S: head, body, right arm,
-   left arm, right leg, left leg; x right, y down, angles in radians). */
+/* Chameleon's poses (the Pose item or V cycles them; everyone sees them through the server's 'poses'): the first
+   Leoncraft's Mecha poses, with its own numbers (minecraft.html mcPoseModel). There the head, body and arms hang from
+   an upper body that turns at the hip (12 pixels up) and drops by a number of pixels; here each part is placed for
+   itself, so the upper body's turn is worked into each part's pivot and angles (S: head, body, right arm, left arm,
+   right leg, left leg in the game's model space: x right, y down, angles in radians). */
 const HALF = Math.PI / 2;
-const POSES = [
-  ['Standing', null],
-  ['T-Pose', S => { S[2].rx = S[3].rx = 0; S[2].ry = S[3].ry = 0; S[2].rz = HALF; S[3].rz = -HALF; }],
-  ['Arms Up', S => { S[2].rx = S[3].rx = -Math.PI; S[2].rz = 0.12; S[3].rz = -0.12; }],
-  ['Zombie', S => { S[2].rx = S[3].rx = -HALF; S[2].ry = S[3].ry = 0; S[2].rz = S[3].rz = 0; }],
-  ['Sitting', S => { for (const q of S) q.y += 10; S[4].rx = S[5].rx = -HALF; S[4].ry = 0.15; S[5].ry = -0.15; S[2].rx = S[3].rx = -0.4; }],
-  ['Star', S => { S[2].rx = S[3].rx = 0; S[2].rz = 2.3; S[3].rz = -2.3; S[4].rx = S[5].rx = 0; S[4].rz = 0.45; S[5].rz = -0.45; }],
-  ['Waving', S => { S[2].rx = -2.9; S[2].rz = 0.35; S[3].rx = 0; S[3].rz = -0.1; }],
+// LC1's poses: up (the upper body's turn about x), drop (pixels), then [rx, ry, rz] for head, armR, armL, legR, legL, in
+// three.js's frame (y up), as LC1 sets them; a function of the time for the wave
+const LC1_POSES = [
+  ['Stand', null],
+  ['Sit', { up: 0.14, drop: 12 * 0.78, head: [-0.1, 0, 0], armR: [0.55, 0, 0.14], armL: [0.55, 0, -0.14], legR: [-HALF, 0, 0], legL: [-HALF, 0, 0] }],
+  ['Starfish', { up: 0, drop: 0, head: [-0.14, 0, 0], armR: [-0.12, 0, -1.4], armL: [-0.12, 0, 1.4], legR: [0, 0, -0.4], legL: [0, 0, 0.4] }],
+  ['Lie Down', { up: -HALF, drop: 12 - 0.16 * 16, head: [0, 0, 0], armR: [0, 0, -0.28], armL: [0, 0, 0.28], legR: [-HALF, 0, 0], legL: [-HALF, 0, 0] }],
+  ['Crouch', { up: 0.5, drop: 0.22 * 16, head: [-0.34, 0, 0], armR: [-0.45, 0, 0], armL: [-0.45, 0, 0], legR: [0, 0, 0], legL: [0, 0, 0] }],
+  ['Wave', t => { const s = Math.sin(t * 5); return { up: 0, drop: 0, head: [0, 0.18, 0], armR: [-0.2, 0, -2.5 - s * 0.22], armL: [0.16, 0, 0], legR: [0, 0, 0], legL: [0, 0, 0] }; }],
 ];
+// where each part's pivot rests in three.js's frame (the model's 24 - y and -z), and the hip the upper body turns at
+const POSE_REST = [[0, 24, 0], [0, 24, 0], [-5, 22, 0], [5, 22, 0], [-1.9, 12, -0.1], [1.9, 12, -0.1]];
+const poseM = { u: null, l: null, e: null, v: null };
+function lc1Pose(spec) {
+  return S => {
+    const P = typeof spec === 'function' ? spec(performance.now() / 1000) : spec;
+    if (!poseM.u) { poseM.u = new THREE.Matrix4(); poseM.l = new THREE.Matrix4(); poseM.e = new THREE.Euler(); poseM.v = new THREE.Vector3(); }
+    const U = poseM.u.makeRotationX(P.up), L = poseM.l, E = poseM.e, v = poseM.v;
+    const parts = [P.head, [0, 0, 0], P.armR, P.armL, P.legR, P.legL];
+    for (let i = 0; i < 6; i++) {
+      const r = POSE_REST[i], a = parts[i], upper = i < 4;
+      v.set(r[0], r[1], r[2]);
+      E.set(a[0], a[1], a[2], 'XYZ'); L.makeRotationFromEuler(E);
+      if (upper) { v.y -= 12; v.applyMatrix4(U); v.y += 12; L.premultiply(U); }
+      v.y -= P.drop;
+      E.setFromRotationMatrix(L, 'ZYX');
+      // back to the game's model space: y and z flip, so do the y and z turns (avatar.js matrices)
+      const q = S[i]; q.x = v.x; q.y = 24 - v.y; q.z = -v.z; q.rx = E.x; q.ry = -E.y; q.rz = -E.z;
+    }
+  };
+}
+const POSES = LC1_POSES.map(([name, spec]) => [name, spec ? lc1Pose(spec) : null]);
 // a seeker crouching: down on one knee's lean, both arms out along the look as if sighting down a rifle
 const SNIPE = (S, sneak) => {
   const head = S[0];
@@ -734,7 +761,12 @@ export class Hub {
     this.unwrapNet = () => { net.blocks = blocks; net.local = local; };
     // K in a shared waiting room starts the game (never while a screen or the chat is open)
     this.onKey = e => {
-      if (e.code !== 'KeyK' || e.repeat || e.ctrlKey || e.altKey || e.metaKey || ctx.gui.screen) return;
+      if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || ctx.gui.screen) return;
+      // Chameleon: B opens the Paint Brush and V is the next pose, as the items do
+      const cham = this.area === 'game' && this.alive && this.hide && this.hide.kind === 'chameleon' && this.role === 'hider';
+      if (e.code === 'KeyB' && cham) { this.openBrush(); return; }
+      if (e.code === 'KeyV' && cham) { this.nextPose(); return; }
+      if (e.code !== 'KeyK') return;
       if (this.area === 'wait' && this.startable) this.send({ k: 'start' });
       else if (this.area === 'wait' && this.watching) this.ctx.chat.add('§cA game is already on here. You will play in the next round.', 0xFFFFFF);
     };
@@ -984,7 +1016,7 @@ export class Hub {
     if (kind === 'lobby') {
       inv.slots[0] = stack('compass', 1, { name: '§aGame Menu §7(Right Click)' });
       inv.slots[1] = stack(TEMP_BLOCK, 64, { name: TEMP_NAME });
-      inv.slots[4] = stack('player_head', 1, { name: '§aProfile §7- Right Click for your stats, titles and item layouts' }) || stack('name_tag', 1, { name: '§aProfile §7- Right Click for your stats, titles and item layouts' });
+      inv.slots[2] = stack('player_head', 1, { face: 'self', name: '§aProfile §7- Right Click for your stats, titles and item layouts' }) || stack('name_tag', 1, { name: '§aProfile §7- Right Click for your stats, titles and item layouts' });
     } else if (kind === 'wait' || kind === 'wait_vote' || kind === 'wait_theme') {
       if (kind === 'wait_theme') inv.slots[0] = stack('writable_book', 1, { name: '§aTheme Vote §7- Right Click to vote for the theme' });
       inv.slots[8] = stack('red_bed', 1, { name: '§c§lReturn to Lobby §7(Right Click)' });
@@ -1066,9 +1098,9 @@ export class Hub {
     } else if (kind === 'ch_hider') {
       this.alive = true;
       const named = (items, name) => { for (const it of items) { const st = stack(it, 1, { name }); if (st) return st; } return null; };
-      inv.slots[0] = named(['brush', 'feather'], '§aPaint Brush §7- Right Click to paint your skin');
+      inv.slots[0] = named(['brush', 'feather'], '§aPaint Brush §7- Right Click (or B) to paint your skin');
       inv.slots[1] = named(['spyglass', 'stick'], '§bColour Picker §7- Right Click a block to copy its colour');
-      inv.slots[2] = named(['armor_stand', 'oak_fence'], '§6Pose §7- Right Click to change your pose');
+      inv.slots[2] = named(['armor_stand', 'oak_fence'], '§6Pose §7- Right Click (or V) to change your pose');
       inv.slots[8] = named(['goat_horn', 'note_block'], '§eWhistle §7- Right Click to whistle (+2 points)');
       inv.select(0);
     } else if (kind === 'ch_seeker' || kind === 'ch_hunter') {
@@ -1275,8 +1307,8 @@ export class Hub {
     this.clearHolos();
     this.npcList = list.map((n, i) => Object.assign({ nid: -1000 - i }, n));
     for (const n of this.npcList) {
-      const sk = NPC_SKIN[String(n.id).replace(/^game:/, '')];
-      this.npcs.add({ id: n.nid, name: '', skin: sk ? skinUrl(sk) : '', eq: n.held ? { h: n.held, o: '', a: null } : null });
+      const sk = String(n.id).replace(/^game:/, '');
+      this.npcs.add({ id: n.nid, name: '', skin: NPC_SKIN.has(sk) ? npcSkinUrl(sk) : '', eq: n.held ? { h: n.held, o: '', a: null } : null });
       this.feed(n);
       this.holo('npc:' + n.id, n.x, n.y + 1.95, n.z, n.lines || []);
     }
@@ -1362,18 +1394,12 @@ export class Hub {
       // Chameleon: a whistle, heard by everyone near (the server keeps its wait)
       if (this.hide && this.hide.kind === 'chameleon' && /^Whistle/.test(nm)) { this.send({ k: 'whistle' }); return true; }
       // Chameleon: the next pose (as LC1's Mecha had them), told to everyone through the server
-      if (this.hide && this.hide.kind === 'chameleon' && /^Pose/.test(nm)) {
-        this.myPose = ((this.myPose | 0) + 1) % POSES.length;
-        this.send({ k: 'pose', p: this.myPose });
-        this.ctx.chat.add('§6Pose: §e' + POSES[this.myPose][0] + ' §7(right click again for the next)', 0xFFFFFF);
-        this.sound('block.wood.place');
-        return true;
-      }
+      if (this.hide && this.hide.kind === 'chameleon' && /^Pose/.test(nm)) { this.nextPose(); return true; }
       // Chameleon: the brush, the picker and the stamp
       if (this.hide && this.hide.kind === 'chameleon' && this.painter) {
         const T = this.game.inter.target;
-        if (/^Paint Brush/.test(nm)) { if (this.mayPaint()) this.openScreen(new PaintScreen(this.painter, { renderer: this.ctx.renderer, world: this.game.world, player: this.game.player })); return true; }
-        if (/^Colour Picker/.test(nm)) { if (T) { const c = faceColour(T.b || this.game.world.get(T.x, T.y, T.z), faceOfNormal(T.face)); if (c !== null) { this.painter.setColour(c); this.ctx.chat.add('§bPicked a colour: §f#' + c.toString(16).padStart(6, '0') + ' §7(paint with it in the Paint Brush)', 0xFFFFFF); this.sound('block.note_block.hat'); } } return true; }
+        if (/^Paint Brush/.test(nm)) { this.openBrush(); return true; }
+        if (/^Colour Picker/.test(nm)) { { const c = pickAtCentre(this.game.world, this.ctx.renderer, () => T ? faceColour(T.b || this.game.world.get(T.x, T.y, T.z), faceOfNormal(T.face)) : null); if (c !== null) { this.painter.setColour(c); this.ctx.chat.add('§bPicked a colour: §f#' + c.toString(16).padStart(6, '0') + ' §7(paint with it in the Paint Brush)', 0xFFFFFF); this.sound('block.note_block.hat'); } } return true; }
       }
     }
     // Prop Hunt: the Disguise item opens the round's list of blocks
@@ -1515,6 +1541,8 @@ export class Hub {
       }
       if (this.padFlying) { P.fallDistance = 0; if (P.onGround && this.t > this.padAt - 15) this.padFlying = false; }
     }
+    // punches in the lobby only knock you about: nothing there hurts
+    if (this.area === 'lobby') sv.health = sv.maxHealth;
     // the lobby's temporary blocks never run out
     if (this.area === 'lobby' && this.t % 20 === 0) {
       const inv = g.inv, tb = idOf(TEMP_BLOCK);
@@ -1736,6 +1764,16 @@ export class Hub {
     E.particles('poof', ex, ey, ez, 5, 0.08, [0.6, 0.6, 0.6]);
   }
   // a hider paints whenever they like, all round long (only being a seeker, or the round's end, takes the brush away)
+  // Chameleon: the next pose (as LC1's Mecha had them), told to everyone through the server
+  nextPose() {
+    this.myPose = ((this.myPose | 0) + 1) % POSES.length;
+    this.send({ k: 'pose', p: this.myPose });
+    this.ctx.chat.add('§6Pose: §e' + POSES[this.myPose][0] + ' §7(right click or V for the next)', 0xFFFFFF);
+    this.sound('block.wood.place');
+  }
+  openBrush() {
+    if (this.painter && this.mayPaint()) this.openScreen(new PaintScreen(this.painter, { renderer: this.ctx.renderer, world: this.game.world, player: this.game.player }));
+  }
   mayPaint() {
     if (this.painter && this.paintOn && this.role !== 'seeker') return true;
     if (this.role === 'seeker') this.ctx.chat.add('§cSeekers cannot paint!', 0xFF5555);
@@ -1750,7 +1788,10 @@ export class Hub {
     // (no capes in Chameleon: one would give a painted hider away)
     capeRule.off = on;
     playerSize.full = on && this.seekerIds ? this.seekerIds : new Set();
-    if (g && g.player && g.player.setScale) g.player.setScale(k);
+    /* (and a hider's box is thinner than the body drawn, as LC1's Mecha has it: 0.6 x 0.28 wide on a model at 0.9 x 0.5, a box
+       three of the model's pixels each side of the middle, so the shoulders and the head go into a wall pressed against.
+       Three of our half-size model's pixels (0.9375 / 32 a block) are 0.0879, and the box's half width 0.3 x 0.5 x 7/12 = 0.0875) */
+    if (g && g.player && g.player.setScale) g.player.setScale(k, k < 1 ? k * 7 / 12 : k);
     // (and nobody in it is hurt by a block at the eyes: half-size players squeeze into places, and paint against walls)
     if (g && g.survival) g.survival.noSuffocate = on;
     // and everyone in it climbs walls by holding jump against them (never the barriers round the map, or anyone could climb out)
@@ -1808,7 +1849,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=85', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=86', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -1823,7 +1864,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=85', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=86', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -1831,7 +1872,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=85', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=86', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -1842,7 +1883,7 @@ export class Hub {
     this.moving = true;
     const gui = this.ctx.gui, hooks = gui.hooks || {};
     this.ctx.chat.add('§7Sending you to ' + (id === 'hub' ? 'Leonpixel' : 'the game world') + '...', 0xFFFFFF);
-    const go = () => import('../ui/multiplayer.js?v=85').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
+    const go = () => import('../ui/multiplayer.js?v=86').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
     Promise.resolve(hooks.quitToTitle ? hooks.quitToTitle() : null).then(go, go);
   }
 

@@ -28,9 +28,9 @@
    and the light dim through render/vanilla.js (Fast) and the cloud cover
    (Detailed).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=85';
-import { CH, LEVEL, FALLING } from '../world-const.js?v=85';
-import { WeatherFX } from './weatherfx.js?v=85';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=86';
+import { CH, LEVEL, FALLING } from '../world-const.js?v=86';
+import { WeatherFX } from './weatherfx.js?v=86';
 
 const between = (r, a, b) => a + Math.floor(r() * (b - a + 1));
 

@@ -7,7 +7,7 @@
    Positions are centred on the block, lifted by one so they stay positive
    in the unsigned vertex format (the shader takes off 8, 0, 8).
 --------------------------------------------------------------------------- */
-import { boxesOf } from '../models.js?v=85';
+import { boxesOf } from '../models.js?v=86';
 const THREE = window.THREE;
 
 /* The vertex format's attributes (mesher.js) are small whole numbers, and the
@@ -34,6 +34,8 @@ const FLAT = new Set(['cross', 'torch', 'wall_torch', 'rail', 'wire', 'crop', 'v
    given a sixteenth of thickness, every pixel's edge a little side face. */
 let PIX = null;
 export function setLayerPixels(px) { PIX = px; }
+// (the same pixels as the world draws them, a resource pack's included: Chameleon's colour picker reads them, ui/paint.js)
+export function layerPixels() { return PIX; }
 
 export function isFlatItem(d) { return !!d && (FLAT.has(d.shape) || (d.iconLayer !== undefined && d.shape !== 'cube' && d.shape !== 'slab' && d.shape !== 'stairs')); }
 
