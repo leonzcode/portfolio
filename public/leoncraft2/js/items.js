@@ -17,8 +17,8 @@
    Tool, armour, food and fuel numbers are the Minecraft Wiki's (Java Edition,
    October 2026); the list itself is minecraft-data's (js/itemdata.js).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from './blocks.js?v=94';
-import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=94';
+import { B, BLOCKS, MAX_ID } from './blocks.js?v=95';
+import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=95';
 
 export const ITEM_BASE = MAX_ID;          // 4096: the first id that is not a block
 export const ITEMS = [];
@@ -237,6 +237,12 @@ export function fuelTicks(id) { const it = ITEMS[id]; return it && it.fuel ? it.
    was linked ({ x, y, z, dim }); bees and honey, a nest or hive moved with
    Silk Touch (the bees in it, [{ j, t, n }], and its honey level) */
 const EXTRA = ['items', 'color', 'flight', 'explosions', 'firework', 'sherds', 'charged', 'pages', 'title', 'author', 'stew', 'patterns', 'map', 'amp', 'instrument', 'variant', 'lodestone', 'bees', 'honey'];
+/* What a server's own items carry, kept by every copy but never saved: cos, a
+   Leonpixel lobby cosmetic's id (net/lobbycos.js); lore, the grey lines under
+   the name; plain, a name drawn without italics; face, a head's skin (the
+   Profile); cosBoots, the Double Jump Boots worn. A copy without cos was a
+   plain block or dye that did nothing. */
+const TAGS = ['cos', 'lore', 'plain', 'face', 'cosBoots'];
 /* What a suspicious stew made with each flower does: [effect, ticks] (the
    wiki's Suspicious Stew table, Java Edition). The tulips all give weakness. */
 export const STEW_EFFECTS = {
@@ -343,7 +349,7 @@ const hasExtra = s => { for (const k of EXTRA) if (s[k] !== undefined) return tr
 // two stacks that can go on one another (same item, same wear, enchantments, name, contents)
 export function sameItem(a, b) {
   if (!a || !b || a.id !== b.id) return false;
-  if ((a.dmg | 0) !== (b.dmg | 0) || (a.rep | 0) !== (b.rep | 0) || (a.name || '') !== (b.name || '')) return false;
+  if ((a.dmg | 0) !== (b.dmg | 0) || (a.rep | 0) !== (b.rep | 0) || (a.name || '') !== (b.name || '') || (a.cos || '') !== (b.cos || '')) return false;
   if ((a.trim ? a.trim.join() : '') !== (b.trim ? b.trim.join() : '') || (a.potion || '') !== (b.potion || '')) return false;
   if ((hasExtra(a) || hasExtra(b)) && extraKey(a) !== extraKey(b)) return false;
   return enchKey(a) === enchKey(b);
@@ -366,6 +372,7 @@ export function withCount(s, count) {
   if (s.potion) o.potion = s.potion;
   if (s.items) o.items = s.items.map(x => (x ? withCount(x, x.count) : null));
   for (const k of EXTRA) if (k !== 'items' && s[k] !== undefined) o[k] = typeof s[k] === 'object' ? JSON.parse(JSON.stringify(s[k])) : s[k];
+  for (const k of TAGS) if (s[k] !== undefined) o[k] = Array.isArray(s[k]) ? s[k].slice() : s[k];
   return o;
 }
 export function enchLevel(s, name) { return s && s.ench && s.ench[name] ? s.ench[name] : 0; }
