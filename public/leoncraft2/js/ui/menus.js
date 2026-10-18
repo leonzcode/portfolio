@@ -1064,6 +1064,8 @@ const CREDITS = [
   ['github.com/bs-community/skinview3d', 0, 'https://github.com/bs-community/skinview3d'],
   ['Block list and hardness: minecraft-data, MIT License'],
   ['github.com/PrismarineJS/minecraft-data', 0, 'https://github.com/PrismarineJS/minecraft-data'],
+  ['RIP Computer\'s wind, plants pushed aside and puddles: after Photon Shaders by SixthSurge, under the Photon Shaders License (shaders/PHOTON-LICENSE.txt).'],
+  ['github.com/sixthsurge/photon', 0, 'https://github.com/sixthsurge/photon'],
   ['The player skin, the grey buttons, the effect pictures, the frost'], ['and a few textures are original drawings.'],
   ['The capes in the Capes menu are our own, drawn in code.'],
   ['Everything else: written for Leoncraft by Leon Zhao.'], [''],

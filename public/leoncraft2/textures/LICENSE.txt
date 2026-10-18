@@ -317,3 +317,10 @@ CC BY-SA 3.0 / 4.0: https://creativecommons.org/licenses/by-sa/3.0/ , /by-sa/4.0
 
 Not an official Minecraft product. Not approved by or associated with Mojang
 or Microsoft.
+
+Code from Photon Shaders
+
+RIP Computer's wind on plants, the plants pushed aside by whoever walks
+through them, and the puddles in rain are ported from Photon Shaders by
+SixthSurge (https://github.com/sixthsurge/photon) under the Photon Shaders
+License; what was taken and the licence itself are in shaders/PHOTON-LICENSE.txt.

@@ -31,6 +31,7 @@ import { pieceLook, armorSheet } from '../render/armor.js?v=91';
 import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=91';
 import { DRAW, I, stackFromJSON } from '../items.js?v=91';
 import { B, BLOCKS } from '../blocks.js?v=91';
+import { walkers } from '../render/realism.js?v=91';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -306,6 +307,8 @@ export class RemotePlayers {
       P.yaw = p.yaw;
       const feet = r.feet || (r.feet = new THREE.Vector3());
       feet.set(p.x, p.y, p.z);
+      // (RIP Computer: walking through the grass parts it: render/realism.js)
+      if (!(p.f & (F.FLY | F.DEAD))) walkers.add(p.x, p.y, p.z, av.size || 1, true);
       this.draw(r, av, P, feet, Math.min(1, r.acc / 0.05), dt, now);
       /* the name, its top half a block over the head (lower when they sneak),
          within 64 blocks; a player sneaking shows only the faint layer, and

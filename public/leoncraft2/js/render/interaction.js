@@ -6,7 +6,9 @@
             the last), so wading, swimming and splashing send rings out
             across the water that spread, cross and die away
      b      how trampled the grass is: pressed flat where you walk, standing
-            slowly back up over a few seconds
+            slowly back up over a few seconds (RIP Computer: where anyone
+            walks, the player, other players and mobs, and it springs back
+            up past upright and settles, the speed it is moving at kept in a)
 
    It is stepped at a fixed 60 times a second, whatever the frame rate, and
    slid along with the player a whole texel at a time so nothing smears.
@@ -19,6 +21,8 @@ uniform sampler2D uPrev;
 uniform vec2 uShift;          // texels the map moved this step
 uniform vec4 uSplash;         // world xz, strength, radius (blocks)
 uniform vec4 uStep;           // world xz of the player's feet, trample strength, radius
+uniform vec4 uSteps[8];       // realism: everyone else walking near: world xz, strength, radius (strength 0: none)
+uniform float uSpring;        // realism: 1 the grass springs back (a spring, the speed in a), 0 it stands slowly up
 uniform vec4 uRect;           // world xz of the corner, size
 uniform float uDamp;
 in vec2 vUv; out vec4 o;
@@ -36,10 +40,26 @@ void main() {
   vec2 world = uRect.xy + vUv * uRect.zw;
   float ds = length(world - uSplash.xy);
   if (uSplash.z != 0.0 && ds < uSplash.w) h += uSplash.z * (1.0 - ds / uSplash.w) * (1.0 - ds / uSplash.w);
-  float tr = c.b * 0.9965;                // grass stands back up over a few seconds
+  float press = 0.0;
   float dp = length(world - uStep.xy);
-  if (uStep.z > 0.0 && dp < uStep.w) tr = max(tr, uStep.z * smoothstep(uStep.w, uStep.w * 0.35, dp));
-  o = vec4(clamp(h, -2.0, 2.0), c.r, tr, 1.0);
+  if (uStep.z > 0.0 && dp < uStep.w) press = uStep.z * smoothstep(uStep.w, uStep.w * 0.35, dp);
+  for (int i = 0; i < 8; i++) {
+    vec4 s = uSteps[i];
+    if (s.z <= 0.0) continue;
+    float d = length(world - s.xy);
+    if (d < s.w) press = max(press, s.z * smoothstep(s.w, s.w * 0.35, d));
+  }
+  if (uSpring > 0.5) {
+    // pressed flat at once; let go, it springs back up in about three quarters of a second, past upright, and settles
+    // (a press counts only over what is there: the swing back past upright is below 0)
+    float b = c.b, v = c.a;
+    if (press > max(b, 0.0)) { b = press; v = 0.0; }
+    else { v = v * 0.975 - b * 0.0012; b += v; }
+    o = vec4(clamp(h, -2.0, 2.0), c.r, clamp(b, -0.6, 1.0), clamp(v, -1.0, 1.0));
+  } else {
+    float tr = max(c.b * 0.9965, press);   // grass stands back up over a few seconds
+    o = vec4(clamp(h, -2.0, 2.0), c.r, tr, 0.0);
+  }
 }`;
 
 export class Interaction {
@@ -53,6 +73,7 @@ export class Interaction {
     this.u = {
       uPrev: { value: null }, uShift: { value: new THREE.Vector2() }, uSplash: { value: new THREE.Vector4() },
       uStep: { value: new THREE.Vector4() }, uRect: { value: new THREE.Vector4() }, uDamp: { value: 0.992 },
+      uSteps: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) }, uSpring: { value: 0 },
     };
     this.m = rawMat(FS, this.u);
     this.fs = new FullScreen(this.m);
@@ -61,7 +82,11 @@ export class Interaction {
   }
   get texture() { return this.t[this.i].texture; }
   splash(x, z, strength, radius) { this.splashes.push([x, z, strength, radius]); }
-  update(dt, player, stepStrength) {
+  // steps: realism's other walkers ([x, z, strength, radius] each, up to 8), spring: whether the grass springs back
+  update(dt, player, stepStrength, steps, spring) {
+    const S = this.u.uSteps.value;
+    for (let i = 0; i < 8; i++) { const s = steps && steps[i]; if (s) S[i].set(s[0], s[1], s[2], s[3]); else S[i].set(0, 0, 0, 0); }
+    this.u.uSpring.value = spring ? 1 : 0;
     this.acc = Math.min(this.acc + dt, 0.1);
     const tpb = this.size / this.world;
     while (this.acc >= 1 / 60) {
