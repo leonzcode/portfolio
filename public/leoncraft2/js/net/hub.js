@@ -840,7 +840,8 @@ export class Hub {
         // (but Death Swap, which is the game's own survival)
         { const C = g.entities && g.entities.combat; if (C) C.legacy = m.area !== 'ds'; }
         this.gameKind = m.game || null; this.modeId = m.mode || null; this.spill = !!m.spill; this.noBuild = !!m.noBuild; this.jumps = m.jumps | 0;
-        this.hideNames = !!m.hideNames; this.role = m.role || null; this.hadBow = false; this.arrowT = 0;
+        this.hideNames = !!m.hideNames; this.role = m.role || null; this.hadBow = false; this.boughtBow = false; this.arrowT = 0;
+        this.clearCorpses();
         // a shared room: K starts it (startable); a late comer watches the round on there (watching)
         this.startable = !!m.startable; this.watching = !!m.watching;
         // the new games: The Bridge's goals (no building there), a Build Battle plot and its vote, Spleef's snow, hiding
@@ -909,6 +910,8 @@ export class Hub {
         return;
       }
       case 'spec': this.alive = false; return;
+      // Murder Mystery: a body lying where someone fell, in their skin, for the rest of the round
+      case 'corpse': this.addCorpse(m); return;
       case 'counts': this.counts = m.c || {}; this.gameCounts = m.g || {}; this.refreshScreen(); return;
       case 'mode': if (m.m && g.mode !== m.m) this.ctx.commandCtx().setMode(m.m); return;
       // (Murder Mystery: you shot an innocent)
@@ -1344,6 +1347,20 @@ export class Hub {
     this.holo(key, n.x, n.y + 1.95, n.z, lines);
   }
   feed(n) { this.npcs.state(n.nid, { ts: performance.now(), x: n.x, y: n.y, z: n.z, yaw: n.yaw, pitch: 0, f: 0, d: 0 }, performance.now()); }
+  // a body lying where someone fell (Murder Mystery), in the skin they wore; gone with the round (clearCorpses)
+  addCorpse(m) {
+    if (!this.npcs) return;
+    const r = this.net.players && this.net.players.list.get(m.id), mine = m.id === this.net.id;
+    let skin = '', slim = false;
+    if (r) { skin = r.skinUrl || ''; slim = !!r.slim; }
+    else if (mine) { const s = getSkinSettings(); skin = s.skin || ''; slim = s.slim; }
+    this.corpses = this.corpses || [];
+    const nid = -4000 - this.corpses.length;
+    this.npcs.add({ id: nid, name: '', skin, slim });
+    this.feed({ nid, x: +m.x, y: +m.y, z: +m.z, yaw: +m.yaw || 0 });
+    this.corpses.push({ nid });
+  }
+  clearCorpses() { if (this.corpses && this.npcs) for (const c of this.corpses) this.npcs.remove(c.nid); this.corpses = null; }
   // the person under the crosshair, within reach: what a click on them does
   clickNpc() {
     const n = this.npcAt();
@@ -1602,18 +1619,21 @@ export class Hub {
     if (this.br) { this.brTick(); return; }
     // the void takes you at once
     if (P.pos.y < this.floor && !sv.dead) { this.voided = true; sv.hurt(3.4e38, 'out_of_world'); return; }
-    // Murder Mystery: ten gold makes a bow and an arrow; the detective's arrow comes back; a bow picked up is told to the server
+    /* Murder Mystery, as Hypixel's: ten gold makes a bow and an arrow (the murderer's ten too), each ten after that one
+       more arrow; a bow bought is yours and goes with you when you die. The detective's bow, and the one picked up off
+       the floor (only the detective's is ever dropped), brings its arrow back after 5 s and is told to the server,
+       which drops it where its holder dies. */
     if (this.gameKind === 'murder') {
-      const inv = g.inv, bowId = idOf('bow'), arrowId = idOf('arrow'), hasBow = inv.count(bowId) > 0;
-      if (this.count('gold_ingot') >= 10 && this.role !== 'murderer') {
+      const inv = g.inv, bowId = idOf('bow'), arrowId = idOf('arrow'), bows = inv.count(bowId);
+      if (this.count('gold_ingot') >= 10) {
         this.take('gold_ingot', 10);
-        if (!hasBow) inv.addStack(stack('bow'));
+        if (!bows) { inv.addStack(stack('bow')); this.boughtBow = true; }
         inv.addStack(stack('arrow'));
-        this.ctx.chat.add('§6You got a bow and an arrow for 10 gold!', 0xFFFFFF);
+        this.ctx.chat.add(bows ? '§6You got an arrow for 10 gold!' : '§6You got a bow and an arrow for 10 gold!', 0xFFFFFF);
         this.sound('entity.player.levelup');
       }
-      if (inv.count(bowId) > 0 && !this.hadBow) { this.hadBow = true; this.send({ k: 'bow' }); }
-      if (this.role === 'detective' && hasBow && inv.count(arrowId) === 0) { if (++this.arrowT >= 100) { this.arrowT = 0; inv.addStack(stack('arrow')); } } else this.arrowT = 0;
+      if (inv.count(bowId) > (this.boughtBow ? 1 : 0) && !this.hadBow) { this.hadBow = true; this.send({ k: 'bow' }); }
+      if (this.hadBow && this.role !== 'murderer' && inv.count(bowId) > 0 && inv.count(arrowId) === 0) { if (++this.arrowT >= 100) { this.arrowT = 0; inv.addStack(stack('arrow')); } } else this.arrowT = 0;
     }
     // The Bridge: the arrow comes back three and a half seconds after it is gone
     if (this.gameKind === 'bridge') {
@@ -1714,6 +1734,7 @@ export class Hub {
     this.drawProps();
     this.applyPoses();
     this.watchFrame();
+    if (this.corpses) for (const c of this.corpses) { const b = this.npcs.list.get(c.nid); if (b && b.av) b.av.poseOverride = POSES[3][1]; }
     // F1: the words floating in the world go with the HUD, but for the people's own (showHolo)
     const hideText = !!this.ctx.gui.hideHud;
     if (hideText !== !!this.holoHidden) { this.holoHidden = hideText; for (const [k, h] of this.holos) this.showHolo(k, h); }
