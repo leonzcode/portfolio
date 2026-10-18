@@ -26,13 +26,13 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=92';
-import { ConfirmScreen } from './menus.js?v=92';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=92';
-import { Account } from '../net/account.js?v=92';
-import { LoginScreen, AccountScreen } from './account.js?v=92';
-import { parseSeed } from '../gen/random.js?v=92';
-import { MapRequestsScreen } from './maprequests.js?v=92';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=93';
+import { ConfirmScreen } from './menus.js?v=93';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=93';
+import { Account } from '../net/account.js?v=93';
+import { LoginScreen, AccountScreen } from './account.js?v=93';
+import { parseSeed } from '../gen/random.js?v=93';
+import { MapRequestsScreen } from './maprequests.js?v=93';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
