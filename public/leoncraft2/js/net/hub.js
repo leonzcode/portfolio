@@ -762,6 +762,12 @@ export class Hub {
     const net = this.net, blocks = net.blocks.bind(net), local = net.local.bind(net);
     net.blocks = (d, e) => { if (this.area === 'game') for (let i = 0; i + 4 < e.length; i += 5) this.changed.add(e[i] + ',' + e[i + 1] + ',' + e[i + 2]); return blocks(d, e); };
     net.local = (w, x, y, z, b, m, prev) => {
+      /* a map's own block whose state this page's simulation changed by itself (a daylight detector following the sun):
+         the server keeps the maps as they are, turns it down and puts it back, and the page changed it again a moment
+         later, over and over (dozens of refused messages a minute from every page in a Murder Mystery house). Such a
+         change stays on this page. Doors, trapdoors and gates still go (the server lets them open and shut), and so does
+         everything in SkyWars, Death Swap, the Map Editor and /hubbuild, and any change to a block a player put down */
+      if (b && (prev >> 8) === b && !this.changed.has(x + ',' + y + ',' + z) && this.area !== 'ds' && this.area !== 'edit' && !this.building && this.gameKind !== 'skywars' && !/(_door|_trapdoor|fence_gate)$/.test((BLOCKS[b] || {}).name || '')) return;
       if (this.area === 'game') { this.changed.add(x + ',' + y + ',' + z); if (b === B.tnt && this.alive) this.tnt.push([x, y, z]); }
       // (Bridging: a block put down during a run, into its recording by name)
       const RR = this.br && this.br.rec;
