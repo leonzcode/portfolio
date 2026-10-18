@@ -886,7 +886,7 @@ export function makeLobbyCos(K) {
       let who = null;
       if (!hit && f.mine && (id === 'gad_snowball' || id === 'gad_water' || id === 'gad_melon')) for (const [n, r] of this.others()) {
         const e = r.feet;
-        if (Math.abs(e.x - nx) < 0.5 && Math.abs(e.z - nz) < 0.5 && ny > e.y && ny < e.y + 1.9) { who = n; hit = true; break; }
+        if (Math.abs(e.x - nx) < 0.6 && Math.abs(e.z - nz) < 0.6 && ny > e.y - 0.1 && ny < e.y + 2.0) { who = n; hit = true; break; }
       }
       if (id === 'gad_tnt' && hit) {
         // TNT bounces off what it hits and goes off on its fuse
@@ -902,7 +902,7 @@ export function makeLobbyCos(K) {
       if (!boom) return;
       f.until = this.t;
       const [x, y, z] = p;
-      if (id === 'gad_snowball') { this.puff('snowflake', x, y, z, 12, 0.2); if (who) this.hub.send({ k: 'cosgad', id, hit: who, dir: [r3(v[0] * 0.6), 0.3, r3(v[2] * 0.6)] }); }
+      if (id === 'gad_snowball') { this.puff('snowflake', x, y, z, 12, 0.2); if (who) { const hv = Math.hypot(v[0], v[2]) || 1; this.hub.send({ k: 'cosgad', id, hit: who, dir: [r3(v[0] / hv * 0.42), 0.28, r3(v[2] / hv * 0.42)] }); } }
       else if (id === 'gad_pearl') {
         this.puff('portal', x, y, z, 30, 0.5);
         this.sound('entity.enderman.teleport', x, y, z, 1, 1);
