@@ -82,7 +82,8 @@ const SWORDS = ['wooden_sword', 'stone_sword', 'iron_sword', 'diamond_sword'];
 
 /* ---- the item shop: [id, shown, price [currency, n], what it gives] by category ---- */
 const C = (cur, n) => [cur, n];
-function shopItems(team) {
+// (big: three and four a team, where TNT costs twice as much, as in the mode's own shop)
+function shopItems(team, big) {
   return {
     blocks: [
       { id: 'wool', name: 'Wool', price: C('iron', 4), give: () => [stack(team.wool, 16)], icon: team.wool, n: 16, lore: ['Great for bridging across', 'islands. Turns into your team\'s', 'colour.'] },
@@ -122,7 +123,7 @@ function shopItems(team) {
     ],
     utility: [
       { id: 'gapple', name: 'Golden Apple', price: C('gold', 3), give: () => [stack('golden_apple')], icon: 'golden_apple', lore: ['Well-rounded healing.'] },
-      { id: 'tnt', name: 'TNT', price: C('gold', 4), give: () => [stack('tnt')], icon: 'tnt', lore: ['Instantly ignites, appropriate', 'to explode things!'] },
+      { id: 'tnt', name: 'TNT', price: C('gold', big ? 8 : 4), give: () => [stack('tnt')], icon: 'tnt', lore: ['Instantly ignites, appropriate', 'to explode things!'] },
       { id: 'pearl', name: 'Ender Pearl', price: C('emerald', 4), give: () => [stack('ender_pearl')], icon: 'ender_pearl', lore: ['The quickest way to invade', 'enemy bases.'] },
       { id: 'water', name: 'Water Bucket', price: C('gold', 3), give: () => [stack('water_bucket')], icon: 'water_bucket', lore: ['Great to slow down', 'approaching enemies. Can also', 'protect against TNT.'] },
       { id: 'sponge', name: 'Sponge', price: C('gold', 3), give: () => [stack('sponge', 4)], icon: 'sponge', n: 4, lore: ['Great for soaking up water.'] },
@@ -191,7 +192,7 @@ class ShopScreen extends MenuScreen {
   constructor(hub) { super(hub, 'Item Shop'); }
   fillBox() {
     const hub = this.hub, cat = hub.shopCat || 'quick';
-    const items = shopItems(hub.team || { wool: 'white_wool', clay: 'white_terracotta', glass: 'white_stained_glass' });
+    const items = shopItems(hub.team || { wool: 'white_wool', clay: 'white_terracotta', glass: 'white_stained_glass' }, hub.prices | 0);
     CATEGORIES.forEach((c, i) => {
       const st = stack(c.icon); if (!st) return;
       st.name = '§a' + c.name;
@@ -1664,6 +1665,8 @@ export class Hub {
       this.jumpHeld = down;
     }
     if (this.gameKind !== 'bedwars') return;
+    // a potion drunk leaves no bottle behind, as the mode has it
+    { const inv = g.inv, gb = idOf('glass_bottle'); if (gb) for (let i = 0; i < 36; i++) { const s = inv.slots[i]; if (s && s.id === gb) { inv.slots[i] = null; inv.changed(); } } }
     if (this.t % 10 === 0) this.applyUpgrades(false);
     if (this.t % 20 === 0) {
       const up = this.up || {};
