@@ -10,15 +10,15 @@
    units for the familiar proportions; every texture is painted here, pixel
    by pixel, with our own patterns (no Mojang file).
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=87';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=88';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=87';
-import { Animal, register, TYPES } from './mobs.js?v=87';
-import { model } from './mobs2.js?v=87';
-import { addArt } from './mobart.js?v=87';
-import { AbstractHorse } from './mobs4.js?v=87';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=87';
-import { Projectile } from './projectiles.js?v=87';
+  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=88';
+import { Animal, register, TYPES } from './mobs.js?v=88';
+import { model } from './mobs2.js?v=88';
+import { addArt } from './mobart.js?v=88';
+import { AbstractHorse } from './mobs4.js?v=88';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=88';
+import { Projectile } from './projectiles.js?v=88';
 
 const PI = Math.PI;
 const R = () => Math.random();
