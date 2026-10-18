@@ -12,9 +12,9 @@
    F6), bit 3 on (sim/states.js draws it tripped); the string's own meta is
    left as it is.
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=88';
-import { F6, WEAK, STRONG, SOURCE } from './redstone.js?v=88';
-import { INSIDE } from './rsparts.js?v=88';
+import { B } from '../blocks.js?v=89';
+import { F6, WEAK, STRONG, SOURCE } from './redstone.js?v=89';
+import { INSIDE } from './rsparts.js?v=89';
 
 export function installTripwire(sim) {
   const rs = sim.redstone, S = sim;

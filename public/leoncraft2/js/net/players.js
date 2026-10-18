@@ -26,11 +26,11 @@
    can give themselves one; it shows over their head, in the Tab list and in
    their chat lines.
 --------------------------------------------------------------------------- */
-import { Avatar, invisLook } from '../render/avatar.js?v=88';
-import { pieceLook, armorSheet } from '../render/armor.js?v=88';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=88';
-import { DRAW, I, stackFromJSON } from '../items.js?v=88';
-import { B, BLOCKS } from '../blocks.js?v=88';
+import { Avatar, invisLook } from '../render/avatar.js?v=89';
+import { pieceLook, armorSheet } from '../render/armor.js?v=89';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=89';
+import { DRAW, I, stackFromJSON } from '../items.js?v=89';
+import { B, BLOCKS } from '../blocks.js?v=89';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -68,6 +68,8 @@ const BED_DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
 // everyone else's size here (Leon Network's Chameleon plays at half size: net/hub.js sets it; its seekers, in full, stay full size)
 export const playerSize = { k: 1, full: new Set(), of(id) { return this.full.has(id) ? 1 : this.k; } };
+// F1 hides the names over heads as it does the HUD (the game's renderNames is !hideGui); net.js sets it every frame
+export const nameRule = { hidden: false };
 
 export class RemotePlayers {
   constructor(renderer, font) {
@@ -177,7 +179,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=88', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=89', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
     av.setCape(r.capeUrl || '').catch(() => {});
   }
@@ -310,7 +312,7 @@ export class RemotePlayers {
       const tag = this.tagOf(r), top = (P.bed ? 0.2 : P.sneaking ? 1.5 : P.pose === 'swim' ? 0.6 : 1.8) + 0.5 + 0.025 - tag.h * 0.0125;
       tag.far.position.set(p.x, p.y + top, p.z); tag.near.position.copy(tag.far.position);
       // (nor over someone invisible, or dying)
-      const close = d2 < 64 * 64 && !r.invis && !(p.f & F.DEAD);
+      const close = d2 < 64 * 64 && !r.invis && !(p.f & F.DEAD) && !nameRule.hidden;
       tag.far.visible = close;
       tag.near.visible = close && !P.sneaking;
       if (tag.far.material.depthTest !== P.sneaking) tag.far.material.depthTest = P.sneaking;
@@ -406,7 +408,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=88', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=89', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;
@@ -414,7 +416,7 @@ function faceOf(url) {
 export class PlayerList {
   constructor(net) { this.net = net; this.shown = false; this.animates = false; }
   draw(g) {
-    if (!this.shown) return;
+    if (!this.shown || g.hideHud) return;
     const net = this.net, lat = net.lat || {};
     const rows = [{ name: net.name, rank: net.tag, ping: Math.round(net.rtt), face: net.ctx ? net.ctx.renderer.avatar.canvas : null }];
     if (net.players) for (const r of net.players.list.values()) rows.push({ name: r.name, rank: r.rank, ping: lat[r.id] !== undefined ? lat[r.id] : -1, face: r.av && r.av.ready ? r.av.canvas : faceOf(r.skinUrl) });
