@@ -763,7 +763,54 @@ export class Hub {
     };
     // the shop's glass stands any explosion
     for (const n of ['red', 'blue', 'lime', 'yellow', 'cyan', 'white', 'pink', 'gray']) if (B[n + '_stained_glass'] !== undefined) RES_OVERRIDE.set(B[n + '_stained_glass'], 3600000);
-    this.unwrapNet = () => { net.blocks = blocks; net.local = local; };
+    /* Prop Hunt: a disguised hider is hit where their block is drawn (a whole block, in its cell once locked), never by the
+       standing player's box under it (thinner and twice as tall: a swing at the block's edge missed them and cost the
+       seeker health, one at the air over it found them); arrows meet the same block (proxyOf) */
+    const hub = this, pick0 = net.pickPlayer, proxy0 = net.proxyOf;
+    const boxOf = id => {
+      const pr = this.area === 'game' && this.hide && this.hide.kind === 'prophunt' && this.props.get(id);
+      if (!pr) return null;
+      if (pr.lock) return [pr.lock[0], pr.lock[1], pr.lock[2]];
+      const r = net.players && net.players.list.get(id);
+      return r && r.feet ? [r.feet.x - 0.5, r.feet.y, r.feet.z - 0.5] : null;
+    };
+    net.pickPlayer = function (E, eye, blockT, found) {
+      const res = pick0.call(this, E, eye, blockT, found);
+      if (!hub.props.size || !hub.hide || hub.hide.kind !== 'prophunt' || !this.players || this.game.mode === 'spectator') return res;
+      const P = this.game.player, dx = -Math.sin(P.yaw) * Math.cos(P.pitch), dy = Math.sin(P.pitch), dz = -Math.cos(P.yaw) * Math.cos(P.pitch);
+      const along = (x0, y0, z0, x1, y1, z1) => {
+        let t0 = 0, t1 = Infinity;
+        for (const [o, d, a, b] of [[eye.x, dx, x0, x1], [eye.y, dy, y0, y1], [eye.z, dz, z0, z1]]) {
+          if (Math.abs(d) < 1e-9) { if (o < a || o > b) return Infinity; continue; }
+          let ta = (a - o) / d, tb = (b - o) / d;
+          if (ta > tb) { const s = ta; ta = tb; tb = s; }
+          t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
+          if (t0 > t1) return Infinity;
+        }
+        return t0;
+      };
+      const resId = res && res.remotePlayer ? +String(res.id).slice(1) : null, disguised = resId !== null && hub.props.has(resId);
+      let lim = Math.min(E.combat.reach(), blockT === undefined ? Infinity : blockT), best = null;
+      // (someone not disguised that the ordinary pick found, nearer than any block, keeps the hit)
+      if (res && !disguised && res.remotePlayer) { const f = res.pos, w = res.hw; lim = Math.min(lim, along(f.x - w, f.y, f.z - w, f.x + w, f.y + res.h, f.z + w)); best = res; }
+      const D = this.game.dim;
+      for (const id of hub.props.keys()) {
+        const r = this.players.list.get(id), b = boxOf(id);
+        if (!r || !b || !this.hittable(r, r.st ? r.st.d : D)) continue;
+        const t = along(b[0], b[1], b[2], b[0] + 1, b[1] + 1, b[2] + 1);
+        if (t < lim) { lim = t; best = this.proxyOf(r); }
+      }
+      if (best) return best;
+      return disguised ? found : res;
+    };
+    net.proxyOf = function (r) {
+      const p = proxy0.call(this, r), b = boxOf(r.id);
+      if (!b) return p;
+      const q = Object.create(p);
+      Object.defineProperties(q, { pos: { get: () => ({ x: b[0] + 0.5, y: b[1], z: b[2] + 0.5 }) }, hw: { value: 0.5 }, w: { value: 1 }, h: { value: 1, writable: true } });
+      return q;
+    };
+    this.unwrapNet = () => { net.blocks = blocks; net.local = local; net.pickPlayer = pick0; net.proxyOf = proxy0; };
     // K in a shared waiting room starts the game (never while a screen or the chat is open)
     this.onKey = e => {
       if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || ctx.gui.screen) return;
