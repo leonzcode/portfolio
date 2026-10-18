@@ -769,7 +769,69 @@ export class Hub {
     };
     // the shop's glass stands any explosion
     for (const n of ['red', 'blue', 'lime', 'yellow', 'cyan', 'white', 'pink', 'gray']) if (B[n + '_stained_glass'] !== undefined) RES_OVERRIDE.set(B[n + '_stained_glass'], 3600000);
-    this.unwrapNet = () => { net.blocks = blocks; net.local = local; };
+    /* Prop Hunt: a disguised hider is hit where their block is drawn (a whole block, in its cell once locked), never by the
+       standing player's box under it (thinner and twice as tall: a swing at the block's edge missed them and cost the
+       seeker health, one at the air over it found them); arrows meet the same block (proxyOf) */
+    const hub = this, pick0 = net.pickPlayer, proxy0 = net.proxyOf;
+    const boxOf = id => {
+      const pr = this.area === 'game' && this.hide && this.hide.kind === 'prophunt' && this.props.get(id);
+      if (!pr) return null;
+      if (pr.lock) return [pr.lock[0], pr.lock[1], pr.lock[2]];
+      const r = net.players && net.players.list.get(id);
+      return r && r.feet ? [r.feet.x - 0.5, r.feet.y, r.feet.z - 0.5] : null;
+    };
+    net.pickPlayer = function (E, eye, blockT, found) {
+      const res = pick0.call(this, E, eye, blockT, found);
+      if (!hub.hide || hub.area !== 'game' || !this.players || this.game.mode === 'spectator') return res;
+      const P = this.game.player, dx = -Math.sin(P.yaw) * Math.cos(P.pitch), dy = Math.sin(P.pitch), dz = -Math.cos(P.yaw) * Math.cos(P.pitch);
+      // Chameleon: the Tag Stick finds a small hider as the Rifle does, within 0.64 of their middle (their own half size box
+      // is a sliver to swing at)
+      if (hub.hide.kind === 'chameleon') {
+        let lim = Math.min(E.combat.reach(), blockT === undefined ? Infinity : blockT), best = null;
+        if (res && res.remotePlayer) { const f = res.pos; lim = Math.min(lim, Math.hypot(f.x - eye.x, f.y + res.h / 2 - eye.y, f.z - eye.z)); best = res; }
+        for (const r of this.players.list.values()) {
+          if (!this.hittable(r, r.st ? r.st.d : 0) || playerSize.of(r.id) >= 1) continue;
+          const f = r.feet, mx = f.x - eye.x, my = f.y + 0.45 - eye.y, mz = f.z - eye.z, along = mx * dx + my * dy + mz * dz;
+          if (along > 0 && along < lim && (mx * mx + my * my + mz * mz) - along * along <= 0.64 * 0.64) { lim = along; best = this.proxyOf(r); }
+        }
+        return best || res;
+      }
+      if (!hub.props.size || hub.hide.kind !== 'prophunt') return res;
+      const along = (x0, y0, z0, x1, y1, z1) => {
+        let t0 = 0, t1 = Infinity;
+        for (const [o, d, a, b] of [[eye.x, dx, x0, x1], [eye.y, dy, y0, y1], [eye.z, dz, z0, z1]]) {
+          if (Math.abs(d) < 1e-9) { if (o < a || o > b) return Infinity; continue; }
+          let ta = (a - o) / d, tb = (b - o) / d;
+          if (ta > tb) { const s = ta; ta = tb; tb = s; }
+          t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
+          if (t0 > t1) return Infinity;
+        }
+        return t0;
+      };
+      const resId = res && res.remotePlayer ? +String(res.id).slice(1) : null, disguised = resId !== null && hub.props.has(resId);
+      let lim = Math.min(E.combat.reach(), blockT === undefined ? Infinity : blockT), best = null;
+      // (someone not disguised that the ordinary pick found, nearer than any block, keeps the hit)
+      if (res && !disguised && res.remotePlayer) { const f = res.pos, w = res.hw; lim = Math.min(lim, along(f.x - w, f.y, f.z - w, f.x + w, f.y + res.h, f.z + w)); best = res; }
+      const D = this.game.dim;
+      for (const id of hub.props.keys()) {
+        const r = this.players.list.get(id), b = boxOf(id);
+        if (!r || !b || !this.hittable(r, r.st ? r.st.d : D)) continue;
+        const t = along(b[0], b[1], b[2], b[0] + 1, b[1] + 1, b[2] + 1);
+        if (t < lim) { lim = t; best = this.proxyOf(r); }
+      }
+      if (best) return best;
+      return disguised ? found : res;
+    };
+    net.proxyOf = function (r) {
+      const p = proxy0.call(this, r), b = boxOf(r.id);
+      if (!b) return p;
+      const q = Object.create(p);
+      Object.defineProperties(q, { pos: { get: () => ({ x: b[0] + 0.5, y: b[1], z: b[2] + 0.5 }) }, hw: { value: 0.5 }, w: { value: 1 }, h: { value: 1, writable: true } });
+      return q;
+    };
+    // Murder Mystery, as Hypixel's: the murderer cannot take up the bow the detective dropped
+    net.mayTake = st => !(this.area === 'game' && this.gameKind === 'murder' && this.role === 'murderer' && st && st.id === idOf('bow'));
+    this.unwrapNet = () => { net.blocks = blocks; net.local = local; net.pickPlayer = pick0; net.proxyOf = proxy0; net.mayTake = null; };
     // K in a shared waiting room starts the game (never while a screen or the chat is open)
     this.onKey = e => {
       if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || ctx.gui.screen) return;
@@ -849,7 +911,8 @@ export class Hub {
         // (but Death Swap, which is the game's own survival)
         { const C = g.entities && g.entities.combat; if (C) C.legacy = m.area !== 'ds'; }
         this.gameKind = m.game || null; this.modeId = m.mode || null; this.spill = !!m.spill; this.noBuild = !!m.noBuild; this.jumps = m.jumps | 0;
-        this.hideNames = !!m.hideNames; this.role = m.role || null; this.hadBow = false; this.arrowT = 0;
+        this.hideNames = !!m.hideNames; this.role = m.role || null; this.hadBow = false; this.boughtBow = false; this.arrowT = 0;
+        this.clearCorpses();
         // a shared room: K starts it (startable); a late comer watches the round on there (watching)
         this.startable = !!m.startable; this.watching = !!m.watching;
         // the new games: The Bridge's goals (no building there), a Build Battle plot and its vote, Spleef's snow, hiding
@@ -918,6 +981,8 @@ export class Hub {
         return;
       }
       case 'spec': this.alive = false; return;
+      // Murder Mystery: a body lying where someone fell, in their skin, for the rest of the round
+      case 'corpse': this.addCorpse(m); return;
       case 'counts': this.counts = m.c || {}; this.gameCounts = m.g || {}; this.refreshScreen(); return;
       case 'mode': if (m.m && g.mode !== m.m) this.ctx.commandCtx().setMode(m.m); return;
       // (Murder Mystery: you shot an innocent)
@@ -1360,6 +1425,20 @@ export class Hub {
     this.holo(key, n.x, n.y + 1.95, n.z, lines);
   }
   feed(n) { this.npcs.state(n.nid, { ts: performance.now(), x: n.x, y: n.y, z: n.z, yaw: n.yaw, pitch: 0, f: 0, d: 0 }, performance.now()); }
+  // a body lying where someone fell (Murder Mystery), in the skin they wore; gone with the round (clearCorpses)
+  addCorpse(m) {
+    if (!this.npcs) return;
+    const r = this.net.players && this.net.players.list.get(m.id), mine = m.id === this.net.id;
+    let skin = '', slim = false;
+    if (r) { skin = r.skinUrl || ''; slim = !!r.slim; }
+    else if (mine) { const s = getSkinSettings(); skin = s.skin || ''; slim = s.slim; }
+    this.corpses = this.corpses || [];
+    const nid = -4000 - this.corpses.length;
+    this.npcs.add({ id: nid, name: '', skin, slim });
+    this.feed({ nid, x: +m.x, y: +m.y, z: +m.z, yaw: +m.yaw || 0 });
+    this.corpses.push({ nid });
+  }
+  clearCorpses() { if (this.corpses && this.npcs) for (const c of this.corpses) this.npcs.remove(c.nid); this.corpses = null; }
   // the person under the crosshair, within reach: what a click on them does
   clickNpc() {
     const n = this.npcAt();
@@ -1620,18 +1699,21 @@ export class Hub {
     if (this.br) { this.brTick(); return; }
     // the void takes you at once
     if (P.pos.y < this.floor && !sv.dead) { this.voided = true; sv.hurt(3.4e38, 'out_of_world'); return; }
-    // Murder Mystery: ten gold makes a bow and an arrow; the detective's arrow comes back; a bow picked up is told to the server
+    /* Murder Mystery, as Hypixel's: ten gold makes a bow and an arrow (the murderer's ten too), each ten after that one
+       more arrow; a bow bought is yours and goes with you when you die. The detective's bow, and the one picked up off
+       the floor (only the detective's is ever dropped), brings its arrow back after 5 s and is told to the server,
+       which drops it where its holder dies. */
     if (this.gameKind === 'murder') {
-      const inv = g.inv, bowId = idOf('bow'), arrowId = idOf('arrow'), hasBow = inv.count(bowId) > 0;
-      if (this.count('gold_ingot') >= 10 && this.role !== 'murderer') {
+      const inv = g.inv, bowId = idOf('bow'), arrowId = idOf('arrow'), bows = inv.count(bowId);
+      if (this.count('gold_ingot') >= 10) {
         this.take('gold_ingot', 10);
-        if (!hasBow) inv.addStack(stack('bow'));
+        if (!bows) { inv.addStack(stack('bow')); this.boughtBow = true; }
         inv.addStack(stack('arrow'));
-        this.ctx.chat.add('§6You got a bow and an arrow for 10 gold!', 0xFFFFFF);
+        this.ctx.chat.add(bows ? '§6You got an arrow for 10 gold!' : '§6You got a bow and an arrow for 10 gold!', 0xFFFFFF);
         this.sound('entity.player.levelup');
       }
-      if (inv.count(bowId) > 0 && !this.hadBow) { this.hadBow = true; this.send({ k: 'bow' }); }
-      if (this.role === 'detective' && hasBow && inv.count(arrowId) === 0) { if (++this.arrowT >= 100) { this.arrowT = 0; inv.addStack(stack('arrow')); } } else this.arrowT = 0;
+      if (inv.count(bowId) > (this.boughtBow ? 1 : 0) && !this.hadBow) { this.hadBow = true; this.send({ k: 'bow' }); }
+      if (this.hadBow && this.role !== 'murderer' && inv.count(bowId) > 0 && inv.count(arrowId) === 0) { if (++this.arrowT >= 100) { this.arrowT = 0; inv.addStack(stack('arrow')); } } else this.arrowT = 0;
     }
     // The Bridge: the arrow comes back three and a half seconds after it is gone
     if (this.gameKind === 'bridge') {
@@ -1733,6 +1815,7 @@ export class Hub {
     if (this.cos) this.cos.frame();
     this.applyPoses();
     this.watchFrame();
+    if (this.corpses) for (const c of this.corpses) { const b = this.npcs.list.get(c.nid); if (b && b.av) b.av.poseOverride = POSES[3][1]; }
     // F1: the words floating in the world go with the HUD, but for the people's own (showHolo)
     const hideText = !!this.ctx.gui.hideHud;
     if (hideText !== !!this.holoHidden) { this.holoHidden = hideText; for (const [k, h] of this.holos) this.showHolo(k, h); }
@@ -1881,6 +1964,8 @@ export class Hub {
      sees the trail and hears the bang through the server. */
   shoot() {
     if (this.t - (this.shotAt === undefined ? -99 : this.shotAt) < 16) return;
+    // (stunned after too many misses: the first Leoncraft's Mecha makes you stand still a moment)
+    if (this.t < (this.stunUntil | 0)) { this.ctx.chat.add('§cYou are stunned for ' + Math.ceil((this.stunUntil - this.t) / 20) + 's!', 0xFF5555); this.shotAt = this.t; return; }
     this.shotAt = this.t;
     const g = this.game, P = g.player, w = g.world, net = this.net;
     const eye = { x: P.pos.x, y: P.pos.y + (P.eyeH || 1.62), z: P.pos.z };
@@ -1888,13 +1973,28 @@ export class Hub {
     // the first solid block in the way, a tenth of a block at a time
     let lim = 60;
     for (let t = 0.2; t < lim; t += 0.1) { const b = w.get(Math.floor(eye.x + dx * t), Math.floor(eye.y + dy * t), Math.floor(eye.z + dz * t)); if (b && SOLID[b]) { lim = t; break; } }
-    // the first player before it
+    // the first player before it: a small hider is hit by a shot passing within 0.64 of their middle (knee high on anyone
+    // else), as the first Leoncraft's Mecha counts it (a half size figure's own box asked for more aim than a mouse gives);
+    // anyone full size by their box
     let best = null;
     if (net && net.players) for (const r of net.players.list.values()) {
       if (!net.hittable(r, (r.st || {}).d)) continue;
-      const f = r.feet, k = playerSize.of(r.id), hw = 0.3 * k + 0.1, h = (r.st && r.st.f & F.SNEAK ? 1.5 : 1.8) * k;
-      const t = rayBox(eye.x, eye.y, eye.z, dx, dy, dz, f.x - hw, f.y, f.z - hw, f.x + hw, f.y + h, f.z + hw);
+      const f = r.feet, k = playerSize.of(r.id);
+      let t;
+      if (k < 1) {
+        const mx = f.x - eye.x, my = f.y + 0.9 * k - eye.y, mz = f.z - eye.z, along = mx * dx + my * dy + mz * dz;
+        t = along > 0 && (mx * mx + my * my + mz * mz) - along * along <= 0.64 * 0.64 ? along : Infinity;
+      } else {
+        const hw = 0.3 * k + 0.1, h = (r.st && r.st.f & F.SNEAK ? 1.5 : 1.8) * k;
+        t = rayBox(eye.x, eye.y, eye.z, dx, dy, dz, f.x - hw, f.y, f.z - hw, f.x + hw, f.y + h, f.z + hw);
+      }
       if (t < lim) { lim = t; best = r; }
+    }
+    // a shot into the scenery costs the shooter (6 of LC1's 100, 1.2 of 20 here); at none left, 4 s stunned and whole again
+    if (!best) {
+      const sv = g.survival;
+      if (sv.health - 1.2 > 0.01) { sv.health -= 1.2; this.ctx.chat.add('§cMissed! §7(-1.2 health; shooting the scenery costs you)', 0xFF5555); }
+      else { sv.health = sv.maxHealth; this.stunUntil = this.t + 80; sv.addEffect('slowness', 6, 80); this.ctx.chat.add('§c§lSTUNNED! §7Too many misses: 4 seconds without the Rifle.', 0xFF5555); this.sound('entity.player.hurt'); }
     }
     const to = [eye.x + dx * lim, eye.y + dy * lim, eye.z + dz * lim], r3 = v => Math.round(v * 1000) / 1000;
     if (best && net.send) net.send({ t: 'hit', id: best.id, k: 'arrow', dmg: 1, dir: [r3(dx * 3), r3(dy * 3), r3(dz * 3)], at: to.map(r3), item: 'Rifle' });
@@ -1955,8 +2055,9 @@ export class Hub {
   }
   // Chameleon: a hider's pose, or a seeker's aim while crouching, on every body drawn (none anywhere else)
   applyPoses() {
-    // (and Prop Hunt's seekers never heal by themselves: a wrong hit's half heart stays lost)
-    if (this.game.survival) this.game.survival.noRegen = this.area === 'game' && this.gameKind === 'prophunt' && this.role === 'seeker';
+    // (Prop Hunt's seekers never heal by themselves, a wrong hit's half heart stays lost; nor does anyone in Chameleon, where
+    //  a Rifle shot into the scenery costs the shooter)
+    if (this.game.survival) this.game.survival.noRegen = this.area === 'game' && ((this.gameKind === 'prophunt' && this.role === 'seeker') || this.gameKind === 'chameleon');
     const on = this.area === 'game' && this.gameKind === 'chameleon', A = this.ctx.renderer.avatar, P = this.game.player;
     // (in the lobby: riding a mount, net/lobbycos.js)
     if (A) A.poseOverride = !on ? (this.cos ? this.cos.poseOf('') : null) : this.role === 'seeker' ? (P.sneaking ? SNIPE : null) : (POSES[this.myPose | 0] || POSES[0])[1];
