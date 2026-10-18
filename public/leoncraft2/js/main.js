@@ -38,6 +38,7 @@ import { ItemIcons } from './ui/icons.js?v=91';
 import { Inventory, inventoryScreen } from './ui/inventory.js?v=91';
 import { Hud } from './ui/hud.js?v=91';
 import { Interactor } from './interact.js?v=91';
+import { QuickBlocks } from './quickblocks.js?v=91';
 import { MAPS, isFilledMap } from './maps.js?v=91';
 import { Save } from './save.js?v=91';
 import { Chat, ChatScreen } from './ui/chat.js?v=91';
@@ -838,6 +839,9 @@ async function boot() {
       // hoppers and droppers fill and empty chest boats (js/entities)
       containers.entityAt = (x, y, z) => entities.containerAt(x, y, z);
       inter.entities = entities; entities.inter = inter; inter.sim = sim;
+      // blocks put down drawn at once, before their column's new mesh comes (quickblocks.js)
+      if (g.quick) g.quick.dispose();
+      g.quick = w.quick = new QuickBlocks(renderer, w);
       if (renderer.particles) renderer.particles.setWorld(w);
       soundParts(g);
       advParts(g);
@@ -1075,6 +1079,7 @@ async function boot() {
     if (g.net) { g.net.close(); g.net = null; }
     g.drops.dispose();
     if (g.details) g.details.dispose();
+    if (g.quick) { g.quick.dispose(); if (g.world && g.world.quick === g.quick) g.world.quick = null; g.quick = null; }
     scope(false);
     game = null;
     soundLeave();
@@ -1586,8 +1591,10 @@ async function boot() {
     const alpha = acc / 0.05;
     world.update(player.pos.x, player.pos.z);
     world.flush();
+    if (world.quick) world.quick.frame();
     const v = player.view(alpha);
-    inter.look(v.eye);
+    // (the outline from the eyes as the game's frame pick has them: between the ticks, at the pose's own height, no view bob)
+    inter.look(player.pickEye ? player.pickEye(alpha) : v.eye);
     g.hands.alpha = alpha;
     g.drops.update(dt, alpha, player, renderer.camera);
     if (g.details) g.details.update();
