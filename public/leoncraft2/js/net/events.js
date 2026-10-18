@@ -49,6 +49,7 @@ import { Ambience } from '../sound/ambient.js?v=91';
 import { B, BLOCKS } from '../blocks.js?v=91';
 import { selectionBoxes } from '../models.js?v=91';
 import { exposure } from '../explosion.js?v=91';
+import { WORLD_FX } from '../world.js?v=91';
 import { Overlay } from '../render/overlay.js?v=91';
 import { F } from './players.js?v=91';
 import { Potion } from '../entities/projectiles.js?v=91';
@@ -394,6 +395,8 @@ export class Events {
       E.particles(power >= 2 ? 'explosion_big' : 'explosion', x, y, z, 1, 0);
       E.particles('explosion', x, y, z, Math.round(power * 4), power * 0.6);
     }
+    // (RIP Computer: its flash and smoke, and the blocks it took bursting into pieces here too: render/realism.js)
+    if (WORLD_FX.blast) WORLD_FX.blast(x, y, z, power);
     if (!E || g.mode === 'creative' || g.mode === 'spectator' || (g.survival && g.survival.dead)) return;
     const reach = power * 2, p = P.pos;
     const dist = Math.sqrt((p.x - x) ** 2 + (p.y - y) ** 2 + (p.z - z) ** 2) / reach;

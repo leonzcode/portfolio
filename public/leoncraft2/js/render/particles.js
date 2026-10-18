@@ -23,6 +23,7 @@ import { BLOCKS, B, SOLID } from '../blocks.js?v=91';
 import { VANILLA } from './vanilla.js?v=91';
 import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=91';
 import { Terrain } from '../entities/terrain.js?v=91';
+import { Debris } from './debris.js?v=91';
 const THREE = window.THREE;
 
 const MAX = 1500;
@@ -125,8 +126,10 @@ export class Particles {
     this.right = new THREE.Vector3(); this.up = new THREE.Vector3();
     this.burning = [];              // x, y, z, width, height of each thing on fire this frame (burn())
     this.T = world ? new Terrain(world) : null;   // the light where each one is
+    // RIP Computer: blocks blown up or broken split into real pieces too (debris.js)
+    this.debris = new Debris(renderer, world);
   }
-  setWorld(world) { this.world = world; this.list.length = 0; this.T = world ? new Terrain(world) : null; }
+  setWorld(world) { this.world = world; this.list.length = 0; this.T = world ? new Terrain(world) : null; this.debris.setWorld(world); }
   // the sky and block light (0..1) at a particle, as the game lights one
   lightAt(p) {
     const T = this.T;
@@ -217,6 +220,7 @@ export class Particles {
   blockBreak(x, y, z, b, boxes) {
     const look = this.look(b, x, z);
     if (!look) return;
+    this.debris.crumble(x, y, z, b);
     const list = boxes && boxes.length ? boxes : [[0, 0, 0, 1, 1, 1]];
     for (const bx of list) {
       const dx = Math.min(1, bx[3] - bx[0]), dy = Math.min(1, bx[4] - bx[1]), dz = Math.min(1, bx[5] - bx[2]);
@@ -269,6 +273,7 @@ export class Particles {
 
   /* ---- 20 a second ---- */
   tick() {
+    this.debris.tick();
     const L = this.list, w = this.world;
     let n = 0;
     for (let i = 0; i < L.length; i++) {
@@ -299,6 +304,7 @@ export class Particles {
 
   /* ---- each frame: the quads, between ticks ---- */
   render(cam, alpha) {
+    this.debris.render(alpha, cam);
     const L = this.list;
     let n = Math.min(L.length, MAX);
     const P = this.pos, UV = this.uv, C = this.col, LV = this.lv;

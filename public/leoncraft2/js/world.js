@@ -12,6 +12,10 @@ import { BLOCKS, FLUID } from './blocks.js?v=91';
 import { searchSpawn } from './spawn.js?v=91';
 import { settleEdges } from './edgevines.js?v=91';
 
+/* RIP Computer's realism (render/realism.js) hears of every block taken away (gone: the world, where, what it was,
+   what is there now) and every explosion (blast: where, its power; explosion.js, entities/explosion.js, net/events.js) */
+export const WORLD_FX = { gone: null, blast: null };
+
 /* ---- the workers, kept for the whole visit ----
    A new worker is slow for its first seconds: its code is fetched, compiled
    and only made fast as it runs. So the same workers serve every world (the
@@ -1017,6 +1021,7 @@ export class World {
     // redstone, what grows) and the mobs (js/entities: falling sand and the like)
     if (this.onSet) this.onSet(x, y, z, was, wasM, b, m || 0);
     if (this.onSetE) this.onSetE(x, y, z, b);
+    if (WORLD_FX.gone && was && was !== b) WORLD_FX.gone(this, x, y, z, was, b);
     return true;
   }
   // a block's moving part is drawn elsewhere from now on (on), or back in the block's own mesh (off)

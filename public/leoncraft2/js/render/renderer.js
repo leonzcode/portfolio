@@ -14,6 +14,7 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
+import { Realism } from './realism.js?v=91';
 import { Interaction } from './interaction.js?v=91';
 import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=91';
 import { makeNoise2D } from './noisetex.js?v=91';
@@ -134,6 +135,8 @@ export class Renderer {
       uFlowLayers: { value: new THREE.Vector2(textures.manifest.textures.water_flow ? textures.manifest.textures.water_flow.layer : 0, textures.manifest.textures.lava_flow ? textures.manifest.textures.lava_flow.layer : 0) },
     };
     this.gl = r.getContext();
+    // RIP Computer's realism: walkers parting the plants, Photon's wind, wet ground, explosions' flash and pieces (realism.js)
+    this.real = new Realism(this);
     /* Everything that depends on the look: Shaders OFF (the game's own, vanilla.js), or
        the shader's light pipeline (the sky in one pass first, as the scene's last solid
        thing, so most of the screen never runs it; the game's blocks of cloud after the
@@ -714,6 +717,7 @@ export class Renderer {
     const light = sun.y > -0.02 ? sun : moon;
     U.uLightDir.value.copy(light);
     U.uPlayer.value.copy(state.feet);
+    this.real.frame(state, dt);
     U.uEyeInWater.value = state.eyeInWater ? 1 : 0;
     U.uSkyAtEye.value = state.skyAtEye;
     /* the void (glsl.js VOID): the sky under the horizon darkens once the eye is
@@ -776,7 +780,7 @@ export class Renderer {
       else if (this.frame % n < 3) { this.sky.part(this.frame % n, sun, moon, state.eye.y); if (this.frame % n === 0) at.copy(sun); }
     }
     if (!this.vanilla) {
-      this.inter.update(dt, state.feet, state.trample);
+      this.inter.update(dt, state.feet, state.trample, this.real.steps, this.real.on);
       U.uInteract.value = this.inter.texture;
     }
 
