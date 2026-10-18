@@ -23,11 +23,11 @@
    Made by net/hub.js with its own pieces (makeLobbyCos(K)), as the Profile
    menus are, so this file imports nothing of hub.js.
 --------------------------------------------------------------------------- */
-import { COS, COSMETICS, HATS, AURAS, TRAILS, GADGETS, RARITY, CATS } from './cosdata.js?v=96';
-import { B, BLOCKS, SOLID } from '../blocks.js?v=96';
-import { Sound } from '../sound/sound.js?v=96';
-import { F } from './players.js?v=96';
-import { blockGeometry } from '../render/blockmesh.js?v=96';
+import { COS, COSMETICS, HATS, AURAS, TRAILS, GADGETS, RARITY, CATS } from './cosdata.js?v=97';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=97';
+import { Sound } from '../sound/sound.js?v=97';
+import { F } from './players.js?v=97';
+import { blockGeometry } from '../render/blockmesh.js?v=97';
 
 const THREE = window.THREE;
 const FIXED = ['compass', 'temp', 'profile'];

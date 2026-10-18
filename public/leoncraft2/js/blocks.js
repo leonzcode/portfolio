@@ -15,10 +15,10 @@
      light   block light it gives off (0-15)
      opacity how much sky light it takes away (15 = all, leaves and water 1)
 --------------------------------------------------------------------------- */
-import { DATA } from './blockdata.js?v=96';
-import { MODEL_SHAPES, OFFSET_XZ, OFFSET_XYZ } from './models.js?v=96';
-import { SHELF_TEX } from './shelfmushroom.js?v=96';
-import { dimBlocks } from './dim/blocks.js?v=96';
+import { DATA } from './blockdata.js?v=97';
+import { MODEL_SHAPES, OFFSET_XZ, OFFSET_XYZ } from './models.js?v=97';
+import { SHELF_TEX } from './shelfmushroom.js?v=97';
+import { dimBlocks } from './dim/blocks.js?v=97';
 
 export const AIR = 0;
 export const MAX_ID = 4096;   // block ids are 16-bit in the world; this many fit the lookup tables
@@ -208,6 +208,15 @@ if (B.sea_pickle !== undefined) {
   delete o.id; delete o.name; delete o.order;
   def('lc2_wet_sea_pickle', Object.assign(o, { item: false, tab: null, itemOf: 'sea_pickle', waterlogged: true }));
 }
+/* What moves in RIP Computer's realism (render/glsl.js windOffset) beyond the wind's plants: the wet corals and coral
+   fans rock a little in the swell (wave 7), sugar cane bends from its foot in the wind (9), a cobweb flutters (10); and
+   the plants that grow in stalks (stalk: which kind) are told by the mesher how many blocks of the stalk are under each
+   block, so a whole kelp, tall seagrass or sugar cane stalk bends from its foot, its blocks meeting as one. */
+for (const d of BLOCKS) if (d && d.waterlogged && d.shape === 'cross' && /coral/.test(d.name)) d.wave = 7;
+for (const [n, k] of [['kelp', 1], ['kelp_plant', 1], ['seagrass', 2], ['tall_seagrass', 2], ['tall_seagrass_top_block', 2], ['sugar_cane', 3]])
+  if (B[n] !== undefined) BLOCKS[B[n]].stalk = k;
+if (B.sugar_cane !== undefined) BLOCKS[B.sugar_cane].wave = 9;
+if (B.cobweb !== undefined) BLOCKS[B.cobweb].wave = 10;
 for (const d of BLOCKS) {
   if (!d) continue;
   if (d.display === undefined) d.display = d.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
