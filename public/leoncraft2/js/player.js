@@ -39,9 +39,9 @@
    at the first one in the way. Walking into something up to 0.6 high steps
    up onto it, which is how stairs and slabs are climbed.
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=85';
-import { collisionBoxes, selectionBoxes } from './models.js?v=85';
-import { LEVEL, FALLING } from './world-const.js?v=85';
+import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=86';
+import { collisionBoxes, selectionBoxes } from './models.js?v=86';
+import { LEVEL, FALLING } from './world-const.js?v=86';
 const THREE = window.THREE;
 
 const W = 0.3, HT = 1.8, STEP = 0.6;
@@ -102,10 +102,11 @@ export class Player {
      to fly, forward to sprint) are counted in ticks, as the game counts
      them. */
   // a player made smaller or bigger (Leon Network's Chameleon plays at half size): the box, the eyes and the height all follow
-  setScale(k) {
-    if (!(k > 0) || k === this.scale) return;
-    const grew = k > this.scale;
-    this.scale = k; this.halfW = W * k;
+  // (wide: the box's width alone, when it is not k: a Chameleon hider is thinner than they look, as in LC1's Mecha)
+  setScale(k, wide = k) {
+    if (!(k > 0) || !(wide > 0) || (k === this.scale && W * wide === this.halfW)) return;
+    const grew = k > this.scale || W * wide > this.halfW;
+    this.scale = k; this.halfW = W * wide;
     this.h = POSE[this.pose][0] * k; this.eyeH = this.prevEyeH = POSE[this.pose][1] * k;
     // (growing back inside something would wedge you: lifted until clear, as the first Leoncraft does)
     if (grew && this.w) { const p = this.pos; for (let i = 0; i < 4 && this.boxHits(p.x - this.halfW, p.y, p.z - this.halfW, p.x + this.halfW, p.y + this.h, p.z + this.halfW); i++) p.y += 1; }
