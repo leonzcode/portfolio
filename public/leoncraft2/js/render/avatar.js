@@ -54,6 +54,7 @@ import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLIN
 import { blockGeometry, isFlatItem } from './blockmesh.js?v=91';
 import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=91';
 import { setGlint } from './glint.js?v=91';
+import { hatParts, HAT_TEX } from './hats.js?v=91';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -575,6 +576,18 @@ export class Avatar {
     this.capeMesh = new THREE.Mesh(cgeo, this.capeMat);
     this.capeShadow = new THREE.Mesh(cgeo, this.capeShadowMat);
     this.capeOn = false;
+    // a hat of Leonpixel's lobby (render/hats.js): its own picture, on the head's own matrix (the body's parts), drawn with the
+    // body's shader and casting a shadow; in the hat layer whatever the skin's own Hat setting is
+    this.hatCanvas = document.createElement('canvas');
+    this.hatCanvas.width = this.hatCanvas.height = HAT_TEX;
+    const htex = this.hatTex = new THREE.Texture(this.hatCanvas);
+    htex.magFilter = htex.minFilter = THREE.NearestFilter; htex.generateMipmaps = false; htex.flipY = false;
+    const huni = Object.assign({}, uni, { uSkin: { value: htex }, uShow: { value: 0x7f } });
+    this.hatMat = mk(VS, FS, huni);
+    this.hatShadowMat = new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: HEAD + SHADOW_VS, fragmentShader: HEAD + SHADOW_FS, uniforms: huni, side: THREE.DoubleSide });
+    this.hatMesh = new THREE.Mesh(new THREE.BufferGeometry(), this.hatMat);
+    this.hatShadow = new THREE.Mesh(this.hatMesh.geometry, this.hatShadowMat);
+    this.hatOn = false;
     // where the cape's free end is (the game's xCloak: it chases the player a quarter of the way each tick), the bob and walk
     this.cloak = new THREE.Vector3(); this.cloakO = new THREE.Vector3(); this.cloakSet = false;
     this.bob = 0; this.oBob = 0; this.walkDist = 0; this.walkDistO = 0;
@@ -593,12 +606,12 @@ export class Avatar {
       this.uGlow.value.set(lit ? 3 : 1, lit ? 3 : 1, lit ? 3 : 1, lit ? 0.7 : 1);
     };
     this.glowing = false; this.invisible = false;
-    for (const m of [this.mesh, this.shadowMesh, this.arm, this.armor, this.armorShadow, this.glowRim, this.glowBehind, this.capeMesh, this.capeShadow]) { m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false; }
+    for (const m of [this.mesh, this.shadowMesh, this.arm, this.armor, this.armorShadow, this.glowRim, this.glowBehind, this.capeMesh, this.capeShadow, this.hatMesh, this.hatShadow]) { m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false; }
     renderer.scene.add(this.mesh);
     renderer.scene.add(this.armor);
-    renderer.scene.add(this.glowRim); renderer.scene.add(this.glowBehind); renderer.scene.add(this.capeMesh);
+    renderer.scene.add(this.glowRim); renderer.scene.add(this.glowBehind); renderer.scene.add(this.capeMesh); renderer.scene.add(this.hatMesh);
     // (only drawn while there are shadows: render/shadows.js; another player's model has no first-person arm)
-    if (!remote) { renderer.shadowScene.add(this.shadowMesh); renderer.shadowScene.add(this.armorShadow); renderer.shadowScene.add(this.capeShadow); renderer.handScene.add(this.arm); }
+    if (!remote) { renderer.shadowScene.add(this.shadowMesh); renderer.shadowScene.add(this.armorShadow); renderer.shadowScene.add(this.capeShadow); renderer.shadowScene.add(this.hatShadow); renderer.handScene.add(this.arm); }
     // what is in each hand (0 main, 1 off), in the model's hand in third person
     this.held = [null, null];
     this.heldGlint = [false, false];
@@ -627,6 +640,17 @@ export class Avatar {
   /* ---- skins ----
      urlOrImage: a URL (data: and blob: too), an Image, an ImageBitmap or a canvas.
      slim: true for 3 pixel arms, false for 4, left out to tell from the skin. */
+  // a lobby hat (net/cosdata.js HATS entry), or null for none
+  setHat(def) {
+    if (!def) { this.hatOn = false; this.hatDef = null; return; }
+    if (def === this.hatDef) { this.hatOn = true; return; }
+    const old = this.hatMesh.geometry, { geometry, paint } = hatParts(def);
+    paint(this.hatCanvas.getContext('2d'));
+    this.hatTex.needsUpdate = true;
+    this.hatMesh.geometry = geometry; this.hatShadow.geometry = geometry;
+    old.dispose();
+    this.hatDef = def; this.hatOn = true;
+  }
   async setCape(url) {
     if (!url) { this.capeOn = false; return; }
     let img;
@@ -857,6 +881,7 @@ export class Avatar {
     }
     if (!P) {
       this.mesh.visible = this.shadowMesh.visible = this.armor.visible = this.armorShadow.visible = false;
+      this.hatMesh.visible = this.hatShadow.visible = false;
       for (const h of this.held) if (h) h.mesh.visible = false;
       if (this.headItem) this.headItem.mesh.visible = false;
       return;
@@ -909,6 +934,8 @@ export class Avatar {
     // a camera pulled right in to the head (a wall just behind you) would see the inside of the helmet: it is left off then
     const close = this.view !== 0 && cam && cam.position.distanceToSquared(state.eye) < 0.36;
     this.uPiece.value[0].y = this.headWorn && !close ? 1 : 0;
+    this.hatMesh.visible = third && this.hatOn && !this.invisible && !close;
+    this.hatShadow.visible = this.ready && this.hatOn && !this.invisible && !this.hidden;
     const hi = this.headItem;
     if (hi) {
       hi.mesh.visible = third && !close;

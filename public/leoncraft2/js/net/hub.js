@@ -17,6 +17,7 @@
 import { B, BLOCKS, SOLID } from '../blocks.js?v=91';
 import { I, ITEMS, maxStack } from '../items.js?v=91';
 import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=91';
+import { makeLobbyCos } from './lobbycos.js?v=91';
 import { POTIONS } from '../brewing.js?v=91';
 import { creativeItems, entryId, HEADS } from '../ui/inventory.js?v=91';
 import { DIM_IDS } from '../dims.js?v=91';
@@ -313,6 +314,9 @@ const MODE_BLURB = {
 let PROFILE = null;
 const shopAll = hub => { const items = shopItems(hub.team || { wool: 'white_wool', clay: 'white_terracotta', glass: 'white_stained_glass' }), all = {}; for (const k in items) for (const it of items[k]) { all[it.id] = it; it.cat = k; } return all; };
 const profileMenus = () => PROFILE || (PROFILE = makeProfile({ MenuScreen, stack, ITEMS, QUICK, GRID, allShopItems: shopAll }));
+// the lobby's cosmetics (net/lobbycos.js): hidden chests, hats, auras, trails, gadgets, the Backpack
+let LOBBYCOS = null;
+const lobbyCos = () => LOBBYCOS || (LOBBYCOS = makeLobbyCos({ MenuScreen, ChestScreen, stack, idOf }));
 // Bridging's replays: the ghost's number among the NPCs, and the menu of runs (your best and the board's top ten)
 const REPLAY_ID = -3000;
 class ReplayMenu extends MenuScreen {
@@ -713,6 +717,7 @@ export class Hub {
     // (sized as the players are: a Chameleon hider's own body, left standing while they watch, is half size; everyone on
     //  the stands and the Bridging ghost are full size, playerSize.k being 1 outside Chameleon)
     this.npcs.sized = true;
+    this.cos = new (lobbyCos().LobbyCos)(this);
     this.group = new THREE.Group(); this.group.name = 'hub-holograms';
     ctx.renderer.scene.add(this.group);
     // a death is the minigame's: the server is told, you are made whole where you are, and it moves you on
@@ -720,7 +725,8 @@ export class Hub {
     hooks.onDeath = (message, src) => this.died(src, message);
     // the people on the stands answer either button; what you hold in a lobby (the game menu, the way back) answers the right one
     const I2 = game.inter, use = I2.useWith.bind(I2), down = I2.down.bind(I2);
-    I2.useWith = () => { if (this.spec) { this.useHeld(); return true; } if (this.clickNpc() || this.useHeld()) return true; return use(); };
+    // (a chest in the lobby may be a hidden one: asked before what you hold has its say)
+    I2.useWith = () => { if (this.spec) { this.useHeld(); return true; } if (this.clickNpc() || (this.area === 'lobby' && this.cos && this.cos.useTarget()) || this.useHeld()) return true; return use(); };
     // (a left click on a person opens their menu only when nothing nearer is under the crosshair: a player you are fighting in
     //  front of a shop takes the hit)
     I2.down = b => { if (this.spec) return; if (b === 0 && !I2.entityTarget && this.clickNpc()) return; if (b === 0) this.seekerSwing(I2); down(b); };
@@ -790,6 +796,7 @@ export class Hub {
   }
   detach() {
     if (active === this) active = null;
+    if (this.cos) { this.cos.leaveLobby(); this.cos.inLobby = false; }
     this.area = null; this.applySize();
     if (this.overlay) { const o = this.ctx.gui.overlays, i = o.indexOf(this.overlay); if (i >= 0) o.splice(i, 1); }
     if (this.npcs) { this.npcs.dispose(); this.npcs = null; }
@@ -811,6 +818,8 @@ export class Hub {
     if (!g) return;
     // moved by the server (a new round, the lobby, being found): back in the body first, so its move is the one that lands
     if (this.spec && (m.k === 'where' || m.k === 'go' || m.k === 'kit')) this.endWatch(false);
+    if (this.cos && this.cos.receive(m)) return;
+    if (m.k === 'where' && this.cos) this.cos.areaChanged(m.area);
     switch (m.k) {
       case 'hello': {
         this.modes = m.modes || []; this.games = m.games || []; this.staff = !!m.staff; this.editable = m.editable || [];
@@ -1034,9 +1043,14 @@ export class Hub {
     g.survival.clearEffects();
     g.survival.health = g.survival.maxHealth; g.survival.food = 20; g.survival.saturation = 5;
     if (kind === 'lobby') {
-      inv.slots[0] = stack('compass', 1, { name: '§aGame Menu §7(Right Click)' });
-      inv.slots[1] = stack(TEMP_BLOCK, 64, { name: TEMP_NAME });
-      inv.slots[2] = stack('player_head', 1, { face: 'self', name: '§aProfile §7- Right Click for your stats, titles and item layouts' }) || stack('name_tag', 1, { name: '§aProfile §7- Right Click for your stats, titles and item layouts' });
+      // the lobby's own three things and every cosmetic you have found, each where you last kept it (net/lobbycos.js)
+      const fixed = {
+        compass: stack('compass', 1, { name: '§aGame Menu §7(Right Click)' }),
+        temp: stack(TEMP_BLOCK, 64, { name: TEMP_NAME }),
+        profile: stack('player_head', 1, { face: 'self', name: '§aProfile §7- Right Click for your stats, titles and item layouts' }) || stack('name_tag', 1, { name: '§aProfile §7- Right Click for your stats, titles and item layouts' }),
+      };
+      if (this.cos) this.cos.lobbyKit(inv, fixed);
+      else { inv.slots[0] = fixed.compass; inv.slots[1] = fixed.temp; inv.slots[2] = fixed.profile; }
     } else if (kind === 'wait' || kind === 'wait_vote' || kind === 'wait_theme') {
       if (kind === 'wait_theme') inv.slots[0] = stack('writable_book', 1, { name: '§aTheme Vote §7- Right Click to vote for the theme' });
       inv.slots[8] = stack('red_bed', 1, { name: '§c§lReturn to Lobby §7(Right Click)' });
@@ -1138,7 +1152,8 @@ export class Hub {
       this.dressUp();
       inv.select(0);
     }
-    if (!this.previewing && this.layouts) applyLayout(inv, this.layouts[layoutKey(kind, this.swKit || swKitId())], ITEMS);
+    // (the lobby keeps its own arrangement, saved as you move things: net/lobbycos.js)
+    if (!this.previewing && this.layouts && kind !== 'lobby') applyLayout(inv, this.layouts[layoutKey(kind, this.swKit || swKitId())], ITEMS);
     this.giveRating();
     inv.changed();
   }
@@ -1445,6 +1460,7 @@ export class Hub {
       }
     }
     if (!h) return false;
+    if (this.area === 'lobby' && h.cos && this.cos) return this.cos.use(h);
     if (this.area === 'lobby' && h.id === idOf('compass')) { this.openScreen(new GameMenu(this)); return true; }
     if (this.br && h.name && /^Reset/.test(h.name.replace(/\u00a7./g, ''))) { this.brReset(true); return true; }
     if (this.br && h.name && /^Replays/.test(h.name.replace(/\u00a7./g, ''))) { this.send({ k: 'brreplays' }); return true; }
@@ -1568,6 +1584,7 @@ export class Hub {
       }
     }
     const P = g.player, sv = g.survival;
+    if (this.cos) this.cos.tick();
     // a Death Swap world is survival as the game plays it: nothing of the network's here
     if (this.area === 'ds') { this.dsTick(); return; }
     // the lobby's slime launch pad: stepping onto it throws you out towards the games' people, and the landing never hurts
@@ -1712,6 +1729,7 @@ export class Hub {
     // Murder Mystery: nobody's name shows over them
     if (this.hideNames && this.area === 'game' && this.net.players) for (const r of this.net.players.list.values()) if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
     this.drawProps();
+    if (this.cos) this.cos.frame();
     this.applyPoses();
     this.watchFrame();
     // F1: the words floating in the world go with the HUD, but for the people's own (showHolo)
@@ -1939,12 +1957,13 @@ export class Hub {
     // (and Prop Hunt's seekers never heal by themselves: a wrong hit's half heart stays lost)
     if (this.game.survival) this.game.survival.noRegen = this.area === 'game' && this.gameKind === 'prophunt' && this.role === 'seeker';
     const on = this.area === 'game' && this.gameKind === 'chameleon', A = this.ctx.renderer.avatar, P = this.game.player;
-    if (A) A.poseOverride = !on ? null : this.role === 'seeker' ? (P.sneaking ? SNIPE : null) : (POSES[this.myPose | 0] || POSES[0])[1];
+    // (in the lobby: riding a mount, net/lobbycos.js)
+    if (A) A.poseOverride = !on ? (this.cos ? this.cos.poseOf('') : null) : this.role === 'seeker' ? (P.sneaking ? SNIPE : null) : (POSES[this.myPose | 0] || POSES[0])[1];
     const players = this.net.players;
     if (!players) return;
     for (const [id, r] of players.list) {
       if (!r.av) continue;
-      if (!on) { r.av.poseOverride = null; continue; }
+      if (!on) { r.av.poseOverride = this.cos ? this.cos.poseOf(r.name) : null; continue; }
       const pz = this.poses && this.poses.get(id);
       r.av.poseOverride = pz ? (POSES[pz] || POSES[0])[1] : this.seekerIds && this.seekerIds.has(id) && r.st && (r.st.f & F.SNEAK) ? SNIPE : null;
     }
@@ -2248,6 +2267,8 @@ export class Hub {
 /* ---- the network's commands (each answers only on its server) ---- */
 const onHub = (ctx, fn) => { if (!active || active.game !== ctx.game) { ctx.say('That command only works on Leonpixel.', 0xFF5555); return; } fn(active); };
 register('lobby', { always: true, aliases: ['l', 'hub', 'leave'], usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'lobby' })); } });
+// (admins: every lobby cosmetic at once, to try them; the server checks)
+register('cosall', { always: true, usage: '', run(args, ctx) { onHub(ctx, h => h.send({ k: 'cosall' })); } });
 const MODE_IDS = ['bw_solo', 'bw_doubles', 'bw_3s', 'bw_4s', 'sw_solo', 'sw_doubles', 'duels_classic', 'duels_sumo', 'duels_bridge', 'duels_bedwars', 'duels_skywars', 'tntrun', 'murder', 'buildbattle', 'spleef', 'prophunt', 'ch_classic', 'ch_infection', 'ch_double', 'pillars', 'deathswap', 'bridger'];
 register('play', {
   always: true, usage: '<mode>', suggest: i => (i === 0 ? (active && active.modes && active.modes.length ? active.modes.map(m => m.id) : MODE_IDS) : []),

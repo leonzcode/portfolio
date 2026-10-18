@@ -113,6 +113,7 @@ export class RemotePlayers {
       av.mesh.geometry.dispose(); av.arm.geometry.dispose(); av.glowRim.geometry.dispose(); av.glowBehind.geometry.dispose();
       av.glowRim.material.dispose(); av.glowBehind.material.dispose();
       R.scene.remove(av.capeMesh); av.capeMesh.geometry.dispose(); av.capeMat.dispose(); av.capeShadowMat.dispose(); av.capeTex.dispose();
+      R.scene.remove(av.hatMesh); av.hatMesh.geometry.dispose(); av.hatMat.dispose(); av.hatShadowMat.dispose(); av.hatTex.dispose();
       for (let s = 0; s < 2; s++) av.setHeld(s, null);
       av.setHeadItem(null);
       av.tex.dispose(); av.armorTex.dispose();
@@ -320,7 +321,7 @@ export class RemotePlayers {
   }
   hide(r) {
     const av = r.av;
-    av.mesh.visible = av.armor.visible = av.glowRim.visible = av.glowBehind.visible = av.capeMesh.visible = false;
+    av.mesh.visible = av.armor.visible = av.glowRim.visible = av.glowBehind.visible = av.capeMesh.visible = av.hatMesh.visible = false;
     for (const h of av.held) if (h) h.mesh.visible = false;
     if (av.headItem) av.headItem.mesh.visible = false;
     if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
@@ -387,6 +388,8 @@ export class RemotePlayers {
     // their cape (they send none while it is switched off), not while invisible or in an elytra
     av.invisible = !!r.invis;
     av.capeMesh.visible = av.capeShows(on);
+    // a lobby hat (net/lobbycos.js sets it), not while invisible
+    av.hatMesh.visible = on && av.hatOn && !r.invis;
     // the armour's pictures taken up again whenever another file has landed in the sheet
     if (av.wearing) { const sh = armorSheet(); if (sh.version !== av.armorV) { av.armorV = sh.version; av.armorTex.needsUpdate = true; } }
     av.uPiece.value[0].y = av.headWorn ? 1 : 0;

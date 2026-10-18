@@ -197,8 +197,16 @@ export class Player {
     const landed = dy < 0 && my !== dy;
     // blocked sideways while on (or landing on) the ground: try it a step higher
     if ((this.onGround || landed) && !this.flying && (mx !== dx || mz !== dz)) {
-      const up = this.clip(bx, 1, STEP, p.x - this.halfW, p.y, p.z - this.halfW, p.x + this.halfW, p.y + this.h, p.z + this.halfW);
-      const [sx, , sz] = this.slide(p.x, p.y + up, p.z, dx, 0, dz, bx);
+      let up = this.clip(bx, 1, STEP, p.x - this.halfW, p.y, p.z - this.halfW, p.x + this.halfW, p.y + this.h, p.z + this.halfW);
+      let [sx, , sz] = this.slide(p.x, p.y + up, p.z, dx, 0, dz, bx);
+      /* and the game's second try (Entity.collide): lifted only as far as the ceiling over the whole way across allows,
+         so a carpet, a slab or a stair's lip under a low lintel still steps up (the full lift hit the lintel, and a doorway
+         two blocks high with a carpet in it could not be walked through) */
+      const up2 = this.clip(bx, 1, STEP, Math.min(p.x, p.x + dx) - this.halfW, p.y, Math.min(p.z, p.z + dz) - this.halfW, Math.max(p.x, p.x + dx) + this.halfW, p.y + this.h, Math.max(p.z, p.z + dz) + this.halfW);
+      if (up2 < up - 1e-9 && up2 > 1e-9) {
+        const [tx, , tz] = this.slide(p.x, p.y + up2, p.z, dx, 0, dz, bx);
+        if (tx * tx + tz * tz > sx * sx + sz * sz + 1e-9) { sx = tx; sz = tz; up = up2; }
+      }
       if (sx * sx + sz * sz > mx * mx + mz * mz + 1e-9) {
         // and back down onto whatever is there
         const down = this.clip(bx, 1, -up, p.x + sx - this.halfW, p.y + up, p.z + sz - this.halfW, p.x + sx + this.halfW, p.y + up + this.h, p.z + sz + this.halfW);
@@ -575,7 +583,8 @@ export class Player {
       // Levitation: drawn up towards 0.05 a tick a level; Slow Falling: a tenth of the gravity on the way down
       const lev = this.effects && this.effects.levitation;
       if (lev) this.vel.y = (this.vel.y + (0.05 * lev.level - this.vel.y) * 0.2) * 0.98;
-      else this.vel.y = (this.vel.y - (this.effects && this.effects.slow_falling && this.vel.y < 0 ? 0.01 : 0.08)) * 0.98;
+      // (gravityScale: Leonpixel's Moon Boots, net/lobbycos.js; 1 everywhere else)
+      else this.vel.y = (this.vel.y - (this.effects && this.effects.slow_falling && this.vel.y < 0 ? 0.01 : 0.08) * (this.gravityScale || 1)) * 0.98;
       this.vel.x *= slip * 0.91; this.vel.z *= slip * 0.91;
       // walking on slime: slowed unless you are bouncing
       if (this.onGround && BLOCKS[under] && BLOCKS[under].name === 'slime_block' && Math.abs(this.vel.y) < 0.1 && !this.sneaking) {
