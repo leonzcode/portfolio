@@ -3,7 +3,7 @@
 // baked.js throws away mesh fragments over a carriageway between just under the road and uCutTop above it, so
 // our own road surface (and our own traffic) shows instead. Areas are redrawn as the car moves.
 import * as THREE from 'three';
-import { bakedUniforms } from './baked.js?v=2';
+import { bakedUniforms } from './baked.js?v=3';
 
 const WIDTH = { motorway: 3.6, trunk: 3.5, primary: 3.4, secondary: 3.3, tertiary: 3.2, unclassified: 3, residential: 3, living_street: 2.8, service: 3, motorway_link: 3.5, trunk_link: 3.4, primary_link: 3.3, secondary_link: 3.2, tertiary_link: 3.1 };
 const LANES = { motorway: 2, trunk: 2, primary: 2, secondary: 2, tertiary: 2, unclassified: 2, residential: 2, living_street: 2, service: 1 };
@@ -49,6 +49,20 @@ export class CutMask {
     const g = this.canvas.getContext('2d');
     g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
     g.strokeStyle = '#fff'; g.lineCap = 'round'; g.lineJoin = 'round';
+    // the roads module's own edges when given (the widths it draws), else widths guessed from the tags
+    if (opts.edges && opts.edges.length) {
+      // flat ends: a round cap reaches past a junction's corners, where there is no road to show through the cut
+      g.lineCap = opts.cap || 'round';
+      for (const e of opts.edges) {
+        if (!e.c || e.c.bridge || !e.pts || e.pts.length < 2) continue;
+        g.lineWidth = 2 * e.c.hw * ws * k;
+        g.beginPath();
+        e.pts.forEach(([x, z], i) => { const px = (x - x0) * k, pz = (z - z0) * k; if (i) g.lineTo(px, pz); else g.moveTo(px, pz); });
+        g.stroke();
+      }
+      g.lineCap = 'round';
+      roads = [];
+    }
     for (const r of roads) {
       const t = r.tags || {};
       if (t.tunnel && t.tunnel !== 'no') continue;

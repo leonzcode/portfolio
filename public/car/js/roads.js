@@ -24,7 +24,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=2';
+import { unproject } from './geo.js?v=3';
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -135,7 +135,7 @@ export let style = { region: 'other', yellowCentre: false };
 // ---------------------------------------------------------------- materials
 let MATS = null;
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=2');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=3');
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -204,7 +204,7 @@ function makeMaterials() {
   curb.onBeforeCompile = (sh) => {
     sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
       float cl = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-      diffuseColor.rgb = mix(vec3(cl), diffuseColor.rgb, 0.25) * vec3(1.0, 1.0, 1.02);`);
+      diffuseColor.rgb = mix(vec3(cl), diffuseColor.rgb, 0.25) * vec3(0.8, 0.8, 0.82);`);
   };
   curb.customProgramCacheKey = () => 'roads-curb-1';
   curb.side = THREE.DoubleSide;
@@ -217,7 +217,7 @@ function makeMaterials() {
     const jv = 'vec2(' + J[0].toFixed(2) + ', ' + J[1].toFixed(2) + ')';
     sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
       float pl = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-      diffuseColor.rgb = mix(vec3(0.62, 0.61, 0.58), vec3(pl) * vec3(1.0, 0.99, 0.96), 0.45);
+      diffuseColor.rgb = mix(vec3(0.34, 0.335, 0.32), vec3(pl) * vec3(0.72, 0.71, 0.69), 0.45);
       vec2 jsz = ${jv};
       vec2 jf = abs(fract(vMapUv * 2.0 / jsz) - 0.5) * jsz;
       float jl = min(0.5 * jsz.x - jf.x, 0.5 * jsz.y - jf.y);
@@ -260,6 +260,7 @@ function sampleEdge(e) {
   }
   e.px = px; e.pz = pz; e.ps = ps; e.pv = pv; e.nx = nx; e.nz = nz; e.mk = mk; e.len = s;
   e.ph = new Array(N).fill(0);
+  e.pc = new Array(N).fill(0);
 }
 function findIdx(e, s) { // last index with ps <= s
   let lo = 0, hi = e.ps.length - 1;
@@ -269,7 +270,7 @@ function findIdx(e, s) { // last index with ps <= s
 }
 function at(e, s) {
   const N = e.ps.length;
-  if (N < 2) return { x: e.px[0], z: e.pz[0], h: e.ph[0], nx: e.nx[0], nz: e.nz[0], mk: 1, tx: 1, tz: 0, s };
+  if (N < 2) return { x: e.px[0], z: e.pz[0], h: e.ph[0], c: e.pc[0], nx: e.nx[0], nz: e.nz[0], mk: 1, tx: 1, tz: 0, s };
   s = Math.max(0, Math.min(e.len, s));
   const i = findIdx(e, s), j = Math.min(N - 1, i + 1);
   const L = e.ps[j] - e.ps[i], t = L > 1e-6 ? (s - e.ps[i]) / L : 0;
@@ -277,7 +278,7 @@ function at(e, s) {
   // interior points use the segment normal (no miter); vertices keep their miter
   let nx = -tz0 / tl, nz = tx0 / tl, mk = 1;
   if (t < 1e-4) { nx = e.nx[i]; nz = e.nz[i]; mk = e.mk[i]; } else if (t > 1 - 1e-4) { nx = e.nx[j]; nz = e.nz[j]; mk = e.mk[j]; }
-  return { x: lerp(e.px[i], e.px[j], t), z: lerp(e.pz[i], e.pz[j], t), h: lerp(e.ph[i], e.ph[j], t), nx, nz, mk, tx: tx0 / tl, tz: tz0 / tl, s };
+  return { x: lerp(e.px[i], e.px[j], t), z: lerp(e.pz[i], e.pz[j], t), h: lerp(e.ph[i], e.ph[j], t), c: lerp(e.pc[i], e.pc[j], t), nx, nz, mk, tx: tx0 / tl, tz: tz0 / tl, s };
 }
 // Samples between sa and sb (inclusive ends), each { x, z, h, nx, nz, mk, s }
 // Fewer samples for drawing: keep the way's own vertices (where it bends) and the samples the height profile needs
@@ -293,7 +294,7 @@ function sliceLite(e, sa, sb, maxGap = 60) {
     let keep = vtx || all[i + 1].s - all[k0].s > maxGap;
     if (!keep) {
       const a = all[k0], b = all[i + 1], L = b.s - a.s;
-      for (let j = k0 + 1; j <= i; j++) { const t = (all[j].s - a.s) / L; if (Math.abs(a.h + (b.h - a.h) * t - all[j].h) > 0.02) { keep = true; break; } }
+      for (let j = k0 + 1; j <= i; j++) { const t = (all[j].s - a.s) / L; if (Math.abs(a.h + (b.h - a.h) * t - all[j].h) > 0.02 || Math.abs(a.c + (b.c - a.c) * t - all[j].c) * e.c.hw > 0.02) { keep = true; break; } }
     }
     if (keep) { out.push(p); k0 = i; }
   }
@@ -302,7 +303,7 @@ function sliceLite(e, sa, sb, maxGap = 60) {
 }
 function slice(e, sa, sb) {
   const out = [at(e, sa)];
-  for (let i = 0; i < e.ps.length; i++) if (e.ps[i] > sa + 0.05 && e.ps[i] < sb - 0.05) out.push({ x: e.px[i], z: e.pz[i], h: e.ph[i], nx: e.nx[i], nz: e.nz[i], mk: e.mk[i], s: e.ps[i], i });
+  for (let i = 0; i < e.ps.length; i++) if (e.ps[i] > sa + 0.05 && e.ps[i] < sb - 0.05) out.push({ x: e.px[i], z: e.pz[i], h: e.ph[i], c: e.pc[i], nx: e.nx[i], nz: e.nz[i], mk: e.mk[i], s: e.ps[i], i });
   out.push(at(e, sb));
   return out;
 }
@@ -554,9 +555,8 @@ async function buildJunctions() {
         const lim = Math.min(40, 3 * Math.max(a.w, b.w) + 10);
         if (t >= -0.5 && u >= -0.5 && t <= lim && u <= lim) {
           let tc = Math.max(0, t), uc = Math.max(0, u);
-          // a narrow road peeling off a wide one at a sharp angle: the wide one keeps its length (the narrow ribbon
-          // tucks under it, ranks are lifted apart), so its markings do not vanish over a long junction
-          if (gap < 0.6) { if (a.w > b.w * 1.3 || a.e.c.rank > b.e.c.rank) tc = Math.min(tc, b.w * 1.2 + 2); else if (b.w > a.w * 1.3 || b.e.c.rank > a.e.c.rank) uc = Math.min(uc, a.w * 1.2 + 2); }
+          // (a narrow road peeling off a wide one at a sharp angle used to tuck under it to keep the wide road's
+          // markings; on hills the two diverge in height, so the whole fork is junction now)
           a.need = Math.max(a.need, tc); b.need = Math.max(b.need, uc);
           a.corner = b.corner = true;
           pr.c = [n.x + a.w * nax + tc * a.dx, n.z + a.w * naz + tc * a.dz]; pr.tc = tc; pr.uc = uc;
@@ -594,13 +594,15 @@ function junctionOutline(j) {
   const side = (x, plus) => { // point on x's boundary at its setback, plus side = toward next end
     const e = x.e, s = x.atStart ? x.sb : e.len - x.sb, p = at(e, s);
     const sgn = (x.atStart ? 1 : -1) * (plus ? 1 : -1);
-    return { x: p.x + p.nx * p.mk * x.w * sgn, z: p.z + p.nz * p.mk * x.w * sgn, h: p.h };
+    return { x: p.x + p.nx * p.mk * x.w * sgn, z: p.z + p.nz * p.mk * x.w * sgn, h: p.h + (p.c || 0) * p.mk * x.w * sgn };
   };
   const curbSide = (x, plus) => { const c = x.e.c; return (x.atStart === plus) ? c.curbR : c.curbL; };
   for (let i = 0; i < E.length; i++) {
     const a = E[i], b = E[(i + 1) % E.length], pr = pairs[i];
     const A = side(a, true), B = side(b, false);
     const am = side(a, false);
+    // between two cut points the outline lies on the junction's plane (exact at both ends)
+    const onPlane = (x, z, t) => n.plane ? planeAt(n, x, z) + lerp(A.h - planeAt(n, A.x, A.z), B.h - planeAt(n, B.x, B.z), t) : lerp(A.h, B.h, t);
     out.push({ ...am, curb: false, cut: true }); // across a's cut line
     const curb = curbSide(a, true) && curbSide(b, false);
     out.push({ ...A, curb });
@@ -609,7 +611,8 @@ function junctionOutline(j) {
       const C = pr.c, steps = 6;
       for (let s = 1; s < steps; s++) {
         const t = s / steps, u = 1 - t;
-        out.push({ x: u * u * A.x + 2 * u * t * C[0] + t * t * B.x, z: u * u * A.z + 2 * u * t * C[1] + t * t * B.z, h: lerp(A.h, B.h, t), curb });
+        const x = u * u * A.x + 2 * u * t * C[0] + t * t * B.x, z = u * u * A.z + 2 * u * t * C[1] + t * t * B.z;
+        out.push({ x, z, h: onPlane(x, z, t), curb });
       }
     } else if (pr.gap > Math.PI + 0.3) {
       // outer side of a bend: arc around the node
@@ -619,7 +622,8 @@ function junctionOutline(j) {
       const steps = Math.max(2, Math.ceil(da / 0.35));
       for (let s = 1; s < steps; s++) {
         const ang = a0 + da * s / steps;
-        out.push({ x: n.x + Math.cos(ang) * r, z: n.z + Math.sin(ang) * r, h: lerp(A.h, B.h, s / steps), curb });
+        const x = n.x + Math.cos(ang) * r, z = n.z + Math.sin(ang) * r;
+        out.push({ x, z, h: onPlane(x, z, s / steps), curb });
       }
     }
     // B is pushed as b's "minus" point at the next loop step
@@ -639,61 +643,123 @@ function nodeHeight(n) {
   return v.length ? pct(v, 0.3) : null;
 }
 function profileHeights(e) {
-  const N = e.px.length, raw = new Array(N).fill(null);
+  const N = e.px.length, raw = new Array(N).fill(null), mid = new Array(N).fill(null);
   const w = e.c.hw * 0.8, offs = [-w, -w * 0.45, 0, w * 0.45, w];
+  const open = S.smooth; // the open world's ground is a smooth terrain model: no cars or bumps to filter out
   for (let i = 0; i < N; i++) {
     const v = [];
-    for (const o of offs) { const h = sampleGround(e.px[i] + e.nx[i] * o, e.pz[i] + e.nz[i] * o); if (h != null) v.push(h); }
-    raw[i] = v.length ? pct(v, S.pct) : null;
+    for (let k = 0; k < offs.length; k++) {
+      const o = offs[k], h = sampleGround(e.px[i] + e.nx[i] * o, e.pz[i] + e.nz[i] * o);
+      if (h != null) { v.push(h); if (k === 2) mid[i] = h; }
+    }
+    raw[i] = v.length ? pct(v, open ? 0.5 : S.pct) : null;
   }
   // fill gaps
-  let any = raw.some(v => v != null);
-  if (!any) return null;
+  if (!raw.some(v => v != null)) return null;
   for (let i = 0; i < N; i++) if (raw[i] == null) {
     let a = i - 1; while (a >= 0 && raw[a] == null) a--; let b = i + 1; while (b < N && raw[b] == null) b++;
     raw[i] = a < 0 ? raw[b] : b >= N ? raw[a] : lerp(raw[a], raw[b], (i - a) / (b - a));
   }
-  // robust window (30th percentile over +-6 m) then a gaussian over +-6 m
-  const lo = new Array(N);
-  for (let i = 0; i < N; i++) {
-    const v = []; for (let k = i; k >= 0 && e.ps[i] - e.ps[k] <= 6; k--) v.push(raw[k]);
-    for (let k = i + 1; k < N && e.ps[k] - e.ps[i] <= 6; k++) v.push(raw[k]);
-    lo[i] = pct(v, 0.3);
+  // photogrammetry: a robust window (30th percentile over +-6 m) takes out cars and bumps; then a gaussian
+  let lo = raw;
+  if (!open) {
+    lo = new Array(N);
+    for (let i = 0; i < N; i++) {
+      const v = []; for (let k = i; k >= 0 && e.ps[i] - e.ps[k] <= 6; k--) v.push(raw[k]);
+      for (let k = i + 1; k < N && e.ps[k] - e.ps[i] <= 6; k++) v.push(raw[k]);
+      lo[i] = pct(v, 0.3);
+    }
   }
-  const out = new Array(N);
+  const out = new Array(N), R = open ? 4 : 7, R2 = open ? 8 : 18;
   for (let i = 0; i < N; i++) {
     let sw = 0, sh = 0;
-    for (let k = i; k >= 0 && e.ps[i] - e.ps[k] <= 7; k--) { const d = e.ps[i] - e.ps[k], wt = Math.exp(-d * d / 18); sw += wt; sh += wt * lo[k]; }
-    for (let k = i + 1; k < N && e.ps[k] - e.ps[i] <= 7; k++) { const d = e.ps[k] - e.ps[i], wt = Math.exp(-d * d / 18); sw += wt; sh += wt * lo[k]; }
+    for (let k = i; k >= 0 && e.ps[i] - e.ps[k] <= R; k--) { const d = e.ps[i] - e.ps[k], wt = Math.exp(-d * d / R2); sw += wt; sh += wt * lo[k]; }
+    for (let k = i + 1; k < N && e.ps[k] - e.ps[i] <= R; k++) { const d = e.ps[k] - e.ps[i], wt = Math.exp(-d * d / R2); sw += wt; sh += wt * lo[k]; }
     out[i] = sh / sw;
+    // smoothing must not push the road into the terrain (it rounds off the crest of a hill)
+    if (open) { const g = mid[i] != null ? mid[i] : raw[i]; if (out[i] < g) out[i] = g; }
   }
   return out;
 }
 // Overlapping ribbons of unconnected roads would fight in depth: lift each class a few millimetres apart.
 const rankBias = (e) => e.c.rank * 0.004 + (e.c.bridge ? 0.02 : 0);
-// Ground samples kept between builds (a rebuild as the car drives on mostly sees the same roads): node heights by
-// node id, road profiles by the edge's node list. A reheight re-samples its box and overwrites them.
-const NCACHE = new Map(), PCACHE = new Map();
-async function computeHeights(bbox) {
-  const inBox = (x, z, m = 30) => !bbox || (x >= bbox.x0 - m && x <= bbox.x1 + m && z >= bbox.z0 - m && z <= bbox.z1 + m);
-  if (NCACHE.size > 60000) NCACHE.clear();
-  if (PCACHE.size > 20000) PCACHE.clear();
-  const nodes = S.nodes;
-  // nodes touching a non-bridge edge are anchors from the ground
-  for (const n of nodes.values()) {
-    if (!inBox(n.x, n.z)) continue;
-    await Y();
-    n.anchor = n.ends.some(x => !x.e.c.bridge) || n.ends.length === 1;
-    if (n.anchor) {
-      const c = !bbox ? NCACHE.get(n.id) : undefined;
-      const h = c !== undefined ? c : nodeHeight(n);
-      n.h = h != null ? h : (n.h || 0); n.known = h != null;
-      if (h != null) NCACHE.set(n.id, h);
+// Ground samples kept between builds (a rebuild as the car drives on mostly sees the same roads): road profiles
+// by the edge's node list. A reheight re-samples its box and overwrites them.
+const PCACHE = new Map();
+const profAt = (e, s) => {
+  const P = e.prof; if (!P) return null;
+  const i = findIdx(e, s), j = Math.min(P.length - 1, i + 1), L = e.ps[j] - e.ps[i];
+  return L > 1e-6 ? lerp(P[i], P[j], Math.max(0, Math.min(1, (s - e.ps[i]) / L))) : P[i];
+};
+const planeAt = (n, x, z) => n.plane ? n.plane[0] + n.plane[1] * (x - n.x) + n.plane[2] * (z - n.z) : n.h;
+
+// A junction is a plane fitted through the roads that meet there (sampled just outside it, the bigger roads
+// weighing more), so it slopes with the hill; every road blends from that plane at the junction's edge to its own
+// profile over the next metres, so the road and the junction meet at exactly the same height.
+function fitPlane(n) {
+  let sw = 0, sx = 0, sz = 0, sh = 0, sxx = 0, szz = 0, sxz = 0, sxh = 0, szh = 0;
+  for (const x of n.ends) {
+    const e = x.e; if (e.c.bridge || !e.prof) continue;
+    const wt = e.c.rank * e.c.rank;
+    const sb = x.atStart ? e.set0 : e.set1;
+    for (const d of [0, 3, 6, 9]) {
+      const sl = sb + d; if (sl > e.len) break;
+      const s = x.atStart ? sl : e.len - sl, p = at(e, s), h = profAt(e, s);
+      const dx = p.x - n.x, dz = p.z - n.z;
+      sw += wt; sx += wt * dx; sz += wt * dz; sh += wt * h; sxx += wt * dx * dx; szz += wt * dz * dz; sxz += wt * dx * dz; sxh += wt * dx * h; szh += wt * dz * h;
     }
   }
-  // bridge-only nodes: inverse distance over anchors through the bridge network (linear along a chain)
+  if (sw <= 0) return null;
+  // weighted least squares h = a + b dx + c dz, with a little ridge on the slopes for straight-through nodes
+  const lam = 0.5 * sw;
+  const M = [[sw, sx, sz], [sx, sxx + lam, sxz], [sz, sxz, szz + lam]], V = [sh, sxh, szh];
+  const det3 = (m) => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+  const D = det3(M); if (Math.abs(D) < 1e-9) return [sh / sw, 0, 0];
+  const col = (k) => M.map((r, i) => r.map((v, j) => j === k ? V[i] : v));
+  let a = det3(col(0)) / D, b = det3(col(1)) / D, c = det3(col(2)) / D;
+  const g = Math.hypot(b, c); if (g > 0.35) { b *= 0.35 / g; c *= 0.35 / g; a = (sh - b * sx - c * sz) / sw; }
+  return [a, b, c];
+}
+
+async function computeHeights(bbox) {
+  const inBox = (x, z, m = 30) => !bbox || (x >= bbox.x0 - m && x <= bbox.x1 + m && z >= bbox.z0 - m && z <= bbox.z1 + m);
+  if (PCACHE.size > 20000) PCACHE.clear();
+  const nodes = S.nodes;
+  const edgeIn = (e) => {
+    for (let i = 0; i < e.px.length; i += 4) if (inBox(e.px[i], e.pz[i])) return true;
+    const n0 = nodes.get(e.ids[0]), n1 = nodes.get(e.ids[e.ids.length - 1]);
+    return inBox(n0.x, n0.z) || inBox(n1.x, n1.z);
+  };
+  // 1. each road's own profile from the ground
+  for (const e of S.edges) {
+    if (e.c.bridge || !edgeIn(e)) continue;
+    await Y();
+    const key = e.ids.join(',') + ':' + e.px.length + ':' + e.c.width + (S.smooth ? 'o' : 'p');
+    let prof = !bbox ? PCACHE.get(key) : undefined;
+    if (!prof) { prof = profileHeights(e); if (prof) PCACHE.set(key, prof); }
+    e.guessed = !prof;
+    if (prof) e.prof = prof;
+    else if (!e.prof) e.prof = null;
+  }
+  // 2. junction planes and node heights
   for (const n of nodes.values()) {
-    if (n.anchor || !inBox(n.x, n.z)) continue;
+    if (!inBox(n.x, n.z, 60)) continue;
+    await Y();
+    n.anchor = n.ends.some(x => !x.e.c.bridge) || n.ends.length === 1;
+    if (!n.anchor) continue;
+    n.plane = null;
+    if (n.ends.length >= 2) {
+      const pl = fitPlane(n);
+      if (pl) { n.plane = pl; n.h = pl[0]; n.known = true; continue; }
+    }
+    const x = n.ends.find(x => !x.e.c.bridge && x.e.prof);
+    if (x) { n.h = x.atStart ? x.e.prof[0] : x.e.prof[x.e.prof.length - 1]; n.known = true; }
+    else { const g = sampleGround(n.x, n.z); if (g != null) { n.h = g; n.known = true; } else n.h = n.h || 0; }
+  }
+  // 3. bridge-only nodes: inverse distance over anchors through the bridge network (linear along a chain)
+  for (const n of nodes.values()) {
+    if (n.anchor || !inBox(n.x, n.z, 60)) continue;
+    n.plane = null;
     const dist = new Map([[n.id, 0]]), queue = [n.id], found = [];
     while (queue.length) {
       queue.sort((a, b) => dist.get(b) - dist.get(a));
@@ -707,33 +773,41 @@ async function computeHeights(bbox) {
     }
     if (found.length) { let a = 0, b = 0; for (const [h, d] of found) { a += h / Math.max(d, 1); b += 1 / Math.max(d, 1); } n.h = a / b; }
   }
+  // 4. final heights: from the junction plane at each cut to the road's own profile
   for (const e of S.edges) {
+    if (!edgeIn(e)) continue;
     await Y();
     const n0 = nodes.get(e.ids[0]), n1 = nodes.get(e.ids[e.ids.length - 1]);
-    let inside = false;
-    for (let i = 0; i < e.px.length; i += 4) if (inBox(e.px[i], e.pz[i])) { inside = true; break; }
-    if (!inside && !inBox(n0.x, n0.z) && !inBox(n1.x, n1.z)) continue;
-    const N = e.px.length;
+    const N = e.px.length, bias = rankBias(e);
     if (e.c.bridge) {
-      for (let i = 0; i < N; i++) e.ph[i] = lerp(n0.h, n1.h, e.len > 0 ? e.ps[i] / e.len : 0) + rankBias(e);
+      // straight between the planes of the junctions at its ends
+      const h0 = planeAt(n0, e.px[0], e.pz[0]), h1 = planeAt(n1, e.px[N - 1], e.pz[N - 1]);
+      for (let i = 0; i < N; i++) { e.ph[i] = lerp(h0, h1, e.len > 0 ? e.ps[i] / e.len : 0) + bias; e.pc[i] = 0; }
       continue;
     }
-    const key = e.ids.join(',') + ':' + N + ':' + e.c.width;
-    let prof = !bbox ? PCACHE.get(key) : undefined;
-    if (!prof) { prof = profileHeights(e); if (prof) PCACHE.set(key, prof); }
-    e.guessed = !prof;
-    if (!prof) prof = new Array(N).fill(lerp(n0.h, n1.h, 0.5));
-    // pin the ends to the node heights over 10 m
-    const D = Math.min(10, e.len / 2);
+    const prof = e.prof || new Array(N).fill(lerp(n0.h, n1.h, 0.5));
+    const s0 = e.set0, s1 = e.len - e.set1, room = Math.max(0, s1 - s0);
+    const D = Math.max(0.01, Math.min(10, room / 2));
+    const p0 = n0.ends.length >= 2 && n0.plane, p1 = n1.ends.length >= 2 && n1.plane;
     for (let i = 0; i < N; i++) {
+      const s = e.ps[i];
       let h = prof[i];
-      const s0 = e.ps[i], s1 = e.len - e.ps[i];
-      if (s0 < D) { const t = s0 / D, w = t * t * (3 - 2 * t); h = lerp(n0.h, h, w); }
-      if (s1 < D) { const t = s1 / D, w = t * t * (3 - 2 * t); h = lerp(n1.h, h, w); }
-      e.ph[i] = h + rankBias(e);
+      let c = 0;
+      if (p0) { const t = Math.max(0, Math.min(1, (s - s0) / D)), w = t * t * (3 - 2 * t); h = lerp(planeAt(n0, e.px[i], e.pz[i]), h, w); c += (1 - w) * (n0.plane[1] * e.nx[i] + n0.plane[2] * e.nz[i]); }
+      if (p1) { const t = Math.max(0, Math.min(1, (s1 - s) / D)), w = t * t * (3 - 2 * t); h = lerp(planeAt(n1, e.px[i], e.pz[i]), h, w); c += (1 - w) * (n1.plane[1] * e.nx[i] + n1.plane[2] * e.nz[i]); }
+      e.ph[i] = h; e.pc[i] = Math.max(-0.35, Math.min(0.35, c));
     }
+    // no road steeper than MAX_GRADE between its junctions (a ramp into a garage, or a bad ground sample, would
+    // otherwise be a wall for the car): relax towards both ends, the parts inside the junctions stay on the planes
+    const fixed = (i) => (p0 && e.ps[i] <= s0) || (p1 && e.ps[i] >= s1);
+    for (let it = 0; it < 3; it++) {
+      for (let i = 1; i < N; i++) if (!fixed(i)) { const g = MAX_GRADE * (e.ps[i] - e.ps[i - 1]); e.ph[i] = Math.max(e.ph[i - 1] - g, Math.min(e.ph[i - 1] + g, e.ph[i])); }
+      for (let i = N - 2; i >= 0; i--) if (!fixed(i)) { const g = MAX_GRADE * (e.ps[i + 1] - e.ps[i]); e.ph[i] = Math.max(e.ph[i + 1] - g, Math.min(e.ph[i + 1] + g, e.ph[i])); }
+    }
+    for (let i = 0; i < N; i++) e.ph[i] += bias;
   }
 }
+const MAX_GRADE = 0.33;
 
 // ---------------------------------------------------------------- crossings, stops, signals
 function onEdgeAt(nodeId) { // [{ e, i (index in e.ids), s }]
@@ -814,6 +888,8 @@ function findFeatures(data) {
       }
     }
   }
+  // the vector tile store has no signal or stop nodes: infer them from the junctions (marked inferred)
+  if (data.source === 'openfreemap' && !approaches.length) inferControls(approaches);
   // where each crosswalk is drawn: [s0, s1] along its edge, clear of the junctions
   const depth = S.style.region === 'jp' ? 4 : 3;
   for (const cr of crossings) {
@@ -840,6 +916,33 @@ function findFeatures(data) {
   S.crossings = crossings; S.approaches = approaches;
 }
 
+// Junction controls guessed from the road classes, for data with no signal or stop nodes (deterministic):
+//  - signals where two or more tertiary-or-bigger roads meet with 4+ legs, or 3 legs of which two are primary or
+//    secondary in town (no motorways);
+//  - otherwise a minor road (residential, unclassified, living street, a service road over 30 m) meeting a
+//    tertiary-or-bigger road stops (US, Canada, Australia: stop sign and line) or gives way (elsewhere).
+function inferControls(approaches) {
+  const stopKind = (S.region === 'us' || S.region === 'au') ? 'stop' : 'give_way';
+  for (const n of S.nodes.values()) {
+    const legs = n.ends;
+    if (legs.length < 3) continue;
+    if (legs.some(x => x.e.c.rank >= 9 && /motorway/.test(x.e.c.cls))) continue;
+    const major = legs.filter(x => x.e.c.rank >= 6).length, mainRoads = legs.filter(x => x.e.c.rank >= 7).length;
+    const urban = legs.some(x => x.e.c.urban);
+    const incoming = (x) => x.atStart ? x.e.c.lanesB > 0 : x.e.c.lanesF > 0;
+    if ((legs.length >= 4 && major >= 2) || (legs.length === 3 && mainRoads >= 2 && urban)) {
+      for (const x of legs) if (incoming(x)) approaches.push({ e: x.e, toEnd: !x.atStart, s: null, kind: 'signal', node: n.id, junction: n.id, inferred: true });
+      continue;
+    }
+    if (!major) continue;
+    for (const x of legs) {
+      const c = x.e.c;
+      if (c.rank >= 6 || !incoming(x)) continue;
+      if (!(c.cls === 'residential' || c.cls === 'unclassified' || c.cls === 'living_street' || (c.cls === 'service' && x.e.len > 30))) continue;
+      approaches.push({ e: x.e, toEnd: !x.atStart, s: null, kind: stopKind, node: n.id, junction: n.id, inferred: true });
+    }
+  }
+}
 function buildSignals() {
   const sigs = S.approaches.filter(a => a.kind === 'signal');
   // union nodes (signal nodes and their junctions) within 30 m
@@ -863,7 +966,7 @@ function buildSignals() {
   for (const a of sigs) {
     const g = find(a.node);
     let G = groups.get(g);
-    if (!G) groups.set(g, G = { id: g, x: 0, z: 0, nodes: [], approaches: [], axis: 0, _n: 0 });
+    if (!G) groups.set(g, G = { id: g, x: 0, z: 0, nodes: [], approaches: [], axis: 0, _n: 0, inferred: !!a.inferred });
     const p = at(a.e, a.s);
     const dirSign = a.toEnd ? 1 : -1;
     const tx = p.tz * 0, heading = (Math.atan2(p.tx * dirSign, -p.tz * dirSign) * 180 / Math.PI + 360) % 360;
@@ -872,7 +975,7 @@ function buildSignals() {
     // right curb at the stop line, relative to travel direction
     const rs = dirSign; // right normal of travel = edge right normal * dirSign
     const hw = a.e.c.hw;
-    const ap = { heading, x: p.x, z: p.z, px: p.x + p.nx * rs * (hw + 0.6), pz: p.z + p.nz * rs * (hw + 0.6), halfWidth: hw, lanes, node: a.node, edge: a.e.id, toEnd: a.toEnd, s: a.s };
+    const ap = { heading, x: p.x, z: p.z, px: p.x + p.nx * rs * (hw + 0.6), pz: p.z + p.nz * rs * (hw + 0.6), halfWidth: hw, lanes, node: a.node, edge: a.e.id, toEnd: a.toEnd, s: a.s, inferred: !!a.inferred };
     if (S.leftHand) { ap.px = p.x - p.nx * rs * (hw + 0.6); ap.pz = p.z - p.nz * rs * (hw + 0.6); }
     // the far side: the near-side curb (right in right-hand traffic) of the road that continues straight across
     // the junction, just past it (fx, fz); null when nothing continues straight
@@ -917,7 +1020,7 @@ function buildSignals() {
     const p = at(a.e, a.s), dirSign = a.toEnd ? 1 : -1;
     const heading = (Math.atan2(p.tx * dirSign, -p.tz * dirSign) * 180 / Math.PI + 360) % 360;
     const side = S.leftHand ? -1 : 1, off = a.e.c.hw + 0.7;
-    sg.push({ id: a.node, kind: a.kind, x: p.x, z: p.z, heading, px: p.x + p.nx * dirSign * side * off, pz: p.z + p.nz * dirSign * side * off });
+    sg.push({ id: a.node, kind: a.kind, x: p.x, z: p.z, heading, px: p.x + p.nx * dirSign * side * off, pz: p.z + p.nz * dirSign * side * off, inferred: !!a.inferred });
   }
   S.signs = sg;
 }
@@ -932,20 +1035,22 @@ function emitRibbon(e, sa, sb) {
   let prevL = -1, prevR = -1;
   const nrm = (i) => {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], ds = b.s - a.s;
-    const g = ds > 0.01 ? (b.h - a.h) / ds : 0, p = pts[i], tx = p.nz, tz = -p.nx, l = Math.sqrt(1 + g * g);
-    return [-g * tx / l, 1 / l, -g * tz / l];
+    const g = ds > 0.01 ? (b.h - a.h) / ds : 0, p = pts[i], tx = p.nz, tz = -p.nx, c = p.c || 0;
+    const vx = -(g * tx + c * p.nx), vz = -(g * tz + c * p.nz), l = Math.sqrt(1 + vx * vx + vz * vz);
+    return [vx / l, 1 / l, vz / l];
   };
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i], o = hw * p.mk, y = p.h + LIFT;
     const B = tileB('road', p.x, p.z);
     if (i > 0 && B !== pts[i - 1].B) { // tile change: restart in this tile with the previous pair copied
-      const q = pts[i - 1], oq = hw * q.mk, yq = q.h + LIFT, nq = nrm(i - 1);
-      prevL = B.v(q.x - q.nx * oq, yq, q.z - q.nz * oq, (q.x - q.nx * oq) * UVS, (q.z - q.nz * oq) * UVS, road(-hw), null, nq);
-      prevR = B.v(q.x + q.nx * oq, yq, q.z + q.nz * oq, (q.x + q.nx * oq) * UVS, (q.z + q.nz * oq) * UVS, road(hw), null, nq);
+      const q = pts[i - 1], oq = hw * q.mk, yq = q.h + LIFT, nq = nrm(i - 1), cq = (q.c || 0) * oq;
+      prevL = B.v(q.x - q.nx * oq, yq - cq, q.z - q.nz * oq, (q.x - q.nx * oq) * UVS, (q.z - q.nz * oq) * UVS, road(-hw), null, nq);
+      prevR = B.v(q.x + q.nx * oq, yq + cq, q.z + q.nz * oq, (q.x + q.nx * oq) * UVS, (q.z + q.nz * oq) * UVS, road(hw), null, nq);
     }
     p.B = B;
     const lx = p.x - p.nx * o, lz = p.z - p.nz * o, rx = p.x + p.nx * o, rz = p.z + p.nz * o, np = nrm(i);
-    const L = B.v(lx, y, lz, lx * UVS, lz * UVS, road(-hw), null, np), Rr = B.v(rx, y, rz, rx * UVS, rz * UVS, road(hw), null, np);
+    const cy = (p.c || 0) * o;
+    const L = B.v(lx, y - cy, lz, lx * UVS, lz * UVS, road(-hw), null, np), Rr = B.v(rx, y + cy, rz, rx * UVS, rz * UVS, road(hw), null, np);
     if (i > 0) B.quad(prevL, L, Rr, prevR);
     prevL = L; prevR = Rr;
   }
@@ -974,17 +1079,30 @@ function emitJunction(j) {
 // Markings: quads along an offset line
 function emitLine(e, o, sa, sb, width, col, dash) {
   if (sb - sa < 0.3) return;
+  const raw = [];
+  if (!dash) raw.push([sa, sb]);
+  else { const per = dash[0] + dash[1]; let s = sa + 0.5; while (s < sb) { raw.push([s, Math.min(sb, s + dash[0])]); s += per; } }
   const pieces = [];
-  if (!dash) pieces.push([sa, sb]);
-  else { const per = dash[0] + dash[1]; let s = sa + 0.5; while (s < sb) { pieces.push([s, Math.min(sb, s + dash[0])]); s += per; } }
+  for (const [a, b] of raw) {
+    const n = Math.max(1, Math.ceil((b - a) / 2));
+    let ra = null;
+    for (let k = 0; k < n; k++) {
+      const u0 = a + (b - a) * k / n, u1 = a + (b - a) * (k + 1) / n, p = at(e, (u0 + u1) / 2);
+      const off = onCarriageway(p.x + p.nx * o * p.mk, p.z + p.nz * o * p.mk, e.id);
+      if (!off && ra == null) ra = u0;
+      if (off && ra != null) { pieces.push([ra, u0]); ra = null; }
+    }
+    if (ra != null) pieces.push([ra, b]);
+  }
   for (const [a, b] of pieces) {
     if (b - a < 0.2) continue;
     const pts = sliceLite(e, a, b);
     let pl = -1, pr = -1, PB = null;
     for (let i = 0; i < pts.length; i++) {
-      const p = pts[i], k = p.mk, y = p.h + LIFT + 0.004;
+      const p = pts[i], k = p.mk, y = p.h + (p.c || 0) * o * k + LIFT + 0.004;
       const B = tileB('paint', p.x, p.z);
-      if (PB && B !== PB) { pl = -1; }
+      const vx = (q) => { const yq = q.h + (q.c || 0) * o * q.mk + LIFT + 0.004, cx = q.x + q.nx * o * q.mk, cz = q.z + q.nz * o * q.mk; const lx = cx - q.nx * width / 2, lz = cz - q.nz * width / 2, rx = cx + q.nx * width / 2, rz = cz + q.nz * width / 2; return [B.v(lx, yq, lz, lx * UVS, lz * UVS, null, col), B.v(rx, yq, rz, rx * UVS, rz * UVS, null, col)]; };
+      if (PB && B !== PB) { const q = vx(pts[i - 1]); pl = q[0]; pr = q[1]; } // tile seam: restart in this tile
       const cx = p.x + p.nx * o * k, cz = p.z + p.nz * o * k;
       const lx = cx - p.nx * width / 2, lz = cz - p.nz * width / 2, rx = cx + p.nx * width / 2, rz = cz + p.nz * width / 2;
       const L = B.v(lx, y, lz, lx * UVS, lz * UVS, null, col), R = B.v(rx, y, rz, rx * UVS, rz * UVS, null, col);
@@ -997,7 +1115,7 @@ function emitLine(e, o, sa, sb, width, col, dash) {
 function emitBar(e, s, o0, o1, d, col) {
   const p = at(e, s), q = at(e, Math.min(e.len, s + d));
   const B = tileB('paint', p.x, p.z), y0 = p.h + LIFT + 0.004, y1 = q.h + LIFT + 0.004;
-  const P = (pp, o, y) => { const x = pp.x + pp.nx * o, z = pp.z + pp.nz * o; return B.v(x, y, z, x * UVS, z * UVS, null, col); };
+  const P = (pp, o, y) => { const x = pp.x + pp.nx * o, z = pp.z + pp.nz * o; return B.v(x, y + (pp.c || 0) * o, z, x * UVS, z * UVS, null, col); };
   const a = P(p, o0, y0), b = P(q, o0, y1), c = P(q, o1, y1), dd = P(p, o1, y0);
   B.quad(a, b, c, dd);
 }
@@ -1087,7 +1205,7 @@ function emitArrows() {
       const ox = lerp(a.x, b.x, f), oz = lerp(a.z, b.z, f);
       let dx = b.x - a.x, dz = b.z - a.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
       const rx = -dz, rz = dx;
-      const es = lerp(L._s[k - 1], L._s[k], f), y = at(e, es).h + LIFT + 0.004;
+      const es = lerp(L._s[k - 1], L._s[k], f), q = at(e, es), y = q.h + (q.c || 0) * ((ox - q.x) * q.nx + (oz - q.z) * q.nz) + LIFT + 0.004;
       const B = tileB('paint', ox, oz);
       const poly = (pts) => {
         const ids = pts.map(p => { const x = ox + rx * p[0] + dx * p[1], z = oz + rz * p[0] + dz * p[1]; return B.v(x, y, z, x * UVS, z * UVS, null, WHITE); });
@@ -1132,13 +1250,30 @@ function emitCurbs(e) {
   const pts = sliceLite(e, sa, sb);
   for (const side of [-1, 1]) {
     if (side < 0 ? !c.curbL : !c.curbR) continue;
-    const line = pts.map(p => ({ x: p.x + p.nx * side * c.hw * p.mk, z: p.z + p.nz * side * c.hw * p.mk, h: p.h, nx: p.nx * side, nz: p.nz * side, mk: p.mk }));
-    emitCurbLine(line, side < 0 ? c.swWL : c.swWR);
+    const line = pts.map(p => ({ x: p.x + p.nx * side * c.hw * p.mk, z: p.z + p.nz * side * c.hw * p.mk, h: p.h + (p.c || 0) * side * c.hw * p.mk, nx: p.nx * side, nz: p.nz * side, mk: p.mk }));
+    emitCurbLine(line, side < 0 ? c.swWL : c.swWR, e.id);
   }
 }
 // line: [{x, z, h, nx, nz}] with n pointing away from the road
 // line: [{x, z, h, nx, nz, mk}] along a carriageway edge, n pointing away from the road
-function emitCurbLine(line, paveW) {
+function emitCurbLine(line0, paveW, edgeId = -1) {
+  if (line0.length < 2) return;
+  const fine = [line0[0]];
+  for (let i = 1; i < line0.length; i++) {
+    const a = line0[i - 1], b = line0[i], n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 2));
+    for (let k = 1; k <= n; k++) { const t = k / n; fine.push(k === n ? b : { x: lerp(a.x, b.x, t), z: lerp(a.z, b.z, t), h: lerp(a.h, b.h, t), nx: b.nx, nz: b.nz, mk: 1 }); }
+  }
+  let run = [fine[0]];
+  const out = [];
+  for (let i = 1; i < fine.length; i++) {
+    const a = fine[i - 1], b = fine[i], mx = (a.x + b.x) / 2 + (a.nx + b.nx) * 0.075, mz = (a.z + b.z) / 2 + (a.nz + b.nz) * 0.075;
+    if (onCarriageway(mx, mz, edgeId) || (edgeId >= 0 && onCarriageway(mx - (a.nx + b.nx) * 0.2, mz - (a.nz + b.nz) * 0.2, edgeId))) { if (run.length > 1) out.push(run); run = [b]; }
+    else run.push(b);
+  }
+  if (run.length > 1) out.push(run);
+  for (const r of out) emitCurbRun(r, paveW);
+}
+function emitCurbRun(line, paveW) {
   if (line.length < 2) return;
   let s = 0, prev = null;
   const verts = (B, p, s) => {
@@ -1194,12 +1329,13 @@ function inBuilding(x, z) {
   }
   return false;
 }
-function onCarriageway(x, z) {
+function onCarriageway(x, z, except = -1) {
   const l = S.grid.get(gkey(x, z, CELL)); if (!l) return false;
   const segs = S.segs, tris = S.trisA;
   for (const id of l) {
     if (id >= 1e9) continue;
     if (id >= 0) {
+      if (segs[id + 8] === except) continue;
       const ax = segs[id], az = segs[id + 1], dx = segs[id + 2] - ax, dz = segs[id + 3] - az, L2 = dx * dx + dz * dz;
       const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2)) : 0;
       if (Math.hypot(x - ax - dx * t, z - az - dz * t) < segs[id + 6] - 0.05) return true;
@@ -1323,6 +1459,8 @@ async function buildMeshes(bbox) {
   DIRTY = dirty;
   ST('m-junctions');
   for (const j of S.junctions) { DIRTY = dirty; emitJunction(j); await Y(); }
+  DIRTY = dirty; ST('m-index');
+  await buildSurfaceIndex();
   DIRTY = dirty; ST('m-marks');
   for (const e of S.edges) { DIRTY = dirty; emitMarkings(e); await Y(); }
   DIRTY = dirty;
@@ -1351,8 +1489,6 @@ async function buildMeshes(bbox) {
     }
     flush();
   }
-  await Y(); DIRTY = dirty; ST('m-index');
-  await buildSurfaceIndex();
   await Y(); DIRTY = dirty; ST('m-pave');
   if (S.sidewalks) {
     for (const pl of S.paveLines) { DIRTY = dirty; emitPavement(pl.line, pl.w); await Y(); }
@@ -1425,13 +1561,13 @@ async function buildSurfaceIndex() {
     const fl = (e.c.curbL ? 1 : 0) | (e.c.curbR ? 2 : 0);
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1], b = pts[i];
-      seg.push(a.x, a.z, b.x, b.z, a.h + LIFT, b.h + LIFT, e.c.hw, fl, e.id);
+      seg.push(a.x, a.z, b.x, b.z, a.h + LIFT, b.h + LIFT, e.c.hw, fl, e.id, a.c || 0, b.c || 0);
     }
     await Y();
   }
   const segs = new Float64Array(seg), tris = new Float64Array(S.tris), outl = new Float64Array(S.outl);
   const grid = new Map();
-  for (let i = 0; i < segs.length; i += 9) {
+  for (let i = 0; i < segs.length; i += 11) {
     const r = segs[i + 6] + CURB_W + 1;
     gridAdd(grid, Math.min(segs[i], segs[i + 2]) - r, Math.min(segs[i + 1], segs[i + 3]) - r, Math.max(segs[i], segs[i + 2]) + r, Math.max(segs[i + 1], segs[i + 3]) + r, i, CELL);
     if ((i % 4500) === 0) await Y();
@@ -1459,9 +1595,9 @@ const RES = { h: null, onRoad: false, edge: Infinity, curbH: 0 };
 // surfaceAt(x, z, yHint?) -> { h, onRoad, edge, curbH }
 //   onRoad: inside a carriageway or junction. h: the road surface height there (with the lift), or on a curb the
 //   curb top. edge: metres to the nearest carriageway edge (negative inside). curbH: 0.15 when the point is on a
-//   curb top (h already includes it), else 0. Off the road and off any curb: h is the nearest road's height (or
-//   null far from roads) and the caller should use world.groundAt instead. With several decks (bridges), yHint picks
-//   the one nearest below yHint + 1. The returned object is reused: copy what you keep.
+//   curb top or a pavement (h already includes it), else 0. Off the road, curbs and pavements h is null: use
+//   world.groundAt there. Where pieces overlap (bridges, forks on a hill),
+//   yHint (the wheel's last height) picks the nearest one, and a deck more than 1.5 m from yHint is ignored. The returned object is reused: copy what you keep.
 export function surfaceAt(x, z, yHint) {
   const r = RES; r.h = null; r.onRoad = false; r.edge = Infinity; r.curbH = 0;
   const Lv = LIVE;
@@ -1469,12 +1605,11 @@ export function surfaceAt(x, z, yHint) {
   if (!l) return r;
   const segs = Lv.segs, tris = Lv.trisA, outl = Lv.outlA, pav = Lv.pavA;
   let bestH = null, bestInside = Infinity, nearH = null, nearEdge = Infinity, nearCurb = false;
+  // where pieces overlap (bridges, forks on a hill) the one nearest the hint wins; with no hint the highest
   const pick = (h) => {
     if (bestH == null) return true;
     if (yHint == null) return h > bestH;
-    const ok = h <= yHint + 1, okB = bestH <= yHint + 1;
-    if (ok !== okB) return ok;
-    return ok ? h > bestH : h < bestH;
+    return Math.abs(h - yHint) < Math.abs(bestH - yHint);
   };
   let inJunction = false;
   let pavH = null;
@@ -1498,7 +1633,8 @@ export function surfaceAt(x, z, yHint) {
       const tc = t < 0 ? 0 : t > 1 ? 1 : t;
       const cx = ax + dx * tc, cz = az + dz * tc;
       const d = Math.hypot(x - cx, z - cz), hw = segs[id + 6];
-      const h = segs[id + 4] + (segs[id + 5] - segs[id + 4]) * tc;
+      const lat = L2 > 0 ? ((x - cx) * -dz + (z - cz) * dx) / Math.sqrt(L2) : 0, cs = segs[id + 9] + (segs[id + 10] - segs[id + 9]) * tc;
+      const h = segs[id + 4] + (segs[id + 5] - segs[id + 4]) * tc + cs * Math.max(-hw, Math.min(hw, lat));
       const ed = d - hw;
       if (ed <= 0 && t >= -0.02 && t <= 1.02) {
         if (pick(h)) bestH = h;
@@ -1537,6 +1673,8 @@ export function surfaceAt(x, z, yHint) {
     const d = Math.hypot(x - ax - dx * t, z - az - dz * t);
     if (d < olD) { olD = d; olCurb = outl[i + 4] === 2; }
   }
+  // a road deck far above or below the wheel (another leg of a hairpin, a bridge overhead) is not this road
+  if (bestH != null && yHint != null && Math.abs(bestH - yHint) > 1.5) { bestH = null; bestInside = Infinity; inJunction = false; }
   if (bestH != null) {
     r.onRoad = true; r.h = bestH;
     // distances to the sides of the pieces are upper bounds of the depth inside the road: take the smallest
@@ -1547,7 +1685,7 @@ export function surfaceAt(x, z, yHint) {
   // outside every road piece
   let ed = nearEdge, curb = nearCurb, h = nearH;
   if (olD < ed) { ed = olD; curb = olCurb; }
-  r.edge = ed; r.h = h;
+  r.edge = ed; r.h = null;
   if (curb && ed >= 0 && ed <= CURB_W && h != null) { r.curbH = CURB_H; r.h = h + CURB_H; }
   else if (pavH != null) { r.curbH = CURB_H; r.h = pavH; }
   return r;
@@ -1595,10 +1733,10 @@ async function buildGraph() {
       const n = idxs.length, turns = turnsOf(turnStr, n);
       idxs.forEach((k, order) => {
         const o = bound(k) + c.lw / 2;
-        let P = pts.map(p => ({ x: p.x + p.nx * o * p.mk, y: p.h + LIFT, z: p.z + p.nz * o * p.mk }));
+        let P = pts.map(p => ({ x: p.x + p.nx * o * p.mk, y: p.h + (p.c || 0) * o * p.mk + LIFT, z: p.z + p.nz * o * p.mk }));
         let SS = pts.map(p => p.s);
         if (dir < 0) { P = P.reverse(); SS = SS.reverse(); }
-        const L = { id: lanes.length, kind: 'road', pts: P, _s: SS, speed: c.speed, next: [], prev: [], edge: e.id, dir, order, count: n, turns: turns ? turns[order] : null,
+        const L = { id: lanes.length, kind: 'road', pts: P, _s: SS, _o: o, speed: c.speed, next: [], prev: [], edge: e.id, dir, order, count: n, turns: turns ? turns[order] : null,
           fromNode: dir > 0 ? e.ids[0] : e.ids[e.ids.length - 1], toNode: dir > 0 ? e.ids[e.ids.length - 1] : e.ids[0], signal: null, stop: null, stopS: null };
         lanes.push(L); (dir > 0 ? e.lanes.f : e.lanes.b).push(L);
       });
@@ -1640,6 +1778,7 @@ async function buildGraph() {
       const t = s / steps, u = 1 - t;
       P.push({ x: u * u * u * p0.x + 3 * u * u * t * c0x + 3 * u * t * t * c1x + t * t * t * p1.x, y: lerp(p0.y, p1.y, t), z: u * u * u * p0.z + 3 * u * u * t * c0z + 3 * u * t * t * c1z + t * t * t * p1.z });
     }
+    junctionY(P, S.nodes.get(nodeId));
     const J = { id: lanes.length, kind: 'junction', pts: P, speed: Math.min(A.speed, B.speed), next: [B.id], prev: [A.id], node: nodeId, turn, from: A.id, to: B.id, signal: A.signal, stop: null, stopS: null, order: 0, count: 1 };
     cumulate(J);
     if (turn !== 'straight' && ang) { const R = Math.max(3, J.len / (Math.abs(ang) * Math.PI / 180 || 1)); J.speed = Math.min(J.speed, Math.sqrt(2.5 * R)); }
@@ -1781,6 +1920,8 @@ async function doBuild(data, opts) {
   if (opts.scene) S.scene = opts.scene;
   if (opts.collide) S.collide = opts.collide;
   S.sidewalks = opts.sidewalks === true;
+  // the open world (drive.js passes sidewalks only there) stands on a smooth terrain model: median, no low filter
+  S.smooth = S.sidewalks || !!(opts.world && opts.world.mode === 'open');
   LIFT = opts.lift != null ? opts.lift : 0.03;
   S.data = data;
   // photogrammetry has parked cars and bumps baked in: a low percentile; smooth terrain (the open world): the median
@@ -1846,7 +1987,7 @@ async function doReheight(b) {
   const L = LIVE;
   S = Object.assign(newState(L), {
     edges: L.edges, nodes: L.nodes, junctions: L.junctions, crossings: L.crossings, approaches: L.approaches, graph: L.graph,
-    signals: L.signals, signalGroups: L.signalGroups, signs: L.signs, data: L.data, sidewalks: L.sidewalks, pct: L.pct,
+    signals: L.signals, signalGroups: L.signalGroups, signs: L.signs, data: L.data, sidewalks: L.sidewalks, pct: L.pct, smooth: L.smooth,
     bgrid: L.bgrid, bpolys: L.bpolys, laneGrid: L.laneGrid,
   });
   await computeHeights(b);
@@ -1855,17 +1996,24 @@ async function doReheight(b) {
   updateLaneHeights();
   if (roads.stats) roads.stats.pending = S.edges.filter(e => e.guessed).length;
 }
+// A path across a junction follows the junction's plane, meeting its two lanes exactly at the ends.
+function junctionY(P, n) {
+  if (!n || !n.plane || P.length < 2) return;
+  const a = P[0], b = P[P.length - 1], da = a.y - planeAt(n, a.x, a.z), db = b.y - planeAt(n, b.x, b.z);
+  for (let k = 1; k < P.length - 1; k++) P[k].y = planeAt(n, P[k].x, P[k].z) + lerp(da, db, k / (P.length - 1));
+}
 function updateLaneHeights() {
   const G = S.graph;
   for (const L of G.lanes) {
     if (L.kind !== 'road') continue;
     const e = S.edges[L.edge];
-    for (let k = 0; k < L.pts.length; k++) L.pts[k].y = at(e, L._s[k]).h + LIFT;
+    for (let k = 0; k < L.pts.length; k++) { const q = at(e, L._s[k]); L.pts[k].y = q.h + (q.c || 0) * L._o * q.mk + LIFT; }
   }
   for (const L of G.lanes) {
     if (L.kind !== 'junction') continue;
     const A = G.lanes[L.from], B = G.lanes[L.to], y0 = A.pts[A.pts.length - 1].y, y1 = B.pts[0].y, n = L.pts.length - 1;
     for (let k = 0; k <= n; k++) L.pts[k].y = lerp(y0, y1, k / n);
+    junctionY(L.pts, S.nodes.get(L.node));
   }
   for (const n of G.nodes.values()) { const m = S.nodes.get(n.id); if (m) n.y = m.h + LIFT; }
 }

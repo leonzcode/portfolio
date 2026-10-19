@@ -1,16 +1,17 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=2';
-import { Collide } from './collide.js?v=2';
-import { Vehicle } from './vehicle.js?v=2';
-import { CarCamera } from './camera.js?v=2';
-import { Hud } from './hud.js?v=2';
-import { CarSound } from './sound.js?v=2';
-import { CutMask } from './cutmask.js?v=2';
-import * as SIG from './signals.js?v=2';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=3';
+import { Collide } from './collide.js?v=3';
+import { Vehicle } from './vehicle.js?v=3';
+import { CarCamera } from './camera.js?v=3';
+import { Hud } from './hud.js?v=3';
+import { CarSound } from './sound.js?v=3';
+import { CutMask } from './cutmask.js?v=3';
+import * as SIG from './signals.js?v=3';
 
 const STEP = 1 / 120;
+const GLIFT = 0.15; // how far under Google's road ours is drawn
 const tryImport = async p => { try { return await import(p); } catch (e) { console.warn('module missing or broken', p, e.message); return null; } };
 
 // countries that measure speed in miles an hour (by rough boxes): the US, UK, Liberia, Myanmar
@@ -50,11 +51,11 @@ export class Drive {
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
     const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=2'), tryImport('./osm.js?v=2'), tryImport('./roads.js?v=2'), tryImport('./props.js?v=2'),
-      tryImport('./buildings.js?v=2'), tryImport('./trees.js?v=2'), tryImport('./traffic.js?v=2'), tryImport('./imagery.js?v=2')]);
+      tryImport('./cars.js?v=3'), tryImport('./osm.js?v=3'), tryImport('./roads.js?v=3'), tryImport('./props.js?v=3'),
+      tryImport('./buildings.js?v=3'), tryImport('./trees.js?v=3'), tryImport('./traffic.js?v=3'), tryImport('./imagery.js?v=3')]);
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
     // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
-    if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); return t; }).catch(() => null);
+    if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); const M = this.bldgObj && this.bldgObj.material; if (M) { M.envMap = t; M.needsUpdate = true; } return t; }).catch(() => null);
     // a test page can send OSM queries through a local caching proxy
     const ov = new URLSearchParams(location.search).get('overpass');
     if (ov && osm && osm.setFetcher) osm.setFetcher(q => fetch(ov + '?data=' + encodeURIComponent(q)).then(r => { if (!r.ok) throw new Error('overpass ' + r.status); return r.json(); }));
@@ -207,7 +208,7 @@ export class Drive {
     if (!/[?&]noswoop/.test(location.search)) this.cam.swoop();
     this.hud.loading(null);
     this.hud.show(true);
-    if (this.mode === 'open' && !this.notedKey) { this.notedKey = true; this.hud.note(this.G.keyFailed ? "Google did not accept the API key, so this is the open map. Check the key in the map's menu." : "This is the open map, built from satellite photos and OpenStreetMap. For Google's photorealistic 3D city, add a Google Maps API key in the map's menu."); }
+    if (this.mode === 'open' && !this.notedKey) { this.notedKey = true; this.hud.note(this.G.keyFailed ? "Google did not accept the API key, so this is the open map. Check the key in the map's menu." : (innerWidth < 600 ? "Open map from satellite photos and OpenStreetMap. For Google's 3D city, add a Google key in the map's menu." : "This is the open map, built from satellite photos and OpenStreetMap. For Google's photorealistic 3D city, add a Google Maps API key in the map's menu.")); }
     return { x, z, heading: hd };
   }
 
@@ -266,9 +267,10 @@ export class Drive {
   ground(x, z, yHint) {
     const R = this.roadsObj;
     const r = R && R.surfaceAt ? R.surfaceAt(x, z, yHint) : null;
-    if (r && r.onRoad) return r.h;
+    const lift = this.mode === 'google' ? GLIFT : 0;
+    if (r && r.onRoad) return r.h + lift;
     // on a kerb or pavement surfaceAt's height already includes the kerb
-    if (r && r.curbH > 0 && Number.isFinite(r.h)) return r.h;
+    if (r && r.curbH > 0 && Number.isFinite(r.h)) return r.h + lift;
     const w = this.world.groundAt(x, z, yHint);
     if (r && Number.isFinite(r.h) && r.edge !== undefined && r.edge !== null && r.edge < 14) {
       if (w === null) return r.h;
@@ -318,7 +320,7 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=2').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=3').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;
@@ -340,7 +342,11 @@ export class Drive {
     const oldExtra = this.world.extra.slice();
     const ground = (x, z, y) => this.world.groundAt(x, z, y);
     const ctx = { groundAt: ground, scene: this.scene, world: this.world, collide, imagery: this.imageryObj, mph: this.mph, sidewalks: this.mode === 'open',
-      trees: this.mode === 'open' ? (this.mods.trees ? 'none' : 'draw') : 'collide' };
+      trees: this.mode === 'open' ? (this.mods.trees ? 'none' : 'draw') : 'collide', renderer: this.G.renderer, focus: [x, z] };
+    // With Google's mesh its own road (real paint, patches, manholes) is what shows: ours is drawn 15 cm under it and
+    // only fills the holes left where the cars baked into the photos are cut away (from 0.2 m up). Heights read from
+    // the roads module get the 15 cm back (GLIFT).
+    if (this.mode === 'google') ctx.lift = -GLIFT;
     try {
       if (this.mods.imagery && !this.imageryObj && this.mode === 'open') { this.imageryObj = this.mods.imagery.createImagery ? this.mods.imagery.createImagery() : this.mods.imagery; ctx.imagery = this.imageryObj; }
     } catch (e) { console.warn('imagery', e); }
@@ -357,13 +363,18 @@ export class Drive {
     try {
       if (!this.cut) this.cut = new CutMask();
       const R = this.roadsObj, open = this.mode === 'open';
-      this.cut.build(x, z, data.roads || [], R && R.surfaceAt ? (a, b) => R.surfaceAt(a, b) : null, open ? ground : null, open ? { widthScale: 0.8, parking: false, top: 1.6, below: 0.6 } : { top: 4.2, below: 0.6 });
+      const edges = R && R._debug ? (R._debug().edges || null) : null;
+      const surf = R && R.surfaceAt ? (a, b) => { const r = R.surfaceAt(a, b); return open || !r.onRoad ? r : { onRoad: true, h: r.h + GLIFT }; } : null;
+      this.cut.build(x, z, data.roads || [], surf, open ? ground : null, open ? { edges, widthScale: 0.86, cap: 'butt', parking: false, top: 1.6, below: 0.6 } : { edges, widthScale: 1.0, top: 4.2, below: -0.2 });
     } catch (e) { console.warn('cut mask', e); }
     if (this.mods.props) await swap('propsObj', () => this.mods.props.build(data, ctx));
     mark('props');
     if (this.mode === 'open') {
       if (this.mods.buildings) await swap('bldgObj', () => this.mods.buildings.build(data.buildings || [], ctx));
       mark('buildings');
+      // the facades' glass reflects a real street (the cars' HDR photo) rather than the plain sky
+      try { const M = this.bldgObj && this.bldgObj.material; if (M && this.carEnv && M.envMap !== this.carEnv) { M.envMap = this.carEnv; M.needsUpdate = true; } } catch (e) {}
+      ctx.buildings = data.buildings || [];
       if (this.mods.trees) await swap('treesObj', () => this.mods.trees.build(data, ctx));
     } else {
       // building footprints still stop the car where Google's mesh has them
@@ -383,7 +394,7 @@ export class Drive {
     if (this.traffic && this.traffic.dispose) this.traffic.dispose();
     this.traffic = null;
     if (!this.mods.traffic || !R || !R.graph) return;
-    try { this.traffic = new this.mods.traffic.Traffic({ scene: this.scene, roads: R, props: this.propsObj, cars: this.mods.cars, ground: (x, z, y) => this.ground(x, z, y), collide: this.collide, world: this.world, carEnv: this.carEnv }); } catch (e) { console.warn('traffic', e); }
+    try { this.traffic = new this.mods.traffic.Traffic({ scene: this.scene, roads: R, props: this.propsObj, cars: this.mods.cars, ground: (x, z, y) => this.ground(x, z, y), collide: this.collide, world: this.world, carEnv: this.carEnv, yLift: this.mode === 'google' ? GLIFT : 0 }); } catch (e) { console.warn('traffic', e); }
   }
 
   clearArea() {
@@ -440,7 +451,7 @@ export class Drive {
       if (this.cut && this.osmData && performance.now() - (this.cutAt || 0) > 8000) {
         this.cutAt = performance.now();
         const R = this.roadsObj;
-        this.cut.build(this.cut.center.x, this.cut.center.z, this.osmData.roads || [], (a, b) => R.surfaceAt(a, b), null);
+        this.cut.build(this.cut.center.x, this.cut.center.z, this.osmData.roads || [], (a, b) => { const r = R.surfaceAt(a, b); return r.onRoad ? { onRoad: true, h: r.h + GLIFT } : r; }, null, { edges: R._debug ? R._debug().edges : null, top: 4.2, below: -0.2 });
       }
     }
     // streaming: load the streets ahead once the car is 300 m from where they were loaded

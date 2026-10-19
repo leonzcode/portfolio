@@ -9,7 +9,7 @@
 // longitude and nearly linear in latitude over a few hundred metres, so a box is one scaled drawImage of the
 // stitched tiles (the error over 300 m is a few millimetres). A tile that fails falls back to its parent tile.
 import * as THREE from 'three';
-import { unproject, lonLatToTile } from './geo.js?v=2';
+import { unproject, lonLatToTile } from './geo.js?v=3';
 
 export const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 export const ATTRIBUTION = 'Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community';
@@ -201,7 +201,19 @@ export async function pixels(x0, z0, x1, z1, opts = {}) {
   return { data, w, h, x0, z0, x1, z1, zoom: opts.zoom ?? 18, sample: smp };
 }
 
+// The numbers a worker needs to cut a box out of the tiles at a zoom: the tile range and the linear map from
+// local metres to global pixel coordinates.
+export function tileMap(x0, z0, x1, z1, zoom = 18) {
+  if (x1 < x0) [x0, x1] = [x1, x0];
+  if (z1 < z0) [z0, z1] = [z1, z0];
+  const nw = unproject(x0, z0), se = unproject(x1, z1);
+  const a = lonLatToTile(nw.lon, nw.lat, zoom), b = lonLatToTile(se.lon, se.lat, zoom);
+  const tx0 = Math.floor(a[0]), ty0 = Math.floor(a[1]);
+  return { zoom, tx0, ty0, nx: Math.floor(b[0]) - tx0 + 1, ny: Math.floor(b[1]) - ty0 + 1, gx0: a[0] * 256, gy0: a[1] * 256,
+    kx: (b[0] - a[0]) * 256 / (x1 - x0), kz: (b[1] - a[1]) * 256 / (z1 - z0), x0, z0, x1, z1 };
+}
+
 export function clear() { tiles.clear(); tileRGBA.clear(); }
 
-export const imagery = { rect, pixels, sampler, clear, ESRI, ATTRIBUTION };
+export const imagery = { rect, pixels, sampler, tileMap, clear, ESRI, ATTRIBUTION };
 export default imagery;

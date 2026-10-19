@@ -7,8 +7,8 @@ import { GLTFExtensionsPlugin, TileCompressionPlugin, TilesFadePlugin, Terrarium
 import { GoogleCloudAuthPlugin } from '3d-tiles-renderer/core/plugins';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=2';
-import { patchBaked } from './baked.js?v=2';
+import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=3';
+import { patchBaked } from './baked.js?v=3';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -93,7 +93,7 @@ export class World extends THREE.EventDispatcher {
       tiles.registerPlugin(new TileCompressionPlugin());
       tiles.registerPlugin(new TilesFadePlugin({ fadeDuration: 400 }));
       tiles.errorTarget = +(new URLSearchParams(location.search).get('err') || 8);
-      tiles.lruCache.minSize = 900; tiles.lruCache.maxSize = 1800;
+      tiles.lruCache.minSize = 600; tiles.lruCache.maxSize = 1200;
     } else {
       // zoom 14 (about 7.5 m a pixel): city elevation data holds some of the buildings and trees; a coarser level
       // smooths them out of the streets while keeping hills
@@ -177,10 +177,15 @@ export class World extends THREE.EventDispatcher {
       _ray.firstHitOnly = false;
       return h.length ? h[0].point.y : null;
     }
-    _ray.set(_o.set(x, 3000, z), _d); _ray.far = 6000; _ray.firstHitOnly = false;
-    const hits = _ray.intersectObject(this.tiles.group, true);
+    // from 400 m over the ground found so far near here (a shorter ray crosses far fewer tiles), else from 3 km
+    const top = this.gRef === undefined ? 3000 : this.gRef + 400;
+    _ray.set(_o.set(x, top, z), _d); _ray.far = top + 3000; _ray.firstHitOnly = false;
+    let hits = _ray.intersectObject(this.tiles.group, true);
+    if (!hits.length && top < 3000) { _ray.set(_o.set(x, 3000, z), _d); _ray.far = 6000; hits = _ray.intersectObject(this.tiles.group, true); }
     if (!hits.length) return null;
-    return hits[hits.length - 1].point.y;
+    const y = hits[hits.length - 1].point.y;
+    this.gRef = this.gRef === undefined ? y : this.gRef * 0.98 + y * 0.02;
+    return y;
   }
 
   // First hit along a ray against the world's own surfaces (tiles, terrain is skipped in the open world, buildings).
@@ -207,6 +212,7 @@ export class World extends THREE.EventDispatcher {
   }
 
   dispose() {
+    this.gRef = undefined;
     if (this.tiles) { this.root.remove(this.tiles.group); this.tiles.dispose(); this.tiles = null; }
     this.heights = null;
   }
