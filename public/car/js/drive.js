@@ -1,15 +1,15 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=5';
-import { Collide } from './collide.js?v=5';
-import { Vehicle } from './vehicle.js?v=5';
-import { CarCamera } from './camera.js?v=5';
-import { Hud } from './hud.js?v=5';
-import { CarSound } from './sound.js?v=5';
-import { CutMask } from './cutmask.js?v=5';
-import * as SIG from './signals.js?v=5';
-import { Parked } from './parked.js?v=5';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=6';
+import { Collide } from './collide.js?v=6';
+import { Vehicle } from './vehicle.js?v=6';
+import { CarCamera } from './camera.js?v=6';
+import { Hud } from './hud.js?v=6';
+import { CarSound } from './sound.js?v=6';
+import { CutMask } from './cutmask.js?v=6';
+import * as SIG from './signals.js?v=6';
+import { Parked } from './parked.js?v=6';
 
 const STEP = 1 / 120;
 const GLIFT = 0.15; // how far under Google's road ours is drawn
@@ -52,8 +52,8 @@ export class Drive {
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
     const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=5'), tryImport('./osm.js?v=5'), tryImport('./roads.js?v=5'), tryImport('./props.js?v=5'),
-      tryImport('./buildings.js?v=5'), tryImport('./trees.js?v=5'), tryImport('./traffic.js?v=5'), tryImport('./imagery.js?v=5')]);
+      tryImport('./cars.js?v=6'), tryImport('./osm.js?v=6'), tryImport('./roads.js?v=6'), tryImport('./props.js?v=6'),
+      tryImport('./buildings.js?v=6'), tryImport('./trees.js?v=6'), tryImport('./traffic.js?v=6'), tryImport('./imagery.js?v=6')]);
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
     // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
     if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); const M = this.bldgObj && this.bldgObj.material; if (M) { M.envMap = t; M.needsUpdate = true; } return t; }).catch(() => null);
@@ -252,7 +252,24 @@ export class Drive {
   roadSpot(x, z, want) {
     const R = this.roadsObj;
     if (!R) return null;
-    const ok = L => L.kind === 'road' && L.len > 10;
+    // a spot is no good if a car there would already be inside something (a lane under a building, a parked car)
+    const bad = new Set();
+    const blocked = r => {
+      const h = r.heading * Math.PI / 180, fx = Math.sin(h), fz = -Math.cos(h), cs = [];
+      for (const o of [-1.6, 0, 1.6]) cs.push({ x: r.x + fx * o, z: r.z + fz * o, r: 0.95, y0: (r.y || 0) + 0.2, y1: (r.y || 0) + 1.5 });
+      return this.collide.contacts(cs).length > 0;
+    };
+    for (let tries = 0; tries < 10; tries++) {
+      const r = this.roadSpotOnce(x, z, want, bad);
+      if (!r || !r.lane || !blocked(r)) return r;
+      bad.add(r.lane.edge);
+    }
+    return this.roadSpotOnce(x, z, want, new Set());
+  }
+
+  roadSpotOnce(x, z, want, bad) {
+    const R = this.roadsObj;
+    const ok = L => L.kind === 'road' && L.len > 10 && !bad.has(L.edge);
     // a lane within 40 m that runs the way asked (or the other way, then its partner is taken below) comes first,
     // so a drop facing along a street does not start on the cross street that happens to be nearer
     const angOff = (a, b) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
@@ -263,9 +280,9 @@ export class Drive {
     if (off > 90) {
       const o = R.nearestLane(x, z, 400, L => ok(L) && L.edge === r.lane.edge && L.dir !== r.lane.dir);
       if (o) r = o;
-      else return { x: r.x, z: r.z, heading: r.heading };
+      else return { x: r.x, z: r.z, y: r.y, heading: r.heading, lane: r.lane };
     }
-    return { x: r.x, z: r.z, heading: r.heading };
+    return { x: r.x, z: r.z, y: r.y, heading: r.heading, lane: r.lane };
   }
 
   // height under a wheel: the road's own surface on a road, its kerb and pavement beside it, then the world,
@@ -326,7 +343,7 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=5').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=6').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;

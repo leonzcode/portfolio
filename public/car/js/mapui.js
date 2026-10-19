@@ -17,7 +17,7 @@
 // while typing), Nominatim (Enter and reverse lookups, at most one request a second, as its policy asks; its
 // policy forbids type-ahead, which is why suggestions come from Photon), Overpass (roads you can drive).
 
-const CSS_HREF = new URL('../css/mapui.css?v=5', import.meta.url).href;
+const CSS_HREF = new URL('../css/mapui.css?v=6', import.meta.url).href;
 
 const TILES = {
   // CARTO's keyless raster basemaps now answer every request with an "API key required" picture (checked
@@ -345,6 +345,7 @@ export function createMapUI(root, { onDrop = () => {}, onBack = () => {} } = {})
         <label class="mu-gkey-l" for="mu-gkey-in">Map Tiles API key</label>
         <input id="mu-gkey-in" class="mu-gkey-in" type="password" spellcheck="false" autocomplete="off" placeholder="Paste your key">
         <p class="mu-gkey-p">With a key, your next drop uses Google's photorealistic 3D city. The key stays in this browser. Leave it empty to use the open map.</p>
+        <p class="mu-gkey-p">To get one: in Google Cloud, turn on the Map Tiles API and create an API key (<a href="https://developers.google.com/maps/documentation/tile/get-api-key" target="_blank" rel="noopener">Google's steps</a>). Google may charge past its free monthly use.</p>
         <div class="mu-gkey-row"><button class="mu-gkey-clear" type="button">Remove key</button><button class="mu-gkey-save" type="submit">Save</button></div>
       </form>
       <div class="mu-dr-sep"></div>
