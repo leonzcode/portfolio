@@ -1,0 +1,345 @@
+/* The place picker (a look-alike of the Google Maps web app) and the Street View style drive overlay.
+   Every rule hangs off .mu so nothing leaks into the game's own styles. */
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&family=Roboto:wght@400;500&display=swap');
+
+.mu {
+  --mu-primary: #0b57d0;
+  --mu-blue: #1a73e8;
+  --mu-text: #1f1f1f;
+  --mu-text-2: #444746;
+  --mu-text-3: #70757a;
+  --mu-line: #c4c7c5;
+  --mu-line-2: #e8eaed;
+  --mu-hover: #f2f2f2;
+  --mu-shadow: 0 1px 2px rgba(60, 64, 67, .3), 0 2px 6px 2px rgba(60, 64, 67, .15);
+  --mu-shadow-sm: 0 1px 4px -1px rgba(0, 0, 0, .3);
+  --mu-font: Roboto, 'Segoe UI', Arial, sans-serif;
+  --mu-head: 'Google Sans', Roboto, 'Segoe UI', Arial, sans-serif;
+  font-family: var(--mu-font);
+  color: var(--mu-text);
+  -webkit-font-smoothing: antialiased;
+}
+.mu [hidden] { display: none !important; }
+.mu button {
+  font: inherit; color: inherit; background: none; border: 0; margin: 0; padding: 0; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; text-transform: none; letter-spacing: normal; width: auto; height: auto;
+  min-width: 0; min-height: 0; box-shadow: none; border-radius: 0; line-height: normal;
+}
+.mu button:disabled { cursor: default; }
+.mu svg { display: block; }
+.mu :focus { outline: none; }
+.mu :focus-visible { outline: 2px solid var(--mu-primary); outline-offset: 2px; }
+
+/* ------------------------------------------------------------------ the picker */
+.mu-picker { position: fixed; inset: 0; z-index: 30; overflow: hidden; background: #e5e3df; }
+.mu-map { position: absolute; inset: 0; z-index: 0; }
+.mu-map.leaflet-container { background: #e5e3df; font-family: var(--mu-font); }
+.mu-is-sat .mu-map.leaflet-container { background: #2b2d2f; }
+.mu-dragging, .mu-dragging * { cursor: grabbing !important; }
+.mu-map.leaflet-grab { cursor: default; }
+.mu-map.leaflet-dragging .leaflet-grab { cursor: grabbing; }
+
+/* Search box */
+.mu-top { position: absolute; top: 12px; left: 16px; right: 16px; display: flex; align-items: flex-start; gap: 12px; pointer-events: none; z-index: 5; }
+.mu-search {
+  pointer-events: auto; position: relative; flex: 0 0 392px; width: 392px; background: #fff; border-radius: 24px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, .2), 0 -1px 0 rgba(0, 0, 0, .02); transition: border-radius .12s, box-shadow .12s;
+}
+.mu-search.mu-open { border-radius: 24px 24px 16px 16px; box-shadow: 0 2px 4px rgba(0, 0, 0, .2), 0 6px 18px rgba(0, 0, 0, .12); }
+.mu-search-row { display: flex; align-items: center; height: 48px; padding: 0 6px 0 4px; }
+.mu .mu-ib { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; color: var(--mu-text-2); }
+.mu-ib svg { width: 24px; height: 24px; fill: currentColor; }
+.mu .mu-ib:hover { background: rgba(68, 71, 70, .08); }
+.mu-input {
+  flex: 1; min-width: 0; height: 40px; border: 0; outline: 0; background: none; padding: 0 4px 0 8px; margin: 0;
+  font: 400 15px/20px var(--mu-font); color: var(--mu-text); box-shadow: none; border-radius: 0;
+}
+.mu-input::placeholder { color: #5e5e5e; opacity: 1; }
+.mu-input:focus-visible { outline: none; }
+.mu-go svg { fill: var(--mu-text-2); }
+.mu .mu-clear { width: 36px; height: 36px; }
+.mu-sugg { display: none; border-top: 1px solid var(--mu-line-2); padding: 8px 0 10px; max-height: min(60vh, 420px); overflow-y: auto; }
+.mu-open .mu-sugg { display: block; }
+.mu-sugg-row { display: flex; align-items: center; gap: 4px; min-height: 48px; padding: 4px 16px 4px 12px; cursor: pointer; }
+.mu-sugg-row:hover, .mu-sugg-row.mu-sel { background: #f1f3f4; }
+.mu-sugg-ic { width: 36px; flex: none; display: grid; place-items: center; }
+.mu-sugg-ic svg { width: 20px; height: 20px; fill: #80868b; }
+.mu-sugg-txt { min-width: 0; display: flex; flex-direction: column; line-height: 20px; }
+.mu-sugg-main { font-size: 15px; color: var(--mu-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mu-sugg-main b { font-weight: 500; }
+.mu-sugg-sub { font-size: 13px; color: var(--mu-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mu-sugg-empty { padding: 10px 20px; font-size: 14px; color: var(--mu-text-3); }
+
+/* Chips beside the box */
+.mu-chips { pointer-events: auto; display: flex; gap: 8px; padding: 8px 2px 6px; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+.mu-chips::-webkit-scrollbar { display: none; }
+.mu .mu-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px 0 10px; border-radius: 16px;
+  background: #fff; color: #3c4043; font: 500 14px/32px var(--mu-head); white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(60, 64, 67, .3), 0 1px 3px 1px rgba(60, 64, 67, .15);
+}
+.mu .mu-chip:hover { background: #f8f9fa; box-shadow: 0 1px 3px rgba(60, 64, 67, .3), 0 4px 8px 3px rgba(60, 64, 67, .15); }
+.mu-chip-ic svg { width: 18px; height: 18px; fill: #5f6368; }
+
+/* Top progress line while searching or loading roads */
+.mu-progress { position: absolute; left: 0; right: 0; top: 0; height: 3px; overflow: hidden; z-index: 9; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.mu-busy .mu-progress, .mu-loading-roads .mu-progress { opacity: 1; }
+.mu-progress::before { content: ''; position: absolute; top: 0; bottom: 0; width: 35%; background: var(--mu-blue); animation: mu-bar 1.1s cubic-bezier(.4, 0, .2, 1) infinite; }
+@keyframes mu-bar { from { left: -35%; } to { left: 100%; } }
+
+/* Place card */
+.mu-place {
+  position: absolute; z-index: 4; top: 72px; left: 16px; width: 392px; box-sizing: border-box; padding: 20px 24px 16px;
+  background: #fff; border-radius: 16px; box-shadow: var(--mu-shadow); animation: mu-rise .18s ease-out;
+}
+.mu .mu-place-x { position: absolute; z-index: 1; top: 10px; right: 10px; width: 36px; height: 36px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
+.mu .mu-place-x:hover { background: #f1f3f4; }
+.mu-place-hero { position: relative; height: 150px; margin: -20px -24px 16px; border-radius: 16px 16px 0 0; overflow: hidden; background: #3c4043; }
+.mu-place-title { font: 400 22px/28px var(--mu-head); color: var(--mu-text); padding-right: 32px; }
+.mu-place-kind { margin-top: 4px; font-size: 14px; color: var(--mu-text-3); }
+.mu-place-sub { margin-top: 2px; font-size: 14px; line-height: 20px; color: var(--mu-text-2); min-height: 20px; }
+.mu-place-coord { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--mu-line-2); font-size: 13px; color: var(--mu-text-3); }
+.mu-actions { display: flex; gap: 20px; margin-top: 16px; }
+.mu .mu-act { display: flex; flex-direction: column; align-items: center; gap: 6px; font: 500 12px/16px var(--mu-head); color: var(--mu-primary); }
+.mu-act > span { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--mu-line); box-sizing: border-box; background: #fff; transition: background .15s; }
+.mu-act > span svg { width: 20px; height: 20px; fill: var(--mu-primary); }
+.mu-act:hover > span { background: #eef3fc; }
+.mu-act-primary > span { background: var(--mu-primary); border-color: var(--mu-primary); }
+.mu-act-primary > span svg { fill: #fff; }
+.mu-act-primary:hover > span { background: #0a4fbd; }
+
+/* Hint pill (zoom in to see roads) */
+.mu-hint {
+  position: absolute; z-index: 6; top: 72px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px); box-sizing: border-box;
+  padding: 9px 18px; border-radius: 20px; background: rgba(32, 33, 36, .92); color: #fff; font: 500 14px/18px var(--mu-head);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .25); pointer-events: none; white-space: nowrap; animation: mu-fade .15s;
+}
+
+/* Layers toggle */
+.mu-layers {
+  position: absolute; z-index: 3; left: 16px; bottom: 28px; width: 72px; height: 72px; border-radius: 8px; overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3), 0 0 0 2px #fff; cursor: pointer; background: #ccc;
+}
+.mu-layers:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .4), 0 0 0 2px #fff; }
+.mu-layers-map { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.mu-layers-map.leaflet-container { background: #ccc; }
+.mu-layers-label {
+  position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; gap: 3px; height: 26px;
+  padding-top: 8px; box-sizing: border-box; background: linear-gradient(transparent, rgba(0, 0, 0, .6)); color: #fff;
+  font: 500 12px/14px var(--mu-head); pointer-events: none; z-index: 1;
+}
+.mu-layers-label svg { width: 15px; height: 15px; fill: #fff; }
+.mu-layers:focus-visible { outline: 2px solid var(--mu-primary); outline-offset: 3px; }
+
+/* Controls bottom right */
+.mu-rail { position: absolute; z-index: 3; right: 16px; bottom: 28px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.mu .mu-btn { width: 40px; height: 40px; border-radius: 8px; background: #fff; box-shadow: var(--mu-shadow-sm); display: grid; place-items: center; color: #666; position: relative; }
+.mu .mu-btn:hover { color: #333; background: #f8f8f8; }
+.mu-btn svg { width: 24px; height: 24px; fill: currentColor; }
+.mu .mu-compass { border-radius: 50%; }
+.mu-compass-svg { width: 26px !important; height: 26px !important; }
+.mu-spin .mu-compass-svg { animation: mu-spin .7s cubic-bezier(.3, 1.4, .5, 1); }
+@keyframes mu-spin { 0% { transform: rotate(0); } 40% { transform: rotate(-25deg); } 100% { transform: rotate(0); } }
+.mu-locate.mu-has { color: var(--mu-blue); }
+.mu-locate.mu-wait svg { animation: mu-pulse 1s ease-in-out infinite; }
+@keyframes mu-pulse { 50% { opacity: .35; } }
+.mu .mu-peg { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.mu-peg .mu-fig { width: 22px; height: 34px; transition: transform .15s; }
+.mu-peg:hover .mu-fig { transform: translateY(-2px) scale(1.06); }
+.mu-peg-out .mu-fig { opacity: .22; filter: grayscale(1); transform: none !important; }
+.mu-zoom { width: 40px; border-radius: 8px; background: #fff; box-shadow: var(--mu-shadow-sm); overflow: hidden; }
+.mu .mu-zbtn { width: 40px; height: 40px; display: grid; place-items: center; color: #666; }
+.mu .mu-zbtn:hover { color: #333; background: #f8f8f8; }
+.mu .mu-zbtn:disabled { color: #ccc; background: #fff; }
+.mu-zbtn svg { width: 24px; height: 24px; fill: currentColor; }
+.mu-zsep { height: 1px; width: 28px; margin: 0 auto; background: #e6e6e6; }
+
+/* Tooltips on the controls */
+@media (hover: hover) {
+  .mu-rail [data-tip]:hover::after, .mu-menu-btn:hover::after {
+    content: attr(data-tip); position: absolute; right: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+    padding: 5px 8px; border-radius: 4px; background: #303030; color: #f2f2f2; font: 400 12px/16px var(--mu-font);
+    white-space: nowrap; pointer-events: none; animation: mu-fade .12s .25s both;
+  }
+  .mu-menu-btn { position: relative; }
+  .mu-menu-btn:hover::after { right: auto; left: 0; top: calc(100% + 8px); transform: none; }
+  .mu-dragging [data-tip]:hover::after { display: none; }
+}
+
+/* Footer: credits and scale */
+.mu-foot {
+  position: absolute; z-index: 3; right: 0; bottom: 0; height: 16px; max-width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 12px;
+  padding: 0 8px; background: rgba(255, 255, 255, .78); color: #444; font: 400 10px/16px var(--mu-font); white-space: nowrap; border-top-left-radius: 4px;
+}
+.mu-credit { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.mu-credit a { color: #444; text-decoration: none; }
+.mu-credit a:hover { text-decoration: underline; }
+.mu-scale { display: flex; align-items: center; gap: 6px; flex: none; }
+.mu-scale-bar { height: 5px; border: 1.5px solid #3c4043; border-top: 0; margin-top: -3px; }
+
+/* Context menu */
+.mu-ctx { position: absolute; z-index: 8; min-width: 200px; padding: 6px 0; background: #fff; border-radius: 8px; box-shadow: 0 2px 6px 2px rgba(60, 64, 67, .15), 0 1px 2px rgba(60, 64, 67, .3); animation: mu-fade .1s; }
+.mu .mu-ctx-i { display: block; width: 100%; text-align: left; padding: 0 16px; height: 36px; font: 400 14px/36px var(--mu-font); color: var(--mu-text); white-space: nowrap; }
+.mu .mu-ctx-i:hover { background: #f1f3f4; }
+.mu .mu-ctx-coord { font-weight: 500; color: var(--mu-text); }
+.mu .mu-ctx-strong { color: var(--mu-primary); font-weight: 500; }
+
+/* Card at the bottom after clicking a road */
+.mu-card {
+  position: absolute; z-index: 4; left: 50%; bottom: 28px; transform: translateX(-50%); width: 420px; max-width: calc(100% - 32px); box-sizing: border-box;
+  display: flex; align-items: center; gap: 14px; padding: 8px 12px 8px 8px; background: #fff; border-radius: 12px; box-shadow: var(--mu-shadow);
+  animation: mu-rise-c .18s ease-out;
+}
+.mu-card-thumb { position: relative; width: 96px; height: 96px; flex: none; border-radius: 8px; overflow: hidden; background: #3c4043; }
+.mu-sat { position: absolute; left: 50%; top: 50%; overflow: hidden; }
+.mu-sat img { position: absolute; width: 256px; height: 256px; max-width: none; display: block; }
+.mu-card-thumb-dot { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -7px 0 0 -7px; border-radius: 50%; background: #ea4335; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .5); }
+.mu-card-body { flex: 1; min-width: 0; padding: 4px 0; }
+.mu-card-t { font: 500 15px/20px var(--mu-head); color: var(--mu-text); padding-right: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mu-card-s { font-size: 13px; line-height: 18px; color: var(--mu-text-3); min-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mu .mu-card-c { margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--mu-blue); }
+.mu .mu-card-c:hover { text-decoration: underline; }
+.mu-card-go { flex: none; }
+.mu .mu-card-x { position: absolute; top: 2px; right: 2px; width: 32px; height: 32px; }
+.mu-card-x svg { width: 18px; height: 18px; }
+
+/* Drawer */
+.mu-drawer-scrim { position: absolute; inset: 0; z-index: 10; background: rgba(0, 0, 0, .4); opacity: 0; transition: opacity .2s; }
+.mu-drawer-scrim.on { opacity: 1; }
+.mu-drawer {
+  position: absolute; z-index: 11; top: 0; left: 0; bottom: 0; width: 320px; max-width: 86vw; background: #fff; box-shadow: 0 0 16px rgba(0, 0, 0, .28);
+  transform: translateX(-104%); transition: transform .2s cubic-bezier(.2, 0, 0, 1); overflow-y: auto; padding-bottom: 16px;
+}
+.mu-drawer.on { transform: none; }
+.mu-drawer-head { display: flex; align-items: center; justify-content: space-between; height: 64px; padding: 0 8px 0 24px; }
+.mu-brand { font: 400 22px/28px var(--mu-head); color: var(--mu-text-2); }
+.mu .mu-dr-item { display: flex; align-items: center; gap: 20px; width: 100%; height: 48px; padding: 0 24px; text-align: left; font: 400 14px/20px var(--mu-font); color: var(--mu-text); }
+.mu .mu-dr-item:hover { background: #f1f3f4; }
+.mu .mu-dr-item:disabled { opacity: .45; background: none; }
+.mu-dr-item > svg { width: 24px; height: 24px; fill: #5f6368; flex: none; }
+.mu-dr-item > span { flex: 1; }
+.mu-switch { width: 32px; height: 14px; border-radius: 7px; background: #bdc1c6; position: relative; flex: none; transition: background .15s; }
+.mu-switch::after { content: ''; position: absolute; top: -3px; left: -2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .4); transition: transform .15s, background .15s; }
+.mu-on .mu-switch { background: #8ab4f8; }
+.mu-on .mu-switch::after { transform: translateX(16px); background: var(--mu-blue); }
+.mu-dr-sep { height: 1px; background: var(--mu-line-2); margin: 8px 0; }
+.mu-dr-help { display: flex; gap: 20px; padding: 10px 24px; color: var(--mu-text-2); font-size: 13px; line-height: 19px; }
+.mu-dr-help svg { width: 24px; height: 24px; fill: #5f6368; flex: none; }
+.mu-dr-help b { font: 500 14px/20px var(--mu-head); color: var(--mu-text); }
+.mu-dr-help p { margin: 4px 0 0; }
+
+/* Snackbar */
+.mu-toast {
+  position: absolute; z-index: 12; left: 50%; bottom: 40px; transform: translate(-50%, 20px); max-width: calc(100% - 32px); box-sizing: border-box;
+  padding: 14px 16px; border-radius: 8px; background: #303134; color: #f1f3f4; font: 400 14px/20px var(--mu-font);
+  box-shadow: 0 3px 5px -1px rgba(0, 0, 0, .2), 0 6px 10px rgba(0, 0, 0, .14); opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s;
+}
+.mu-toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* Markers on the map */
+.mu-pin { background: none; border: 0; }
+.mu-pin-svg { width: 27px; height: 43px; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .35)); animation: mu-drop .35s cubic-bezier(.3, 1.5, .6, 1); transform-origin: 50% 100%; }
+@keyframes mu-drop { from { transform: translateY(-40px) scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
+.mu-me { background: none; border: 0; }
+.mu-me span { position: absolute; inset: 3px; border-radius: 50%; background: #4285f4; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
+.mu-dropped { background: none; border: 0; }
+.mu-dropped-fig { position: absolute; left: 0; top: 0; width: 28px; height: 44px; animation: mu-drop .3s cubic-bezier(.3, 1.5, .6, 1); }
+.mu-dropped-fig .mu-fig { width: 28px; height: 44px; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .35)); }
+.mu-dropped-dot { position: absolute; left: 7px; top: 42px; width: 14px; height: 7px; border-radius: 50%; background: rgba(66, 133, 244, .6); border: 1.5px solid #fff; box-sizing: border-box; }
+
+/* The figure while it is carried */
+.mu-drag { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
+.mu-drag-fig { position: fixed; left: 0; top: 0; width: 44px; height: 52px; margin: -66px 0 0 -22px; transform-origin: 22px 4px; will-change: transform; }
+.mu-drag-fig .mu-fig { width: 44px; height: 52px; filter: drop-shadow(0 6px 5px rgba(0, 0, 0, .35)); }
+.mu-drag-target { position: fixed; left: 0; top: 0; width: 26px; height: 12px; margin: -6px 0 0 -13px; border-radius: 50%; background: radial-gradient(rgba(0, 0, 0, .45), rgba(0, 0, 0, .12) 70%, transparent 72%); transition: background .1s, box-shadow .1s; }
+.mu-on-road .mu-drag-target { background: rgba(26, 115, 232, .45); box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #1a73e8; }
+.mu-off-map .mu-drag-fig { opacity: .6; }
+.mu-off-map .mu-drag-target { opacity: 0; }
+
+/* ------------------------------------------------------------------ the drive overlay */
+.mu-drive { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
+.mu-addr {
+  position: absolute; top: 12px; left: 12px; max-width: min(380px, calc(100% - 24px)); box-sizing: border-box; display: flex; align-items: flex-start; gap: 4px;
+  padding: 8px 18px 10px 4px; border-radius: 8px; background: rgba(32, 33, 36, .82); color: #fff; pointer-events: auto;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .3); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.mu .mu-back { color: #fff; margin-top: 1px; }
+.mu .mu-back:hover { background: rgba(255, 255, 255, .12); }
+.mu-addr-text { min-width: 0; padding-top: 4px; }
+.mu-addr-t { font: 400 18px/24px var(--mu-head); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mu-addr-s { font: 400 13px/18px var(--mu-font); color: #bdc1c6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mu-addr-s:empty { display: none; }
+.mu-addr-m { margin-top: 3px; font: 400 12px/16px var(--mu-font); color: #9aa0a6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.mu-mini {
+  --mini-w: 240px; --mini-h: 152px;
+  position: absolute; left: 12px; bottom: var(--mu-mini-bottom, 16px); width: var(--mini-w); height: var(--mini-h); border-radius: 8px; overflow: hidden;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .5); pointer-events: auto; background: #e5e3df;
+  transition: width .22s cubic-bezier(.2, 0, 0, 1), height .22s cubic-bezier(.2, 0, 0, 1);
+}
+@media (hover: hover) { .mu-mini:hover { --mini-w: 400px; --mini-h: 280px; } }
+.mu-mini.mu-big { --mini-w: 400px; --mini-h: 280px; }
+.mu-mini-map { position: absolute; z-index: 0; left: 50%; top: 50%; width: 440px; height: 320px; margin: -160px 0 0 -220px; pointer-events: none; }
+.mu-mini-map.leaflet-container { background: #e5e3df; }
+.mu .mu-mini-x {
+  position: absolute; top: 6px; right: 6px; width: 32px; height: 32px; border-radius: 4px; background: rgba(255, 255, 255, .92); display: grid; place-items: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3); color: #444; opacity: 0; transition: opacity .15s; z-index: 2;
+}
+.mu-mini-x svg { width: 20px; height: 20px; fill: currentColor; }
+.mu-mini:hover .mu-mini-x, .mu-mini.mu-big .mu-mini-x { opacity: 1; }
+.mu-mini-credit { position: absolute; right: 0; bottom: 0; z-index: 2; padding: 0 4px; background: rgba(255, 255, 255, .75); color: #555; font: 9px/13px var(--mu-font); border-top-left-radius: 3px; white-space: nowrap; }
+.mu-mini-credit a { color: #555; text-decoration: none; }
+.mu-car-ic { background: none; border: 0; }
+.mu-car { width: 120px; height: 120px; }
+.mu-car-svg { width: 120px; height: 120px; overflow: visible; filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, .35)); }
+
+/* ------------------------------------------------------------------ animations */
+@keyframes mu-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mu-rise { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes mu-rise-c { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translateX(-50%); } }
+
+/* ------------------------------------------------------------------ phones */
+@media (max-width: 640px) {
+  .mu-top { top: 8px; left: 8px; right: 8px; flex-direction: column; gap: 0; }
+  .mu-search { flex: none; width: 100%; }
+  .mu-chips { width: calc(100% + 16px); margin: 0 -8px; padding: 10px 8px 6px; box-sizing: border-box; }
+  .mu-search.mu-open + .mu-chips { display: none; }
+  .mu-place { top: auto; bottom: 0; left: 0; width: 100%; border-radius: 16px 16px 0 0; padding: 18px 20px 20px; z-index: 7; animation: mu-rise-b .2s ease-out; }
+  .mu-place-title { font-size: 20px; line-height: 26px; }
+  .mu-place-hero { height: 110px; margin: -18px -20px 14px; }
+  .mu-hint { top: 112px; white-space: normal; text-align: center; }
+  .mu-layers { left: 12px; bottom: 26px; width: 60px; height: 60px; }
+  .mu-rail { right: 12px; bottom: 26px; }
+  .mu-card { bottom: 24px; width: auto; left: 8px; right: 8px; max-width: none; transform: none; animation: mu-rise-b .18s ease-out; gap: 10px; }
+  .mu-card-thumb { width: 72px; height: 72px; }
+  .mu-toast { bottom: 100px; }
+  .mu-foot { font-size: 9px; }
+  .mu-addr { top: 8px; left: 8px; max-width: calc(100% - 16px); padding-right: 14px; }
+  .mu-addr-t { font-size: 16px; line-height: 22px; }
+  .mu-mini { --mini-w: 148px; --mini-h: 104px; left: 8px; }
+  .mu-mini.mu-big { --mini-w: min(300px, calc(100vw - 16px)); --mini-h: 220px; }
+  .mu-mini-credit { font-size: 8px; line-height: 11px; }
+}
+@media (max-width: 640px) and (hover: none) { .mu-zoom { display: none; } }
+@keyframes mu-rise-b { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .mu *, .mu *::before, .mu *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* Google 3D key, in the menu */
+.mu-dr-state { font: 500 12px/16px var(--mu-head); color: var(--mu-text-3); font-style: normal; }
+.mu-gkey { padding: 4px 24px 12px 68px; }
+.mu-gkey-l { display: block; font: 500 12px/16px var(--mu-head); color: var(--mu-text-2); margin-bottom: 6px; }
+.mu .mu-gkey-in {
+  width: 100%; box-sizing: border-box; height: 40px; padding: 0 12px; border: 1px solid var(--mu-line); border-radius: 8px; background: #fff;
+  font: 400 14px/20px var(--mu-font); color: var(--mu-text); outline: none; margin: 0; box-shadow: none;
+}
+.mu .mu-gkey-in:focus { border-color: var(--mu-primary); box-shadow: 0 0 0 1px var(--mu-primary); }
+.mu-gkey-p { margin: 8px 0 10px; font-size: 12px; line-height: 17px; color: var(--mu-text-3); }
+.mu-gkey-row { display: flex; justify-content: flex-end; gap: 8px; }
+.mu .mu-gkey-row button { height: 36px; padding: 0 16px; border-radius: 18px; font: 500 14px/36px var(--mu-head); }
+.mu .mu-gkey-clear { color: var(--mu-primary); }
+.mu .mu-gkey-clear:hover { background: #eef3fc; }
+.mu .mu-gkey-save { background: var(--mu-primary); color: #fff; }
+.mu .mu-gkey-save:hover { background: #0a4fbd; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }

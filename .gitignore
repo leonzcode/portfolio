@@ -8,3 +8,5 @@ dist/
 
 .DS_Store
 Thumbs.db
+# Earth Drive (/car) dev and test pages, never deployed
+public/car/dev/
