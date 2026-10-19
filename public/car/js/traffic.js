@@ -3,7 +3,7 @@
 // and signals for it, stops at red lights (signals.js, the same timing the lights show), waits at stop signs, gives
 // way at junctions without lights, slows for the player's car in its path, and stops with its hazards on when hit.
 import * as THREE from 'three';
-import * as SIG from './signals.js?v=4';
+import * as SIG from './signals.js?v=5';
 
 const PAINTS = [0xf2f2f0, 0xf2f2f0, 0x111214, 0x111214, 0x8c9096, 0xb8bcc2, 0x55595f, 0x1e3a6b, 0x7a1418, 0x24402c, 0xc9b99a, 0x3d4a5c, 0x9a2a1d, 0xe8e2d0];
 const S0 = 2.2, T_HEAD = 1.25, A_MAX = 1.9, B_COMF = 2.6, LOOK = 70;
@@ -22,7 +22,8 @@ function laneAt(L, s, out) {
 }
 
 export class Traffic {
-  constructor({ scene, roads, cars, ground, carEnv, yLift }) {
+  constructor({ scene, roads, cars, ground, carEnv, yLift, per }) {
+    this.per = per || 55;
     this.scene = scene; this.roads = roads; this.C = cars; this.ground = ground; this.carEnv = carEnv || null; this.yLift = yLift || 0;
     this.lanes = roads.graph.lanes;
     this.byId = new Map(); for (const L of this.lanes) this.byId.set(L.id, L);
@@ -108,7 +109,7 @@ export class Traffic {
     }
     this.near = near;
     // about a car per 55 m of lane, at most 30
-    this.want = Math.min(24, Math.round(len / 55));
+    this.want = Math.min(24, Math.round(len / this.per));
   }
 
   async spawn(px, pz, pfx, pfz, initial) {

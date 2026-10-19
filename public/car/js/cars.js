@@ -33,19 +33,21 @@ export const CARS = [
     credit: '"FREE 1975 Porsche 911 (930) Turbo" by Lionsharp Studios, CC BY 4.0',
   },
   {
-    id: 's10', name: 'Chevrolet S-10 pickup', kind: 'pickup', file: 's10.glb', npcFile: 's10_npc.glb', mass: 1450, cabinDark: 0.4,
+    id: 's10', name: 'Chevrolet S-10 pickup', kind: 'pickup', file: 's10.glb', npcFile: 's10_npc.glb', mass: 1450, cabinDark: 0.15,
+    // the model's cabin is pure black: give it the dark grey plastic of the real truck
+    recolor: { interior: { color: 0x3a3834, roughness: 0.8, metalness: 0 }, black: { color: 0x161616, roughness: 0.6, metalness: 0.1 } },
     paint: 0xb3261e, paints: [0xb3261e, 0xe8e8e4, 0x1b1d22, 0x2f4f7f, 0x6d6f70, 0x2d4a33],
     physics: { power: 134e3, torque: 340, drive: 'rwd', comHeight: 0.62, maxSteer: 35, steerRatio: 17, gears: [3.06, 1.63, 1.0, 0.7], final: 3.42, redline: 5200 },
     credit: '"Chevrolet S10" by Luquita (speedmodel), CC BY 4.0',
   },
   {
-    id: 'fairheaven', name: "Fairheaven LT '80", kind: 'sedan', file: 'fairheaven.glb', npcFile: 'fairheaven_npc.glb', mass: 1600, cabinDark: 0.45,
+    id: 'fairheaven', name: "Fairheaven LT '80", kind: 'sedan', file: 'fairheaven.glb', npcFile: 'fairheaven_npc.glb', mass: 1600, cabinDark: 0.35,
     paint: 0x6e1f24, paints: [0x6e1f24, 0xc9c3b4, 0x2b3a55, 0x3b4a3a, 0x8c8f91, 0x1a1a1c, 0x9a7b4f],
     physics: { power: 100e3, torque: 300, drive: 'rwd', comHeight: 0.55, maxSteer: 36, steerRatio: 18, gears: [2.46, 1.46, 1.0], final: 2.73, redline: 4600, mu: 0.95 },
     credit: "\"Fairheaven LT '80 - Low poly model\" by Daniel Zhabotinsky, CC BY 4.0",
   },
   {
-    id: 'milano', name: "Milano '95", kind: 'hatchback', file: 'milano.glb', npcFile: 'milano_npc.glb', mass: 1000, cabinDark: 0.5,
+    id: 'milano', name: "Milano '95", kind: 'hatchback', file: 'milano.glb', npcFile: 'milano_npc.glb', mass: 1000, cabinDark: 0.4,
     paint: 0x1f3a3a, paints: [0x1f3a3a, 0xc8ccd0, 0x8a1c1c, 0x23324f, 0xe0d9c6, 0x505357, 0x3d5f2e],
     physics: { power: 66e3, torque: 130, drive: 'fwd', comHeight: 0.5, maxSteer: 36, steerRatio: 16, gears: [3.4, 1.9, 1.3, 0.95, 0.76], final: 4.1, redline: 6200, mu: 0.95 },
     credit: "\"Milano '95 - Low poly model\" by Daniel Zhabotinsky, CC BY 4.0",
@@ -83,7 +85,7 @@ function loader() {
 const templates = new Map(); // file -> Promise<{ scene, info }>
 function loadTemplate(file) {
   if (!templates.has(file)) {
-    templates.set(file, loader().loadAsync(MODELS + file + '?v=4').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
+    templates.set(file, loader().loadAsync(MODELS + file + '?v=5').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
   }
   return templates.get(file);
 }
@@ -248,7 +250,7 @@ function lampMaterial(src, role, level) {
 export async function makeEnvironment(renderer, { file = 'env/wide_street_01_1k.hdr' } = {}) {
   const pm = new THREE.PMREMGenerator(renderer);
   try {
-    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=4');
+    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=5');
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     const env = pm.fromEquirectangular(hdr).texture;
     env.userData.source = hdr; // the garage shows it as a backdrop
@@ -354,7 +356,7 @@ const CABIN_LIGHT = `
   vec3 e = vec3(0.10, 0.0, 0.10), s2 = vec3(0.06, uCabinSoft.y, 0.10);
   vec3 cq2 = smoothstep(uCabinMin - e, uCabinMin - e + s2, vCabinPos) * (1.0 - smoothstep(uCabinMax + e - s2, uCabinMax + e, vCabinPos));
   float upper = smoothstep(uCabinMax.y - 0.42, uCabinMax.y - 0.22, vCabinPos.y);
-  float dk = clamp(inside * 0.45 + cq2.x * cq2.y * cq2.z * upper * 0.92, 0.0, 0.95);
+  float dk = clamp(inside * 0.45 * min(1.0, uCabinK / 0.6) + cq2.x * cq2.y * cq2.z * upper * 0.92, 0.0, 0.95);
   reflectedLight.directDiffuse *= 1.0 - dk;
   reflectedLight.directSpecular *= 1.0 - dk;
 #endif
@@ -513,6 +515,13 @@ class CarRig {
         o.material = Array.isArray(o.material) ? o.material.map(fix) : fix(o.material);
       });
       this._owned.push(...own.values());
+      if (spec.recolor) for (const m of own.values()) {
+        const r = spec.recolor[m.name];
+        if (!r) continue;
+        if (r.color !== undefined) m.color.setHex(r.color);
+        if (r.roughness !== undefined) m.roughness = r.roughness;
+        if (r.metalness !== undefined) m.metalness = r.metalness;
+      }
     }
     this.state = { brake: 0, reverse: false, signal: 0, headlights: false };
 
