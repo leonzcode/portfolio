@@ -153,8 +153,8 @@ const PAL = {
   [STYLE.BRICK]: ['#9a5b45', '#8a4c3a', '#a8664c', '#7d4636', '#b39672', '#a08262', '#6f4a3c', '#c19d7c', '#8f6a55'],
   [STYLE.CONCRETE]: ['#c9c5bd', '#b9b5ad', '#d6d0c4', '#a9a7a2', '#cfc6b4', '#bfb6a5', '#9c9a96', '#dcd8cf', '#8f8d88'],
   [STYLE.GLASS]: ['#7e8a90', '#5d666b', '#9aa3a8', '#3e464b', '#b4b8b8'],
-  [STYLE.STUCCO]: ['#ece5d6', '#e6d9bf', '#e9dcae', '#d9c7a5', '#e8d3c9', '#cfd6d6', '#f2efe8', '#d8c2a0', '#c9b79c', '#e3e1d8'],
-  [STYLE.WOOD]: ['#e9e6dd', '#c9cfcf', '#a9b8b8', '#d8ccaa', '#b8b19a', '#8f9ea6', '#e2d4b4', '#9aa58c', '#d9d2c4'],
+  [STYLE.STUCCO]: ['#e6dfd0', '#ddd0b6', '#d9cba0', '#cdbb98', '#d9c6bb', '#c3cac9', '#e8e4dc', '#c8b292', '#b9a78c', '#d6d3c9', '#bfb6a6', '#a99f8f'],
+  [STYLE.WOOD]: ['#e2dfd6', '#bcc3c3', '#9aabab', '#cbbf9d', '#aca58e', '#84939b', '#d6c8a8', '#8e9a82', '#cdc6b8', '#7d8a8f', '#b7a68a'],
   [STYLE.METAL]: ['#b4b8ba', '#a3a8a8', '#c8c6bc', '#8e9496', '#c2b8a4', '#d0d2cf'],
   [STYLE.STONE]: ['#cfc3a8', '#bfb39a', '#d8d0bc', '#a89c88', '#e0d8c6'],
 };
@@ -179,7 +179,7 @@ function pickStyle(b, H, area, ctx, r) {
   const t = b.type, reg = ctx.region;
   const ms = materialStyle(b.material);
   if (ms !== null) return ms;
-  if (HOUSE.has(t) || (t === 'residential' && area < 260)) {
+  if (b.houseLike || HOUSE.has(t) || (t === 'residential' && area < 260)) {
     if (reg === 'uk') return r < 0.75 ? STYLE.BRICK : STYLE.STUCCO;
     if (reg === 'us') return r < 0.55 ? STYLE.STUCCO : STYLE.WOOD;
     if (reg === 'jp') return r < 0.7 ? STYLE.STUCCO : STYLE.WOOD;
@@ -215,6 +215,7 @@ function pickGround(b, style, H, ctx, r) {
   return r < 0.4 ? GROUND.DOOR : GROUND.NONE;
 }
 
+const SHAPE_OK = (t) => !/^(garages|industrial|warehouse|commercial|retail|office|school|church|hospital)$/.test(t);
 const ROOF_ALIAS = { gabled: 'gabled', gambrel: 'gabled', saltbox: 'gabled', round: 'gabled', 'half-hipped': 'hipped', hipped: 'hipped', mansard: 'hipped', side_hipped: 'hipped', pyramidal: 'pyramidal', dome: 'pyramidal', onion: 'pyramidal', cone: 'pyramidal', skillion: 'skillion', lean_to: 'skillion' };
 
 // heights, roof and look of one record; null when it cannot be drawn
@@ -232,26 +233,35 @@ function plan(b, ctx) {
   const ob = obb(outer);
   if (!ob) return null;
 
-  // roof shape: tagged, else pitched for small houses
+  // roof shape: tagged, else pitched for houses and small low buildings away from dense centres (vector-tile
+  // records come as type 'yes' with a height only): gabled along the long axis for rectangles, hipped otherwise
   let shape = b.roofShape ? (ROOF_ALIAS[b.roofShape] || 'flat') : null;
-  const houseLike = HOUSE.has(t) || ((t === 'yes' || t === 'residential' || t === 'garage' || t === 'shed') && area > 35 && area < 280 && ctx.density < 0.3 && !(b.levels > 3));
+  const rect = area / ob.area > 0.86;
+  const smallLow = area > 30 && area < 400 && (b.height == null || b.height < 10) && !(b.levels > 3);
+  const houseLike = HOUSE.has(t) || (smallLow && ctx.density < 0.4 && /^(yes|residential|garage|shed|semidetached_house|detached|house|bungalow|cabin)$/.test(t));
   if (!shape) {
-    if (houseLike && area < 450 && area / ob.area > 0.62 && ctx.region !== 'jp-centre') shape = r2 < (ctx.region === 'us' ? 0.55 : 0.3) ? 'hipped' : 'gabled';
+    if (houseLike && area < 600 && area / ob.area > 0.55 && SHAPE_OK(t)) shape = rect ? (r2 < 0.75 ? 'gabled' : 'hipped') : 'hipped';
     else shape = 'flat';
   }
   if (holes.length && shape !== 'flat') shape = 'flat';
 
   const minH = b.minHeight || (b.minLevel ? b.minLevel * LV : 0);
   let roofH = b.roofHeight ?? (b.roofLevels ? b.roofLevels * LV : null);
-  const pitch = ctx.region === 'us' ? 24 : 34;
+  const pitch = houseLike ? 25 + r3 * 10 : (ctx.region === 'us' ? 24 : 34) + (r3 - 0.5) * 10;
   if (roofH == null && shape !== 'flat') {
     if (shape === 'skillion') roofH = Math.min(3, ob.hw * 2 * Math.tan(12 * D2R));
-    else roofH = Math.min(7, ob.hw * Math.tan((pitch + (r3 - 0.5) * 10) * D2R));
+    else roofH = Math.min(houseLike ? 5 : 7, ob.hw * Math.tan(pitch * D2R));
   }
   if (shape === 'flat') roofH = 0;
 
   let H = b.height;
   let levels = b.levels;
+  // a house whose only height is a vector tile's default (5 m) or a low guess: take it as the walls' height and
+  // put the roof on top, one storey or two
+  if (houseLike && shape !== 'flat' && H != null && levels == null && b.roofHeight == null && H <= 7.5) {
+    const eaveH = Math.abs(H - 5) < 0.01 ? (r4 < 0.7 ? 3.1 : 5.6) : Math.max(2.8, H - 0.4);
+    H = eaveH + roofH;
+  }
   if (H == null && levels != null) H = levels * LV + (roofH || 0) + (levels > 0 && !HOUSE.has(t) ? 0.6 : 0);
   if (H == null) {
     let d;
@@ -272,11 +282,11 @@ function plan(b, ctx) {
   if (H <= minH + 0.5) H = minH + Math.max(2.5, (levels || 1) * LV);
   if (roofH > (H - minH) * 0.6) roofH = (H - minH) * 0.6;
   const eave = H - roofH;
-  if (!levels) levels = Math.max(1, Math.round((eave - 0.5) / (HOUSE.has(t) ? 2.9 : 3.4)));
+  if (!levels) levels = Math.max(1, Math.round((eave - 0.5) / (houseLike ? 2.8 : 3.4)));
   let fh = (eave - (b.minLevel ? b.minLevel * LV : 0) - 0.4) / Math.max(1, levels - (b.minLevel || 0));
-  if (!(fh > 2.5 && fh < 6)) fh = HOUSE.has(t) ? 2.9 : 3.4;
-  let style = pickStyle(b, H, area, ctx, r1);
-  const ground = pickGround({ ...b, minH }, style, H, ctx, r2);
+  if (!(fh > 2.5 && fh < 6)) fh = houseLike ? 2.9 : 3.4;
+  let style = pickStyle({ ...b, houseLike }, H, area, ctx, r1);
+  const ground = houseLike && !(b.minHeight > 0.5) ? GROUND.HOUSE : pickGround({ ...b, minH }, style, H, ctx, r2);
   let gh = ground === GROUND.SHOP ? Math.max(fh, 4.4) : ground === GROUND.LOBBY ? Math.max(fh, 5.0) : ground === GROUND.ROLLUP ? Math.max(fh, 5.2) : fh;
   if (gh > eave - 0.5) gh = Math.max(2.5, eave - 0.5);
   if (style === STYLE.GLASS && H < 12) style = STYLE.CONCRETE;
@@ -289,7 +299,10 @@ function plan(b, ctx) {
   const outer0 = outer;
   outer = offsetRing(outer, eps);
   holes = holes.map(h => offsetRing(h, eps));
-  return { b, id, outer, outer0, holes, area, ob, shape, minH, roofH, H, eave, fh, gh, style, ground, colour, roofColour, r1, r2, r3, r4, levels };
+  // houses: a slight overhang, a garage when there is room for one (not in British terraces)
+  const overhang = houseLike && shape !== 'flat' ? 0.35 + 0.2 * r1 : 0;
+  const garage = houseLike && area > 110 && ctx.region !== 'uk' && ctx.region !== 'jp' && t !== 'terrace' && r3 < 0.8;
+  return { b, id, outer, outer0, holes, area, ob, shape, minH, roofH, H, eave, fh, gh, style, ground, colour, roofColour, r1, r2, r3, r4, levels, houseLike, overhang, garage };
 }
 
 // the roof's height over the eave: roofH * (1 - max_i t_i(p)), each t_i linear in p (x, z)
@@ -304,8 +317,9 @@ function roofTerms(P) {
   return null;
 }
 const termAt = (t, x, z) => t.g[0] * x + t.g[1] * z + t.c;
-function roofAt(P, terms, x, z) {
+function roofAt(P, terms, x, z, below = false) {
   if (!terms) return 0;
+  if (below) { let m = -Infinity; for (const t of terms) { const v = termAt(t, x, z); if (v > m) m = v; } return P.roofH * Math.min(1, 1 - m); }
   let m = -Infinity;
   for (const t of terms) { const v = termAt(t, x, z); if (v > m) m = v; }
   return P.roofH * Math.max(0, Math.min(1, 1 - m));
@@ -369,6 +383,20 @@ function emit(P, ctx, W, R, img) {
   };
   const rc = img ? WHITE : (P.roofColour || P.fallbackRoof);
 
+  // the front: the outer edge that faces the nearest road (else the longest)
+  if (ground === GROUND.HOUSE && P.front === undefined) {
+    let cx = 0, cz = 0; for (const p of outer) { cx += p[0]; cz += p[1]; } cx /= outer.length; cz /= outer.length;
+    let rp = null; try { rp = ctx.nearRoad ? ctx.nearRoad(cx, cz) : null; } catch (e) { rp = null; }
+    let best = -Infinity; P.front = 0;
+    for (let i = 0; i < outer.length; i++) {
+      const p = outer[i], q = outer[(i + 1) % outer.length], dx = q[0] - p[0], dz = q[1] - p[1], len = Math.hypot(dx, dz);
+      if (len < 2.5) continue;
+      const nx = -dz / len, nz = dx / len;
+      let sc = Math.min(len, 14) * 0.05;
+      if (rp) { const mx = (p[0] + q[0]) / 2, mz = (p[1] + q[1]) / 2, rx = rp.x - mx, rz = rp.z - mz, rl = Math.hypot(rx, rz) || 1; sc += (nx * rx + nz * rz) / rl * 2 - rl * 0.01; }
+      if (sc > best) { best = sc; P.front = i; }
+    }
+  }
   // walls, ring by ring
   for (const ring of [outer, ...holes]) {
     const n = ring.length;
@@ -387,7 +415,7 @@ function emit(P, ctx, W, R, img) {
         }
       }
       ss.sort((x, y) => x - y); ss.push(1);
-      edges.push({ p, q, dx, dz, len, ss, ang: Math.atan2(dz, dx) });
+      edges.push({ p, q, dx, dz, len, ss, ang: Math.atan2(dz, dx), i, ring });
     }
     const m = edges.length; if (m < 3) continue;
     // runs of nearly straight edges share one window layout
@@ -402,6 +430,8 @@ function emit(P, ctx, W, R, img) {
     }
     for (let k = 0; k < m; k++) {
       const e = edges[k], nx = -e.dz / e.len, nz = e.dx / e.len, L = runLen[runOf[k]];
+      // a house's front wall (towards the road) gets the door and the garage; its other walls plain windows
+      const gk = ground === GROUND.HOUSE && e.ring === outer && e.i === P.front ? (P.garage ? GROUND.HOUSE_GARAGE : GROUND.HOUSE_FRONT) : ground;
       for (let j = 0; j + 1 < e.ss.length; j++) {
         const sa = e.ss[j], sb = e.ss[j + 1];
         // the ends are the ring's own vertices, bit for bit, so neighbouring walls share their corner exactly
@@ -411,10 +441,10 @@ function emit(P, ctx, W, R, img) {
         const ga = ground0(ax, az), gb = ground0(bx, bz);
         const ua = uStart[k] + e.len * sa, ub = uStart[k] + e.len * sb;
         const eh = eave;
-        const i0 = W.v(ax, yBot, az, nx, 0, nz, wc, ua, L, eh, ga, base, fh, gh, seed, style, ground);
-        const i1 = W.v(bx, yBot, bz, nx, 0, nz, wc, ub, L, eh, gb, base, fh, gh, seed, style, ground);
-        const i2 = W.v(bx, tb, bz, nx, 0, nz, wc, ub, L, eh, gb, base, fh, gh, seed, style, ground);
-        const i3 = W.v(ax, ta, az, nx, 0, nz, wc, ua, L, eh, ga, base, fh, gh, seed, style, ground);
+        const i0 = W.v(ax, yBot, az, nx, 0, nz, wc, ua, L, eh, ga, base, fh, gh, seed, style, gk);
+        const i1 = W.v(bx, yBot, bz, nx, 0, nz, wc, ub, L, eh, gb, base, fh, gh, seed, style, gk);
+        const i2 = W.v(bx, tb, bz, nx, 0, nz, wc, ub, L, eh, gb, base, fh, gh, seed, style, gk);
+        const i3 = W.v(ax, ta, az, nx, 0, nz, wc, ua, L, eh, ga, base, fh, gh, seed, style, gk);
         W.idx.push(i0, i1, i2, i0, i2, i3);
       }
     }
@@ -445,17 +475,26 @@ function emit(P, ctx, W, R, img) {
   };
   if (!terms) pushTris(outer, holes, () => base + H);
   else {
+    const roofRing = P.overhang > 0 ? offsetRing(outer, P.overhang) : outer;
     for (let i = 0; i < terms.length; i++) {
-      let poly = outer;
+      let poly = roofRing;
       for (let j = 0; j < terms.length && poly.length >= 3; j++) {
         if (j === i) continue;
         poly = clip(poly, [terms[i].g[0] - terms[j].g[0], terms[i].g[1] - terms[j].g[1]], terms[i].c - terms[j].c);
       }
-      if (poly.length >= 3) pushTris(poly, [], (x, z) => yEave + roofAt(P, terms, x, z));
+      if (poly.length >= 3) pushTris(poly, [], (x, z) => yEave + roofAt(P, terms, x, z, P.overhang > 0));
     }
   }
 }
 const WHITE = new THREE.Color(1, 1, 1);
+
+function defaultRoof(P, ctx) {
+  if (P.shape === 'flat') return new THREE.Color(0.32, 0.32, 0.31);
+  const la = frame.lat, lo = frame.lon;
+  const tiles = (la < 44 && la > 30 && lo > -10 && lo < 30) || (lo < -30 && lo > -120 && la < 30);
+  if (tiles) return new THREE.Color().setRGB(0.55 + P.r2 * 0.1, 0.27, 0.18, THREE.SRGBColorSpace);
+  return P.r2 < 0.6 ? new THREE.Color().setRGB(0.28, 0.28, 0.29, THREE.SRGBColorSpace) : new THREE.Color().setRGB(0.36, 0.3, 0.25, THREE.SRGBColorSpace);
+}
 
 // ---------- imagery: lean of tall buildings, roof colours ----------
 function sampler(img) {
@@ -615,13 +654,46 @@ function freeRec(rec, world) {
   built.delete(rec.sig);
 }
 
+const DRIVE = /^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road)(_link)?$/;
+function roadIndex(list) {
+  const G = 64, grid = new Map();
+  for (const r of list) {
+    if (!r || !r.pts || !DRIVE.test(r.highway || (r.tags && r.tags.highway) || '')) continue;
+    for (let k = 0; k + 1 < r.pts.length; k++) {
+      const a = r.pts[k], b = r.pts[k + 1];
+      for (let i = Math.floor(Math.min(a[0], b[0]) / G); i <= Math.floor(Math.max(a[0], b[0]) / G); i++)
+        for (let j = Math.floor(Math.min(a[1], b[1]) / G); j <= Math.floor(Math.max(a[1], b[1]) / G); j++) {
+          const key = i + ',' + j; if (!grid.has(key)) grid.set(key, []); grid.get(key).push([a, b]);
+        }
+    }
+  }
+  return (x, z) => {
+    let best = null, bd = Infinity;
+    const ci = Math.floor(x / G), cj = Math.floor(z / G);
+    for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++) {
+      const l = grid.get(i + ',' + j); if (!l) continue;
+      for (const [a, b] of l) {
+        const dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz;
+        const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / L2)) : 0;
+        const px = a[0] + dx * t, pz = a[1] + dz * t, d = Math.hypot(x - px, z - pz);
+        if (d < bd) { bd = d; best = { x: px, z: pz, dist: d }; }
+      }
+    }
+    return best;
+  };
+}
+
 export function build(list, opts = {}) {
   const { scene, world, collide, imagery } = opts;
   const groundAt = opts.groundAt || (world ? (x, z) => world.groundAt(x, z) : () => 0);
   const parent = opts.parent || scene || (world && world.scene);
   const group = new THREE.Group(); group.name = 'buildings';
   const wallMat = opts.wallMaterial || wallMaterial();
-  const ctx = { groundAt, region: region(), density: 0, g0: groundAt(0, 0) ?? 0 };
+  const ctx = { groundAt, region: region(), density: 0, g0: groundAt(0, 0) ?? 0, nearRoad: null };
+  // where the nearest road is (a house's front faces it): roads.js when given, else OSM road lines
+  const RD = opts.roads;
+  if (RD && !Array.isArray(RD) && typeof RD.nearestEdge === 'function') ctx.nearRoad = (x, z) => RD.nearestEdge(x, z, 80);
+  else if (Array.isArray(RD) || Array.isArray(opts.roadList)) ctx.nearRoad = roadIndex(Array.isArray(RD) ? RD : opts.roadList);
   const recs = [], handles = [];
   let disposed = false, done = false;
   const stats = { buildings: 0, cells: 0, reused: 0, triangles: 0, lean: [], ms: 0 };
@@ -662,6 +734,20 @@ export function build(list, opts = {}) {
   let t0 = performance.now();
   const slice = async (where) => { const d = performance.now() - t0; if (d > 8) { if (d > 40) (stats.slow || (stats.slow = [])).push((where || '?') + ':' + Math.round(d)); await new Promise(r => setTimeout(r, 0)); t0 = performance.now(); } };
 
+  // build the shaders off the main thread (KHR_parallel_shader_compile) and upload the roof pictures one at a
+  // time, before anything is shown: the facade program alone took seconds to build on the first frame
+  const renderer = opts.renderer || (world && world.renderer);
+  const warmed = new WeakSet();
+  const warm = async (rec) => {
+    if (!renderer || !cam) return;
+    for (const m of rec.meshes) {
+      if (warmed.has(m.material)) continue;
+      warmed.add(m.material);
+      if (renderer.compileAsync) { try { await renderer.compileAsync(m, cam, parent); } catch (e) {} }
+      t0 = performance.now();
+    }
+    for (const t of rec.textures) { if (renderer.initTexture) { try { renderer.initTexture(t); } catch (e) {} } await slice('upload'); }
+  };
   const show = (rec) => {
     for (const m of rec.meshes) {
       group.add(m);
@@ -707,7 +793,7 @@ export function build(list, opts = {}) {
       const face = at && img.lean ? facadeMean(P, at, img.lean) : null;
       if (face) stats.faceColours = (stats.faceColours || 0) + 1;
       P.wallColour = wallColour(P, mean, face);
-      P.fallbackRoof = mean ? new THREE.Color().setRGB(mean[0], mean[1], mean[2], THREE.SRGBColorSpace) : new THREE.Color(0.45, 0.45, 0.44);
+      P.fallbackRoof = mean ? new THREE.Color().setRGB(mean[0], mean[1], mean[2], THREE.SRGBColorSpace) : defaultRoof(P, ctx);
       emit(P, ctx, W, R, img);
       await slice('L655');
       if (disposed) { if (img) img.texture.dispose(); return; }
@@ -715,7 +801,7 @@ export function build(list, opts = {}) {
     const wg = W.geometry(), rg = R.geometry();
     const wm = new THREE.Mesh(wg, wallMat);
     wm.castShadow = true; wm.receiveShadow = true; wm.name = 'walls ' + c.key;
-    const rm = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, map: img ? img.texture : null });
+    const rm = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, map: img ? img.texture : null, side: THREE.DoubleSide });
     patchBaked(rm);
     rm.shadowSide = THREE.DoubleSide;
     const roof = new THREE.Mesh(rg, rm);
@@ -732,6 +818,8 @@ export function build(list, opts = {}) {
     recs.push(rec);
     stats.buildings += plans.length;
     stats.cells++;
+    await warm(rec);
+    if (disposed) return;
     if (progressive) show(rec);
   }
 

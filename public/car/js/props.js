@@ -4,8 +4,10 @@
 // Every model is built in code to real dimensions and drawn as InstancedMeshes, one per model part per 500 m
 // bin, so the draw call count stays near (parts in use) x (bins in view).
 //
-//   await props.build(osm, { groundAt, scene, collide, roads })   adds what is new in the osm store
-//   props.update(dt)                                                lens colours from signals.js (SIG.tick runs elsewhere)
+//   await props.preload()                                           textures, materials, model templates (no OSM data)
+//   await props.build(osm, { groundAt, scene, collide, roads })   builds everything in the store off screen, yielding
+//                                                                   every 8 ms, then swaps it in; returns props
+//   props.update(dt, camera)                                        lens colours from signals.js (SIG.tick runs elsewhere)
 //   props.signalAt(nodeId, heading) -> 'red' | 'amber' | 'green'    for traffic travelling on that heading
 //   props.reheight(bbox)                                            re-sample ground heights inside {x0,z0,x1,z1}
 //   props.reset() / props.dispose()                                 drop everything (a new area or origin)
@@ -1200,7 +1202,8 @@ function placeLamp(p) {
   const nearRoad = e && e.dist - e.halfWidth < 7;
   let h = num(t.height);
   // hung on a utility pole that is mapped at (nearly) the same spot: just the bracket arm and the luminaire
-  const pole = S.poleSpots && S.poleSpots.find(q => Math.hypot(q.x - p.x, q.z - p.z) < 2);
+  let pole = S.poleByNode.get(p.id) || null;
+  if (!pole) for (const q of S.poleByNode.values()) if (q.kind === 'pole' && Math.abs(q.x - p.x) < 2 && Math.abs(q.z - p.z) < 2) { pole = q; break; }
   if (pole && nearRoad) {
     const [, , toRoad] = curbside(pole.x, pole.z, 0.6);
     const yaw = toRoad ?? 0, d = yaw * D2R, ox = Math.sin(d) * 0.15, oz = -Math.cos(d) * 0.15;
@@ -1323,7 +1326,11 @@ function treeKind(t, r) {
   return r() < 0.55 ? 'round' : 'oval';
 }
 const LEAF_TINTS = [[0.82, 0.95, 0.72], [0.95, 1.0, 0.78], [0.78, 0.9, 0.62], [1.0, 1.0, 0.85], [0.86, 0.96, 0.8], [0.9, 0.92, 0.66]];
+// what OSM's trees are here: 'draw' (models and a trunk to hit), 'collide' (a trunk only: Google's mesh already
+// shows the tree) or 'none' (trees.js does them in the open world)
+let TREE_MODE = 'draw';
 function placeTree(x, z, t, seed, isRow) {
+  if (TREE_MODE === 'none') return;
   const r = rng(seed);
   const kind = treeKind(t || {}, r);
   let H = num(t && t.height), D = num(t && (t.diameter_crown || t['crown:diameter']));
@@ -1342,6 +1349,7 @@ function placeTree(x, z, t, seed, isRow) {
   const trunkS = kind === 'palm' ? s : Math.sqrt(s * sxz);
   const rec = addRec([[x, z]], (rr) => {
     const y = rr.ys[0];
+    if (TREE_MODE === 'collide') return;
     emit(T[0], base(x, y, z, yaw, trunkS, s, trunkS));
     emit(T[1], base(x, y, z, yaw, sxz, s, sxz), tc);
   });
@@ -1650,6 +1658,7 @@ export async function build(osm, opts = {}) {
   await preload();
   if (token !== TOKEN) return props;
   if (opts.scene) SCENE = opts.scene;
+  TREE_MODE = opts.trees || 'draw';
   const N = freshState();
   N.groundAt = opts.groundAt || (LIVE && LIVE.groundAt) || null;
   N.collide = opts.collide || (LIVE && LIVE.collide) || null;
@@ -1694,8 +1703,9 @@ export async function build(osm, opts = {}) {
   }
 
   // points (not those inside a building: indoor benches, roof garden trees)
+  // power first, so street lamps mapped on a utility pole can hang on it
+  placePower(osm);
   N.bld = new BuildingIndex(); N.bld.add(osm.buildings);
-  N.poleSpots = osm.points.filter(p => p.kind === 'power_pole' || p.kind === 'utility_pole');
   if (await tick()) return props;
   for (const p of osm.points) {
     const k = 'n' + p.id; if (N.done.has(k)) continue;
@@ -1739,9 +1749,6 @@ export async function build(osm, opts = {}) {
     placeBarrier(b);
     if (await tick()) return props;
   }
-  // power
-  placePower(osm);
-  if (await tick()) return props;
   for (const b of N.bins.values()) { rebuildBin(b); if (await tick()) return props; }
   for (const G of N.groups.values()) stepGroup(G);
   recolourLenses(N, true);

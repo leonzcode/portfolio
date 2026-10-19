@@ -89,7 +89,16 @@ function endpoints() {
   return o ? [o, ...ENDPOINTS] : ENDPOINTS;
 }
 
+// At most two Overpass requests at a time from this page, however many cells are asked for.
+let active = 0; const waiting = [];
+async function slot() { if (active < 2) { active++; return; } await new Promise(r => waiting.push(r)); active++; }
+function release() { active--; const n = waiting.shift(); if (n) n(); }
+
 async function overpass(q) {
+  await slot();
+  try { return await overpassOne(q); } finally { release(); }
+}
+async function overpassOne(q) {
   if (fetcher) return fetcher(q);
   let last = null;
   for (let round = 0; round < 2; round++) {

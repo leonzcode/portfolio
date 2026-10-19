@@ -36,13 +36,18 @@ function textures() {
   // a cluster of leaves, light in the middle, darker leaves behind
   const leaf = (dark) => {
     const c = mk(256, 256), g = c.getContext('2d'), r = rng(dark ? 7 : 3);
+    // clumps of leaves round the middle, so the sprite's edge is ragged rather than a disc
+    const clumps = [];
+    for (let i = 0; i < 9; i++) { const a = r() * Math.PI * 2, d = i === 0 ? 0 : 30 + r() * 52; clumps.push([128 + Math.cos(a) * d, 128 + Math.sin(a) * d * 0.9, 26 + r() * 22]); }
     for (let layer = 0; layer < 3; layer++) {
       const n = [900, 700, 500][layer];
       for (let i = 0; i < n; i++) {
-        const a = r() * Math.PI * 2, d = Math.sqrt(r()) * (98 - layer * 14);
-        const x = 128 + Math.cos(a) * d, y = 128 + Math.sin(a) * d * 0.92;
+        const cl = clumps[Math.floor(r() * clumps.length)];
+        const a = r() * Math.PI * 2, d = Math.sqrt(r()) * cl[2] * (1 - layer * 0.12);
+        const x = cl[0] + Math.cos(a) * d, y = cl[1] + Math.sin(a) * d;
+        if ((x - 128) ** 2 + (y - 128) ** 2 > 124 * 124) continue;
         const l = (dark ? 20 : 26) + layer * 9 + r() * 12 - (y - 128) * 0.04;
-        const hue = dark ? 130 + r() * 25 : 78 + r() * 30;
+        const hue = dark ? 125 + r() * 25 : 78 + r() * 30;
         g.fillStyle = `hsl(${hue}, ${dark ? 22 : 30 + r() * 12}%, ${l}%)`;
         g.save(); g.translate(x, y); g.rotate(r() * Math.PI);
         g.beginPath();
@@ -413,7 +418,7 @@ function kindOf(tags, h, region) {
   if (/phoenix|washingtonia|syagrus|palm|trachycarpus|archontophoenix|butia|chamaerops/.test(g) || /palm/i.test(t['species:en'] || '')) return 'palm';
   if (t.leaf_type === 'needleleaved' || /pinus|picea|abies|cedrus|sequoia|cupressus|thuja|juniperus|taxus|pseudotsuga|metasequoia|cryptomeria|chamaecyparis/.test(g)) return 'conifer';
   if (t.leaf_type === 'broadleaved' || g) return 'broad';
-  if (region === 'ca') return h < 0.06 ? 'palm' : h < 0.2 ? 'conifer' : 'broad';
+  if (region === 'ca') return h < 0.03 ? 'palm' : h < 0.16 ? 'conifer' : 'broad';
   return h < 0.12 ? 'conifer' : 'broad';
 }
 
@@ -572,6 +577,10 @@ export function build(src, opts = {}) {
     if (disposed) return stats;
     await makeMeshes(list);
     if (disposed) return stats;
+    // the programs built off the main thread before the trees show (first time only, then they are cached)
+    const renderer = opts.renderer || (opts.world && opts.world.renderer), cam = opts.camera || (opts.world && opts.world.camera);
+    if (renderer && cam && renderer.compileAsync) { try { await renderer.compileAsync(group, cam, parent); } catch (e) {} }
+    if (disposed) return stats;
     // swap: the new trees in, the old ones out, in one step
     parent.add(group);
     for (const g of adopted) g.release();
@@ -622,10 +631,14 @@ export function build(src, opts = {}) {
         else dummy.scale.set(rc * (1.05 + t.h2 * 0.2), rc * (0.8 + t.h1 * 0.2), rc * (1.05 + t.h1 * 0.2));
         dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix);
         if (t.col) {
-          // match the picture: the crown's colour seen from above, as a tint over the leaf texture
+          // match the picture: the crown's brightness, and its warmth (yellow, autumn red, olive) seen from
+          // above; never its blue, which is the picture's shade, not the leaves
           const lin = (v) => Math.pow(v, 2.2);
           const m = kind === 'conifer' ? TEXMEAN.conifer : TEXMEAN.broad;
-          col.setRGB(Math.min(2.2, lin(t.col[0]) / m[0] * 1.5), Math.min(2.2, lin(t.col[1]) / m[1] * 1.5), Math.min(2.2, lin(t.col[2]) / m[2] * 1.5));
+          const [r0, g0, b0] = t.col, lumI = 0.3 * lin(r0) + 0.59 * lin(g0) + 0.11 * lin(b0), lumT = 0.3 * m[0] + 0.59 * m[1] + 0.11 * m[2];
+          const k = Math.min(1.7, Math.max(0.55, lumI / lumT * 1.25));
+          const warm = Math.max(-0.15, Math.min(0.25, (r0 - g0) / Math.max(0.05, g0)));
+          col.setRGB(k * (1 + warm * 0.9), k, k * (0.85 - Math.max(0, warm) * 0.5));
         } else if (kind === 'conifer') col.setRGB(0.6 + t.h1 * 0.2, 0.7 + t.h2 * 0.2, 0.62 + t.h1 * 0.15);
         else col.setRGB(0.7 + t.h1 * 0.3, 0.75 + t.h2 * 0.2, 0.55 + t.h2 * 0.25);
         mesh.setColorAt(i, col);

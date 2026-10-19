@@ -111,7 +111,15 @@ if ( uDetailOn > 0.5 ) {
   float fade = ( 1.0 - smoothstep( 25.0, 90.0, dd ) ) * smoothstep( 0.6, 0.85, abs( fn.y ) );
   if ( fade > 0.0 ) {
     float n = texture2D( uDetail, vBkWorld.xz * 0.35 ).r * 0.6 + texture2D( uDetail, vBkWorld.xz * 1.3 ).r * 0.4;
-    gl_FragColor.rgb *= 1.0 + ( n - 0.5 ) * 0.42 * fade;
+    // grass in the photo (green over red and blue) gets a finer, stronger grain with a little hue in it, the way
+    // a lawn looks from a car; everything else a light concrete and asphalt grain
+    vec3 cc = gl_FragColor.rgb;
+    float green = smoothstep( 0.01, 0.06, cc.g - max( cc.r, cc.b ) );
+    float blades = texture2D( uDetail, vBkWorld.xz * vec2( 3.1, 2.3 ) ).r * 0.5 + texture2D( uDetail, vBkWorld.xz * 6.7 ).r * 0.5;
+    float amt = mix( 0.42, 0.75, green );
+    float dn = mix( n, blades * 0.6 + n * 0.4, green );
+    gl_FragColor.rgb *= 1.0 + ( dn - 0.5 ) * amt * fade;
+    gl_FragColor.rgb = mix( gl_FragColor.rgb, gl_FragColor.rgb * vec3( 0.92, 1.06, 0.9 ), green * ( dn - 0.4 ) * fade );
   }
 }
 `;
