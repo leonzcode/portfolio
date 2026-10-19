@@ -1,0 +1,61 @@
+html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d10; font-family: Roboto, "Google Sans", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; outline: none; }
+#ui { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
+#ui > * { pointer-events: auto; }
+
+.hud { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s; color: #fff; }
+.hud.on { opacity: 1; }
+.hud-speed { position: absolute; right: 24px; bottom: 22px; display: flex; align-items: baseline; gap: 6px; text-shadow: 0 1px 3px rgba(0,0,0,.55); }
+.hud-v { font: 600 54px/1 Roboto, system-ui, sans-serif; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+.hud-u { font-size: 15px; opacity: .85; }
+.hud-g { font: 500 15px/1 Roboto, system-ui; background: rgba(0,0,0,.45); border-radius: 6px; padding: 4px 7px; margin-left: 6px; }
+.hud-sig { position: absolute; right: 30px; bottom: 86px; display: flex; gap: 14px; font-size: 18px; }
+.hud-sig span { color: rgba(255,255,255,.18); text-shadow: none; transition: color .05s; }
+.hud-sig span.on { color: #2ee35a; text-shadow: 0 0 8px rgba(46,227,90,.8); }
+.hud-toast { position: absolute; left: 50%; top: 18%; transform: translate(-50%, -6px); background: rgba(32,33,36,.86); color: #fff; padding: 9px 16px; border-radius: 20px; font-size: 14px; opacity: 0; transition: opacity .2s, transform .2s; }
+.hud-toast.on { opacity: 1; transform: translate(-50%, 0); }
+.hud-keys { position: absolute; right: 16px; top: 72px; width: 236px; background: rgba(255,255,255,.95); color: #202124; border-radius: 10px; box-shadow: 0 1px 3px rgba(60,64,67,.3), 0 4px 8px 3px rgba(60,64,67,.15); padding: 10px 14px 12px; pointer-events: auto; font-size: 13px; }
+.hud-keys.off { display: none; }
+.hud-keys-h { font-weight: 500; font-size: 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.hud-x { border: 0; background: none; font-size: 20px; line-height: 1; cursor: pointer; color: #5f6368; padding: 0 2px; }
+.hud-keys dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; }
+.hud-keys dt { color: #1a73e8; font-weight: 500; white-space: nowrap; }
+.hud-keys dd { margin: 0; color: #3c4043; }
+.hud-load { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.25); pointer-events: auto; }
+.hud-load.on { display: flex; }
+.hud-load-card { background: #fff; color: #202124; border-radius: 12px; padding: 20px 26px; min-width: 240px; box-shadow: 0 2px 10px rgba(0,0,0,.3); display: flex; flex-direction: column; align-items: center; gap: 12px; font-size: 15px; }
+.hud-spin { width: 28px; height: 28px; border: 3px solid #e8eaed; border-top-color: #1a73e8; border-radius: 50%; animation: hudspin .9s linear infinite; }
+@keyframes hudspin { to { transform: rotate(360deg); } }
+.hud-bar { width: 100%; height: 4px; background: #e8eaed; border-radius: 2px; overflow: hidden; }
+.hud-bar i { display: block; height: 100%; width: 0; background: #1a73e8; transition: width .3s; }
+.hud-bump { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.9)); opacity: 0; transition: opacity .25s; }
+.attrib { position: absolute; right: 6px; bottom: 2px; font-size: 10px; color: rgba(255,255,255,.85); text-shadow: 0 0 2px #000; pointer-events: none; max-width: 70vw; text-align: right; }
+.glogo { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); pointer-events: none; }
+@media (max-width: 600px) {
+  .hud-v { font-size: 40px; }
+  .hud-keys { display: none; }
+}
+
+.hud-touch { display: none; }
+.hud.touch .hud-touch { display: flex; position: absolute; left: 0; right: 0; bottom: 0; justify-content: space-between; padding: 0 14px calc(14px + env(safe-area-inset-bottom)); pointer-events: none; }
+.hud-touch > div { display: flex; gap: 10px; align-items: flex-end; pointer-events: auto; }
+.hud-touch button { width: 74px; height: 74px; border-radius: 50%; border: 0; background: rgba(32,33,36,.55); color: #fff; font: 500 15px Roboto, system-ui; touch-action: none; user-select: none; -webkit-user-select: none; backdrop-filter: blur(4px); }
+.hud-touch button.on { background: rgba(26,115,232,.85); }
+.hud-touch .ht-gas { height: 104px; border-radius: 18px; background: rgba(30,142,62,.6); }
+.hud-touch .ht-brake { height: 84px; border-radius: 18px; background: rgba(197,34,31,.55); }
+.hud-touch .ht-small { width: 52px; height: 52px; font-size: 20px; }
+.hud.touch .hud-speed { bottom: 128px; right: 18px; }
+.hud.touch .hud-sig { bottom: 186px; }
+
+.hud-note { position: absolute; top: 14px; left: 50%; transform: translate(-50%, -8px); max-width: min(560px, calc(100vw - 32px)); background: rgba(32,33,36,.9); color: #e8eaed; font-size: 13px; line-height: 1.4; padding: 9px 10px 9px 16px; border-radius: 8px; display: flex; gap: 10px; align-items: center; opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; }
+.hud-note.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.hud-note button { border: 0; background: none; color: #9aa0a6; font-size: 18px; cursor: pointer; line-height: 1; padding: 0 4px; }
+.hud.touch ~ .attrib { bottom: auto; top: 4px; right: 8px; max-width: 60vw; font-size: 9px; opacity: .8; }
+@media (max-width: 440px) {
+  .hud-touch button { width: 62px; height: 62px; }
+  .hud-touch .ht-gas { width: 70px; height: 96px; }
+  .hud-touch .ht-brake { width: 66px; height: 76px; }
+  .hud-touch .ht-small { width: 44px; height: 44px; font-size: 17px; }
+  .hud.touch .hud-touch { padding-left: 10px; padding-right: 10px; }
+  .hud-touch > div { gap: 8px; }
+}

@@ -1,0 +1,96 @@
+// The road mask that takes the parked and moving cars out of Google's photogrammetry: the carriageways from OSM
+// are drawn into a picture of the area (white inside), and the road's height is kept in a small float picture.
+// baked.js throws away mesh fragments over a carriageway between just under the road and uCutTop above it, so
+// our own road surface (and our own traffic) shows instead. Areas are redrawn as the car moves.
+import * as THREE from 'three';
+import { bakedUniforms } from './baked.js?v=1';
+
+const WIDTH = { motorway: 3.6, trunk: 3.5, primary: 3.4, secondary: 3.3, tertiary: 3.2, unclassified: 3, residential: 3, living_street: 2.8, service: 3, motorway_link: 3.5, trunk_link: 3.4, primary_link: 3.3, secondary_link: 3.2, tertiary_link: 3.1 };
+const LANES = { motorway: 2, trunk: 2, primary: 2, secondary: 2, tertiary: 2, unclassified: 2, residential: 2, living_street: 2, service: 1 };
+
+export function carriageWidth(tags) {
+  const hw = tags.highway;
+  if (!(hw in WIDTH)) return 0;
+  const w = parseFloat(tags.width);
+  if (w > 2 && w < 40) return w;
+  let lanes = parseInt(tags.lanes) || (tags.oneway === 'yes' && hw !== 'motorway' ? 1 : LANES[hw]) || 2;
+  let width = lanes * WIDTH[hw];
+  // street parking on either side is part of what we cover
+  const park = tags['parking:lane:both'] || tags['parking:both'];
+  if (park && park !== 'no') width += 4.4;
+  else { if ((tags['parking:lane:left'] || tags['parking:left'] || 'no') !== 'no') width += 2.2; if ((tags['parking:lane:right'] || tags['parking:right'] || 'no') !== 'no') width += 2.2; }
+  if (['residential', 'tertiary', 'secondary', 'unclassified'].includes(hw) && !park && lanes <= 2) width += 2.4; // most such streets have parking
+  return width;
+}
+
+export class CutMask {
+  constructor(size = 2048, metres = 1400) {
+    this.size = size; this.metres = metres;
+    this.canvas = document.createElement('canvas'); this.canvas.width = this.canvas.height = size;
+    this.tex = new THREE.CanvasTexture(this.canvas);
+    this.tex.colorSpace = THREE.NoColorSpace; this.tex.generateMipmaps = false;
+    this.tex.minFilter = this.tex.magFilter = THREE.LinearFilter;
+    this.HN = 256;
+    this.hraw = new Float32Array(this.HN * this.HN);
+    this.hdata = new Uint16Array(this.HN * this.HN);
+    this.htex = new THREE.DataTexture(this.hdata, this.HN, this.HN, THREE.RedFormat, THREE.HalfFloatType);
+    this.htex.minFilter = this.htex.magFilter = THREE.LinearFilter;
+    bakedUniforms.uCutMap.value = this.tex;
+    bakedUniforms.uCutHt.value = this.htex;
+  }
+
+  // roads: osm roads [{ pts, tags }]; surface(x, z) -> { h, onRoad } from roads.js (or null)
+  build(cx, cz, roads, surface, ground) {
+    const S = this.size, M = this.metres, x0 = cx - M / 2, z0 = cz - M / 2, k = S / M;
+    const g = this.canvas.getContext('2d');
+    g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
+    g.strokeStyle = '#fff'; g.lineCap = 'round'; g.lineJoin = 'round';
+    for (const r of roads) {
+      const t = r.tags || {};
+      if (t.tunnel && t.tunnel !== 'no') continue;
+      if (t.bridge && t.bridge !== 'no') continue; // a bridge's deck is its own: leave the mesh under it alone
+      const w = carriageWidth(t);
+      if (!w || !r.pts || r.pts.length < 2) continue;
+      g.lineWidth = w * k;
+      g.beginPath();
+      r.pts.forEach(([x, z], i) => { const px = (x - x0) * k, pz = (z - z0) * k; if (i) g.lineTo(px, pz); else g.moveTo(px, pz); });
+      g.stroke();
+    }
+    this.tex.needsUpdate = true;
+    // the road's height on a coarse grid (5.5 m): the road surface where there is one, the ground elsewhere
+    const N = this.HN, step = M / N;
+    const H = this.hraw, ok = new Uint8Array(N * N);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const x = x0 + (i + 0.5) * step, z = z0 + (j + 0.5) * step;
+      const s = surface ? surface(x, z) : null;
+      let h = s && s.onRoad && Number.isFinite(s.h) ? s.h : null;
+      if (h === null && ground) h = ground(x, z);
+      if (h !== null && Number.isFinite(h)) { H[j * N + i] = h; ok[j * N + i] = 1; }
+    }
+    // cells with no road spread from their neighbours, so filtering at a road's edge reads the road's height
+    for (let it = 0; it < 24; it++) {
+      let changed = 0;
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+        const o = j * N + i; if (ok[o]) continue;
+        let sum = 0, n = 0;
+        if (i > 0 && ok[o - 1] === 1) { sum += H[o - 1]; n++; }
+        if (i < N - 1 && ok[o + 1] === 1) { sum += H[o + 1]; n++; }
+        if (j > 0 && ok[o - N] === 1) { sum += H[o - N]; n++; }
+        if (j < N - 1 && ok[o + N] === 1) { sum += H[o + N]; n++; }
+        if (n) { H[o] = sum / n; ok[o] = 2; changed++; }
+      }
+      for (let o = 0; o < N * N; o++) if (ok[o] === 2) ok[o] = 1;
+      if (!changed) break;
+    }
+    // half floats hold heights round a base (the middle's) to a few centimetres
+    const base = this.hraw[(N >> 1) * N + (N >> 1)];
+    for (let i = 0; i < N * N; i++) this.hdata[i] = THREE.DataUtils.toHalfFloat(this.hraw[i] - base);
+    bakedUniforms.uCutH.value.set(base, 1);
+    this.htex.needsUpdate = true;
+    bakedUniforms.uCutBox.value.set(x0, z0, 1 / M, 1 / M);
+    bakedUniforms.uCutOn.value = 1;
+    this.center = { x: cx, z: cz };
+  }
+
+  off() { bakedUniforms.uCutOn.value = 0; }
+}

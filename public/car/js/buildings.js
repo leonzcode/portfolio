@@ -1,0 +1,795 @@
+// Buildings for the open world, from OSM building records (osm.js): every footprint extruded to its real height
+// (height, else levels, else a guess by type and by how built up the area is), building:part pieces from their
+// min_height, roofs flat, gabled, hipped, pyramidal or skillion, the roofs textured with the satellite picture
+// right above them (so they show their real colours, AC units and skylights), the walls drawn by facade.js.
+//
+//   const b = buildings.build(list, { groundAt, scene, world, collide, imagery, focus })
+//   b.group            THREE.Group, added to scene (or world.root)
+//   b.ready            Promise, resolved once every cell is built with its imagery
+//   b.dispose()
+//
+// Meshes are merged per CELL x CELL metre square: one walls mesh (one shared material) and one roof mesh (its
+// cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
+// and the meshes go into world.extra so world.raycast hits them.
+import * as THREE from 'three';
+import { frame } from './geo.js?v=1';
+import { patchBaked } from './baked.js?v=1';
+import { makeFacadeMaterial, STYLE, GROUND } from './facade.js?v=1';
+
+export const CELL = 400;
+const LV = 3.2;
+const D2R = Math.PI / 180;
+
+// ---------- small helpers ----------
+function hashf(n, salt = 0) {
+  let h = (Math.imul((n | 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(((n / 4294967296) | 0) + salt * 7919, 0xc2b2ae35)) >>> 0;
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d) >>> 0; h ^= h >>> 12; h = Math.imul(h, 0x297a2d39) >>> 0; h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+const area2 = (r) => { let a = 0; for (let i = 0, n = r.length; i < n; i++) { const p = r[i], q = r[(i + 1) % n]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; };
+
+function cleanRing(r) {
+  const out = [];
+  for (const p of r) {
+    const q = out[out.length - 1];
+    if (!q || Math.hypot(p[0] - q[0], p[1] - q[1]) > 0.05) out.push([p[0], p[1]]);
+  }
+  while (out.length > 2 && Math.hypot(out[0][0] - out[out.length - 1][0], out[0][1] - out[out.length - 1][1]) <= 0.05) out.pop();
+  return out;
+}
+
+function inRing(x, z, r) {
+  let c = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const a = r[i], b = r[j];
+    if ((a[1] > z) !== (b[1] > z) && x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]) c = !c;
+  }
+  return c;
+}
+
+function hull(pts) {
+  const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (p.length < 3) return p;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+  up.pop(); lo.pop();
+  return lo.concat(up);
+}
+
+// minimum-area bounding rectangle: centre, long axis A, short axis P, half length hl (along A), half width hw
+function obb(ring) {
+  const h = hull(ring);
+  let best = null;
+  for (let i = 0; i < h.length; i++) {
+    const a = h[i], b = h[(i + 1) % h.length];
+    let dx = b[0] - a[0], dz = b[1] - a[1]; const l = Math.hypot(dx, dz); if (l < 1e-6) continue;
+    dx /= l; dz /= l;
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (const p of h) { const u = p[0] * dx + p[1] * dz, v = -p[0] * dz + p[1] * dx; if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v; }
+    const ar = (u1 - u0) * (v1 - v0);
+    if (!best || ar < best.ar) best = { ar, dx, dz, u0, u1, v0, v1 };
+  }
+  if (!best) return null;
+  const { dx, dz, u0, u1, v0, v1 } = best;
+  const cu = (u0 + u1) / 2, cv = (v0 + v1) / 2;
+  const cx = cu * dx - cv * dz, cz = cu * dz + cv * dx;
+  let A = [dx, dz], P = [-dz, dx], hl = (u1 - u0) / 2, hw = (v1 - v0) / 2;
+  if (hw > hl) { [A, P] = [P, A]; [hl, hw] = [hw, hl]; }
+  return { cx, cz, A, P, hl, hw, area: best.ar };
+}
+
+// every vertex moved by d along its edges' outward normals (-dz, dx), mitred, capped at sharp corners
+function offsetRing(r, d) {
+  const n = r.length, out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = r[(i - 1 + n) % n], p = r[i], b = r[(i + 1) % n];
+    let ax = p[0] - a[0], az = p[1] - a[1], bx = b[0] - p[0], bz = b[1] - p[1];
+    const la = Math.hypot(ax, az) || 1, lb = Math.hypot(bx, bz) || 1;
+    const n1x = -az / la, n1z = ax / la, n2x = -bz / lb, n2z = bx / lb;
+    let mx = n1x + n2x, mz = n1z + n2z; const ml = Math.hypot(mx, mz);
+    if (ml < 1e-6) { out[i] = [p[0] + n1x * d, p[1] + n1z * d]; continue; }
+    mx /= ml; mz /= ml;
+    const k = Math.min(3, 1 / Math.max(0.33, mx * n1x + mz * n1z));
+    out[i] = [p[0] + mx * d * k, p[1] + mz * d * k];
+  }
+  return out;
+}
+
+// clip a ring by f(p) = g . p + c >= 0
+function clip(ring, g, c) {
+  const out = [];
+  for (let i = 0, n = ring.length; i < n; i++) {
+    const p = ring[i], q = ring[(i + 1) % n];
+    const fp = g[0] * p[0] + g[1] * p[1] + c, fq = g[0] * q[0] + g[1] * q[1] + c;
+    if (fp >= 0) out.push(p);
+    if ((fp >= 0) !== (fq >= 0)) { const s = fp / (fp - fq); out.push([p[0] + (q[0] - p[0]) * s, p[1] + (q[1] - p[1]) * s]); }
+  }
+  return out;
+}
+
+function triangulate(outer, holes) {
+  const c = outer.map(p => new THREE.Vector2(p[0], p[1]));
+  const hs = (holes || []).map(h => h.map(p => new THREE.Vector2(p[0], p[1])));
+  let tris;
+  try { tris = THREE.ShapeUtils.triangulateShape(c, hs); } catch (e) { tris = []; }
+  const pts = c.concat(...hs);
+  return { pts, tris };
+}
+
+const _col = new THREE.Color();
+function parseColour(s) {
+  if (!s) return null;
+  s = String(s).trim().toLowerCase().replace(/[\s_-]/g, '');
+  if (s === 'grey' || s === 'gray') s = 'gray';
+  const alias = { lightgrey: 'lightgray', darkgrey: 'darkgray', cream: '#efe6cc', sand: '#d8c39a', brick: '#9a4a36', redbrick: '#9a4a36', stone: '#c8bea8', concrete: '#bdbab3', glass: '#5a6e7c', white: '#f0eee8', black: '#2a2a2a' };
+  if (alias[s]) s = alias[s];
+  if (s[0] === '#' || THREE.Color.NAMES[s] !== undefined) {
+    try { _col.setStyle(s, THREE.SRGBColorSpace); return _col.clone(); } catch (e) { return null; }
+  }
+  return null;
+}
+
+// ---------- what each building is ----------
+const HOUSE = new Set(['house', 'detached', 'semidetached_house', 'bungalow', 'terrace', 'cabin', 'farm', 'villa', 'static_caravan', 'houseboat', 'hut']);
+const SMALL = new Set(['garage', 'garages', 'shed', 'carport', 'kiosk', 'hut', 'toilets', 'roof', 'service', 'transformer_tower', 'bunker', 'container', 'shelter']);
+const SHOPS = new Set(['commercial', 'retail', 'mixed_use', 'supermarket', 'kiosk', 'shop', 'store', 'restaurant', 'hotel']);
+const OFFICE = new Set(['office', 'bank', 'government']);
+const WORKS = new Set(['industrial', 'warehouse', 'factory', 'manufacture', 'hangar', 'storage_tank', 'barn', 'farm_auxiliary', 'greenhouse', 'parking', 'garages', 'service']);
+const CIVIC = new Set(['church', 'cathedral', 'chapel', 'mosque', 'temple', 'synagogue', 'shrine', 'civic', 'public', 'government', 'museum', 'townhall', 'courthouse', 'train_station', 'transportation']);
+const FLATS = new Set(['apartments', 'residential', 'dormitory', 'flats']);
+
+function region() {
+  const la = frame.lat, lo = frame.lon;
+  if (lo > -170 && lo < -50 && la > 14 && la < 72) return 'us';
+  if (lo > -11 && lo < 2 && la > 49 && la < 61) return 'uk';
+  if (lo > 129 && lo < 146 && la > 30 && la < 46) return 'jp';
+  if (lo > -11 && lo < 40 && la > 35 && la < 71) return 'eu';
+  return 'other';
+}
+
+const PAL = {
+  [STYLE.BRICK]: ['#9a5b45', '#8a4c3a', '#a8664c', '#7d4636', '#b39672', '#a08262', '#6f4a3c', '#c19d7c', '#8f6a55'],
+  [STYLE.CONCRETE]: ['#c9c5bd', '#b9b5ad', '#d6d0c4', '#a9a7a2', '#cfc6b4', '#bfb6a5', '#9c9a96', '#dcd8cf', '#8f8d88'],
+  [STYLE.GLASS]: ['#7e8a90', '#5d666b', '#9aa3a8', '#3e464b', '#b4b8b8'],
+  [STYLE.STUCCO]: ['#ece5d6', '#e6d9bf', '#e9dcae', '#d9c7a5', '#e8d3c9', '#cfd6d6', '#f2efe8', '#d8c2a0', '#c9b79c', '#e3e1d8'],
+  [STYLE.WOOD]: ['#e9e6dd', '#c9cfcf', '#a9b8b8', '#d8ccaa', '#b8b19a', '#8f9ea6', '#e2d4b4', '#9aa58c', '#d9d2c4'],
+  [STYLE.METAL]: ['#b4b8ba', '#a3a8a8', '#c8c6bc', '#8e9496', '#c2b8a4', '#d0d2cf'],
+  [STYLE.STONE]: ['#cfc3a8', '#bfb39a', '#d8d0bc', '#a89c88', '#e0d8c6'],
+};
+const PAL_LIN = {};
+// linear (Color stores linear), darkened: sunlit walls under a sun of 3 read about as bright as the photographs
+for (const k in PAL) PAL_LIN[k] = PAL[k].map(h => new THREE.Color(h).multiplyScalar(0.62));
+
+function materialStyle(m) {
+  if (!m) return null;
+  m = String(m).toLowerCase();
+  if (/brick/.test(m)) return STYLE.BRICK;
+  if (/glass|mirror/.test(m)) return STYLE.GLASS;
+  if (/concrete|cement|reinforced/.test(m)) return STYLE.CONCRETE;
+  if (/plaster|stucco|render/.test(m)) return STYLE.STUCCO;
+  if (/wood|timber|vinyl|siding/.test(m)) return STYLE.WOOD;
+  if (/metal|steel|alumin|tin/.test(m)) return STYLE.METAL;
+  if (/stone|granite|marble|sandstone|limestone/.test(m)) return STYLE.STONE;
+  return null;
+}
+
+function pickStyle(b, H, area, ctx, r) {
+  const t = b.type, reg = ctx.region;
+  const ms = materialStyle(b.material);
+  if (ms !== null) return ms;
+  if (HOUSE.has(t) || (t === 'residential' && area < 260)) {
+    if (reg === 'uk') return r < 0.75 ? STYLE.BRICK : STYLE.STUCCO;
+    if (reg === 'us') return r < 0.55 ? STYLE.STUCCO : STYLE.WOOD;
+    if (reg === 'jp') return r < 0.7 ? STYLE.STUCCO : STYLE.WOOD;
+    return r < 0.5 ? STYLE.STUCCO : STYLE.BRICK;
+  }
+  if (WORKS.has(t) || SMALL.has(t)) return t === 'garage' || t === 'garages' || t === 'shed' ? (reg === 'uk' ? STYLE.BRICK : STYLE.STUCCO) : STYLE.METAL;
+  if (CIVIC.has(t)) return r < 0.7 ? STYLE.STONE : STYLE.BRICK;
+  if (H > 48) return r < 0.6 ? STYLE.GLASS : (r < 0.85 ? STYLE.CONCRETE : STYLE.STONE);
+  if (OFFICE.has(t)) return H > 25 && r < 0.45 ? STYLE.GLASS : STYLE.CONCRETE;
+  if (FLATS.has(t)) {
+    if (reg === 'uk') return r < 0.65 ? STYLE.BRICK : (r < 0.85 ? STYLE.STUCCO : STYLE.CONCRETE);
+    if (reg === 'jp') return r < 0.6 ? STYLE.CONCRETE : STYLE.STUCCO;
+    if (reg === 'us') return r < 0.5 ? STYLE.STUCCO : (r < 0.8 ? STYLE.BRICK : STYLE.WOOD);
+    return r < 0.5 ? STYLE.STUCCO : STYLE.CONCRETE;
+  }
+  if (reg === 'uk') return r < 0.5 ? STYLE.BRICK : (r < 0.75 ? STYLE.STUCCO : STYLE.STONE);
+  if (reg === 'jp') return r < 0.55 ? STYLE.CONCRETE : (r < 0.85 ? STYLE.STUCCO : STYLE.GLASS);
+  if (reg === 'us') return H > 14 ? (r < 0.45 ? STYLE.CONCRETE : r < 0.75 ? STYLE.BRICK : STYLE.STONE) : (r < 0.45 ? STYLE.STUCCO : r < 0.75 ? STYLE.CONCRETE : STYLE.BRICK);
+  return r < 0.4 ? STYLE.CONCRETE : (r < 0.7 ? STYLE.STUCCO : STYLE.BRICK);
+}
+
+function pickGround(b, style, H, ctx, r) {
+  const t = b.type;
+  if (b.minH > 0.5) return GROUND.NONE;
+  if (HOUSE.has(t)) return GROUND.DOOR;
+  if (SHOPS.has(t)) return GROUND.SHOP;
+  if (WORKS.has(t)) return GROUND.ROLLUP;
+  if (OFFICE.has(t) || style === STYLE.GLASS) return GROUND.LOBBY;
+  if (CIVIC.has(t)) return GROUND.DOOR;
+  // a built up centre: most street fronts are shops
+  if (ctx.density > 0.35 && H > 7) return r < 0.7 ? GROUND.SHOP : GROUND.LOBBY;
+  if (FLATS.has(t)) return r < 0.3 && ctx.density > 0.2 ? GROUND.SHOP : GROUND.DOOR;
+  return r < 0.4 ? GROUND.DOOR : GROUND.NONE;
+}
+
+const ROOF_ALIAS = { gabled: 'gabled', gambrel: 'gabled', saltbox: 'gabled', round: 'gabled', 'half-hipped': 'hipped', hipped: 'hipped', mansard: 'hipped', side_hipped: 'hipped', pyramidal: 'pyramidal', dome: 'pyramidal', onion: 'pyramidal', cone: 'pyramidal', skillion: 'skillion', lean_to: 'skillion' };
+
+// heights, roof and look of one record; null when it cannot be drawn
+function plan(b, ctx) {
+  let outer = cleanRing(b.outer || []);
+  if (outer.length < 3) return null;
+  if (area2(outer) > 0) outer.reverse();          // counter-clockwise from above (negative shoelace, z south)
+  const area = -area2(outer);
+  if (area < 3) return null;
+  let holes = (b.holes || []).map(cleanRing).filter(h => h.length >= 3);
+  holes = holes.map(h => (area2(h) < 0 ? h.slice().reverse() : h));
+  const id = typeof b.id === 'number' ? b.id : hashf(String(b.id).length) * 1e9;
+  const r1 = hashf(id, 1), r2 = hashf(id, 2), r3 = hashf(id, 3), r4 = hashf(id, 4);
+  const t = b.type || 'yes';
+  const ob = obb(outer);
+  if (!ob) return null;
+
+  // roof shape: tagged, else pitched for small houses
+  let shape = b.roofShape ? (ROOF_ALIAS[b.roofShape] || 'flat') : null;
+  const houseLike = HOUSE.has(t) || ((t === 'yes' || t === 'residential' || t === 'garage' || t === 'shed') && area > 35 && area < 280 && ctx.density < 0.3 && !(b.levels > 3));
+  if (!shape) {
+    if (houseLike && area < 450 && area / ob.area > 0.62 && ctx.region !== 'jp-centre') shape = r2 < (ctx.region === 'us' ? 0.55 : 0.3) ? 'hipped' : 'gabled';
+    else shape = 'flat';
+  }
+  if (holes.length && shape !== 'flat') shape = 'flat';
+
+  const minH = b.minHeight || (b.minLevel ? b.minLevel * LV : 0);
+  let roofH = b.roofHeight ?? (b.roofLevels ? b.roofLevels * LV : null);
+  const pitch = ctx.region === 'us' ? 24 : 34;
+  if (roofH == null && shape !== 'flat') {
+    if (shape === 'skillion') roofH = Math.min(3, ob.hw * 2 * Math.tan(12 * D2R));
+    else roofH = Math.min(7, ob.hw * Math.tan((pitch + (r3 - 0.5) * 10) * D2R));
+  }
+  if (shape === 'flat') roofH = 0;
+
+  let H = b.height;
+  let levels = b.levels;
+  if (H == null && levels != null) H = levels * LV + (roofH || 0) + (levels > 0 && !HOUSE.has(t) ? 0.6 : 0);
+  if (H == null) {
+    let d;
+    if (HOUSE.has(t)) d = t === 'bungalow' ? 4 : (t === 'terrace' ? 9 : 6.2) + (roofH || 0) * 0.5;
+    else if (SMALL.has(t)) d = 3;
+    else if (FLATS.has(t)) d = area < 200 ? 9 : 13;
+    else if (SHOPS.has(t)) d = area > 3000 ? 8 : 10;
+    else if (OFFICE.has(t)) d = 16;
+    else if (WORKS.has(t)) d = 8;
+    else if (CIVIC.has(t)) d = t === 'church' || t === 'cathedral' ? 16 : 11;
+    else if (t === 'school' || t === 'university' || t === 'college' || t === 'hospital') d = 11;
+    else d = houseLike ? 6.5 : 8;
+    // no height and no levels in a dense centre: real buildings there are taller than the type suggests
+    if (ctx.density > 0.4 && !HOUSE.has(t) && !SMALL.has(t) && area > 60) d = Math.max(d, 11 + ctx.density * 12 + r4 * 6);
+    else if (ctx.density > 0.25 && !HOUSE.has(t) && !SMALL.has(t) && area > 60) d = Math.max(d, 9 + r4 * 4);
+    H = d;
+  }
+  if (H <= minH + 0.5) H = minH + Math.max(2.5, (levels || 1) * LV);
+  if (roofH > (H - minH) * 0.6) roofH = (H - minH) * 0.6;
+  const eave = H - roofH;
+  if (!levels) levels = Math.max(1, Math.round((eave - 0.5) / (HOUSE.has(t) ? 2.9 : 3.4)));
+  let fh = (eave - (b.minLevel ? b.minLevel * LV : 0) - 0.4) / Math.max(1, levels - (b.minLevel || 0));
+  if (!(fh > 2.5 && fh < 6)) fh = HOUSE.has(t) ? 2.9 : 3.4;
+  let style = pickStyle(b, H, area, ctx, r1);
+  const ground = pickGround({ ...b, minH }, style, H, ctx, r2);
+  let gh = ground === GROUND.SHOP ? Math.max(fh, 4.4) : ground === GROUND.LOBBY ? Math.max(fh, 5.0) : ground === GROUND.ROLLUP ? Math.max(fh, 5.2) : fh;
+  if (gh > eave - 0.5) gh = Math.max(2.5, eave - 0.5);
+  if (style === STYLE.GLASS && H < 12) style = STYLE.CONCRETE;
+  const colour = parseColour(b.colour);
+  const roofColour = parseColour(b.roofColour);
+  // Parts often share a facade (a tower flush with its podium, an outline drawn with its own part): two walls in
+  // one plane facing the same way flicker against each other. Push every footprint out by its own few centimetres
+  // (taller ones further), so no two buildings' walls are ever exactly coplanar.
+  const eps = 0.012 + 0.0003 * Math.min(H, 400) + 0.014 * r4;
+  const outer0 = outer;
+  outer = offsetRing(outer, eps);
+  holes = holes.map(h => offsetRing(h, eps));
+  return { b, id, outer, outer0, holes, area, ob, shape, minH, roofH, H, eave, fh, gh, style, ground, colour, roofColour, r1, r2, r3, r4, levels };
+}
+
+// the roof's height over the eave: roofH * (1 - max_i t_i(p)), each t_i linear in p (x, z)
+function roofTerms(P) {
+  const { ob, shape } = P;
+  const { cx, cz, A, Pp = ob.P, hl, hw } = { ...ob, Pp: ob.P };
+  const lin = (gx, gz, k, s) => ({ g: [gx / s, gz / s], c: (-(gx * cx + gz * cz) - k) / s });
+  if (shape === 'gabled') return [lin(Pp[0], Pp[1], 0, hw), lin(-Pp[0], -Pp[1], 0, hw)];
+  if (shape === 'hipped') { const k = Math.max(0, hl - hw); return [lin(Pp[0], Pp[1], 0, hw), lin(-Pp[0], -Pp[1], 0, hw), lin(A[0], A[1], k, hw), lin(-A[0], -A[1], k, hw)]; }
+  if (shape === 'pyramidal') return [lin(Pp[0], Pp[1], 0, hw), lin(-Pp[0], -Pp[1], 0, hw), lin(A[0], A[1], 0, hl), lin(-A[0], -A[1], 0, hl)];
+  if (shape === 'skillion') { const s = P.r3 < 0.5 ? 1 : -1; const t = lin(s * Pp[0], s * Pp[1], -hw, 2 * hw); return [t]; }
+  return null;
+}
+const termAt = (t, x, z) => t.g[0] * x + t.g[1] * z + t.c;
+function roofAt(P, terms, x, z) {
+  if (!terms) return 0;
+  let m = -Infinity;
+  for (const t of terms) { const v = termAt(t, x, z); if (v > m) m = v; }
+  return P.roofH * Math.max(0, Math.min(1, 1 - m));
+}
+
+// ---------- geometry buffers ----------
+class Buf {
+  constructor() { this.pos = []; this.nrm = []; this.col = []; this.w = []; this.bb = []; this.s = []; this.idx = []; this.n = 0; }
+  v(x, y, z, nx, ny, nz, c, u, L, eave, gy, base, fh, gh, seed, style, ground) {
+    this.pos.push(x, y, z); this.nrm.push(nx, ny, nz); this.col.push(c.r, c.g, c.b);
+    this.w.push(u, L, eave, gy); this.bb.push(base, fh, gh, seed); this.s.push(style, ground);
+    return this.n++;
+  }
+  geometry() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3));
+    g.setAttribute('aCol', new THREE.Float32BufferAttribute(this.col, 3));
+    g.setAttribute('aW', new THREE.Float32BufferAttribute(this.w, 4));
+    g.setAttribute('aB', new THREE.Float32BufferAttribute(this.bb, 4));
+    g.setAttribute('aS', new THREE.Float32BufferAttribute(this.s, 2));
+    g.setIndex(this.n > 65535 ? new THREE.Uint32BufferAttribute(this.idx, 1) : new THREE.Uint16BufferAttribute(this.idx, 1));
+    g.computeBoundingSphere(); g.computeBoundingBox();
+    return g;
+  }
+}
+class RoofBuf {
+  constructor() { this.pos = []; this.uv = []; this.col = []; this.idx = []; this.n = 0; }
+  v(x, y, z, c, uv) { this.pos.push(x, y, z); this.col.push(c.r, c.g, c.b); this.uv.push(uv[0], uv[1]); return this.n++; }
+  geometry() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    g.setIndex(this.n > 65535 ? new THREE.Uint32BufferAttribute(this.idx, 1) : new THREE.Uint16BufferAttribute(this.idx, 1));
+    g.computeVertexNormals();
+    g.computeBoundingSphere(); g.computeBoundingBox();
+    return g;
+  }
+}
+
+// one building into the buffers
+function emit(P, ctx, W, R, img) {
+  const { outer, holes, minH, H, eave, fh, gh, style, ground, id } = P;
+  const ground0 = (x, z) => { const g = ctx.groundAt(x, z); return g == null || !isFinite(g) ? ctx.g0 : g; };
+  let gmin = Infinity;
+  for (const p of outer) { const g = ground0(p[0], p[1]); if (g < gmin) gmin = g; }
+  const base = P.baseY ?? gmin;
+  P.baseY = base;
+  const yBot = minH > 0.3 ? base + minH : gmin - 1.2;
+  const terms = roofTerms(P);
+  const yEave = base + eave;
+  const seed = Math.floor(P.r4 * 997);   // a whole number: the shader hashes it
+  const wc = P.wallColour;
+  const lean = img ? img.lean : null;
+  const uvOf = (x, z, y) => {
+    if (!img) return [0, 0];
+    let lx = x, lz = z;
+    if (lean) { const hh = Math.max(0, y - base); lx += lean[0] * hh; lz += lean[1] * hh; }
+    return [(lx - img.x0) / (img.x1 - img.x0), (lz - img.z0) / (img.z1 - img.z0)];
+  };
+  const rc = img ? WHITE : (P.roofColour || P.fallbackRoof);
+
+  // walls, ring by ring
+  for (const ring of [outer, ...holes]) {
+    const n = ring.length;
+    // points with the roof's kinks inserted on each edge
+    const edges = [];
+    for (let i = 0; i < n; i++) {
+      const p = ring[i], q = ring[(i + 1) % n];
+      const dx = q[0] - p[0], dz = q[1] - p[1], len = Math.hypot(dx, dz);
+      if (len < 1e-3) continue;
+      const ss = [0];
+      if (terms && terms.length > 1) {
+        for (let a = 0; a < terms.length; a++) for (let c = a + 1; c < terms.length; c++) {
+          const fa = termAt(terms[a], p[0], p[1]) - termAt(terms[c], p[0], p[1]);
+          const fb = termAt(terms[a], q[0], q[1]) - termAt(terms[c], q[0], q[1]);
+          if ((fa > 0) !== (fb > 0) && Math.abs(fa - fb) > 1e-9) { const s = fa / (fa - fb); if (s > 0.001 && s < 0.999) ss.push(s); }
+        }
+      }
+      ss.sort((x, y) => x - y); ss.push(1);
+      edges.push({ p, q, dx, dz, len, ss, ang: Math.atan2(dz, dx) });
+    }
+    const m = edges.length; if (m < 3) continue;
+    // runs of nearly straight edges share one window layout
+    const turn = (k) => { let d = edges[k].ang - edges[(k - 1 + m) % m].ang; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return Math.abs(d); };
+    let s0 = 0; for (let k = 0; k < m; k++) if (turn(k) > 0.4) { s0 = k; break; }
+    const runOf = new Array(m), uStart = new Array(m), runLen = [];
+    let run = -1, acc = 0;
+    for (let j = 0; j < m; j++) {
+      const k = (s0 + j) % m;
+      if (j === 0 || turn(k) > 0.4) { run++; runLen.push(0); acc = 0; }
+      runOf[k] = run; uStart[k] = acc; acc += edges[k].len; runLen[run] = acc;
+    }
+    for (let k = 0; k < m; k++) {
+      const e = edges[k], nx = -e.dz / e.len, nz = e.dx / e.len, L = runLen[runOf[k]];
+      for (let j = 0; j + 1 < e.ss.length; j++) {
+        const sa = e.ss[j], sb = e.ss[j + 1];
+        // the ends are the ring's own vertices, bit for bit, so neighbouring walls share their corner exactly
+        const ax = sa === 0 ? e.p[0] : e.p[0] + e.dx * sa, az = sa === 0 ? e.p[1] : e.p[1] + e.dz * sa;
+        const bx = sb === 1 ? e.q[0] : e.p[0] + e.dx * sb, bz = sb === 1 ? e.q[1] : e.p[1] + e.dz * sb;
+        const ta = yEave + roofAt(P, terms, ax, az), tb = yEave + roofAt(P, terms, bx, bz);
+        const ga = ground0(ax, az), gb = ground0(bx, bz);
+        const ua = uStart[k] + e.len * sa, ub = uStart[k] + e.len * sb;
+        const eh = eave;
+        const i0 = W.v(ax, yBot, az, nx, 0, nz, wc, ua, L, eh, ga, base, fh, gh, seed, style, ground);
+        const i1 = W.v(bx, yBot, bz, nx, 0, nz, wc, ub, L, eh, gb, base, fh, gh, seed, style, ground);
+        const i2 = W.v(bx, tb, bz, nx, 0, nz, wc, ub, L, eh, gb, base, fh, gh, seed, style, ground);
+        const i3 = W.v(ax, ta, az, nx, 0, nz, wc, ua, L, eh, ga, base, fh, gh, seed, style, ground);
+        W.idx.push(i0, i1, i2, i0, i2, i3);
+      }
+    }
+  }
+
+  // the underside of a raised part
+  if (minH > 0.3) {
+    const { pts, tris } = triangulate(outer, holes);
+    const ids = pts.map(p => W.v(p.x, yBot, p.y, 0, -1, 0, wc, 0, 0, 0, -1e4, base, fh, gh, seed, STYLE.SOFFIT, 0));
+    for (const t of tris) {
+      const a = pts[t[0]], b = pts[t[1]], c = pts[t[2]];
+      const cr = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+      // facing down: the opposite winding of a roof
+      if (cr > 0) W.idx.push(ids[t[0]], ids[t[1]], ids[t[2]]); else W.idx.push(ids[t[0]], ids[t[2]], ids[t[1]]);
+    }
+  }
+
+  // the roof
+  const pushTris = (poly, hs, heightOf) => {
+    const { pts, tris } = triangulate(poly, hs);
+    const ids = pts.map(p => { const y = heightOf(p.x, p.y); return R.v(p.x, y, p.y, rc, uvOf(p.x, p.y, y)); });
+    for (const t of tris) {
+      const a = pts[t[0]], b = pts[t[1]], c = pts[t[2]];
+      const cr = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+      // facing up (+y) with z south: counter-clockwise from above is a negative cross product here
+      if (cr < 0) R.idx.push(ids[t[0]], ids[t[1]], ids[t[2]]); else R.idx.push(ids[t[0]], ids[t[2]], ids[t[1]]);
+    }
+  };
+  if (!terms) pushTris(outer, holes, () => base + H);
+  else {
+    for (let i = 0; i < terms.length; i++) {
+      let poly = outer;
+      for (let j = 0; j < terms.length && poly.length >= 3; j++) {
+        if (j === i) continue;
+        poly = clip(poly, [terms[i].g[0] - terms[j].g[0], terms[i].g[1] - terms[j].g[1]], terms[i].c - terms[j].c);
+      }
+      if (poly.length >= 3) pushTris(poly, [], (x, z) => yEave + roofAt(P, terms, x, z));
+    }
+  }
+}
+const WHITE = new THREE.Color(1, 1, 1);
+
+// ---------- imagery: lean of tall buildings, roof colours ----------
+function sampler(img) {
+  const { data, w, h, x0, z0, x1, z1 } = img;
+  const sx = w / (x1 - x0), sz = h / (z1 - z0);
+  return (x, z) => {
+    const i = Math.floor((x - x0) * sx), j = Math.floor((z - z0) * sz);
+    if (i < 0 || j < 0 || i >= w || j >= h) return null;
+    const k = (j * w + i) * 4;
+    return [data[k], data[k + 1], data[k + 2]];
+  };
+}
+const lum = (c) => c ? 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2] : NaN;
+
+// Satellite pictures are taken a little off vertical, so a tall roof is drawn shifted from its footprint by
+// (height x a constant vector). Find that vector for the cell: the shift at which the roofs' outlines sit on the
+// strongest edges in the picture. Nearby cells share the picture, so the first good answer is where the next
+// cells start looking.
+let LEAN_HINT = null;
+async function estimateLean(plans, lumAt, slice) {
+  const tall = plans.filter(P => P.H > 28 && P.area > 150).sort((a, b) => b.H - a.H).slice(0, 30);
+  if (tall.length < 3) return null;
+  const samples = [];
+  for (const P of tall) {
+    const r = P.outer, n = r.length, list = [];
+    for (let i = 0; i < n; i++) {
+      const p = r[i], q = r[(i + 1) % n], dx = q[0] - p[0], dz = q[1] - p[1], len = Math.hypot(dx, dz);
+      if (len < 4) continue;
+      const nx = -dz / len, nz = dx / len, k = Math.max(1, Math.floor(len / 3));
+      for (let j = 0; j < k; j++) { const s = (j + 0.5) / k; list.push([p[0] + dx * s, p[1] + dz * s, nx, nz]); }
+    }
+    while (list.length > 60) list.splice(Math.floor(list.length * 0.37) % list.length, 1);
+    if (list.length) samples.push({ H: P.H, list });
+  }
+  const score = (kx, kz) => {
+    let s = 0, c = 0;
+    for (const B of samples) {
+      const ox = kx * B.H, oz = kz * B.H;
+      let sb = 0, cb = 0;
+      for (const [x, z, nx, nz] of B.list) {
+        const a = lumAt(x + ox - nx * 1.4, z + oz - nz * 1.4), b = lumAt(x + ox + nx * 1.4, z + oz + nz * 1.4);
+        if (a !== a || b !== b) continue;
+        sb += Math.abs(a - b); cb++;
+      }
+      if (cb) { s += sb / cb; c++; }
+    }
+    return c ? s / c : 0;
+  };
+  const s0 = score(0, 0);
+  let best = [0, 0], bs = s0;
+  const tryK = (kx, kz) => { const s = score(kx, kz); if (s > bs) { bs = s; best = [kx, kz]; } };
+  const hint = LEAN_HINT && LEAN_HINT.lat === frame.lat && LEAN_HINT.lon === frame.lon ? LEAN_HINT.k : null;
+  if (hint) {
+    for (let a = -3; a <= 3; a++) { for (let b = -3; b <= 3; b++) tryK(hint[0] + a * 0.02, hint[1] + b * 0.02); await slice('lean'); }
+  } else {
+    for (let kx = -0.6; kx <= 0.6001; kx += 0.1) { for (let kz = -0.6; kz <= 0.6001; kz += 0.1) tryK(kx, kz); await slice('lean'); }
+    for (const st of [0.03, 0.01]) {
+      const [bx, bz] = best;
+      for (let a = -2; a <= 2; a++) { for (let b = -2; b <= 2; b++) tryK(bx + a * st, bz + b * st); await slice('lean'); }
+    }
+  }
+  // only trust a clear improvement, well inside the range searched
+  if (bs < s0 * 1.2 || Math.abs(best[0]) > 0.62 || Math.abs(best[1]) > 0.62) return null;
+  if (bs > s0 * 1.25) LEAN_HINT = { lat: frame.lat, lon: frame.lon, k: best };
+  return { k: best, gain: bs / Math.max(1e-6, s0) };
+}
+
+function roofMean(P, at, lean) {
+  const { ob } = P;
+  let r = 0, g = 0, b = 0, c = 0;
+  const off = lean ? [lean[0] * P.H, lean[1] * P.H] : [0, 0];
+  for (let i = 0; i < 48 && c < 24; i++) {
+    const u = (hashf(P.id, 10 + i) - 0.5) * 2 * ob.hl * 0.9, v = (hashf(P.id, 70 + i) - 0.5) * 2 * ob.hw * 0.9;
+    const x = ob.cx + ob.A[0] * u + ob.P[0] * v, z = ob.cz + ob.A[1] * u + ob.P[1] * v;
+    if (!inRing(x, z, P.outer)) continue;
+    const s = at(x + off[0], z + off[1]); if (!s) continue;
+    r += s[0]; g += s[1]; b += s[2]; c++;
+  }
+  return c ? [r / c / 255, g / c / 255, b / c / 255] : null;
+}
+
+// A leaning picture shows the faces that look towards the satellite, between each base and its shifted roof:
+// the mean colour of those faces is the building's real wall colour.
+function facadeMean(P, at, lean) {
+  if (!lean || P.H < 9) return null;
+  const kl = Math.hypot(lean[0], lean[1]);
+  if (kl < 0.08) return null;
+  const r = P.outer, n = r.length;
+  let R = 0, G = 0, B = 0, c = 0;
+  for (let i = 0; i < n; i++) {
+    const p = r[i], q = r[(i + 1) % n], dx = q[0] - p[0], dz = q[1] - p[1], len = Math.hypot(dx, dz);
+    if (len < 3) continue;
+    const nx = -dz / len, nz = dx / len;
+    // faces turned towards the satellite: against the shift
+    if ((nx * lean[0] + nz * lean[1]) / kl > -0.35) continue;
+    const m = Math.min(6, Math.floor(len / 3));
+    for (let j = 0; j < m; j++) for (const f of [0.3, 0.5, 0.7, 0.85]) {
+      const s = (j + 0.5) / m, h = P.minH + (P.eave - P.minH) * f;
+      const x = p[0] + dx * s + lean[0] * h, z = p[1] + dz * s + lean[1] * h;
+      const v = at(x, z); if (!v) continue;
+      R += v[0]; G += v[1]; B += v[2]; c++;
+    }
+  }
+  return c >= 8 ? [R / c / 255, G / c / 255, B / c / 255] : null;
+}
+
+function wallColour(P, mean, face) {
+  if (face && !P.colour) {
+    // the picture's colour (in light and shade as the satellite saw it), kept within what walls are
+    const c = new THREE.Color().setRGB(face[0], face[1], face[2], THREE.SRGBColorSpace);
+    const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    const k = Math.min(1.6, Math.max(0.7, 0.3 / Math.max(0.02, l)));
+    c.multiplyScalar(k * 0.85);
+    const pal = PAL_LIN[P.style] || PAL_LIN[STYLE.CONCRETE];
+    return c.lerp(pal[Math.floor(P.r3 * pal.length) % pal.length], 0.25);
+  }
+  if (P.colour) {
+    // 'red' or 'yellow' in a tag means a red or yellow building, not paint straight from the tube
+    const c = P.colour.clone(), l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    c.lerp(new THREE.Color(l, l, l), 0.45).multiplyScalar(0.62);
+    return c;
+  }
+  const pal = PAL_LIN[P.style] || PAL_LIN[STYLE.CONCRETE];
+  let pick = pal[Math.floor(P.r3 * pal.length) % pal.length];
+  if (mean) {
+    // lean towards the roof's colour family: warm roofs, warm walls; light roofs, light walls
+    const warm = mean[0] - mean[2], light = (mean[0] + mean[1] + mean[2]) / 3;
+    let best = null, bs = Infinity;
+    pal.forEach((c, i) => {
+      const s = new THREE.Color().copy(c).convertLinearToSRGB();
+      const cw = s.r - s.b, cl = (s.r + s.g + s.b) / 3;
+      const sc = Math.abs(cw - warm) * 1.2 + Math.abs(cl - (0.35 + light * 0.7)) * 0.35 + hashf(P.id, 200 + i) * 0.5;
+      if (sc < bs) { bs = sc; best = c; }
+    });
+    pick = best;
+  }
+  const c = pick.clone().multiplyScalar(0.92 + 0.16 * P.r4);
+  return c;
+}
+
+// ---------- the public builder ----------
+// Cells built by any live build, by signature (cell and the ids in it): a rebuild reuses them as they are.
+const built = new Map();     // sig -> { sig, meshes, mats, textures, refs: Set, n }
+let retiring = [];           // handles disposed while a newer build may still be on its way
+let WALL_MAT = null;
+const wallMaterial = () => WALL_MAT || (WALL_MAT = makeFacadeMaterial());
+
+function freeRec(rec, world) {
+  for (const m of rec.meshes) {
+    if (m.parent) m.parent.remove(m);
+    if (m.geometry.disposeBoundsTree && m.geometry.boundsTree) m.geometry.disposeBoundsTree();
+    m.geometry.dispose();
+    if (world && world.extra) { const i = world.extra.indexOf(m); if (i >= 0) world.extra.splice(i, 1); }
+  }
+  for (const m of rec.mats) m.dispose();
+  for (const t of rec.textures) t.dispose();
+  built.delete(rec.sig);
+}
+
+export function build(list, opts = {}) {
+  const { scene, world, collide, imagery } = opts;
+  const groundAt = opts.groundAt || (world ? (x, z) => world.groundAt(x, z) : () => 0);
+  const parent = opts.parent || scene || (world && world.scene);
+  const group = new THREE.Group(); group.name = 'buildings';
+  const wallMat = opts.wallMaterial || wallMaterial();
+  const ctx = { groundAt, region: region(), density: 0, g0: groundAt(0, 0) ?? 0 };
+  const recs = [], handles = [];
+  let disposed = false, done = false;
+  const stats = { buildings: 0, cells: 0, reused: 0, triangles: 0, lean: [], ms: 0 };
+  // older builds stay on screen until this one is ready, then go in one step
+  const adopted = retiring; retiring = [];
+  const progressive = !adopted.some(h => h.group.parent && h.group.children.length);
+  if (progressive) parent.add(group);
+
+  // cells by centroid
+  const cells = new Map();
+  for (const b of list || []) {
+    if (!b || !b.outer || b.outer.length < 3) continue;
+    let x = 0, z = 0; for (const p of b.outer) { x += p[0]; z += p[1]; } x /= b.outer.length; z /= b.outer.length;
+    const k = Math.floor(x / CELL) + ',' + Math.floor(z / CELL);
+    if (!cells.has(k)) cells.set(k, { key: k, cx: Math.floor(x / CELL), cz: Math.floor(z / CELL), list: [] });
+    cells.get(k).list.push(b);
+  }
+  for (const c of cells.values()) {
+    let a = 0; for (const b of c.list) a += Math.abs(area2(b.outer));
+    c.density = Math.min(1, a / (CELL * CELL));
+    c.sig = c.key + ':' + c.list.map(b => b.id).sort().join(',');
+  }
+
+  // collision now (cheap, no heights needed): every footprint the car can reach
+  if (collide && collide.addPolygon) {
+    for (const c of cells.values()) for (const b of c.list) {
+      if ((b.minHeight || 0) > 3 || (b.minLevel || 0) > 1) continue;
+      try { const h = collide.addPolygon(b.outer.map(p => [p[0], p[1]]), -1e4, 1e4, 'building'); if (h != null) handles.push(h); } catch (e) { /* collide not ready */ }
+    }
+  }
+
+  const cam = (world && world.camera) || null;
+  const focus = opts.focus || (cam ? [cam.position.x, cam.position.z] : [0, 0]);
+  const dist = (c) => Math.hypot((c.cx + 0.5) * CELL - focus[0], (c.cz + 0.5) * CELL - focus[1]);
+  const order = [...cells.values()].sort((a, b) => dist(a) - dist(b));
+
+  // a slice of work at a time, so the frame loop keeps running
+  let t0 = performance.now();
+  const slice = async (where) => { const d = performance.now() - t0; if (d > 8) { if (d > 40) (stats.slow || (stats.slow = [])).push((where || '?') + ':' + Math.round(d)); await new Promise(r => setTimeout(r, 0)); t0 = performance.now(); } };
+
+  const show = (rec) => {
+    for (const m of rec.meshes) {
+      group.add(m);
+      if (world && world.extra && !world.extra.includes(m)) world.extra.push(m);
+    }
+  };
+
+  async function buildCell(c) {
+    const old = built.get(c.sig);
+    if (old) { old.refs.add(handle); recs.push(old); stats.reused++; stats.buildings += old.n; if (progressive) show(old); return; }
+    ctx.density = c.density;
+    const plans = [];
+    for (const b of c.list) { const P = plan(b, ctx); if (P) plans.push(P); await slice('L625'); if (disposed) return; }
+    if (!plans.length) return;
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity, hmax = 0;
+    for (const P of plans) { for (const p of P.outer) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); } hmax = Math.max(hmax, P.H); }
+    const pad = 2 + Math.min(70, hmax * 0.3);
+    let img = null;
+    if (imagery && imagery.rect) {
+      // the near cells at the picture's best, the rest at half (a quarter of the texture memory and upload)
+      const zoom = opts.zoom ?? (dist(c) < 320 ? 19 : 18);
+      try {
+        img = await Promise.race([
+          imagery.rect(x0 - pad, z0 - pad, x1 + pad, z1 + pad, { zoom, maxSize: zoom >= 19 ? 2048 : 1024, read: true }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('imagery timeout')), opts.imageryTimeout ?? 20000)),
+        ]);
+      } catch (e) { img = null; }
+    }
+    t0 = performance.now();
+    if (disposed) { if (img) img.texture.dispose(); return; }
+    let at = null;
+    if (img && img.sample) {
+      const tmp = [0, 0, 0];
+      at = (x, z) => img.sample(x, z, tmp);
+      const lumAt = (x, z) => { const c = img.sample(x, z, tmp); return c ? 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2] : NaN; };
+      const L = await estimateLean(plans, lumAt, slice);
+      if (L) { img.lean = L.k; stats.lean.push({ cell: [c.cx, c.cz], k: L.k, gain: +L.gain.toFixed(2) }); }
+      await slice('L647');
+    }
+    const W = new Buf(), R = new RoofBuf();
+    for (const P of plans) {
+      const mean = at ? roofMean(P, at, img.lean) : null;
+      const face = at && img.lean ? facadeMean(P, at, img.lean) : null;
+      if (face) stats.faceColours = (stats.faceColours || 0) + 1;
+      P.wallColour = wallColour(P, mean, face);
+      P.fallbackRoof = mean ? new THREE.Color().setRGB(mean[0], mean[1], mean[2], THREE.SRGBColorSpace) : new THREE.Color(0.45, 0.45, 0.44);
+      emit(P, ctx, W, R, img);
+      await slice('L655');
+      if (disposed) { if (img) img.texture.dispose(); return; }
+    }
+    const wg = W.geometry(), rg = R.geometry();
+    const wm = new THREE.Mesh(wg, wallMat);
+    wm.castShadow = true; wm.receiveShadow = true; wm.name = 'walls ' + c.key;
+    const rm = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, map: img ? img.texture : null });
+    patchBaked(rm);
+    rm.shadowSide = THREE.DoubleSide;
+    const roof = new THREE.Mesh(rg, rm);
+    roof.castShadow = true; roof.receiveShadow = false; roof.name = 'roofs ' + c.key;
+    const rec = { sig: c.sig, meshes: [wm, roof], mats: [rm], textures: img ? [img.texture] : [], refs: new Set([handle]), n: plans.length };
+    for (const m of rec.meshes) {
+      m.matrixAutoUpdate = false; m.updateMatrix();
+      await slice('L670');
+      if (m.geometry.computeBoundsTree) { try { m.geometry.computeBoundsTree({ maxLeafTris: 8 }); } catch (e) {} }
+      stats.triangles += m.geometry.index.count / 3;
+    }
+    if (disposed) { freeRec(rec, world); return; }
+    built.set(c.sig, rec);
+    recs.push(rec);
+    stats.buildings += plans.length;
+    stats.cells++;
+    if (progressive) show(rec);
+  }
+
+  const tStart = performance.now();
+  let qi = 0;
+  const worker = async () => {
+    await null; // the handle exists before any cell is looked at
+    while (qi < order.length && !disposed) {
+      const c = order[qi++];
+      try { await buildCell(c); } catch (e) { console.warn('buildings: cell failed', e); }
+      await slice('L689');
+    }
+  };
+  const ready = Promise.all([worker(), worker(), worker()]).then(() => {
+    if (disposed) return stats;
+    // swap: the new set in, the old builds out, in one step
+    if (!progressive) { for (const r of recs) show(r); parent.add(group); }
+    for (const h of adopted) h._release();
+    done = true;
+    stats.ms = Math.round(performance.now() - tStart);
+    return stats;
+  });
+
+  // drop this build's hold on its cells; free the ones no other build uses
+  function release() {
+    if (group.parent) group.parent.remove(group);
+    for (const r of recs) {
+      r.refs.delete(handle);
+      if (!r.refs.size) freeRec(r, world);
+      else for (const m of r.meshes) if (m.parent === group) group.remove(m);
+    }
+    recs.length = 0;
+  }
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    if (collide && collide.remove) for (const h of handles) { try { collide.remove(h); } catch (e) {} }
+    // what is on screen stays until the next build is ready (or none follows straight away)
+    let keep;
+    if (done) keep = [handle];
+    else {
+      // never shown: let go of what it built so far, keep what it was going to replace
+      for (const r of recs) { r.refs.delete(handle); if (!r.refs.size) freeRec(r, world); }
+      recs.length = 0;
+      if (group.parent) group.parent.remove(group);
+      keep = adopted;
+    }
+    retiring.push(...keep);
+    setTimeout(() => {
+      const left = retiring.filter(h => keep.includes(h));
+      if (!left.length) return;
+      retiring = retiring.filter(h => !keep.includes(h));
+      for (const h of left) h._release();
+    }, 0);
+  }
+  const handle = { group, ready, dispose, stats, material: wallMat, _release: release };
+  return handle;
+}
+
+export const buildings = { build, CELL };
+export default buildings;
