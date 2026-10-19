@@ -12,9 +12,9 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame } from './geo.js?v=2';
-import { patchBaked } from './baked.js?v=2';
-import { makeFacadeMaterial, STYLE, GROUND } from './facade.js?v=2';
+import { frame } from './geo.js?v=3';
+import { patchBaked } from './baked.js?v=3';
+import { makeFacadeMaterial, STYLE, GROUND } from './facade.js?v=3';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -745,10 +745,17 @@ export function build(list, opts = {}) {
     for (const m of rec.meshes) {
       if (warmed.has(m.material)) continue;
       warmed.add(m.material);
+      const tc = performance.now();
       if (renderer.compileAsync) { try { await renderer.compileAsync(m, cam, parent); } catch (e) {} }
+      (stats.compile || (stats.compile = [])).push(Math.round(performance.now() - tc));
       t0 = performance.now();
     }
-    for (const t of rec.textures) { if (renderer.initTexture) { try { renderer.initTexture(t); } catch (e) {} } await slice('upload'); }
+    for (const t of rec.textures) {
+      const tu = performance.now();
+      if (renderer.initTexture) { try { renderer.initTexture(t); } catch (e) {} }
+      stats.upload = Math.max(stats.upload || 0, Math.round(performance.now() - tu));
+      await slice('upload');
+    }
   };
   const show = (rec) => {
     for (const m of rec.meshes) {

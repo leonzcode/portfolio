@@ -2,15 +2,23 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=2';
-import { World } from './world.js?v=2';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=2';
-import { Sky } from './sky.js?v=2';
-import { Drive } from './drive.js?v=2';
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=3';
+import { World } from './world.js?v=3';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=3';
+import { Sky } from './sky.js?v=3';
+import { Drive } from './drive.js?v=3';
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+// depth: a reversed depth buffer where the browser has EXT_clip_control (?rz=1 to try), else logarithmic (which turns
+// off the early depth test, so walls behind walls are shaded too)
+const RZ = Q.get('rz') === '1';
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: !RZ, reversedDepthBuffer: RZ, powerPreference: 'high-performance' }); }
+catch (e) {
+  document.getElementById('ui').innerHTML = '<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#202124;color:#e8eaed;font:15px Roboto,system-ui,sans-serif;text-align:center;padding:24px">This game needs WebGL 2, which this browser or computer could not start.<br>Try a recent Chrome, Edge, Firefox or Safari, with hardware acceleration on.</div>';
+  throw e;
+}
 renderer.setPixelRatio(Math.min(devicePixelRatio, Q.has('pr') ? +Q.get('pr') : 1.5));
 renderer.setSize(innerWidth, innerHeight, false);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -96,9 +104,14 @@ function autoScale(now) {
   if (now - scaleT < 2500) return;
   const fps = scaleN / ((now - scaleT) / 1000);
   scaleT = now; scaleN = 0;
+  // (a resize is costly, so only after two windows in a row agree, and never while an area is being built)
+  const want = fps < 40 ? -1 : fps > 57 ? 1 : 0;
+  scaleSum = want !== 0 && want === Math.sign(scaleSum) ? scaleSum + want : want;
+  if (G.drive.loadingArea || Math.abs(scaleSum) < 2) return;
   let next = prNow;
-  if (fps < 40 && prNow > 0.6) next = Math.max(0.6, prNow - 0.15);
-  else if (fps > 57 && prNow < PR_MAX) next = Math.min(PR_MAX, prNow + 0.1);
+  if (scaleSum < 0 && prNow > 0.6) next = Math.max(0.6, prNow - 0.15);
+  else if (scaleSum > 0 && prNow < PR_MAX) next = Math.min(PR_MAX, prNow + 0.1);
+  scaleSum = 0;
   if (next !== prNow) { prNow = next; renderer.setPixelRatio(prNow); renderer.setSize(innerWidth, innerHeight, false); }
 }
 G.pixelRatio = () => prNow;
@@ -128,14 +141,15 @@ const drive = G.drive = new Drive(G);
 const attrib = document.createElement('div'); attrib.className = 'attrib'; document.getElementById('ui').appendChild(attrib);
 const OPEN_CREDIT = 'Imagery: Esri, Maxar, Earthstar Geographics | Elevation: Mapzen, AWS Open Data | Map data © OpenStreetMap contributors';
 world.addEventListener('attributions', e => { attrib.textContent = 'Google' + (e.text ? ' | ' + e.text : '') + ' | Map data © OpenStreetMap contributors'; });
-G.setCredit = () => { if (world.mode === 'open') attrib.textContent = OPEN_CREDIT; };
+const OPEN_CREDIT_SHORT = 'Esri, Maxar | Mapzen, AWS | © OpenStreetMap';
+G.setCredit = () => { if (world.mode === 'open') attrib.textContent = innerWidth < 600 ? OPEN_CREDIT_SHORT : OPEN_CREDIT; };
 // a Google Map Tiles API key turns on Google's photorealistic 3D city: ?key=... once, or from the console
 G.setKey = k => { try { if (k) localStorage.setItem('car_gkey', k); else localStorage.removeItem('car_gkey'); } catch (e) {} };
 if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
 async function openMap() {
   try {
-    const M = await import('./mapui.js?v=2');
+    const M = await import('./mapui.js?v=3');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();

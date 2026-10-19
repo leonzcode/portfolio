@@ -8,7 +8,7 @@
 //                         roadsMask, buildings, roads, centre: [x, z], radius, lean: [kx, kz] })
 //   t.group, t.ready (Promise of stats), t.dispose()
 import * as THREE from 'three';
-import { frame } from './geo.js?v=2';
+import { frame } from './geo.js?v=3';
 
 const D2R = Math.PI / 180;
 function hashf(n, salt = 0) {
@@ -144,7 +144,7 @@ float spS = 1.0;
 mvPosition = modelViewMatrix * mvPosition;
 #ifdef SPRITE_LOD
 // far away a crown is its first sprite, grown to cover it: a fraction of the overdraw
-float spFar = smoothstep( 110.0, 170.0, -mvPosition.z );
+float spFar = smoothstep( 70.0, 120.0, -mvPosition.z );
 float spK = aSid < 0.5 ? 1.0 + 0.7 * spFar : 1.0 - spFar;
 #else
 float spK = 1.0;
@@ -201,214 +201,53 @@ function trunkGeo() {
   return g;
 }
 
-// ---------- finding trees in the satellite picture ----------
-async function treesFromImagery(imagery, box, opts, stats) {
-  const px = await Promise.race([
-    imagery.pixels(box.x0, box.z0, box.x1, box.z1, { zoom: opts.zoom ?? 18, maxSize: 4096, slice: opts.slice }),
-    new Promise((_, rej) => setTimeout(() => rej(new Error('imagery timeout')), 25000)),
-  ]);
-  const { data, w, h } = px;
-  let tp = performance.now(); const ph = stats.phase || (stats.phase = {});
-  const mark = (k) => { const n = performance.now(); ph[k] = Math.max(ph[k] || 0, Math.round(n - tp)); tp = n; };
-  const slice = opts.slice || (async () => {});
-  mark('L207'); await slice('L207'); tp = performance.now();
-  const sx = w / (px.x1 - px.x0), sz = h / (px.z1 - px.z0);
-  const G = 1.0;                                  // grid cell, metres
-  const gw = Math.ceil((px.x1 - px.x0) / G), gh = Math.ceil((px.z1 - px.z0) / G);
-  const exg = new Float32Array(gw * gh), lum = new Float32Array(gw * gh), lum2 = new Float32Array(gw * gh);
-  const gbS = new Float32Array(gw * gh), grS = new Float32Array(gw * gh);
-  const cnt = new Float32Array(gw * gh);
-  for (let j = 0; j < h; j++) {
-    const gz = Math.min(gh - 1, Math.floor(j / sz / G));
-    for (let i = 0; i < w; i++) {
-      const k = (j * w + i) * 4, r = data[k], g = data[k + 1], b = data[k + 2];
-      const c = gz * gw + Math.min(gw - 1, Math.floor(i / sx / G));
-      const l = 0.3 * r + 0.59 * g + 0.11 * b;
-      const sum = r + g + b + 30;
-      exg[c] += (2 * g - r - b) / sum; gbS[c] += (g - b) / sum; grS[c] += (g - r) / sum; lum[c] += l; lum2[c] += l * l; cnt[c]++;
-    }
-    if ((j & 31) === 31) await slice('acc');
+// ---------- finding trees in the satellite picture: in a worker ----------
+// treeworker.js fetches the tiles and runs treedetect.js off the page's thread; without workers the same code runs
+// here on pixels from imagery.js.
+let WORKER = null, jobN = 0;
+const jobs = new Map();
+function getWorker() {
+  if (WORKER === false) return null;
+  if (!WORKER) {
+    try {
+      WORKER = new Worker(new URL('./treeworker.js?v=3', import.meta.url), { type: 'module' });
+      WORKER.onmessage = (e) => { const j = jobs.get(e.data.id); if (!j) return; jobs.delete(e.data.id); if (e.data.error) j.reject(new Error(e.data.error)); else j.resolve(e.data.res); };
+      WORKER.onerror = () => { WORKER = false; for (const j of jobs.values()) j.reject(new Error('worker failed')); jobs.clear(); };
+    } catch (e) { WORKER = false; return null; }
   }
-  mark('L224'); await slice('L224'); tp = performance.now();
-  // blocked cells: buildings, roads, water
-  const blocked = new Uint8Array(gw * gh);
-  const fillPoly = (ring, v) => {
-    let z0 = Infinity, z1 = -Infinity;
-    for (const p of ring) { z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); }
-    const j0 = Math.max(0, Math.floor((z0 - px.z0) / G)), j1 = Math.min(gh - 1, Math.floor((z1 - px.z0) / G));
-    for (let j = j0; j <= j1; j++) {
-      const z = px.z0 + (j + 0.5) * G, xs = [];
-      for (let a = 0, b = ring.length - 1; a < ring.length; b = a++) {
-        const p = ring[a], q = ring[b];
-        if ((p[1] > z) !== (q[1] > z)) xs.push(p[0] + (z - p[1]) / (q[1] - p[1]) * (q[0] - p[0]));
-      }
-      xs.sort((a, b) => a - b);
-      for (let k = 0; k + 1 < xs.length; k += 2) {
-        const i0 = Math.max(0, Math.ceil((xs[k] - px.x0) / G - 0.5)), i1 = Math.min(gw - 1, Math.floor((xs[k + 1] - px.x0) / G - 0.5));
-        for (let i = i0; i <= i1; i++) blocked[j * gw + i] = v;
-      }
-    }
+  return WORKER;
+}
+const RW = { motorway: 7, trunk: 7, primary: 6, secondary: 5, tertiary: 4.5, unclassified: 3.5, residential: 3.5, service: 2.2, living_street: 3, motorway_link: 3.5, trunk_link: 3.5, primary_link: 3.5, secondary_link: 3, tertiary_link: 3 };
+async function detectBlock(imagery, box, opts) {
+  const det = {
+    core: opts.core, lean: opts.lean || [0, 0], idBase: opts.idBase || 0,
+    buildings: (opts.buildings || []).map(b => b.outer),
+    water: (opts.areas || []).filter(a => a.kind === 'water' && a.outer).map(a => a.outer),
+    roads: [],
   };
-  { let n = 0; for (const b of opts.buildings || []) { if (b.outer && b.outer.length > 2) fillPoly(b.outer, 1); if ((++n & 63) === 0) await slice('bld'); } }
-  for (const a of opts.areas || []) if (a.kind === 'water' && a.outer) fillPoly(a.outer, 1);
-  const RW = { motorway: 7, trunk: 7, primary: 6, secondary: 5, tertiary: 4.5, unclassified: 3.5, residential: 3.5, service: 2.2, living_street: 3, motorway_link: 3.5, trunk_link: 3.5, primary_link: 3.5, secondary_link: 3, tertiary_link: 3 };
-  let nr = 0;
   for (const r of opts.roads || []) {
-    if ((++nr & 15) === 0) await slice('roads');
     const hw = RW[r.highway]; if (!hw || !r.pts) continue;
     const t = r.tags || {};
     if (t.tunnel && t.tunnel !== 'no') continue;
-    const half = (num(t.width) ? num(t.width) / 2 : hw * (num(t.lanes) ? Math.max(1, num(t.lanes)) / 2 : 1)) - 0.5;
-    for (let k = 0; k + 1 < r.pts.length; k++) {
-      const [ax, az] = r.pts[k], [bx, bz] = r.pts[k + 1];
-      const len = Math.hypot(bx - ax, bz - az), steps = Math.ceil(len / 0.7);
-      for (let s = 0; s <= steps; s++) {
-        const x = ax + (bx - ax) * s / steps, z = az + (bz - az) * s / steps;
-        const rr = Math.ceil(half / G);
-        const ci = Math.floor((x - px.x0) / G), cj = Math.floor((z - px.z0) / G);
-        for (let dj = -rr; dj <= rr; dj++) for (let di = -rr; di <= rr; di++) {
-          if (di * di + dj * dj > (half / G) * (half / G)) continue;
-          const i = ci + di, j = cj + dj; if (i >= 0 && j >= 0 && i < gw && j < gh) blocked[j * gw + i] = 1;
-        }
-      }
-    }
+    det.roads.push({ pts: r.pts, half: (num(t.width) ? num(t.width) / 2 : hw * (num(t.lanes) ? Math.max(1, num(t.lanes)) / 2 : 1)) - 0.5 });
   }
-
-  mark('L267'); await slice('L267'); tp = performance.now();
-  // canopy: green beyond grey, not bright like a lawn, textured
-  const can = new Uint8Array(gw * gh);
-  let nc = 0;
-  const L1 = new Float32Array(gw * gh);
-  for (let c = 0; c < gw * gh; c++) L1[c] = cnt[c] ? lum[c] / cnt[c] : 0;
-  for (let j = 1; j < gh - 1; j++) for (let i = 1; i < gw - 1; i++) {
-    if (i === 1 && (j & 31) === 0) await slice('class');
-    const c = j * gw + i;
-    if (!cnt[c] || blocked[c]) continue;
-    const n = cnt[c], l = L1[c], gb = gbS[c] / n, gr = grS[c] / n;
-    if (!(l > 12 && l < 130 && gr > 0.02)) continue;
-    const sd = Math.sqrt(Math.max(0, lum2[c] / n - l * l));
-    // crowns are lumpy (lit tops, shaded sides) over a few metres, lawns, fields and shade on pavement are smooth
-    let s1 = 0, s2 = 0;
-    for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const q = L1[c + b * gw + a]; s1 += q; s2 += q * q; }
-    const nsd = Math.sqrt(Math.max(0, s2 / 9 - (s1 / 9) ** 2));
-    let tree = false;
-    if (gb > 0.07) tree = nsd > (opts.rough ?? 6.5) || (l < 60 && sd > 2.5 && gb > 0.095);
-    // foliage in shade: the picture tints it blue, so ask for red well under green and real texture
-    else if (gb > -0.08) tree = l < 80 && gr > 0.05 && sd > 4 && nsd > 4;
-    if (tree) { can[c] = 1; nc++; }
+  const zoom = opts.zoom ?? 18;
+  const W = imagery.tileMap ? getWorker() : null;
+  let res;
+  if (W) {
+    const id = ++jobN;
+    res = await Promise.race([
+      new Promise((resolve, reject) => { jobs.set(id, { resolve, reject }); W.postMessage({ id, job: { map: imagery.tileMap(box.x0, box.z0, box.x1, box.z1, zoom), opts: det } }); }),
+      new Promise((_, rej) => setTimeout(() => { jobs.delete(id); rej(new Error('tree worker timeout')); }, 40000)),
+    ]);
+  } else {
+    const px = await imagery.pixels(box.x0, box.z0, box.x1, box.z1, { zoom, slice: opts.slice });
+    if (opts.slice) await opts.slice('pre');
+    res = detect(px, det);
   }
-  // the caller's road mask, asked only where there is canopy
-  if (opts.roadsMask) {
-    const m = typeof opts.roadsMask === 'function' ? opts.roadsMask : (opts.roadsMask.at ? (x, z) => opts.roadsMask.at(x, z) : null);
-    if (m) for (let c = 0; c < gw * gh; c++) if (can[c]) { try { if (m(px.x0 + (c % gw + 0.5) * G, px.z0 + (((c / gw) | 0) + 0.5) * G)) { can[c] = 0; blocked[c] = 1; nc--; } } catch (e) {} }
-  }
-  // close small gaps (a crown seen in pieces between its own shadows): dilate twice, erode twice
-  const morph = (src, grow) => {
-    const out = new Uint8Array(gw * gh);
-    for (let j = 1; j < gh - 1; j++) for (let i = 1; i < gw - 1; i++) {
-      const c = j * gw + i;
-      if (grow) out[c] = src[c] | src[c - 1] | src[c + 1] | src[c - gw] | src[c + gw];
-      else out[c] = src[c] & src[c - 1] & src[c + 1] & src[c - gw] & src[c + gw];
-    }
-    return out;
-  };
-  {
-    let m = morph(morph(can, true), true);
-    for (let c = 0; c < gw * gh; c++) if (blocked[c]) m[c] = 0;
-    m = morph(morph(m, false), false);
-    for (let c = 0; c < gw * gh; c++) can[c] = can[c] | m[c];
-  }
-  // drop specks: a canopy cell needs 3 canopy neighbours
-  const can2 = new Uint8Array(gw * gh);
-  for (let j = 1; j < gh - 1; j++) for (let i = 1; i < gw - 1; i++) {
-    const c = j * gw + i; if (!can[c]) continue;
-    const n = can[c - 1] + can[c + 1] + can[c - gw] + can[c + gw] + can[c - gw - 1] + can[c - gw + 1] + can[c + gw - 1] + can[c + gw + 1];
-    if (n >= 3) can2[c] = 1;
-  }
-  mark('L317'); await slice('L317'); tp = performance.now();
-  // distance to the canopy's edge (chamfer 3-4), in metres
-  const INF = 1e9, dist = new Float32Array(gw * gh);
-  for (let c = 0; c < gw * gh; c++) dist[c] = can2[c] ? INF : 0;
-  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
-    const c = j * gw + i; if (!dist[c]) continue;
-    let d = dist[c];
-    if (i > 0) d = Math.min(d, dist[c - 1] + 1); else d = Math.min(d, 1);
-    if (j > 0) { d = Math.min(d, dist[c - gw] + 1); if (i > 0) d = Math.min(d, dist[c - gw - 1] + 1.414); if (i < gw - 1) d = Math.min(d, dist[c - gw + 1] + 1.414); } else d = Math.min(d, 1);
-    dist[c] = d;
-  }
-  for (let j = gh - 1; j >= 0; j--) for (let i = gw - 1; i >= 0; i--) {
-    const c = j * gw + i; if (!dist[c]) continue;
-    let d = dist[c];
-    if (i < gw - 1) d = Math.min(d, dist[c + 1] + 1); else d = Math.min(d, 1);
-    if (j < gh - 1) { d = Math.min(d, dist[c + gw] + 1); if (i < gw - 1) d = Math.min(d, dist[c + gw + 1] + 1.414); if (i > 0) d = Math.min(d, dist[c + gw - 1] + 1.414); } else d = Math.min(d, 1);
-    dist[c] = d;
-  }
-  mark('L335'); await slice('L335'); tp = performance.now();
-  // crowns: greedy from the deepest cells
-  const cand = [];
-  for (let c = 0; c < gw * gh; c++) if (dist[c] >= 1.4) cand.push(c);
-  cand.sort((a, b) => dist[b] - dist[a]);
-  const out = [], grid = new Map(), GC = 8;
-  // the crown's mean colour in the picture (sRGB 0..1), from the pixels inside 70% of its radius
-  const crownColour = (x, z, r) => {
-    let R = 0, Gs = 0, B = 0, n = 0;
-    const rr = r * 0.7, i0 = Math.floor((x - rr - px.x0) * sx), i1 = Math.ceil((x + rr - px.x0) * sx), j0 = Math.floor((z - rr - px.z0) * sz), j1 = Math.ceil((z + rr - px.z0) * sz);
-    const step = Math.max(1, Math.floor((i1 - i0) / 8));
-    for (let j = Math.max(0, j0); j < Math.min(h, j1); j += step) for (let i = Math.max(0, i0); i < Math.min(w, i1); i += step) {
-      const dx = (i / sx + px.x0) - x, dz = (j / sz + px.z0) - z; if (dx * dx + dz * dz > rr * rr) continue;
-      const k = (j * w + i) * 4; R += data[k]; Gs += data[k + 1]; B += data[k + 2]; n++;
-    }
-    return n ? [R / n / 255, Gs / n / 255, B / n / 255] : null;
-  };
-  const key = (x, z) => Math.floor(x / GC) + ',' + Math.floor(z / GC);
-  const lean = opts.lean || [0, 0];
-  let nci = 0;
-  for (const c of cand) {
-    if ((++nci & 1023) === 0) await slice('crowns');
-    const i = c % gw, j = (c / gw) | 0;
-    let x = px.x0 + (i + 0.5) * G, z = px.z0 + (j + 0.5) * G;
-    const r = Math.min(dist[c] * G + 0.8, 5.0 + hashf(c, 3) * 2.5);
-    let ok = true;
-    const kx = Math.floor(x / GC), kz = Math.floor(z / GC);
-    for (let a = -1; a <= 1 && ok; a++) for (let b = -1; b <= 1 && ok; b++) {
-      const l = grid.get((kx + a) + ',' + (kz + b)); if (!l) continue;
-      for (const t of l) if (Math.hypot(t.x - x, t.z - z) < (t.r + r) * 0.72) { ok = false; break; }
-    }
-    if (!ok) continue;
-    const t = { x, z, r, src: 'img', c: (opts.idBase || 0) + c, col: null };
-    const k = key(x, z); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(t);
-    out.push(t);
-  }
-  // only this block's own crowns (the margin is there for the distance transform)
-  const core = opts.core;
-  const own = core ? out.filter(t => t.x >= core.x0 && t.x < core.x1 && t.z >= core.z0 && t.z < core.z1) : out;
-  out.length = 0; out.push(...own);
-  for (const t of out) t.col = crownColour(t.x, t.z, t.r);
-  // the picture shows a crown displaced by its height times the lean; put the trunk back under it
-  for (const t of out) { const hc = 2.0 * t.r + 1.5; t.x -= lean[0] * hc; t.z -= lean[1] * hc; }
-  stats.canopyCells = (stats.canopyCells || 0) + nc; stats.imageTrees = (stats.imageTrees || 0) + out.length;
-  if (opts.debug) {
-    // the picture with the canopy (green), blocked cells (blue) and the crowns (red rings), one pixel a cell
-    const c = document.createElement('canvas'); c.width = gw; c.height = gh;
-    const g = c.getContext('2d'), id = g.createImageData(gw, gh);
-    for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
-      const k = (j * gw + i) * 4, cc = j * gw + i, l = cnt[cc] ? lum[cc] / cnt[cc] : 0;
-      let r = l, gg = l, b = l;
-      if (blocked[cc]) { b = 0.6 * b + 90; }
-      if (can2[cc]) { gg = 0.5 * gg + 120; r *= 0.5; b *= 0.5; }
-      id.data[k] = r; id.data[k + 1] = gg; id.data[k + 2] = b; id.data[k + 3] = 255;
-    }
-    g.putImageData(id, 0, 0);
-    g.strokeStyle = '#f00';
-    for (const t of out) { g.beginPath(); g.arc((t.x + lean[0] * (2 * t.r + 1.5) - px.x0) / G, (t.z + lean[1] * (2 * t.r + 1.5) - px.z0) / G, t.r / G, 0, 7); g.stroke(); }
-    stats.debugCanvas = c;
-    stats.cellAt = (i, j) => { const cc = j * gw + i, n = cnt[cc] || 1; return [+(lum[cc] / n).toFixed(1), +(Math.sqrt(Math.max(0, lum2[cc] / n - (lum[cc] / n) ** 2))).toFixed(1), +(gbS[cc] / n).toFixed(3), +(grS[cc] / n).toFixed(3), can2[cc], blocked[cc]]; };
-    stats.grid = [gw, gh];
-    const raw = document.createElement('canvas'); raw.width = w; raw.height = h;
-    const rg = raw.getContext('2d'), rd = rg.createImageData(w, h); rd.data.set(data); rg.putImageData(rd, 0, 0);
-    stats.rawCanvas = raw;
-  }
-  return { list: out, has: (x, z) => { const i = Math.floor((x - px.x0) / G), j = Math.floor((z - px.z0) / G); return i >= 0 && j >= 0 && i < gw && j < gh ? can2[j * gw + i] : 0; }, dist: (x, z) => { const i = Math.floor((x - px.x0) / G), j = Math.floor((z - px.z0) / G); return i >= 0 && j >= 0 && i < gw && j < gh ? dist[j * gw + i] * G : 0; } };
+  // the caller's road mask (roads.js), asked only where a trunk would stand
+  if (opts.roadsMask) res.list = res.list.filter(t => { try { return !opts.roadsMask(t.x, t.z); } catch (e) { return true; } });
+  return res;
 }
 
 // ---------- species ----------
@@ -503,7 +342,7 @@ export function build(src, opts = {}) {
           const bl = buildingsList.filter(b => b.outer && inBox(b.outer));
           const rl = roads.filter(r => r.pts && inBox(r.pts));
           const al = areas.filter(a => a.kind === 'water' && a.outer && inBox(a.outer));
-          pr = treesFromImagery(imagery, ob, { ...opts, core, slice, buildings: bl, roads: rl, areas: al, roadsMask, idBase: (bx * 7919 + bz * 104729) * 1000003 }, stats)
+          pr = detectBlock(imagery, ob, { ...opts, core, slice, buildings: bl, roads: rl, areas: al, roadsMask, idBase: (bx * 7919 + bz * 104729) * 1000003 })
             .catch(e => { console.warn('trees: imagery', e); return null; });
           blockCache.set(key, pr);
           pr.then(v => { if (!v) blockCache.delete(key); });
@@ -511,12 +350,11 @@ export function build(src, opts = {}) {
         const res = await pr;
         t0 = performance.now();
         stats.blocks++;
-        if (res) { for (const t of res.list) crowns.push(t); probes.push({ core, res }); }
+        if (res) { for (const t of res.list) crowns.push(t); probes.push(core); stats.imageTrees += res.list.length; stats.canopyCells = (stats.canopyCells || 0) + res.canopyCells; }
         await slice('L496');
       }
     }
     if (disposed) return stats;
-    const probeAt = (x, z) => { for (const p of probes) if (x >= p.core.x0 && x < p.core.x1 && z >= p.core.z0 && z < p.core.z1) return p.res; return null; };
     // woods and parks: scattered where the picture could not say (no imagery)
     if (!probes.length) {
       for (const a of areas) {
@@ -542,11 +380,7 @@ export function build(src, opts = {}) {
     // OSM trees take their crown size from the picture; the picture's crowns fill in where OSM has none
     if (probes.length) {
       const near = new Map(), GC = 6;
-      for (const t of list) {
-        const k = Math.floor(t.x / GC) + ',' + Math.floor(t.z / GC); if (!near.has(k)) near.set(k, []); near.get(k).push(t);
-        const p = t.r == null ? probeAt(t.x, t.z) : null;
-        if (p && p.has(t.x, t.z)) t.r = Math.max(1.5, Math.min(6, p.dist(t.x, t.z) + 0.8));
-      }
+      for (const t of list) { const k = Math.floor(t.x / GC) + ',' + Math.floor(t.z / GC); if (!near.has(k)) near.set(k, []); near.get(k).push(t); }
       for (const t of crowns) {
         let clash = false;
         const kx = Math.floor(t.x / GC), kz = Math.floor(t.z / GC);
@@ -555,6 +389,11 @@ export function build(src, opts = {}) {
           for (const o of l) if (Math.hypot(o.x - t.x, o.z - t.z) < Math.max(3.5, t.r * 0.8)) { clash = true; break; }
         }
         if (!clash) list.push({ x: t.x, z: t.z, r: t.r, h: null, tags: null, src: 'img', id: t.c, col: t.col });
+        // an OSM tree standing in a crown the picture shows takes that crown's size and colour
+        else for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+          const l = near.get((kx + a) + ',' + (kz + b)); if (!l) continue;
+          for (const o of l) if (o.r == null && Math.hypot(o.x - t.x, o.z - t.z) < Math.max(3.5, t.r * 0.8)) { o.r = Math.max(1.5, Math.min(7, t.r)); o.col = o.col || t.col; }
+        }
       }
       await slice('L540');
     }
@@ -604,7 +443,7 @@ export function build(src, opts = {}) {
       r = Math.min(r, 9); H = Math.min(Math.max(H, r * 1.4), 45);
       const g = groundAt(t.x, t.z);
       if (g == null) continue;
-      groups[kind].push({ x: t.x, z: t.z, g, r, H, h1, h2, rot: h0 * Math.PI * 2, col: t.col });
+      groups[kind].push({ x: t.x, z: t.z, g, r, H, h1, h2, rot: h0 * Math.PI * 2, col: t.col || null });
       if ((n & 255) === 0) await slice('L585');
     }
     const dummy = new THREE.Object3D(), col = new THREE.Color();

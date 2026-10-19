@@ -25,25 +25,27 @@ export const CARS = [
   },
   {
     id: 'porsche930', name: 'Porsche 911 Turbo (1975)', kind: 'sports', file: 'porsche930.glb', npcFile: 'porsche930_npc.glb', mass: 1195,
-    interior: false, eye: [-0.35, 1.02, 0.18], // the model's cabin is a dark shell: no steering wheel to turn
+    eye: [-0.35, 1.02, 0.18], cabinDark: 0.55,
+    // the model has no steering wheel of its own: a simple one is built in front of the driver
+    wheel: { pos: [-0.35, 0.75, -0.30], tilt: 24, r: 0.19 },
     paint: 0xb8babd, paints: [0xb8babd, 0x9b1b1e, 0x101012, 0xd7cfae, 0x1f3a2c, 0x2a4a7a],
     physics: { power: 191e3, torque: 330, drive: 'rwd', comHeight: 0.46, maxSteer: 32, steerRatio: 16.5, gears: [3.18, 1.83, 1.21, 0.89], final: 4.0, mu: 1.0, redline: 6500 },
     credit: '"FREE 1975 Porsche 911 (930) Turbo" by Lionsharp Studios, CC BY 4.0',
   },
   {
-    id: 's10', name: 'Chevrolet S-10 pickup', kind: 'pickup', file: 's10.glb', npcFile: 's10_npc.glb', mass: 1450,
+    id: 's10', name: 'Chevrolet S-10 pickup', kind: 'pickup', file: 's10.glb', npcFile: 's10_npc.glb', mass: 1450, cabinDark: 0.4,
     paint: 0xb3261e, paints: [0xb3261e, 0xe8e8e4, 0x1b1d22, 0x2f4f7f, 0x6d6f70, 0x2d4a33],
     physics: { power: 134e3, torque: 340, drive: 'rwd', comHeight: 0.62, maxSteer: 35, steerRatio: 17, gears: [3.06, 1.63, 1.0, 0.7], final: 3.42, redline: 5200 },
     credit: '"Chevrolet S10" by Luquita (speedmodel), CC BY 4.0',
   },
   {
-    id: 'fairheaven', name: "Fairheaven LT '80", kind: 'sedan', file: 'fairheaven.glb', npcFile: 'fairheaven_npc.glb', mass: 1600,
+    id: 'fairheaven', name: "Fairheaven LT '80", kind: 'sedan', file: 'fairheaven.glb', npcFile: 'fairheaven_npc.glb', mass: 1600, cabinDark: 0.45,
     paint: 0x6e1f24, paints: [0x6e1f24, 0xc9c3b4, 0x2b3a55, 0x3b4a3a, 0x8c8f91, 0x1a1a1c, 0x9a7b4f],
     physics: { power: 100e3, torque: 300, drive: 'rwd', comHeight: 0.55, maxSteer: 36, steerRatio: 18, gears: [2.46, 1.46, 1.0], final: 2.73, redline: 4600, mu: 0.95 },
     credit: "\"Fairheaven LT '80 - Low poly model\" by Daniel Zhabotinsky, CC BY 4.0",
   },
   {
-    id: 'milano', name: "Milano '95", kind: 'hatchback', file: 'milano.glb', npcFile: 'milano_npc.glb', mass: 1000,
+    id: 'milano', name: "Milano '95", kind: 'hatchback', file: 'milano.glb', npcFile: 'milano_npc.glb', mass: 1000, cabinDark: 0.5,
     paint: 0x1f3a3a, paints: [0x1f3a3a, 0xc8ccd0, 0x8a1c1c, 0x23324f, 0xe0d9c6, 0x505357, 0x3d5f2e],
     physics: { power: 66e3, torque: 130, drive: 'fwd', comHeight: 0.5, maxSteer: 36, steerRatio: 16, gears: [3.4, 1.9, 1.3, 0.95, 0.76], final: 4.1, redline: 6200, mu: 0.95 },
     credit: "\"Milano '95 - Low poly model\" by Daniel Zhabotinsky, CC BY 4.0",
@@ -81,7 +83,7 @@ function loader() {
 const templates = new Map(); // file -> Promise<{ scene, info }>
 function loadTemplate(file) {
   if (!templates.has(file)) {
-    templates.set(file, loader().loadAsync(MODELS + file + '?v=2').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
+    templates.set(file, loader().loadAsync(MODELS + file + '?v=3').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
   }
   return templates.get(file);
 }
@@ -246,7 +248,7 @@ function lampMaterial(src, role, level) {
 export async function makeEnvironment(renderer, { file = 'env/wide_street_01_1k.hdr' } = {}) {
   const pm = new THREE.PMREMGenerator(renderer);
   try {
-    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=2');
+    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=3');
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     const env = pm.fromEquirectangular(hdr).texture;
     env.userData.source = hdr; // the garage shows it as a backdrop
@@ -342,9 +344,20 @@ varying vec3 vCabinPos;`;
 const CABIN_LIGHT = `
 {
   vec3 cq = smoothstep(uCabinMin, uCabinMin + uCabinSoft, vCabinPos) * (1.0 - smoothstep(uCabinMax - uCabinSoft, uCabinMax, vCabinPos));
-  float occ = 1.0 - uCabinK * cq.x * cq.y * cq.z;
+  float inside = cq.x * cq.y * cq.z;
+  float occ = 1.0 - uCabinK * inside;
   reflectedLight.indirectDiffuse *= occ;
   reflectedLight.indirectSpecular *= occ;
+#ifndef CABIN_PAINT
+  // the roof and pillars are far thinner than a shadow-map texel, so the sun's shadow on the lining comes and
+  // goes in streaks: inside the glasshouse the sun is cut by half, and on the lining and pillars almost wholly
+  vec3 e = vec3(0.10, 0.0, 0.10), s2 = vec3(0.06, uCabinSoft.y, 0.10);
+  vec3 cq2 = smoothstep(uCabinMin - e, uCabinMin - e + s2, vCabinPos) * (1.0 - smoothstep(uCabinMax + e - s2, uCabinMax + e, vCabinPos));
+  float upper = smoothstep(uCabinMax.y - 0.42, uCabinMax.y - 0.22, vCabinPos.y);
+  float dk = clamp(inside * 0.45 + cq2.x * cq2.y * cq2.z * upper * 0.92, 0.0, 0.95);
+  reflectedLight.directDiffuse *= 1.0 - dk;
+  reflectedLight.directSpecular *= 1.0 - dk;
+#endif
 }`;
 function cabinPatch(m, U) {
   if (m.userData.cabin || !(m.isMeshStandardMaterial || m.isMeshPhysicalMaterial)) return;
@@ -420,6 +433,35 @@ function positionsOnly(g) {
 }
 function neverCasts(o) {
   Object.defineProperty(o, 'castShadow', { get: () => false, set: () => {}, configurable: true });
+}
+
+// a plain three-spoke steering wheel in dark leather, for models that have none. Its group's +z is the column,
+// pointing back and up at the driver; extras.axis says the same for the rig.
+function buildSteeringWheel(w) {
+  // its own materials: the player's cabin shading gives each car's materials that car's uniforms
+  const leather = new THREE.MeshStandardMaterial({ name: 'steer_leather', color: 0x16130f, roughness: 0.62, metalness: 0 });
+  const metal = new THREE.MeshStandardMaterial({ name: 'steer_metal', color: 0x2a2a2a, roughness: 0.35, metalness: 0.6 });
+  const r = w.r || 0.19, g = new THREE.Group();
+  g.name = 'steer';
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(r, 0.016, 12, 64), leather);
+  g.add(rim);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.045, 24), leather);
+  hub.rotation.x = Math.PI / 2; hub.position.z = -0.01; g.add(hub);
+  const badge = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.004, 20), metal);
+  badge.rotation.x = Math.PI / 2; badge.position.z = 0.014; g.add(badge);
+  for (const a of [0, Math.PI, -Math.PI / 2]) { // right, left, down
+    const len = r - 0.045;
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(len, 0.032, 0.012), leather);
+    spoke.position.set(Math.cos(a) * (0.045 + len / 2), Math.sin(a) * (0.045 + len / 2), -0.006);
+    spoke.rotation.z = a;
+    g.add(spoke);
+  }
+  const t = THREE.MathUtils.degToRad(w.tilt ?? 24);
+  g.position.fromArray(w.pos);
+  g.rotation.x = -t;
+  g.userData.axis = [0, Math.sin(t), Math.cos(t)];
+  g.userData.diameter = 2 * r;
+  return g;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -525,7 +567,11 @@ class CarRig {
 
     // steering wheel
     this._steer = null;
-    const st = model.getObjectByName('steer');
+    let st = model.getObjectByName('steer');
+    if (!st && spec.wheel && !this.npc) {
+      st = buildSteeringWheel(spec.wheel); model.add(st);
+      st.traverse(o => { if (o.isMesh && !this._owned.includes(o.material)) this._owned.push(o.material); });
+    }
     if (st) {
       const ax = st.userData.axis ? new THREE.Vector3().fromArray(st.userData.axis).normalize() : new THREE.Vector3(0, 0.3, 1).normalize();
       this._steer = { node: st, axis: ax, q0: st.quaternion.clone() };
@@ -694,7 +740,7 @@ class CarRig {
           m.shadowSide = THREE.DoubleSide;
         }
       });
-      if (this._paint) { cabinPatch(this._paint, U); this._paint.shadowSide = THREE.DoubleSide; }
+      if (this._paint) { this._paint.defines = { ...(this._paint.defines || {}), CABIN_PAINT: '' }; cabinPatch(this._paint, U); this._paint.shadowSide = THREE.DoubleSide; }
     }
     // glass lets the sun in: it never casts a shadow, whatever the game sets on the car's meshes
     for (const o of this._glass) Object.defineProperty(o, 'castShadow', { get: () => false, set: () => {}, configurable: true });
