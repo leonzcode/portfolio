@@ -14,23 +14,23 @@
    goes back the same way.
 --------------------------------------------------------------------------- */
 
-import { B, BLOCKS, SOLID } from '../blocks.js?v=98';
-import { I, ITEMS, maxStack } from '../items.js?v=98';
-import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=98';
-import { makeLobbyCos } from './lobbycos.js?v=98';
-import { POTIONS } from '../brewing.js?v=98';
-import { creativeItems, entryId, HEADS } from '../ui/inventory.js?v=98';
-import { DIM_IDS } from '../dims.js?v=98';
-import { ChestScreen } from '../ui/containers.js?v=98';
-import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=98';
-import { RemotePlayers, playerSize, F } from './players.js?v=98';
-import { register, commandDef } from '../commands.js?v=98';
-import { Sound } from '../sound/sound.js?v=98';
-import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=98';
-import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64, pickAtCentre } from '../ui/paint.js?v=98';
-import { blockGeometry } from '../render/blockmesh.js?v=98';
-import { lightNear } from '../lightlevel.js?v=98';
-import { setSkin as setOwnSkin, invisLook, capeRule, getSkinSettings } from '../render/avatar.js?v=98';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=99';
+import { I, ITEMS, maxStack } from '../items.js?v=99';
+import { makeProfile, applyLayout, layoutKey } from './hubprofile.js?v=99';
+import { makeLobbyCos } from './lobbycos.js?v=99';
+import { POTIONS } from '../brewing.js?v=99';
+import { creativeItems, entryId, HEADS } from '../ui/inventory.js?v=99';
+import { DIM_IDS } from '../dims.js?v=99';
+import { ChestScreen } from '../ui/containers.js?v=99';
+import { Screen, Button, TextField, WHITE } from '../ui/gui.js?v=99';
+import { RemotePlayers, playerSize, F } from './players.js?v=99';
+import { register, commandDef } from '../commands.js?v=99';
+import { Sound } from '../sound/sound.js?v=99';
+import { RES_OVERRIDE, BLAST_FILTER } from '../explosion.js?v=99';
+import { Painter, PaintScreen, faceColour, faceOfNormal, loadSkin64, pickAtCentre } from '../ui/paint.js?v=99';
+import { blockGeometry } from '../render/blockmesh.js?v=99';
+import { lightNear } from '../lightlevel.js?v=99';
+import { setSkin as setOwnSkin, invisLook, capeRule, getSkinSettings } from '../render/avatar.js?v=99';
 // the Profile item's head wears your own skin (ui/inventory.js drawHead)
 HEADS.self = () => getSkinSettings().skin;
 // each game's person on the stand wears its own skin for the game: our own 64 x 64 skins, drawn in code by
@@ -38,12 +38,12 @@ HEADS.self = () => getSkinSettings().skin;
 // a hider's own body while they watch (watchFrame), drawn on their page as a stand-in; the Spectate item's name
 const SPEC_BODY = -3001, WATCH_NAME = '§dSpectate §7- Right Click (or L) to leave your body and watch the others';
 const NPC_SKIN = new Set(['chameleon', 'pillars', 'bedwars', 'skywars', 'deathswap', 'duels', 'prophunt', 'murder', 'tntrun', 'spleef', 'bridger', 'buildbattle']);
-const npcSkinUrl = game => new URL('../../textures/skin/npc/' + game + '.png?v=98', import.meta.url).href;
+const npcSkinUrl = game => new URL('../../textures/skin/npc/' + game + '.png?v=99', import.meta.url).href;
 
 const THREE = window.THREE;
 let active = null;                     // the hub on this page, for its commands
 // (no advancement or recipe toasts on the network: its games are not survival)
-import('../adv/toast.js?v=98').then(m => {
+import('../adv/toast.js?v=99').then(m => {
   const T = m.AdvToast, add = T.add, rec = T.addRecipes;
   T.add = function (x) { if (active) return; return add.call(this, x); };
   T.addRecipes = function (ids) { if (active) return; return rec.call(this, ids); };
@@ -760,10 +760,13 @@ export class Hub {
     // the people on the stands answer either button; what you hold in a lobby (the game menu, the way back) answers the right one
     const I2 = game.inter, use = I2.useWith.bind(I2), down = I2.down.bind(I2);
     // (a chest in the lobby may be a hidden one: asked before what you hold has its say)
-    I2.useWith = () => { if (this.spec) { this.useHeld(); return true; } if (this.clickNpc() || (this.area === 'lobby' && this.cos && this.cos.useTarget()) || this.useHeld()) return true; return use(); };
+    // (out of your body a held button's repeat does nothing: the press itself is down's, below, so a click held past a
+    //  quarter of a second does not step you straight back in)
+    I2.useWith = () => { if (this.spec) return true; if (this.clickNpc() || (this.area === 'lobby' && this.cos && this.cos.useTarget()) || this.useHeld()) return true; return use(); };
     // (a left click on a person opens their menu only when nothing nearer is under the crosshair: a player you are fighting in
     //  front of a shop takes the hit)
-    I2.down = b => { if (b === 2) this.pressN = (this.pressN | 0) + 1; if (this.spec) return; if (b === 0 && !I2.entityTarget && this.clickNpc()) return; if (b === 0) this.seekerSwing(I2); down(b); };
+    // (out of your body a right click goes to useHeld alone: the Spectate item steps you back in, nothing else does anything)
+    I2.down = b => { if (b === 2) this.pressN = (this.pressN | 0) + 1; if (this.spec) { if (b === 2) this.useHeld(); return; } if (b === 0 && !I2.entityTarget && this.clickNpc()) return; if (b === 0) this.seekerSwing(I2); down(b); };
     I2.mayBreak = (x, y, z) => this.mayBreak(x, y, z);
     // no dropping things anywhere on the network (but the Map Editor and /hubbuild): Q does nothing, and what is thrown
     // out of a screen goes back into the inventory (an inventory that is full still spills what it cannot hold)
@@ -1907,7 +1910,7 @@ export class Hub {
       this.npcs.add({ id: SPEC_BODY, name: '', skin: sk });
       this.feed({ nid: SPEC_BODY, x: at.x, y: at.y, z: at.z, yaw: at.yaw });
     }
-    this.ctx.chat.add('§dYou left your body. §7Fly about, or §eLeft§7/§eRight §7to watch the others; §eL §7to step back in.', 0xFFFFFF);
+    this.ctx.chat.add('§dYou left your body. §7Fly about, or §eLeft§7/§eRight §7to watch the others; §eL §7or the Spectate item to step back in.', 0xFFFFFF);
     this.sound('entity.enderman.teleport');
     this.ctx.gui.markDirty();
   }
@@ -2174,7 +2177,7 @@ export class Hub {
   /* ---- Chameleon: your skin, painted, for this game only ---- */
   startPaint() {
     const o = this.ctx.gui.options, own = o.get('skin');
-    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=98', import.meta.url).href;
+    const url = own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=99', import.meta.url).href;
     this.painter = new Painter(canvas => {
       const data = canvas.toDataURL('image/png');
       this.net.skinOverride = data;
@@ -2189,7 +2192,7 @@ export class Hub {
     if (!this.net) return;
     const put = data => { if (this.role !== 'seeker' || this.gameKind !== 'chameleon' || this.area !== 'game') return; this.net.skinOverride = data; setOwnSkin(data, false); if (this.net.sendSkin) this.net.sendSkin(); };
     if (this.seekerSkin) { put(this.seekerSkin); return; }
-    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=98', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
+    loadSkin64(new URL('../../textures/skin/gallery/swat_agent.png?v=99', import.meta.url).href).then(c => { if (c) { this.seekerSkin = c.toDataURL('image/png'); put(this.seekerSkin); } });
   }
   unpaint() {
     if (!this.painter && !(this.net && this.net.skinOverride)) return;
@@ -2197,7 +2200,7 @@ export class Hub {
     if (this.net) this.net.skinOverride = null;
     if (!this.ctx) return;
     const o = this.ctx.gui.options, own = o.get('skin');
-    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=98', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
+    setOwnSkin(own && own !== 'default' ? own : new URL('../../textures/skin/default.png?v=99', import.meta.url).href, own && own !== 'default' ? o.get('skinModel') === 'slim' : false);
     if (this.net.sendSkin) this.net.sendSkin();
   }
 
@@ -2208,7 +2211,7 @@ export class Hub {
     this.moving = true;
     const gui = this.ctx.gui, hooks = gui.hooks || {};
     this.ctx.chat.add('§7Sending you to ' + (id === 'hub' ? 'Leonpixel' : 'the game world') + '...', 0xFFFFFF);
-    const go = () => import('../ui/multiplayer.js?v=98').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
+    const go = () => import('../ui/multiplayer.js?v=99').then(M => M.rejoin(gui, id), e => console.error('transfer', e));
     Promise.resolve(hooks.quitToTitle ? hooks.quitToTitle() : null).then(go, go);
   }
 

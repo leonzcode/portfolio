@@ -11,8 +11,8 @@
    src is anything with chunkAt(x, z) (a World, or the player model's own
    chunk cache); noSky is the Nether, which has no sky light at all.
 --------------------------------------------------------------------------- */
-import { OPACITY, OPAQUE } from './blocks.js?v=98';
-import { H } from './world-const.js?v=98';
+import { OPACITY, OPAQUE } from './blocks.js?v=99';
+import { H } from './world-const.js?v=99';
 
 export function lightLevel(src, x, y, z, noSky) {
   const open = noSky ? 0 : 0xf0;

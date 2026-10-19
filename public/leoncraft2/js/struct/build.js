@@ -27,9 +27,9 @@
      g.w, g.h, g.d                     the box size
    Everything outside the chunk being generated is skipped quietly.
 --------------------------------------------------------------------------- */
-import { Box, Piece, NORTH, EAST, SOUTH, WEST, id } from './piece.js?v=98';
-import { JRand, hash32 } from './rand.js?v=98';
-import { B, BLOCKS } from '../blocks.js?v=98';
+import { Box, Piece, NORTH, EAST, SOUTH, WEST, id } from './piece.js?v=99';
+import { JRand, hash32 } from './rand.js?v=99';
+import { B, BLOCKS } from '../blocks.js?v=99';
 
 export { NORTH, EAST, SOUTH, WEST };
 
