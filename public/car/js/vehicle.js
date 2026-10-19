@@ -75,7 +75,7 @@ export class Vehicle {
     const kmh = Math.abs(this.fwdSpeed) * 3.6;
 
     // steering: smoothed, less lock at speed
-    const lock = p.maxSteer * Math.PI / 180 * (1 / (1 + (kmh / 75) ** 1.6));
+    const lock = p.maxSteer * Math.PI / 180 * (1 / (1 + (kmh / 52) ** 1.6));
     const target = input.steer * lock;
     const rate = (Math.sign(target) !== Math.sign(this.steer) || Math.abs(target) < Math.abs(this.steer) ? 3.2 : 2.0) * lock + 0.4;
     this.steer += THREE.MathUtils.clamp(target - this.steer, -rate * dt, rate * dt);
@@ -113,7 +113,7 @@ export class Vehicle {
     let driveF = thr * tq * ratio * 0.88 / wheelR;
     driveF = Math.min(driveF, thr * p.power / Math.max(3, Math.abs(this.fwdSpeed)));
     if (this.shiftT > 0.2) driveF *= 0.25;
-    if (this.rpm > p.redline * 1.02 || kmh > p.topSpeed) driveF = 0;
+    if (this.rpm > p.redline * 1.02 || kmh > p.topSpeed || (this.reverse && kmh > 32)) driveF = 0;
     const nDriven = this.wheels.filter(w => w.driven).length;
 
     const F = _f.set(0, -G * m, 0), T = _t.set(0, 0, 0);
@@ -177,7 +177,8 @@ export class Vehicle {
       const ws = wf.clone().cross(n).normalize(); // to the right
       const vc = this.v.clone().add(_v.copy(this.w).cross(rel));
       const vl = vc.dot(wf), vs = vc.dot(ws);
-      const mu = p.mu * (env.grip ? env.grip(gx, gz) : 1);
+      // (the rear a touch grippier than the front: the car pushes wide at the limit instead of spinning)
+      const mu = p.mu * (env.grip ? env.grip(gx, gz) : 1) * (w.front ? 1 : 1.07);
       const Fz = fs;
       // across the tyre
       const alpha = Math.atan2(vs, Math.max(Math.abs(vl), 1.5));
@@ -191,20 +192,25 @@ export class Vehicle {
       if (bForce > 0) fx += -THREE.MathUtils.clamp(vl / 0.4, -1, 1) * bForce;
       fx += -THREE.MathUtils.clamp(vl / 0.5, -1, 1) * 0.013 * Fz;
       if (!this.reverse && thr < 0.05 && brk < 0.05) fx += -THREE.MathUtils.clamp(vl / 0.5, -1, 1) * 0.02 * Fz; // engine braking
-      // standing still with nothing pressed: hold
-      if (thr < 0.05 && Math.abs(vl) < 0.3 && this.speed < 0.5) fx = -vl * m / 4 / 0.1;
+      // nearly stopped with nothing pressed: hold, on a hill too (the hold is only as strong as the tyre)
+      if (thr < 0.05 && Math.abs(vl) < 1.2 && this.speed < 1.5) fx = -THREE.MathUtils.clamp(vl / 0.25, -1, 1) * mu * Fz * 0.9;
       if (!w.front && this.handbrake > 0.3) fy *= 0.45;
       // friction circle
       const lim = mu * Fz * 1.05, tot = Math.hypot(fx, fy);
       w.slip = 0;
-      if (tot > lim) { w.slip = tot / lim - 1; fx *= lim / tot; fy *= lim / tot; }
+      if (lim < 1e-3) { w.slip = tot > 1 ? 1 : 0; fx = 0; fy = 0; }
+      else if (tot > lim) { w.slip = Math.min(3, tot / lim - 1); fx *= lim / tot; fy *= lim / tot; }
       w.lat = Math.abs(alpha);
       // wheel spin for the picture: rolling, plus spin when the drive is more than the tyre holds
       const roll = vl / w.r;
       w.omega = w.driven && w.slip > 0.15 && thr > 0.5 ? roll + dir * w.slip * 12 : (!w.front && this.handbrake > 0.3 && Math.abs(vl) > 1 ? 0 : (brk > 0.95 && Math.abs(vl) > 4 && w.slip > 0.3 ? 0 : roll));
-      const Fw = wf.multiplyScalar(fx).addScaledVector(ws, fy).addScaledVector(up, fs);
-      F.add(Fw);
-      T.add(rel.cross(Fw));
+      if (!Number.isFinite(w.omega)) w.omega = 0;
+      // the road's push along the ground acts at a roll centre raised towards the centre of mass (as a car's
+      // suspension geometry does), so hard cornering leans the body but rarely tips it over
+      const Fg = wf.multiplyScalar(fx).addScaledVector(ws, fy), Fn = up.clone().multiplyScalar(fs);
+      F.add(Fg).add(Fn);
+      const relG = rel.clone().addScaledVector(up, p.comHeight * 0.5);
+      T.add(relG.cross(Fg)).add(rel.cross(Fn));
     }
     this.airTime = grounded ? 0 : this.airTime + dt;
 
@@ -213,6 +219,8 @@ export class Vehicle {
     const dw = this.invI(_v, T.x, T.y, T.z);
     this.w.addScaledVector(dw, dt);
     this.w.multiplyScalar(grounded ? 0.999 : 0.9995);
+    // a little extra damping of roll and pitch (shock absorbers' share the springs above do not model)
+    if (grounded) { const wu = this.w.dot(up); _a.copy(this.w).addScaledVector(up, -wu).multiplyScalar(1 - Math.min(1, 2.5 * dt)); this.w.copy(_a).addScaledVector(up, wu); }
     this.pos.addScaledVector(this.v, dt);
     const wl = this.w.length();
     if (wl > 1e-6) { _q.setFromAxisAngle(_v.copy(this.w).divideScalar(wl), wl * dt); this.q.premultiply(_q).normalize(); }

@@ -31,6 +31,8 @@ export class CarCamera {
     dom.addEventListener('contextmenu', e => e.preventDefault());
   }
   get name() { return NAMES[this.view]; }
+  // a drop starts high over the car and swoops down to the view, as Google Earth flies in
+  swoop(seconds = 3.2) { this.introT = seconds; this.introD = seconds; }
   next(d = 1) { this.view = VIEWS[(VIEWS.indexOf(this.view) + d + VIEWS.length) % VIEWS.length]; this.ready = false; this.yawOff = this.pitchOff = 0; return this.view; }
   set(v) { if (VIEWS.includes(v)) { this.view = v; this.ready = false; } }
   inside() { return this.view === 'driver'; }
@@ -62,6 +64,15 @@ export class CarCamera {
         const from = base.clone().add(new THREE.Vector3(0, 1.4, 0)), to = want.clone().sub(from), len = to.length();
         const h = world.raycast(from, to.normalize(), len);
         if (h && h.distance < len) want.copy(from).addScaledVector(to, Math.max(1.5, h.distance - 0.4));
+        // a traffic car between: move in to just in front of it
+        if (input.others) for (const c of input.others) {
+          const ax = from.x, az = from.z, bx = want.x, bz = want.z, dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz;
+          const t = L2 > 0 ? THREE.MathUtils.clamp(((c.x - ax) * dx + (c.z - az) * dz) / L2, 0, 1) : 0;
+          if (Math.hypot(ax + dx * t - c.x, az + dz * t - c.z) < c.r + 0.5 && t > 0.15) {
+            const keep = Math.max(1.6, Math.sqrt(L2) * t - c.r - 0.8);
+            want.copy(from).addScaledVector(to, keep); want.y = Math.max(want.y, from.y + 0.6);
+          }
+        }
         const g = world.groundAt ? world.groundAt(want.x, want.z, want.y) : null;
         if (g !== null && g !== undefined && want.y < g + 0.6) want.y = g + 0.6;
       }
@@ -84,11 +95,13 @@ export class CarCamera {
       this.ready = true;
     } else {
       const m = car.rig.mounts;
-      const mount = this.view === 'driver' ? m.driver : this.view === 'hood' ? m.hood : m.bumper;
+      let mount = this.view === 'driver' ? m.driver : this.view === 'hood' ? m.hood : m.bumper;
+      // looking back from inside: a view out over the boot, as a rear-view mirror shows (from the seat it is all headrest)
+      if (input.lookBack) mount = new THREE.Vector3(0, car.rig.dims.height * 0.82, car.rig.dims.length * 0.5 - 0.15);
       cam.position.copy(mount).applyMatrix4(o.matrixWorld);
       // the head is steadied against the body's roll and pitch a little, as a driver's neck does
       const look = new THREE.Quaternion().copy(q);
-      _e.set(this.pitchOff - (this.view === 'driver' ? 0.06 : 0.03), yaw * (this.view === 'driver' ? 1 : 0.6), 0, 'YXZ');
+      _e.set(this.pitchOff - (this.view === 'driver' ? 0.06 : 0.03), input.lookBack ? Math.PI : yaw * (this.view === 'driver' ? 1 : 0.6), 0, 'YXZ');
       look.multiply(new THREE.Quaternion().setFromEuler(_e));
       cam.quaternion.copy(look);
       if (this.view === 'driver') {
@@ -97,6 +110,22 @@ export class CarCamera {
         cam.rotateY(-v.steer * 0.35);
       } else fov = 70;
       this.ready = true;
+    }
+    if (this.introT > 0) {
+      this.introT -= dt;
+      const k = 1 - Math.max(0, this.introT) / this.introD, e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+      const flat = new THREE.Vector3(fwd.x, 0, fwd.z).normalize();
+      const high = base.clone().addScaledVector(flat, -180).add(new THREE.Vector3(0, 260, 0));
+      const end = cam.position.clone(), endQ = cam.quaternion.clone();
+      const pos = high.clone().lerp(end, e);
+      // the path bows down near its end so it does not cut through what is in front
+      pos.y += Math.sin(e * Math.PI) * 25 * (1 - e);
+      cam.position.copy(pos);
+      // (Matrix4.lookAt points -z at the target, as a camera looks; Object3D.lookAt would point +z)
+      const m = new THREE.Matrix4().lookAt(pos, base.clone().add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(0, 1, 0));
+      cam.quaternion.setFromRotationMatrix(m).slerp(endQ, Math.pow(e, 3));
+      fov = 55 + (fov - 55) * e;
+      if (this.view === 'chase' || this.view === 'far') this.pos.copy(end);
     }
     if (Math.abs(cam.fov - fov) > 0.05) { cam.fov += (fov - cam.fov) * Math.min(1, dt * 3); cam.updateProjectionMatrix(); }
     cam.near = this.view === 'driver' ? 0.05 : 0.15; cam.updateProjectionMatrix();

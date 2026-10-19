@@ -2,11 +2,11 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=1';
-import { World } from './world.js?v=1';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=1';
-import { Sky } from './sky.js?v=1';
-import { Drive } from './drive.js?v=1';
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=2';
+import { World } from './world.js?v=2';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=2';
+import { Sky } from './sky.js?v=2';
+import { Drive } from './drive.js?v=2';
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -19,6 +19,8 @@ renderer.toneMapping = TM[Q.get('tm')] || THREE.NeutralToneMapping;
 renderer.toneMappingExposure = +(Q.get('exp') || 0.9);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
+// reading every shader's log back from the driver stalls the page for seconds as the world loads; ?debug turns it on
+renderer.debug.checkShaderErrors = Q.has('debug');
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200000);
@@ -104,7 +106,7 @@ G.pixelRatio = () => prNow;
 let last = performance.now();
 G.frames = 0;
 function loop(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (Q.has('free')) { freeCam(dt); sky.update(camera); }
   else if (G.drive) G.drive.update(dt);
   if (G.onFrame) G.onFrame(dt);
@@ -133,7 +135,7 @@ if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
 async function openMap() {
   try {
-    const M = await import('./mapui.js?v=1');
+    const M = await import('./mapui.js?v=2');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();
