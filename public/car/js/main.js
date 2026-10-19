@@ -2,11 +2,11 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=9';
-import { World } from './world.js?v=9';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=9';
-import { Sky } from './sky.js?v=9';
-import { Drive } from './drive.js?v=9';
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=10';
+import { World } from './world.js?v=10';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=10';
+import { Sky } from './sky.js?v=10';
+import { Drive } from './drive.js?v=10';
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -145,7 +145,10 @@ function loop(now) {
     // the shadow matrix the photographed surfaces read must be this frame's (the shadow box follows the car)
     if (sky.sun.castShadow) { sky.sun.updateMatrixWorld(); sky.sun.target.updateMatrixWorld(); sky.sun.shadow.updateMatrices(sky.sun); }
     syncBaked(sky.sun);
-    renderer.render(scene, camera);
+    // while a drop loads, nothing is drawn: a shader first met in a draw is built there and then, and that held
+    // the page still for seconds (the drive builds them all in the background before the car is shown)
+    // (never for more than 40 s, whatever happened to the drop)
+    if (!(G.drive && G.drive.holdRender && now - G.drive.holdSince < 40000)) renderer.render(scene, camera);
   }
   G.frames++;
   G.fps = G.fps ? G.fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05 : 60;
@@ -168,7 +171,7 @@ if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
 async function openMap() {
   try {
-    const M = await import('./mapui.js?v=9');
+    const M = await import('./mapui.js?v=10');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();

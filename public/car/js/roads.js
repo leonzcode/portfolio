@@ -24,7 +24,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=9';
+import { unproject } from './geo.js?v=10';
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -123,7 +123,8 @@ const Y = async () => {
     await new Promise(r => setTimeout(r, 0)); sliceT = performance.now();
   }
 };
-const ST = (n) => { const t = performance.now(); busy[stage] = (busy[stage] || 0) + t - sliceT; sliceT = t; stage = n; };
+const TRACE = typeof location !== 'undefined' && /[?&]trace/.test(location.search);
+const ST = (n) => { const t = performance.now(); busy[stage] = (busy[stage] || 0) + t - sliceT; sliceT = t; stage = n; if (TRACE) console.debug('[roads] ' + n); };
 
 export let graph = { lanes: [], nodes: new Map() };
 export let signals = new Map();
@@ -135,7 +136,7 @@ export let style = { region: 'other', yellowCentre: false };
 // ---------------------------------------------------------------- materials
 let MATS = null;
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=9');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=10');
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -472,19 +473,24 @@ async function buildTopology(data) {
   const roomOf = (pts) => {
     if (!walls.size || !pts || pts.length < 2) return null;
     let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-    const n = Math.min(40, Math.max(2, Math.floor(L / 10))), got = [];
+    const n = Math.min(40, Math.max(2, Math.floor(L / 10))), got = [], gl = [], gr = [];
     let k = 1, acc = 0;
     for (let m = 0; m < n; m++) {
       const s = L * (m + 0.5) / n;
       while (k < pts.length - 1 && acc + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]) < s) { acc += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]); k++; }
       const a = pts[k - 1], c = pts[k], sl = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1, t = Math.max(0, Math.min(1, (s - acc) / sl));
       const x = a[0] + (c[0] - a[0]) * t, z = a[1] + (c[1] - a[1]) * t, tx = (c[0] - a[0]) / sl, tz = (c[1] - a[1]) / sl;
-      const l = rayWall(x, z, -tz, tx), r = rayWall(x, z, tz, -tx);
+      // (left of the way's direction is (tz, -tx) here: +x east, +z south)
+      const l = rayWall(x, z, tz, -tx), r = rayWall(x, z, -tz, tx);
       if (l < 30 && r < 30) got.push(l + r);
+      if (l < 30) gl.push(l);
+      if (r < 30) gr.push(r);
     }
-    if (got.length < 2 || got.length < n * 0.25) return null;
+    const pct = a => { if (a.length < 2 || a.length < n * 0.4) return null; a.sort((p, q) => p - q); return a[Math.floor(a.length * 0.3)]; };
+    const left = pct(gl), right = pct(gr);
+    if (got.length < 2 || got.length < n * 0.25) return { room: null, left, right };
     got.sort((p, q) => p - q);
-    return got[Math.floor(got.length * 0.3)];
+    return { room: got[Math.floor(got.length * 0.3)], left, right };
   };
   const nodePos = data.nodes || new Map();
   const twins = findTwins(data.roads || []);
@@ -493,7 +499,8 @@ async function buildTopology(data) {
     await Y();
     // the busiest stretch of the way decides (a long avenue's middle may lie outside the loaded area)
     let nb = 0; if (w.pts && w.pts.length) for (let k = 0; k <= 8; k++) { const q = w.pts[Math.round(k / 8 * (w.pts.length - 1))]; nb = Math.max(nb, countAt(q[0], q[1])); }
-    const c = classify(w, region, nb >= 40 ? 2 : nb >= 10 ? 1 : 0, twins.get(w.id) ?? null, nb >= 10 ? roomOf(w.pts) : null); if (!c || w.nodes.length < 2) continue;
+    const rm = nb >= 10 ? roomOf(w.pts) : null;
+    const c = classify(w, region, nb >= 40 ? 2 : nb >= 10 ? 1 : 0, twins.get(w.id) ?? null, rm ? rm.room : null); if (!c || w.nodes.length < 2) continue;
     let nodes = w.nodes.slice();
     if (c.reverse) nodes.reverse();
     const pts = []; const ids = [];
@@ -514,7 +521,13 @@ async function buildTopology(data) {
     if (c.roundabout) { curbL = curbR && c.urban; }
     c.curbL = curbL; c.curbR = curbR; c.curbKey = (curbL ? 1 : 0) + (curbR ? 2 : 0);
     const defW = c.rank >= 8 && c.urban ? 4.2 : c.rank >= 7 && c.urban ? 3.6 : region === 'jp' ? 2.0 : 2.4;
-    c.swWL = Math.max(1, Math.min(8, c.swWL || c.swW || defW)); c.swWR = Math.max(1, Math.min(8, c.swWR || c.swW || defW));
+    const tagL = c.swWL || c.swW, tagR = c.swWR || c.swW;
+    c.swWL = Math.max(1, Math.min(8, tagL || defW)); c.swWR = Math.max(1, Math.min(8, tagR || defW));
+    // in a built-up street the pavement runs to the buildings (else a strip of bare satellite ground lies between)
+    if (rm && c.urban) {
+      if (!tagL && rm.left != null && rm.left - c.hw < 9) c.swWL = Math.max(c.swWL, Math.min(8, rm.left - c.hw - 0.2));
+      if (!tagR && rm.right != null && rm.right - c.hw < 9) c.swWR = Math.max(c.swWR, Math.min(8, rm.right - c.hw - 0.2));
+    }
     if (c.reverse) { const x = c.swWL; c.swWL = c.swWR; c.swWR = x; }
     ways.push({ id: w.id, tags: w.tags, wayDir: c.reverse ? -1 : 1, ids, pts, c });
   }
@@ -1054,7 +1067,9 @@ async function computeHeights(bbox) {
       let lo = 0, hi = 0;
       for (let i = 0; i < N; i++) {
         if (fixed(i)) continue;
-        while (e.ps[lo] < e.ps[i] - W) lo++;
+        // (bounded by i itself: an unbounded walk hung the page on some Overpass data)
+        while (lo < i && e.ps[lo] < e.ps[i] - W) lo++;
+        if (hi < lo) hi = lo;
         while (hi + 1 < N && e.ps[hi + 1] <= e.ps[i] + W) hi++;
         let sw = 0, sh = 0;
         for (let j = lo; j <= hi; j++) { const w = 1 - Math.abs(e.ps[j] - e.ps[i]) / W; if (w > 0) { sw += w; sh += w * e.ph[j]; } }
