@@ -13,9 +13,9 @@
    The words come from the pack in use: the player's own Minecraft's
    en_us.json, or else Leoncraft's own words for it (subtitles.js).
 --------------------------------------------------------------------------- */
-import { Sound } from './sound.js?v=98';
-import { caption } from './subtitles.js?v=98';
-import { SoundPacks } from './packs.js?v=98';
+import { Sound } from './sound.js?v=99';
+import { caption } from './subtitles.js?v=99';
+import { SoundPacks } from './packs.js?v=99';
 
 const LIFE = 3000;
 

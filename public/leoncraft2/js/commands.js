@@ -10,10 +10,10 @@
    Each command gets a context: ctx.game (the world being played), and
    ctx.say(text, colour) for the reply.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=98';
-import { Y0 } from './world-const.js?v=98';
-import { ENCHANTS } from './itemdata.js?v=98';
-import { stateOf } from './gen/states.js?v=98';
+import { B, BLOCKS, FLUID } from './blocks.js?v=99';
+import { Y0 } from './world-const.js?v=99';
+import { ENCHANTS } from './itemdata.js?v=99';
+import { stateOf } from './gen/states.js?v=99';
 
 const REG = new Map();
 export function register(name, def) { REG.set(name, def); for (const a of def.aliases || []) REG.set(a, def); }
@@ -461,7 +461,7 @@ function blockArg(s) {
 }
 // the block tags, from the generator's data (loaded only when a tag is asked for)
 let TAGS = null;
-const loadTags = () => import('./gen/vdata.js?v=98').then(m => { TAGS = m.VDATA.block_tags || {}; });
+const loadTags = () => import('./gen/vdata.js?v=99').then(m => { TAGS = m.VDATA.block_tags || {}; });
 function tagIds(name, seen = new Set()) {
   const key = name.replace(/^minecraft:/, '');
   const list = TAGS[key];
