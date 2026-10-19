@@ -2,7 +2,7 @@
 // (OpenMapTiles schema, OpenStreetMap data, no key, served from a CDN). Fewer tags than Overpass (no lanes,
 // hydrants or signals) but it answers in a second. Decodes Mapbox Vector Tiles itself and returns the same store
 // shape as osm.js (roads with made-up node ids shared where lines meet, buildings with heights).
-import { project } from './geo.js?v=7';
+import { project } from './geo.js?v=8';
 
 const TILEJSON = 'https://tiles.openfreemap.org/planet';
 const Z = 14;
@@ -198,7 +198,8 @@ export async function load(lat, lon, radius = 700) {
           const pts = seg.map(([px, py]) => loc(px, py));
           if (tags.oneway === '-1') { pts.reverse(); tags.oneway = 'yes'; }
           if (!tags.name) { const m = pts[(pts.length / 2) | 0], m2 = pts.length > 1 ? pts[Math.min(pts.length - 1, ((pts.length / 2) | 0) + 1)] : m; const g = nameAt((m[0] + m2[0]) / 2, (m[1] + m2[1]) / 2) || nameAt(m[0], m[1]); if (g) { tags.name = g.name; if (g.ref) tags.ref = g.ref; } }
-          store.roads.push({ id: wid--, nodes: pts.map(([a, b]) => node(a, b)), pts, tags: { ...tags }, highway: tags.highway });
+          const onB = q => q[0] <= 1e-6 || q[1] <= 1e-6 || q[0] >= ext - 1e-6 || q[1] >= ext - 1e-6;
+          store.roads.push({ id: wid--, nodes: pts.map(([a, b]) => node(a, b)), pts, tags: { ...tags }, highway: tags.highway, bS: onB(seg[0]), bE: onB(seg[seg.length - 1]) });
         }
       }
     }
@@ -233,6 +234,32 @@ export async function load(lat, lon, radius = 700) {
         } else if (cur) { const h = rings[k]; if (shoelace(h) < 0) h.reverse(); cur.holes.push(h); }
       }
     }
+  }
+  // A road crossing a tile border comes as two lines, cut at the border in each tile's own coordinates, so their
+  // ends miss each other by up to a metre or so: join each such end to the nearest one of the same kind from the
+  // other side (else the two are separate dead ends, with a step between them and a gap in the lanes).
+  {
+    const ends = [], EG = new Map(), C = 4;
+    for (const r of store.roads) for (const end of [0, 1]) {
+      if (!(end ? r.bE : r.bS)) continue;
+      const i = end ? r.pts.length - 1 : 0, p = r.pts[i], e = { r, i, x: p[0], z: p[1], done: false };
+      ends.push(e);
+      const k = Math.floor(p[0] / C) + ',' + Math.floor(p[1] / C); let l = EG.get(k); if (!l) EG.set(k, l = []); l.push(e);
+    }
+    for (const e of ends) {
+      if (e.done) continue;
+      let best = null, bd = 3;
+      const ci = Math.floor(e.x / C), cj = Math.floor(e.z / C);
+      for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++) for (const o of EG.get(i + ',' + j) || []) {
+        if (o === e || o.done || o.r === e.r || o.r.highway !== e.r.highway) continue;
+        const d = Math.hypot(o.x - e.x, o.z - e.z); if (d < bd) { bd = d; best = o; }
+      }
+      if (!best) continue;
+      const mx = (e.x + best.x) / 2, mz = (e.z + best.z) / 2, id = e.r.nodes[e.i];
+      for (const q of [e, best]) { q.r.pts[q.i] = [mx, mz]; q.r.nodes[q.i] = id; q.done = true; }
+      const n = store.nodes.get(id); if (n) { n.x = mx; n.z = mz; }
+    }
+    for (const r of store.roads) { delete r.bS; delete r.bE; }
   }
   // only what is near the place asked for (a tile is about 2 km across)
   const [cx, cz] = project(lat, lon), R2 = (radius + 120) ** 2;

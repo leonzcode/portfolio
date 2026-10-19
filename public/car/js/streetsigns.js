@@ -17,7 +17,7 @@ export class StreetSigns {
   }
 
   // roads: roads.js (its _debug() edges and junctions); us: American style
-  build(roads, { collide, us = false, cx = 0, cz = 0, radius = 500 } = {}) {
+  build(roads, { collide, us = false, cx = 0, cz = 0, radius = 500, buildings = null } = {}) {
     this.clear();
     const S = roads && roads._debug ? roads._debug() : null;
     if (!S || !S.junctions) return;
@@ -53,6 +53,31 @@ export class StreetSigns {
       for (let k = 0; k < n; k++) { const a = k / n * Math.PI * 2; ppos.push(x + Math.cos(a) * r, y, z + Math.sin(a) * r, x + Math.cos(a) * r, y + h, z + Math.sin(a) * r); }
       for (let k = 0; k < n; k++) { const a = b + k * 2, c = b + ((k + 1) % n) * 2; pidx.push(a, c, a + 1, c, c + 1, a + 1); }
     };
+    // footprints by 32 m cells: a corner where the map's buildings reach the kerb has no room for a pole
+    const G = 32, bidx = new Map();
+    for (const b of buildings || []) {
+      if (!b || b.part || b.open || !b.outer || b.outer.length < 3 || (b.minHeight || 0) > 1) continue;
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (const p of b.outer) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); }
+      if (x1 - x0 > 1500 || z1 - z0 > 1500) continue;
+      const r = { p: b.outer, x0: x0 - 0.5, z0: z0 - 0.5, x1: x1 + 0.5, z1: z1 + 0.5 };
+      for (let i = Math.floor(r.x0 / G); i <= Math.floor(r.x1 / G); i++) for (let j = Math.floor(r.z0 / G); j <= Math.floor(r.z1 / G); j++) { const k = i + ',' + j; let l = bidx.get(k); if (!l) bidx.set(k, l = []); l.push(r); }
+    }
+    const inBuilding = (x, z) => {
+      const l = bidx.get(Math.floor(x / G) + ',' + Math.floor(z / G)); if (!l) return false;
+      for (const r of l) {
+        if (x < r.x0 || x > r.x1 || z < r.z0 || z > r.z1) continue;
+        let c = false, d2 = Infinity; const P = r.p;
+        for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+          const a = P[i], q = P[j];
+          if ((a[1] > z) !== (q[1] > z) && x < (q[0] - a[0]) * (z - a[1]) / (q[1] - a[1]) + a[0]) c = !c;
+          const ex = q[0] - a[0], ez = q[1] - a[1], L2 = ex * ex + ez * ez, t = L2 > 0 ? Math.max(0, Math.min(1, ((x - a[0]) * ex + (z - a[1]) * ez) / L2)) : 0;
+          d2 = Math.min(d2, (a[0] + ex * t - x) ** 2 + (a[1] + ez * t - z) ** 2);
+        }
+        if (c || d2 < 0.25) return true; // inside, or the blades would touch the wall
+      }
+      return false;
+    };
     let made = 0;
     for (const J of S.junctions) {
       if (!J.n || !J.E || J.E.length < 3) continue;
@@ -68,6 +93,7 @@ export class StreetSigns {
       const x = J.n.x + A.dx * (B.hw + 1.4) + B.dx * (A.hw + 1.4), z = J.n.z + A.dz * (B.hw + 1.4) + B.dz * (A.hw + 1.4);
       const sf = roads.surfaceAt(x, z);
       if (sf && sf.onRoad) continue;
+      if (inBuilding(x, z)) continue;
       const y = sf && Number.isFinite(sf.h) ? sf.h : (Number.isFinite(J.n.h) ? J.n.h + 0.15 : 0);
       pole(x, y, z, 3.15);
       quad(x, y + 2.86, z, A.dx, A.dz, sa.w, 0.19, sa, false); quad(x, y + 2.86, z, A.dx, A.dz, sa.w, 0.19, sa, true);

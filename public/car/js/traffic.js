@@ -3,8 +3,10 @@
 // and signals for it, stops at red lights (signals.js, the same timing the lights show), waits at stop signs, gives
 // way at junctions without lights, slows for the player's car in its path, and stops with its hazards on when hit.
 import * as THREE from 'three';
-import * as SIG from './signals.js?v=7';
+import * as SIG from './signals.js?v=8';
+import { frame } from './geo.js?v=8';
 
+const nearNYC = () => Math.abs(frame.lat - 40.74) < 0.25 && Math.abs(frame.lon + 73.95) < 0.3;
 const PAINTS = [0xf2f2f0, 0xf2f2f0, 0x111214, 0x111214, 0x8c9096, 0xb8bcc2, 0x55595f, 0x1e3a6b, 0x7a1418, 0x24402c, 0xc9b99a, 0x3d4a5c, 0x9a2a1d, 0xe8e2d0];
 const S0 = 2.2, T_HEAD = 1.25, A_MAX = 1.9, B_COMF = 2.6, LOOK = 70;
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _u = new THREE.Vector3(0, 1, 0);
@@ -86,7 +88,9 @@ export class Traffic {
   async getRig(model) {
     let free = this.pool.get(model);
     if (free && free.length) return free.pop();
-    const color = PAINTS[(Math.random() * PAINTS.length) | 0];
+    let color = PAINTS[(Math.random() * PAINTS.length) | 0];
+    // New York's streets are full of yellow cabs: about a third of the saloons there
+    if ((model === 'volvos90' || model === 'fairheaven') && nearNYC() && Math.random() < 0.35) color = 0xf2b705;
     const rig = await this.C.loadCar(model, { npc: true, color });
     if (this.carEnv && rig.setEnvMap) rig.setEnvMap(this.carEnv);
     rig.model = model;
@@ -223,6 +227,9 @@ export class Traffic {
     if (lon > 0 && lon < 50 && lat < 2.2 + lon * 0.02) {
       const g = lon - c.len / 2 - 2.4;
       if (g < gap) { gap = g; lv = pv ? Math.max(0, pv.v.x * fx + pv.v.z * fz) : 0; }
+    } else if (lon > -c.len / 2 - 1 && lon <= 0 && lat < 2.1) {
+      // the player's car alongside, overlapping this one: wait rather than grind along its side
+      gap = 0; lv = 0;
     }
     return { gap, lv };
   }
@@ -314,6 +321,14 @@ export class Traffic {
     const h1 = Math.atan2(b.x - a.x, -(b.z - a.z)), h2 = Math.atan2(d.x - b.x, -(d.z - b.z));
     let dh = h2 - h1; dh = (dh + Math.PI * 3) % (Math.PI * 2) - Math.PI;
     return dh / 3;
+  }
+
+  // take away any car within r of (x, z) (the player's car is being put there)
+  clearNear(x, z, r) {
+    for (let i = this.list.length - 1; i >= 0; i--) {
+      const c = this.list[i];
+      if (Math.hypot(c.x - x, c.z - z) < r) { this.freeRig(c.rig); this.list.splice(i, 1); }
+    }
   }
 
   // two circles a car for the player's collisions

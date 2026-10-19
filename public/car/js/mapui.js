@@ -17,7 +17,7 @@
 // while typing), Nominatim (Enter and reverse lookups, at most one request a second, as its policy asks; its
 // policy forbids type-ahead, which is why suggestions come from Photon), Overpass (roads you can drive).
 
-const CSS_HREF = new URL('../css/mapui.css?v=7', import.meta.url).href;
+const CSS_HREF = new URL('../css/mapui.css?v=8', import.meta.url).href;
 
 const TILES = {
   // CARTO's keyless raster basemaps now answer every request with an "API key required" picture (checked
@@ -1343,14 +1343,17 @@ export function createMapUI(root, { onDrop = () => {}, onBack = () => {} } = {})
       const ctrl = geo.ctrl = new AbortController();
       reverse(lat, lon, ctrl.signal).then((r) => {
         if (mode !== 'drive') return;
-        addrT.textContent = r.title || 'Unnamed road';
+        addrT.textContent = r.title || (carState && carState.road) || 'Unnamed road';
         addrS.textContent = r.sub;
-      }).catch(() => {}).finally(() => { if (geo.ctrl === ctrl) geo.ctrl = null; });
+      }).catch(() => {
+        // no answer (offline, refused): say so rather than "Finding the street" for the rest of the drive
+        if (mode === 'drive' && !ctrl.signal.aborted && addrT.textContent === 'Finding the street') addrT.textContent = (carState && carState.road) || 'Address not available';
+      }).finally(() => { if (geo.ctrl === ctrl) geo.ctrl = null; });
     }
   }
   function updateCar(s) {
     if (mode !== 'drive' || !s || !isFinite(s.lat) || !isFinite(s.lon)) return;
-    carState = { lat: +s.lat, lon: +s.lon, heading: +s.heading || 0, speed: +s.speed || 0, t: performance.now() };
+    carState = { lat: +s.lat, lon: +s.lon, heading: +s.heading || 0, speed: +s.speed || 0, road: s.road || '', t: performance.now() };
     lastCar = { lat: carState.lat, lon: carState.lon, heading: carState.heading };
     if (!carRaf) carRaf = requestAnimationFrame(drawCar);
   }

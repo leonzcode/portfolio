@@ -424,7 +424,7 @@ export const FACADE_TIME = { value: 0 };
 
 export function makeFacadeMaterial(opts = {}) {
   // the sky's hemisphere light already lights the walls from above; the environment adds reflections more than fill
-  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.0, envMapIntensity: opts.envMapIntensity ?? 0.5 });
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.0, envMapIntensity: opts.envMapIntensity ?? 0.8 });
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = FACADE_TIME;
     shader.vertexShader = shader.vertexShader
