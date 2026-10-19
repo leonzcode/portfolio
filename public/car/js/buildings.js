@@ -12,9 +12,9 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame } from './geo.js?v=1';
-import { patchBaked } from './baked.js?v=1';
-import { makeFacadeMaterial, STYLE, GROUND } from './facade.js?v=1';
+import { frame } from './geo.js?v=2';
+import { patchBaked } from './baked.js?v=2';
+import { makeFacadeMaterial, STYLE, GROUND } from './facade.js?v=2';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -290,6 +290,8 @@ function plan(b, ctx) {
   let gh = ground === GROUND.SHOP ? Math.max(fh, 4.4) : ground === GROUND.LOBBY ? Math.max(fh, 5.0) : ground === GROUND.ROLLUP ? Math.max(fh, 5.2) : fh;
   if (gh > eave - 0.5) gh = Math.max(2.5, eave - 0.5);
   if (style === STYLE.GLASS && H < 12) style = STYLE.CONCRETE;
+  // sheds and warehouses are low: anything tall with a works or service tag is an office block in disguise
+  if (style === STYLE.METAL && H > 18 && !materialStyle(b.material)) style = H > 48 && r1 < 0.5 ? STYLE.GLASS : STYLE.CONCRETE;
   const colour = parseColour(b.colour);
   const roofColour = parseColour(b.roofColour);
   // Parts often share a facade (a tower flush with its podium, an outline drawn with its own part): two walls in

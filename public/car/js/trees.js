@@ -8,7 +8,7 @@
 //                         roadsMask, buildings, roads, centre: [x, z], radius, lean: [kx, kz] })
 //   t.group, t.ready (Promise of stats), t.dispose()
 import * as THREE from 'three';
-import { frame } from './geo.js?v=1';
+import { frame } from './geo.js?v=2';
 
 const D2R = Math.PI / 180;
 function hashf(n, salt = 0) {

@@ -1,14 +1,14 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=1';
-import { Collide } from './collide.js?v=1';
-import { Vehicle } from './vehicle.js?v=1';
-import { CarCamera } from './camera.js?v=1';
-import { Hud } from './hud.js?v=1';
-import { CarSound } from './sound.js?v=1';
-import { CutMask } from './cutmask.js?v=1';
-import * as SIG from './signals.js?v=1';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=2';
+import { Collide } from './collide.js?v=2';
+import { Vehicle } from './vehicle.js?v=2';
+import { CarCamera } from './camera.js?v=2';
+import { Hud } from './hud.js?v=2';
+import { CarSound } from './sound.js?v=2';
+import { CutMask } from './cutmask.js?v=2';
+import * as SIG from './signals.js?v=2';
 
 const STEP = 1 / 120;
 const tryImport = async p => { try { return await import(p); } catch (e) { console.warn('module missing or broken', p, e.message); return null; } };
@@ -50,8 +50,8 @@ export class Drive {
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
     const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=1'), tryImport('./osm.js?v=1'), tryImport('./roads.js?v=1'), tryImport('./props.js?v=1'),
-      tryImport('./buildings.js?v=1'), tryImport('./trees.js?v=1'), tryImport('./traffic.js?v=1'), tryImport('./imagery.js?v=1')]);
+      tryImport('./cars.js?v=2'), tryImport('./osm.js?v=2'), tryImport('./roads.js?v=2'), tryImport('./props.js?v=2'),
+      tryImport('./buildings.js?v=2'), tryImport('./trees.js?v=2'), tryImport('./traffic.js?v=2'), tryImport('./imagery.js?v=2')]);
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
     // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
     if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); return t; }).catch(() => null);
@@ -203,6 +203,8 @@ export class Drive {
     if (this.traffic && this.traffic.preload) { this.hud.loading('Getting the traffic ready', 0.9); await this.traffic.preload(this.G.renderer, this.camera); }
     mark('traffic');
     this.active = true;
+    this.cam.ready = false;
+    if (!/[?&]noswoop/.test(location.search)) this.cam.swoop();
     this.hud.loading(null);
     this.hud.show(true);
     if (this.mode === 'open' && !this.notedKey) { this.notedKey = true; this.hud.note(this.G.keyFailed ? "Google did not accept the API key, so this is the open map. Check the key in the map's menu." : "This is the open map, built from satellite photos and OpenStreetMap. For Google's photorealistic 3D city, add a Google Maps API key in the map's menu."); }
@@ -214,12 +216,14 @@ export class Drive {
     const T = this.world.tiles;
     // point the camera at the start so the tiles there are the ones asked for
     this.camera.position.set(x, (this.world.groundAt(x, z) || 0) + 3, z + 8); this.camera.lookAt(x, 0, z);
-    for (let i = 0; i < 80; i++) {
+    const t0 = performance.now(), cap = this.mode === 'google' ? 6000 : 3000;
+    for (let i = 0; i < 400; i++) {
       const g = this.world.groundAt(x, z);
-      const st = T && T.stats, busy = st ? st.downloading + st.parsing : 0;
+      const st = T && T.stats, busy = st ? st.downloading + st.parsing : 0, ms = performance.now() - t0;
       // the ground's shape is known at once; its picture keeps sharpening for a while, so wait for it a little only
-      if (g !== null && i > 3 && (busy === 0 || i > (this.mode === 'google' ? 40 : 26))) return g;
-      await new Promise(r => setTimeout(r, 150));
+      if (g !== null && ms > 400 && (busy === 0 || ms > cap)) return g;
+      if (ms > 15000) break;
+      await new Promise(r => setTimeout(r, 100));
     }
     return this.world.groundAt(x, z) || 0;
   }
@@ -314,7 +318,7 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=1').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=2').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;
@@ -401,8 +405,8 @@ export class Drive {
     this.acc += dt;
     let n = 0;
     if (!this.prevPos) { this.prevPos = v.pos.clone(); this.prevQ = v.q.clone(); }
-    while (this.acc >= STEP && n < 10) { this.prevPos.copy(v.pos); this.prevQ.copy(v.q); v.step(STEP, inp, env); this.acc -= STEP; n++; }
-    if (n === 10) this.acc = 0;
+    while (this.acc >= STEP && n < 12) { this.prevPos.copy(v.pos); this.prevQ.copy(v.q); v.step(STEP, inp, env); this.acc -= STEP; n++; }
+    if (n === 12) this.acc = 0;
     if (v.hits.length) { for (const h of v.hits) if (h.other && h.other.obj && this.traffic && this.traffic.bumped) this.traffic.bumped(h.other.obj, h); const big = v.hits.reduce((a, h) => Math.max(a, h.speed), 0); if (big > 4) this.hud.bump(big); if (big > 1.5 && performance.now() - (this.lastHit || 0) > 250) { this.sound.hit(big); this.lastHit = performance.now(); } }
     // fell out of the world: back to the road
     const o = v.origin();
@@ -422,7 +426,7 @@ export class Drive {
     const look = v.look();
     look.signal = this.signal; look.headlights = this.headlights; look.dt = dt;
     rig.update(dt, look);
-    this.cam.update(dt, this.car, this.world, { lookBack: this.lookBack });
+    this.cam.update(dt, this.car, this.world, { lookBack: this.lookBack, others });
     this.G.sky.update(this.camera, o);
     if (this.traffic) this.traffic.update(dt, { x: o.x, z: o.z, heading: v.heading, speed: v.fwdSpeed, vehicle: v });
     if (this.propsObj && this.propsObj.update) this.propsObj.update(dt, this.camera);

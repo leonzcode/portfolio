@@ -18,7 +18,7 @@ export class Hud {
           <dt>A D / &larr; &rarr;</dt><dd>Steer</dd><dt>Space</dt><dd>Handbrake</dd>
           <dt>C</dt><dd>Change view</dd><dt>B</dt><dd>Look back</dd><dt>Drag</dt><dd>Look around</dd>
           <dt>Q / E</dt><dd>Left / right signal</dd><dt>X</dt><dd>Hazard lights</dd><dt>L</dt><dd>Headlights</dd>
-          <dt>1 to 8</dt><dd>Change car</dd><dt>R</dt><dd>Back on the road</dd><dt>M</dt><dd>Sound on or off</dd><dt>H</dt><dd>Show or hide this</dd>
+          <dt>1 to 5</dt><dd>Change car</dd><dt>R</dt><dd>Back on the road</dd><dt>M</dt><dd>Sound on or off</dd><dt>H</dt><dd>Show or hide this</dd>
         </dl>
       </div>
       <div class="hud-load"><div class="hud-load-card"><div class="hud-spin"></div><div class="hud-load-t">Loading</div><div class="hud-bar"><i></i></div></div></div>
