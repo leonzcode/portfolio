@@ -24,7 +24,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=7';
+import { unproject } from './geo.js?v=8';
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -135,7 +135,7 @@ export let style = { region: 'other', yellowCentre: false };
 // ---------------------------------------------------------------- materials
 let MATS = null;
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=7');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=8');
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -348,7 +348,7 @@ function tileB(kind, x, z) {
 const UVS = 1 / 2.1; // asphalt texture tile is 2.1 m
 
 // ---------------------------------------------------------------- topology
-function classify(w, region, dense = 0, twin = null) {
+function classify(w, region, dense = 0, twin = null, room = null) {
   const t = w.tags, hw = w.highway;
   const C = CLASSES[hw]; if (!C) return null;
   if (t.area === 'yes') return null;
@@ -391,6 +391,17 @@ function classify(w, region, dense = 0, twin = null) {
     if (hw === 'service' && t.service === 'parking_aisle') width = 5.5;
     if (hw === 'service' && t.service === 'driveway') width = 3.2;
   }
+  // no wider than the street between its buildings allows, with a pavement each side (a guessed width in a narrow
+  // old street otherwise puts the outer lanes inside the houses)
+  if (room != null && !num(t.width) && !num(t['width:carriageway'])) {
+    // (lanes given in the map stay; lanes guessed above for a dense centre give way)
+    const mapped = num(t.lanes) != null || t['lanes:forward'] != null || t['lanes:backward'] != null;
+    const pav = region === 'us' ? 2.4 : 1.9, cap = room - 2 * pav, least = mapped ? nLanes * 2.75 : (oneway ? 3.2 : 5.6);
+    if (width > cap) {
+      width = Math.max(least, cap);
+      while (nLanes > 1 && width / nLanes < 2.9 && !mapped) { if (oneway) lf--; else if (lf >= lb) lf--; else lb--; nLanes--; }
+    }
+  }
   // one half of a dual carriageway: no wider than the gap to the other half (their ribbons must not overlap)
   if (twin != null && !num(t.width) && width > twin - 1) {
     width = Math.max(3.2, twin - 1);
@@ -432,6 +443,49 @@ async function buildTopology(data) {
     return n;
   };
   const urbanAt = (x, z) => countAt(x, z) >= 10;
+  // building walls on a 20 m grid, for how much room a street has between its buildings
+  const WG = 20, walls = new Map();
+  for (const b of data.buildings || []) {
+    if (!b.outer || b.outer.length < 3 || b.part || (b.minHeight || 0) > 2.5 || /roof|canopy|carport/.test(b.type || '')) continue;
+    const P = b.outer;
+    for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+      const a = P[j], c = P[i], sg = [a[0], a[1], c[0], c[1]];
+      for (let gx = Math.floor(Math.min(a[0], c[0]) / WG); gx <= Math.floor(Math.max(a[0], c[0]) / WG); gx++)
+        for (let gz = Math.floor(Math.min(a[1], c[1]) / WG); gz <= Math.floor(Math.max(a[1], c[1]) / WG); gz++) { const k = gx * 73856093 ^ gz * 19349663; let l = walls.get(k); if (!l) walls.set(k, l = []); l.push(sg); }
+    }
+  }
+  // distance from (x, z) along (dx, dz) to the first wall, up to 30 m
+  const rayWall = (x, z, dx, dz) => {
+    let best = 30; const seen = new Set();
+    for (let d = 0; d <= 30; d += 10) {
+      const k = Math.floor((x + dx * d) / WG) * 73856093 ^ Math.floor((z + dz * d) / WG) * 19349663;
+      const l = walls.get(k); if (!l || seen.has(k)) continue; seen.add(k);
+      for (const sg of l) {
+        const ex = sg[2] - sg[0], ez = sg[3] - sg[1], den = dx * ez - dz * ex; if (Math.abs(den) < 1e-9) continue;
+        const qx = sg[0] - x, qz = sg[1] - z, t = (qx * ez - qz * ex) / den, u = (qx * dz - qz * dx) / den;
+        if (t > 0 && t < best && u >= 0 && u <= 1) best = t;
+      }
+    }
+    return best;
+  };
+  // the room between buildings along a way: a low percentile of (left + right) over samples with walls both sides
+  const roomOf = (pts) => {
+    if (!walls.size || !pts || pts.length < 2) return null;
+    let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    const n = Math.min(40, Math.max(2, Math.floor(L / 10))), got = [];
+    let k = 1, acc = 0;
+    for (let m = 0; m < n; m++) {
+      const s = L * (m + 0.5) / n;
+      while (k < pts.length - 1 && acc + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]) < s) { acc += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]); k++; }
+      const a = pts[k - 1], c = pts[k], sl = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1, t = Math.max(0, Math.min(1, (s - acc) / sl));
+      const x = a[0] + (c[0] - a[0]) * t, z = a[1] + (c[1] - a[1]) * t, tx = (c[0] - a[0]) / sl, tz = (c[1] - a[1]) / sl;
+      const l = rayWall(x, z, -tz, tx), r = rayWall(x, z, tz, -tx);
+      if (l < 30 && r < 30) got.push(l + r);
+    }
+    if (got.length < 2 || got.length < n * 0.25) return null;
+    got.sort((p, q) => p - q);
+    return got[Math.floor(got.length * 0.3)];
+  };
   const nodePos = data.nodes || new Map();
   const twins = findTwins(data.roads || []);
   const ways = [];
@@ -439,7 +493,7 @@ async function buildTopology(data) {
     await Y();
     // the busiest stretch of the way decides (a long avenue's middle may lie outside the loaded area)
     let nb = 0; if (w.pts && w.pts.length) for (let k = 0; k <= 8; k++) { const q = w.pts[Math.round(k / 8 * (w.pts.length - 1))]; nb = Math.max(nb, countAt(q[0], q[1])); }
-    const c = classify(w, region, nb >= 40 ? 2 : nb >= 10 ? 1 : 0, twins.get(w.id) ?? null); if (!c || w.nodes.length < 2) continue;
+    const c = classify(w, region, nb >= 40 ? 2 : nb >= 10 ? 1 : 0, twins.get(w.id) ?? null, nb >= 10 ? roomOf(w.pts) : null); if (!c || w.nodes.length < 2) continue;
     let nodes = w.nodes.slice();
     if (c.reverse) nodes.reverse();
     const pts = []; const ids = [];
@@ -989,6 +1043,21 @@ async function computeHeights(bbox) {
     for (let it = 0; it < 3; it++) {
       for (let i = 1; i < N; i++) if (!fixed(i)) { const g = G * (e.ps[i] - e.ps[i - 1]); e.ph[i] = Math.max(e.ph[i - 1] - g, Math.min(e.ph[i - 1] + g, e.ph[i])); }
       for (let i = N - 2; i >= 0; i--) if (!fixed(i)) { const g = G * (e.ps[i + 1] - e.ps[i]); e.ph[i] = Math.max(e.ph[i + 1] - g, Math.min(e.ph[i + 1] + g, e.ph[i])); }
+    }
+    // round the creases where the grade changes (the limit above leaves straight runs meeting at a kink, and a
+    // coarse terrain model has its own): a triangular average over 8 m each way, twice, as a road's vertical curves
+    if (N > 3) for (let pass = 0; pass < 2; pass++) {
+      const W = 8, q = e.ph.slice();
+      let lo = 0, hi = 0;
+      for (let i = 0; i < N; i++) {
+        if (fixed(i)) continue;
+        while (e.ps[lo] < e.ps[i] - W) lo++;
+        while (hi + 1 < N && e.ps[hi + 1] <= e.ps[i] + W) hi++;
+        let sw = 0, sh = 0;
+        for (let j = lo; j <= hi; j++) { const w = 1 - Math.abs(e.ps[j] - e.ps[i]) / W; if (w > 0) { sw += w; sh += w * e.ph[j]; } }
+        if (sw > 0) q[i] = sh / sw;
+      }
+      for (let i = 0; i < N; i++) e.ph[i] = q[i];
     }
     for (let i = 0; i < N; i++) e.ph[i] += bias;
   }
@@ -1787,6 +1856,7 @@ async function buildSurfaceIndex() {
 }
 
 const RES = { h: null, onRoad: false, edge: Infinity, curbH: 0 };
+const SURF_CAND = [];
 // surfaceAt(x, z, yHint?) -> { h, onRoad, edge, curbH }
 //   onRoad: inside a carriageway or junction. h: the road surface height there (with the lift), or on a curb the
 //   curb top. edge: metres to the nearest carriageway edge (negative inside). curbH: 0.15 when the point is on a
@@ -1808,6 +1878,11 @@ export function surfaceAt(x, z, yHint) {
   };
   let inJunction = false;
   let pavH = null;
+  // every piece the point is in, with how deep inside it is: where two roads' ribbons overlap outside a junction
+  // (wide avenues meeting at a shallow angle) at heights a little apart, the surface is their blend weighted by
+  // depth, so neither piece's edge is a step
+  const cand = SURF_CAND; cand.length = 0;
+  let extH = null, extIn = Infinity;
   for (let k = 0; k < l.length; k++) {
     const id = l[k];
     if (id >= 2e9) {
@@ -1831,10 +1906,25 @@ export function surfaceAt(x, z, yHint) {
       const lat = L2 > 0 ? ((x - cx) * -dz + (z - cz) * dx) / Math.sqrt(L2) : 0, cs = segs[id + 9] + (segs[id + 10] - segs[id + 9]) * tc;
       const h = segs[id + 4] + (segs[id + 5] - segs[id + 4]) * tc + cs * Math.max(-hw, Math.min(hw, lat));
       const ed = d - hw;
-      if (ed <= 0 && t >= -0.02 && t <= 1.02) {
+      // past either end of this piece only counts where the same road carries on there (the outside of a bend,
+      // between two pieces), never past the road's own end
+      const eid = segs[id + 8];
+      const tlo = id >= 11 && segs[id - 3] === eid ? -Infinity : -0.02, thi = id + 11 < segs.length && segs[id + 19] === eid ? Infinity : 1.02;
+      if (ed <= 0 && (t < -0.02 || t > 1.02) && t >= tlo && t <= thi) {
+        // only a fallback: used when no piece covers the point properly (below)
+        if (extH == null || (yHint != null ? Math.abs(h - yHint) < Math.abs(extH - yHint) : h > extH)) { extH = h; extIn = ed; }
+      } else if (ed <= 0 && t >= -0.02 && t <= 1.02) {
         if (pick(h)) bestH = h;
         if (ed < bestInside) bestInside = ed;
-      } else if (ed < nearEdge && t >= -0.05 && t <= 1.05) {
+        // depth also counts from the open end of a road's last piece (where its ribbon stops short of a junction)
+        let dep = -ed;
+        if (dep > 0.05 && L2 > 0) {
+          const len = Math.sqrt(L2);
+          if (id < 11 || segs[id - 3] !== eid) dep = Math.min(dep, Math.max(0, (t + 0.02) * len));
+          if (id + 11 >= segs.length || segs[id + 19] !== eid) dep = Math.min(dep, Math.max(0, (1.02 - t) * len));
+        }
+        cand.push(h, dep);
+      } else if (ed < nearEdge && t >= Math.min(tlo, -0.05) && t <= Math.max(thi, 1.05)) {
         nearEdge = ed; nearH = h;
         const side = (x - ax) * dz - (z - az) * dx; // >0: left of a->b? (x right-handed in xz with z south)
         const fl = segs[id + 7];
@@ -1853,6 +1943,7 @@ export function surfaceAt(x, z, yHint) {
         const h = w0 * tris[i + 2] + w1 * tris[i + 5] + w2 * tris[i + 8];
         if (pick(h)) bestH = h;
         inJunction = true;
+        cand.push(h, -1); // a junction's depth comes from its outline, below
       }
     }
   }
@@ -1868,8 +1959,20 @@ export function surfaceAt(x, z, yHint) {
     const d = Math.hypot(x - ax - dx * t, z - az - dz * t);
     if (d < olD) { olD = d; olCurb = outl[i + 4] === 2; }
   }
+  if (bestH == null && extH != null) { bestH = extH; bestInside = extIn; }
   // a road deck far above or below the wheel (another leg of a hairpin, a bridge overhead) is not this road
   if (bestH != null && yHint != null && Math.abs(bestH - yHint) > 1.5) { bestH = null; bestInside = Infinity; inJunction = false; }
+  if (bestH != null && cand.length > 2) {
+    // pieces on the chosen level (within 0.8 m of it), each weighted by its depth inside, up to 3 m
+    let sw = 0, sh = 0;
+    for (let k = 0; k < cand.length; k += 2) {
+      const h = cand[k]; if (Math.abs(h - bestH) > 0.8) continue;
+      const d = cand[k + 1] < 0 ? (olD === Infinity ? 3 : olD) : cand[k + 1];
+      const w = Math.min(3, d) + 1e-3;
+      sw += w; sh += w * h;
+    }
+    if (sw > 0) bestH = sh / sw;
+  }
   if (bestH != null) {
     r.onRoad = true; r.h = bestH;
     // distances to the sides of the pieces are upper bounds of the depth inside the road: take the smallest
@@ -2073,7 +2176,7 @@ async function buildGraph() {
   for (const L of lanes) {
     for (let i = 1; i < L.pts.length; i++) {
       const a = L.pts[i - 1], b = L.pts[i];
-      gridAdd(lg, Math.min(a.x, b.x), Math.min(a.z, b.z), Math.max(a.x, b.x), Math.max(a.z, b.z), L.id * 1000 + i, 16);
+      gridAdd(lg, Math.min(a.x, b.x), Math.min(a.z, b.z), Math.max(a.x, b.x), Math.max(a.z, b.z), L.id * 100000 + i, 16);
     }
     await Y();
   }
@@ -2089,7 +2192,7 @@ export function nearestLane(x, z, maxDist = 60, filter) {
       if (Math.max(Math.abs(i - ci), Math.abs(j - cj)) !== ring) continue;
       const l = LIVE.laneGrid.get(i * 73856093 ^ j * 19349663); if (!l) continue;
       for (const id of l) {
-        const L = LIVE.graph.lanes[Math.floor(id / 1000)], k = id % 1000; if (!L || (filter && !filter(L))) continue;
+        const L = LIVE.graph.lanes[Math.floor(id / 100000)], k = id % 100000; if (!L || (filter && !filter(L))) continue;
         const a = L.pts[k - 1], b = L.pts[k];
         const dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz;
         const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / L2)) : 0;

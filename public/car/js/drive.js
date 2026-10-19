@@ -1,17 +1,17 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=7';
-import { Collide } from './collide.js?v=7';
-import { Vehicle } from './vehicle.js?v=7';
-import { CarCamera } from './camera.js?v=7';
-import { Hud } from './hud.js?v=7';
-import { CarSound } from './sound.js?v=7';
-import { CutMask } from './cutmask.js?v=7';
-import * as SIG from './signals.js?v=7';
-import { Parked } from './parked.js?v=7';
-import { Skids } from './skids.js?v=7';
-import { StreetSigns } from './streetsigns.js?v=7';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=8';
+import { Collide } from './collide.js?v=8';
+import { Vehicle } from './vehicle.js?v=8';
+import { CarCamera } from './camera.js?v=8';
+import { Hud } from './hud.js?v=8';
+import { CarSound } from './sound.js?v=8';
+import { CutMask } from './cutmask.js?v=8';
+import * as SIG from './signals.js?v=8';
+import { Parked } from './parked.js?v=8';
+import { Skids } from './skids.js?v=8';
+import { StreetSigns } from './streetsigns.js?v=8';
 
 const STEP = 1 / 120;
 const GLIFT = 0.15; // how far under Google's road ours is drawn
@@ -56,8 +56,8 @@ export class Drive {
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
     const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=7'), tryImport('./osm.js?v=7'), tryImport('./roads.js?v=7'), tryImport('./props.js?v=7'),
-      tryImport('./buildings.js?v=7'), tryImport('./trees.js?v=7'), tryImport('./traffic.js?v=7'), tryImport('./imagery.js?v=7')]);
+      tryImport('./cars.js?v=8'), tryImport('./osm.js?v=8'), tryImport('./roads.js?v=8'), tryImport('./props.js?v=8'),
+      tryImport('./buildings.js?v=8'), tryImport('./trees.js?v=8'), tryImport('./traffic.js?v=8'), tryImport('./imagery.js?v=8')]);
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
     // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
     if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); const M = this.bldgObj && this.bldgObj.material; if (M) { M.envMap = t; M.needsUpdate = true; } return t; }).catch(() => null);
@@ -98,7 +98,8 @@ export class Drive {
     const o = v.origin(), hd = v.heading;
     if (!A.L || A.lost > 1.5) {
       const r = R && R.nearestLane ? R.nearestLane(o.x, o.z, 30, L => L.kind === 'road' && Math.abs(((hdOf(L, 0) - hd) % 360 + 540) % 360 - 180) < 100) : null;
-      if (!r) return { throttle: 0, brake: 1, steer: 0 };
+      // nowhere to go: stop and stay stopped (the brake pedal held at a standstill would select reverse)
+      if (!r) return { throttle: 0, brake: v.fwdSpeed > 0.5 ? 1 : 0, steer: 0, handbrake: 1 };
       A.L = r.lane; A.s = r.s; A.path = []; A.lost = 0;
     }
     // where we are along the lane
@@ -130,10 +131,10 @@ export class Drive {
     const steer = THREE.MathUtils.clamp(-ang / Math.max(0.05, lock), -1, 1);
     // slow for bends: how far the way turns over the next 30 m
     const at = d => { let LL = A.L, ss = A.s + d, kk = 0; while (ss > LL.len && kk < A.path.length) { ss -= LL.len; LL = A.path[kk++]; } return ptOf(LL, Math.min(ss, LL.len)); };
-    const p0 = at(0), p1 = at(12), p2 = at(30);
-    const h1 = Math.atan2(p1.x - p0.x, -(p1.z - p0.z)), h2 = Math.atan2(p2.x - p1.x, -(p2.z - p1.z));
-    const bend = Math.abs(((h2 - h1) * 180 / Math.PI + 540) % 360 - 180);
-    const bendKmh = bend > 60 ? 18 : bend > 30 ? 28 : bend > 15 ? 40 : 999;
+    // (also over the stretch after it, so a hairpin at the bottom of a hill is seen in time)
+    const turn = (a, b, c) => { const p0 = at(a), p1 = at(b), p2 = at(c), h1 = Math.atan2(p1.x - p0.x, -(p1.z - p0.z)), h2 = Math.atan2(p2.x - p1.x, -(p2.z - p1.z)); return Math.abs(((h2 - h1) * 180 / Math.PI + 540) % 360 - 180); };
+    const kmhFor = b => b > 60 ? 18 : b > 30 ? 28 : b > 15 ? 40 : 999;
+    const bendKmh = Math.min(kmhFor(turn(0, 12, 30)), kmhFor(turn(15, 27, 45)) + 8);
     let want = Math.min(A.kmh, bendKmh, Math.abs(lat) > 3 ? 15 : A.kmh) / 3.6;
     // keep a gap to traffic in front
     if (this.traffic) for (const c of this.traffic.list) {
@@ -141,7 +142,7 @@ export class Drive {
       if (ahead > 0 && ahead < 8 + v.fwdSpeed * 1.6 && side < 2.2) want = Math.min(want, Math.max(0, c.v * (ahead > 10 ? 1 : 0.5)));
     }
     const sp = v.fwdSpeed;
-    return { throttle: sp < want ? Math.min(1, (want - sp) * 0.5 + 0.2) : 0, brake: sp > want + 1 && sp > 0.8 ? Math.min(1, (sp - want) / 5) : 0, steer, handbrake: 0 };
+    return { throttle: sp < want ? Math.min(1, (want - sp) * 0.5 + 0.2) : 0, brake: sp > want + 0.5 && sp > 0.8 ? Math.min(1, (sp - want) / 2.5) : 0, steer, handbrake: 0 };
   }
 
   input(dt) {
@@ -199,7 +200,7 @@ export class Drive {
     const R = this.roadsObj;
     const p = this.roadSpot(0, 0, heading);
     if (p) { x = p.x; z = p.z; hd = p.heading; }
-    await this.waitGround(x, z);
+    await this.waitGround(x, z, hd);
     mark('ground');
     this.spawn(x, z, hd);
     if (warm) await warm;
@@ -219,25 +220,38 @@ export class Drive {
   }
 
   // until the ground under the start is known and the world's tiles round it have come in (at most 12 s)
-  async waitGround(x, z) {
+  async waitGround(x, z, heading = 0) {
     const T = this.world.tiles;
     // point the camera at the start so the tiles there are the ones asked for
-    this.camera.position.set(x, (this.world.groundAt(x, z) || 0) + 3, z + 8); this.camera.lookAt(x, 0, z);
+    const near = () => { this.camera.position.set(x, (this.world.groundAt(x, z) || 0) + 3, z + 8); this.camera.lookAt(x, 0, z); };
+    near();
     const t0 = performance.now(), cap = this.mode === 'google' ? 6000 : 3000;
+    let high = 0;
     for (let i = 0; i < 400; i++) {
       const g = this.world.groundAt(x, z);
       const st = T && T.stats, busy = st ? st.downloading + st.parsing : 0, ms = performance.now() - t0;
+      // once the ground is known, look from where the fly-down starts for a moment (at most 1.2 s), so the wide
+      // view it opens on has its coarse tiles instead of an empty map; then back down to the car
+      if (g !== null && !high && ms > 400) {
+        high = performance.now();
+        const h = heading * Math.PI / 180, fx = Math.sin(h), fz = -Math.cos(h);
+        this.camera.position.set(x - fx * 180, g + 260, z - fz * 180); this.camera.lookAt(x, g, z);
+      }
+      if (high > 0 && performance.now() - high > 1200 || (high > 0 && performance.now() - high > 300 && busy === 0)) { near(); high = -1; }
       // the ground's shape is known at once; its picture keeps sharpening for a while, so wait for it a little only
-      if (g !== null && ms > 400 && (busy === 0 || ms > cap)) return g;
+      if (g !== null && high === -1 && ms > 400 && (busy === 0 || ms > cap)) return g;
       if (ms > 15000) break;
       await new Promise(r => setTimeout(r, 100));
     }
+    near();
     return this.world.groundAt(x, z) || 0;
   }
 
   spawn(x, z, heading) {
     const y = this.ground(x, z) ?? 0;
     this.car.vehicle.place(x, y, z, heading);
+    // no traffic car left where the player's car now stands
+    try { if (this.traffic && this.traffic.clearNear) this.traffic.clearNear(x, z, 7); } catch (e) {}
     // the drawing starts from where the car now is (spawn can be called in the middle of update)
     this.prevPos = this.car.vehicle.pos.clone(); this.prevQ = this.car.vehicle.q.clone(); this.acc = 0;
     this.cam.ready = false;
@@ -249,8 +263,31 @@ export class Drive {
     const v = this.car.vehicle, o = v.origin();
     let x = o.x, z = o.z, hd = v.heading;
     const p = this.roadSpot(x, z, hd);
-    if (p) { x = p.x; z = p.z; hd = p.heading; }
+    if (p) {
+      x = p.x; z = p.z; hd = p.heading;
+      // stuck against something on the lane (a wall where the map's road and building disagree, a car):
+      // further along the lane if it is clear there, else facing back the way the car came
+      if (p.lane && this.wallAhead(x, z, hd, p.y)) {
+        const L = p.lane, s0 = p.s ?? 0;
+        let moved = false;
+        for (let ds = 8; ds <= 40 && !moved; ds += 4) {
+          const s = s0 + ds; if (s > L.len - 2) break;
+          const q = lanePoint(L, s);
+          if (!this.wallAhead(q.x, q.z, q.heading, q.y) && !this.wallAhead(q.x, q.z, q.heading, q.y, -4)) { x = q.x; z = q.z; hd = q.heading; moved = true; }
+        }
+        if (!moved) { const q = this.roadSpot(x, z, (hd + 180) % 360); if (q) { x = q.x; z = q.z; hd = q.heading; } else hd = (hd + 180) % 360; }
+      }
+    }
     this.spawn(x, z, hd);
+  }
+
+  // something solid within a few metres in front of a car standing at (x, z) facing hd (behind it with a negative reach)
+  wallAhead(x, z, hd, y = null, reach = 5) {
+    if (!this.collide) return false;
+    const h = hd * Math.PI / 180, fx = Math.sin(h), fz = -Math.cos(h), g = y ?? this.ground(x, z) ?? 0, cs = [];
+    const sg = Math.sign(reach) || 1, far = Math.abs(reach);
+    for (let k = 1; k <= 3; k++) { const o = sg * (1.6 + (far - 1.6) * k / 3); cs.push({ x: x + fx * o, z: z + fz * o, r: 0.9, y0: g + 0.25, y1: g + 1.5 }); }
+    return this.collide.contacts(cs).length > 0;
   }
 
   // the nearest lane centre going the way wanted (the other side of the road if the nearest lane runs against it)
@@ -272,6 +309,27 @@ export class Drive {
     return this.roadSpotOnce(x, z, want, new Set());
   }
 
+  laneFacing(x, z, want, maxD, ok) {
+    const R = this.roadsObj, lanes = R && R.graph && R.graph.lanes;
+    if (!lanes || !Number.isFinite(want)) return null;
+    let best = null, bs = Infinity;
+    for (const L of lanes) {
+      if (!ok(L)) continue;
+      const P = L.pts;
+      for (let k = 1; k < P.length; k++) {
+        const a = P[k - 1], b = P[k], dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz;
+        if (!(L2 > 0)) continue;
+        const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / L2)), cx = a.x + dx * t, cz = a.z + dz * t;
+        const d = Math.hypot(x - cx, z - cz); if (d > maxD) continue;
+        const h = (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360, off = Math.abs(((want - h) % 360 + 540) % 360 - 180);
+        if (off > 70) continue;
+        const sc = d + off * 0.3;
+        if (sc < bs) { bs = sc; best = { x: cx, z: cz, y: a.y + (b.y - a.y) * t, heading: h, lane: L, s: L.cum[k - 1] + Math.sqrt(L2) * t }; }
+      }
+    }
+    return best;
+  }
+
   roadSpotOnce(x, z, want, bad) {
     const R = this.roadsObj;
     const ok = L => L.kind === 'road' && L.len > 10 && !bad.has(L.edge);
@@ -279,13 +337,24 @@ export class Drive {
     // so a drop facing along a street does not start on the cross street that happens to be nearer
     const angOff = (a, b) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
     const along = L => { const p = L.pts, a = p[0], b = p[p.length - 1]; const h = (Math.atan2(b.x - a.x, -(b.z - a.z)) * 180 / Math.PI + 360) % 360; const d = angOff(h, want); return Math.min(d, 180 - d) < 35; };
-    let r = R.nearestLane ? (R.nearestLane(x, z, 40, L => ok(L) && along(L)) || R.nearestLane(x, z, 90, L => ok(L) && along(L)) || R.nearestLane(x, z, 400, ok) || R.nearestLane(x, z, 2000, L => L.kind === 'road')) : null;
+    // first choice: the nearest lane within 60 m whose own direction at its nearest point is the one asked for
+    // (a lane's ends say little on a bend, and a dual carriageway's other half is another road)
+    // (never much further than the nearest road: a drop with no direction asked for faces north by default)
+    const nearest = R.nearestLane ? R.nearestLane(x, z, 400, ok) : null;
+    let r = this.laneFacing(x, z, want, nearest ? Math.min(60, nearest.dist + 15) : 60, ok);
+    if (r) return r;
+    r = R.nearestLane ? (R.nearestLane(x, z, 40, L => ok(L) && along(L)) || R.nearestLane(x, z, 90, L => ok(L) && along(L)) || R.nearestLane(x, z, 400, ok) || R.nearestLane(x, z, 2000, L => L.kind === 'road')) : null;
     if (!r) { const q = R.nearestRoadPoint && R.nearestRoadPoint(x, z); return q ? { x: q.x, z: q.z, heading: pickDir(q.heading, want) } : null; }
     const off = Math.abs(((want - r.heading) % 360 + 540) % 360 - 180);
     if (off > 90) {
       const o = R.nearestLane(x, z, 400, L => ok(L) && L.edge === r.lane.edge && L.dir !== r.lane.dir);
       if (o) r = o;
-      else return { x: r.x, z: r.z, y: r.y, heading: r.heading, lane: r.lane };
+      else {
+        // a one-way road (or one half of a dual carriageway): the other half, a little further, goes the right way
+        const q = this.laneFacing(x, z, want, r.dist + 25, ok);
+        if (q) return q;
+        return { x: r.x, z: r.z, y: r.y, heading: r.heading, lane: r.lane };
+      }
     }
     return { x: r.x, z: r.z, y: r.y, heading: r.heading, lane: r.lane };
   }
@@ -354,7 +423,7 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=7').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=8').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;
@@ -394,6 +463,8 @@ export class Drive {
     if (this.mods.roads) await swap('roadsObj', () => this.mods.roads.build(data, ctx));
     mark('roads');
     ctx.roads = this.roadsObj;
+    try { times.openN = openBuildings(data.buildings, this.roadsObj); } catch (e) { console.warn('open buildings', e); }
+    this.lastData = data;
     // Google's mesh has cars baked into the streets: cut the carriageways out of it so our road shows
     // (in the open world the same mask, a little narrower than the carriageway, keeps the coarse terrain from
     // poking up through the road)
@@ -407,7 +478,7 @@ export class Drive {
     if (this.mods.props) await swap('propsObj', () => this.mods.props.build(data, ctx));
     mark('props');
     // street name signs at the corners where named streets meet
-    try { if (this.roadsObj) this.signs.build(this.roadsObj, { collide, us: !!(this.roadsObj.style && this.roadsObj.style.region === 'us'), cx: x, cz: z }); } catch (e) { console.warn('street signs', e); }
+    try { if (this.roadsObj) this.signs.build(this.roadsObj, { collide, us: !!(this.roadsObj.style && this.roadsObj.style.region === 'us'), cx: x, cz: z, buildings: data.buildings }); } catch (e) { console.warn('street signs', e); }
     // cars parked along the kerbs where the road has room for them
     try {
       if (this.mods.cars && this.roadsObj) {
@@ -424,7 +495,7 @@ export class Drive {
       if (this.mods.trees) await swap('treesObj', () => this.mods.trees.build(data, ctx));
     } else {
       // building footprints still stop the car where Google's mesh has them
-      for (const b of data.buildings || []) if (!b.part && (b.height === null || b.height > 2)) collide.addPolygon(b.outer, -1e4, 1e4, 'building');
+      for (const b of data.buildings || []) if (!b.part && !b.open && (b.height === null || b.height > 2)) collide.addPolygon(b.outer, -1e4, 1e4, 'building');
     }
     this.collide = collide;
     if (this.auto) this.auto.L = null;
@@ -531,6 +602,71 @@ export class Drive {
 }
 
 // only what lies within r of (x, z): the store keeps everything loaded so far, a drive only needs its surroundings
+// Buildings the car must be able to pass: roofs on posts (toll plazas, petrol station canopies, carports), drawn
+// raised, and any building a lane runs through or within a metre of (a building passage, or a footprint and a road
+// line that disagree, as the vector tiles' simplified lines often do): a car keeping its lane should never meet a wall.
+// Marks b.open (no collision) and b.roofOnly.
+const ROOFS = new Set(['roof', 'canopy', 'carport']);
+function openBuildings(list, R) {
+  if (!list || !list.length) return 0;
+  let n = 0;
+  for (const b of list) if (ROOFS.has(b.type) && !(b.minHeight > 0.5)) { b.open = b.roofOnly = true; n++; }
+  const lanes = R && R.graph && R.graph.lanes;
+  if (!lanes || !lanes.length) return n;
+  const M = 0.3; // how near a lane's middle a wall may come before it counts as across the lane
+  const G = 16, grid = new Map();
+  for (const b of list) {
+    if (b.open || b.part || !b.outer || b.outer.length < 3) continue;
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const p of b.outer) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < z0) z0 = p[1]; if (p[1] > z1) z1 = p[1]; }
+    b._bb = [x0 - M, z0 - M, x1 + M, z1 + M];
+    for (let i = Math.floor(b._bb[0] / G); i <= Math.floor(b._bb[2] / G); i++) for (let j = Math.floor(b._bb[1] / G); j <= Math.floor(b._bb[3] / G); j++) {
+      const k = i * 73856093 ^ j * 19349663; let l = grid.get(k); if (!l) grid.set(k, l = []); l.push(b);
+    }
+  }
+  const near = (P, x, z) => {
+    let c = false, d2 = Infinity;
+    for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+      const a = P[i], q = P[j];
+      if ((a[1] > z) !== (q[1] > z) && x < (q[0] - a[0]) * (z - a[1]) / (q[1] - a[1]) + a[0]) c = !c;
+      const ex = q[0] - a[0], ez = q[1] - a[1], L2 = ex * ex + ez * ez;
+      const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - a[0]) * ex + (z - a[1]) * ez) / L2)) : 0;
+      const dx = a[0] + ex * t - x, dz = a[1] + ez * t - z; d2 = Math.min(d2, dx * dx + dz * dz);
+    }
+    return c || d2 < M * M;
+  };
+  // only through roads, and mapped passages: a service road or alley that runs into a building is a garage or a
+  // loading bay entrance, where a wall is right
+  const edges = R._debug ? R._debug().edges : null;
+  const through = L => {
+    const e = edges && edges[L.edge]; if (!e) return L.kind === 'junction';
+    const t = (e.way && e.way.tags) || {};
+    if (t.tunnel === 'building_passage' || t.covered === 'yes' || t.tunnel === 'yes') return true;
+    return !/^(service|track|footway|path|cycleway|steps|bridleway)$/.test(e.c.cls);
+  };
+  for (const L of lanes) {
+    const P = L.pts; if (!P || P.length < 2) continue;
+    if (L.kind === 'junction' || !through(L)) continue; // turns at junctions: a driver steers round a corner building
+    for (let k = 1; k < P.length; k++) {
+      const ax = P[k - 1].x, az = P[k - 1].z, dx = P[k].x - ax, dz = P[k].z - az, m = Math.max(1, Math.ceil(Math.hypot(dx, dz)));
+      for (let t = 0; t <= m; t++) {
+        const x = ax + dx * t / m, z = az + dz * t / m;
+        const l = grid.get(Math.floor(x / G) * 73856093 ^ Math.floor(z / G) * 19349663);
+        if (l) for (const b of l) { if (b.open) continue; const bb = b._bb; if (x > bb[0] && x < bb[2] && z > bb[1] && z < bb[3] && near(b.outer, x, z)) { b.open = true; n++; } }
+      }
+    }
+  }
+  return n;
+}
+
+// a point s metres along a lane, with the lane's heading there
+function lanePoint(L, s) {
+  const P = L.pts, C = L.cum;
+  let k = 1; while (k < P.length - 1 && C[k] < s) k++;
+  const a = P[k - 1], b = P[k], seg = Math.max(1e-6, C[k] - C[k - 1]), t = Math.max(0, Math.min(1, (s - C[k - 1]) / seg));
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t, heading: (Math.atan2(b.x - a.x, -(b.z - a.z)) * 180 / Math.PI + 360) % 360 };
+}
+
 function trimTo(d, x, z, r) {
   const R2 = r * r, near = pts => { for (const p of pts) if ((p[0] - x) ** 2 + (p[1] - z) ** 2 < R2) return true; return false; };
   const out = { ...d };

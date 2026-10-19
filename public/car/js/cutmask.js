@@ -3,7 +3,7 @@
 // baked.js throws away mesh fragments over a carriageway between just under the road and uCutTop above it, so
 // our own road surface (and our own traffic) shows instead. Areas are redrawn as the car moves.
 import * as THREE from 'three';
-import { bakedUniforms } from './baked.js?v=7';
+import { bakedUniforms } from './baked.js?v=8';
 
 const WIDTH = { motorway: 3.6, trunk: 3.5, primary: 3.4, secondary: 3.3, tertiary: 3.2, unclassified: 3, residential: 3, living_street: 2.8, service: 3, motorway_link: 3.5, trunk_link: 3.4, primary_link: 3.3, secondary_link: 3.2, tertiary_link: 3.1 };
 const LANES = { motorway: 2, trunk: 2, primary: 2, secondary: 2, tertiary: 2, unclassified: 2, residential: 2, living_street: 2, service: 1 };

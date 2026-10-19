@@ -12,9 +12,9 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=7';
-import { patchBaked } from './baked.js?v=7';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME } from './facade.js?v=7';
+import { frame, project } from './geo.js?v=8';
+import { patchBaked } from './baked.js?v=8';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME } from './facade.js?v=8';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -329,7 +329,7 @@ function plan(b, ctx) {
   }
   if (holes.length && shape !== 'flat') shape = 'flat';
 
-  const minH = b.minHeight || (b.minLevel ? b.minLevel * LV : 0);
+  let minH = b.minHeight || (b.minLevel ? b.minLevel * LV : 0);
   let roofH = b.roofHeight ?? (b.roofLevels ? b.roofLevels * LV : null);
   const pitch = houseLike ? 25 + r3 * 10 : (ctx.region === 'us' ? 24 : 34) + (r3 - 0.5) * 10;
   if (roofH == null && shape !== 'flat') {
@@ -363,6 +363,8 @@ function plan(b, ctx) {
     else if (ctx.density > 0.25 && !HOUSE.has(t) && !SMALL.has(t) && area > 60) d = Math.max(d, 9 + r4 * 4);
     H = d;
   }
+  // a roof on posts with no height of its own (toll plaza, petrol station canopy, carport): a slab the car fits under
+  if (b.roofOnly && !(minH > 0.5)) { H = t === 'carport' ? 2.9 : Math.max(5.5, Math.min(H || 0, 9)); minH = H - (t === 'carport' ? 0.35 : 0.9); levels = 1; }
   if (H <= minH + 0.5) H = minH + Math.max(2.5, (levels || 1) * LV);
   if (roofH > (H - minH) * 0.6) roofH = (H - minH) * 0.6;
   const eave = H - roofH;
@@ -773,10 +775,12 @@ function wallColour(P, mean, face) {
     // the picture's colour (in light and shade as the satellite saw it), kept within what walls are
     const c = new THREE.Color().setRGB(face[0], face[1], face[2], THREE.SRGBColorSpace);
     const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-    const k = Math.min(1.6, Math.max(0.7, 0.3 / Math.max(0.02, l)));
+    // (a house's walls are small in the picture and mostly come out as its eaves and their shade: lighter, and
+    // more of the palette's paint and siding)
+    const house = P.houseLike, k = Math.min(house ? 2.4 : 1.6, Math.max(0.7, (house ? 0.42 : 0.3) / Math.max(0.02, l)));
     c.multiplyScalar(k * 0.85);
     const pal = P.palette || PAL_LIN[P.style] || PAL_LIN[STYLE.CONCRETE];
-    return c.lerp(pal[Math.floor(P.r3 * pal.length) % pal.length], P.palette ? 0.55 : 0.25);
+    return c.lerp(pal[Math.floor(P.r3 * pal.length) % pal.length], P.palette ? 0.55 : house ? 0.6 : 0.25);
   }
   if (P.colour) {
     // 'red' or 'yellow' in a tag means a red or yellow building, not paint straight from the tube
@@ -888,7 +892,7 @@ export function build(list, opts = {}) {
   // collision now (cheap, no heights needed): every footprint the car can reach
   if (collide && collide.addPolygon) {
     for (const c of cells.values()) for (const b of c.list) {
-      if ((b.minHeight || 0) > 3 || (b.minLevel || 0) > 1) continue;
+      if ((b.minHeight || 0) > 3 || (b.minLevel || 0) > 1 || b.open) continue;
       try { const h = collide.addPolygon(b.outer.map(p => [p[0], p[1]]), -1e4, 1e4, 'building'); if (h != null) handles.push(h); } catch (e) { /* collide not ready */ }
     }
   }

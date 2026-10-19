@@ -17,8 +17,8 @@
 // placed with yaw H (heading degrees) its front faces heading H.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { frame, dirHeading } from './geo.js?v=7';
-import * as SIG from './signals.js?v=7';
+import { frame, dirHeading } from './geo.js?v=8';
+import * as SIG from './signals.js?v=8';
 
 const D2R = Math.PI / 180;
 const BIN = 500;
@@ -443,7 +443,9 @@ PARTDEF.headJP = () => ({ geo: headH(0.15), mat: M().steel, cast: true, color: t
 function backboard(r, border, h3) {
   const b = new GB(), W = r * 2.5 + 0.26, H = h3 + 0.26;
   b.add(boxc(W, H, 0.012), border, mat(0, 0, 0.13));
-  b.add(boxc(W - 0.1, H - 0.1, 0.016), 0x0c0c0c, mat(0, 0, 0.128));
+  // the black panel stands 4 mm proud of the border at the front and stops short of its back (sharing the back
+  // face, the two fought there)
+  b.add(boxc(W - 0.1, H - 0.1, 0.012), 0x0c0c0c, mat(0, 0, 0.126));
   return b.build();
 }
 PARTDEF.boardUS = () => ({ geo: backboard(0.15, 0xe2b400, 0.15 * 2.25 * 3 + 0.09), mat: M().plastic, cast: true, color: false });
@@ -886,7 +888,20 @@ function sample(rec) {
     if (rec.ok) { c.s.y0 = rec.ys[c.i] - 0.3; c.s.y1 = rec.ys[c.i] + c.h; } else { c.s.y0 = -1e4; c.s.y1 = 1e4; }
   }
 }
+// A one-point prop that still ends up well inside a carriageway (mapped on a road whose kerb could not be found, or
+// pushed off one road onto the next at a junction) or inside a building is left out: there it would be a pole in the
+// traffic or a sign sticking out of a wall.
+function misplaced(x, z) {
+  const r = S.roads;
+  if (r && typeof r.surfaceAt === 'function') { try { const q = r.surfaceAt(x, z); if (q && q.onRoad && q.edge < -0.6) return 'road'; } catch (e) {} }
+  if (S.bld && S.bld.inside(x, z, 0.3)) return 'building';
+  return null;
+}
 function addRec(pts, emit, extra) {
+  if (pts.length === 1) {
+    const why = misplaced(pts[0][0], pts[0][1]);
+    if (why) { S.dropped = S.dropped || { road: 0, building: 0 }; S.dropped[why]++; const r = { pts, ys: new Array(pts.length), emit() {}, cols: null, ok: false, skip: true }; sample(r); return r; }
+  }
   const rec = { pts, ys: new Array(pts.length), emit, cols: null, ok: false, ...extra };
   sample(rec);
   const k = binKey(pts[0][0], pts[0][1]);
@@ -896,13 +911,13 @@ function addRec(pts, emit, extra) {
   return rec;
 }
 function circle(rec, x, z, r, h, i = 0) {
-  const c = S.collide; if (!c || !c.addCircle) return;
+  const c = S.collide; if (!c || !c.addCircle || rec.skip) return;
   const y = rec.ok ? rec.ys[i] : null;
   const s = c.addCircle(x, z, r, y != null ? y - 0.3 : -1e4, y != null ? y + h : 1e4, 'prop');
   (rec.cols || (rec.cols = [])).push({ s, i, h });
 }
 function segment(rec, a, b, th, h, i = 0) {
-  const c = S.collide; if (!c || !c.addSegment) return;
+  const c = S.collide; if (!c || !c.addSegment || rec.skip) return;
   const y = rec.ok ? Math.min(rec.ys[i], rec.ys[Math.min(i + 1, rec.ys.length - 1)]) : null;
   const s = c.addSegment(a, b, th, y != null ? y - 0.3 : -1e4, y != null ? y + h : 1e4, 'prop');
   (rec.cols || (rec.cols = [])).push({ s, i, h });
@@ -1014,7 +1029,7 @@ class BuildingIndex {
   constructor() { this.g = new Map(); this.C = 50; }
   add(list) {
     for (const b of list || []) {
-      if (!b.outer || b.outer.length < 3 || b.part || (b.minHeight || 0) > 1 || /roof|carport|canopy/.test(b.type || '')) continue;
+      if (!b.outer || b.outer.length < 3 || b.part || b.open || (b.minHeight || 0) > 1 || /roof|carport|canopy/.test(b.type || '')) continue;
       let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
       for (const [x, z] of b.outer) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; }
       if (x1 - x0 > 2000 || z1 - z0 > 2000) continue;
@@ -1668,6 +1683,7 @@ export async function build(osm, opts = {}) {
   N.left = N.roads && typeof N.roads.leftHand === 'boolean' ? N.roads.leftHand : (N.region === 'uk' || N.region === 'jp');
   N.group = new THREE.Group(); N.group.name = 'props'; N.group.matrixAutoUpdate = false;
   S = N;
+  N.bld = new BuildingIndex(); N.bld.add(osm.buildings);
   // give the frame loop a turn every 8 ms; a newer build makes this one stop
   let t0 = performance.now();
   const tick = async () => {
@@ -1705,7 +1721,6 @@ export async function build(osm, opts = {}) {
   // points (not those inside a building: indoor benches, roof garden trees)
   // power first, so street lamps mapped on a utility pole can hang on it
   placePower(osm);
-  N.bld = new BuildingIndex(); N.bld.add(osm.buildings);
   if (await tick()) return props;
   for (const p of osm.points) {
     const k = 'n' + p.id; if (N.done.has(k)) continue;
@@ -1828,7 +1843,7 @@ export function stats() {
   const st = LIVE || S;
   let meshes = 0, inst = 0; const byPart = {};
   for (const b of st.bins.values()) for (const [n, m] of b.meshes) { meshes++; inst += m.count; byPart[n] = (byPart[n] || 0) + m.count; }
-  return { bins: st.bins.size, meshes, instances: inst, records: st.recs.length, groups: st.groups.size, wires: st.wires.length, region: st.region, leftHand: st.left, byPart };
+  return { bins: st.bins.size, meshes, instances: inst, records: st.recs.length, dropped: st.dropped || null, groups: st.groups.size, wires: st.wires.length, region: st.region, leftHand: st.left, byPart };
 }
 
 export const props = { preload, build, update, signalAt, reheight, reset, dispose: reset, pending, stats, get groups() { return (LIVE || S).groups; }, get group() { return LIVE ? LIVE.group : null; } };
