@@ -22,8 +22,8 @@ function laneAt(L, s, out) {
 }
 
 export class Traffic {
-  constructor({ scene, roads, cars, ground }) {
-    this.scene = scene; this.roads = roads; this.C = cars; this.ground = ground;
+  constructor({ scene, roads, cars, ground, carEnv }) {
+    this.scene = scene; this.roads = roads; this.C = cars; this.ground = ground; this.carEnv = carEnv || null;
     this.lanes = roads.graph.lanes;
     this.byId = new Map(); for (const L of this.lanes) this.byId.set(L.id, L);
     this.list = []; this.pool = new Map(); this.max = 28; this.t = 0; this.scanT = 0; this.near = [];
@@ -87,7 +87,7 @@ export class Traffic {
     if (free && free.length) return free.pop();
     const color = PAINTS[(Math.random() * PAINTS.length) | 0];
     const rig = await this.C.loadCar(model, { npc: true, color });
-    rig.object.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
+    if (this.carEnv && rig.setEnvMap) rig.setEnvMap(this.carEnv);
     rig.model = model;
     return rig;
   }

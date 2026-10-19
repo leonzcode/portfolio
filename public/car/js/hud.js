@@ -9,6 +9,8 @@ export class Hud {
       <div class="hud-sig"><span class="hud-l">&#9664;</span><span class="hud-r">&#9654;</span></div>
       <div class="hud-toast"></div>
       <div class="hud-note"><span></span><button aria-label="Close">&times;</button></div>
+      <button class="hud-carbtn" aria-label="Choose a car"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M18.9 6c-.2-.6-.8-1-1.4-1h-11c-.7 0-1.2.4-1.4 1L3 12v8c0 .6.4 1 1 1h1c.6 0 1-.4 1-1v-1h12v1c0 .6.4 1 1 1h1c.6 0 1-.4 1-1v-8l-2.1-6zM6.5 16c-.8 0-1.5-.7-1.5-1.5S5.7 13 6.5 13s1.5.7 1.5 1.5S7.3 16 6.5 16zm11 0c-.8 0-1.5-.7-1.5-1.5s.7-1.5 1.5-1.5 1.5.7 1.5 1.5-.7 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg><span>Car</span></button>
+      <div class="hud-cars"><div class="hud-cars-h">Choose a car <button class="hud-cx" aria-label="Close">&times;</button></div><div class="hud-cars-l"></div><div class="hud-cars-p"></div></div>
       <div class="hud-keys">
         <div class="hud-keys-h">Controls <button class="hud-x" aria-label="Close">&times;</button></div>
         <dl>
@@ -27,7 +29,11 @@ export class Hud {
       </div>`;
     root.appendChild(el);
     this.$ = s => el.querySelector(s);
+    // the notice lives outside the HUD, so it can show over the map too
+    this.noteEl = this.$('.hud-note'); root.appendChild(this.noteEl);
     this.$('.hud-x').onclick = () => this.toggleHelp(false);
+    this.$('.hud-carbtn').onclick = e => { e.currentTarget.blur(); const b = this.$('.hud-cars'); if (b.classList.contains('on')) b.classList.remove('on'); else this.openCars(); };
+    this.$('.hud-cx').onclick = () => this.$('.hud-cars').classList.remove('on');
     // touch screens: buttons that hold the same keys the keyboard does
     if (matchMedia('(pointer: coarse)').matches || /[?&]touch/.test(location.search)) {
       el.classList.add('touch');
@@ -54,9 +60,25 @@ export class Hud {
     const t = this.$('.hud-toast'); t.textContent = text; t.classList.add('on');
     clearTimeout(this._ft); this._ft = setTimeout(() => t.classList.remove('on'), 1400);
   }
+  // the car chooser: every drivable car, then the paints of the one being driven
+  openCars() {
+    const C = this.drive.mods.cars, box = this.$('.hud-cars');
+    if (!C) return;
+    const list = C.CARS.filter(c => !c.npcOnly), cur = this.drive.carId;
+    const KIND = { sedan: 'Sedan', sports: 'Sports car', pickup: 'Pickup', hatchback: 'Hatchback', van: 'Van', suv: 'SUV' };
+    this.$('.hud-cars-l').innerHTML = list.map((c, i) => `<button data-id="${c.id}" class="${c.id === cur ? 'on' : ''}"><b>${c.name}</b><small>${KIND[c.kind] || c.kind || ''} &middot; key ${i + 1}</small></button>`).join('');
+    const spec = list.find(c => c.id === cur);
+    const paints = spec && spec.paints ? spec.paints : [];
+    this.$('.hud-cars-p').innerHTML = paints.map(p => `<button data-paint="${p}" style="background:#${p.toString(16).padStart(6, '0')}" aria-label="Paint"></button>`).join('');
+    // (buttons give the focus back, or Space, the handbrake, would press them again)
+    for (const b of box.querySelectorAll('[data-id]')) b.onclick = async () => { b.blur(); await this.drive.setCar(b.dataset.id); this.openCars(); };
+    for (const b of box.querySelectorAll('[data-paint]')) b.onclick = () => { b.blur(); const r = this.drive.car && this.drive.car.rig; if (r && r.setPaint) r.setPaint(+b.dataset.paint); };
+    box.classList.add('on');
+  }
+
   // a longer notice at the top that can be closed
   note(text, ms = 9000) {
-    const n = this.$('.hud-note');
+    const n = this.noteEl;
     n.querySelector('span').textContent = text; n.classList.add('on');
     n.querySelector('button').onclick = () => n.classList.remove('on');
     clearTimeout(this._nt); this._nt = setTimeout(() => n.classList.remove('on'), ms);

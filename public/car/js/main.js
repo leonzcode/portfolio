@@ -138,9 +138,16 @@ async function openMap() {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();
         G.paused = false;
-        const r = await drive.start(lat, lon, heading || 0);
-        const g = toLatLon(drive.car.vehicle.origin());
-        mapui.startDrive({ lat: g.lat, lon: g.lon, heading: r.heading });
+        try {
+          const r = await drive.start(lat, lon, heading || 0);
+          const g = toLatLon(drive.car.vehicle.origin());
+          mapui.startDrive({ lat: g.lat, lon: g.lon, heading: r.heading });
+        } catch (e) {
+          console.error('drop failed', e);
+          drive.active = false; drive.hud.loading(null); drive.hud.show(false);
+          mapui.showPicker(); G.paused = true;
+          drive.hud.note('Something went wrong loading that place. Please try again or pick another spot.');
+        }
       },
       onBack: () => { drive.active = false; drive.hud.show(false); drive.sound.stop(); mapui.endDrive(); mapui.showPicker(); G.paused = true; },
     });

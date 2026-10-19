@@ -8,13 +8,14 @@ import { bakedUniforms } from './baked.js?v=1';
 const WIDTH = { motorway: 3.6, trunk: 3.5, primary: 3.4, secondary: 3.3, tertiary: 3.2, unclassified: 3, residential: 3, living_street: 2.8, service: 3, motorway_link: 3.5, trunk_link: 3.4, primary_link: 3.3, secondary_link: 3.2, tertiary_link: 3.1 };
 const LANES = { motorway: 2, trunk: 2, primary: 2, secondary: 2, tertiary: 2, unclassified: 2, residential: 2, living_street: 2, service: 1 };
 
-export function carriageWidth(tags) {
+export function carriageWidth(tags, parking = true) {
   const hw = tags.highway;
   if (!(hw in WIDTH)) return 0;
   const w = parseFloat(tags.width);
   if (w > 2 && w < 40) return w;
   let lanes = parseInt(tags.lanes) || (tags.oneway === 'yes' && hw !== 'motorway' ? 1 : LANES[hw]) || 2;
   let width = lanes * WIDTH[hw];
+  if (!parking) return width;
   // street parking on either side is part of what we cover
   const park = tags['parking:lane:both'] || tags['parking:both'];
   if (park && park !== 'no') width += 4.4;
@@ -40,7 +41,10 @@ export class CutMask {
   }
 
   // roads: osm roads [{ pts, tags }]; surface(x, z) -> { h, onRoad } from roads.js (or null)
-  build(cx, cz, roads, surface, ground) {
+  build(cx, cz, roads, surface, ground, opts = {}) {
+    const ws = opts.widthScale || 1, parking = opts.parking !== false;
+    bakedUniforms.uCutTop.value = opts.top ?? 4.2;
+    bakedUniforms.uCutBelow.value = opts.below ?? 0.6;
     const S = this.size, M = this.metres, x0 = cx - M / 2, z0 = cz - M / 2, k = S / M;
     const g = this.canvas.getContext('2d');
     g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
@@ -49,7 +53,7 @@ export class CutMask {
       const t = r.tags || {};
       if (t.tunnel && t.tunnel !== 'no') continue;
       if (t.bridge && t.bridge !== 'no') continue; // a bridge's deck is its own: leave the mesh under it alone
-      const w = carriageWidth(t);
+      const w = carriageWidth(t, parking) * ws;
       if (!w || !r.pts || r.pts.length < 2) continue;
       g.lineWidth = w * k;
       g.beginPath();

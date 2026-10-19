@@ -53,6 +53,8 @@ export class Drive {
       tryImport('./cars.js?v=1'), tryImport('./osm.js?v=1'), tryImport('./roads.js?v=1'), tryImport('./props.js?v=1'),
       tryImport('./buildings.js?v=1'), tryImport('./trees.js?v=1'), tryImport('./traffic.js?v=1'), tryImport('./imagery.js?v=1')]);
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
+    // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
+    if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); return t; }).catch(() => null);
     // a test page can send OSM queries through a local caching proxy
     const ov = new URLSearchParams(location.search).get('overpass');
     if (ov && osm && osm.setFetcher) osm.setFetcher(q => fetch(ov + '?data=' + encodeURIComponent(q)).then(r => { if (!r.ok) throw new Error('overpass ' + r.status); return r.json(); }));
@@ -162,6 +164,8 @@ export class Drive {
 
   async start(lat, lon, heading = 0, opts = {}) {
     this.active = false;
+    const T0 = performance.now(), tm = this.G.startTimes = {};
+    const mark = k => { tm[k] = Math.round(performance.now() - T0); };
     this.hud.loading('Loading the world', 0.05);
     if (!this.mods.cars && !opts.noMods) await this.loadMods();
     this.clearArea();
@@ -175,21 +179,29 @@ export class Drive {
     if (this.mods.props && this.mods.props.preload && !this.propsReady) { this.propsReady = true; this.mods.props.preload().catch(e => console.warn('props preload', e)); }
     const dataP = this.fetchArea(0, 0, true);
     this.mode = await this.G.startWorld(lat, lon);
+    mark('world');
     this.hud.loading('Loading streets', 0.35);
     const data = await dataP;
+    mark('data');
     this.hud.loading('Building the streets', 0.6);
     if (data) await this.buildArea(data, 0, 0); else this.hud.flash('Could not load the streets here');
+    mark('build');
     this.hud.loading('Getting the car ready', 0.8);
     await carP;
+    mark('car');
     let x = 0, z = 0, hd = heading;
     const R = this.roadsObj;
     const p = this.roadSpot(0, 0, heading);
     if (p) { x = p.x; z = p.z; hd = p.heading; }
     await this.waitGround(x, z);
+    mark('ground');
     this.spawn(x, z, hd);
     if (warm) await warm;
+    if (this.carEnvP) await this.carEnvP;
     this.makeTraffic();
+    mark('warm');
     if (this.traffic && this.traffic.preload) { this.hud.loading('Getting the traffic ready', 0.9); await this.traffic.preload(this.G.renderer, this.camera); }
+    mark('traffic');
     this.active = true;
     this.hud.loading(null);
     this.hud.show(true);
@@ -205,7 +217,8 @@ export class Drive {
     for (let i = 0; i < 80; i++) {
       const g = this.world.groundAt(x, z);
       const st = T && T.stats, busy = st ? st.downloading + st.parsing : 0;
-      if (g !== null && i > 3 && busy === 0) return g;
+      // the ground's shape is known at once; its picture keeps sharpening for a while, so wait for it a little only
+      if (g !== null && i > 3 && (busy === 0 || i > (this.mode === 'google' ? 40 : 26))) return g;
       await new Promise(r => setTimeout(r, 150));
     }
     return this.world.groundAt(x, z) || 0;
@@ -214,6 +227,7 @@ export class Drive {
   spawn(x, z, heading) {
     const y = this.ground(x, z) ?? 0;
     this.car.vehicle.place(x, y, z, heading);
+    this.prevPos = null;
     this.cam.ready = false;
     this.lastGood = { x, z, heading };
   }
@@ -249,13 +263,15 @@ export class Drive {
     const R = this.roadsObj;
     const r = R && R.surfaceAt ? R.surfaceAt(x, z, yHint) : null;
     if (r && r.onRoad) return r.h;
+    // on a kerb or pavement surfaceAt's height already includes the kerb
+    if (r && r.curbH > 0 && Number.isFinite(r.h)) return r.h;
     const w = this.world.groundAt(x, z, yHint);
     if (r && Number.isFinite(r.h) && r.edge !== undefined && r.edge !== null && r.edge < 14) {
-      const top = r.h + (r.curbH || 0);
-      if (w === null) return top;
-      if (this.mode === 'google') return r.edge < 2.8 && (w < top || w > top + 0.6) ? top : w;
-      const t = THREE.MathUtils.smoothstep(r.edge, 3, 14);
-      return top + (w - top) * t;
+      if (w === null) return r.h;
+      if (this.mode === 'google') return w;
+      // the open world's terrain is coarse: ease from the road's height into it over a few metres
+      const t = THREE.MathUtils.smoothstep(r.edge, 2, 14);
+      return r.h + (w - r.h) * t;
     }
     if (w === null && r && Number.isFinite(r.h)) return r.h;
     return w;
@@ -275,7 +291,7 @@ export class Drive {
       vehicle.pos.copy(old.vehicle.pos); vehicle.q.copy(old.vehicle.q); vehicle.pos.y += 0.3;
       this.scene.remove(old.rig.object); old.rig.dispose && old.rig.dispose();
     }
-    rig.object.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    if (this.carEnv && rig.setEnvMap) rig.setEnvMap(this.carEnv);
     this.scene.add(rig.object);
     this.car = { rig, vehicle, id };
     this.carId = id;
@@ -293,14 +309,15 @@ export class Drive {
   async fetchArea(x, z, first) {
     const O = this.mods.osm;
     if (!O) return null;
-    const g = unproject(x, z), radius = 800;
+    const g = unproject(x, z), radius = first ? 650 : 800;
     // the elevation under the next area first (the open world's ground and every road height come from it)
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
-    let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 5000 : 6000))]);
-    if (data === 'slow' || data === null) {
-      let tiles = null;
-      try { const M = await import('./mvt.js?v=1'); tiles = await M.load(g.lat, g.lon, radius); } catch (e) { console.warn('mvt', e); }
+    // the tiles are fetched at once too, so they are there if Overpass is slow
+    const mvtP = import('./mvt.js?v=1').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
+    if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
+      const tiles = await mvtP;
       if (tiles && tiles.roads.length) {
         if (data === 'slow') ovp.then(d => { if (d && d.roads && d.roads.length && this.active && this.areaAt && this.areaAt.x === x && this.areaAt.z === z) this.buildArea(d, x, z); });
         data = tiles;
@@ -318,7 +335,8 @@ export class Drive {
     const collide = new Collide();
     const oldExtra = this.world.extra.slice();
     const ground = (x, z, y) => this.world.groundAt(x, z, y);
-    const ctx = { groundAt: ground, scene: this.scene, world: this.world, collide, imagery: this.imageryObj, mph: this.mph, sidewalks: this.mode === 'open' };
+    const ctx = { groundAt: ground, scene: this.scene, world: this.world, collide, imagery: this.imageryObj, mph: this.mph, sidewalks: this.mode === 'open',
+      trees: this.mode === 'open' ? (this.mods.trees ? 'none' : 'draw') : 'collide' };
     try {
       if (this.mods.imagery && !this.imageryObj && this.mode === 'open') { this.imageryObj = this.mods.imagery.createImagery ? this.mods.imagery.createImagery() : this.mods.imagery; ctx.imagery = this.imageryObj; }
     } catch (e) { console.warn('imagery', e); }
@@ -330,13 +348,13 @@ export class Drive {
     mark('roads');
     ctx.roads = this.roadsObj;
     // Google's mesh has cars baked into the streets: cut the carriageways out of it so our road shows
-    if (this.mode === 'google' || /cuttest/.test(location.search)) {
-      try {
-        if (!this.cut) this.cut = new CutMask();
-        const R = this.roadsObj;
-        this.cut.build(x, z, data.roads || [], R && R.surfaceAt ? (a, b) => R.surfaceAt(a, b) : null, this.mode === 'open' ? ground : null);
-      } catch (e) { console.warn('cut mask', e); }
-    }
+    // (in the open world the same mask, a little narrower than the carriageway, keeps the coarse terrain from
+    // poking up through the road)
+    try {
+      if (!this.cut) this.cut = new CutMask();
+      const R = this.roadsObj, open = this.mode === 'open';
+      this.cut.build(x, z, data.roads || [], R && R.surfaceAt ? (a, b) => R.surfaceAt(a, b) : null, open ? ground : null, open ? { widthScale: 0.8, parking: false, top: 1.6, below: 0.6 } : { top: 4.2, below: 0.6 });
+    } catch (e) { console.warn('cut mask', e); }
     if (this.mods.props) await swap('propsObj', () => this.mods.props.build(data, ctx));
     mark('props');
     if (this.mode === 'open') {
@@ -361,7 +379,7 @@ export class Drive {
     if (this.traffic && this.traffic.dispose) this.traffic.dispose();
     this.traffic = null;
     if (!this.mods.traffic || !R || !R.graph) return;
-    try { this.traffic = new this.mods.traffic.Traffic({ scene: this.scene, roads: R, props: this.propsObj, cars: this.mods.cars, ground: (x, z, y) => this.ground(x, z, y), collide: this.collide, world: this.world }); } catch (e) { console.warn('traffic', e); }
+    try { this.traffic = new this.mods.traffic.Traffic({ scene: this.scene, roads: R, props: this.propsObj, cars: this.mods.cars, ground: (x, z, y) => this.ground(x, z, y), collide: this.collide, world: this.world, carEnv: this.carEnv }); } catch (e) { console.warn('traffic', e); }
   }
 
   clearArea() {
@@ -382,7 +400,8 @@ export class Drive {
     const env = { ground: (x, z, y) => this.ground(x, z, y), collide: this.collide, others };
     this.acc += dt;
     let n = 0;
-    while (this.acc >= STEP && n < 10) { v.step(STEP, inp, env); this.acc -= STEP; n++; }
+    if (!this.prevPos) { this.prevPos = v.pos.clone(); this.prevQ = v.q.clone(); }
+    while (this.acc >= STEP && n < 10) { this.prevPos.copy(v.pos); this.prevQ.copy(v.q); v.step(STEP, inp, env); this.acc -= STEP; n++; }
     if (n === 10) this.acc = 0;
     if (v.hits.length) { for (const h of v.hits) if (h.other && h.other.obj && this.traffic && this.traffic.bumped) this.traffic.bumped(h.other.obj, h); const big = v.hits.reduce((a, h) => Math.max(a, h.speed), 0); if (big > 4) this.hud.bump(big); if (big > 1.5 && performance.now() - (this.lastHit || 0) > 250) { this.sound.hit(big); this.lastHit = performance.now(); } }
     // fell out of the world: back to the road
@@ -393,10 +412,13 @@ export class Drive {
     const upY = new THREE.Vector3(0, 1, 0).applyQuaternion(v.q).y;
     this.flipT = upY < 0.45 && v.speed < 3 ? (this.flipT || 0) + dt : 0;
     if (this.flipT > 2) { this.flipT = 0; this.hud.flash('Back on the road'); this.respawn(); }
-    // the model
-    const rig = this.car.rig;
-    rig.object.position.copy(o);
-    rig.object.quaternion.copy(v.q);
+    // the model, drawn between the last two physics steps so it glides however the frames fall
+    const rig = this.car.rig, a = Math.min(1, this.acc / STEP);
+    const q = this.drawQ || (this.drawQ = new THREE.Quaternion());
+    q.copy(this.prevQ).slerp(v.q, a);
+    const p = (this.drawP || (this.drawP = new THREE.Vector3())).copy(this.prevPos).lerp(v.pos, a);
+    rig.object.quaternion.copy(q);
+    rig.object.position.copy(v.com).applyQuaternion(q).negate().add(p);
     const look = v.look();
     look.signal = this.signal; look.headlights = this.headlights; look.dt = dt;
     rig.update(dt, look);

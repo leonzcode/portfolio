@@ -7,7 +7,7 @@ import * as THREE from 'three';
 
 // styles (aS.x) and ground floors (aS.y), shared with buildings.js
 export const STYLE = { BRICK: 0, CONCRETE: 1, GLASS: 2, STUCCO: 3, WOOD: 4, METAL: 5, STONE: 6, SOFFIT: 8 };
-export const GROUND = { NONE: 0, SHOP: 1, DOOR: 2, LOBBY: 3, ROLLUP: 4 };
+export const GROUND = { NONE: 0, SHOP: 1, DOOR: 2, LOBBY: 3, ROLLUP: 4, HOUSE: 5, HOUSE_FRONT: 6, HOUSE_GARAGE: 7 };
 
 const VERT_PARS = /* glsl */`
 attribute vec3 aCol;
@@ -166,7 +166,7 @@ void facade() {
     surf = mix( surf, mix( wall * 0.75, sc, stone ), 1.0 - smoothstep( 0.015, 0.05, px ) );
   }
   // a darker plinth and dirt near the ground, a cornice under a flat roof's edge
-  if ( gk > 0.5 && style != 2.0 ) surf *= mix( 1.0, 0.78, fBand( v, -50.0, 0.45, px ) );
+  if ( gk > 0.5 && gk < 4.5 && style != 2.0 ) surf *= mix( 1.0, 0.78, fBand( v, -50.0, 0.45, px ) );
   surf *= mix( 1.0, 0.82, fBand( eave - v, 0.0, 0.35, px ) );
   surf *= mix( 1.0, 1.08, fBand( eave - v, 0.35, 0.6, px ) );
   fcCol = surf;
@@ -179,8 +179,8 @@ void facade() {
   if ( style < 0.5 ) { bayW = 2.6; ww = 0.46; sill = 0.8; head = fh - 0.55; depth = 0.18; kind = 1.0; frameC = sv > 0.45 ? vec3( 0.86, 0.85, 0.82 ) : vec3( 0.12, 0.12, 0.12 ); }
   else if ( style < 1.5 ) { bayW = 3.0; ww = sv > 0.55 ? 0.94 : 0.62; sill = 0.9; head = fh - 0.6; depth = 0.12; frameC = vec3( 0.32, 0.34, 0.36 ); }
   else if ( style < 2.5 ) { bayW = 1.5; }
-  else if ( style < 3.5 ) { bayW = 3.0; ww = 0.42; sill = 0.9; head = fh - 0.7; depth = 0.12; kind = 1.0; frameC = vec3( 0.9, 0.9, 0.88 ); }
-  else if ( style < 4.5 ) { bayW = 3.4; ww = 0.32; sill = 0.9; head = fh - 0.75; depth = 0.08; kind = 1.0; frameC = vec3( 0.93, 0.93, 0.9 ); }
+  else if ( style < 3.5 ) { bayW = gk > 4.5 ? 3.3 : 3.0; ww = gk > 4.5 ? 0.46 : 0.42; sill = 0.9; head = fh - 0.7; depth = 0.12; kind = 1.0; frameC = vec3( 0.86, 0.86, 0.84 ); }
+  else if ( style < 4.5 ) { bayW = 3.4; ww = gk > 4.5 ? 0.42 : 0.32; sill = 0.9; head = fh - 0.75; depth = 0.08; kind = 1.0; frameC = vec3( 0.88, 0.88, 0.85 ); }
   else if ( style < 5.5 ) { bayW = 6.0; ww = 0.5; sill = fh - 1.3; head = fh - 0.4; depth = 0.05; lit = 0.02; }
   else { bayW = 3.2; ww = 0.4; sill = 0.7; head = fh - 0.45; depth = 0.22; kind = 1.0; frameC = vec3( 0.18, 0.17, 0.16 ); }
   bayW *= 0.88 + 0.24 * sv2;
@@ -232,8 +232,39 @@ void facade() {
     return;
   }
 
+  // houses: a base course all round, and on the front a door and maybe a garage door; windows in the other bays
+  float skipWin = 0.0;
+  if ( gk > 4.5 ) {
+    float bcm = 1.0 - smoothstep( 0.42 - px, 0.42 + px, v );
+    fcCol = mix( fcCol, vec3( 0.3, 0.29, 0.27 ) * ( 0.9 + 0.2 * grime ), bcm ); fcRough = mix( fcRough, 0.92, bcm );
+    if ( gk > 5.5 && v < fh ) {
+      float side = step( 0.5, sv );
+      float gwid = gk > 6.5 ? ( L > 16.0 && sv2 > 0.45 ? 5.0 : 2.7 ) : 0.0;
+      float g0 = side < 0.5 ? 0.7 : L - 0.7 - gwid;
+      float dc = gwid > 0.0 ? ( side < 0.5 ? ( g0 + gwid + L ) * 0.5 : g0 * 0.5 ) : L * ( 0.35 + 0.3 * sv2 );
+      float gm = gwid > 0.0 ? fBox( vec2( u, v ), vec2( g0, 0.0 ), vec2( g0 + gwid, 2.3 ), px ) : 0.0;
+      float dm = fBox( vec2( u, v ), vec2( dc - 0.48, 0.0 ), vec2( dc + 0.48, 2.12 ), px );
+      float uc = margin + ( bi + 0.5 ) * bw;
+      if ( ( gwid > 0.0 && uc > g0 - 0.8 && uc < g0 + gwid + 0.8 ) || abs( uc - dc ) < 1.25 ) skipWin = 1.0;
+      if ( gm > 0.0 ) {
+        // a sectional garage door: four panels, white or a warm wood
+        float panel = 0.86 + 0.14 * smoothstep( 0.0, 0.06, fract( v / 0.575 ) );
+        vec3 gcol = mix( vec3( 0.6, 0.59, 0.56 ), vec3( 0.36, 0.25, 0.16 ), step( 0.75, sv2 ) ) * mix( panel, 0.95, lod );
+        fcCol = mix( fcCol, gcol, gm ); fcRough = mix( fcRough, 0.6, gm ); fcMetal = mix( fcMetal, 0.0, gm );
+        if ( gm > 0.5 ) return;
+      }
+      if ( dm > 0.0 ) {
+        float hd = fH( vec2( seed, 8.0 ) );
+        vec3 dcol = hd < 0.3 ? vec3( 0.32, 0.19, 0.11 ) : hd < 0.5 ? vec3( 0.1, 0.15, 0.12 ) : hd < 0.7 ? vec3( 0.12, 0.15, 0.24 ) : hd < 0.85 ? vec3( 0.36, 0.09, 0.07 ) : vec3( 0.6, 0.58, 0.55 );
+        float fr = 1.0 - fBox( vec2( u, v ), vec2( dc - 0.4, 0.0 ), vec2( dc + 0.4, 2.04 ), px );
+        fcCol = mix( fcCol, mix( dcol, frameC, fr ), dm ); fcRough = mix( fcRough, 0.55, dm ); fcMetal = mix( fcMetal, 0.0, dm );
+        if ( dm > 0.5 ) return;
+      }
+    }
+  }
+
   // the ground floor
-  if ( v < gh && gk > 0.5 ) {
+  if ( v < gh && gk > 0.5 && gk < 4.5 ) {
     float doorBay = floor( fH( vec2( seed * 3.0, 5.0 ) ) * nb );
     if ( gk < 1.5 || gk > 2.5 && gk < 3.5 ) {
       // shop fronts or a lobby: big glass between piers, a sign band over them
@@ -280,7 +311,8 @@ void facade() {
   float fy, fi, ly;
   if ( v < gh ) { fi = -1.0; ly = v - max( 0.0, gh - fh ); }
   else { fy = ( v - gh ) / fh; fi = floor( fy ); ly = fract( fy ) * fh; }
-  if ( v < gh && gk > 0.5 ) return;
+  if ( v < gh && gk > 0.5 && gk < 4.5 && abs( gk - 2.0 ) > 0.5 ) return;
+  if ( skipWin > 0.5 && v < fh ) return;
   // the top floor must fit under the roof
   if ( v - ly + head > topV + 0.3 ) return;
   float id = bi * 31.0 + fi * 7.0 + seed * 11.0;
@@ -298,7 +330,8 @@ void facade() {
 `;
 
 export function makeFacadeMaterial(opts = {}) {
-  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.0, envMapIntensity: opts.envMapIntensity ?? 1.0 });
+  // the sky's hemisphere light already lights the walls from above; the environment adds reflections more than fill
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.0, envMapIntensity: opts.envMapIntensity ?? 0.5 });
   m.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\n' + VERT_PARS)
@@ -321,6 +354,6 @@ reflectedLight.indirectSpecular *= mix( 1.0, fcAO, 0.6 );
 reflectedLight.directDiffuse *= mix( 1.0, fcAO, 0.45 );
 reflectedLight.directSpecular = min( reflectedLight.directSpecular, vec3( 1.5 ) );`);
   };
-  m.customProgramCacheKey = () => 'facade7' + (m.userData.dbg || '');
+  m.customProgramCacheKey = () => 'facade8' + (m.userData.dbg || '');
   return m;
 }

@@ -4,8 +4,7 @@
 //   await roads.build(osmData, opts)    (re)builds everything from the osm.js store. opts: { groundAt(x, z) (number
 //        or null), scene, collide, world (its mode 'open' picks the median ground), sidewalks (true: draw pavements,
 //        for the open world), groundPercentile (default 0.25, or 0.5 with world.mode 'open'), lat, lon (default:
-//        the geo.js origin), lift (metres over the sampled ground, default 0.03), renderer (or world.renderer: the
-//        new meshes are uploaded to the GPU a few a frame before the swap) }. Yields to the frame loop
+//        the geo.js origin), lift (metres over the sampled ground, default 0.03) }. Yields to the frame loop
 //        every ~8 ms; the old meshes and lookups stay live until the new ones are complete, then swap in one step.
 //        Calls queue.
 //   await roads.reheight(bbox)           re-samples heights inside {x0, z0, x1, z1} or a THREE.Box3 and rebuilds
@@ -416,9 +415,9 @@ async function buildTopology(data) {
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) n += bgrid.get((cx + i) + ',' + (cz + j)) || 0;
     return n >= 10;
   };
-  const nodePos = data.nodes;
+  const nodePos = data.nodes || new Map();
   const ways = [];
-  for (const w of data.roads) {
+  for (const w of data.roads || []) {
     await Y();
     const c = classify(w, region); if (!c || w.nodes.length < 2) continue;
     let nodes = w.nodes.slice();
@@ -722,6 +721,7 @@ async function computeHeights(bbox) {
     const key = e.ids.join(',') + ':' + N + ':' + e.c.width;
     let prof = !bbox ? PCACHE.get(key) : undefined;
     if (!prof) { prof = profileHeights(e); if (prof) PCACHE.set(key, prof); }
+    e.guessed = !prof;
     if (!prof) prof = new Array(N).fill(lerp(n0.h, n1.h, 0.5));
     // pin the ends to the node heights over 10 m
     const D = Math.min(10, e.len / 2);
@@ -764,19 +764,19 @@ function findFeatures(data) {
     const l = interior.get(id);
     if (l) for (const r of l) crossings.push({ e: r.e, s: r.s, kind: (t && (t.crossing === 'zebra' || t.crossing_ref === 'zebra')) ? 'zebra' : 'marked', node: id });
   };
-  for (const p of data.points) if (p.kind === 'crossing' && marked(p.tags)) addCrossing(p.id, p.tags);
-  for (const w of data.roads) {
+  for (const p of data.points || []) if (p.kind === 'crossing' && marked(p.tags)) addCrossing(p.id, p.tags);
+  for (const w of data.roads || []) {
     const t = w.tags;
     if (!(t.footway === 'crossing' || t.cycleway === 'crossing' || t.path === 'crossing')) continue;
     if (!marked(t)) continue;
-    for (const id of w.nodes) if (interior.has(id)) { const nt = data.nodes.get(id); if (!nt || !nt.tags || marked(nt.tags)) addCrossing(id, t); }
+    for (const id of w.nodes) if (interior.has(id)) { const nt = data.nodes && data.nodes.get(id); if (!nt || !nt.tags || marked(nt.tags)) addCrossing(id, t); }
   }
   // stop / give way / signals
   const dirOf = (t) => {
     const v = t && (t.direction || t['traffic_signals:direction'] || t['traffic_sign:direction'] || t['stop:direction']);
     return v === 'forward' ? 1 : v === 'backward' ? -1 : v === 'both' ? 0 : null;
   };
-  for (const p of data.points) {
+  for (const p of data.points || []) {
     if (p.kind !== 'traffic_signals' && p.kind !== 'stop' && p.kind !== 'give_way') continue;
     const kind = p.kind === 'traffic_signals' ? 'signal' : p.kind;
     const jn = S.nodes.get(p.id);
@@ -1063,6 +1063,45 @@ function emitCrossings() {
     for (let k = 0; k < nb; k++) { emitBar(e, s, o, o + bar, depth, WHITE); o += bar + gap; }
   }
 }
+// Turn arrows painted in lanes that have turn:lanes, a few metres before the stop line (or the lane's end).
+// Shapes in the lane's frame: x to the right of travel, y forward, metres.
+const ARROW = {
+  stem: [[-0.08, 0], [0.08, 0], [0.08, 3.2], [-0.08, 3.2]],
+  ahead: [[-0.3, 3.2], [0.3, 3.2], [0, 5.0]],
+  bar: (sd) => [[0, 2.5], [0, 2.75], [sd * 0.75, 2.75], [sd * 0.75, 2.5]].map(p => [p[0], p[1]]),
+  side: (sd) => [[sd * 0.75, 2.25], [sd * 0.75, 3.0], [sd * 1.35, 2.625]],
+};
+function emitArrows() {
+  const G = S.graph; if (!G) return;
+  for (const L of G.lanes) {
+    if (L.kind !== 'road' || !L.turns || L.len < 18) continue;
+    const t = L.turns;
+    if (!t.left && !t.right && !t.through) continue;
+    const e = S.edges[L.edge];
+    const sEnd = L.stopS != null ? L.stopS : L.len;
+    for (const back of [6, 22]) {
+      const s0 = sEnd - back - 5; if (s0 < 2) continue;
+      // lane point and direction at s0
+      let k = 1; while (k < L.cum.length - 1 && L.cum[k] < s0) k++;
+      const a = L.pts[k - 1], b = L.pts[k], seg = L.cum[k] - L.cum[k - 1] || 1, f = (s0 - L.cum[k - 1]) / seg;
+      const ox = lerp(a.x, b.x, f), oz = lerp(a.z, b.z, f);
+      let dx = b.x - a.x, dz = b.z - a.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+      const rx = -dz, rz = dx;
+      const es = lerp(L._s[k - 1], L._s[k], f), y = at(e, es).h + LIFT + 0.004;
+      const B = tileB('paint', ox, oz);
+      const poly = (pts) => {
+        const ids = pts.map(p => { const x = ox + rx * p[0] + dx * p[1], z = oz + rz * p[0] + dz * p[1]; return B.v(x, y, z, x * UVS, z * UVS, null, WHITE); });
+        if (ids.length === 4) B.quad(ids[0], ids[1], ids[2], ids[3]); else B.tri(ids[0], ids[1], ids[2]);
+      };
+      poly(ARROW.stem);
+      if (t.through || (!t.left && !t.right)) poly(ARROW.ahead);
+      for (const sd of [-1, 1]) {
+        if (sd < 0 ? !t.left : !t.right) continue;
+        poly(ARROW.bar(sd)); poly(ARROW.side(sd));
+      }
+    }
+  }
+}
 function emitStopLines() {
   for (const a of S.approaches) {
     const e = a.e, c = e.c;
@@ -1288,7 +1327,8 @@ async function buildMeshes(bbox) {
   for (const e of S.edges) { DIRTY = dirty; emitMarkings(e); await Y(); }
   DIRTY = dirty;
   ST('m-cross'); emitCrossings();
-  emitStopLines(); await Y(); DIRTY = dirty; ST('m-curbs');
+  emitStopLines(); await Y(); DIRTY = dirty; ST('m-arrows');
+  emitArrows(); await Y(); DIRTY = dirty; ST('m-curbs');
   for (const e of S.edges) { DIRTY = dirty; emitCurbs(e); await Y(); }
   DIRTY = dirty;
   for (const j of S.junctions) {
@@ -1326,8 +1366,21 @@ async function buildMeshes(bbox) {
     S.pavA = pav;
   } else S.pavA = new Float64Array(0);
   ST('m-geom');
+  const oldByKey = new Map();
+  for (const m of S.toRemove) oldByKey.set(m.name.slice(6), m);
   for (const [key, b] of TILES) {
     await Y();
+    if (!b.idx.length) continue;
+    // a tile whose geometry came out the same as before keeps its old mesh (nothing to upload again)
+    let sum = 0; const P = b.pos; for (let i = 0; i < P.length; i++) sum += P[i] * ((i % 13) + 1);
+    for (let i = 0; i < b.col.length; i += 7) sum += b.col[i];
+    const hash = P.length + ':' + b.idx.length + ':' + sum.toFixed(3);
+    const old = oldByKey.get(key);
+    if (old && old.userData.hash === hash) {
+      S.toRemove.splice(S.toRemove.indexOf(old), 1);
+      S.meshes.set(key, old);
+      continue;
+    }
     // fix winding per triangle so every face points up (roads, paint); curbs and pavements are double sided
     const g = b.geometry(); if (!g) continue;
     fixUp(g);
@@ -1335,7 +1388,7 @@ async function buildMeshes(bbox) {
     const m = new THREE.Mesh(g, mat);
     m.receiveShadow = true; m.castShadow = false;
     m.renderOrder = b.kind === 'paint' ? 2 : 1;
-    m.name = 'roads-' + key;
+    m.name = 'roads-' + key; m.userData.hash = hash;
     S.meshes.set(key, m); S.toAdd.push(m);
   }
   DIRTY = null;
@@ -1727,7 +1780,6 @@ async function doBuild(data, opts) {
   if (opts.groundAt) S.groundAt = opts.groundAt;
   if (opts.scene) S.scene = opts.scene;
   if (opts.collide) S.collide = opts.collide;
-  if (opts.renderer || (opts.world && opts.world.renderer)) S.renderer = opts.renderer || opts.world.renderer;
   S.sidewalks = opts.sidewalks === true;
   LIFT = opts.lift != null ? opts.lift : 0.03;
   S.data = data;
@@ -1747,32 +1799,14 @@ async function doBuild(data, opts) {
   ST('features'); findFeatures(data);
   buildSignals();
   await Y();
-  ST('meshes'); await buildMeshes();
   ST('graph'); await buildGraph();
-  ST('upload'); await preUpload(S.toAdd);
+  ST('meshes'); await buildMeshes();
   ST('publish'); await Y();
   publish();
   ST('');
   roads.slices = slices; roads.busy = Object.fromEntries(Object.entries(busy).filter(([k]) => k).map(([k, v]) => [k, Math.round(v)]));
-  roads.stats = { edges: S.edges.length, junctions: S.junctions.length, lanes: S.graph.lanes.length, crossings: S.crossings.length, approaches: S.approaches.length, meshes: GROUP.children.length, ms: Math.round(performance.now() - t0) };
+  roads.stats = { pending: S.edges.filter(e => e.guessed).length, edges: S.edges.length, junctions: S.junctions.length, lanes: S.graph.lanes.length, crossings: S.crossings.length, approaches: S.approaches.length, meshes: GROUP.children.length, ms: Math.round(performance.now() - t0) };
   return roads;
-}
-// Uploads the new meshes' buffers to the graphics card a few at a time before they are shown, by drawing them
-// into a 1x1 target (otherwise the first frame after the swap uploads everything at once and stalls).
-let upRT = null, upCam = null;
-async function preUpload(list) {
-  const r = S.renderer; if (!r || !list.length) return;
-  if (!upRT) { upRT = new THREE.WebGLRenderTarget(1, 1); upCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1); }
-  const sc = new THREE.Scene();
-  for (let i = 0; i < list.length; i += 6) {
-    const batch = list.slice(i, i + 6), prev = r.getRenderTarget(), sh = r.shadowMap.autoUpdate;
-    for (const m of batch) { m.frustumCulled = false; sc.add(m); }
-    r.setRenderTarget(upRT); r.shadowMap.autoUpdate = false;
-    try { r.render(sc, upCam); } catch (e) { /* ignore */ }
-    r.setRenderTarget(prev); r.shadowMap.autoUpdate = sh;
-    for (const m of batch) { sc.remove(m); m.frustumCulled = true; }
-    await new Promise(res => setTimeout(res, 0));
-  }
 }
 function publish() {
   for (const m of S.toRemove) { GROUP.remove(m); m.geometry.dispose(); }
@@ -1817,9 +1851,9 @@ async function doReheight(b) {
   });
   await computeHeights(b);
   await buildMeshes(b);
-  await preUpload(S.toAdd);
   publish();
   updateLaneHeights();
+  if (roads.stats) roads.stats.pending = S.edges.filter(e => e.guessed).length;
 }
 function updateLaneHeights() {
   const G = S.graph;

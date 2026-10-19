@@ -123,7 +123,9 @@ export async function load(lat, lon, radius = 700) {
   const jobs = [];
   for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
     const x = Math.floor(fx) + dx, y = Math.floor(fy) + dy;
-    if (Math.hypot((x + 0.5 - fx) * tileM, (y + 0.5 - fy) * tileM) > radius + tileM) continue;
+    // only tiles that reach into the circle: the nearest point of the tile's square to the centre
+    const nx = Math.max(x, Math.min(fx, x + 1)), ny = Math.max(y, Math.min(fy, y + 1));
+    if (Math.hypot((nx - fx) * tileM, (ny - fy) * tileM) > radius) continue;
     jobs.push(getTile(x, y).then(L => ({ x, y, L })).catch(() => null));
   }
   const tiles = (await Promise.all(jobs)).filter(Boolean);
