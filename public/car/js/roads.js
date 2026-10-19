@@ -24,7 +24,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=14';
+import { unproject } from './geo.js?v=15';
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -136,7 +136,7 @@ export let style = { region: 'other', yellowCentre: false };
 // ---------------------------------------------------------------- materials
 let MATS = null;
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=14');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=15');
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -1676,7 +1676,9 @@ function emitPavement(line0, W) {
     const pa = (o, p, k) => [p.x + p.nx * o * k, p.z + p.nz * o * k];
     const A0 = pa(CURB_W, a, ka), A1 = pa(CURB_W, b, kb), C0 = pa(w, a, ka), C1 = pa(w, b, kb);
     // the outer edge follows the ground (a pavement on a hillside slopes with it), never far from the kerb top
-    const outer = (C, y) => { const g = sampleGround(C[0], C[1]); return g == null ? y : Math.max(y - 1.2, Math.min(y + 0.4, g + 0.05)); };
+    // (at most 35 cm below the kerb across its width: a ground sample under a city's rooftops can be metres out,
+    // and a pavement falling 1.2 m beside the road was a ditch that rolled the car)
+    const outer = (C, y) => { const g = sampleGround(C[0], C[1]); return g == null ? y : Math.max(y - 0.35, Math.min(y + 0.4, g + 0.05)); };
     const oa = outer(C0, ya), ob = outer(C1, yb);
     const P = (p, o, y, k, u) => { const x = p.x + p.nx * o * k, z = p.z + p.nz * o * k; return B.v(x, y, z, u, o); };
     B.quad(P(a, CURB_W, ya, ka, sa), P(b, CURB_W, yb, kb, sb), P(b, w, ob, kb, sb), P(a, w, oa, ka, sa));
@@ -1688,6 +1690,26 @@ function emitPavement(line0, W) {
   }
 }
 // Pedestrian areas (area:highway, highway=pedestrian areas) and separately mapped sidewalks, paved on the ground.
+// a pavement near a road stands at about its kerb top: from 25 cm under it to 60 cm over it (the ground samples
+// alone put some Paris pavements 1.7 m below the street)
+// (the roads being built, not the live ones: their own index, made once a build)
+function kerbClamp(x, z, h) {
+  const C = 16;
+  if (!S._kg) {
+    S._kg = new Map();
+    for (const e of S.edges) { if (!e.px || e.c.bridge) continue; for (let i = 1; i < e.px.length; i++) gridAdd(S._kg, Math.min(e.px[i - 1], e.px[i]) - 12, Math.min(e.pz[i - 1], e.pz[i]) - 12, Math.max(e.px[i - 1], e.px[i]) + 12, Math.max(e.pz[i - 1], e.pz[i]) + 12, [e, i], C); }
+  }
+  const l = S._kg.get(gkey(x, z, C)); if (!l) return h;
+  let bd = 12, top = null;
+  for (const [e, i] of l) {
+    const ax = e.px[i - 1], az = e.pz[i - 1], dx = e.px[i] - ax, dz = e.pz[i] - az, L2 = dx * dx + dz * dz;
+    const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2)) : 0;
+    const d = Math.hypot(x - ax - dx * t, z - az - dz * t) - e.c.hw;
+    if (d < bd) { bd = d; top = e.ph[i - 1] + (e.ph[i] - e.ph[i - 1]) * t + LIFT + CURB_H; }
+  }
+  if (top == null || !Number.isFinite(top)) return h;
+  return Math.max(top - 0.25, Math.min(top + 0.6, h));
+}
 async function emitPedAreas(dirty) {
   for (const a of S.data.areas || []) {
     if (a.kind !== 'pedestrian' && a.kind !== 'road_area') continue;
@@ -1696,15 +1718,29 @@ async function emitPedAreas(dirty) {
     const r = a.outer; if (!r || r.length < 3) continue;
     const ring = (r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1]) ? r.slice(0, -1) : r;
     let tris; try { tris = THREE.ShapeUtils.triangulateShape(ring.map(p => new THREE.Vector2(p[0], p[1])), []); } catch (e) { continue; }
-    const hs = ring.map(p => { const g = sampleGround(p[0], p[1]); return g == null ? 0 : g; });
+    // the area's triangles cut into pieces about 6 m across, each corner at its own ground and kerb height (a long
+    // pavement mapped with few corners made triangles 200 m long, sloping straight between their corners and
+    // metres under the street in between)
+    const hAt = (x, z) => kerbClamp(x, z, (sampleGround(x, z) ?? 0) + 0.06);
     for (const t of tris) {
-      const P = t.map(k => ring[k]), H = t.map(k => hs[k] + 0.06);
-      const cx = (P[0][0] + P[1][0] + P[2][0]) / 3, cz = (P[0][1] + P[1][1] + P[2][1]) / 3;
-      if (onCarriageway(cx, cz)) continue;
-      const B = tileB('pave', cx, cz);
-      const ids = P.map((p, k) => B.v(p[0], H[k], p[1], p[0], p[1]));
-      B.tri(ids[0], ids[1], ids[2]);
-      S.pav.push(P[0][0], P[0][1], H[0], P[1][0], P[1][1], H[1], P[2][0], P[2][1], H[2]);
+      const [A, Bq, Cq] = t.map(k => ring[k]);
+      const Lm = Math.max(Math.hypot(Bq[0] - A[0], Bq[1] - A[1]), Math.hypot(Cq[0] - A[0], Cq[1] - A[1]), Math.hypot(Cq[0] - Bq[0], Cq[1] - Bq[1]));
+      const n = Math.max(1, Math.min(24, Math.ceil(Lm / 6)));
+      const pt = (i, j) => { const x = A[0] + (Bq[0] - A[0]) * i / n + (Cq[0] - A[0]) * j / n, z = A[1] + (Bq[1] - A[1]) * i / n + (Cq[1] - A[1]) * j / n; return [x, z, hAt(x, z)]; };
+      const grid = new Map(), at = (i, j) => { const k = i * 64 + j; let v = grid.get(k); if (!v) grid.set(k, v = pt(i, j)); return v; };
+      const emit = (p0, p1, p2) => {
+        const cx = (p0[0] + p1[0] + p2[0]) / 3, cz = (p0[1] + p1[1] + p2[1]) / 3;
+        if (onCarriageway(cx, cz)) return;
+        const B = tileB('pave', cx, cz);
+        const ids = [p0, p1, p2].map(p => B.v(p[0], p[2], p[1], p[0], p[1]));
+        B.tri(ids[0], ids[1], ids[2]);
+        S.pav.push(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]);
+      };
+      for (let i = 0; i < n; i++) for (let j = 0; j < n - i; j++) {
+        emit(at(i, j), at(i + 1, j), at(i, j + 1));
+        if (i + j + 2 <= n) emit(at(i + 1, j), at(i + 1, j + 1), at(i, j + 1));
+      }
+      await Y(); DIRTY = dirty;
     }
   }
   for (const w of S.data.roads || []) {
@@ -1725,7 +1761,7 @@ async function emitPedAreas(dirty) {
         const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
         const u0 = u; u += L / n;
         if (onCarriageway(cx, cz) || inBuilding(cx, cz)) continue;
-        const h0 = (sampleGround(x0, z0) ?? 0) + 0.06, h1 = (sampleGround(x1, z1) ?? 0) + 0.06;
+        const h0 = kerbClamp(x0, z0, (sampleGround(x0, z0) ?? 0) + 0.06), h1 = kerbClamp(x1, z1, (sampleGround(x1, z1) ?? 0) + 0.06);
         const B = tileB('pave', cx, cz);
         const q = [B.v(x0 - nx * W, h0, z0 - nz * W, u0, 0), B.v(x1 - nx * W, h1, z1 - nz * W, u, 0), B.v(x1 + nx * W, h1, z1 + nz * W, u, 2 * W), B.v(x0 + nx * W, h0, z0 + nz * W, u0, 2 * W)];
         B.quad(q[0], q[1], q[2], q[3]);
@@ -2014,7 +2050,13 @@ export function surfaceAt(x, z, yHint) {
   if (olD < ed) { ed = olD; curb = olCurb; }
   r.edge = ed; r.h = null;
   if (curb && ed >= 0 && ed <= CURB_W && h != null) { r.curbH = CURB_H; r.h = h + CURB_H; }
-  else if (pavH != null) { r.curbH = CURB_H; r.h = pavH; }
+  else if (pavH != null) {
+    // next to a road its pavement is at its kerb top: a strip of another road's pavement lower down (two roads
+    // at different heights side by side) was a ditch along the edge that rolled the car
+    let ph = pavH;
+    if (nearH != null && nearEdge < 4) ph = Math.max(nearH + CURB_H - 0.35, Math.min(nearH + CURB_H + 0.6, ph));
+    r.curbH = CURB_H; r.h = ph;
+  }
   return r;
 }
 

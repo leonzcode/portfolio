@@ -3,7 +3,7 @@
 // the Arc de Triomphe (limestone, the great arch through it). The footprints the map draws there are left out, so
 // what stands is the landmark; its legs and piers are solid.
 import * as THREE from 'three';
-import { project } from './geo.js?v=14';
+import { project } from './geo.js?v=15';
 
 const SITES = [
   { id: 'eiffel', lat: 48.85826, lon: 2.29448, clear: 80, heading: 39 },
