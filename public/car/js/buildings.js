@@ -12,9 +12,9 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=11';
-import { patchBaked } from './baked.js?v=11';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME } from './facade.js?v=11';
+import { frame, project } from './geo.js?v=12';
+import { patchBaked } from './baked.js?v=12';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME } from './facade.js?v=12';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -204,7 +204,13 @@ function applyCity(P, ctx) {
     P.palette = LOOK_PAL.render;
     if (P.style !== STYLE.GLASS) P.style = houseLike ? STYLE.STUCCO : (r1 < 0.5 ? STYLE.STONE : STYLE.STUCCO);
   } else if (city === 'london' || city === 'uk') {
-    if (!houseLike && (area > 1500 || H > 24) && !tall) { P.style = STYLE.STONE; P.palette = LOOK_PAL.portland; }
+    // the West End and the City are mostly cream Portland stone and stucco fronts over shops, brick behind
+    let central = false;
+    if (city === 'london' && ctx.londonMid && !houseLike && H > 12) {
+      let cx = 0, cz = 0; for (const q of P.outer) { cx += q[0]; cz += q[1]; } cx /= P.outer.length; cz /= P.outer.length;
+      central = Math.hypot(cx - ctx.londonMid[0], cz - ctx.londonMid[1]) < 2500 && r2 < 0.7;
+    }
+    if (!houseLike && (area > 1500 || H > 24 || central) && !tall) { P.style = STYLE.STONE; P.palette = LOOK_PAL.portland; }
     else if (!tall) { P.style = STYLE.BRICK; P.palette = r2 < 0.75 ? LOOK_PAL.lstock : LOOK_PAL.lred; P.look = LOOK.SASH; }
   } else if (city === 'sf') {
     if (!tall && H < 18 && area < 900 && P.style !== STYLE.GLASS) {
@@ -867,6 +873,7 @@ export function build(list, opts = {}) {
   const group = new THREE.Group(); group.name = 'buildings';
   const wallMat = opts.wallMaterial || wallMaterial();
   const ctx = { groundAt, region: region(), density: 0, g0: groundAt(0, 0) ?? 0, nearRoad: null, city: cityOf(frame.lat, frame.lon), cores: [] };
+  if (ctx.city === 'london') ctx.londonMid = project(51.5125, -0.1330);
   for (const [la, lo, r, share, full] of CORES) { const [x, z] = project(la, lo); if (Math.hypot(x, z) < 6000) ctx.cores.push([x, z, r, share, full]); }
   // where the nearest road is (a house's front faces it): roads.js when given, else OSM road lines
   const RD = opts.roads;
