@@ -2,11 +2,11 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=3';
-import { World } from './world.js?v=3';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=3';
-import { Sky } from './sky.js?v=3';
-import { Drive } from './drive.js?v=3';
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=4';
+import { World } from './world.js?v=4';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=4';
+import { Sky } from './sky.js?v=4';
+import { Drive } from './drive.js?v=4';
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -149,7 +149,7 @@ if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
 async function openMap() {
   try {
-    const M = await import('./mapui.js?v=3');
+    const M = await import('./mapui.js?v=4');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();

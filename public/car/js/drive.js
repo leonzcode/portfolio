@@ -1,14 +1,14 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=3';
-import { Collide } from './collide.js?v=3';
-import { Vehicle } from './vehicle.js?v=3';
-import { CarCamera } from './camera.js?v=3';
-import { Hud } from './hud.js?v=3';
-import { CarSound } from './sound.js?v=3';
-import { CutMask } from './cutmask.js?v=3';
-import * as SIG from './signals.js?v=3';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=4';
+import { Collide } from './collide.js?v=4';
+import { Vehicle } from './vehicle.js?v=4';
+import { CarCamera } from './camera.js?v=4';
+import { Hud } from './hud.js?v=4';
+import { CarSound } from './sound.js?v=4';
+import { CutMask } from './cutmask.js?v=4';
+import * as SIG from './signals.js?v=4';
 
 const STEP = 1 / 120;
 const GLIFT = 0.15; // how far under Google's road ours is drawn
@@ -51,8 +51,8 @@ export class Drive {
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
     const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=3'), tryImport('./osm.js?v=3'), tryImport('./roads.js?v=3'), tryImport('./props.js?v=3'),
-      tryImport('./buildings.js?v=3'), tryImport('./trees.js?v=3'), tryImport('./traffic.js?v=3'), tryImport('./imagery.js?v=3')]);
+      tryImport('./cars.js?v=4'), tryImport('./osm.js?v=4'), tryImport('./roads.js?v=4'), tryImport('./props.js?v=4'),
+      tryImport('./buildings.js?v=4'), tryImport('./trees.js?v=4'), tryImport('./traffic.js?v=4'), tryImport('./imagery.js?v=4')]);
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
     // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
     if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); const M = this.bldgObj && this.bldgObj.material; if (M) { M.envMap = t; M.needsUpdate = true; } return t; }).catch(() => null);
@@ -320,7 +320,7 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=3').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=4').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;
