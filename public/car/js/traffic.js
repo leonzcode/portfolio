@@ -3,8 +3,8 @@
 // and signals for it, stops at red lights (signals.js, the same timing the lights show), waits at stop signs, gives
 // way at junctions without lights, slows for the player's car in its path, and stops with its hazards on when hit.
 import * as THREE from 'three';
-import * as SIG from './signals.js?v=8';
-import { frame } from './geo.js?v=8';
+import * as SIG from './signals.js?v=9';
+import { frame } from './geo.js?v=9';
 
 const nearNYC = () => Math.abs(frame.lat - 40.74) < 0.25 && Math.abs(frame.lon + 73.95) < 0.3;
 const PAINTS = [0xf2f2f0, 0xf2f2f0, 0x111214, 0x111214, 0x8c9096, 0xb8bcc2, 0x55595f, 0x1e3a6b, 0x7a1418, 0x24402c, 0xc9b99a, 0x3d4a5c, 0x9a2a1d, 0xe8e2d0];

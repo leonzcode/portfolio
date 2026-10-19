@@ -24,7 +24,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=8';
+import { unproject } from './geo.js?v=9';
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -135,7 +135,7 @@ export let style = { region: 'other', yellowCentre: false };
 // ---------------------------------------------------------------- materials
 let MATS = null;
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=8');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=9');
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -1046,8 +1046,11 @@ async function computeHeights(bbox) {
     }
     // round the creases where the grade changes (the limit above leaves straight runs meeting at a kink, and a
     // coarse terrain model has its own): a triangular average over 8 m each way, twice, as a road's vertical curves
-    if (N > 3) for (let pass = 0; pass < 2; pass++) {
-      const W = 8, q = e.ph.slice();
+    // (in a built-up area outside the US the elevation model carries the buildings' tops, which make bumps in the
+    // streets: a longer window there)
+    const lumpy = e.c.urban && S.region !== 'us';
+    if (N > 3) for (let pass = 0; pass < (lumpy ? 3 : 2); pass++) {
+      const W = lumpy ? 18 : 8, q = e.ph.slice();
       let lo = 0, hi = 0;
       for (let i = 0; i < N; i++) {
         if (fixed(i)) continue;
