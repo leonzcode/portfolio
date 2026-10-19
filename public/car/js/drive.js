@@ -1,17 +1,17 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=12';
-import { Collide } from './collide.js?v=12';
-import { Vehicle } from './vehicle.js?v=12';
-import { CarCamera } from './camera.js?v=12';
-import { Hud } from './hud.js?v=12';
-import { CarSound } from './sound.js?v=12';
-import { CutMask } from './cutmask.js?v=12';
-import * as SIG from './signals.js?v=12';
-import { Parked } from './parked.js?v=12';
-import { Skids } from './skids.js?v=12';
-import { StreetSigns } from './streetsigns.js?v=12';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=13';
+import { Collide } from './collide.js?v=13';
+import { Vehicle } from './vehicle.js?v=13';
+import { CarCamera } from './camera.js?v=13';
+import { Hud } from './hud.js?v=13';
+import { CarSound } from './sound.js?v=13';
+import { CutMask } from './cutmask.js?v=13';
+import * as SIG from './signals.js?v=13';
+import { Parked } from './parked.js?v=13';
+import { Skids } from './skids.js?v=13';
+import { StreetSigns } from './streetsigns.js?v=13';
 
 const STEP = 1 / 120;
 const GLIFT = 0.15; // how far under Google's road ours is drawn
@@ -56,8 +56,8 @@ export class Drive {
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
     const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=12'), tryImport('./osm.js?v=12'), tryImport('./roads.js?v=12'), tryImport('./props.js?v=12'),
-      tryImport('./buildings.js?v=12'), tryImport('./trees.js?v=12'), tryImport('./traffic.js?v=12'), tryImport('./imagery.js?v=12')]);
+      tryImport('./cars.js?v=13'), tryImport('./osm.js?v=13'), tryImport('./roads.js?v=13'), tryImport('./props.js?v=13'),
+      tryImport('./buildings.js?v=13'), tryImport('./trees.js?v=13'), tryImport('./traffic.js?v=13'), tryImport('./imagery.js?v=13')]);
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
     // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
     if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); const M = this.bldgObj && this.bldgObj.material; if (M) { M.envMap = t; M.needsUpdate = true; } return t; }).catch(() => null);
@@ -395,7 +395,13 @@ export class Drive {
   async compileScene(obj, target = null, cap = 8000) {
     const R = this.G.renderer;
     if (!R || !R.compileAsync || !obj) return;
+    // a car built while another is in the scene will take that one's place: its own headlight spots must not be
+    // counted on top of the other's (the shaders came out for four spot lights, and the change rebuilt them all
+    // in a draw, a 3.3 s freeze)
+    const hidden = [];
+    if (target && obj !== this.scene && this.car && this.car.rig && this.car.rig.object !== obj) obj.traverse(o => { if (o.isLight && o.visible) { o.visible = false; hidden.push(o); } });
     try { await Promise.race([R.compileAsync(obj, this.camera, target || undefined), new Promise(r => setTimeout(r, cap))]); } catch (e) { console.warn('compile', e); }
+    finally { for (const l of hidden) l.visible = true; }
   }
 
   // the other drivable cars loaded and their shaders built in the background, a second apart, after a drop, so
@@ -473,7 +479,7 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=12').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=13').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;
