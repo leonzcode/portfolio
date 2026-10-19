@@ -12,9 +12,9 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame } from './geo.js?v=6';
-import { patchBaked } from './baked.js?v=6';
-import { makeFacadeMaterial, STYLE, GROUND } from './facade.js?v=6';
+import { frame, project } from './geo.js?v=7';
+import { patchBaked } from './baked.js?v=7';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME } from './facade.js?v=7';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -147,6 +147,90 @@ function region() {
   if (lo > 129 && lo < 146 && la > 30 && la < 46) return 'jp';
   if (lo > -11 && lo < 40 && la > 35 && la < 71) return 'eu';
   return 'other';
+}
+
+// ---------- what a city's buildings look like ----------
+// A building with no colour or material tags takes its city's look: the city by distance from its centre, else a
+// region by a lat/lon box (the Alps also by height above the sea, per building).
+const CITIES = [['paris', 48.8566, 2.3522, 12000], ['london', 51.5074, -0.1278, 16000], ['sf', 37.7749, -122.4194, 9000], ['nyc', 40.7400, -73.9900, 16000]];
+function cityOf(lat, lon) {
+  for (const [n, la, lo, r] of CITIES) {
+    const dx = (lon - lo) * 111320 * Math.cos(la * D2R), dz = (lat - la) * 110540;
+    if (dx * dx + dz * dz < r * r) return n;
+  }
+  if (lat > 30 && lat < 46 && lon > 129 && lon < 146) return 'japan';
+  if (lat > 45.6 && lat < 48.1 && lon > 5.8 && lon < 16.8) return 'alps';
+  if (lat > 49.8 && lat < 59 && lon > -8.5 && lon < 2) return 'uk';
+  if (lat > 42.3 && lat < 51.2 && lon > -5 && lon < 8.3) return 'france';
+  if ((lat > 30 && lat < 44.5 && lon > -10 && lon < 36) || (lat > 15 && lat < 33 && lon > -118 && lon < -86)) return 'med';
+  return null;
+}
+// the dense commercial cores whose fronts are covered in lit screens: [lat, lon, radius m]
+const CORES = [[40.7580, -73.9855, 260], [35.6595, 139.7005, 230], [51.5101, -0.1342, 70]];
+const hex = (a) => a.map(h => new THREE.Color(h).multiplyScalar(0.62));
+const LOOK_PAL = {
+  hauss: hex(['#e3d9c3', '#d9ccb0', '#e6dcc8', '#d2c4a6', '#ddd2bb', '#d6cdb9']),
+  portland: hex(['#e4dfd2', '#d9d3c3', '#ece8dd', '#d2ccbd']),
+  lstock: hex(['#b39672', '#a88b66', '#bfa27c', '#9c8160', '#b09878', '#a99070']),
+  lred: hex(['#9a5b45', '#8e4f3c', '#a3634b']),
+  sf: hex(['#efe6cf', '#d6e6d6', '#f0e0a8', '#cfdfe9', '#efd5cf', '#f2efe8', '#e3e7d3', '#e9dcc5', '#d8d2e6', '#f3e2b8']),
+  nycbrick: hex(['#8e4a36', '#7a4030', '#9b5a44', '#844634', '#a0604a', '#8a5240']),
+  brownstone: hex(['#6b4a3a', '#7a5644', '#5f4234', '#735040']),
+  nycstone: hex(['#b8b4ac', '#a6a29a', '#c4bfb3', '#9d9a94']),
+  jpn: hex(['#e6e4de', '#d8d6d0', '#cfcac0', '#ebe8e0', '#d9cfbd', '#c9c9c6', '#e2ddd2', '#d4d0c4']),
+  alpine: hex(['#efece4', '#ebe6d9', '#f2efe7', '#e6e0d0']),
+  med: hex(['#f1ece0', '#e8d2a8', '#d9b98a', '#f3e7cf', '#ead9b8', '#e0c49a', '#f4f1ea']),
+  render: hex(['#ece5d6', '#e3d8c2', '#e9e2d2', '#d9cdb5', '#efe9dc']),
+};
+// facade looks (aS.z, plus 10 for a wall with screens, 20 for a wall with a vertical sign)
+export const LOOK = { NONE: 0, HAUSS: 1, SASH: 2, JAPAN: 3, ALPINE: 4, SF: 5 };
+
+// the city's look for one building: style, palette, facade look and roof, changed on the plan in place
+function applyCity(P, ctx) {
+  const b = P.b, city = ctx.city, t = b.type || 'yes';
+  if (!city || b.material || b.colour) return;
+  const { H, area, r1, r2, r3, houseLike } = P;
+  const tall = H > 45, dense = ctx.density > 0.25;
+  const flatRoof = () => { if (!b.roofShape) { P.shape = 'flat'; P.eave = P.H; P.roofH = 0; P.overhang = 0; } };
+  if ((city === 'paris' || (city === 'france' && dense)) && !houseLike && H > 11 && H < 42) {
+    // Haussmann blocks: cream limestone, tall windows, iron balconies, a zinc mansard roof
+    P.style = STYLE.STONE; P.palette = LOOK_PAL.hauss; P.look = LOOK.HAUSS;
+    if (!b.roofShape && P.holes.length === 0 && area > 60) {
+      P.shape = 'mansard'; P.roofH = Math.min(4.2, Math.max(3.2, P.H * 0.17)); P.eave = P.H - P.roofH; P.overhang = 0;
+    }
+  } else if (city === 'paris' || city === 'france') {
+    P.palette = LOOK_PAL.render;
+    if (P.style !== STYLE.GLASS) P.style = houseLike ? STYLE.STUCCO : (r1 < 0.5 ? STYLE.STONE : STYLE.STUCCO);
+  } else if (city === 'london' || city === 'uk') {
+    if (!houseLike && (area > 1500 || H > 24) && !tall) { P.style = STYLE.STONE; P.palette = LOOK_PAL.portland; }
+    else if (!tall) { P.style = STYLE.BRICK; P.palette = r2 < 0.75 ? LOOK_PAL.lstock : LOOK_PAL.lred; P.look = LOOK.SASH; }
+  } else if (city === 'sf') {
+    if (!tall && H < 18 && area < 900 && P.style !== STYLE.GLASS) {
+      P.style = STYLE.STUCCO; P.palette = LOOK_PAL.sf; P.look = LOOK.SF;
+      if (dense) flatRoof();
+    }
+  } else if (city === 'nyc') {
+    if (tall) {
+      if (P.style !== STYLE.GLASS) P.style = r1 < 0.6 ? STYLE.GLASS : STYLE.STONE;
+      if (P.style === STYLE.STONE) P.palette = LOOK_PAL.nycstone;
+    } else if (H < 26 && (FLATS.has(t) || houseLike || t === 'yes') && r2 < 0.35) {
+      P.style = STYLE.STONE; P.palette = LOOK_PAL.brownstone; P.look = LOOK.SASH;
+    } else { P.style = STYLE.BRICK; P.palette = LOOK_PAL.nycbrick; }
+    if (!tall) flatRoof();
+  } else if (city === 'japan') {
+    if (!tall && P.style !== STYLE.GLASS) { P.style = r1 < 0.55 ? STYLE.CONCRETE : STYLE.BRICK; P.palette = LOOK_PAL.jpn; P.look = LOOK.JAPAN; }
+  } else if (city === 'alps') {
+    if (P.elev > 700 && (houseLike || (H < 18 && area < 1200))) {
+      // chalets: white render below, dark wood above, balconies, wide low roofs
+      P.style = STYLE.STUCCO; P.palette = LOOK_PAL.alpine; P.look = LOOK.ALPINE;
+      if (!b.roofShape && P.holes.length === 0) {
+        P.shape = 'gabled'; P.roofH = Math.min(4.5, P.ob.hw * Math.tan((18 + r3 * 7) * D2R));
+        P.eave = Math.max(P.minH + 2.8, P.H - P.roofH); P.H = P.eave + P.roofH; P.overhang = 1.0 + r1 * 0.5;
+      }
+    } else P.palette = LOOK_PAL.render;
+  } else if (city === 'med') {
+    if (P.style !== STYLE.GLASS) { P.style = STYLE.STUCCO; P.palette = LOOK_PAL.med; }
+  }
 }
 
 const PAL = {
@@ -303,8 +387,16 @@ function plan(b, ctx) {
   holes = holes.map(h => offsetRing(h, eps));
   // houses: a slight overhang, a garage when there is room for one (not in British terraces)
   const overhang = houseLike && shape !== 'flat' ? 0.35 + 0.2 * r1 : 0;
-  const garage = houseLike && area > 110 && ctx.region !== 'uk' && ctx.region !== 'jp' && t !== 'terrace' && r3 < 0.8;
-  return { b, id, outer, outer0, holes, area, ob, shape, minH, roofH, H, eave, fh, gh, style, ground, colour, roofColour, r1, r2, r3, r4, levels, houseLike, overhang, garage };
+  const garage = houseLike && area > 110 && ctx.region !== 'uk' && ctx.region !== 'jp' && t !== 'terrace' && r3 < 0.8 && ctx.city !== 'sf';
+  const g0 = ctx.groundAt(outer[0][0], outer[0][1]);
+  const P = { b, id, outer, outer0, holes, area, ob, shape, minH, roofH, H, eave, fh, gh, style, ground, colour, roofColour, r1, r2, r3, r4, levels, houseLike, overhang, garage, look: 0, palette: null, elev: g0 == null ? 0 : g0 + (frame.h || 0) };
+  applyCity(P, ctx);
+  // in a dense commercial core, the fronts facing the street carry lit screens
+  if (ctx.cores.length && P.H > 10 && !houseLike) {
+    let cx = 0, cz = 0; for (const p of outer) { cx += p[0]; cz += p[1]; } cx /= outer.length; cz /= outer.length;
+    for (const c of ctx.cores) if (Math.hypot(cx - c[0], cz - c[1]) < c[2]) { P.core = true; break; }
+  }
+  return P;
 }
 
 // the roof's height over the eave: roofH * (1 - max_i t_i(p)), each t_i linear in p (x, z)
@@ -313,14 +405,17 @@ function roofTerms(P) {
   const { cx, cz, A, Pp = ob.P, hl, hw } = { ...ob, Pp: ob.P };
   const lin = (gx, gz, k, s) => ({ g: [gx / s, gz / s], c: (-(gx * cx + gz * cz) - k) / s });
   if (shape === 'gabled') return [lin(Pp[0], Pp[1], 0, hw), lin(-Pp[0], -Pp[1], 0, hw)];
-  if (shape === 'hipped') { const k = Math.max(0, hl - hw); return [lin(Pp[0], Pp[1], 0, hw), lin(-Pp[0], -Pp[1], 0, hw), lin(A[0], A[1], k, hw), lin(-A[0], -A[1], k, hw)]; }
+  if (shape === 'hipped' || shape === 'mansard') { const k = Math.max(0, hl - hw); return [lin(Pp[0], Pp[1], 0, hw), lin(-Pp[0], -Pp[1], 0, hw), lin(A[0], A[1], k, hw), lin(-A[0], -A[1], k, hw)]; }
   if (shape === 'pyramidal') return [lin(Pp[0], Pp[1], 0, hw), lin(-Pp[0], -Pp[1], 0, hw), lin(A[0], A[1], 0, hl), lin(-A[0], -A[1], 0, hl)];
   if (shape === 'skillion') { const s = P.r3 < 0.5 ? 1 : -1; const t = lin(s * Pp[0], s * Pp[1], -hw, 2 * hw); return [t]; }
   return null;
 }
 const termAt = (t, x, z) => t.g[0] * x + t.g[1] * z + t.c;
+// a mansard's steep band is about 1.7 m deep: past it the roof is flat
+const mansardK = (P) => Math.max(1, P.ob.hw / 1.7);
 function roofAt(P, terms, x, z, below = false) {
   if (!terms) return 0;
+  if (P.shape === 'mansard') { let m = -Infinity; for (const t of terms) { const v = termAt(t, x, z); if (v > m) m = v; } return P.roofH * Math.max(0, Math.min(1, (1 - m) * mansardK(P))); }
   if (below) { let m = -Infinity; for (const t of terms) { const v = termAt(t, x, z); if (v > m) m = v; } return P.roofH * Math.min(1, 1 - m); }
   let m = -Infinity;
   for (const t of terms) { const v = termAt(t, x, z); if (v > m) m = v; }
@@ -330,9 +425,9 @@ function roofAt(P, terms, x, z, below = false) {
 // ---------- geometry buffers ----------
 class Buf {
   constructor() { this.pos = []; this.nrm = []; this.col = []; this.w = []; this.bb = []; this.s = []; this.idx = []; this.n = 0; }
-  v(x, y, z, nx, ny, nz, c, u, L, eave, gy, base, fh, gh, seed, style, ground) {
+  v(x, y, z, nx, ny, nz, c, u, L, eave, gy, base, fh, gh, seed, style, ground, look = 0) {
     this.pos.push(x, y, z); this.nrm.push(nx, ny, nz); this.col.push(c.r, c.g, c.b);
-    this.w.push(u, L, eave, gy); this.bb.push(base, fh, gh, seed); this.s.push(style, ground);
+    this.w.push(u, L, eave, gy); this.bb.push(base, fh, gh, seed); this.s.push(style, ground, look);
     return this.n++;
   }
   geometry() {
@@ -342,7 +437,7 @@ class Buf {
     g.setAttribute('aCol', new THREE.Float32BufferAttribute(this.col, 3));
     g.setAttribute('aW', new THREE.Float32BufferAttribute(this.w, 4));
     g.setAttribute('aB', new THREE.Float32BufferAttribute(this.bb, 4));
-    g.setAttribute('aS', new THREE.Float32BufferAttribute(this.s, 2));
+    g.setAttribute('aS', new THREE.Float32BufferAttribute(this.s, 3));
     g.setIndex(this.n > 65535 ? new THREE.Uint32BufferAttribute(this.idx, 1) : new THREE.Uint16BufferAttribute(this.idx, 1));
     g.computeBoundingSphere(); g.computeBoundingBox();
     return g;
@@ -386,7 +481,7 @@ function emit(P, ctx, W, R, img) {
   const rc = img ? WHITE : (P.roofColour || P.fallbackRoof);
 
   // the front: the outer edge that faces the nearest road (else the longest)
-  if (ground === GROUND.HOUSE && P.front === undefined) {
+  if ((ground === GROUND.HOUSE || P.look === LOOK.SF || P.look === LOOK.JAPAN) && P.front === undefined) {
     let cx = 0, cz = 0; for (const p of outer) { cx += p[0]; cz += p[1]; } cx /= outer.length; cz /= outer.length;
     let rp = null; try { rp = ctx.nearRoad ? ctx.nearRoad(cx, cz) : null; } catch (e) { rp = null; }
     let best = -Infinity; P.front = 0;
@@ -416,6 +511,13 @@ function emit(P, ctx, W, R, img) {
           if ((fa > 0) !== (fb > 0) && Math.abs(fa - fb) > 1e-9) { const s = fa / (fa - fb); if (s > 0.001 && s < 0.999) ss.push(s); }
         }
       }
+      if (terms && P.shape === 'mansard') {
+        const lim = 1 - 1 / mansardK(P);
+        for (const tm of terms) {
+          const fa = termAt(tm, p[0], p[1]) - lim, fb = termAt(tm, q[0], q[1]) - lim;
+          if ((fa > 0) !== (fb > 0) && Math.abs(fa - fb) > 1e-9) { const s = fa / (fa - fb); if (s > 0.001 && s < 0.999) ss.push(s); }
+        }
+      }
       ss.sort((x, y) => x - y); ss.push(1);
       edges.push({ p, q, dx, dz, len, ss, ang: Math.atan2(dz, dx), i, ring });
     }
@@ -434,6 +536,31 @@ function emit(P, ctx, W, R, img) {
       const e = edges[k], nx = -e.dz / e.len, nz = e.dx / e.len, L = runLen[runOf[k]];
       // a house's front wall (towards the road) gets the door and the garage; its other walls plain windows
       const gk = ground === GROUND.HOUSE && e.ring === outer && e.i === P.front ? (P.garage ? GROUND.HOUSE_GARAGE : GROUND.HOUSE_FRONT) : ground;
+      let lk = P.look || 0;
+      if (e.ring === outer && P.core && e.len >= 8) {
+        // a core's street fronts: screens on any wall with a road just in front of it
+        let rp = null; const mx = e.p[0] + e.dx / 2 + nx * 6, mz = e.p[1] + e.dz / 2 + nz * 6;
+        try { rp = ctx.nearRoad ? ctx.nearRoad(mx, mz) : null; } catch (err) { rp = null; }
+        if (rp && rp.dist < 22) lk += 10;
+      } else if (e.ring === outer && P.look === LOOK.JAPAN && e.i === P.front && P.H > 9 && P.H < 50 && e.len > 3.5 && P.r2 < 0.75 && !P.signed) {
+        // a vertical sign standing out from the front, near one end: two faces, read from up and down the street
+        P.signed = true;
+        const sh = Math.min(P.eave - 1.0 - P.gh - 0.4, 14);
+        if (sh > 2.5) {
+          const at = P.r1 < 0.5 ? Math.min(1.2, e.len * 0.3) : e.len - Math.min(1.2, e.len * 0.3);
+          const ex = e.dx / e.len, ez = e.dz / e.len;
+          const x0 = e.p[0] + ex * at + nx * 0.05, z0 = e.p[1] + ez * at + nz * 0.05, x1 = x0 + nx * 0.95, z1 = z0 + nz * 0.95;
+          const ya = base + P.gh + 0.4, yb = ya + sh, gy = ground0(x0, z0);
+          for (const sd of [1, -1]) {
+            const a0 = W.v(x0, ya, z0, ex * sd, 0, ez * sd, wc, 0, 0.95, eave, gy, base, fh, gh, seed, style, 0, P.look + 30);
+            const a1 = W.v(x1, ya, z1, ex * sd, 0, ez * sd, wc, 0.95, 0.95, eave, gy, base, fh, gh, seed, style, 0, P.look + 30);
+            const a2 = W.v(x1, yb, z1, ex * sd, 0, ez * sd, wc, 0.95, 0.95, eave, gy, base, fh, gh, seed, style, 0, P.look + 30);
+            const a3 = W.v(x0, yb, z0, ex * sd, 0, ez * sd, wc, 0, 0.95, eave, gy, base, fh, gh, seed, style, 0, P.look + 30);
+            // the face whose normal is +edge direction is wound one way, its back the other
+            if (sd > 0) W.idx.push(a0, a2, a1, a0, a3, a2); else W.idx.push(a0, a1, a2, a0, a2, a3);
+          }
+        }
+      }
       for (let j = 0; j + 1 < e.ss.length; j++) {
         const sa = e.ss[j], sb = e.ss[j + 1];
         // the ends are the ring's own vertices, bit for bit, so neighbouring walls share their corner exactly
@@ -443,15 +570,47 @@ function emit(P, ctx, W, R, img) {
         const ga = ground0(ax, az), gb = ground0(bx, bz);
         const ua = uStart[k] + e.len * sa, ub = uStart[k] + e.len * sb;
         const eh = eave;
-        const i0 = W.v(ax, yBot, az, nx, 0, nz, wc, ua, L, eh, ga, base, fh, gh, seed, style, gk);
-        const i1 = W.v(bx, yBot, bz, nx, 0, nz, wc, ub, L, eh, gb, base, fh, gh, seed, style, gk);
-        const i2 = W.v(bx, tb, bz, nx, 0, nz, wc, ub, L, eh, gb, base, fh, gh, seed, style, gk);
-        const i3 = W.v(ax, ta, az, nx, 0, nz, wc, ua, L, eh, ga, base, fh, gh, seed, style, gk);
+        const i0 = W.v(ax, yBot, az, nx, 0, nz, wc, ua, L, eh, ga, base, fh, gh, seed, style, gk, lk);
+        const i1 = W.v(bx, yBot, bz, nx, 0, nz, wc, ub, L, eh, gb, base, fh, gh, seed, style, gk, lk);
+        const i2 = W.v(bx, tb, bz, nx, 0, nz, wc, ub, L, eh, gb, base, fh, gh, seed, style, gk, lk);
+        const i3 = W.v(ax, ta, az, nx, 0, nz, wc, ua, L, eh, ga, base, fh, gh, seed, style, gk, lk);
         W.idx.push(i0, i1, i2, i0, i2, i3);
       }
     }
   }
 
+  // San Francisco: bay windows on the front, from the first floor up to under the cornice
+  if (P.look === LOOK.SF && P.front !== undefined && P.levels >= 2 && P.eave - P.gh > 2.5) {
+    const p = outer[P.front], q = outer[(P.front + 1) % outer.length];
+    const dx = q[0] - p[0], dz = q[1] - p[1], len = Math.hypot(dx, dz);
+    if (len >= 5.5) {
+      const ex = dx / len, ez = dz / len, nx = -ez, nz = ex;
+      const fw = 1.9, d = 0.75, half = fw / 2 + d;
+      const centres = len >= 11 ? [len * 0.27, len * 0.73] : [P.r2 < 0.5 ? len * 0.3 : len * 0.7];
+      const y0 = base + P.gh, y1 = yEave - 0.35;
+      for (const sc of centres) {
+        if (sc - half < 0.3 || sc + half > len - 0.3) continue;
+        const cx = p[0] + ex * sc, cz = p[1] + ez * sc;
+        const a0 = [cx - ex * half, cz - ez * half], a1 = [cx - ex * fw / 2 + nx * d, cz - ez * fw / 2 + nz * d];
+        const a2 = [cx + ex * fw / 2 + nx * d, cz + ez * fw / 2 + nz * d], a3 = [cx + ex * half, cz + ez * half];
+        const gy = ground0(cx, cz);
+        for (const [a, b] of [[a0, a1], [a1, a2], [a2, a3]]) {
+          const fdx = b[0] - a[0], fdz = b[1] - a[1], fl = Math.hypot(fdx, fdz), fnx = -fdz / fl, fnz = fdx / fl;
+          const i0 = W.v(a[0], y0, a[1], fnx, 0, fnz, wc, 0, fl, eave, gy, base, fh, gh, seed, style, 0, LOOK.SF);
+          const i1 = W.v(b[0], y0, b[1], fnx, 0, fnz, wc, fl, fl, eave, gy, base, fh, gh, seed, style, 0, LOOK.SF);
+          const i2 = W.v(b[0], y1, b[1], fnx, 0, fnz, wc, fl, fl, eave, gy, base, fh, gh, seed, style, 0, LOOK.SF);
+          const i3 = W.v(a[0], y1, a[1], fnx, 0, fnz, wc, 0, fl, eave, gy, base, fh, gh, seed, style, 0, LOOK.SF);
+          W.idx.push(i0, i1, i2, i0, i2, i3);
+        }
+        // its top and its underside
+        for (const [y, ny] of [[y1, 1], [y0, -1]]) {
+          const ids = [a0, a1, a2, a3].map(a => W.v(a[0], y, a[1], 0, ny, 0, wc, 0, 0, 0, -1e4, base, fh, gh, seed, STYLE.SOFFIT, 0));
+          // the quad a0 a1 a2 a3 goes along the wall and out: wind it to face up or down
+          if (ny > 0) W.idx.push(ids[0], ids[1], ids[2], ids[0], ids[2], ids[3]); else W.idx.push(ids[0], ids[2], ids[1], ids[0], ids[3], ids[2]);
+        }
+      }
+    }
+  }
   // the underside of a raised part
   if (minH > 0.3) {
     const { pts, tris } = triangulate(outer, holes);
@@ -484,7 +643,13 @@ function emit(P, ctx, W, R, img) {
         if (j === i) continue;
         poly = clip(poly, [terms[i].g[0] - terms[j].g[0], terms[i].g[1] - terms[j].g[1]], terms[i].c - terms[j].c);
       }
-      if (poly.length >= 3) pushTris(poly, [], (x, z) => yEave + roofAt(P, terms, x, z, P.overhang > 0));
+      if (poly.length < 3) continue;
+      if (P.shape === 'mansard') {
+        const lim = 1 - 1 / mansardK(P), t = terms[i];
+        const band = clip(poly, t.g, t.c - lim), top = clip(poly, [-t.g[0], -t.g[1]], lim - t.c);
+        if (band.length >= 3) pushTris(band, [], (x, z) => yEave + roofAt(P, terms, x, z));
+        if (top.length >= 3) pushTris(top, [], () => yEave + P.roofH);
+      } else pushTris(poly, [], (x, z) => yEave + roofAt(P, terms, x, z, P.overhang > 0));
     }
   }
 }
@@ -610,8 +775,8 @@ function wallColour(P, mean, face) {
     const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
     const k = Math.min(1.6, Math.max(0.7, 0.3 / Math.max(0.02, l)));
     c.multiplyScalar(k * 0.85);
-    const pal = PAL_LIN[P.style] || PAL_LIN[STYLE.CONCRETE];
-    return c.lerp(pal[Math.floor(P.r3 * pal.length) % pal.length], 0.25);
+    const pal = P.palette || PAL_LIN[P.style] || PAL_LIN[STYLE.CONCRETE];
+    return c.lerp(pal[Math.floor(P.r3 * pal.length) % pal.length], P.palette ? 0.55 : 0.25);
   }
   if (P.colour) {
     // 'red' or 'yellow' in a tag means a red or yellow building, not paint straight from the tube
@@ -619,9 +784,9 @@ function wallColour(P, mean, face) {
     c.lerp(new THREE.Color(l, l, l), 0.45).multiplyScalar(0.62);
     return c;
   }
-  const pal = PAL_LIN[P.style] || PAL_LIN[STYLE.CONCRETE];
+  const pal = P.palette || PAL_LIN[P.style] || PAL_LIN[STYLE.CONCRETE];
   let pick = pal[Math.floor(P.r3 * pal.length) % pal.length];
-  if (mean) {
+  if (mean && !P.palette) {
     // lean towards the roof's colour family: warm roofs, warm walls; light roofs, light walls
     const warm = mean[0] - mean[2], light = (mean[0] + mean[1] + mean[2]) / 3;
     let best = null, bs = Infinity;
@@ -691,7 +856,8 @@ export function build(list, opts = {}) {
   const parent = opts.parent || scene || (world && world.scene);
   const group = new THREE.Group(); group.name = 'buildings';
   const wallMat = opts.wallMaterial || wallMaterial();
-  const ctx = { groundAt, region: region(), density: 0, g0: groundAt(0, 0) ?? 0, nearRoad: null };
+  const ctx = { groundAt, region: region(), density: 0, g0: groundAt(0, 0) ?? 0, nearRoad: null, city: cityOf(frame.lat, frame.lon), cores: [] };
+  for (const [la, lo, r] of CORES) { const [x, z] = project(la, lo); if (Math.hypot(x, z) < 6000) ctx.cores.push([x, z, r]); }
   // where the nearest road is (a house's front faces it): roads.js when given, else OSM road lines
   const RD = opts.roads;
   if (RD && !Array.isArray(RD) && typeof RD.nearestEdge === 'function') ctx.nearRoad = (x, z) => RD.nearestEdge(x, z, 80);
@@ -810,6 +976,7 @@ export function build(list, opts = {}) {
     const wg = W.geometry(), rg = R.geometry();
     const wm = new THREE.Mesh(wg, wallMat);
     wm.castShadow = true; wm.receiveShadow = true; wm.name = 'walls ' + c.key;
+    wm.onBeforeRender = () => { FACADE_TIME.value = (performance.now() / 1000) % 3600; };
     const rm = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, map: img ? img.texture : null, side: THREE.DoubleSide });
     patchBaked(rm);
     rm.shadowSide = THREE.DoubleSide;

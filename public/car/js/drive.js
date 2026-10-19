@@ -1,15 +1,17 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=6';
-import { Collide } from './collide.js?v=6';
-import { Vehicle } from './vehicle.js?v=6';
-import { CarCamera } from './camera.js?v=6';
-import { Hud } from './hud.js?v=6';
-import { CarSound } from './sound.js?v=6';
-import { CutMask } from './cutmask.js?v=6';
-import * as SIG from './signals.js?v=6';
-import { Parked } from './parked.js?v=6';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=7';
+import { Collide } from './collide.js?v=7';
+import { Vehicle } from './vehicle.js?v=7';
+import { CarCamera } from './camera.js?v=7';
+import { Hud } from './hud.js?v=7';
+import { CarSound } from './sound.js?v=7';
+import { CutMask } from './cutmask.js?v=7';
+import * as SIG from './signals.js?v=7';
+import { Parked } from './parked.js?v=7';
+import { Skids } from './skids.js?v=7';
+import { StreetSigns } from './streetsigns.js?v=7';
 
 const STEP = 1 / 120;
 const GLIFT = 0.15; // how far under Google's road ours is drawn
@@ -35,6 +37,8 @@ export class Drive {
     this.cells = new Set(); this.carId = null;
     this.keys = G.keys;
     this.sound = new CarSound();
+    this.skids = new Skids(G.scene);
+    this.signs = new StreetSigns(G.scene);
     // finer ground arrived (Google's tiles refine as the car comes near): re-sample the roads there, in batches
     this.dirty = null; this.dirtyT = 0;
     this.world.addEventListener('ground-changed', e => {
@@ -52,8 +56,8 @@ export class Drive {
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
     const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=6'), tryImport('./osm.js?v=6'), tryImport('./roads.js?v=6'), tryImport('./props.js?v=6'),
-      tryImport('./buildings.js?v=6'), tryImport('./trees.js?v=6'), tryImport('./traffic.js?v=6'), tryImport('./imagery.js?v=6')]);
+      tryImport('./cars.js?v=7'), tryImport('./osm.js?v=7'), tryImport('./roads.js?v=7'), tryImport('./props.js?v=7'),
+      tryImport('./buildings.js?v=7'), tryImport('./trees.js?v=7'), tryImport('./traffic.js?v=7'), tryImport('./imagery.js?v=7')]);
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
     // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
     if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); const M = this.bldgObj && this.bldgObj.material; if (M) { M.envMap = t; M.needsUpdate = true; } return t; }).catch(() => null);
@@ -209,7 +213,8 @@ export class Drive {
     if (!/[?&]noswoop/.test(location.search)) this.cam.swoop();
     this.hud.loading(null);
     this.hud.show(true);
-    if (this.mode === 'open' && !this.notedKey) { this.notedKey = true; this.hud.note(this.G.keyFailed ? "Google did not accept the API key, so this is the open map. Check the key in the map's menu." : (innerWidth < 600 ? "Open map from satellite photos and OpenStreetMap. For Google's 3D city, add a Google key in the map's menu." : "This is the open map, built from satellite photos and OpenStreetMap. For Google's photorealistic 3D city, add a Google Maps API key in the map's menu.")); }
+    if (!this.roadsObj || !this.roadsObj.graph || !this.roadsObj.graph.lanes.length) this.hud.note('No roads were found near here, so the car starts on open ground.');
+    else if (this.mode === 'open' && (this.G.keyFailed || !this.notedKey)) { this.notedKey = true; this.hud.note(this.G.keyFailed ? "Google did not accept the API key, so this is the open map. Check the key in the map's menu." : (innerWidth < 600 ? "Open map from satellite photos and OpenStreetMap. For Google's 3D city, add a Google key in the map's menu." : "This is the open map, built from satellite photos and OpenStreetMap. For Google's photorealistic 3D city, add a Google Maps API key in the map's menu.")); }
     return { x, z, heading: hd };
   }
 
@@ -274,7 +279,7 @@ export class Drive {
     // so a drop facing along a street does not start on the cross street that happens to be nearer
     const angOff = (a, b) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
     const along = L => { const p = L.pts, a = p[0], b = p[p.length - 1]; const h = (Math.atan2(b.x - a.x, -(b.z - a.z)) * 180 / Math.PI + 360) % 360; const d = angOff(h, want); return Math.min(d, 180 - d) < 35; };
-    let r = R.nearestLane ? (R.nearestLane(x, z, 40, L => ok(L) && along(L)) || R.nearestLane(x, z, 400, ok) || R.nearestLane(x, z, 2000, L => L.kind === 'road')) : null;
+    let r = R.nearestLane ? (R.nearestLane(x, z, 40, L => ok(L) && along(L)) || R.nearestLane(x, z, 90, L => ok(L) && along(L)) || R.nearestLane(x, z, 400, ok) || R.nearestLane(x, z, 2000, L => L.kind === 'road')) : null;
     if (!r) { const q = R.nearestRoadPoint && R.nearestRoadPoint(x, z); return q ? { x: q.x, z: q.z, heading: pickDir(q.heading, want) } : null; }
     const off = Math.abs(((want - r.heading) % 360 + 540) % 360 - 180);
     if (off > 90) {
@@ -308,16 +313,22 @@ export class Drive {
 
   async setCar(id, quiet) {
     const C = this.mods.cars;
+    // only the last car asked for is put on the road (pressing 1 to 5 quickly loads several at once)
+    const ticket = this.carTicket = (this.carTicket || 0) + 1;
     let rig, spec = {};
     try {
-      if (C && id) { rig = await C.loadCar(id); spec = (C.CARS.find(c => c.id === id) || {}).physics || {}; Object.assign(spec, { mass: (C.CARS.find(c => c.id === id) || {}).mass || spec.mass }); }
+      if (C && id) { rig = await C.loadCar(id); spec = { ...((C.CARS.find(c => c.id === id) || {}).physics || {}) }; Object.assign(spec, { mass: (C.CARS.find(c => c.id === id) || {}).mass || spec.mass }); }
     } catch (e) { console.warn('car load failed', e); }
+    if (ticket !== this.carTicket) { if (rig && rig.dispose) rig.dispose(); return; }
     if (!rig) rig = boxRig();
     if (spec.mass === undefined) delete spec.mass;
     const old = this.car;
     const vehicle = new Vehicle(rig, spec);
     if (old) {
-      vehicle.pos.copy(old.vehicle.pos); vehicle.q.copy(old.vehicle.q); vehicle.pos.y += 0.3;
+      // the new car stands where the old one was, upright, on the ground there (its centre of mass differs)
+      const o = old.vehicle.origin(), g = this.ground(o.x, o.z, o.y);
+      vehicle.place(o.x, (g === null || !Number.isFinite(g)) ? o.y : g, o.z, old.vehicle.heading);
+      this.prevPos = vehicle.pos.clone(); this.prevQ = vehicle.q.clone(); this.acc = 0;
       this.scene.remove(old.rig.object); old.rig.dispose && old.rig.dispose();
     }
     if (this.carEnv && rig.setEnvMap) rig.setEnvMap(this.carEnv);
@@ -343,14 +354,17 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=6').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=7').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;
       if (tiles && tiles.roads.length) {
         if (data === 'slow') ovp.then(d => { if (d && d.roads && d.roads.length && this.active && this.areaAt && this.areaAt.x === x && this.areaAt.z === z) this.buildArea(d, x, z); });
         data = tiles;
-      } else if (data === 'slow') data = await ovp;
+      } else if (data === 'slow') {
+        // the tiles have no roads here (sea, desert, ice): give Overpass a little longer, then go on without roads
+        data = await Promise.race([ovp, new Promise(r => setTimeout(() => r(null), 9000))]);
+      }
     }
     return data || null;
   }
@@ -392,6 +406,8 @@ export class Drive {
     } catch (e) { console.warn('cut mask', e); }
     if (this.mods.props) await swap('propsObj', () => this.mods.props.build(data, ctx));
     mark('props');
+    // street name signs at the corners where named streets meet
+    try { if (this.roadsObj) this.signs.build(this.roadsObj, { collide, us: !!(this.roadsObj.style && this.roadsObj.style.region === 'us'), cx: x, cz: z }); } catch (e) { console.warn('street signs', e); }
     // cars parked along the kerbs where the road has room for them
     try {
       if (this.mods.cars && this.roadsObj) {
@@ -439,6 +455,8 @@ export class Drive {
     this.world.extra.length = 0;
     if (this.cut) this.cut.off();
     if (this.parked) this.parked.clear();
+    if (this.skids) this.skids.clear();
+    if (this.signs) this.signs.clear();
   }
 
   update(dt) {
@@ -483,18 +501,23 @@ export class Drive {
     if (this.traffic) this.traffic.update(dt, { x: o.x, z: o.z, heading: v.heading, speed: v.fwdSpeed, vehicle: v });
     if (this.propsObj && this.propsObj.update) this.propsObj.update(dt, this.camera);
     if (this.parked) this.parked.update(this.camera);
+    this.skids.update(dt, v, (x, z, y) => this.ground(x, z, y));
     // re-sample road heights where finer ground came in, at most every 3 s, and the cut mask with them
     this.dirtyT -= dt;
     if (this.dirty && this.dirtyT <= 0 && this.roadsObj && this.roadsObj.reheight) {
       const d = this.dirty; this.dirty = null; this.dirtyT = 3;
       const c = this.car.vehicle.pos;
       const box = { x0: Math.max(d.x0, c.x - 350), z0: Math.max(d.z0, c.z - 350), x1: Math.min(d.x1, c.x + 350), z1: Math.min(d.z1, c.z + 350) };
-      try { this.roadsObj.reheight(box); if (this.traffic && this.traffic.relink) this.traffic.relink(); } catch (e) { console.warn('reheight', e); }
-      if (this.cut && this.osmData && performance.now() - (this.cutAt || 0) > 8000) {
-        this.cutAt = performance.now();
-        const R = this.roadsObj;
-        this.cut.build(this.cut.center.x, this.cut.center.z, this.osmData.roads || [], (a, b) => { const r = R.surfaceAt(a, b); return r.onRoad ? { onRoad: true, h: r.h + GLIFT } : r; }, null, { edges: R._debug ? R._debug().edges : null, top: 4.2, below: -0.2 });
-      }
+      // (reheight is asynchronous: the traffic and the cut mask follow once the new heights are in)
+      const R = this.roadsObj;
+      Promise.resolve().then(() => R.reheight(box)).then(() => {
+        if (R !== this.roadsObj) return;
+        if (this.traffic && this.traffic.relink) this.traffic.relink();
+        if (this.cut && this.osmData && performance.now() - (this.cutAt || 0) > 8000) {
+          this.cutAt = performance.now();
+          this.cut.build(this.cut.center.x, this.cut.center.z, this.osmData.roads || [], (a, b) => { const r = R.surfaceAt(a, b); return r.onRoad ? { onRoad: true, h: r.h + GLIFT } : r; }, null, { edges: R._debug ? R._debug().edges : null, top: 4.2, below: -0.2 });
+        }
+      }).catch(e => console.warn('reheight', e));
     }
     // streaming: load the streets ahead once the car is 300 m from where they were loaded
     if (this.areaAt && !this.loadingArea && Math.hypot(o.x - this.areaAt.x, o.z - this.areaAt.z) > 400) {
@@ -516,7 +539,8 @@ function trimTo(d, x, z, r) {
   out.barriers = (d.barriers || []).filter(b => near(b.pts));
   out.lines = (d.lines || []).filter(b => near(b.pts));
   out.treeRows = (d.treeRows || []).filter(b => near(b.pts));
-  out.areas = (d.areas || []).filter(b => near(b.outer));
+  // (an area such as the sea can be huge with no corner near: keep any whose box reaches the circle)
+  out.areas = (d.areas || []).filter(b => { if (!b.outer) return false; let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const [px, pz] of b.outer) { if (px < x0) x0 = px; if (px > x1) x1 = px; if (pz < z0) z0 = pz; if (pz > z1) z1 = pz; } return x > x0 - r && x < x1 + r && z > z0 - r && z < z1 + r; });
   out.points = (d.points || []).filter(p => (p.x - x) ** 2 + (p.z - z) ** 2 < R2);
   return out;
 }

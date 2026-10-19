@@ -7,8 +7,8 @@ import { GLTFExtensionsPlugin, TileCompressionPlugin, TilesFadePlugin, Terrarium
 import { GoogleCloudAuthPlugin } from '3d-tiles-renderer/core/plugins';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=6';
-import { patchBaked } from './baked.js?v=6';
+import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=7';
+import { patchBaked } from './baked.js?v=7';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -86,14 +86,31 @@ export class World extends THREE.EventDispatcher {
     const testUrl = new URLSearchParams(location.search).get('tiles');
     const tiles = new TilesRenderer(mode === 'google' ? (testUrl || 'https://tile.googleapis.com/v1/3dtiles/root.json') : undefined);
     this.tiles = tiles;
+    // our own handling of each tile's model runs first (before the fade plugin's, which must see the material we keep)
+    tiles.addEventListener('load-model', e => this.onModel(e.scene, e.tile));
     if (mode === 'google') {
-      if (!testUrl) tiles.registerPlugin(new GoogleCloudAuthPlugin({ apiToken: key, autoRefreshToken: true, useRecommendedSettings: true }));
+      if (!testUrl) {
+        const auth = new GoogleCloudAuthPlugin({ apiToken: key, autoRefreshToken: true, useRecommendedSettings: true });
+        tiles.registerPlugin(auth);
+        // a session refresh must not carry one tile's abort signal, and a failed refresh must not block every later
+        // fetch (the library keeps the rejected promise otherwise)
+        const A = auth.auth, refresh = A.refreshToken.bind(A);
+        A.refreshToken = options => {
+          const o = options ? { ...options } : {}; delete o.signal;
+          const pr = refresh(o);
+          pr.catch(() => { A._tokenRefreshPromise = null; });
+          return pr;
+        };
+      }
       const draco = new DRACOLoader().setDecoderPath('vendor/three/addons/libs/draco/gltf/');
       tiles.registerPlugin(new GLTFExtensionsPlugin({ dracoLoader: draco }));
-      tiles.registerPlugin(new TileCompressionPlugin());
+      // mipmaps on: from a car the road is seen at a grazing angle, and without them it shimmers
+      tiles.registerPlugin(new TileCompressionPlugin({ disableMipmaps: false }));
       tiles.registerPlugin(new TilesFadePlugin({ fadeDuration: 400 }));
-      tiles.errorTarget = +(new URLSearchParams(location.search).get('err') || 8);
-      tiles.lruCache.minSize = 600; tiles.lruCache.maxSize = 1200;
+      tiles.errorTarget = +(new URLSearchParams(location.search).get('err') || 10);
+      // (a full cache refuses every new tile, those by the car too: room for a street-level view's thousands)
+      tiles.lruCache.minSize = 3000; tiles.lruCache.maxSize = 6000;
+      tiles.lruCache.minBytesSize = 0.45 * 2 ** 30; tiles.lruCache.maxBytesSize = 0.7 * 2 ** 30;
     } else {
       // zoom 14 (about 7.5 m a pixel): city elevation data holds some of the buildings and trees; a coarser level
       // smooths them out of the streets while keeping hills
@@ -112,7 +129,6 @@ export class World extends THREE.EventDispatcher {
     tiles.group.matrix.copy(frame.ecefToLocal);
     tiles.group.matrixWorldNeedsUpdate = true;
     this.root.add(tiles.group);
-    tiles.addEventListener('load-model', e => this.onModel(e.scene, e.tile));
     tiles.addEventListener('dispose-model', e => e.scene.traverse(o => { if (o.isMesh && o.geometry.boundsTree) o.geometry.disposeBoundsTree(); }));
     tiles.addEventListener('tiles-load-start', () => { this.loading++; });
     tiles.addEventListener('tiles-load-end', () => { this.loading = 0; });
@@ -140,15 +156,18 @@ export class World extends THREE.EventDispatcher {
       }
       patchBaked(o.material);
       if (!o.material.isMeshBasicMaterial) o.material.toneMapped = true;
+      if (o.material.map) o.material.map.anisotropy = 8;
       if (google) {
         o.geometry.computeBoundsTree({ maxLeafTris: 10 });
         o.castShadow = false;
       }
     });
-    if (google) {
+    // finer ground arrived: its box in our frame (the tile's scene has no parent yet, so it is in ECEF until
+    // the group's matrix is applied); only fine tiles matter for the roads
+    if (google && (!tile || !(tile.geometricError > 6))) {
       scene.updateMatrixWorld(true);
-      _box.setFromObject(scene);
-      if (_box.max.x - _box.min.x < 3000) this.dispatchEvent({ type: 'ground-changed', bbox: _box.clone() });
+      _box.setFromObject(scene).applyMatrix4(this.tiles.group.matrixWorld);
+      if (_box.max.x - _box.min.x < 1500) this.dispatchEvent({ type: 'ground-changed', bbox: _box.clone() });
     }
   }
 
@@ -178,10 +197,10 @@ export class World extends THREE.EventDispatcher {
       return h.length ? h[0].point.y : null;
     }
     // from 400 m over the ground found so far near here (a shorter ray crosses far fewer tiles), else from 3 km
-    const top = this.gRef === undefined ? 3000 : this.gRef + 400;
-    _ray.set(_o.set(x, top, z), _d); _ray.far = top + 3000; _ray.firstHitOnly = false;
+    const top = this.gRef === undefined ? 9000 : this.gRef + 400;
+    _ray.set(_o.set(x, top, z), _d); _ray.far = top + 12000; _ray.firstHitOnly = false;
     let hits = _ray.intersectObject(this.tiles.group, true);
-    if (!hits.length && top < 3000) { _ray.set(_o.set(x, 3000, z), _d); _ray.far = 6000; hits = _ray.intersectObject(this.tiles.group, true); }
+    if (!hits.length && this.gRef !== undefined) { _ray.set(_o.set(x, 9000, z), _d); _ray.far = 21000; hits = _ray.intersectObject(this.tiles.group, true); }
     if (!hits.length) return null;
     const y = hits[hits.length - 1].point.y;
     this.gRef = this.gRef === undefined ? y : this.gRef * 0.98 + y * 0.02;
@@ -201,6 +220,7 @@ export class World extends THREE.EventDispatcher {
 
   update() {
     if (!this.tiles) return;
+    if (this.tiles.stats && this.tiles.stats.failed > 0 && performance.now() - (this.retryAt || 0) > 8000) { this.retryAt = performance.now(); try { this.tiles.resetFailedTiles(); } catch (e) {} }
     this.camera.updateMatrixWorld();
     this.tiles.setResolutionFromRenderer(this.camera, this.renderer);
     this.tiles.update();

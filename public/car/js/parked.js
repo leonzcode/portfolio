@@ -77,6 +77,12 @@ export class Parked {
     if (!S || !S.edges || !this.C) return this;
     const avoid = [];
     for (const p of (data && data.points) || []) if (p.kind === 'fire_hydrant' || p.kind === 'bus_stop' || p.kind === 'traffic_signals' || p.kind === 'crossing') avoid.push([p.x, p.z, p.kind === 'bus_stop' ? 14 : p.kind === 'fire_hydrant' ? 4.5 : 8]);
+    // junctions keep clear by their widest road plus a car's length
+    const jn = [];
+    for (const J of S.junctions || []) { if (!J.n) continue; let w = 0; for (const L of J.E || []) { const c = (L.e || L).c; if (c) w = Math.max(w, c.hw); } jn.push([J.n.x, J.n.z, w + 8]); }
+    const nearJunction = (x, z) => jn.some(([jx, jz, r]) => (jx - x) ** 2 + (jz - z) ** 2 < r * r);
+    // a spot must be nearest its own road at its middle and both ends (else it is where another road crosses)
+    const own = (e, x, z) => { if (!roads.nearestEdge) return true; const n = roads.nearestEdge(x, z, 30); return !n || !n.edge || n.edge === e; };
     const out = [];
     for (const e of S.edges) {
       const c = e.c, pr = CLASSES[c && c.cls];
@@ -101,6 +107,7 @@ export class Parked {
           const x = ax + dx * t - tz * off * side, z = az + dz * t + tx * off * side;
           if ((x - cx) ** 2 + (z - cz) ** 2 > radius * radius) continue;
           if (avoid.some(([px, pz, r]) => (px - x) ** 2 + (pz - z) ** 2 < r * r)) continue;
+          if (nearJunction(x, z) || !own(e, x, z) || !own(e, x + tx * 3, z + tz * 3) || !own(e, x - tx * 3, z - tz * 3)) continue;
           const sf = roads.surfaceAt(x, z);
           if (!sf || !sf.onRoad || !Number.isFinite(sf.h)) continue;
           // facing the way traffic goes on that side of the road

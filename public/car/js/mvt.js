@@ -2,7 +2,7 @@
 // (OpenMapTiles schema, OpenStreetMap data, no key, served from a CDN). Fewer tags than Overpass (no lanes,
 // hydrants or signals) but it answers in a second. Decodes Mapbox Vector Tiles itself and returns the same store
 // shape as osm.js (roads with made-up node ids shared where lines meet, buildings with heights).
-import { project } from './geo.js?v=6';
+import { project } from './geo.js?v=7';
 
 const TILEJSON = 'https://tiles.openfreemap.org/planet';
 const Z = 14;
@@ -139,6 +139,38 @@ export async function load(lat, lon, radius = 700) {
     return id;
   };
   let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+  // street names live in their own layer: named lines, matched to the roads by nearness below
+  const named = [], NG = new Map(), NCELL = 20;
+  for (const { x, y, L } of tiles) {
+    const TN = L.transportation_name; if (!TN) continue;
+    const loc = (px, py) => { const [a, b] = tileToLatLon(x, y, px, py, TN.extent); return project(a, b); };
+    for (let i = 0; i < TN.feats.length; i++) {
+      const F = TN.feature(i);
+      if (F.type !== 2 || !F.props.name) continue;
+      for (const part of F.parts) {
+        const pts = part.map(([px, py]) => loc(px, py));
+        for (let k = 1; k < pts.length; k++) {
+          const sgm = { a: pts[k - 1], b: pts[k], name: F.props.name, ref: F.props.ref || null };
+          const cx0 = Math.floor(Math.min(sgm.a[0], sgm.b[0]) / NCELL), cx1 = Math.floor(Math.max(sgm.a[0], sgm.b[0]) / NCELL);
+          const cz0 = Math.floor(Math.min(sgm.a[1], sgm.b[1]) / NCELL), cz1 = Math.floor(Math.max(sgm.a[1], sgm.b[1]) / NCELL);
+          if ((cx1 - cx0 + 1) * (cz1 - cz0 + 1) > 400) continue;
+          for (let i2 = cx0; i2 <= cx1; i2++) for (let j2 = cz0; j2 <= cz1; j2++) { const kk = i2 + ',' + j2; let l = NG.get(kk); if (!l) NG.set(kk, l = []); l.push(sgm); }
+        }
+      }
+    }
+  }
+  const nameAt = (x, z) => {
+    let best = null, bd = 6;
+    const l = NG.get(Math.floor(x / NCELL) + ',' + Math.floor(z / NCELL)); if (!l) return null;
+    for (const g of l) {
+      const dx = g.b[0] - g.a[0], dz = g.b[1] - g.a[1], L2 = dx * dx + dz * dz;
+      const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - g.a[0]) * dx + (z - g.a[1]) * dz) / L2)) : 0;
+      const d = Math.hypot(x - g.a[0] - dx * t, z - g.a[1] - dz * t);
+      if (d < bd) { bd = d; best = g; }
+    }
+    return best;
+  };
+  void named;
   for (const { x, y, L } of tiles) {
     const T = L.transportation, B = L.building;
     const ext = (T || B || { extent: 4096 }).extent;
@@ -165,8 +197,21 @@ export async function load(lat, lon, radius = 700) {
           if (seg.length < 2) continue;
           const pts = seg.map(([px, py]) => loc(px, py));
           if (tags.oneway === '-1') { pts.reverse(); tags.oneway = 'yes'; }
+          if (!tags.name) { const m = pts[(pts.length / 2) | 0], m2 = pts.length > 1 ? pts[Math.min(pts.length - 1, ((pts.length / 2) | 0) + 1)] : m; const g = nameAt((m[0] + m2[0]) / 2, (m[1] + m2[1]) / 2) || nameAt(m[0], m[1]); if (g) { tags.name = g.name; if (g.ref) tags.ref = g.ref; } }
           store.roads.push({ id: wid--, nodes: pts.map(([a, b]) => node(a, b)), pts, tags: { ...tags }, highway: tags.highway });
         }
+      }
+    }
+    // water (sea, lakes, rivers): areas the trees and anything else can stay off
+    const W = L.water;
+    if (W) for (let i = 0; i < W.feats.length; i++) {
+      const F = W.feature(i);
+      if (F.type !== 3) continue;
+      let cur = null;
+      for (const raw of F.parts) {
+        const ring = raw.map(([px, py]) => loc(px, py));
+        if (shoelace(raw) > 0) { if (shoelace(ring) > 0) ring.reverse(); cur = { id: wid--, kind: 'water', outer: ring, holes: [], tags: { natural: 'water', water: F.props.class || 'water' } }; store.areas.push(cur); }
+        else if (cur) { if (shoelace(ring) < 0) ring.reverse(); cur.holes.push(ring); }
       }
     }
     if (B) for (let i = 0; i < B.feats.length; i++) {
@@ -194,6 +239,8 @@ export async function load(lat, lon, radius = 700) {
   const near = pts => pts.some(([a, b]) => (a - cx) ** 2 + (b - cz) ** 2 < R2);
   store.roads = store.roads.filter(r => near(r.pts));
   store.buildings = store.buildings.filter(b => near(b.outer));
+  // a water polygon can be huge with no vertex near: keep any whose box reaches the circle
+  store.areas = store.areas.filter(a => { let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const [px, pz] of a.outer) { x0 = Math.min(x0, px); x1 = Math.max(x1, px); z0 = Math.min(z0, pz); z1 = Math.max(z1, pz); } return cx > x0 - radius && cx < x1 + radius && cz > z0 - radius && cz < z1 + radius; });
   store.bbox = { x0: Math.max(x0, cx - radius), z0: Math.max(z0, cz - radius), x1: Math.min(x1, cx + radius), z1: Math.min(z1, cz + radius) };
   return store;
 }
