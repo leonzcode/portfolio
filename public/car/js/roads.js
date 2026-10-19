@@ -24,7 +24,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=10';
+import { unproject } from './geo.js?v=11';
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -136,7 +136,7 @@ export let style = { region: 'other', yellowCentre: false };
 // ---------------------------------------------------------------- materials
 let MATS = null;
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=10');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=11');
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -1163,8 +1163,19 @@ function findFeatures(data) {
   }
   // the vector tile store has no signal or stop nodes: infer them from the junctions (marked inferred)
   if (data.source === 'openfreemap' && !approaches.length) inferControls(approaches);
-  // where each crosswalk is drawn: [s0, s1] along its edge, clear of the junctions
   const depth = S.style.region === 'jp' ? 4 : 3;
+  // nor any crossings: a signalled junction has one across each road that meets it (marked inferred)
+  if (data.source === 'openfreemap' && !crossings.length) {
+    const seen = new Set();
+    for (const a of approaches) {
+      if (a.kind !== 'signal' || !a.e || a.e.c.rank >= 9) continue;
+      const e = a.e, key = e.id + (a.toEnd ? 'e' : 's');
+      if (seen.has(key) || e.len - e.set0 - e.set1 < depth + 8) continue;
+      seen.add(key);
+      crossings.push({ e, s: a.toEnd ? e.len - e.set1 : e.set0, kind: 'zebra', node: a.node, inferred: true });
+    }
+  }
+  // where each crosswalk is drawn: [s0, s1] along its edge, clear of the junctions
   for (const cr of crossings) {
     const e = cr.e;
     let s = Math.max(e.set0 + 1.6, Math.min(e.len - e.set1 - 1.6 - depth, cr.s - depth / 2));

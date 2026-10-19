@@ -12,9 +12,9 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=10';
-import { patchBaked } from './baked.js?v=10';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME } from './facade.js?v=10';
+import { frame, project } from './geo.js?v=11';
+import { patchBaked } from './baked.js?v=11';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME } from './facade.js?v=11';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -342,6 +342,9 @@ function plan(b, ctx) {
 
   let H = b.height;
   let levels = b.levels;
+  // the vector tiles give 5 m to every building they know no height for: for anything but a house that is no
+  // height at all (half of a Paris block came out one storey tall), so guess it from the type and the area
+  if (H === 5 && !houseLike && levels == null && !(b.tags && (b.tags.height || b.tags['building:levels']))) H = null;
   // a house whose only height is a vector tile's default (5 m) or a low guess: take it as the walls' height and
   // put the roof on top, one storey or two
   if (houseLike && shape !== 'flat' && H != null && levels == null && b.roofHeight == null && H <= 7.5) {

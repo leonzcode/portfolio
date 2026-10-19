@@ -444,11 +444,14 @@ export function makeFacadeMaterial(opts = {}) {
 }`)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += fcEmit;')
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+// light bounced up from the street and the facing buildings: a wall in shade is lit by more than the sky alone
+// (without it shaded faces came out near black)
+reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3( 0.19, 0.18, 0.16 );
 reflectedLight.indirectDiffuse *= fcAO;
 reflectedLight.indirectSpecular *= mix( 1.0, fcAO, 0.6 );
 reflectedLight.directDiffuse *= mix( 1.0, fcAO, 0.45 );
 reflectedLight.directSpecular = min( reflectedLight.directSpecular, vec3( 1.5 ) );`);
   };
-  m.customProgramCacheKey = () => 'facade15' + (m.userData.dbg || '');
+  m.customProgramCacheKey = () => 'facade16' + (m.userData.dbg || '');
   return m;
 }

@@ -85,7 +85,7 @@ function loader() {
 const templates = new Map(); // file -> Promise<{ scene, info }>
 function loadTemplate(file) {
   if (!templates.has(file)) {
-    templates.set(file, loader().loadAsync(MODELS + file + '?v=10').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
+    templates.set(file, loader().loadAsync(MODELS + file + '?v=11').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
   }
   return templates.get(file);
 }
@@ -250,7 +250,7 @@ function lampMaterial(src, role, level) {
 export async function makeEnvironment(renderer, { file = 'env/wide_street_01_1k.hdr' } = {}) {
   const pm = new THREE.PMREMGenerator(renderer);
   try {
-    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=10');
+    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=11');
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     const env = pm.fromEquirectangular(hdr).texture;
     env.userData.source = hdr; // the garage shows it as a backdrop
@@ -482,6 +482,28 @@ export async function loadCar(id, opts = {}) {
   let proxyTpl = null;
   if (!npc && spec.npcFile && spec.npcFile !== file && opts.shadowProxy !== false) proxyTpl = await loadTemplate(spec.npcFile).catch(() => null);
   return new CarRig(spec, tpl, { ...opts, npc, proxyTpl });
+}
+
+// A soft dark patch on the road under every car, where the sky's light does not reach under the body: what makes a
+// car sit on the road rather than hover over it (the sun's shadow alone leaves the ground under it lit from the side).
+let CONTACT = null;
+function contactShadow() {
+  if (CONTACT) return CONTACT;
+  const W = 64, H = 128, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), img = g.createImageData(W, H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const u = (x + 0.5) / W * 2 - 1, v = (y + 0.5) / H * 2 - 1;
+    const dx = Math.max(Math.abs(u) - 0.55, 0) / 0.45, dy = Math.max(Math.abs(v) - 0.7, 0) / 0.3, d = Math.hypot(dx, dy);
+    const a = Math.pow(Math.max(0, 1 - d), 1.6) * (0.8 + 0.2 * (1 - Math.abs(u)));
+    const k = (y * W + x) * 4, val = Math.round(255 * a);
+    img.data[k] = img.data[k + 1] = img.data[k + 2] = val; img.data[k + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  const geo = new THREE.PlaneGeometry(1, 1); geo.rotateX(-Math.PI / 2);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: tex, transparent: true, opacity: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, toneMapped: false });
+  mat.name = 'contact_shadow';
+  return (CONTACT = { geo, mat });
 }
 
 class CarRig {
@@ -782,6 +804,15 @@ class CarRig {
       object.traverse(o => { if (o.isMesh && !(o.material && o.material.name === 'glass')) Object.defineProperty(o, 'castShadow', { value: !this.npc || !!opts.shadows, writable: true, configurable: true }); });
     }
     if (this.npc) object.traverse(o => { o.matrixAutoUpdate = true; });
+    // the contact shadow, a little bigger than the body's footprint (added last, so none of the shadow rules above
+    // reach it)
+    {
+      const C = contactShadow(), dd = this.dims, sh = new THREE.Mesh(C.geo, C.mat);
+      sh.scale.set(dd.width + 0.45, 1, dd.length + 0.4);
+      sh.position.set(0, 0.04, (dd.rear - dd.front) / 2);
+      sh.name = 'contact_shadow'; sh.renderOrder = 1; sh.castShadow = false; sh.receiveShadow = false;
+      object.add(sh);
+    }
   }
 
   _radiusOf(n) {
@@ -888,7 +919,7 @@ class CarRig {
   // use a given environment on this car's materials (null: follow scene.environment)
   setEnvMap(tex) {
     this.object.traverse(o => {
-      if (!o.isMesh) return;
+      if (!o.isMesh || o.name === 'contact_shadow') return;
       (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if ('envMap' in m) { m.envMap = tex; m.needsUpdate = true; } });
     });
   }
