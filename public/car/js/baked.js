@@ -11,7 +11,7 @@ export const bakedUniforms = {
   uShadowOn: { value: 0 },
   uShadowDark: { value: 0.5 },
   uShadowTexel: { value: new THREE.Vector2(1 / 2048, 1 / 2048) },
-  uShadowBias: { value: 0.0015 },
+  uShadowBias: { value: 0.0002 }, // (about 8 cm over the shadow camera's 400 m; the photographed surfaces cast nothing, so no acne)
   uCutMap: { value: null },          // R: inside a carriageway (0..1), G: road height, packed (see roads mask)
   uCutOn: { value: 0 },
   uCutBox: { value: new THREE.Vector4(0, 0, 1, 1) }, // x0, z0, 1/width, 1/depth in metres

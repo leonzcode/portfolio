@@ -29,8 +29,11 @@ export class Hud {
       </div>`;
     root.appendChild(el);
     this.$ = s => el.querySelector(s);
-    // the notice lives outside the HUD, so it can show over the map too
+    // the notice, the loading card and the toast live outside the HUD (which stays hidden until a drive starts),
+    // so they show while a place loads and over the map too
     this.noteEl = this.$('.hud-note'); root.appendChild(this.noteEl);
+    this.loadEl = this.$('.hud-load'); root.appendChild(this.loadEl);
+    this.toastEl = this.$('.hud-toast'); root.appendChild(this.toastEl);
     this.$('.hud-x').onclick = () => this.toggleHelp(false);
     this.$('.hud-carbtn').onclick = e => { e.currentTarget.blur(); const b = this.$('.hud-cars'); if (b.classList.contains('on')) b.classList.remove('on'); else this.openCars(); };
     this.$('.hud-cx').onclick = () => this.$('.hud-cars').classList.remove('on');
@@ -57,7 +60,7 @@ export class Hud {
   }
   flash(text) {
     if (!text) return;
-    const t = this.$('.hud-toast'); t.textContent = text; t.classList.add('on');
+    const t = this.toastEl; t.textContent = text; t.classList.add('on');
     clearTimeout(this._ft); this._ft = setTimeout(() => t.classList.remove('on'), 1400);
   }
   // the car chooser: every drivable car, then the paints of the one being driven
@@ -88,11 +91,11 @@ export class Hud {
     clearTimeout(this._bt); this._bt = setTimeout(() => { b.style.opacity = 0; }, 120);
   }
   loading(text, f) {
-    const l = this.$('.hud-load');
+    const l = this.loadEl;
     if (text === null) { l.classList.remove('on'); return; }
     l.classList.add('on');
-    this.$('.hud-load-t').textContent = text;
-    if (f !== undefined) this.$('.hud-bar i').style.width = Math.round(f * 100) + '%';
+    l.querySelector('.hud-load-t').textContent = text;
+    if (f !== undefined) l.querySelector('.hud-bar i').style.width = Math.round(f * 100) + '%';
   }
   update(dt, v, drive) {
     this.t += dt;

@@ -24,7 +24,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=6';
+import { unproject } from './geo.js?v=7';
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -135,7 +135,7 @@ export let style = { region: 'other', yellowCentre: false };
 // ---------------------------------------------------------------- materials
 let MATS = null;
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=6');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=7');
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -348,7 +348,7 @@ function tileB(kind, x, z) {
 const UVS = 1 / 2.1; // asphalt texture tile is 2.1 m
 
 // ---------------------------------------------------------------- topology
-function classify(w, region, dense = 0) {
+function classify(w, region, dense = 0, twin = null) {
   const t = w.tags, hw = w.highway;
   const C = CLASSES[hw]; if (!C) return null;
   if (t.area === 'yes') return null;
@@ -356,6 +356,9 @@ function classify(w, region, dense = 0) {
   if (t.surface && UNPAVED.has(t.surface)) return null;
   if (hw === 'service' && (t.service === 'driveway' || t.access === 'private') && !t.lanes) { /* keep, narrow */ }
   if (t.highway === 'construction' || t.construction) return null;
+  // elevated roads (layer 2 and up on bridges: city expressways and their flyovers) cannot be placed from a
+  // terrain model and ends alone; drawn at ground height they lie over the streets below, so they are left out
+  if (yes(t.bridge) && (num(t.layer) || 0) >= 2) return null;
   let oneway = t.oneway === 'yes' || t.oneway === '1' || t.oneway === 'true' || t.oneway === '-1' ||
     t.junction === 'roundabout' || t.junction === 'circular' || ((hw === 'motorway' || hw === 'motorway_link') && t.oneway !== 'no');
   const reverse = t.oneway === '-1';
@@ -376,7 +379,7 @@ function classify(w, region, dense = 0) {
     if (hw === 'service' && !lanes && !t['lanes:forward']) { lf = 1; lb = 1; }
   }
   if (reverse) { const x = lf; lf = lb; lb = x; }
-  const nLanes = oneway ? lf : lf + lb;
+  let nLanes = oneway ? lf : lf + lb;
   let lw = C.lw;
   let width = num(t.width) || num(t['width:carriageway']);
   if (width && (width < 2 || width > 50)) width = null;
@@ -387,6 +390,11 @@ function classify(w, region, dense = 0) {
     if (hw === 'service' && oneway && !hasLanesTag) width = Math.min(width, 3.5);
     if (hw === 'service' && t.service === 'parking_aisle') width = 5.5;
     if (hw === 'service' && t.service === 'driveway') width = 3.2;
+  }
+  // one half of a dual carriageway: no wider than the gap to the other half (their ribbons must not overlap)
+  if (twin != null && !num(t.width) && width > twin - 1) {
+    width = Math.max(3.2, twin - 1);
+    while (nLanes > 1 && width / nLanes < 3) { if (oneway) lf--; else if (lf >= lb) lf--; else lb--; nLanes--; }
   }
   let travel = Math.min(nLanes * lw, width - 0.3);
   if (travel / nLanes < 2.5) travel = width; // narrow road: lanes fill it
@@ -425,12 +433,13 @@ async function buildTopology(data) {
   };
   const urbanAt = (x, z) => countAt(x, z) >= 10;
   const nodePos = data.nodes || new Map();
+  const twins = findTwins(data.roads || []);
   const ways = [];
   for (const w of data.roads || []) {
     await Y();
     // the busiest stretch of the way decides (a long avenue's middle may lie outside the loaded area)
     let nb = 0; if (w.pts && w.pts.length) for (let k = 0; k <= 8; k++) { const q = w.pts[Math.round(k / 8 * (w.pts.length - 1))]; nb = Math.max(nb, countAt(q[0], q[1])); }
-    const c = classify(w, region, nb >= 40 ? 2 : nb >= 10 ? 1 : 0); if (!c || w.nodes.length < 2) continue;
+    const c = classify(w, region, nb >= 40 ? 2 : nb >= 10 ? 1 : 0, twins.get(w.id) ?? null); if (!c || w.nodes.length < 2) continue;
     let nodes = w.nodes.slice();
     if (c.reverse) nodes.reverse();
     const pts = []; const ids = [];
@@ -455,6 +464,9 @@ async function buildTopology(data) {
     if (c.reverse) { const x = c.swWL; c.swWL = c.swWR; c.swWR = x; }
     ways.push({ id: w.id, tags: w.tags, wayDir: c.reverse ? -1 : 1, ids, pts, c });
   }
+  // roads that cross on the same level without sharing a node (vector tiles lose some, OSM has errors) get a
+  // junction where they cross, so the two surfaces meet at one height instead of overlapping
+  const extra = joinCrossings(ways);
   // node occurrences
   const occ = new Map();
   for (const w of ways) w.ids.forEach((id, i) => {
@@ -516,11 +528,86 @@ async function buildTopology(data) {
   for (const e of edges) {
     for (const [id, atStart] of [[e.ids[0], true], [e.ids[e.ids.length - 1], false]]) {
       let n = nodes.get(id);
-      if (!n) { const p = nodePos.get(id); nodes.set(id, n = { id, x: p.x, z: p.z, ends: [], h: 0, tags: p.tags }); }
+      if (!n) { const p = nodePos.get(id) || extra.get(id); nodes.set(id, n = { id, x: p.x, z: p.z, ends: [], h: 0, tags: p.tags || null }); }
       n.ends.push({ e, atStart });
     }
   }
   S.edges = edges; S.nodes = nodes;
+}
+// Halves of dual carriageways: a one-way main road with another one-way road of the same class running the other
+// way beside it. Returns way id -> distance between their centre lines (median along the way).
+function findTwins(list) {
+  const isOne = (w) => w.tags.oneway === 'yes' || w.tags.oneway === '1' || w.tags.oneway === 'true' || w.tags.oneway === '-1';
+  const cand = list.filter(w => /^(motorway|trunk|primary|secondary|tertiary)$/.test(w.highway) && isOne(w) && w.pts && w.pts.length >= 2);
+  const g = new Map(), C = 40, out = new Map();
+  cand.forEach((w, wi) => { for (let i = 1; i < w.pts.length; i++) { const a = w.pts[i - 1], b = w.pts[i]; const k = Math.floor((a[0] + b[0]) / 2 / C) + ',' + Math.floor((a[1] + b[1]) / 2 / C); let l = g.get(k); if (!l) g.set(k, l = []); l.push([wi, i]); } });
+  const dirOf = (w, i) => { const a = w.pts[i - 1], b = w.pts[i], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, s = w.tags.oneway === '-1' ? -1 : 1; return [s * (b[0] - a[0]) / l, s * (b[1] - a[1]) / l]; };
+  cand.forEach((w) => {
+    const ds = [], n = w.pts.length - 1, step = Math.max(1, Math.floor(n / 6));
+    for (let i = 1; i <= n; i += step) {
+      const a = w.pts[i - 1], b = w.pts[i], px = (a[0] + b[0]) / 2, pz = (a[1] + b[1]) / 2, d = dirOf(w, i);
+      let best = Infinity;
+      const ci = Math.floor(px / C), cj = Math.floor(pz / C);
+      for (let x = ci - 1; x <= ci + 1; x++) for (let z = cj - 1; z <= cj + 1; z++) for (const [oi, k] of g.get(x + ',' + z) || []) {
+        const o = cand[oi]; if (o === w || o.highway !== w.highway) continue;
+        const q = dirOf(o, k); if (q[0] * d[0] + q[1] * d[1] > -0.8) continue;
+        const u = o.pts[k - 1], v = o.pts[k], dx = v[0] - u[0], dz = v[1] - u[1], L2 = dx * dx + dz * dz;
+        const t = L2 > 0 ? Math.max(0, Math.min(1, ((px - u[0]) * dx + (pz - u[1]) * dz) / L2)) : 0;
+        const dist = Math.hypot(px - u[0] - dx * t, pz - u[1] - dz * t);
+        if (dist < best && dist < 40) best = dist;
+      }
+      if (best < Infinity) ds.push(best);
+    }
+    if (ds.length * 2 >= Math.ceil(n / step)) { ds.sort((p, q) => p - q); out.set(w.id, ds[ds.length >> 1]); }
+  });
+  return out;
+}
+let joinId = -9e12;
+function joinCrossings(ways) {
+  const extra = new Map(), grid = new Map(), C = 24;
+  const level = (w) => w.c.bridge ? 'b' + w.c.layer : 'g';
+  ways.forEach((w, wi) => {
+    for (let i = 1; i < w.pts.length; i++) {
+      const a = w.pts[i - 1], b = w.pts[i];
+      const i0 = Math.floor(Math.min(a[0], b[0]) / C), i1 = Math.floor(Math.max(a[0], b[0]) / C), j0 = Math.floor(Math.min(a[1], b[1]) / C), j1 = Math.floor(Math.max(a[1], b[1]) / C);
+      for (let x = i0; x <= i1; x++) for (let z = j0; z <= j1; z++) { const k = x + ',' + z; let l = grid.get(k); if (!l) grid.set(k, l = []); l.push([wi, i]); }
+    }
+  });
+  const cuts = ways.map(() => []), seen = new Set();
+  for (const l of grid.values()) {
+    for (let p = 0; p < l.length; p++) for (let q = p + 1; q < l.length; q++) {
+      const [wa, ia] = l[p], [wb, ib] = l[q];
+      if (wa === wb) continue;
+      const key = wa < wb ? wa + ':' + ia + ':' + wb + ':' + ib : wb + ':' + ib + ':' + wa + ':' + ia;
+      if (seen.has(key)) continue; seen.add(key);
+      const A = ways[wa], B = ways[wb];
+      if (level(A) !== level(B)) continue;
+      const a0 = A.pts[ia - 1], a1 = A.pts[ia], b0 = B.pts[ib - 1], b1 = B.pts[ib];
+      // segments sharing a node already meet
+      if (A.ids[ia - 1] === B.ids[ib - 1] || A.ids[ia - 1] === B.ids[ib] || A.ids[ia] === B.ids[ib - 1] || A.ids[ia] === B.ids[ib]) continue;
+      const rx = a1[0] - a0[0], rz = a1[1] - a0[1], sx = b1[0] - b0[0], sz = b1[1] - b0[1];
+      const den = rx * sz - rz * sx; if (Math.abs(den) < 1e-9) continue;
+      const qx = b0[0] - a0[0], qz = b0[1] - a0[1];
+      const t = (qx * sz - qz * sx) / den, u = (qx * rz - qz * rx) / den;
+      if (t <= 0.001 || t >= 0.999 || u <= 0.001 || u >= 0.999) continue;
+      const x = a0[0] + rx * t, z = a0[1] + rz * t;
+      const id = joinId--;
+      extra.set(id, { id, x, z, tags: null });
+      cuts[wa].push([ia, t, id, x, z]); cuts[wb].push([ib, u, id, x, z]);
+    }
+  }
+  ways.forEach((w, wi) => {
+    const cs = cuts[wi]; if (!cs.length) return;
+    cs.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+    const ids = [w.ids[0]], pts = [w.pts[0]];
+    let k = 0;
+    for (let i = 1; i < w.pts.length; i++) {
+      while (k < cs.length && cs[k][0] === i) { ids.push(cs[k][2]); pts.push([cs[k][3], cs[k][4]]); k++; }
+      ids.push(w.ids[i]); pts.push(w.pts[i]);
+    }
+    w.ids = ids; w.pts = pts;
+  });
+  return extra;
 }
 function reverseEdge(e) {
   e.ids.reverse(); e.pts.reverse(); e.wayDir = -e.wayDir;
@@ -680,14 +767,22 @@ function profileHeights(e) {
       lo[i] = pct(v, 0.3);
     }
   }
-  const out = new Array(N), R = open ? 4 : 7, R2 = open ? 8 : 18;
+  const out = new Array(N), R = open ? 14 : 7, R2 = open ? 72 : 18;
   for (let i = 0; i < N; i++) {
     let sw = 0, sh = 0;
     for (let k = i; k >= 0 && e.ps[i] - e.ps[k] <= R; k--) { const d = e.ps[i] - e.ps[k], wt = Math.exp(-d * d / R2); sw += wt; sh += wt * lo[k]; }
     for (let k = i + 1; k < N && e.ps[k] - e.ps[i] <= R; k++) { const d = e.ps[k] - e.ps[i], wt = Math.exp(-d * d / R2); sw += wt; sh += wt * lo[k]; }
     out[i] = sh / sw;
-    // smoothing must not push the road into the terrain (it rounds off the crest of a hill)
-    if (open) { const g = mid[i] != null ? mid[i] : raw[i]; if (out[i] < g) out[i] = g; }
+  }
+  if (open) {
+    // the long smoothing irons out bumps the terrain model has from buildings; it may not put the road more than
+    // 1 m under the terrain smoothed over a few metres (the crest of a real hill)
+    for (let i = 0; i < N; i++) {
+      let sw = 0, sh = 0;
+      for (let k = i; k >= 0 && e.ps[i] - e.ps[k] <= 4; k--) { const d = e.ps[i] - e.ps[k], wt = Math.exp(-d * d / 8); sw += wt; sh += wt * (mid[k] != null ? mid[k] : raw[k]); }
+      for (let k = i + 1; k < N && e.ps[k] - e.ps[i] <= 4; k++) { const d = e.ps[k] - e.ps[i], wt = Math.exp(-d * d / 8); sw += wt; sh += wt * (mid[k] != null ? mid[k] : raw[k]); }
+      const g = sh / sw - 1.0; if (out[i] < g) out[i] = g;
+    }
   }
   return out;
 }
@@ -727,7 +822,7 @@ function fitPlane(n) {
   const D = det3(M); if (Math.abs(D) < 1e-9) return [sh / sw, 0, 0];
   const col = (k) => M.map((r, i) => r.map((v, j) => j === k ? V[i] : v));
   let a = det3(col(0)) / D, b = det3(col(1)) / D, c = det3(col(2)) / D;
-  const g = Math.hypot(b, c); if (g > 0.35) { b *= 0.35 / g; c *= 0.35 / g; a = (sh - b * sx - c * sz) / sw; }
+  const g = Math.hypot(b, c); if (g > 0.25) { b *= 0.25 / g; c *= 0.25 / g; a = (sh - b * sx - c * sz) / sw; }
   return [a, b, c];
 }
 
@@ -755,7 +850,8 @@ async function computeHeights(bbox) {
   for (const n of nodes.values()) {
     if (!inBox(n.x, n.z, 60)) continue;
     await Y();
-    n.anchor = n.ends.some(x => !x.e.c.bridge) || n.ends.length === 1;
+    // a bridge's own dead end (where the loaded data stops, often over a hill or water) does not anchor it
+    n.anchor = n.ends.some(x => !x.e.c.bridge);
     if (!n.anchor) continue;
     n.plane = null;
     if (n.ends.length >= 2) {
@@ -766,15 +862,64 @@ async function computeHeights(bbox) {
     if (x) { n.h = x.atStart ? x.e.prof[0] : x.e.prof[x.e.prof.length - 1]; n.known = true; }
     else { const g = sampleGround(n.x, n.z); if (g != null) { n.h = g; n.known = true; } else n.h = n.h || 0; }
   }
+  // 2b. a terrain model with buildings in it (parts of Asia) or a bad patch can put two junctions of one street
+  // 30 m apart over 50 m: pull such junctions towards each other until no road between junctions is steeper than
+  // NET_GRADE (a few sweeps over the network), so the road climbs evenly and stays drivable
+  for (let it = 0; it < 24; it++) {
+    let moved = 0;
+    for (const e of S.edges) {
+      if (e.c.bridge) continue;
+      const n0 = nodes.get(e.ids[0]), n1 = nodes.get(e.ids[e.ids.length - 1]);
+      if (n0 === n1 || !n0.anchor || !n1.anchor) continue;
+      const allowed = NET_GRADE * Math.max(1, e.len), d = n1.h - n0.h;
+      if (Math.abs(d) <= allowed) continue;
+      const ex = (Math.abs(d) - allowed) / 2 * Math.sign(d);
+      const f0 = n0.ends.length === 1 ? 2 : 1, f1 = n1.ends.length === 1 ? 2 : 1; // a dead end gives way more
+      n0.h += ex * f0 / (f0 + f1) * 2 * 0.5 * 1.0; n1.h -= ex * f1 / (f0 + f1) * 2 * 0.5 * 1.0;
+      moved++;
+    }
+    if (!moved) break;
+    await Y();
+  }
+  for (const n of nodes.values()) if (n.plane) n.plane[0] = n.h;
+  // 2c. junctions whose shapes overlap (close crossings, dual carriageways) share one plane, so where their
+  // polygons overlap both give the same height
+  {
+    const jn = [...nodes.values()].filter(n => n.plane && inBox(n.x, n.z, 120));
+    const rad = (n) => { let r = 0; for (const x of n.ends) r = Math.max(r, (x.atStart ? x.e.set0 : x.e.set1) + x.e.c.hw); return r; };
+    const par = new Map(jn.map(n => [n, n])), find = (n) => { while (par.get(n) !== n) { par.set(n, par.get(par.get(n))); n = par.get(n); } return n; };
+    const g = new Map(), C = 40;
+    for (const n of jn) { n._r = rad(n); const k = Math.floor(n.x / C) + ',' + Math.floor(n.z / C); let l = g.get(k); if (!l) g.set(k, l = []); l.push(n); }
+    for (const n of jn) {
+      const i0 = Math.floor(n.x / C), j0 = Math.floor(n.z / C);
+      for (let i = i0 - 1; i <= i0 + 1; i++) for (let j = j0 - 1; j <= j0 + 1; j++) for (const m of g.get(i + ',' + j) || []) {
+        if (m === n) continue;
+        if (Math.hypot(m.x - n.x, m.z - n.z) < n._r + m._r) { const a = find(n), b = find(m); if (a !== b) par.set(a, b); }
+      }
+    }
+    const groups = new Map();
+    for (const n of jn) { const r = find(n); let l = groups.get(r); if (!l) groups.set(r, l = []); l.push(n); }
+    for (const l of groups.values()) {
+      if (l.length < 2) continue;
+      let cx = 0, cz = 0, b = 0, c = 0;
+      for (const n of l) { cx += n.x; cz += n.z; b += n.plane[1]; c += n.plane[2]; }
+      cx /= l.length; cz /= l.length; b /= l.length; c /= l.length;
+      let a = 0; for (const n of l) a += n.h + b * (cx - n.x) + c * (cz - n.z); a /= l.length;
+      for (const n of l) { n.plane = [a + b * (n.x - cx) + c * (n.z - cz), b, c]; n.h = n.plane[0]; }
+    }
+  }
   // 3. bridge-only nodes: inverse distance over anchors through the bridge network (linear along a chain)
   for (const n of nodes.values()) {
     if (n.anchor || !inBox(n.x, n.z, 60)) continue;
     n.plane = null;
-    const dist = new Map([[n.id, 0]]), queue = [n.id], found = [];
+    const dist = new Map([[n.id, 0]]), queue = [n.id], found = [], soft = [];
+    const bb = S.data && S.data.bbox, inData = (m) => !bb || (m.x >= bb.x0 && m.x <= bb.x1 && m.z >= bb.z0 && m.z <= bb.z1);
     while (queue.length) {
       queue.sort((a, b) => dist.get(b) - dist.get(a));
       const id = queue.pop(), d = dist.get(id), m = nodes.get(id);
       if (m.anchor && id !== n.id) { found.push([m.h, d]); continue; }
+      // a bridge's dead end inside the loaded area: its ground, used only if no road on the ground joins the bridge
+      if (m.ends.length === 1) { const g = sampleGround(m.x, m.z); if (g != null) soft.push([g, d, inData(m)]); }
       for (const x of m.ends) {
         if (!x.e.c.bridge) continue;
         const o = x.atStart ? x.e.ids[x.e.ids.length - 1] : x.e.ids[0], nd = d + x.e.len;
@@ -782,6 +927,19 @@ async function computeHeights(bbox) {
       }
     }
     if (found.length) { let a = 0, b = 0; for (const [h, d] of found) { a += h / Math.max(d, 1); b += 1 / Math.max(d, 1); } n.h = a / b; }
+    else if (soft.length) {
+      // a bridge no ground road joins (a long crossing cut off by the loaded area): one level deck at the
+      // height of its end inside the loaded area (the lowest such end if several; the lowest end at all if none)
+      const softIn = soft.filter(q => q[2]), pool = softIn.length ? softIn : soft;
+      n.h = Math.min(...pool.map(q => q[0]));
+    } else { const g = sampleGround(n.x, n.z); if (g != null) n.h = g; }
+  }
+  // junctions by place, for roads that pass over a junction they do not belong to
+  const jg = new Map(), JC = 40;
+  for (const n of nodes.values()) {
+    if (!n.plane || n.ends.length < 2) continue;
+    if (n._r == null) { let r = 0; for (const x of n.ends) r = Math.max(r, (x.atStart ? x.e.set0 : x.e.set1) + x.e.c.hw); n._r = r; }
+    const k = Math.floor(n.x / JC) + ',' + Math.floor(n.z / JC); let l = jg.get(k); if (!l) jg.set(k, l = []); l.push(n);
   }
   // 4. final heights: from the junction plane at each cut to the road's own profile
   for (const e of S.edges) {
@@ -801,23 +959,41 @@ async function computeHeights(bbox) {
     const p0 = n0.ends.length >= 2 && n0.plane, p1 = n1.ends.length >= 2 && n1.plane;
     for (let i = 0; i < N; i++) {
       const s = e.ps[i];
-      let h = prof[i];
+      // a short link between two junctions runs straight from one plane to the other (its own patch of terrain
+      // model is too short to follow)
+      let h = (p0 && p1 && room < 14) ? lerp(planeAt(n0, e.px[i], e.pz[i]), planeAt(n1, e.px[i], e.pz[i]), Math.max(0, Math.min(1, (s - s0) / Math.max(0.01, room)))) : prof[i];
       let c = 0;
       if (p0) { const t = Math.max(0, Math.min(1, (s - s0) / D)), w = t * t * (3 - 2 * t); h = lerp(planeAt(n0, e.px[i], e.pz[i]), h, w); c += (1 - w) * (n0.plane[1] * e.nx[i] + n0.plane[2] * e.nz[i]); }
       if (p1) { const t = Math.max(0, Math.min(1, (s1 - s) / D)), w = t * t * (3 - 2 * t); h = lerp(planeAt(n1, e.px[i], e.pz[i]), h, w); c += (1 - w) * (n1.plane[1] * e.nx[i] + n1.plane[2] * e.nz[i]); }
+      // a road running over (or beside) a junction it is not part of takes that junction's plane there, so the
+      // two surfaces agree where they overlap
+      const ci = Math.floor(e.px[i] / JC), cj = Math.floor(e.pz[i] / JC);
+      for (let a = ci - 1; a <= ci + 1; a++) for (let b = cj - 1; b <= cj + 1; b++) for (const n of jg.get(a + ',' + b) || []) {
+        if (n === n0 || n === n1) continue;
+        const d = Math.hypot(e.px[i] - n.x, e.pz[i] - n.z), r = n._r + e.c.hw;
+        if (d >= r) continue;
+        const t = Math.max(0, Math.min(1, (d - 0.55 * r) / (0.45 * r))), w = t * t * (3 - 2 * t);
+        h = lerp(planeAt(n, e.px[i], e.pz[i]), h, w);
+      }
       e.ph[i] = h; e.pc[i] = Math.max(-0.35, Math.min(0.35, c));
     }
     // no road steeper than MAX_GRADE between its junctions (a ramp into a garage, or a bad ground sample, would
     // otherwise be a wall for the car): relax towards both ends, the parts inside the junctions stay on the planes
     const fixed = (i) => (p0 && e.ps[i] <= s0) || (p1 && e.ps[i] >= s1);
+    // when the two junctions are further apart in height than MAX_GRADE allows (a bad patch of terrain model, a
+    // cliff), the road takes the grade it needs, evenly, rather than a step at one end
+    let G = MAX_GRADE;
+    let ia = -1, ib = N; for (let i = 0; i < N; i++) { if (fixed(i) && (!p1 || e.ps[i] <= s0)) ia = i; }
+    for (let i = N - 1; i >= 0; i--) { if (fixed(i) && (!p0 || e.ps[i] >= s1)) ib = i; }
+    if (ia >= 0 && ib < N && ib > ia) { const need = Math.abs(e.ph[ib] - e.ph[ia]) / Math.max(0.5, e.ps[ib] - e.ps[ia]); if (need * 1.15 > G) G = need * 1.15; }
     for (let it = 0; it < 3; it++) {
-      for (let i = 1; i < N; i++) if (!fixed(i)) { const g = MAX_GRADE * (e.ps[i] - e.ps[i - 1]); e.ph[i] = Math.max(e.ph[i - 1] - g, Math.min(e.ph[i - 1] + g, e.ph[i])); }
-      for (let i = N - 2; i >= 0; i--) if (!fixed(i)) { const g = MAX_GRADE * (e.ps[i + 1] - e.ps[i]); e.ph[i] = Math.max(e.ph[i + 1] - g, Math.min(e.ph[i + 1] + g, e.ph[i])); }
+      for (let i = 1; i < N; i++) if (!fixed(i)) { const g = G * (e.ps[i] - e.ps[i - 1]); e.ph[i] = Math.max(e.ph[i - 1] - g, Math.min(e.ph[i - 1] + g, e.ph[i])); }
+      for (let i = N - 2; i >= 0; i--) if (!fixed(i)) { const g = G * (e.ps[i + 1] - e.ps[i]); e.ph[i] = Math.max(e.ph[i + 1] - g, Math.min(e.ph[i + 1] + g, e.ph[i])); }
     }
     for (let i = 0; i < N; i++) e.ph[i] += bias;
   }
 }
-const MAX_GRADE = 0.33;
+const MAX_GRADE = 0.33, NET_GRADE = 0.25;
 
 // ---------------------------------------------------------------- crossings, stops, signals
 function onEdgeAt(nodeId) { // [{ e, i (index in e.ids), s }]

@@ -2,11 +2,11 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=6';
-import { World } from './world.js?v=6';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=6';
-import { Sky } from './sky.js?v=6';
-import { Drive } from './drive.js?v=6';
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=7';
+import { World } from './world.js?v=7';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=7';
+import { Sky } from './sky.js?v=7';
+import { Drive } from './drive.js?v=7';
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -74,6 +74,7 @@ G.look = (y, p) => { yaw = y; pitch = p; };
 export async function startWorld(lat, lon, opts = {}) {
   const key = opts.key || Q.get('key') || (() => { try { return localStorage.getItem('car_gkey'); } catch (e) { return null; } })();
   let mode = key || Q.get('tiles') ? 'google' : 'open';
+  G.keyFailed = false;
   setOrigin(lat, lon, 0);
   try { await world.start(mode, lat, lon, key); }
   catch (e) {
@@ -87,6 +88,17 @@ export async function startWorld(lat, lon, opts = {}) {
     const e = world.heights.at(lat, lon) || 0;
     setOrigin(lat, lon, e);
     world.tiles.group.matrix.copy(frame.ecefToLocal); world.tiles.group.matrixWorldNeedsUpdate = true;
+  } else {
+    // Google's heights are over the ellipsoid: find the ground under the drop (looking down from high up while the
+    // first tiles come in) and put the origin on it, so the ground is near y 0 in La Paz as on the coast
+    camera.position.set(0, 6000, 1); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
+    let g = null;
+    for (let i = 0; i < 80 && g === null; i++) { await new Promise(r => setTimeout(r, 120)); g = world.groundAt(0, 0); }
+    if (g !== null && Number.isFinite(g)) {
+      setOrigin(lat, lon, g);
+      world.tiles.group.matrix.copy(frame.ecefToLocal); world.tiles.group.matrixWorldNeedsUpdate = true;
+      world.gRef = undefined;
+    }
   }
   G.state = 'world';
   G.mode = mode;
@@ -130,8 +142,10 @@ function loop(now) {
   if (!G.paused) {
     world.update();
     bakedUniforms.uCamPos.value.copy(camera.position);
-    renderer.render(scene, camera);
+    // the shadow matrix the photographed surfaces read must be this frame's (the shadow box follows the car)
+    if (sky.sun.castShadow) { sky.sun.updateMatrixWorld(); sky.sun.target.updateMatrixWorld(); sky.sun.shadow.updateMatrices(sky.sun); }
     syncBaked(sky.sun);
+    renderer.render(scene, camera);
   }
   G.frames++;
   G.fps = G.fps ? G.fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05 : 60;
@@ -140,6 +154,8 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 const drive = G.drive = new Drive(G);
+// a place in the address bar is used only if it is a real one
+function validPlace(lat, lon) { return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 85 && Math.abs(lon) <= 180 && (lat !== 0 || lon !== 0 || Q.get('lat') === '0'); }
 // the sources of what is on screen, as their terms ask
 const attrib = document.createElement('div'); attrib.className = 'attrib'; document.getElementById('ui').appendChild(attrib);
 const OPEN_CREDIT = 'Imagery: Esri, Maxar, Earthstar Geographics | Elevation: Mapzen, AWS Open Data | Map data © OpenStreetMap contributors';
@@ -152,7 +168,7 @@ if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
 async function openMap() {
   try {
-    const M = await import('./mapui.js?v=6');
+    const M = await import('./mapui.js?v=7');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();
@@ -198,5 +214,5 @@ G.onFrame = () => {
   }
 };
 if (Q.has('free') && Q.has('lat')) startWorld(+Q.get('lat'), +Q.get('lon')).then(m => { G.mode = m; });
-else if (Q.has('lat')) drive.start(+Q.get('lat'), +Q.get('lon'), +(Q.get('h') || 0)).then(r => { G.mode = drive.mode; G.spawned = r; });
+else if (Q.has('lat') && validPlace(+Q.get('lat'), +Q.get('lon'))) drive.start(+Q.get('lat'), +Q.get('lon'), +(Q.get('h') || 0) || 0).then(r => { G.mode = drive.mode; G.spawned = r; });
 else openMap();

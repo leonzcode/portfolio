@@ -17,7 +17,7 @@
 // while typing), Nominatim (Enter and reverse lookups, at most one request a second, as its policy asks; its
 // policy forbids type-ahead, which is why suggestions come from Photon), Overpass (roads you can drive).
 
-const CSS_HREF = new URL('../css/mapui.css?v=6', import.meta.url).href;
+const CSS_HREF = new URL('../css/mapui.css?v=7', import.meta.url).href;
 
 const TILES = {
   // CARTO's keyless raster basemaps now answer every request with an "API key required" picture (checked
@@ -964,7 +964,8 @@ export function createMapUI(root, { onDrop = () => {}, onBack = () => {} } = {})
         const seen = new Set();
         const items = (j.features || []).map(fromPhoton).filter((it) => { const k = it.name + '|' + it.sub; if (seen.has(k)) return false; seen.add(k); return true; });
         search.cache.set(key, items);
-        if (input.value === q) { search.items = items; search.sel = -1; search.ctrl = null; renderSugg(q, true); }
+        // (a late answer after Enter or a pick must not reopen the list over the place card)
+        if (input.value === q && document.activeElement === input) { search.items = items; search.sel = -1; search.ctrl = null; renderSugg(q, true); }
       } catch (e) {
         if (e.name !== 'AbortError') { search.ctrl = null; search.items = []; renderSugg(q, false); }
       } finally { if (search.ctrl === ctrl) search.ctrl = null; }
@@ -973,6 +974,8 @@ export function createMapUI(root, { onDrop = () => {}, onBack = () => {} } = {})
   async function runSearch() {
     const q = input.value.trim();
     if (!q) return;
+    clearTimeout(search.timer);
+    if (search.ctrl) { search.ctrl.abort(); search.ctrl = null; }
     if (search.sel >= 0 && search.items[search.sel]) { choose(search.items[search.sel]); return; }
     const coords = parseCoords(q);
     if (coords) { choose(coords); return; }

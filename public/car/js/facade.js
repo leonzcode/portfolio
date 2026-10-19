@@ -13,11 +13,11 @@ const VERT_PARS = /* glsl */`
 attribute vec3 aCol;
 attribute vec4 aW;
 attribute vec4 aB;
-attribute vec2 aS;
+attribute vec3 aS;
 varying vec3 vCol;
 varying vec4 vW;
 varying vec4 vB;
-varying vec2 vS;
+varying vec3 vS;
 varying vec3 vWPos;
 varying vec3 vWNrm;
 `;
@@ -31,7 +31,8 @@ const FRAG_PARS = /* glsl */`
 varying vec3 vCol;
 varying vec4 vW;
 varying vec4 vB;
-varying vec2 vS;
+varying vec3 vS;
+uniform float uTime;
 varying vec3 vWPos;
 varying vec3 vWNrm;
 
@@ -56,6 +57,29 @@ float fBand( float x, float lo, float hi, float aa ) {
 
 vec3 fcCol; float fcRough; float fcMetal; vec3 fcEmit; vec2 fcJit; float fcAO;
 
+// a lit screen's picture: made up, colourful, moving (never a real brand). One pattern without branches: a
+// gradient or moving colour behind, rows of running text or a headline, a round shape, mixed by the screen's seed.
+vec3 fScreen( vec2 q, float kind, float sd, float t, float asp ) {
+  float ph = floor( t / 5.0 + sd );
+  vec3 c1 = 0.5 + 0.5 * cos( 6.2832 * ( fH( vec2( sd, ph ) ) + vec3( 0.0, 0.33, 0.67 ) ) );
+  vec3 c2 = 0.5 + 0.5 * cos( 6.2832 * ( fH( vec2( sd, 2.0 ) ) + vec3( 0.0, 0.33, 0.67 ) ) );
+  vec2 r = q * vec2( asp, 1.0 );
+  float f = sin( r.x * 3.2 + t * 0.9 ) + sin( r.y * 4.1 - t * 0.7 );
+  float wv = step( 1.5, kind ) * step( kind, 2.5 );
+  vec3 col = mix( mix( c1, c2, fract( q.x * 0.7 + q.y * 0.4 - t * 0.08 ) ), mix( c1, c2, 0.5 + 0.5 * sin( f * 1.6 ) ), wv );
+  // running text rows (kind 1) or one headline (kind 0)
+  float rows = kind > 0.5 && kind < 1.5 ? 5.0 : 1.0;
+  float row = floor( q.y * rows ), ry = fract( q.y * rows );
+  float x = r.x * 3.0 + t * 0.8 * ( mod( row, 2.0 ) * 2.0 - 1.0 ) * step( 1.5, rows );
+  float ch = step( 0.35, fH( vec2( floor( x ), row + sd ) ) ) * mix( 1.0, step( 0.25, ry ) * step( ry, 0.75 ), step( 1.5, rows ) ) * step( 0.15, fract( x ) ) * step( fract( x ), 0.85 );
+  ch *= step( kind, 1.5 ) * mix( step( 0.12, q.x ) * step( q.x, 0.88 ) * step( abs( q.y - 0.45 ), 0.14 ), 1.0, step( 1.5, rows ) );
+  col = mix( col * mix( 1.0, 0.3, step( 1.5, rows ) ), vec3( 1.0 ), ch );
+  // a big round shape (kind 3)
+  float disc = step( 2.5, kind ) * step( length( ( q - vec2( 0.72, 0.5 ) ) * vec2( asp, 1.0 ) ), 0.32 );
+  col = mix( mix( col, c1, step( 2.5, kind ) * step( q.x, 0.45 ) ), vec3( 1.0, 0.95, 0.85 ), disc );
+  return col;
+}
+
 // One window (called once a fragment, so the compiler builds it once). p: metres from the window's centre across
 // and from its floor up; hwid half width; sill and head heights; recess depth; Vw the view in the wall's frame;
 // id the window's number; aa the pixel size (across, up); kind 1 for homes (transoms, curtains); lit the share of
@@ -73,7 +97,13 @@ float fWindow( vec2 p, float hwid, float sill, float head, float depth, vec3 Vw,
   float frame = 1.0 - fa.x * fa.y;
   float wwid = 2.0 * hwid;
   frame = max( frame, step( 1.25, wwid ) * ( 1.0 - smoothstep( 0.03, 0.03 + aa.x, abs( g.x ) ) ) );
-  frame = max( frame, kind * step( 1.3, head - sill ) * ( 1.0 - smoothstep( 0.025, 0.025 + aa.y, abs( g.y - ( sill + ( head - sill ) * 0.58 ) ) ) ) );
+  frame = max( frame, min( kind, 1.0 ) * step( 1.3, head - sill ) * ( 1.0 - smoothstep( 0.025, 0.025 + aa.y, abs( g.y - ( sill + ( head - sill ) * ( kind > 1.5 ? 0.5 : 0.58 ) ) ) ) ) );
+  // sash windows: glazing bars, three panes across and two up in each sash
+  if ( kind > 1.5 ) {
+    float lxg = ( g.x + hwid ) / max( 2.0 * hwid, 0.1 ), lyg = ( g.y - sill ) / max( head - sill, 0.1 );
+    float bx = abs( fract( lxg * 3.0 + 0.5 ) - 0.5 ) / 3.0 * 2.0 * hwid, by = abs( fract( lyg * 4.0 + 0.5 ) - 0.5 ) / 4.0 * ( head - sill );
+    frame = max( frame, ( 1.0 - smoothstep( 0.016, 0.016 + aa.x, bx ) ) + ( 1.0 - smoothstep( 0.016, 0.016 + aa.y, by ) ) );
+  }
   float h = fH( vec2( id, id * 1.37 + 3.1 ) ), h2 = fH( vec2( id * 2.11, 7.7 ) );
   float ly = clamp( ( g.y - sill ) / max( head - sill, 0.1 ), 0.0, 1.0 );
   float lx = ( g.x + hwid ) / max( wwid, 0.1 );
@@ -89,7 +119,7 @@ float fWindow( vec2 p, float hwid, float sill, float head, float depth, vec3 Vw,
   // blinds down to some height, or curtains drawn to the sides
   float isBl = ( 1.0 - isLit ) * step( h, lit + 0.22 ) * step( 0.75 - 0.75 * h2, ly );
   float side = ( 1.0 - smoothstep( 0.24, 0.28, lx ) ) + smoothstep( 0.72, 0.76, lx );
-  float isCu = ( 1.0 - isLit ) * ( 1.0 - step( h, lit + 0.22 ) ) * step( h, lit + 0.45 ) * kind * step( 0.5, side );
+  float isCu = ( 1.0 - isLit ) * ( 1.0 - step( h, lit + 0.22 ) ) * step( h, lit + 0.45 ) * min( kind, 1.0 ) * step( 0.5, side );
   float slat = 0.85 + 0.15 * smoothstep( 0.3, 0.7, fract( g.y / 0.05 ) );
   vec3 blC = mix( vec3( 0.55, 0.53, 0.48 ), vec3( 0.62, 0.6, 0.58 ), h ) * mix( 1.0, slat, 1.0 - smoothstep( 0.006, 0.02, aa.y ) );
   vec3 cuC = mix( vec3( 0.7, 0.66, 0.58 ), vec3( 0.45, 0.32, 0.28 ), h2 ) * 0.8;
@@ -114,6 +144,7 @@ void facade() {
   // pixel to pixel by the interpolation's rounding, which showed as white speckles over windows
   float base = vB.x, fh = vB.y, gh = vB.z, seed = floor( vB.w + 0.5 );
   float style = floor( vS.x + 0.5 ), gk = floor( vS.y + 0.5 );
+  float lk = floor( vS.z + 0.5 ), flag = floor( lk / 10.0 + 0.01 ), look = lk - flag * 10.0;
   vec3 N = normalize( vWNrm );
   vec3 T = normalize( vec3( N.z, 0.0, -N.x ) );
   float y = vWPos.y;
@@ -150,6 +181,8 @@ void facade() {
     float vary = fH( vec2( floor( bu ), row ) + seed );
     vec3 bc = wall * ( style == 0.0 ? 0.82 + 0.34 * vary : 0.9 + 0.18 * vary );
     vec3 mortar = style == 0.0 ? vec3( 0.62, 0.6, 0.56 ) * ( 0.8 + 0.2 * grime ) : wall * 0.75;
+    // Japanese tile cladding: fine joints in the tile's own colour
+    if ( floor( vS.z + 0.5 ) == 3.0 ) { mortar = wall * 1.06; bc = wall * ( 0.94 + 0.1 * vary ); }
     surf = mix( wall * ( 0.86 + 0.16 * grime ) * 0.97, mix( mortar, bc, brick ), style == 0.0 ? fine : mid );
   } else if ( style == 1.0 ) {
     // concrete panels: a joint at each floor and every few metres
@@ -170,11 +203,54 @@ void facade() {
   else if ( gk > 0.5 && !glass ) surf *= mix( 1.0, 0.78, plinth );
   surf *= mix( 1.0, 0.82, fBand( eave - v, 0.0, 0.35, pxv ) );
   surf *= mix( 1.0, 1.08, fBand( eave - v, 0.35, 0.6, pxv ) );
+  if ( look == 4.0 && v > gh + 0.05 ) {
+    // a chalet's upper floors: dark vertical boards
+    float bdi = floor( u / 0.17 );
+    vec3 wood = vec3( 0.13, 0.075, 0.04 ) * ( 0.8 + 0.4 * fH( vec2( bdi, seed ) ) ) * ( 0.9 + 0.2 * grime );
+    surf = mix( wood, wood * 0.55, ( 1.0 - smoothstep( 0.0, 0.012 + pxu, abs( fract( u / 0.17 + 0.5 ) - 0.5 ) * 0.17 ) ) * ( 1.0 - smoothstep( 0.01, 0.04, pxu ) ) );
+  }
   fcCol = surf;
+  float sv = fH( vec2( seed * 13.0, 1.0 ) ), sv2 = fH( vec2( seed * 7.0, 2.0 ) );
+#ifndef FACADE_NO_SCREENS
+  // lit screens over the street fronts of a commercial core (Times Square, Shibuya, Piccadilly)
+  if ( flag == 1.0 && v > 4.2 && v < min( eave - 0.8, 48.0 ) && u > 0.5 && u < L - 0.5 ) {
+    float ph = 6.0 + 6.0 * fH( vec2( seed, 31.0 ) ), gap = 0.7;
+    float pv = v - 4.2, pi = floor( pv / ( ph + gap ) ), py = pv - pi * ( ph + gap );
+    float pw = L - 1.0;
+    if ( py < ph && pi < 3.0 && fH( vec2( seed + pi, 17.0 ) ) < 0.85 ) {
+      vec2 q = vec2( ( u - 0.5 ) / pw, py / ph );
+      float sd = seed * 3.0 + pi * 11.0 + floor( u / 40.0 );
+      vec3 c = fScreen( q, floor( fH( vec2( sd, 3.0 ) ) * 4.0 ), sd, uTime, pw / ph );
+      float edge = step( min( min( u - 0.5, L - 0.5 - u ), min( py, ph - py ) ), 0.12 );
+      c = mix( c, vec3( 0.02 ), edge );
+      c = c * c * ( 0.6 + 0.6 * max( max( c.r, c.g ), c.b ) );   // vivid, as screens are, not pastel
+      fcCol = c * 0.1; fcEmit = c * ( 0.85 + 0.35 * sv ) * ( 1.0 - edge ); fcRough = 0.3; fcMetal = 0.0; fcJit = vec2( 0.0 ); fcAO = 1.0;
+      return;
+    }
+  }
+  // a vertical sign down a narrow Japanese front: letters stacked in lit boxes
+  if ( flag == 3.0 ) {
+    float sh = min( eave - 1.0 - gh - 0.4, 14.0 );
+    vec2 q = vec2( u / L, v - gh - 0.4 );
+    {
+      float hc = fH( vec2( seed, 9.0 ) );
+      vec3 bg = hc < 0.25 ? vec3( 0.8, 0.07, 0.05 ) : hc < 0.45 ? vec3( 0.95, 0.78, 0.1 ) : hc < 0.65 ? vec3( 0.92, 0.92, 0.9 ) : hc < 0.82 ? vec3( 0.08, 0.22, 0.7 ) : vec3( 0.08, 0.5, 0.25 );
+      vec3 fg = hc >= 0.45 && hc < 0.65 ? vec3( 0.75, 0.05, 0.05 ) : ( hc >= 0.25 && hc < 0.45 ? vec3( 0.05 ) : vec3( 1.0 ) );
+      float row = floor( q.y / 0.9 ); vec2 c = vec2( q.x, fract( q.y / 0.9 ) );
+      float a1 = fH( vec2( row, seed + 1.0 ) ), a2 = fH( vec2( row, seed + 2.0 ) ), a3 = fH( vec2( row, seed + 3.0 ) );
+      float gl = step( 0.2, c.x ) * step( c.x, 0.8 ) * step( abs( c.y - ( 0.25 + 0.5 * a1 ) ), 0.06 );
+      gl = max( gl, step( 0.15, c.y ) * step( c.y, 0.85 ) * step( abs( c.x - ( 0.3 + 0.4 * a2 ) ), 0.06 ) );
+      gl = max( gl, step( 0.5, a3 ) * step( 0.25, c.x ) * step( c.x, 0.75 ) * step( abs( c.y - 0.8 + 0.6 * a1 ), 0.05 ) );
+      float edge = step( min( min( q.x, 1.0 - q.x ), min( q.y, sh - q.y ) ), 0.05 );
+      vec3 col = mix( mix( bg, fg, gl ), vec3( 0.05 ), edge );
+      fcCol = col * 0.3; fcEmit = col * 1.2 * ( 1.0 - edge ); fcRough = 0.35; fcMetal = 0.0; fcJit = vec2( 0.0 );
+      return;
+    }
+  }
 
   // ---------- the window grid ----------
-  if ( L < 2.2 || v > eave - 0.25 ) return;
-  float sv = fH( vec2( seed * 13.0, 1.0 ) ), sv2 = fH( vec2( seed * 7.0, 2.0 ) );
+#endif
+  if ( L < ( look == 5.0 ? 0.9 : 2.2 ) || v > eave - 0.25 ) return;
   // per style: bay width, window width share, sill, head, recess, lit share, homes, frame colour
   vec4 P1 = vec4( 3.0, 0.48, 0.85, fh - 0.75 );   // bay, ww, sill, head
   vec3 P2 = vec3( 0.14, 0.06, 0.0 );              // depth, lit, kind
@@ -186,6 +262,11 @@ void facade() {
   else if ( style == 4.0 ) { P1 = vec4( 3.4, house ? 0.42 : 0.32, 0.9, fh - 0.75 ); P2 = vec3( 0.08, 0.06, 1.0 ); frameC = vec3( 0.88, 0.88, 0.85 ); }
   else if ( style == 5.0 ) { P1 = vec4( 6.0, 0.5, fh - 1.3, fh - 0.4 ); P2 = vec3( 0.05, 0.02, 0.0 ); }
   else { P1 = vec4( 3.2, 0.4, 0.7, fh - 0.45 ); P2 = vec3( 0.22, 0.06, 1.0 ); frameC = vec3( 0.18, 0.17, 0.16 ); }
+  if ( look == 1.0 ) { P1 = vec4( 2.5, 0.44, 0.12, fh - 0.4 ); P2 = vec3( 0.2, 0.06, 1.0 ); frameC = vec3( 0.7, 0.68, 0.64 ); }
+  else if ( look == 2.0 ) { P1 = vec4( 2.4, 0.4, 0.7, fh - 0.45 ); P2 = vec3( 0.16, 0.06, 2.0 ); frameC = vec3( 0.88, 0.88, 0.86 ); }
+  else if ( look == 3.0 ) { P1 = vec4( 1.9, 0.58, 0.85, fh - 0.5 ); P2 = vec3( 0.1, 0.12, 0.0 ); frameC = vec3( 0.42, 0.44, 0.45 ); }
+  else if ( look == 4.0 ) { P1 = vec4( 3.2, 0.36, 0.9, fh - 0.75 ); P2 = vec3( 0.14, 0.05, 1.0 ); frameC = vec3( 0.9, 0.89, 0.86 ); }
+  else if ( look == 5.0 ) { P1 = vec4( 2.2, 0.62, 0.8, fh - 0.5 ); P2 = vec3( 0.12, 0.06, 1.0 ); frameC = vec3( 0.92, 0.92, 0.9 ); }
   float ww = P1.y, sill = P1.z, head = P1.w;
   float bayW = P1.x * ( 0.88 + 0.24 * sv2 );
   float margin = min( 0.7, L * 0.08 );
@@ -308,6 +389,25 @@ void facade() {
   }
   fcCol = mix( fcCol, signC, sign * ( 1.0 - lodU ) );
   fcRough = mix( fcRough, 0.5, sign );
+#ifndef FACADE_NO_BALC
+  if ( ( look == 1.0 || look == 4.0 ) && v >= gh && lodV < 0.9 ) {
+    // balconies: Haussmann's iron ones all along the 2nd and 5th floors and in front of the other windows,
+    // a chalet's wooden one along every upper floor
+    float full = look == 4.0 ? step( 4.0, L ) : ( abs( fi - 1.0 ) < 0.5 || abs( fi - 4.0 ) < 0.5 ? 1.0 : 0.0 );
+    float bh = look == 4.0 ? 1.05 : 0.95;
+    float inW = step( abs( wx ), whw + 0.1 ) * inBays;
+    float band = step( ly, bh ) * max( full * step( margin, u ) * step( u, L - margin ), look == 1.0 ? inW * step( sill - 0.05, ly ) * step( ly, sill + 0.9 ) : 0.0 );
+    if ( band > 0.5 ) {
+      float yl = look == 1.0 && full < 0.5 ? ly - sill : ly;
+      float rails = max( step( bh - 0.08, yl ), step( yl, 0.06 ) * full );
+      float bars = look == 4.0 ? step( 0.035, abs( fract( u / 0.13 ) - 0.5 ) * 0.13 ) : 1.0 - step( 0.025, abs( fract( u / 0.11 ) - 0.5 ) * 0.11 );
+      float rail = look == 4.0 ? max( rails, bars ) : max( rails, bars );
+      vec3 rc = look == 4.0 ? vec3( 0.2, 0.12, 0.06 ) : vec3( 0.05, 0.05, 0.055 );
+      float m = rail * ( 1.0 - lodU * 0.6 );
+      fcCol = mix( fcCol, rc, m ); fcRough = mix( fcRough, look == 4.0 ? 0.85 : 0.45, m ); fcMetal = mix( fcMetal, look == 4.0 ? 0.0 : 0.3, m ); fcEmit *= 1.0 - m; fcJit *= 1.0 - m;
+    }
+  }
+#endif
   if ( lodV > 0.0 ) {
     float cov = ww * ( head - sill ) / fh;
     fcCol = mix( fcCol, mix( surf, vec3( 0.16, 0.18, 0.2 ), cov ), lodV );
@@ -319,10 +419,14 @@ void facade() {
 }
 `;
 
+// seconds, for the screens; buildings.js sets it before the walls are drawn
+export const FACADE_TIME = { value: 0 };
+
 export function makeFacadeMaterial(opts = {}) {
   // the sky's hemisphere light already lights the walls from above; the environment adds reflections more than fill
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.0, envMapIntensity: opts.envMapIntensity ?? 0.5 });
   m.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = FACADE_TIME;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\n' + VERT_PARS)
       .replace('#include <project_vertex>', '#include <project_vertex>\n' + VERT);
@@ -344,6 +448,6 @@ reflectedLight.indirectSpecular *= mix( 1.0, fcAO, 0.6 );
 reflectedLight.directDiffuse *= mix( 1.0, fcAO, 0.45 );
 reflectedLight.directSpecular = min( reflectedLight.directSpecular, vec3( 1.5 ) );`);
   };
-  m.customProgramCacheKey = () => 'facade10' + (m.userData.dbg || '');
+  m.customProgramCacheKey = () => 'facade15' + (m.userData.dbg || '');
   return m;
 }
