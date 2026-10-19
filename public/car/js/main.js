@@ -2,11 +2,11 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=4';
-import { World } from './world.js?v=4';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=4';
-import { Sky } from './sky.js?v=4';
-import { Drive } from './drive.js?v=4';
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=5';
+import { World } from './world.js?v=5';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=5';
+import { Sky } from './sky.js?v=5';
+import { Drive } from './drive.js?v=5';
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -120,9 +120,13 @@ let last = performance.now();
 G.frames = 0;
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
-  if (Q.has('free')) { freeCam(dt); sky.update(camera); }
-  else if (G.drive) G.drive.update(dt);
-  if (G.onFrame) G.onFrame(dt);
+  // the next frame is asked for first, so an error in one frame can never stop the game
+  requestAnimationFrame(loop);
+  try {
+    if (Q.has('free')) { freeCam(dt); sky.update(camera); }
+    else if (G.drive) G.drive.update(dt);
+    if (G.onFrame) G.onFrame(dt);
+  } catch (e) { if (!G.loopErr || now - G.loopErr > 2000) { console.error('frame', e); G.loopErr = now; } }
   if (!G.paused) {
     world.update();
     bakedUniforms.uCamPos.value.copy(camera.position);
@@ -132,7 +136,6 @@ function loop(now) {
   G.frames++;
   G.fps = G.fps ? G.fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05 : 60;
   autoScale(now);
-  requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
@@ -149,7 +152,7 @@ if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
 async function openMap() {
   try {
-    const M = await import('./mapui.js?v=4');
+    const M = await import('./mapui.js?v=5');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();

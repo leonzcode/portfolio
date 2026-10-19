@@ -1,14 +1,15 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=4';
-import { Collide } from './collide.js?v=4';
-import { Vehicle } from './vehicle.js?v=4';
-import { CarCamera } from './camera.js?v=4';
-import { Hud } from './hud.js?v=4';
-import { CarSound } from './sound.js?v=4';
-import { CutMask } from './cutmask.js?v=4';
-import * as SIG from './signals.js?v=4';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=5';
+import { Collide } from './collide.js?v=5';
+import { Vehicle } from './vehicle.js?v=5';
+import { CarCamera } from './camera.js?v=5';
+import { Hud } from './hud.js?v=5';
+import { CarSound } from './sound.js?v=5';
+import { CutMask } from './cutmask.js?v=5';
+import * as SIG from './signals.js?v=5';
+import { Parked } from './parked.js?v=5';
 
 const STEP = 1 / 120;
 const GLIFT = 0.15; // how far under Google's road ours is drawn
@@ -51,8 +52,8 @@ export class Drive {
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
     const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=4'), tryImport('./osm.js?v=4'), tryImport('./roads.js?v=4'), tryImport('./props.js?v=4'),
-      tryImport('./buildings.js?v=4'), tryImport('./trees.js?v=4'), tryImport('./traffic.js?v=4'), tryImport('./imagery.js?v=4')]);
+      tryImport('./cars.js?v=5'), tryImport('./osm.js?v=5'), tryImport('./roads.js?v=5'), tryImport('./props.js?v=5'),
+      tryImport('./buildings.js?v=5'), tryImport('./trees.js?v=5'), tryImport('./traffic.js?v=5'), tryImport('./imagery.js?v=5')]);
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
     // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
     if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); const M = this.bldgObj && this.bldgObj.material; if (M) { M.envMap = t; M.needsUpdate = true; } return t; }).catch(() => null);
@@ -232,7 +233,8 @@ export class Drive {
   spawn(x, z, heading) {
     const y = this.ground(x, z) ?? 0;
     this.car.vehicle.place(x, y, z, heading);
-    this.prevPos = null;
+    // the drawing starts from where the car now is (spawn can be called in the middle of update)
+    this.prevPos = this.car.vehicle.pos.clone(); this.prevQ = this.car.vehicle.q.clone(); this.acc = 0;
     this.cam.ready = false;
     this.lastGood = { x, z, heading };
   }
@@ -251,7 +253,11 @@ export class Drive {
     const R = this.roadsObj;
     if (!R) return null;
     const ok = L => L.kind === 'road' && L.len > 10;
-    let r = R.nearestLane ? (R.nearestLane(x, z, 400, ok) || R.nearestLane(x, z, 2000, L => L.kind === 'road')) : null;
+    // a lane within 40 m that runs the way asked (or the other way, then its partner is taken below) comes first,
+    // so a drop facing along a street does not start on the cross street that happens to be nearer
+    const angOff = (a, b) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
+    const along = L => { const p = L.pts, a = p[0], b = p[p.length - 1]; const h = (Math.atan2(b.x - a.x, -(b.z - a.z)) * 180 / Math.PI + 360) % 360; const d = angOff(h, want); return Math.min(d, 180 - d) < 35; };
+    let r = R.nearestLane ? (R.nearestLane(x, z, 40, L => ok(L) && along(L)) || R.nearestLane(x, z, 400, ok) || R.nearestLane(x, z, 2000, L => L.kind === 'road')) : null;
     if (!r) { const q = R.nearestRoadPoint && R.nearestRoadPoint(x, z); return q ? { x: q.x, z: q.z, heading: pickDir(q.heading, want) } : null; }
     const off = Math.abs(((want - r.heading) % 360 + 540) % 360 - 180);
     if (off > 90) {
@@ -320,7 +326,7 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=4').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=5').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;
@@ -369,6 +375,13 @@ export class Drive {
     } catch (e) { console.warn('cut mask', e); }
     if (this.mods.props) await swap('propsObj', () => this.mods.props.build(data, ctx));
     mark('props');
+    // cars parked along the kerbs where the road has room for them
+    try {
+      if (this.mods.cars && this.roadsObj) {
+        if (!this.parked) this.parked = new Parked({ scene: this.scene, cars: this.mods.cars });
+        await this.parked.build(this.roadsObj, data, { cx: x, cz: z, collide, lift: this.mode === 'google' ? GLIFT : 0, leftHand: !!this.roadsObj.leftHand });
+      }
+    } catch (e) { console.warn('parked cars', e); }
     if (this.mode === 'open') {
       if (this.mods.buildings) await swap('bldgObj', () => this.mods.buildings.build(data.buildings || [], ctx));
       mark('buildings');
@@ -394,7 +407,11 @@ export class Drive {
     if (this.traffic && this.traffic.dispose) this.traffic.dispose();
     this.traffic = null;
     if (!this.mods.traffic || !R || !R.graph) return;
-    try { this.traffic = new this.mods.traffic.Traffic({ scene: this.scene, roads: R, props: this.propsObj, cars: this.mods.cars, ground: (x, z, y) => this.ground(x, z, y), collide: this.collide, world: this.world, carEnv: this.carEnv, yLift: this.mode === 'google' ? GLIFT : 0 }); } catch (e) { console.warn('traffic', e); }
+    // busier in towns than in the country: a car per 55 m of lane where there are many buildings, per 200 m where not
+    const bl = (this.osmData && this.osmData.buildings) || [], o = this.car ? this.car.vehicle.pos : { x: 0, z: 0 };
+    let near = 0; for (const b of bl) { const p = b.outer && b.outer[0]; if (p && (p[0] - o.x) ** 2 + (p[1] - o.z) ** 2 < 350 * 350) near++; }
+    const per = near > 120 ? 55 : near > 30 ? 90 : 200;
+    try { this.traffic = new this.mods.traffic.Traffic({ scene: this.scene, roads: R, props: this.propsObj, cars: this.mods.cars, ground: (x, z, y) => this.ground(x, z, y), collide: this.collide, world: this.world, carEnv: this.carEnv, yLift: this.mode === 'google' ? GLIFT : 0, per }); } catch (e) { console.warn('traffic', e); }
   }
 
   clearArea() {
@@ -404,6 +421,7 @@ export class Drive {
     this.collide = new Collide();
     this.world.extra.length = 0;
     if (this.cut) this.cut.off();
+    if (this.parked) this.parked.clear();
   }
 
   update(dt) {
@@ -434,6 +452,12 @@ export class Drive {
     const p = (this.drawP || (this.drawP = new THREE.Vector3())).copy(this.prevPos).lerp(v.pos, a);
     rig.object.quaternion.copy(q);
     rig.object.position.copy(v.com).applyQuaternion(q).negate().add(p);
+    // an indicator cancels itself once the wheel has been turned its way and comes back, as a real one does
+    if (this.signal === -1 || this.signal === 1) {
+      const turned = this.signal === -1 ? v.steer > 0.12 : v.steer < -0.12;
+      if (turned) this.sigTurned = true;
+      else if (this.sigTurned && Math.abs(v.steer) < 0.03) { this.signal = 0; this.sigTurned = false; }
+    } else this.sigTurned = false;
     const look = v.look();
     look.signal = this.signal; look.headlights = this.headlights; look.dt = dt;
     rig.update(dt, look);
@@ -441,6 +465,7 @@ export class Drive {
     this.G.sky.update(this.camera, o);
     if (this.traffic) this.traffic.update(dt, { x: o.x, z: o.z, heading: v.heading, speed: v.fwdSpeed, vehicle: v });
     if (this.propsObj && this.propsObj.update) this.propsObj.update(dt, this.camera);
+    if (this.parked) this.parked.update(this.camera);
     // re-sample road heights where finer ground came in, at most every 3 s, and the cut mask with them
     this.dirtyT -= dt;
     if (this.dirty && this.dirtyT <= 0 && this.roadsObj && this.roadsObj.reheight) {
