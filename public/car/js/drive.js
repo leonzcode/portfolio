@@ -1,17 +1,17 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=11';
-import { Collide } from './collide.js?v=11';
-import { Vehicle } from './vehicle.js?v=11';
-import { CarCamera } from './camera.js?v=11';
-import { Hud } from './hud.js?v=11';
-import { CarSound } from './sound.js?v=11';
-import { CutMask } from './cutmask.js?v=11';
-import * as SIG from './signals.js?v=11';
-import { Parked } from './parked.js?v=11';
-import { Skids } from './skids.js?v=11';
-import { StreetSigns } from './streetsigns.js?v=11';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=12';
+import { Collide } from './collide.js?v=12';
+import { Vehicle } from './vehicle.js?v=12';
+import { CarCamera } from './camera.js?v=12';
+import { Hud } from './hud.js?v=12';
+import { CarSound } from './sound.js?v=12';
+import { CutMask } from './cutmask.js?v=12';
+import * as SIG from './signals.js?v=12';
+import { Parked } from './parked.js?v=12';
+import { Skids } from './skids.js?v=12';
+import { StreetSigns } from './streetsigns.js?v=12';
 
 const STEP = 1 / 120;
 const GLIFT = 0.15; // how far under Google's road ours is drawn
@@ -56,8 +56,8 @@ export class Drive {
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
     const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=11'), tryImport('./osm.js?v=11'), tryImport('./roads.js?v=11'), tryImport('./props.js?v=11'),
-      tryImport('./buildings.js?v=11'), tryImport('./trees.js?v=11'), tryImport('./traffic.js?v=11'), tryImport('./imagery.js?v=11')]);
+      tryImport('./cars.js?v=12'), tryImport('./osm.js?v=12'), tryImport('./roads.js?v=12'), tryImport('./props.js?v=12'),
+      tryImport('./buildings.js?v=12'), tryImport('./trees.js?v=12'), tryImport('./traffic.js?v=12'), tryImport('./imagery.js?v=12')]);
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
     // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
     if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); const M = this.bldgObj && this.bldgObj.material; if (M) { M.envMap = t; M.needsUpdate = true; } return t; }).catch(() => null);
@@ -213,6 +213,9 @@ export class Drive {
     // every shader the scene needs, built in the background (in parallel where the browser can) before the first
     // frame is drawn; 15 s at most
     await this.compileScene(this.scene, null, 15000);
+    // one frame drawn behind the loading card: the shadow pass's shaders (which the background build cannot make)
+    // are built here rather than in the first seconds of driving
+    try { this.G.renderer.render(this.scene, this.camera); } catch (e) {}
     this.holdRender = false;
     mark('shaders');
     this.active = true;
@@ -470,7 +473,7 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=11').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=12').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;
@@ -531,6 +534,8 @@ export class Drive {
       if (this.mods.cars && this.roadsObj) {
         if (!this.parked) this.parked = new Parked({ scene: this.scene, cars: this.mods.cars });
         await this.parked.build(this.roadsObj, data, { cx: x, cz: z, collide, lift: this.mode === 'google' ? GLIFT : 0, leftHand: !!this.roadsObj.leftHand });
+        // their shaders (instanced, one paint a colour) built in the background too
+        if (!this.active) await this.compileScene(this.parked.group, this.scene, 6000);
       }
     } catch (e) { console.warn('parked cars', e); }
     if (this.mode === 'open') {

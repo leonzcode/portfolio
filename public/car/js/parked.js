@@ -4,7 +4,7 @@
 // parts are one InstancedMesh for all its parked copies, near ones with the detailed parts, the rest with the far
 // ones, so a hundred parked cars cost about what one moving car does.
 import * as THREE from 'three';
-import { frame } from './geo.js?v=11';
+import { frame } from './geo.js?v=12';
 
 const MODELS = ['fairheaven', 'milano', 'shvan', 'conquer', 's10', 'fairheaven', 'milano'];
 // outside North America no pickups or boxy American vans: saloons and hatchbacks
@@ -61,7 +61,7 @@ export class Parked {
     if (P) return P;
     P = { near: [], far: [], ready: false };
     K.paints.set(color, P);
-    this.C.loadCar(K.model, { npc: true, color }).then(rig => {
+    P.promise = this.C.loadCar(K.model, { npc: true, color }).then(rig => {
       const mats = new Map(); rig.object.traverse(o => { if (o.isMesh && /paint/.test(o.name || '')) mats.set(o.name, o.material); });
       for (const part of K.paintParts) {
         const mat = mats.get(part.name); if (!mat) continue;
@@ -137,6 +137,9 @@ export class Parked {
     }
     this.list = out;
     this.frame = 0;
+    // every colour's paint ready now (made the first time a car of that colour came near, it held a frame)
+    const sets = new Map(); for (const o of out) if (o.K && !o.skip) sets.set(o.K.model + ':' + o.paint, [o.K, o.paint]);
+    await Promise.all([...sets.values()].map(([K, col]) => (this.paintSet(K, col).promise || Promise.resolve()).catch(() => {})));
     return this;
   }
 
