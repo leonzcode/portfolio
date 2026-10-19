@@ -24,7 +24,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=5';
+import { unproject } from './geo.js?v=6';
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -135,7 +135,7 @@ export let style = { region: 'other', yellowCentre: false };
 // ---------------------------------------------------------------- materials
 let MATS = null;
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=5');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=6');
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -217,7 +217,7 @@ function makeMaterials() {
     const jv = 'vec2(' + J[0].toFixed(2) + ', ' + J[1].toFixed(2) + ')';
     sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
       float pl = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-      diffuseColor.rgb = mix(vec3(0.34, 0.335, 0.32), vec3(pl) * vec3(0.72, 0.71, 0.69), 0.45);
+      diffuseColor.rgb = mix(vec3(0.27, 0.268, 0.258), vec3(pl) * vec3(0.58, 0.57, 0.55), 0.45);
       vec2 jsz = ${jv};
       vec2 jf = abs(fract(vMapUv * 2.0 / jsz) - 0.5) * jsz;
       float jl = min(0.5 * jsz.x - jf.x, 0.5 * jsz.y - jf.y);
@@ -348,7 +348,7 @@ function tileB(kind, x, z) {
 const UVS = 1 / 2.1; // asphalt texture tile is 2.1 m
 
 // ---------------------------------------------------------------- topology
-function classify(w, region) {
+function classify(w, region, dense = 0) {
   const t = w.tags, hw = w.highway;
   const C = CLASSES[hw]; if (!C) return null;
   if (t.area === 'yes') return null;
@@ -361,6 +361,13 @@ function classify(w, region) {
   const reverse = t.oneway === '-1';
   let lanes = num(t.lanes);
   let lf = num(t['lanes:forward']), lb = num(t['lanes:backward']);
+  // no lanes and no width (vector tile data): a main road in a dense city is wide (Champs-Elysees, 7th Avenue)
+  if (lanes == null && lf == null && lb == null && !num(t.width)) {
+    const main = hw === 'trunk' || hw === 'primary';
+    if (dense >= 2 && main) { if (oneway) lanes = 5; else { lf = 3; lb = 3; } }
+    else if (dense >= 2 && hw === 'secondary') { if (oneway) lanes = 4; else { lf = 2; lb = 2; } }
+    else if (dense >= 1 && main) { if (oneway) lanes = 3; else { lf = 2; lb = 2; } }
+  }
   if (oneway) { lf = lanes || lf || C.one; lb = 0; }
   else {
     if (lanes && lf == null && lb == null) { lf = Math.ceil(lanes / 2); lb = Math.max(1, lanes - lf); }
@@ -411,16 +418,19 @@ async function buildTopology(data) {
     const k = Math.floor(p[0] / 100) + ',' + Math.floor(p[1] / 100);
     bgrid.set(k, (bgrid.get(k) || 0) + 1);
   }
-  const urbanAt = (x, z) => {
+  const countAt = (x, z) => {
     const cx = Math.floor(x / 100), cz = Math.floor(z / 100); let n = 0;
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) n += bgrid.get((cx + i) + ',' + (cz + j)) || 0;
-    return n >= 10;
+    return n;
   };
+  const urbanAt = (x, z) => countAt(x, z) >= 10;
   const nodePos = data.nodes || new Map();
   const ways = [];
   for (const w of data.roads || []) {
     await Y();
-    const c = classify(w, region); if (!c || w.nodes.length < 2) continue;
+    // the busiest stretch of the way decides (a long avenue's middle may lie outside the loaded area)
+    let nb = 0; if (w.pts && w.pts.length) for (let k = 0; k <= 8; k++) { const q = w.pts[Math.round(k / 8 * (w.pts.length - 1))]; nb = Math.max(nb, countAt(q[0], q[1])); }
+    const c = classify(w, region, nb >= 40 ? 2 : nb >= 10 ? 1 : 0); if (!c || w.nodes.length < 2) continue;
     let nodes = w.nodes.slice();
     if (c.reverse) nodes.reverse();
     const pts = []; const ids = [];
@@ -921,6 +931,12 @@ function findFeatures(data) {
 //    secondary in town (no motorways);
 //  - otherwise a minor road (residential, unclassified, living street, a service road over 30 m) meeting a
 //    tertiary-or-bigger road stops (US, Canada, Australia: stop sign and line) or gives way (elsewhere).
+function buildingsNear(x, z, r) {
+  if (!S.bpolys) return 0;
+  let n = 0;
+  for (const b of S.bpolys) { const cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2; if (Math.abs(cx - x) < r && Math.abs(cz - z) < r && Math.hypot(cx - x, cz - z) < r) n++; }
+  return n;
+}
 function inferControls(approaches) {
   const stopKind = (S.region === 'us' || S.region === 'au') ? 'stop' : 'give_way';
   for (const n of S.nodes.values()) {
@@ -930,7 +946,7 @@ function inferControls(approaches) {
     const major = legs.filter(x => x.e.c.rank >= 6).length, mainRoads = legs.filter(x => x.e.c.rank >= 7).length;
     const urban = legs.some(x => x.e.c.urban);
     const incoming = (x) => x.atStart ? x.e.c.lanesB > 0 : x.e.c.lanesF > 0;
-    if ((legs.length >= 4 && major >= 2) || (legs.length === 3 && mainRoads >= 2 && urban)) {
+    if (((legs.length >= 4 && major >= 2) || (legs.length === 3 && mainRoads >= 2 && urban)) && buildingsNear(n.x, n.z, 150) >= 25) {
       for (const x of legs) if (incoming(x)) approaches.push({ e: x.e, toEnd: !x.atStart, s: null, kind: 'signal', node: n.id, junction: n.id, inferred: true });
       continue;
     }
@@ -1383,14 +1399,17 @@ function emitPavement(line0, W) {
     const a = line[i], b = line[j], ka = a.mk || 1, kb = b.mk || 1, sa = cum[i], sb = cum[j];
     const B = tileB('pave', (a.x + b.x) / 2, (a.z + b.z) / 2);
     const ya = a.h + LIFT + CURB_H, yb = b.h + LIFT + CURB_H;
-    const P = (p, o, y, k, u) => { const x = p.x + p.nx * o * k, z = p.z + p.nz * o * k; return B.v(x, y, z, u, o); };
-    B.quad(P(a, CURB_W, ya, ka, sa), P(b, CURB_W, yb, kb, sb), P(b, w, yb, kb, sb), P(a, w, ya, ka, sa));
-    const sk = [(a.nx + b.nx) / 2, 0, (a.nz + b.nz) / 2];
-    const Pn = (p, o, y, k, u) => { const x = p.x + p.nx * o * k, z = p.z + p.nz * o * k; return B.v(x, y, z, u, o, null, null, sk); };
-    B.quad(Pn(a, w, ya, ka, sa), Pn(b, w, yb, kb, sb), Pn(b, w, yb - 0.6, kb, sb), Pn(a, w, ya - 0.6, ka, sa)); // skirt into the terrain
     const pa = (o, p, k) => [p.x + p.nx * o * k, p.z + p.nz * o * k];
     const A0 = pa(CURB_W, a, ka), A1 = pa(CURB_W, b, kb), C0 = pa(w, a, ka), C1 = pa(w, b, kb);
-    S.pav.push(A0[0], A0[1], ya, A1[0], A1[1], yb, C1[0], C1[1], yb, A0[0], A0[1], ya, C1[0], C1[1], yb, C0[0], C0[1], ya);
+    // the outer edge follows the ground (a pavement on a hillside slopes with it), never far from the kerb top
+    const outer = (C, y) => { const g = sampleGround(C[0], C[1]); return g == null ? y : Math.max(y - 1.2, Math.min(y + 0.4, g + 0.05)); };
+    const oa = outer(C0, ya), ob = outer(C1, yb);
+    const P = (p, o, y, k, u) => { const x = p.x + p.nx * o * k, z = p.z + p.nz * o * k; return B.v(x, y, z, u, o); };
+    B.quad(P(a, CURB_W, ya, ka, sa), P(b, CURB_W, yb, kb, sb), P(b, w, ob, kb, sb), P(a, w, oa, ka, sa));
+    const K = tileB('curb', (a.x + b.x) / 2, (a.z + b.z) / 2), sk = [(a.nx + b.nx) / 2, 0, (a.nz + b.nz) / 2];
+    const Pn = (p, o, y, k, u, v) => { const x = p.x + p.nx * o * k, z = p.z + p.nz * o * k; return K.v(x, y, z, u * 0.5, v, null, null, sk); };
+    K.quad(Pn(a, w, oa, ka, sa, 0), Pn(b, w, ob, kb, sb, 0), Pn(b, w, ob - 0.3, kb, sb, 0.15), Pn(a, w, oa - 0.3, ka, sa, 0.15)); // a low edge into the terrain
+    S.pav.push(A0[0], A0[1], ya, A1[0], A1[1], yb, C1[0], C1[1], ob, A0[0], A0[1], ya, C1[0], C1[1], ob, C0[0], C0[1], oa);
     i = j;
   }
 }

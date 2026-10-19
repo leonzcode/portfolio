@@ -3,7 +3,7 @@
 // blue-green shade on pavement, and not under a building, a road or water. Gaps inside a crown are closed, specks
 // dropped, and crowns are placed greedily at the peaks of the distance to the canopy's edge, sized by it.
 //
-//   detect({ data, w, h, x0, z0, x1, z1 }, { buildings: [ring], water: [ring], roads: [{ pts, half }], core,
+//   detect({ data, w, h, x0, z0, x1, z1 }, { buildings: [ring], tall: [{ ring, h }], water: [ring], roads: [{ pts, half }], core,
 //           lean: [kx, kz], idBase, rough }) -> { list: [{ x, z, r, c, col }], canopyCells }
 
 function hashf(n, salt = 0) {
@@ -68,6 +68,17 @@ export function detect(px, opts = {}) {
       }
     }
   }
+  // street canyons: near tall buildings the shade is deep and tinted, so only clearly green, lit canopy counts
+  const canyon = new Uint8Array(N);
+  for (const tb of opts.tall || []) {
+    const ring = tb.ring; if (!ring || ring.length < 3) continue;
+    const m = Math.min(70, 0.7 * tb.h);
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const p of ring) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < z0) z0 = p[1]; if (p[1] > z1) z1 = p[1]; }
+    const i0 = Math.max(0, Math.floor((x0 - m - px.x0) / G)), i1 = Math.min(gw - 1, Math.floor((x1 + m - px.x0) / G));
+    const j0 = Math.max(0, Math.floor((z0 - m - px.z0) / G)), j1 = Math.min(gh - 1, Math.floor((z1 + m - px.z0) / G));
+    for (let j = j0; j <= j1; j++) canyon.fill(1, j * gw + i0, j * gw + i1 + 1);
+  }
   // canopy
   const can = new Uint8Array(N), L1 = new Float32Array(N);
   let nc = 0;
@@ -83,7 +94,8 @@ export function detect(px, opts = {}) {
     for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const q = L1[c + b * gw + a]; s1 += q; s2 += q * q; }
     const nsd = Math.sqrt(Math.max(0, s2 / 9 - (s1 / 9) ** 2));
     let tree = false;
-    if (gb > 0.07) tree = nsd > rough || (l < 60 && sd > 2.5 && gb > 0.095);
+    if (canyon[c]) tree = gb > 0.1 && gr > 0.06 && l > 35 && nsd > 5;
+    else if (gb > 0.07) tree = nsd > rough || (l < 60 && sd > 2.5 && gb > 0.095);
     // foliage in shade: the picture tints it blue, so ask for red well under green and real texture
     else if (gb > -0.08) tree = l < 80 && gr > 0.05 && sd > 4 && nsd > 4;
     if (tree) { can[c] = 1; nc++; }

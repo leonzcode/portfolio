@@ -8,7 +8,8 @@
 //                         roadsMask, buildings, roads, centre: [x, z], radius, lean: [kx, kz] })
 //   t.group, t.ready (Promise of stats), t.dispose()
 import * as THREE from 'three';
-import { frame } from './geo.js?v=5';
+import { frame } from './geo.js?v=6';
+import { detect } from './treedetect.js?v=6';
 
 const D2R = Math.PI / 180;
 function hashf(n, salt = 0) {
@@ -210,7 +211,7 @@ function getWorker() {
   if (WORKER === false) return null;
   if (!WORKER) {
     try {
-      WORKER = new Worker(new URL('./treeworker.js?v=5', import.meta.url), { type: 'module' });
+      WORKER = new Worker(new URL('./treeworker.js?v=6', import.meta.url), { type: 'module' });
       WORKER.onmessage = (e) => { const j = jobs.get(e.data.id); if (!j) return; jobs.delete(e.data.id); if (e.data.error) j.reject(new Error(e.data.error)); else j.resolve(e.data.res); };
       WORKER.onerror = () => { WORKER = false; for (const j of jobs.values()) j.reject(new Error('worker failed')); jobs.clear(); };
     } catch (e) { WORKER = false; return null; }
@@ -222,6 +223,7 @@ async function detectBlock(imagery, box, opts) {
   const det = {
     core: opts.core, lean: opts.lean || [0, 0], idBase: opts.idBase || 0,
     buildings: (opts.buildings || []).map(b => b.outer),
+    tall: (opts.buildings || []).map(b => ({ ring: b.outer, h: b.height ?? (b.levels ? b.levels * 3.2 : 0) })).filter(b => b.h > 20),
     water: (opts.areas || []).filter(a => a.kind === 'water' && a.outer).map(a => a.outer),
     roads: [],
   };
@@ -245,8 +247,6 @@ async function detectBlock(imagery, box, opts) {
     if (opts.slice) await opts.slice('pre');
     res = detect(px, det);
   }
-  // the caller's road mask (roads.js), asked only where a trunk would stand
-  if (opts.roadsMask) res.list = res.list.filter(t => { try { return !opts.roadsMask(t.x, t.z); } catch (e) { return true; } });
   return res;
 }
 
@@ -283,9 +283,16 @@ export function build(src, opts = {}) {
   const areas = S.areas || [];
   const buildingsList = opts.buildings || S.buildings || [];
   const roads = Array.isArray(opts.roads) ? opts.roads : (S.roads || []);
-  // a roads object (roads.js) gives a better mask than the OSM lines: no trunk on a carriageway
+  // where no trunk may stand: on a carriageway, on a kerb or pavement, or within 1.5 m of a carriageway's edge
+  // (roads.js), else the caller's mask
   let roadsMask = opts.roadsMask || null;
-  if (!roadsMask && opts.roads && typeof opts.roads.surfaceAt === 'function') roadsMask = (x, z) => { const r = opts.roads.surfaceAt(x, z); return !!(r && r.onRoad); };
+  if (!roadsMask && opts.roads && typeof opts.roads.surfaceAt === 'function') roadsMask = (x, z) => {
+    const r = opts.roads.surfaceAt(x, z);
+    return !!(r && (r.onRoad || r.curbH > 0 || (r.h != null && typeof r.edge === 'number' && r.edge < 1.5)));
+  };
+  // the tree line: about 3600 m up to 30 degrees of latitude, 90 m lower a degree past that (2100 m in the Alps,
+  // 900 m at 60 degrees); trees thin out over the 400 m below it
+  const alat = Math.abs(frame.lat), treeLine = alat <= 30 ? 3600 : Math.max(0, 3600 - 90 * (alat - 30));
 
   let t0 = performance.now();
   const slice = async (where) => { const d = performance.now() - t0; if (d > 8) { if (d > 40) (stats.slow || (stats.slow = [])).push((where || '?') + ':' + Math.round(d)); await new Promise(r => setTimeout(r, 0)); t0 = performance.now(); } };
@@ -342,7 +349,7 @@ export function build(src, opts = {}) {
           const bl = buildingsList.filter(b => b.outer && inBox(b.outer));
           const rl = roads.filter(r => r.pts && inBox(r.pts));
           const al = areas.filter(a => a.kind === 'water' && a.outer && inBox(a.outer));
-          pr = detectBlock(imagery, ob, { ...opts, core, slice, buildings: bl, roads: rl, areas: al, roadsMask, idBase: (bx * 7919 + bz * 104729) * 1000003 })
+          pr = detectBlock(imagery, ob, { ...opts, core, slice, buildings: bl, roads: rl, areas: al, idBase: (bx * 7919 + bz * 104729) * 1000003 })
             .catch(e => { console.warn('trees: imagery', e); return null; });
           blockCache.set(key, pr);
           pr.then(v => { if (!v) blockCache.delete(key); });
@@ -397,22 +404,66 @@ export function build(src, opts = {}) {
       }
       await slice('L540');
     }
-    // inside a building is never right
-    if (buildingsList.length) {
-      const bgrid = new Map(), GB = 50;
-      for (const b of buildingsList) {
-        if (!b.outer || b.outer.length < 3 || (b.minHeight || 0) > 3) continue;
-        let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
-        for (const p of b.outer) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); }
-        for (let i = Math.floor(x0 / GB); i <= Math.floor(x1 / GB); i++) for (let j = Math.floor(z0 / GB); j <= Math.floor(z1 / GB); j++) { const k = i + ',' + j; if (!bgrid.has(k)) bgrid.set(k, []); bgrid.get(k).push(b); }
-      }
-      await slice('L551');
-      for (let i = list.length - 1; i >= 0; i--) {
-        const t = list[i], l = bgrid.get(Math.floor(t.x / GB) + ',' + Math.floor(t.z / GB));
-        if (l && l.some(b => inRing(t.x, t.z, b.outer))) list.splice(i, 1);
-        if ((i & 255) === 0) await slice('L555');
-      }
+    // buildings by 50 m cell, for 'inside' and 'how near'
+    const bgrid = new Map(), GB = 50;
+    for (const b of buildingsList) {
+      if (!b.outer || b.outer.length < 3 || (b.minHeight || 0) > 3) continue;
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (const p of b.outer) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); }
+      for (let i = Math.floor(x0 / GB); i <= Math.floor(x1 / GB); i++) for (let j = Math.floor(z0 / GB); j <= Math.floor(z1 / GB); j++) { const k = i + ',' + j; if (!bgrid.has(k)) bgrid.set(k, []); bgrid.get(k).push(b); }
     }
+    // distance to the nearest building wall (negative inside one), up to about 50 m
+    const wallDist = (x, z) => {
+      let d = 60;
+      const ci = Math.floor(x / GB), cj = Math.floor(z / GB);
+      for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++) {
+        const l = bgrid.get(i + ',' + j); if (!l) continue;
+        for (const b of l) {
+          const r = b.outer, n = r.length;
+          let m = Infinity;
+          for (let k = 0; k < n; k++) {
+            const p = r[k], q = r[(k + 1) % n], dx = q[0] - p[0], dz = q[1] - p[1], L2 = dx * dx + dz * dz;
+            const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - p[0]) * dx + (z - p[1]) * dz) / L2)) : 0;
+            const e = Math.hypot(x - p[0] - dx * t, z - p[1] - dz * t); if (e < m) m = e;
+          }
+          if (m < 60 && inRing(x, z, r)) return -m;
+          if (m < d) d = m;
+        }
+      }
+      return d;
+    };
+    await slice('bgrid');
+    // OSM trees stand where they are mapped (only never inside a building); the picture's and the scattered ones
+    // must clear roads, pavements and walls, stay under the tree line, and not crowd more than a park does
+    const kept = [];
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      if ((i & 63) === 0) await slice('filter');
+      const d = wallDist(t.x, t.z);
+      if (t.src === 'osm' || t.src === 'row') { if (d > 0) kept.push(t); continue; }
+      if (d < 1.0) { stats.dropWall = (stats.dropWall || 0) + 1; continue; }
+      if (roadsMask) { let bad = false; try { bad = roadsMask(t.x, t.z); } catch (e) { bad = false; } if (bad) { stats.dropRoad = (stats.dropRoad || 0) + 1; continue; } }
+      const g = groundAt(t.x, t.z);
+      if (g != null) {
+        const elev = g + (frame.h || 0);
+        if (elev > treeLine - 400 * hashf(t.id | 0, 9)) { stats.dropHigh = (stats.dropHigh || 0) + 1; continue; }
+      }
+      // a crown does not reach through a wall
+      if (t.r != null) t.r = Math.max(1.5, Math.min(t.r, d + 1.2));
+      kept.push(t);
+    }
+    // at most 14 detected or scattered trees in a 30 m square (one a 64 m2: a park's plane trees, not a thicket)
+    const cellN = new Map(), CAP = 14, GD = 30;
+    const free = kept.filter(t => t.src === 'img' || t.src === 'area').sort((a, b) => (b.r || 3) - (a.r || 3));
+    const dropSet = new Set();
+    for (const t of free) {
+      const k = Math.floor(t.x / GD) + ',' + Math.floor(t.z / GD), n = (cellN.get(k) || 0) + 1;
+      cellN.set(k, n);
+      if (n > CAP) dropSet.add(t);
+    }
+    stats.dropDense = dropSet.size;
+    list.length = 0;
+    for (const t of kept) if (!dropSet.has(t)) list.push(t);
     if (disposed) return stats;
     await makeMeshes(list);
     if (disposed) return stats;
