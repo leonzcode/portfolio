@@ -4,8 +4,12 @@
 // parts are one InstancedMesh for all its parked copies, near ones with the detailed parts, the rest with the far
 // ones, so a hundred parked cars cost about what one moving car does.
 import * as THREE from 'three';
+import { frame } from './geo.js?v=11';
 
 const MODELS = ['fairheaven', 'milano', 'shvan', 'conquer', 's10', 'fairheaven', 'milano'];
+// outside North America no pickups or boxy American vans: saloons and hatchbacks
+const MODELS_ELSE = ['fairheaven', 'milano', 'volvos90', 'milano', 'fairheaven', 'volvos90', 'milano'];
+const inAmericas = () => frame.lat > 14 && frame.lat < 72 && frame.lon > -170 && frame.lon < -52;
 // the common colours of real cars, white and black and greys most of all
 const PAINTS = [0xf2f2f0, 0xf2f2f0, 0x111214, 0x111214, 0x8c9096, 0xb8bcc2, 0x55595f, 0x1e3a6b, 0x7a1418];
 const CLASSES = { residential: 0.42, tertiary: 0.32, secondary: 0.24, unclassified: 0.3, living_street: 0.35, primary: 0.15 };
@@ -113,7 +117,7 @@ export class Parked {
           // facing the way traffic goes on that side of the road
           const along = (side > 0) !== leftHand;
           const heading = (Math.atan2(along ? tx : -tx, along ? -tz : tz) * 180 / Math.PI + 360) % 360;
-          const model = MODELS[(hash(e.id, k * 7 + 3) * MODELS.length) | 0];
+          const ML = inAmericas() ? MODELS : MODELS_ELSE, model = ML[(hash(e.id, k * 7 + 3) * ML.length) | 0];
           out.push({ x, y: sf.h + lift, z, heading, model, paint: PAINTS[(hash(k, e.id * 3 + 1) * PAINTS.length) | 0] });
           if (out.length >= 420) break;
         }
