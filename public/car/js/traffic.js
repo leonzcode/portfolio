@@ -3,8 +3,8 @@
 // and signals for it, stops at red lights (signals.js, the same timing the lights show), waits at stop signs, gives
 // way at junctions without lights, slows for the player's car in its path, and stops with its hazards on when hit.
 import * as THREE from 'three';
-import * as SIG from './signals.js?v=9';
-import { frame } from './geo.js?v=9';
+import * as SIG from './signals.js?v=10';
+import { frame } from './geo.js?v=10';
 
 const nearNYC = () => Math.abs(frame.lat - 40.74) < 0.25 && Math.abs(frame.lon + 73.95) < 0.3;
 const PAINTS = [0xf2f2f0, 0xf2f2f0, 0x111214, 0x111214, 0x8c9096, 0xb8bcc2, 0x55595f, 0x1e3a6b, 0x7a1418, 0x24402c, 0xc9b99a, 0x3d4a5c, 0x9a2a1d, 0xe8e2d0];
@@ -66,9 +66,11 @@ export class Traffic {
   async preload(renderer, camera) {
     const ids = [...new Set(this.models)];
     const rigs = [];
-    await Promise.all(ids.map(async id => { try { const r = await this.getRig(id); rigs.push(r); this.group.add(r.object); } catch (e) { this.models = this.models.filter(m => m !== id); } }));
-    try { if (renderer.compileAsync) await renderer.compileAsync(this.scene, camera); } catch (e) {}
-    for (const r of rigs) this.freeRig(r);
+    await Promise.all(ids.map(async id => { try { const r = await this.getRig(id); rigs.push(r); } catch (e) { this.models = this.models.filter(m => m !== id); } }));
+    // built off the scene (for its lights), so no frame is drawn with shaders still to build
+    const tmp = new THREE.Group(); for (const r of rigs) tmp.add(r.object);
+    try { if (renderer.compileAsync) await Promise.race([renderer.compileAsync(tmp, camera, this.scene), new Promise(r => setTimeout(r, 10000))]); } catch (e) {}
+    for (const r of rigs) { tmp.remove(r.object); this.freeRig(r); }
   }
 
   // a way on from the end of a lane: junction lanes lead to a road lane

@@ -9,7 +9,7 @@
 // longitude and nearly linear in latitude over a few hundred metres, so a box is one scaled drawImage of the
 // stitched tiles (the error over 300 m is a few millimetres). A tile that fails falls back to its parent tile.
 import * as THREE from 'three';
-import { unproject, lonLatToTile } from './geo.js?v=9';
+import { unproject, lonLatToTile } from './geo.js?v=10';
 
 export const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 export const ATTRIBUTION = 'Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community';
