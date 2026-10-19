@@ -1,17 +1,17 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=8';
-import { Collide } from './collide.js?v=8';
-import { Vehicle } from './vehicle.js?v=8';
-import { CarCamera } from './camera.js?v=8';
-import { Hud } from './hud.js?v=8';
-import { CarSound } from './sound.js?v=8';
-import { CutMask } from './cutmask.js?v=8';
-import * as SIG from './signals.js?v=8';
-import { Parked } from './parked.js?v=8';
-import { Skids } from './skids.js?v=8';
-import { StreetSigns } from './streetsigns.js?v=8';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=9';
+import { Collide } from './collide.js?v=9';
+import { Vehicle } from './vehicle.js?v=9';
+import { CarCamera } from './camera.js?v=9';
+import { Hud } from './hud.js?v=9';
+import { CarSound } from './sound.js?v=9';
+import { CutMask } from './cutmask.js?v=9';
+import * as SIG from './signals.js?v=9';
+import { Parked } from './parked.js?v=9';
+import { Skids } from './skids.js?v=9';
+import { StreetSigns } from './streetsigns.js?v=9';
 
 const STEP = 1 / 120;
 const GLIFT = 0.15; // how far under Google's road ours is drawn
@@ -56,8 +56,8 @@ export class Drive {
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
     const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=8'), tryImport('./osm.js?v=8'), tryImport('./roads.js?v=8'), tryImport('./props.js?v=8'),
-      tryImport('./buildings.js?v=8'), tryImport('./trees.js?v=8'), tryImport('./traffic.js?v=8'), tryImport('./imagery.js?v=8')]);
+      tryImport('./cars.js?v=9'), tryImport('./osm.js?v=9'), tryImport('./roads.js?v=9'), tryImport('./props.js?v=9'),
+      tryImport('./buildings.js?v=9'), tryImport('./trees.js?v=9'), tryImport('./traffic.js?v=9'), tryImport('./imagery.js?v=9')]);
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
     // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
     if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); const M = this.bldgObj && this.bldgObj.material; if (M) { M.envMap = t; M.needsUpdate = true; } return t; }).catch(() => null);
@@ -423,7 +423,7 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=8').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=9').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;
@@ -473,7 +473,7 @@ export class Drive {
       const R = this.roadsObj, open = this.mode === 'open';
       const edges = R && R._debug ? (R._debug().edges || null) : null;
       const surf = R && R.surfaceAt ? (a, b) => { const r = R.surfaceAt(a, b); return open || !r.onRoad ? r : { onRoad: true, h: r.h + GLIFT }; } : null;
-      this.cut.build(x, z, data.roads || [], surf, open ? ground : null, open ? { edges, widthScale: 0.86, cap: 'butt', parking: false, top: 1.6, below: 0.6 } : { edges, widthScale: 1.0, top: 4.2, below: -0.2 });
+      this.cut.build(x, z, data.roads || [], surf, open ? ground : null, open ? { edges, widthScale: 0.86, cap: 'butt', parking: false, top: 3.5, below: 0.6 } : { edges, widthScale: 1.0, top: 4.2, below: -0.2 });
     } catch (e) { console.warn('cut mask', e); }
     if (this.mods.props) await swap('propsObj', () => this.mods.props.build(data, ctx));
     mark('props');

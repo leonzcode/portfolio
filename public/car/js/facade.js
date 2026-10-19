@@ -213,15 +213,16 @@ void facade() {
   float sv = fH( vec2( seed * 13.0, 1.0 ) ), sv2 = fH( vec2( seed * 7.0, 2.0 ) );
 #ifndef FACADE_NO_SCREENS
   // lit screens over the street fronts of a commercial core (Times Square, Shibuya, Piccadilly)
-  if ( flag == 1.0 && v > 4.2 && v < min( eave - 0.8, 48.0 ) && u > 0.5 && u < L - 0.5 ) {
+  // each screen 9 to 18 m across, somewhere along the wall (flag 1), or the whole front (flag 2, Times Square)
+  float pw = flag == 2.0 ? L - 1.0 : min( L - 1.0, 9.0 + 9.0 * fH( vec2( seed, 41.0 ) ) ), u0 = flag == 2.0 ? 0.5 : 0.5 + ( L - 1.0 - pw ) * fH( vec2( seed, 43.0 ) );
+  if ( ( flag == 1.0 || flag == 2.0 ) && v > 4.2 && v < min( eave - 0.8, 48.0 ) && u > u0 && u < u0 + pw ) {
     float ph = 6.0 + 6.0 * fH( vec2( seed, 31.0 ) ), gap = 0.7;
     float pv = v - 4.2, pi = floor( pv / ( ph + gap ) ), py = pv - pi * ( ph + gap );
-    float pw = L - 1.0;
-    if ( py < ph && pi < 3.0 && fH( vec2( seed + pi, 17.0 ) ) < 0.85 ) {
-      vec2 q = vec2( ( u - 0.5 ) / pw, py / ph );
+    if ( py < ph && pi < 3.0 && fH( vec2( seed + pi, 17.0 ) ) < ( flag == 2.0 ? 0.85 : 0.75 ) ) {
+      vec2 q = vec2( ( u - u0 ) / pw, py / ph );
       float sd = seed * 3.0 + pi * 11.0 + floor( u / 40.0 );
       vec3 c = fScreen( q, floor( fH( vec2( sd, 3.0 ) ) * 4.0 ), sd, uTime, pw / ph );
-      float edge = step( min( min( u - 0.5, L - 0.5 - u ), min( py, ph - py ) ), 0.12 );
+      float edge = step( min( min( u - u0, u0 + pw - u ), min( py, ph - py ) ), 0.12 );
       c = mix( c, vec3( 0.02 ), edge );
       c = c * c * ( 0.6 + 0.6 * max( max( c.r, c.g ), c.b ) );   // vivid, as screens are, not pastel
       fcCol = c * 0.1; fcEmit = c * ( 0.85 + 0.35 * sv ) * ( 1.0 - edge ); fcRough = 0.3; fcMetal = 0.0; fcJit = vec2( 0.0 ); fcAO = 1.0;

@@ -12,9 +12,9 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=8';
-import { patchBaked } from './baked.js?v=8';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME } from './facade.js?v=8';
+import { frame, project } from './geo.js?v=9';
+import { patchBaked } from './baked.js?v=9';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME } from './facade.js?v=9';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -166,7 +166,9 @@ function cityOf(lat, lon) {
   return null;
 }
 // the dense commercial cores whose fronts are covered in lit screens: [lat, lon, radius m]
-const CORES = [[40.7580, -73.9855, 260], [35.6595, 139.7005, 230], [51.5101, -0.1342, 70]];
+// (and the share of street walls with a screen: nearly all of Times Square's, fewer round Shibuya's crossing,
+// and whether a screen covers the whole front, as in Times Square)
+const CORES = [[40.7580, -73.9855, 260, 0.85, true], [35.6595, 139.7005, 150, 0.4, false], [51.5101, -0.1342, 70, 0.6, false]];
 const hex = (a) => a.map(h => new THREE.Color(h).multiplyScalar(0.62));
 const LOOK_PAL = {
   hauss: hex(['#e3d9c3', '#d9ccb0', '#e6dcc8', '#d2c4a6', '#ddd2bb', '#d6cdb9']),
@@ -396,7 +398,7 @@ function plan(b, ctx) {
   // in a dense commercial core, the fronts facing the street carry lit screens
   if (ctx.cores.length && P.H > 10 && !houseLike) {
     let cx = 0, cz = 0; for (const p of outer) { cx += p[0]; cz += p[1]; } cx /= outer.length; cz /= outer.length;
-    for (const c of ctx.cores) if (Math.hypot(cx - c[0], cz - c[1]) < c[2]) { P.core = true; break; }
+    for (const c of ctx.cores) if (Math.hypot(cx - c[0], cz - c[1]) < c[2]) { P.core = c[3] ?? 0.6; P.coreFull = !!c[4]; break; }
   }
   return P;
 }
@@ -538,13 +540,14 @@ function emit(P, ctx, W, R, img) {
       const e = edges[k], nx = -e.dz / e.len, nz = e.dx / e.len, L = runLen[runOf[k]];
       // a house's front wall (towards the road) gets the door and the garage; its other walls plain windows
       const gk = ground === GROUND.HOUSE && e.ring === outer && e.i === P.front ? (P.garage ? GROUND.HOUSE_GARAGE : GROUND.HOUSE_FRONT) : ground;
-      let lk = P.look || 0;
+      let lk = P.look || 0, screen = false;
       if (e.ring === outer && P.core && e.len >= 8) {
         // a core's street fronts: screens on any wall with a road just in front of it
         let rp = null; const mx = e.p[0] + e.dx / 2 + nx * 6, mz = e.p[1] + e.dz / 2 + nz * 6;
         try { rp = ctx.nearRoad ? ctx.nearRoad(mx, mz) : null; } catch (err) { rp = null; }
-        if (rp && rp.dist < 22) lk += 10;
-      } else if (e.ring === outer && P.look === LOOK.JAPAN && e.i === P.front && P.H > 9 && P.H < 50 && e.len > 3.5 && P.r2 < 0.75 && !P.signed) {
+        if (rp && rp.dist < 22 && hashf(P.id, 300 + e.i) < P.core) { lk += P.coreFull ? 20 : 10; screen = true; }
+      }
+      if (!screen && e.ring === outer && P.look === LOOK.JAPAN && e.i === P.front && P.H > 9 && P.H < 50 && e.len > 3.5 && P.r2 < 0.75 && !P.signed) {
         // a vertical sign standing out from the front, near one end: two faces, read from up and down the street
         P.signed = true;
         const sh = Math.min(P.eave - 1.0 - P.gh - 0.4, 14);
@@ -861,7 +864,7 @@ export function build(list, opts = {}) {
   const group = new THREE.Group(); group.name = 'buildings';
   const wallMat = opts.wallMaterial || wallMaterial();
   const ctx = { groundAt, region: region(), density: 0, g0: groundAt(0, 0) ?? 0, nearRoad: null, city: cityOf(frame.lat, frame.lon), cores: [] };
-  for (const [la, lo, r] of CORES) { const [x, z] = project(la, lo); if (Math.hypot(x, z) < 6000) ctx.cores.push([x, z, r]); }
+  for (const [la, lo, r, share, full] of CORES) { const [x, z] = project(la, lo); if (Math.hypot(x, z) < 6000) ctx.cores.push([x, z, r, share, full]); }
   // where the nearest road is (a house's front faces it): roads.js when given, else OSM road lines
   const RD = opts.roads;
   if (RD && !Array.isArray(RD) && typeof RD.nearestEdge === 'function') ctx.nearRoad = (x, z) => RD.nearestEdge(x, z, 80);
