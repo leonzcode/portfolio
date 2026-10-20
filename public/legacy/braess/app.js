@@ -14,7 +14,7 @@
  * ===================================================================== */
 (function () {
 const E = window.BraessEngine;
-const V = '?v=1';
+const V = '?v=2';
 const $ = id => document.getElementById(id);
 const clamp = E.clamp;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
