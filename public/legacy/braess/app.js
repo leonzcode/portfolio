@@ -14,7 +14,7 @@
  * ===================================================================== */
 (function () {
 const E = window.BraessEngine;
-const V = '?v=2';
+const V = '?v=3';
 const $ = id => document.getElementById(id);
 const clamp = E.clamp;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -351,7 +351,7 @@ function renderHome() {
   pscroll.innerHTML = `
     <div class="home-head">
       <h1>Popular places with Braess roads</h1>
-      <p>We simulated the weekday rush hours in ${fmt(S.hotTotal || list.length)} busy city centres around the world. In these ${list.length}, closing a road made traffic faster. The busiest come first: ranked by how many shops, offices, schools and restaurants OpenStreetMap has within ${fmt((S.hotRadius || 1200) / 1000, 1)} km.</p>
+      <p>We simulated the weekday rush hours in ${fmt(S.hotTotal || list.length)} busy city centres around the world. In these ${list.length}, closing a road made traffic faster. The busiest come first: ranked by how many shops, offices, schools and restaurants OpenStreetMap has around each one.</p>
       <div class="sortrow">
         <button class="pill${S.sort === 'popular' ? ' on' : ''}" data-sort="popular">Most popular</button>
         <button class="pill${S.sort === 'strong' ? ' on' : ''}" data-sort="strong">Strongest paradox</button>
@@ -363,9 +363,9 @@ function renderHome() {
       return `<div class="res" data-hot="${esc(h.id)}" role="button" tabindex="0">
         <div class="res-body">
           <div class="res-title"><span class="rk">${i + 1}.</span> ${esc(h.name)}</div>
-          <div class="res-line">${esc(h.city)}, ${esc(h.country)} · ${fmt(h.poi)} places nearby</div>
+          <div class="res-line">${esc(h.city)}, ${esc(h.country)} · ${fmt(h.poi)} places within ${fmt(Math.min(h.radius, 1200) / 1000, 1)} km</div>
           <div class="res-status">${h.roads} Braess road${h.roads === 1 ? '' : 's'} <span>· ${esc(h.when || '')}</span></div>
-          ${b ? `<div class="res-quote">${svg(I.block)}<span>Closing ${esc(b.name)}: ${b.imp > 0 ? `total travel time <b class="good">−${pct(b.imp)}</b>` : `some trips <b class="good">${pct(b.odImp, 1)} faster</b>`}</span></div>` : ''}
+          ${b ? `<div class="res-quote">${svg(I.block)}<span>Closing ${esc(b.name)}: ${b.imp >= 0.0001 ? `total travel time <b class="good">−${pct(b.imp)}</b>` : `some trips <b class="good">${pct(b.odImp, 1)} faster</b>`}</span></div>` : ''}
         </div>
         <div class="res-thumb"><div class="tiles">${tilesHTML(h.lat, h.lon, 15, 84, 84)}</div><span class="dot"></span></div>
       </div>`;
@@ -518,13 +518,13 @@ function overviewHTML() {
   if (hot && !res) {
     // (what the world scan found here, until this run has its own answer)
     const at = (hot.rush || []).filter(r => r.roads.length);
-    h += `<div class="section"><h2>Found in the world scan</h2><div class="hint">${at.map(r => `At ${hhmm(r.hour)}: ${r.roads.length} Braess road${r.roads.length > 1 ? 's' : ''}, the strongest ${esc(r.roads[0].name)}${r.roads[0].imp > 0 ? ` (total travel time −${pct(r.roads[0].imp)} if closed)` : ''}.`).join(' ')}</div></div>`;
+    h += `<div class="section"><h2>Found in the world scan</h2><div class="hint">${at.map(r => `At ${hhmm(r.hour)}: ${r.roads.length} Braess road${r.roads.length > 1 ? 's' : ''}, the strongest ${esc(r.roads[0].name)}${r.roads[0].imp >= 0.0001 ? ` (total travel time −${pct(r.roads[0].imp)} if closed)` : ''}.`).join(' ')}</div></div>`;
   }
   if (hot && hot.note) h += `<div class="section"><h2>A real Braess story</h2><div class="hint">${esc(hot.note)}</div></div>`;
   if (res) {
     const top = res.braessRoads[0];
     h += `<div class="section"><h2>What the simulation found</h2>` + (top
-      ? `<div class="hint">At ${hhmm(S.hour)} on a ${S.prof === 'wd' ? 'weekday' : 'weekend'}, ${res.braessRoads.length === 1 ? 'one road makes' : res.braessRoads.length + ' roads make'} traffic slower by being open. Closing <b>${esc(top.name)}</b> ${top.best.imp > 0 ? `would cut total travel time by <b class="good">${pct(top.best.imp)}</b>` : `would leave the area as a whole no slower and make some trips <b class="good">${pct(top.best.odImp, 1)} faster</b>`}.</div>`
+      ? `<div class="hint">At ${hhmm(S.hour)} on a ${S.prof === 'wd' ? 'weekday' : 'weekend'}, the simulation found ${res.braessRoads.length === 1 ? 'one Braess road' : res.braessRoads.length + ' Braess roads'}. Closing <b>${esc(top.name)}</b> ${top.best.imp >= 0.0001 ? `would cut total travel time by <b class="good">${pct(top.best.imp)}</b>` : `would leave the area as a whole no slower and make some trips <b class="good">${pct(top.best.odImp, 1)} faster</b>`}.</div>`
         + (res.combined && res.braessRoads.length > 1 ? `<div class="kv"><span>Closing all of them together</span><b class="good">−${pct(res.combined.imp)} travel time</b></div>` : '')
         + `<button class="pill" style="margin-top:10px" data-tab="roads">See the roads</button>`
       : `<div class="hint">No road here makes traffic faster by being closed at ${hhmm(S.hour)}. The paradox needs a particular mix of congestion and route choices: try the morning or evening rush, more demand, or another area.${res.nearMiss ? ` The closest was ${esc(S.net.segs[res.nearMiss.si].name)} (${res.nearMiss.imp >= 0 ? '−' : '+'}${pct(Math.abs(res.nearMiss.imp), 3)} if closed).` : ''}</div>`) + `</div>`;
