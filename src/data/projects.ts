@@ -391,6 +391,29 @@ mathProjects.forEach((p) => {
 
 export const scienceProjects: Project[] = [
   {
+    slug: "braess",
+    title: "Braess's Paradox Traffic Simulator",
+    description:
+      "Search any street on Earth and simulate its rush hour on the real road network, then find the roads whose closure would make everyone's trip faster: live examples of Braess's paradox.",
+    href: "/legacy/braess/",
+    image: "/cards/card_braess.jpg",
+    tag: "Live demo",
+    story: [
+      "Braess's paradox says that adding a road can make traffic slower for everyone, because each driver picks the route that is fastest for them alone. This simulator looks for real streets where the reverse holds: close the road, and the whole area moves faster.",
+      "Pick any place and it downloads the streets, lanes, speed limits and one-way rules from OpenStreetMap, along with the shops, offices and schools that trips start and end at. It builds the travel demand for the chosen hour from that land use, solves the Wardrop user equilibrium with conjugate Frank-Wolfe and BPR road delays, then closes every busy road in turn and solves again.",
+      "The closures run in parallel on every core of the visitor's computer, and how many are tested depends only on the size of the network, so a slow computer finds the same roads as a fast one. I checked the results against solving every candidate to a relative gap of one in a million: on downtown San Francisco and central Paris it flagged exactly the same roads.",
+      "I also ran it on busy city centres around the world at both weekday rush hours. The ones where it found Braess roads are listed as popular places, busiest first, and open without downloading anything.",
+    ],
+    tech: [
+      "MapLibre GL JS on OpenFreeMap vector tiles, in a light map style of my own",
+      "OpenStreetMap roads and land use through the Overpass API",
+      "Wardrop user equilibrium: conjugate Frank-Wolfe, BPR delays, Newton line search",
+      "Web Workers testing road closures in parallel",
+      "Photon and Nominatim place search",
+      "Vanilla JS, no build step",
+    ],
+  },
+  {
     slug: "ski-resort",
     title: "Ski Resort Trail Map",
     description:
