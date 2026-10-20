@@ -43,7 +43,7 @@ const socialKey = isInternalDetail ? detailHref!.replace(/^\//, "").replace(/\/$
       }
     </div>
     <div class="flex items-baseline justify-between gap-3">
-      <h3 class="font-semibold text-[16px] text-neutral-900 dark:text-neutral-100 group-hover:underline underline-offset-4 decoration-1">
+      <h3 data-edit={socialKey ? "title" : undefined} data-edit-key={socialKey ?? undefined} class="font-semibold text-[16px] text-neutral-900 dark:text-neutral-100 group-hover:underline underline-offset-4 decoration-1">
         {title}
       </h3>
       {
@@ -74,7 +74,7 @@ const socialKey = isInternalDetail ? detailHref!.replace(/^\//, "").replace(/\/$
         )
       }
     </div>
-    <p class="mt-2 text-[14.5px] leading-relaxed text-neutral-600 dark:text-neutral-400">
+    <p data-edit={socialKey ? "desc" : undefined} data-edit-key={socialKey ?? undefined} class="mt-2 text-[14.5px] leading-relaxed text-neutral-600 dark:text-neutral-400">
       {description}
     </p>
     {socialKey && <p class="mt-1.5 text-[12px] text-neutral-400 dark:text-neutral-500 tabular-nums" data-social-key={socialKey} hidden></p>}

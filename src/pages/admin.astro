@@ -1,0 +1,696 @@
+---
+/* leonzhao.dev/admin (Leon, 2026-10-19): change what visitors see without a
+   rebuild. Every project's title, description, views and likes, each tab's
+   order of projects, and every comment, with a delete.
+
+   Nothing secret is in this page. You log in with a Leoncraft 2 admin
+   account; the password goes only to the mlhub server, which keeps a salted
+   hash of it, and the server checks the session it gives on every change
+   (apps/mc/server.js siteAdminOf, apps/mc/sitesocial.js). The edits live
+   there too, and the pages put them in as they load (src/scripts/siteedits.ts). */
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { aiProjects, scienceProjects, mathProjects, gameProjects, type Project } from "../data/projects";
+
+// in the site's own tab order
+const groups: [string, string, Project[]][] = [
+  ["ai", "AI", aiProjects],
+  ["science", "Science", scienceProjects],
+  ["math", "Math", mathProjects],
+  ["games", "Games", gameProjects],
+];
+const data = {
+  cats: groups.map(([id, label, list]) => ({ id, label, n: list.length })),
+  projects: groups.flatMap(([id, , list]) =>
+    list.map((p) => ({ cat: id, slug: p.slug, key: `${id}/${p.slug}`, title: p.title, description: p.description, image: p.image ?? null, href: p.detailHref ?? p.href })),
+  ),
+};
+// (as JSON in the page; a "<" in any text cannot end the script)
+const json = JSON.stringify(data).replace(/</g, "\\u003c");
+
+const field =
+  "w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-[14px] text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-900 dark:focus:border-neutral-300 transition-colors";
+const primary =
+  "inline-flex items-center justify-center px-4 py-2 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[13.5px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors";
+---
+
+<BaseLayout title="Admin · Leon Zhao" wide={true} noindex={true}>
+  <script type="application/json" id="adm-data" set:html={json} />
+
+  <section class="adm">
+    <div class="flex flex-wrap items-baseline justify-between gap-3 mb-8">
+      <h1 class="text-[32px] sm:text-[36px] font-semibold tracking-tight text-neutral-900 dark:text-neutral-50 leading-tight">Admin</h1>
+      <p id="adm-who" hidden class="text-[13.5px] text-neutral-500">
+        Logged in as <b id="adm-name" class="font-medium text-neutral-800 dark:text-neutral-200"></b>
+        · <button type="button" id="adm-logout" class="underline underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100">Log out</button>
+      </p>
+    </div>
+
+    <!-- logging in -->
+    <form id="adm-login" hidden class="max-w-sm flex flex-col gap-3" novalidate>
+      <p class="text-[14.5px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
+        Log in with your Leoncraft 2 admin account.
+      </p>
+      <label class="text-[13px] font-medium text-neutral-700 dark:text-neutral-300" for="adm-user">Name</label>
+      <input id="adm-user" class={field} autocomplete="username" maxlength="16" required />
+      <label class="text-[13px] font-medium text-neutral-700 dark:text-neutral-300" for="adm-pass">Password</label>
+      <input id="adm-pass" type="password" class={field} autocomplete="current-password" maxlength="128" required />
+      <div class="flex items-center gap-3 mt-1">
+        <button type="submit" id="adm-go" class={primary}>Log in</button>
+        <span id="adm-login-msg" role="status" class="text-[13px] text-neutral-500"></span>
+      </div>
+    </form>
+
+    <p id="adm-loading" class="text-[14px] text-neutral-500">Loading…</p>
+
+    <!-- the desk -->
+    <div id="adm-desk" hidden>
+      <nav class="flex gap-6 border-b border-neutral-200 dark:border-neutral-800 mb-8 text-[14px]" role="tablist">
+        <button type="button" role="tab" data-tab="projects" class="adm-tab">Projects</button>
+        <button type="button" role="tab" data-tab="comments" class="adm-tab">Comments <span id="adm-ccount" class="font-mono text-[12px] text-neutral-400"></span></button>
+        <button type="button" role="tab" data-tab="account" class="adm-tab">Account</button>
+      </nav>
+
+      <!-- projects: text, counts and order -->
+      <div data-pane="projects">
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-2">
+          <div id="adm-cats" class="flex flex-wrap gap-2" role="group" aria-label="Tab"></div>
+          <div id="adm-orderbar" class="flex flex-wrap items-center gap-2 text-[13px]">
+            <span id="adm-order-msg" role="status" class="text-neutral-500"></span>
+            <button type="button" id="adm-order-undo" hidden class="px-3 py-1.5 rounded-md border border-neutral-300 dark:border-neutral-700 hover:border-neutral-500">Undo</button>
+            <button type="button" id="adm-order-site" hidden class="px-3 py-1.5 rounded-md border border-neutral-300 dark:border-neutral-700 hover:border-neutral-500">Use the site's order</button>
+            <button type="button" id="adm-order-save" hidden class={primary + " !py-1.5"}>Save order</button>
+          </div>
+        </div>
+        <p class="text-[13px] text-neutral-500 mb-6">
+          Drag a project by its handle, or use the arrows, to change where it sits on the tab. A blue mark means it differs from the site's own.
+        </p>
+        <ol id="adm-rows" class="border-t border-neutral-200 dark:border-neutral-800"></ol>
+      </div>
+
+      <!-- comments -->
+      <div data-pane="comments" hidden>
+        <div class="flex flex-wrap gap-3 mb-6">
+          <label class="sr-only" for="adm-cfilter">Project</label>
+          <select id="adm-cfilter" class={field + " !w-auto"}></select>
+          <label class="sr-only" for="adm-csearch">Search comments</label>
+          <input id="adm-csearch" type="search" placeholder="Search names and text" class={field + " sm:!w-72"} />
+        </div>
+        <ul id="adm-comments" class="border-t border-neutral-200 dark:border-neutral-800"></ul>
+      </div>
+
+      <!-- account -->
+      <div data-pane="account" hidden class="max-w-sm">
+        <h2 class="text-[18px] font-semibold text-neutral-900 dark:text-neutral-100 mb-1">Change password</h2>
+        <p class="text-[13.5px] text-neutral-500 mb-4 leading-relaxed">
+          This is your Leoncraft 2 account, so the new password works there too. Every other place you are logged in is logged out.
+        </p>
+        <form id="adm-pw" class="flex flex-col gap-3" novalidate>
+          <label class="text-[13px] font-medium text-neutral-700 dark:text-neutral-300" for="adm-pw-old">Current password</label>
+          <input id="adm-pw-old" type="password" class={field} autocomplete="current-password" maxlength="128" />
+          <label class="text-[13px] font-medium text-neutral-700 dark:text-neutral-300" for="adm-pw-new">New password</label>
+          <input id="adm-pw-new" type="password" class={field} autocomplete="new-password" maxlength="128" />
+          <label class="text-[13px] font-medium text-neutral-700 dark:text-neutral-300" for="adm-pw-again">New password again</label>
+          <input id="adm-pw-again" type="password" class={field} autocomplete="new-password" maxlength="128" />
+          <div class="flex items-center gap-3 mt-1">
+            <button type="submit" class={primary}>Change password</button>
+            <span id="adm-pw-msg" role="status" class="text-[13px] text-neutral-500"></span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style is:global>
+  /* The one accent here is an editor's blue pencil: anything that differs
+     from the site as it was built carries it. */
+  .adm { --pencil: #2457d6; --pencil-soft: #2457d61a; }
+  .dark .adm { --pencil: #86a8ff; --pencil-soft: #86a8ff1f; }
+
+  .adm-tab { position: relative; padding: 0 0 12px; color: #737373; }
+  .adm-tab:hover { color: inherit; }
+  .adm-tab[aria-selected="true"] { color: inherit; font-weight: 500; }
+  .adm-tab[aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: currentColor; }
+
+  .adm-cat { padding: 6px 12px; border-radius: 6px; font-size: 13.5px; border: 1px solid #d4d4d4; }
+  .dark .adm-cat { border-color: #404040; }
+  .adm-cat[aria-pressed="true"] { background: #171717; color: #fff; border-color: #171717; }
+  .dark .adm-cat[aria-pressed="true"] { background: #fafafa; color: #0a0a0a; border-color: #fafafa; }
+  .adm-cat .n { font-family: var(--font-mono); font-size: 11.5px; opacity: .6; margin-left: 4px; }
+  .adm-cat .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--pencil); margin-left: 6px; vertical-align: 2px; }
+
+  .adm-row { display: grid; grid-template-columns: 44px 96px minmax(0, 1fr); gap: 0 16px; padding: 20px 0; border-bottom: 1px solid #e5e5e5; background: transparent; }
+  .dark .adm-row { border-color: #262626; }
+  .adm-row.dragging { opacity: .45; }
+  .adm-row.drop-target { box-shadow: inset 0 2px 0 var(--pencil); }
+  @media (min-width: 900px) { .adm-row { grid-template-columns: 44px 120px minmax(0, 1fr) 200px; } }
+
+  .adm-place { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 2px; }
+  .adm-pos { font-family: var(--font-mono); font-size: 13px; color: #525252; }
+  .dark .adm-pos { color: #a3a3a3; }
+  .adm-from { font-family: var(--font-mono); font-size: 10.5px; color: var(--pencil); white-space: nowrap; }
+  .adm-ico { display: grid; place-items: center; width: 28px; height: 24px; border-radius: 5px; color: #737373; }
+  .adm-ico:hover:not(:disabled) { background: #f5f5f5; color: #171717; }
+  .dark .adm-ico:hover:not(:disabled) { background: #262626; color: #fafafa; }
+  .adm-ico:disabled { opacity: .25; }
+  .adm-handle { cursor: grab; }
+  .adm-handle:active { cursor: grabbing; }
+
+  .adm-thumb { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 5px; border: 1px solid #e5e5e5; background: #f5f5f5; }
+  .dark .adm-thumb { border-color: #262626; background: #171717; }
+
+  .adm-fields { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .adm-field { position: relative; }
+  .adm-field.marked::before { content: ""; position: absolute; left: -9px; top: 2px; bottom: 2px; width: 2px; border-radius: 1px; background: var(--pencil); }
+  .adm-orig { margin-top: 5px; font-size: 12px; line-height: 1.5; color: #737373; }
+  .adm-orig b { font-family: var(--font-mono); font-weight: 500; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--pencil); margin-right: 6px; }
+  .adm-orig s { text-decoration-color: var(--pencil); }
+
+  .adm-side { grid-column: 3; display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  @media (min-width: 900px) { .adm-side { grid-column: 4; margin-top: 0; } }
+  /* a phone: no picture, the words get the width */
+  @media (max-width: 599px) {
+    .adm-row { grid-template-columns: 36px minmax(0, 1fr); gap: 0 12px; }
+    .adm-row > a { display: none; }
+    .adm-side { grid-column: 2; }
+  }
+  .adm-counts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .adm-counts label { font-size: 12px; color: #737373; }
+  .adm-counts input { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .adm-status { font-size: 12.5px; color: #737373; min-height: 1.2em; }
+  .adm-status.bad { color: #dc2626; }
+
+  .adm-c { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 16px 0; border-bottom: 1px solid #e5e5e5; }
+  .dark .adm-c { border-color: #262626; }
+  .adm-c-meta { font-size: 12.5px; color: #737373; }
+  .adm-c-meta a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  .adm-c-name { font-size: 14px; font-weight: 500; }
+  .adm-c-text { grid-column: 1; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: #404040; }
+  .dark .adm-c-text { color: #d4d4d4; }
+  .adm-del { grid-row: 1 / span 3; grid-column: 2; align-self: start; padding: 6px 12px; border-radius: 6px; font-size: 13px; border: 1px solid #fca5a5; color: #b91c1c; }
+  .adm-del:hover { background: #fef2f2; }
+  .dark .adm-del { border-color: #7f1d1d; color: #fca5a5; }
+  .dark .adm-del:hover { background: #450a0a; }
+
+  .adm button:focus-visible, .adm select:focus-visible, .adm a:focus-visible { outline: 2px solid var(--pencil); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .adm * { transition: none !important; } }
+</style>
+
+<script>
+  import { mergeOrder } from "../scripts/siteedits";
+
+  const SITE = "https://apps.leonzhao.dev/mc/site";
+  const ACCOUNT = "https://apps.leonzhao.dev/mc/lc2/account";
+  const TOK = "siteAdminTok";
+
+  type P = { cat: string; slug: string; key: string; title: string; description: string; image: string | null; href: string };
+  type Cat = { id: string; label: string; n: number };
+  type Comment = { slug: string; id: string; parent: string | null; name: string; text: string; at: number; likes: number };
+  type Server = {
+    name: string;
+    counts: Record<string, { views: number; likes: number; comments: number }>;
+    comments: Comment[];
+    text: Record<string, { title?: string; description?: string }>;
+    order: Record<string, string[]>;
+  };
+
+  const DATA = JSON.parse(document.getElementById("adm-data")!.textContent || "{}") as { cats: Cat[]; projects: P[] };
+  const byKey = new Map(DATA.projects.map((p) => [p.key, p]));
+  const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+  const post = (url: string, body: object) =>
+    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+  function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text?: string): HTMLElementTagNameMap[K] {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  // as the server keeps a line: spaces closed up
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+  const ago = (t: number) => {
+    const s = (Date.now() - t) / 1000;
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + " min ago";
+    if (s < 86400) return Math.floor(s / 3600) + " h ago";
+    return new Date(t).toLocaleDateString();
+  };
+  const store = {
+    get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
+    set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch {} },
+    del: (k: string) => { try { localStorage.removeItem(k); } catch {} },
+  };
+
+  let tok = store.get(TOK);
+  let S: Server | null = null;
+
+  /* ---------- logging in and out ---------- */
+  function showLogin(msg: string) {
+    $("adm-loading").hidden = true;
+    $("adm-desk").hidden = true;
+    $("adm-who").hidden = true;
+    $("adm-login").hidden = false;
+    $("adm-login-msg").textContent = msg;
+    $<HTMLInputElement>("adm-user").focus();
+  }
+  function forget() { tok = null; store.del(TOK); }
+  // (any change the server refuses because the session is over sends you back here)
+  function sessionOver(r: any) {
+    if (r && r.code === "login") { forget(); showLogin("Your session ended. Log in again."); return true; }
+    return false;
+  }
+
+  $("adm-login").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = $<HTMLInputElement>("adm-user").value.trim();
+    const pass = $<HTMLInputElement>("adm-pass");
+    const msg = $("adm-login-msg");
+    if (!name || !pass.value) { msg.textContent = "Enter your name and password."; return; }
+    const go = $<HTMLButtonElement>("adm-go");
+    go.disabled = true; msg.textContent = "Logging in…";
+    try {
+      const r = await post(ACCOUNT + "/login", { name, password: pass.value });
+      if (!r || !r.ok) { msg.textContent = (r && r.error) || "That did not work."; return; }
+      if (!r.admin) {
+        post(ACCOUNT + "/logout", { token: r.token }).catch(() => {});
+        msg.textContent = "That account is not an admin.";
+        return;
+      }
+      tok = r.token; store.set(TOK, r.token);
+      pass.value = "";
+      msg.textContent = "";
+      await start();
+    } catch {
+      msg.textContent = "The server could not be reached. Try again in a moment.";
+    } finally {
+      go.disabled = false;
+    }
+  });
+
+  $("adm-logout").addEventListener("click", () => {
+    if (tok) post(ACCOUNT + "/logout", { token: tok }).catch(() => {});
+    forget();
+    S = null;
+    showLogin("Logged out.");
+  });
+
+  async function start() {
+    if (!tok) return showLogin("");
+    let r: any;
+    try { r = await post(SITE + "/admin", { tok, op: "all" }); }
+    catch { $("adm-loading").textContent = "The server could not be reached. Reload to try again."; return; }
+    if (!r || !r.ok) { if (!sessionOver(r)) { forget(); showLogin((r && r.error) || "Log in again."); } return; }
+    S = r as Server;
+    $("adm-loading").hidden = true;
+    $("adm-login").hidden = true;
+    $("adm-desk").hidden = false;
+    $("adm-who").hidden = false;
+    $("adm-name").textContent = S.name;
+    buildProjects();
+    buildComments();
+    openTab(store.get("adminTab") || "projects");
+  }
+
+  /* ---------- tabs ---------- */
+  function openTab(id: string) {
+    if (!document.querySelector('[data-pane="' + id + '"]')) id = "projects";
+    for (const t of document.querySelectorAll<HTMLElement>("[data-tab]")) t.setAttribute("aria-selected", String(t.dataset.tab === id));
+    for (const p of document.querySelectorAll<HTMLElement>("[data-pane]")) p.hidden = p.dataset.pane !== id;
+    store.set("adminTab", id);
+  }
+  for (const t of document.querySelectorAll<HTMLElement>("[data-tab]")) t.addEventListener("click", () => openTab(t.dataset.tab!));
+
+  /* ---------- projects ---------- */
+  type Row = { p: P; li: HTMLLIElement; refresh: () => void; dirty: () => boolean; pos: HTMLElement; from: HTMLElement; up: HTMLButtonElement; down: HTMLButtonElement };
+  const rows = new Map<string, Row>();
+  let cat = store.get("adminCat") || "games";
+  const working: Record<string, string[]> = {};   // each tab's order as it stands on this page
+  const defaults = (c: string) => DATA.projects.filter((p) => p.cat === c).map((p) => p.slug);
+  const saved = (c: string) => mergeOrder(defaults(c), S!.order[c]);
+  const orderDirty = (c: string) => (working[c] || saved(c)).join() !== saved(c).join();
+
+  function buildProjects() {
+    rows.clear();
+    for (const p of DATA.projects) rows.set(p.key, makeRow(p));
+    for (const c of DATA.cats) working[c.id] = saved(c.id);
+    if (!DATA.cats.some((c) => c.id === cat)) cat = "games";
+    drawCats();
+    drawRows();
+  }
+
+  function drawCats() {
+    const box = $("adm-cats");
+    box.textContent = "";
+    for (const c of DATA.cats) {
+      const b = el("button", "adm-cat", c.label);
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(c.id === cat));
+      b.append(el("span", "n", String(c.n)));
+      // (a dot for a tab with changes not saved yet)
+      const unsaved = orderDirty(c.id) || DATA.projects.some((p) => p.cat === c.id && rows.get(p.key)!.dirty());
+      if (unsaved) { const d = el("span", "dot"); d.title = "Changes not saved"; b.append(d); }
+      b.addEventListener("click", () => { cat = c.id; store.set("adminCat", cat); drawCats(); drawRows(); });
+      box.append(b);
+    }
+  }
+
+  function drawRows() {
+    const box = $("adm-rows");
+    box.textContent = "";
+    for (const slug of working[cat]) box.append(rows.get(cat + "/" + slug)!.li);
+    renumber();
+  }
+
+  function renumber() {
+    const list = working[cat], def = defaults(cat);
+    list.forEach((slug, i) => {
+      const r = rows.get(cat + "/" + slug)!;
+      r.pos.textContent = String(i + 1);
+      const was = def.indexOf(slug) + 1;
+      r.from.textContent = was !== i + 1 ? "site " + was : "";
+      r.from.title = was !== i + 1 ? "Number " + was + " in the site's own order" : "";
+      r.up.disabled = i === 0;
+      r.down.disabled = i === list.length - 1;
+    });
+    drawOrderBar();
+  }
+
+  function drawOrderBar() {
+    const dirty = orderDirty(cat);
+    const custom = !!S!.order[cat];
+    const msg = $("adm-order-msg");
+    msg.textContent = dirty ? "Order changed, not saved yet." : custom ? "Using your own order." : "";
+    $("adm-order-save").hidden = !dirty;
+    $("adm-order-undo").hidden = !dirty;
+    $("adm-order-site").hidden = !(custom || working[cat].join() !== defaults(cat).join());
+    drawCatDots();
+  }
+  // (only the dots, so a click in progress is not lost to a redraw)
+  function drawCatDots() {
+    const btns = $("adm-cats").querySelectorAll<HTMLElement>(".adm-cat");
+    DATA.cats.forEach((c, i) => {
+      const b = btns[i];
+      if (!b) return;
+      const unsaved = orderDirty(c.id) || DATA.projects.some((p) => p.cat === c.id && rows.get(p.key)!.dirty());
+      const dot = b.querySelector(".dot");
+      if (unsaved && !dot) { const d = el("span", "dot"); d.title = "Changes not saved"; b.append(d); }
+      if (!unsaved && dot) dot.remove();
+    });
+  }
+
+  function move(slug: string, by: number) {
+    const list = working[cat], i = list.indexOf(slug), j = i + by;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    list.splice(i, 1);
+    list.splice(j, 0, slug);
+    drawRows();
+    rows.get(cat + "/" + slug)![by < 0 ? "up" : "down"].focus();
+  }
+
+  async function saveOrder(list: string[]) {
+    const msg = $("adm-order-msg");
+    msg.textContent = "Saving…";
+    // (the site's own order is saved as none, so projects added later fall in where they are put)
+    const slugs = list.join() === defaults(cat).join() ? [] : list;
+    try {
+      const r = await post(SITE + "/admin", { tok, op: "order", cat, slugs });
+      if (sessionOver(r)) return;
+      if (!r || !r.ok) { msg.textContent = (r && r.error) || "That did not save."; return; }
+      if (r.order) S!.order[cat] = r.order; else delete S!.order[cat];
+      working[cat] = saved(cat);
+      drawRows();
+      msg.textContent = slugs.length ? "Order saved." : "Back to the site's order.";
+    } catch { msg.textContent = "The server could not be reached."; }
+  }
+  $("adm-order-save").addEventListener("click", () => saveOrder(working[cat]));
+  $("adm-order-undo").addEventListener("click", () => { working[cat] = saved(cat); drawRows(); });
+  $("adm-order-site").addEventListener("click", () => saveOrder(defaults(cat)));
+
+  // dragging rows by their handle
+  let dragged: HTMLLIElement | null = null;
+  const rowsBox = $("adm-rows");
+  rowsBox.addEventListener("dragover", (e) => {
+    if (!dragged) return;
+    e.preventDefault();
+    const over = (e.target as HTMLElement).closest<HTMLLIElement>(".adm-row");
+    if (!over || over === dragged) return;
+    const r = over.getBoundingClientRect();
+    rowsBox.insertBefore(dragged, e.clientY < r.top + r.height / 2 ? over : over.nextSibling);
+  });
+  rowsBox.addEventListener("drop", (e) => { if (dragged) e.preventDefault(); });
+
+  function makeRow(p: P): Row {
+    const li = el("li", "adm-row");
+    li.dataset.key = p.key;
+
+    // where it sits
+    const place = el("div", "adm-place");
+    const pos = el("span", "adm-pos");
+    const handle = el("button", "adm-ico adm-handle");
+    handle.type = "button";
+    handle.setAttribute("aria-label", "Drag to move " + p.title + ", or press the up and down arrow keys");
+    handle.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="5" r="1.6"/><circle cx="15" cy="5" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="19" r="1.6"/><circle cx="15" cy="19" r="1.6"/></svg>';
+    const up = el("button", "adm-ico");
+    up.type = "button"; up.setAttribute("aria-label", "Move " + p.title + " up");
+    up.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>';
+    const down = el("button", "adm-ico");
+    down.type = "button"; down.setAttribute("aria-label", "Move " + p.title + " down");
+    down.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+    const from = el("span", "adm-from");
+    place.append(pos, up, handle, down, from);
+    up.addEventListener("click", () => move(p.slug, -1));
+    down.addEventListener("click", () => move(p.slug, 1));
+    handle.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowUp") { e.preventDefault(); move(p.slug, -1); handle.focus(); }
+      if (e.key === "ArrowDown") { e.preventDefault(); move(p.slug, 1); handle.focus(); }
+    });
+    handle.addEventListener("pointerdown", () => { li.draggable = true; });
+    li.addEventListener("dragstart", (e) => {
+      dragged = li;
+      li.classList.add("dragging");
+      e.dataTransfer?.setData("text/plain", p.key);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+    });
+    li.addEventListener("dragend", () => {
+      li.draggable = false;
+      li.classList.remove("dragging");
+      dragged = null;
+      working[cat] = [...rowsBox.querySelectorAll<HTMLElement>(".adm-row")].map((r) => r.dataset.key!.split("/")[1]);
+      renumber();
+    });
+
+    // the picture, linking to the project's page
+    const pic = el("a", "block");
+    pic.href = p.href; pic.target = "_blank"; pic.rel = "noopener";
+    pic.setAttribute("aria-label", "Open " + p.title);
+    if (p.image) { const img = el("img", "adm-thumb"); img.src = p.image; img.alt = ""; img.loading = "lazy"; pic.append(img); }
+    else pic.append(el("div", "adm-thumb"));
+
+    // the words
+    const fields = el("div", "adm-fields");
+    const fTitle = el("div", "adm-field");
+    const title = el("input", "adm-input");
+    title.maxLength = 120;
+    title.setAttribute("aria-label", "Title");
+    const oTitle = el("p", "adm-orig");
+    fTitle.append(title, oTitle);
+    const fDesc = el("div", "adm-field");
+    const desc = el("textarea", "adm-input");
+    desc.maxLength = 600; desc.rows = 3;
+    desc.setAttribute("aria-label", "Description");
+    const oDesc = el("p", "adm-orig");
+    fDesc.append(desc, oDesc);
+    fields.append(fTitle, fDesc);
+    const fieldCls = document.querySelector<HTMLInputElement>("#adm-user")!.className;
+    title.className = fieldCls + " font-semibold";
+    desc.className = fieldCls + " resize-y leading-relaxed";
+
+    // the counts and the buttons
+    const side = el("div", "adm-side");
+    const counts = el("div", "adm-counts");
+    const num = (label: string) => {
+      const box = el("div");
+      const id = "n-" + label + "-" + p.key.replace("/", "-");
+      const l = el("label", "", label); l.htmlFor = id;
+      const i = el("input"); i.id = id; i.type = "number"; i.min = "0"; i.step = "1"; i.inputMode = "numeric";
+      i.className = fieldCls + " !px-2 !py-1.5";
+      box.append(l, i);
+      counts.append(box);
+      return i;
+    };
+    const views = num("Views"), likes = num("Likes");
+    const btns = el("div", "flex flex-wrap gap-2");
+    const save = el("button", document.querySelector<HTMLElement>("#adm-go")!.className + " !py-1.5", "Save");
+    save.type = "button";
+    const reset = el("button", "px-3 py-1.5 rounded-md border border-neutral-300 dark:border-neutral-700 hover:border-neutral-500 text-[13px]", "Use the site's text");
+    reset.type = "button";
+    btns.append(save, reset);
+    const status = el("p", "adm-status");
+    status.setAttribute("role", "status");
+    side.append(counts, btns, status);
+
+    li.append(place, pic, fields, side);
+
+    const live = () => S!.text[p.key] || {};
+    const cnt = () => S!.counts[p.key] || { views: 0, likes: 0, comments: 0 };
+    const textDirty = () => norm(title.value) !== norm(live().title || p.title) || norm(desc.value) !== norm(live().description || p.description);
+    const countDirty = () => views.value !== String(cnt().views) || likes.value !== String(cnt().likes);
+    const dirty = () => textDirty() || countDirty();
+    const fill = () => {
+      title.value = live().title || p.title;
+      desc.value = live().description || p.description;
+      views.value = String(cnt().views);
+      likes.value = String(cnt().likes);
+    };
+    const mark = (box: HTMLElement, orig: HTMLElement, value: string, site: string) => {
+      const differs = !!norm(value) && norm(value) !== norm(site);
+      box.classList.toggle("marked", differs);
+      orig.textContent = "";
+      if (differs) { orig.append(el("b", "", "Site text"), el("s", "", site)); }
+    };
+    const refresh = () => {
+      mark(fTitle, oTitle, title.value, p.title);
+      mark(fDesc, oDesc, desc.value, p.description);
+      save.disabled = !dirty();
+      reset.hidden = !S!.text[p.key];
+      drawCatDots();
+    };
+    for (const i of [title, desc, views, likes]) i.addEventListener("input", () => { status.textContent = ""; status.classList.remove("bad"); refresh(); });
+
+    async function send(body: object) {
+      const r = await post(SITE + "/admin", Object.assign({ tok }, body));
+      if (sessionOver(r)) throw new Error("login");
+      if (!r || !r.ok) throw new Error((r && r.error) || "That did not save.");
+      return r;
+    }
+    save.addEventListener("click", async () => {
+      const v = Number(views.value), l = Number(likes.value);
+      if (countDirty() && !(Number.isInteger(v) && v >= 0 && Number.isInteger(l) && l >= 0)) {
+        status.textContent = "Views and likes must be whole numbers, 0 or more."; status.classList.add("bad"); return;
+      }
+      save.disabled = true; status.classList.remove("bad"); status.textContent = "Saving…";
+      try {
+        if (textDirty()) {
+          const t = norm(title.value), d = norm(desc.value);
+          // (the site's own words, or none, are saved as no edit)
+          const r = await send({ op: "text", slug: p.key, title: t === norm(p.title) ? "" : t, description: d === norm(p.description) ? "" : d });
+          if (r.edit) S!.text[p.key] = r.edit; else delete S!.text[p.key];
+        }
+        if (countDirty()) {
+          const r = await send({ op: "counts", slug: p.key, views: v, likes: l });
+          S!.counts[p.key] = { views: r.views, likes: r.likes, comments: cnt().comments };
+        }
+        fill(); refresh();
+        status.textContent = "Saved. Visitors see it on their next page load.";
+      } catch (e: any) {
+        if (e && e.message === "login") return;
+        status.textContent = (e && e.message) || "The server could not be reached."; status.classList.add("bad");
+        refresh();
+      }
+    });
+    reset.addEventListener("click", async () => {
+      reset.disabled = true; status.classList.remove("bad"); status.textContent = "Saving…";
+      try {
+        await send({ op: "text", slug: p.key, title: "", description: "" });
+        delete S!.text[p.key];
+        title.value = p.title; desc.value = p.description;
+        refresh();
+        status.textContent = "Back to the site's text.";
+      } catch (e: any) {
+        if (e && e.message === "login") return;
+        status.textContent = (e && e.message) || "The server could not be reached."; status.classList.add("bad");
+      } finally { reset.disabled = false; }
+    });
+
+    fill();
+    const row: Row = { p, li, refresh, dirty, pos, from, up, down };
+    // (the first refresh waits until every row is made: it draws the tab dots, which ask every row)
+    queueMicrotask(refresh);
+    return row;
+  }
+
+  /* ---------- comments ---------- */
+  function buildComments() {
+    const sel = $<HTMLSelectElement>("adm-cfilter");
+    const keep = sel.value;
+    sel.textContent = "";
+    const counts = new Map<string, number>();
+    for (const c of S!.comments) counts.set(c.slug, (counts.get(c.slug) || 0) + 1);
+    const all = el("option", "", "All projects (" + S!.comments.length + ")");
+    all.value = "";
+    sel.append(all);
+    for (const [slug, n] of [...counts].sort((a, b) => b[1] - a[1])) {
+      const o = el("option", "", (byKey.get(slug)?.title || slug) + " (" + n + ")");
+      o.value = slug;
+      sel.append(o);
+    }
+    sel.value = counts.has(keep) ? keep : "";
+    $("adm-ccount").textContent = String(S!.comments.length);
+    drawComments();
+  }
+  function drawComments() {
+    const box = $("adm-comments");
+    const only = $<HTMLSelectElement>("adm-cfilter").value;
+    const q = $<HTMLInputElement>("adm-csearch").value.trim().toLowerCase();
+    const list = S!.comments.filter((c) => (!only || c.slug === only) && (!q || (c.name + " " + c.text).toLowerCase().includes(q)));
+    box.textContent = "";
+    if (!list.length) {
+      box.append(el("li", "py-6 text-[14px] text-neutral-500", S!.comments.length ? "No comments match." : "There are no comments yet."));
+      return;
+    }
+    for (const c of list) {
+      const li = el("li", "adm-c");
+      const meta = el("p", "adm-c-meta");
+      const p = byKey.get(c.slug);
+      const a = el("a", "", p ? p.title : c.slug);
+      a.href = p ? p.href : "/" + c.slug;
+      a.target = "_blank"; a.rel = "noopener";
+      meta.append(a, document.createTextNode(" · " + ago(c.at) + (c.parent ? " · a reply" : "") + (c.likes ? " · " + c.likes + (c.likes === 1 ? " like" : " likes") : "")));
+      meta.title = new Date(c.at).toLocaleString();
+      const del = el("button", "adm-del", "Delete");
+      del.type = "button";
+      del.setAttribute("aria-label", "Delete the comment by " + c.name);
+      del.addEventListener("click", async () => {
+        if (!confirm("Delete this comment by " + c.name + "?")) return;
+        del.disabled = true; del.textContent = "Deleting…";
+        try {
+          const r = await post(SITE + "/admin", { tok, op: "delete", slug: c.slug, id: c.id });
+          if (sessionOver(r)) return;
+          if (!r || !r.ok) { alert((r && r.error) || "That did not delete."); del.disabled = false; del.textContent = "Delete"; return; }
+          S!.comments = S!.comments.filter((x) => x !== c);
+          const n = S!.counts[c.slug];
+          if (n && n.comments) n.comments--;
+          buildComments();
+        } catch { alert("The server could not be reached."); del.disabled = false; del.textContent = "Delete"; }
+      });
+      li.append(meta, del, el("p", "adm-c-name", c.name), el("p", "adm-c-text", c.text));
+      box.append(li);
+    }
+  }
+  $("adm-cfilter").addEventListener("change", drawComments);
+  $("adm-csearch").addEventListener("input", drawComments);
+
+  /* ---------- account ---------- */
+  $("adm-pw").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const old = $<HTMLInputElement>("adm-pw-old"), now = $<HTMLInputElement>("adm-pw-new"), again = $<HTMLInputElement>("adm-pw-again");
+    const msg = $("adm-pw-msg");
+    if (!old.value || !now.value) { msg.textContent = "Fill in both passwords."; return; }
+    if (now.value !== again.value) { msg.textContent = "The new passwords do not match."; return; }
+    msg.textContent = "Changing…";
+    try {
+      const r = await post(ACCOUNT + "/password", { token: tok, old: old.value, password: now.value });
+      if (r && r.ok) { old.value = now.value = again.value = ""; msg.textContent = "Password changed."; }
+      else if (r && r.code === "session") { forget(); showLogin("Your session ended. Log in again."); }
+      else msg.textContent = (r && r.error) || "That did not work.";
+    } catch { msg.textContent = "The server could not be reached."; }
+  });
+
+  // (leaving with changes not saved asks first)
+  addEventListener("beforeunload", (e) => {
+    if (!S) return;
+    const unsaved = DATA.cats.some((c) => orderDirty(c.id)) || [...rows.values()].some((r) => r.dirty());
+    if (unsaved) e.preventDefault();
+  });
+
+  start();
+</script>

@@ -17,6 +17,8 @@ const buildSearchIndex = (p: Project) =>
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+// "games/ski": the key the server keeps the project's counts and edits under
+const keyOf = (p: Project) => (p.detailHref ? p.detailHref.replace(/^\//, "").replace(/\/$/, "") : undefined);
 ---
 
 <div data-project-section>
@@ -49,7 +51,7 @@ const buildSearchIndex = (p: Project) =>
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10" data-grid>
     {
       projects.map((p, i) => (
-        <div data-card data-search={buildSearchIndex(p)} data-index={i}>
+        <div data-card data-search={buildSearchIndex(p)} data-index={i} data-key={keyOf(p)}>
           <ProjectCard {...p} />
         </div>
       ))
@@ -63,14 +65,38 @@ const buildSearchIndex = (p: Project) =>
 </div>
 
 <script>
-  // every card's views and likes, from one request for the whole page
+  import { SITE_API, cachedEdits, rememberEdits, applyText, applyOrder } from "../scripts/siteedits";
+  // every card's views and likes, and the admin's edits, from one request for the whole page
   {
     const cards = [...document.querySelectorAll<HTMLElement>("[data-social-key]")];
     const keys = [...new Set(cards.map((c) => c.dataset.socialKey!))];
+    const cats = [...new Set(keys.map((k) => k.split("/")[0]))];
+    const grids = [...document.querySelectorAll<HTMLElement>("[data-grid]")];
+    const edit = (text: Record<string, any>, order: Record<string, string[]>) => {
+      for (const k of keys) applyText(k, text[k]);
+      for (const g of grids) {
+        const first = g.querySelector<HTMLElement>("[data-card][data-key]");
+        if (first) applyOrder(g, order[first.dataset.key!.split("/")[0]]);
+      }
+      // the search finds a card by its edited words too
+      for (const c of document.querySelectorAll<HTMLElement>("[data-card][data-key]")) {
+        const t = text[c.dataset.key!];
+        if (c.dataset.searchOrig === undefined) c.dataset.searchOrig = c.dataset.search || "";
+        c.dataset.search = c.dataset.searchOrig + (t ? " " + [t.title, t.description].filter(Boolean).join(" ").toLowerCase() : "");
+      }
+    };
+    const kept = cachedEdits();
+    edit(kept.text, kept.order);
     if (keys.length) {
-      fetch("https://apps.leonzhao.dev/mc/site/stats?slugs=" + encodeURIComponent(keys.join(",")), { cache: "no-store" })
+      fetch(SITE_API + "/stats?edits=1&slugs=" + encodeURIComponent(keys.join(",")), { cache: "no-store" })
         .then((r) => r.json())
-        .then((j) => {
+        .then((res) => {
+          // (a server from before the edits answers with the counts alone)
+          const j = res && res.stats ? res.stats : res;
+          if (res && res.stats) {
+            edit(res.text || {}, res.order || {});
+            rememberEdits(keys, cats, res.text || {}, res.order || {});
+          }
           for (const c of cards) {
             const s = j && j[c.dataset.socialKey!];
             if (!s) continue;

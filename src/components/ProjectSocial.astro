@@ -50,7 +50,7 @@ const { slugKey } = Astro.props;
 </div>
 
 <script>
-  const API = "https://apps.leonzhao.dev/mc/site";
+  import { SITE_API as API, cachedEdits, rememberEdits, applyText } from "../scripts/siteedits";
   // one id a browser: what stops a like being counted twice. Not a login.
   function visitor(): string {
     try {
@@ -62,15 +62,14 @@ const { slugKey } = Astro.props;
       return v;
     } catch { return "anon" + Math.random().toString(36).slice(2, 12); }
   }
-  // an admin can delete; the code is checked on the server, never here
+  /* An admin can delete: logged in at /admin, whose session this browser
+     keeps. The server checks the session; nothing here grants anything. */
   function admin(): string | null {
     try {
-      if (location.hash === "#admin") {
-        const c = prompt("Admin code");
-        if (c) localStorage.setItem("siteAdmin", c);
-        history.replaceState(null, "", location.pathname);
-      }
-      return localStorage.getItem("siteAdmin");
+      // (the old way in: a code typed here, which is gone)
+      localStorage.removeItem("siteAdmin");
+      if (location.hash === "#admin") { location.href = "/admin"; return null; }
+      return localStorage.getItem("siteAdminTok");
     } catch { return null; }
   }
   const post = (path: string, body: object) =>
@@ -94,7 +93,20 @@ const { slugKey } = Astro.props;
     const openBtn = $<HTMLButtonElement>("[data-open]");
     let replyTo: string | null = null;
 
+    // the admin's title and description for this project, if there are any
+    const showEdit = (e: any) => {
+      applyText(key, e);
+      const h = document.querySelector<HTMLElement>('h1[data-edit="title"][data-edit-key="' + key + '"]');
+      if (h) document.title = (h.textContent || "").trim() + " · Leon Zhao";
+    };
+    showEdit(cachedEdits().text[key]);
     const setCounts = (j: any) => {
+      if ("edit" in j) {
+        showEdit(j.edit);
+        const text: Record<string, any> = {};
+        if (j.edit) text[key] = j.edit;
+        rememberEdits([key], [], text, {});
+      }
       if (typeof j.views === "number") $("[data-views]").textContent = String(j.views);
       if (typeof j.likes === "number") $("[data-likes]").textContent = String(j.likes);
       if (typeof j.liked === "boolean") likeBtn.setAttribute("aria-pressed", String(j.liked));
@@ -147,7 +159,7 @@ const { slugKey } = Astro.props;
         $("[data-msg]").appendChild(cancel);
         $<HTMLTextAreaElement>("[data-text]").focus();
       }
-      if (dl && adm && confirm("Delete this comment?")) post("/comment/delete", { slug: key, id: dl.dataset.del, admin: adm }).then((j) => { if (j && j.error) alert(j.error); load(); });
+      if (dl && adm && confirm("Delete this comment?")) post("/comment/delete", { slug: key, id: dl.dataset.del, tok: adm }).then((j) => { if (j && j.error) alert(j.error); load(); });
     });
     $<HTMLFormElement>("[data-form]").addEventListener("submit", (e) => {
       e.preventDefault();
