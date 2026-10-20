@@ -45,11 +45,15 @@ const tech = project.tech ?? [];
 
     <header class="mb-10">
       <h1
+        data-edit="title"
+        data-edit-key={`math/${project.slug}`}
         class="text-[32px] sm:text-[40px] font-semibold tracking-tight text-neutral-900 dark:text-neutral-50 mb-3 leading-tight"
       >
         {project.title}
       </h1>
       <p
+        data-edit="desc"
+        data-edit-key={`math/${project.slug}`}
         class="text-[15px] leading-relaxed text-neutral-600 dark:text-neutral-400 max-w-2xl"
       >
         {project.description}
