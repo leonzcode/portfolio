@@ -7,10 +7,10 @@
    out of range, and takes edits: a changed block remeshes its column, and
    the neighbouring one too when it sits on an edge.
 --------------------------------------------------------------------------- */
-import { CH, H, idx } from './world-const.js?v=99';
-import { BLOCKS, FLUID } from './blocks.js?v=99';
-import { searchSpawn } from './spawn.js?v=99';
-import { settleEdges } from './edgevines.js?v=99';
+import { CH, H, idx } from './world-const.js?v=100';
+import { BLOCKS, FLUID } from './blocks.js?v=100';
+import { searchSpawn } from './spawn.js?v=100';
+import { settleEdges } from './edgevines.js?v=100';
 
 /* RIP Computer's realism (render/realism.js) hears of every block taken away (gone: the world, where, what it was,
    what is there now) and every explosion (blast: where, its power; explosion.js, entities/explosion.js, net/events.js) */
@@ -25,7 +25,7 @@ export const WORLD_FX = { gone: null, blast: null };
 const GEN_N = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 const POOL = [];
 function newWorker() {
-  const w = new Worker(new URL('./worker.js?v=99', import.meta.url), { type: 'module' });
+  const w = new Worker(new URL('./worker.js?v=100', import.meta.url), { type: 'module' });
   w.onerror = e => console.error('worker', e.message || e);
   return w;
 }
@@ -1010,6 +1010,8 @@ export class World {
     }
     const was = c.blocks[i], wasM = c.meta[i];
     c.blocks[i] = b; c.meta[i] = m || 0;
+    // (a count of the chunk's changes: what reads its blocks again only when they change, drops.js, can tell)
+    c.ver = (c.ver | 0) + 1;
     if (b && y > c.top) c.top = y;
     const ck = this.key(c.cx, c.cz);
     let ed = this.edits.get(ck);

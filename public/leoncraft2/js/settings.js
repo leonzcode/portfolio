@@ -24,8 +24,8 @@
    asks it before every frame whether to draw one (hold) and calls frame()
    once a frame with the game.
 --------------------------------------------------------------------------- */
-import { shaderSettings, lookOf, setFiltering, loadNormalMaps, SHADER_LEVELS } from './render/looks.js?v=99';
-import { particleSetting } from './render/particles.js?v=99';
+import { shaderSettings, lookOf, setFiltering, loadNormalMaps, SHADER_LEVELS } from './render/looks.js?v=100';
+import { particleSetting } from './render/particles.js?v=100';
 
 export class VideoSettings {
   constructor(options, guessShaders) {
@@ -166,6 +166,8 @@ export class VideoSettings {
         this.parts = key;
         if (game.sim) game.sim.simDist = o.get('simulationDistance');
         if (game.entities) { game.entities.entityDistance = o.get('entityDistance'); game.entities.entityShadows = !!o.get('entityShadows'); }
+        // (the items and orbs lying about: their time runs within the simulation distance, they are drawn by Entity Distance)
+        if (game.drops) { game.drops.simDist = o.get('simulationDistance'); game.drops.entityDistance = o.get('entityDistance'); }
       }
       // the game saves by itself every five minutes of play (and shows it)
       this.playTicks += dt * 20;

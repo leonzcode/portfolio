@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=99';
-import { idx, H } from '../world-const.js?v=99';
-import { DIMS, DIM_IDS } from '../dims.js?v=99';
-import { Save } from '../save.js?v=99';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=99';
-import { glints } from '../render/armor.js?v=99';
-import { containerKind } from '../containers.js?v=99';
-import { getSkinSettings } from '../render/avatar.js?v=99';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=99';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=99';
-import { Y0 } from '../world-const.js?v=99';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=99';
-import { Projectile } from '../entities/projectiles.js?v=99';
-import { Combat } from '../combat/combat.js?v=99';
-import { Vehicles } from './vehicles.js?v=99';
-import { Mobs, Orbs } from './mobs.js?v=99';
-import { Events } from './events.js?v=99';
-import { EndSync } from './endfight.js?v=99';
-import { Hub } from './hub.js?v=99';
-import { Account, wsBase, httpBase } from './account.js?v=99';
-import { rankTag } from './players.js?v=99';
+import { B, BLOCKS } from '../blocks.js?v=100';
+import { idx, H } from '../world-const.js?v=100';
+import { DIMS, DIM_IDS } from '../dims.js?v=100';
+import { Save } from '../save.js?v=100';
+import { itemName, stackToJSON, stackFromJSON, maxStack } from '../items.js?v=100';
+import { glints } from '../render/armor.js?v=100';
+import { containerKind } from '../containers.js?v=100';
+import { getSkinSettings } from '../render/avatar.js?v=100';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=100';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=100';
+import { Y0 } from '../world-const.js?v=100';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=100';
+import { Projectile } from '../entities/projectiles.js?v=100';
+import { Combat } from '../combat/combat.js?v=100';
+import { Vehicles } from './vehicles.js?v=100';
+import { Mobs, Orbs } from './mobs.js?v=100';
+import { Events } from './events.js?v=100';
+import { EndSync } from './endfight.js?v=100';
+import { Hub } from './hub.js?v=100';
+import { Account, wsBase, httpBase } from './account.js?v=100';
+import { rankTag } from './players.js?v=100';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -1174,7 +1174,8 @@ export class Net {
   }
   flush() {
     if (this.outFx.length) { this.send({ t: 'fx', d: dimCode(this.game.dim), k: 'break', e: this.outFx }); this.outFx = []; }
-    if (this.outIt.length) { this.send({ t: 'it+', e: this.outIt }); this.outIt = []; }
+    // (256 a message at most, the server's limit: a bigger one was thrown away whole, and its items were never numbered)
+    while (this.outIt.length) this.send({ t: 'it+', e: this.outIt.splice(0, 256) });
     if (!this.outC.size && !this.outT.size && !this.outB[0].length && !this.outB[1].length && !this.outB[2].length) return;
     const s = ++this.seq, msgs = [];
     for (let d = 0; d < 3; d++) {
@@ -1335,6 +1336,7 @@ export class Net {
       case 'it=': this.numbered(m.e || []); return;
       case 'it-': case 'itno': this.itemGone(m.id, m.by); return;
       case 'itok': this.granted(m.id, m.s); return;
+      case 'itc': this.itemCount(m.id, m.s, m.ag); return;
       case 'o=': case 'o+': case 'o-': case 'ono': case 'ook': this.orbs.receive(m); return;
       case 'pm':
         if (m.err) this.ctx.chat.add(m.err, 0xFF5555);
@@ -1351,8 +1353,14 @@ export class Net {
      server by number (the first to ask gets it); until it answers the item
      stays where it is. One that burns, falls out of the world or lies its
      five minutes goes on everyone's machine by itself; the player nearest to
-     it tells the server. Items of the same kind lying together are not
-     joined into one on a server: each machine would join them differently. */
+     it tells the server. Items of the same kind lying together are joined
+     by the server, not here (each machine would join them differently): it
+     says which one grew ('itc') and which went. The server also says when
+     an item's five minutes are up, counting only the ticks it lay near a
+     player, as the game counts an item's age only in a ticked chunk. One a
+     blast here blew up is told to everyone by this machine, whoever is
+     nearest it; a death's spill is marked, so the server keeps it even when
+     the world is full. */
   hookDrops(D) {
     const net = this;
     this.hdr = D;
@@ -1368,9 +1376,9 @@ export class Net {
     D._remove = function (e, i) {
       const had = !e.gone;
       remove.call(this, e, i);
-      if (!had || net.applying || net.closed || e.taken) return;
-      // (burnt, lain its time, fallen out of the world, taken by a hopper: said by the player nearest it)
-      if (e.nid && net.ownsAt(e.pos.x, e.pos.z)) { net.send({ t: 'it-', id: e.nid }); net.items[dimCode(net.game.dim)].delete(e.nid); }
+      if (!had || net.applying || net.closed || e.taken || e.quiet) return;
+      // (burnt, fallen out of the world, taken by a hopper: said by the player nearest it; blown up: by whoever's blast it was)
+      if (e.nid && (e.blown || net.ownsAt(e.pos.x, e.pos.z))) { net.send({ t: 'it-', id: e.nid }); net.items[dimCode(net.game.dim)].delete(e.nid); }
     };
     D._merge = function () {};
     D.toJSON = function () { const o = toJSON.call(this); o.items = []; return o; };
@@ -1397,9 +1405,11 @@ export class Net {
     const st = stackFromJSON(rec.s);
     if (!st) return;
     const ago = Math.floor((performance.now() - rec.at) / 50), fresh = ago < 3;
+    // (the time it waited counts towards its age only where this machine ticks the world, as the server counts it)
+    const aged = !D._awake || D._awake(rec.p[0], rec.p[2]) ? ago : 0;
     this.applying = true;
     let e;
-    try { e = D.spawn(rec.p[0], rec.p[1], rec.p[2], st, { vel: fresh ? rec.v : [0, 0, 0], delay: Math.max(0, rec.dl - ago), age: rec.ag + ago, pop: false }); }
+    try { e = D.spawn(rec.p[0], rec.p[1], rec.p[2], st, { vel: fresh ? rec.v : [0, 0, 0], delay: Math.max(0, rec.dl - ago), age: rec.ag + aged, pop: false }); }
     finally { this.applying = false; }
     if (!e) return;
     e.nid = rec.id; e.wait = Math.max(0, rec.dl - ago);
@@ -1410,7 +1420,21 @@ export class Net {
     e.nk = k; e.wait = e.delay;
     this.byKey.set(k, [e, d]);
     const r3 = v => Math.round(v * 1000) / 1000;
-    this.outIt.push({ k, d, p: [r3(e.pos.x), r3(e.pos.y), r3(e.pos.z)], v: [r3(e.vel.x), r3(e.vel.y), r3(e.vel.z)], s: stackToJSON(e.stack), dl: e.delay | 0, ag: e.age | 0 });
+    // (mx: how many of it make a full stack, for the server's joining; dth: a death's spill)
+    const o = { k, d, p: [r3(e.pos.x), r3(e.pos.y), r3(e.pos.z)], v: [r3(e.vel.x), r3(e.vel.y), r3(e.vel.z)], s: stackToJSON(e.stack), dl: e.delay | 0, ag: e.age | 0, mx: maxStack(e.stack.id) };
+    if (e.keep) o.dth = 1;
+    this.outIt.push(o);
+  }
+  // two stacks lying together joined on the server: this one is now the stack s (the other one goes with an 'it-')
+  itemCount(id, s, ag) {
+    const st = stackFromJSON(s);
+    for (const M of this.items) {
+      const rec = M.get(id);
+      if (!rec || !st) continue;
+      rec.s = s;
+      if (Number.isInteger(ag)) rec.ag = ag;
+      if (rec.e && !rec.e.gone) { rec.e.stack.count = st.count; if (Number.isInteger(ag)) rec.e.age = ag; }
+    }
   }
   // the server's numbers for the items this machine made ([key, number, ...]; 0: not kept, so it stays this machine's own)
   numbered(a) {

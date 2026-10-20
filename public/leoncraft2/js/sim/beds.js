@@ -24,7 +24,7 @@
    glowstone in the Nether it sets the respawn point; anywhere else it blows
    up like a bed. Respawning at one uses a charge.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=99';
+import { B, BLOCKS } from '../blocks.js?v=100';
 
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];      // north east south west, as the bed's facing bits
 export const bedsWork = dim => !dim || dim === 'overworld';
@@ -84,7 +84,7 @@ export function installBeds(sim) {
       if (!bedsWork(s.dimension())) {
         s.set(hx, hy, hz, 0, 0);
         if (isBed(s.get(fx, hy, fz))) s.set(fx, hy, fz, 0, 0);
-        s.explode(hx + 0.5, hy + 0.5, hz + 0.5, 5, { fire: true, decay: true, source: 'bad_respawn_point' });
+        s.explode(hx + 0.5, hy + 0.5, hz + 0.5, 5, { fire: true, decay: 'block', source: 'bad_respawn_point' });
         return true;
       }
       if (hm & 4) { msg('This bed is occupied'); return true; }
@@ -173,7 +173,7 @@ export function installBeds(sim) {
         // water beside it stops the blast breaking blocks (the game's own exception)
         let wet = false;
         for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) if (s.get(x + dx, y + dy, z + dz) === B.water) wet = true;
-        s.explode(x + 0.5, y + 0.5, z + 0.5, 5, { fire: !wet, decay: true, breaks: !wet, source: 'bad_respawn_point' });
+        s.explode(x + 0.5, y + 0.5, z + 0.5, 5, { fire: !wet, decay: 'block', breaks: !wet, source: 'bad_respawn_point' });
         return true;
       }
       s.spawnBed = { x, y, z, kind: 'anchor' };

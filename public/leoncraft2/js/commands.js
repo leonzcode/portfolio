@@ -10,10 +10,10 @@
    Each command gets a context: ctx.game (the world being played), and
    ctx.say(text, colour) for the reply.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=99';
-import { Y0 } from './world-const.js?v=99';
-import { ENCHANTS } from './itemdata.js?v=99';
-import { stateOf } from './gen/states.js?v=99';
+import { B, BLOCKS, FLUID } from './blocks.js?v=100';
+import { Y0 } from './world-const.js?v=100';
+import { ENCHANTS } from './itemdata.js?v=100';
+import { stateOf } from './gen/states.js?v=100';
 
 const REG = new Map();
 export function register(name, def) { REG.set(name, def); for (const a of def.aliases || []) REG.set(a, def); }
@@ -461,7 +461,7 @@ function blockArg(s) {
 }
 // the block tags, from the generator's data (loaded only when a tag is asked for)
 let TAGS = null;
-const loadTags = () => import('./gen/vdata.js?v=99').then(m => { TAGS = m.VDATA.block_tags || {}; });
+const loadTags = () => import('./gen/vdata.js?v=100').then(m => { TAGS = m.VDATA.block_tags || {}; });
 function tagIds(name, seen = new Set()) {
   const key = name.replace(/^minecraft:/, '');
   const list = TAGS[key];
@@ -666,6 +666,8 @@ const RULES = {
   doImmediateRespawn: false, naturalRegeneration: true, fallDamage: true, drowningDamage: true, fireDamage: true, freezeDamage: true,
   doTileDrops: true, doMobLoot: true, doEntityDrops: true, randomTickSpeed: 3, spawnRadius: 10, playersSleepingPercentage: 100,
   showDeathMessages: true, announceAdvancements: true, doInsomnia: true, doPatrolSpawning: true, doTraderSpawning: true, maxEntityCramming: 24, commandModificationBlockLimit: 32768,
+  // what an explosion's blocks lose of their drops (explosion.js dropDecay keeps the same defaults; the game has TNT's off)
+  blockExplosionDropDecay: true, mobExplosionDropDecay: true, tntExplosionDropDecay: true,
 };
 // for commands other parts register (enchanting.js /enchant): the same errors and arguments
 export { fail, int, self };

@@ -34,11 +34,11 @@
    Drawn with the block's own model and the held-block material, so they take
    the same light and fog as the world.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=99';
-import { blockGeometry, intAttribute } from '../render/blockmesh.js?v=99';
-import { lightNear } from '../lightlevel.js?v=99';
-import { FALLS, free as fallsInto, touchesWater, concreteOf } from '../entities/fallingblock.js?v=99';
-import { H } from '../world-const.js?v=99';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=100';
+import { blockGeometry, intAttribute } from '../render/blockmesh.js?v=100';
+import { lightNear } from '../lightlevel.js?v=100';
+import { FALLS, free as fallsInto, touchesWater, concreteOf } from '../entities/fallingblock.js?v=100';
+import { H } from '../world-const.js?v=100';
 const THREE = window.THREE;
 
 /* ---- when blocks fall (the game's FallingBlock, PointedDripstoneBlock, ScaffoldingBlock, DragonEggBlock) ---- */
@@ -286,7 +286,7 @@ export class Bodies {
       if (e.kind === 'tnt') {
         if (e.fuse > 0) e.fuse--;
         if (e.fuse <= 0 && (blasts >= BLASTS_PER_TICK || (blasts && performance.now() - this.lastTick > 15))) continue;
-        if (e.fuse <= 0) { blasts++; e.dead = true; this.drop(e); this.sim.explode(e.x, e.y + HT / 16, e.z, 4, { source: e, decay: false }); }
+        if (e.fuse <= 0) { blasts++; e.dead = true; this.drop(e); this.sim.explode(e.x, e.y + HT / 16, e.z, 4, { source: e, decay: 'tnt' }); }
       } else {
         e.time++;
         if (e.onGround) { e.dead = true; this.land(e); }

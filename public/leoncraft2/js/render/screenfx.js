@@ -18,7 +18,7 @@
      const spin = new Spin();  spin.tick(portalTime, nausea);  state.spin = spin.at(alpha)
      screenFx(renderer, cam, state)   after the camera's projection is made
 --------------------------------------------------------------------------- */
-import { timeOfDay } from './vanilla.js?v=99';
+import { timeOfDay } from './vanilla.js?v=100';
 const THREE = window.THREE;
 
 /* the strength of the wobble, ticked with the game */
