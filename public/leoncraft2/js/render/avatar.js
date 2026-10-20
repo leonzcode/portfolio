@@ -44,17 +44,17 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { VANILLA, AVATAR_FS } from './vanilla.js?v=99';
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=99';
-import { lightDefines } from './materials.js?v=99';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=99';
-import { H, idx } from '../world-const.js?v=99';
-import { lightNear } from '../lightlevel.js?v=99';
-import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=99';
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=99';
-import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=99';
-import { setGlint } from './glint.js?v=99';
-import { hatParts, HAT_TEX } from './hats.js?v=99';
+import { VANILLA, AVATAR_FS } from './vanilla.js?v=100';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=100';
+import { lightDefines } from './materials.js?v=100';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=100';
+import { H, idx } from '../world-const.js?v=100';
+import { lightNear } from '../lightlevel.js?v=100';
+import { armorSheet, avatarArmorGeometry, poseWings, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=100';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=100';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=100';
+import { setGlint } from './glint.js?v=100';
+import { hatParts, HAT_TEX } from './hats.js?v=100';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -65,7 +65,7 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=99', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=100', import.meta.url).href;
 // the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
 let defaultSkin = DEFAULT_SKIN;
 

@@ -10,6 +10,14 @@
    up and down); stacks of the same item lying within half a block join
    into one (checked every 2 ticks when one crosses into another block,
    every 40 otherwise); after five minutes (6000 ticks) they are gone.
+   Their five minutes only run while they are within the simulation
+   distance of the player (Video Settings), as the game ticks an item only
+   in a chunk that is ticked: a death's spill waits for you while you are
+   far off, and is saved with the world. An explosion hurts them as it
+   hurts anything (blast below), so most of what lies near one goes.
+   Drawn only within 16 blocks times the game's view scale (0.25 of a
+   block across x 64, by the render distance and Entity Distance), as the
+   game's shouldRenderAtSqrDistance draws them.
    They have 5 health: fire takes 1 a tick (soul fire 2), a cactus 1, lava
    4, so an item lasts five ticks in fire and two in lava. Netherite (and
    ancient debris) does not burn and floats up through lava as other items
@@ -31,21 +39,24 @@
      dropItem(world, x, y, z, 'diamond', 2)     from anywhere (mob loot...)
      giveXp(x, y, z, 7)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=99';
-import { collisionBoxes } from './models.js?v=99';
-import { LEVEL, FALLING } from './world-const.js?v=99';
-import { lightNear } from './lightlevel.js?v=99';
-import { glints } from './render/armor.js?v=99';
-import { setGlint } from './render/glint.js?v=99';
-import { DIMS } from './dims.js?v=99';
-import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=99';
-import { blockGeometry, intAttribute } from './render/blockmesh.js?v=99';
+import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=100';
+import { collisionBoxes } from './models.js?v=100';
+import { LEVEL, FALLING } from './world-const.js?v=100';
+import { lightNear } from './lightlevel.js?v=100';
+import { glints } from './render/armor.js?v=100';
+import { setGlint } from './render/glint.js?v=100';
+import { DIMS } from './dims.js?v=100';
+import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=100';
+import { blockGeometry, intAttribute } from './render/blockmesh.js?v=100';
 const THREE = window.THREE;
 
 const ITEM_W = 0.125, ITEM_H = 0.25;           // half width, height
 const ORB_W = 0.5, ORB_H = 0.5;                 // full width and height
 const ORB_SIZES = [2477, 1237, 617, 307, 149, 73, 37, 17, 7, 3, 1];
-const MAX_ITEMS = 400;
+/* At most this many lying about in a dimension (the server's own limit for a world): past it the one nearest its
+   end goes to make room, never a death's spill while anything else could go. Stacks of the same item join, and a
+   blast's drops come out in stacks, so a world rarely comes near it. */
+const MAX_ITEMS = 1500;
 
 let active = null;
 // spawn an item entity: from mob loot, a broken container... (the active world's Drops)
@@ -107,6 +118,8 @@ function copiesOf(src, n, flat, id, sc) {
 // what touching a block does to an item or an orb a tick: fire 1, soul fire 2, a cactus 1
 const HURTS = new Map();
 for (const [n, d] of [['fire', 1], ['soul_fire', 2], ['cactus', 1]]) if (B[n] !== undefined) HURTS.set(B[n], d);
+// a block column as one number, for the items' grid (columns 2^20 apart share a key: only ever a few extra to look at)
+const colKey = (x, z) => (x & 0xfffff) * 1048576 + (z & 0xfffff);
 function orbIcon(v) { for (let i = 0; i < ORB_SIZES.length; i++) if (v >= ORB_SIZES[i]) return 10 - i; return 0; }
 
 export class Drops {
@@ -142,25 +155,100 @@ export class Drops {
   }
 
   /* ---- spawning ---- */
-  // a stack at (x, y, z) (the bottom of the item); opts: { vel: [x, y, z], delay, age, pop }
+  // a stack at (x, y, z) (the bottom of the item); opts: { vel: [x, y, z], delay, age, pop, keep (a death's spill) }
   spawn(x, y, z, stack, opts = {}) {
     if (!stack || !stack.id || stack.count <= 0 || !ITEMS[stack.id]) return null;
-    if (this.items.length >= MAX_ITEMS) this._remove(this.items[0], 0);
+    if (this.items.length >= MAX_ITEMS) this._cull();
     const e = {
       stack: withCount(stack, stack.count), pos: new THREE.Vector3(x, y, z), prev: new THREE.Vector3(x, y, z),
       vel: new THREE.Vector3(), age: opts.age | 0, delay: opts.delay === undefined ? 10 : opts.delay, onGround: false,
-      spin: Math.random() * Math.PI * 2, mesh: null, light: -1, lightT: 0, gone: false, fly: 0, hp: 5,
+      spin: Math.random() * Math.PI * 2, mesh: null, light: -1, lightT: 0, gone: false, fly: 0, hp: 5, keep: !!opts.keep,
     };
     if (opts.vel) e.vel.set(opts.vel[0], opts.vel[1], opts.vel[2]);
     else if (opts.pop !== false) e.vel.set(Math.random() * 0.2 - 0.1, 0.2, Math.random() * 0.2 - 0.1);
     this.items.push(e);
     return e;
   }
-  // what a broken block gives, jumping out of its middle (the game's popResource)
+  // room for one more: the oldest that is not a death's spill goes (only on this page: `quiet` tells a server nothing)
+  _cull() {
+    let best = null, bestKeep = null;
+    for (const e of this.items) {
+      if (e.gone || e.fly > 0) continue;
+      if (e.keep) { if (!bestKeep || e.age > bestKeep.age) bestKeep = e; }
+      else if (!best || e.age > best.age) best = e;
+    }
+    const e = best || bestKeep;
+    if (e) { e.quiet = true; this._remove(e, -1); }
+  }
+  /* What a broken block gives, jumping out of its middle (the game's popResource). While an explosion's
+     blocks go (explosion.js sets `gather`), it is gathered instead: each stack joins the first gathered
+     one of the same item with room under 16 (what does not fit starts one of its own at its block),
+     and scatter() throws them all out at the end, as the game's ServerExplosion does. */
   popFrom(bx, by, bz, stack) {
+    if (this.gather) {
+      const st = withCount(stack, stack.count);
+      for (const g of this.gather) {
+        if (st.count <= 0) break;
+        if (!sameItem(g.stack, st)) continue;
+        const k = Math.min(Math.min(maxStack(g.stack.id), 16) - g.stack.count, st.count);
+        if (k > 0) { g.stack.count += k; st.count -= k; }
+      }
+      if (st.count > 0) this.gather.push({ x: bx, y: by, z: bz, stack: st });
+      return null;
+    }
     const h = 0.125;
     return this.spawn(bx + 0.5 + (Math.random() - 0.5) * 0.5, by + 0.5 - h + (Math.random() - 0.5) * 0.5, bz + 0.5 + (Math.random() - 0.5) * 0.5, stack);
   }
+  scatter() {
+    const got = this.gather;
+    this.gather = null;
+    if (got) for (const g of got) this.popFrom(g.x, g.y, g.z, g.stack);
+  }
+  /* An explosion of this power at (x, y, z) (explosion.js and entities/explosion.js, before its blocks go): each item
+     and orb within twice the power takes (impact^2 + impact) / 2 x 7 x 2 x power + 1 from its 5 health, the impact
+     being (1 - distance / (2 x power)) x seen(box), the share of its box the blast reaches; one that lasts is pushed
+     away by the impact, from the centre towards its eyes (0.85 of its height). A nether star is not hurt (the
+     game's damage_resistant). As the game's ServerExplosion.hurtEntities, with ItemEntity's and ExperienceOrb's
+     health. Returns how many went. */
+  blast(x, y, z, power, seen) {
+    const reach = power * 2, v = this._bv || (this._bv = new THREE.Vector3());
+    let gone = 0;
+    const one = (e, hw, h) => {
+      if (e.gone || e.fly > 0) return false;
+      const dx = e.pos.x - x, dy = e.pos.y - y, dz = e.pos.z - z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) / reach;
+      if (dist > 1) return false;
+      v.set(dx, e.pos.y + h * 0.85 - y, dz);
+      const l = v.length();
+      const impact = (1 - dist) * (seen ? seen([e.pos.x - hw, e.pos.y, e.pos.z - hw, e.pos.x + hw, e.pos.y + h, e.pos.z + hw]) : 1);
+      const star = e.stack && ITEMS[e.stack.id] && ITEMS[e.stack.id].name === 'nether_star';
+      if (!star) {
+        e.hp = Math.floor(e.hp - ((impact * impact + impact) / 2 * 7 * reach + 1));
+        if (e.hp <= 0) return true;
+      }
+      if (l > 0) e.vel.addScaledVector(v, impact / l);
+      return false;
+    };
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      const e = this.items[i];
+      // (blown up: on a server everyone is told, whoever stands nearest it: net.js)
+      if (one(e, ITEM_W, ITEM_H)) { e.blown = true; this._remove(e, i); gone++; }
+    }
+    for (let i = this.orbs.length - 1; i >= 0; i--) {
+      const o = this.orbs[i];
+      if (one(o, ORB_W / 2, ORB_H)) { o.blown = true; this._removeOrb(o, i); gone++; }
+    }
+    return gone;
+  }
+  /* Is something at x, z where the world is ticked: in a loaded chunk within the simulation distance of the player
+     (a circle of chunks, as sim.js's random ticks go)? Out of it an item or an orb waits, its age and all. */
+  _awake(x, z) {
+    const c = this._near;
+    if (!c) return true;
+    const dx = Math.floor(x / 16) - c.cx, dz = Math.floor(z / 16) - c.cz;
+    return dx * dx + dz * dz <= c.r2 && !!this.world.chunkXZ(dx + c.cx, dz + c.cz);
+  }
+
   // thrown by the player (Q, or out of a screen): forward from the eyes
   throwFrom(player, stack) {
     const yaw = player.yaw, pitch = player.pitch;
@@ -304,6 +392,19 @@ export class Drops {
         }
     return dmg;
   }
+  /* The fluid it is in (and e.depth) and what touching blocks do to it this tick (e.envT), looked up again only when it
+     has moved or its chunk changed (world.js counts a chunk's changes): most items lie still, and a thousand of
+     them looking at twenty blocks each every tick was most of what they cost. */
+  _around(e, proof) {
+    const w = this.world, p = e.pos;
+    const cx = Math.floor((p.x - 0.25) / 16), cz = Math.floor((p.z - 0.25) / 16);
+    const one = cx === Math.floor((p.x + 0.25) / 16) && cz === Math.floor((p.z + 0.25) / 16) ? w.chunkXZ(cx, cz) || null : null;
+    if (one && e.envC === one && e.envV === (one.ver | 0) && e.envX === p.x && e.envY === p.y && e.envZ === p.z) { e.depth = e.envD; return e.envFl; }
+    const fl = this._fluid(e);
+    e.envT = this._touchDamage(e, ITEM_W, ITEM_H, proof);
+    e.envC = one; e.envV = one ? one.ver | 0 : 0; e.envX = p.x; e.envY = p.y; e.envZ = p.z; e.envFl = fl; e.envD = e.depth;
+    return fl;
+  }
   _slip(e) {
     const b = this.world.get(Math.floor(e.pos.x), Math.floor(e.pos.y - 0.5), Math.floor(e.pos.z));
     return (BLOCKS[b] && BLOCKS[b].slippery) || 0.6;
@@ -317,17 +418,32 @@ export class Drops {
     const P = player ? player.pos : null;
     // 64 below the dimension's floor is the void: anything falling there is gone (heights here are y + 64)
     const voidY = (DIMS[this.world && this.world.dim] || DIMS.overworld).minY;
+    // the chunks being ticked: within the simulation distance (settings.js sets simDist), 12 by default as the game's
+    const sd = Math.max(2, this.simDist || 12);
+    this._near = P ? { cx: Math.floor(P.x / 16), cz: Math.floor(P.z / 16), r2: sd * sd } : null;
+    // where each lies, by block column, for joining stacks without looking at every item for every item
+    const G = this._grid || (this._grid = new Map());
+    G.clear();
+    if (this.items.length > 32) for (const e of this.items) {
+      if (e.gone || e.fly > 0) continue;
+      const k = colKey(Math.floor(e.pos.x), Math.floor(e.pos.z)), l = G.get(k);
+      if (l) l.push(e); else G.set(k, [e]);
+    }
     for (let i = this.items.length - 1; i >= 0; i--) {
       const e = this.items[i];
       e.prev.copy(e.pos);
       if (e.fly > 0) { if (--e.fly <= 0 || !P) this._remove(e, i); continue; }
+      if (!this._awake(e.pos.x, e.pos.z)) continue;
       e.age++;
       if (e.delay > 0) e.delay--;
-      if (e.age >= 6000) { this._remove(e, i); continue; }
-      const fl = this._fluid(e);
+      /* Five minutes lain. On a server the server says when a shared one's time is up (it counts the ticks it lay near
+         anyone, net.js), so this page's own count, which stops while you are away, is no reason to throw it away:
+         only half a minute past it, should the server never say (it lost it). */
+      if (e.age >= 6000 && (!(e.nid || e.nk) || e.age >= 6600)) { if (e.nid || e.nk) e.quiet = true; this._remove(e, i); continue; }
       // fire, lava and cactus wear its 5 health away (netherite does not burn)
       const proof = fireResistant(e.stack.id);
-      const harm = (fl === 2 && !proof ? 4 : 0) + this._touchDamage(e, ITEM_W, ITEM_H, proof);
+      const fl = this._around(e, proof);
+      const harm = (fl === 2 && !proof ? 4 : 0) + e.envT;
       if (harm > 0 && (e.hp -= harm) <= 0) { this._remove(e, i); continue; }
       // more than a tenth of a block into water (or lava, for what survives it) it floats up; otherwise it falls
       if (fl && e.depth > 0.1) {
@@ -335,13 +451,23 @@ export class Drops {
         e.vel.x *= drag; e.vel.z *= drag;
         if (e.vel.y < 0.06) e.vel.y += 5e-4;
       } else e.vel.y -= 0.04;
-      if (!this._unstick(e) && (!e.onGround || e.vel.x * e.vel.x + e.vel.z * e.vel.z > 1e-5 || (this.ticks + i) % 4 === 0)) {
+      /* (lying still out of any fluid, in a chunk nothing has changed in since it came to rest: the ground under it is
+         still there, so the game's move every fourth tick would only find the same place again; skipped) */
+      const C = e.envC, still = !fl && e.onGround && C && e.restC === C && e.restV === (C.ver | 0) && e.restX === e.pos.x && e.restY === e.pos.y && e.restZ === e.pos.z &&
+        e.vel.x * e.vel.x + e.vel.z * e.vel.z <= 1e-5;
+      if (still) e.vel.y = 0;
+      else if (!this._unstick(e) && (!e.onGround || e.vel.x * e.vel.x + e.vel.z * e.vel.z > 1e-5 || (this.ticks + i) % 4 === 0)) {
+        const x0 = e.pos.x, y0 = e.pos.y, z0 = e.pos.z;
         this._move(e, ITEM_W, ITEM_H);
         if (e.onGround) this._overEdge(e);
         const f = e.onGround ? this._slip(e) * 0.98 : 0.98;
         e.vel.x *= f; e.vel.y *= 0.98; e.vel.z *= f;
         if (e.onGround && e.vel.y < 0) e.vel.y *= -0.5;
         if (e.hitY && !e.onGround) e.vel.y = 0;
+        // came to rest here: remembered with its chunk's count of changes
+        if (e.onGround && e.pos.x === x0 && e.pos.y === y0 && e.pos.z === z0 && e.vel.x * e.vel.x + e.vel.z * e.vel.z <= 1e-5 && e.envC) {
+          e.restC = e.envC; e.restV = e.envC.ver | 0; e.restX = x0; e.restY = y0; e.restZ = z0;
+        } else e.restC = null;
       }
       if (e.pos.y < voidY) { this._remove(e, i); continue; }
       // join a stack of the same item close by: every 2 ticks of its age when it crossed into another block, else every 40
@@ -377,6 +503,7 @@ export class Drops {
       const o = this.orbs[i];
       o.prev.copy(o.pos);
       if (o.fly > 0) { if (--o.fly <= 0 || !P) this._removeOrb(o, i); continue; }
+      if (!this._awake(o.pos.x, o.pos.z)) continue;
       o.age++;
       if (o.age >= 6000) { this._removeOrb(o, i); continue; }
       const fl = this._fluid(o, ORB_W / 2, ORB_H);
@@ -447,7 +574,7 @@ export class Drops {
     const max = maxStack(e.stack.id);
     let before = 0;
     if (e.stack.count >= max) return before;
-    for (const o of this.items) {
+    for (const o of this._nearby(e)) {
       if (o === e || o.gone || o.fly > 0 || !sameItem(o.stack, e.stack)) continue;
       if (Math.abs(o.pos.x - e.pos.x) > 0.5 + 2 * ITEM_W || Math.abs(o.pos.z - e.pos.z) > 0.5 + 2 * ITEM_W || Math.abs(o.pos.y - e.pos.y) > ITEM_H) continue;
       if (o.stack.count + e.stack.count > max) continue;
@@ -462,6 +589,15 @@ export class Drops {
       if (small === e) return before;
     }
     return before;
+  }
+  // the items in the block columns round e's (all of them while there are few: tick() keeps the columns)
+  _nearby(e) {
+    const G = this._grid;
+    if (!G || !G.size) return this.items;
+    const fx = Math.floor(e.pos.x), fz = Math.floor(e.pos.z), out = this._nb || (this._nb = []);
+    out.length = 0;
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) { const l = G.get(colKey(fx + dx, fz + dz)); if (l) for (const o of l) out.push(o); }
+    return out;
   }
   _remove(e, i) {
     e.gone = true;
@@ -556,7 +692,14 @@ export class Drops {
     }
     // how far along its flight a taken thing is: the game's ((ticks + partial) / 3) squared, slow first
     const flown = e => { const k = Math.min(1, (3 - e.fly + alpha) / 3); return k * k; };
+    /* How far one is drawn: the game's shouldRenderAtSqrDistance, the average side of its box x 64 x the view scale
+       (the render distance / 8, held to 1..2.5, x Entity Distance): an item 16 blocks at the least, an orb 32. */
+    const vs = Math.min(2.5, Math.max(1, ((this.world && this.world.renderDist) || 8) / 8)) * (this.entityDistance || 1);
+    const C = cam ? cam.position : P, itemR2 = (16 * vs) ** 2, orbR2 = (32 * vs) ** 2;
+    const far = (e, r2) => !!C && !(e.fly > 0) && (e.pos.x - C.x) ** 2 + (e.pos.y - C.y) ** 2 + (e.pos.z - C.z) ** 2 > r2;
     for (const e of this.items) {
+      if (far(e, itemR2)) { if (e.mesh) e.mesh.visible = false; continue; }
+      if (e.mesh) e.mesh.visible = true;
       // a stack that grew or shrank past a step is drawn with more or fewer copies
       const n = copiesFor(e.stack.count);
       if (e.mesh && e.copies !== n) this._unmesh(e);
@@ -614,6 +757,8 @@ export class Drops {
       c.mesh.matrix.copy(m); c.mesh.matrixWorld.copy(m);
     }
     for (const o of this.orbs) {
+      if (far(o, orbR2)) { if (o.mesh) o.mesh.visible = false; continue; }
+      if (o.mesh) o.mesh.visible = true;
       if (!o.mesh) {
         const layer = textureLayer('xp_orb_' + orbIcon(o.value));
         if (layer < 0) continue;
@@ -654,16 +799,17 @@ export class Drops {
     }
   }
 
-  /* ---- saving: items and orbs near where you are ---- */
+  /* ---- saving: the items and orbs of the dimension, wherever they lie (a death's spill far off waits there), with
+     their ages; a death's spill is marked (a 1 after the delay) ---- */
   toJSON() {
     return {
-      items: this.items.filter(e => !e.fly).slice(-200).map(e => [stackToJSON(e.stack), +e.pos.x.toFixed(2), +e.pos.y.toFixed(2), +e.pos.z.toFixed(2), e.age, e.delay]),
-      orbs: this.orbs.filter(o => !o.fly).slice(-200).map(o => [o.value, +o.pos.x.toFixed(2), +o.pos.y.toFixed(2), +o.pos.z.toFixed(2), o.age]),
+      items: this.items.filter(e => !e.fly).slice(-MAX_ITEMS).map(e => { const a = [stackToJSON(e.stack), +e.pos.x.toFixed(2), +e.pos.y.toFixed(2), +e.pos.z.toFixed(2), e.age, e.delay]; if (e.keep) a.push(1); return a; }),
+      orbs: this.orbs.filter(o => !o.fly).slice(-MAX_ITEMS).map(o => [o.value, +o.pos.x.toFixed(2), +o.pos.y.toFixed(2), +o.pos.z.toFixed(2), o.age]),
     };
   }
   fromJSON(o) {
     if (!o) return;
-    for (const a of o.items || []) { const st = stackFromJSON(a[0]); if (st) this.spawn(a[1], a[2], a[3], st, { age: a[4], delay: a[5], pop: false }); }
+    for (const a of o.items || []) { const st = stackFromJSON(a[0]); if (st) this.spawn(a[1], a[2], a[3], st, { age: a[4], delay: a[5], pop: false, keep: a[6] === 1 }); }
     for (const a of o.orbs || []) { this.xp(a[1], a[2], a[3], a[0]); const orb = this.orbs[this.orbs.length - 1]; if (orb) { orb.age = a[4] | 0; orb.vel.set(0, 0, 0); } }
   }
 }

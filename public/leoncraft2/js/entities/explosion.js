@@ -7,7 +7,11 @@
    (blast resistance + 0.3) x 0.3 off it, and a further 0.225 goes with each
    step. A block the ray still has strength left at is destroyed. Water and
    lava have a resistance of 100, so an explosion in water breaks nothing.
-   Blocks blown up by a mob drop with a chance of 1 / power.
+   Blocks blown up drop with a chance of 1 / power when the game rule for
+   that kind says so (../explosion.js dropDecay: mobExplosionDropDecay for
+   creepers, fireballs and the wither, tntExplosionDropDecay for a TNT
+   minecart), gathered into stacks of up to 16 of a kind as the game does.
+   Items and orbs lying in the blast are hurt first (drops.js blast).
 
    Entities: everything within twice the power. Its "exposure" is the share
    of a grid of points over its box that can see the centre. The impact is
@@ -15,13 +19,13 @@
    (impact^2 + impact) / 2 x 7 x 2 x power + 1, and it is pushed away from
    the centre by the impact (towards its eyes, for the living).
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, B } from '../blocks.js?v=99';
-import { blastResistance } from './terrain.js?v=99';
-import { breakAt } from '../place.js?v=99';
-import { BLAST_FILTER } from '../explosion.js?v=99';
-import { WORLD_FX } from '../world.js?v=99';
-import { dropOf } from '../survival.js?v=99';
-import { Living } from './entity.js?v=99';
+import { BLOCKS, FLUID, B } from '../blocks.js?v=100';
+import { blastResistance } from './terrain.js?v=100';
+import { breakAt } from '../place.js?v=100';
+import { BLAST_FILTER, dropDecay, exposure as seenBy } from '../explosion.js?v=100';
+import { WORLD_FX } from '../world.js?v=100';
+import { dropOf } from '../survival.js?v=100';
+import { Living } from './entity.js?v=100';
 
 const R = () => Math.random();
 // the 1352 ray directions, made once
@@ -99,9 +103,19 @@ export function explode(m, cx, cy, cz, power, source, o = {}) {
   };
   if (P && P.alive() && !P.creative()) push(P, true);
   m.forNear(cx, cz, r2 + 2, e => { if (!e.removed && e !== (source && source.attacker)) push(e, false); });
+  // the items and orbs lying in it, before the blocks go (so what it breaks out is not blown up by it)
+  const L = window.__lc2, D = L && L.game && L.game.drops;
+  if (D && D.blast && power > 0) D.blast(cx, cy, cz, power, box => seenBy(W, cx, cy, cz, box));
   // the blocks go, some dropping (RIP Computer: bursting into pieces, with a flash and smoke: render/realism.js)
   if (WORLD_FX.blast) WORLD_FX.blast(cx, cy, cz, power);
-  const chance = source && source.mob ? 1 / power : 1;
+  // (a TNT minecart is TNT; anything else that comes here, creepers, fireballs a ghast threw, the wither, is a mob's)
+  const chance = dropDecay(source && source.tnt ? 'tnt' : 'mob') ? 1 / power : 1;
+  // what the blocks drop, gathered into stacks of up to 16 of a kind (the game's addOrAppendStack), thrown out after
+  const got = [];
+  const gather = (name, x, y, z) => {
+    for (const g of got) if (g.name === name && g.n < 16) { g.n++; return; }
+    got.push({ name, n: 1, x, y, z });
+  };
   /* TNT in the blast is lit with a short fuse (the game's TntBlock.wasExploded: 10 to 29 ticks), owned by the
      blast's indirect source as ServerExplosion.getIndirectSourceEntity has it: the creeper or the wither itself,
      a fireball's living shooter; a TNT minecart is not living, so its chain is no one's */
@@ -114,13 +128,14 @@ export function explode(m, cx, cy, cz, power, source, o = {}) {
     for (const [gx, gy, gz] of breakAt(W, x, y, z)) {
       const gb = W.get(gx, gy, gz);
       if (!gb) continue;
-      if (R() < chance && o.drops !== false && !(BLAST_FILTER.noDrops && BLAST_FILTER.noDrops())) { const d = dropOf(gb); if (d && BLOCKS[d]) m.dropItemAt(gx + 0.5, gy + 0.5, gz + 0.5, BLOCKS[d].name, 1, true); }
+      if (R() < chance && o.drops !== false && !(BLAST_FILTER.noDrops && BLAST_FILTER.noDrops())) { const d = dropOf(gb); if (d && BLOCKS[d]) gather(BLOCKS[d].name, gx + 0.5, gy + 0.5, gz + 0.5); }
       W.set(gx, gy, gz, 0, 0);
       if (BLOCKS[gb] && BLOCKS[gb].waterlogged) W.set(gx, gy, gz, B.water, 0);
       if (m.fluids) m.fluids.around(gx, gy, gz);
     }
     if (o.fire && R() < 1 / 3 && !W.get(x, y, z) && BLOCKS[W.get(x, y - 1, z)] && BLOCKS[W.get(x, y - 1, z)].solid && B.fire !== undefined) W.set(x, y, z, B.fire, 0);
   }
+  for (const g of got) m.dropItemAt(g.x, g.y, g.z, g.name, g.n, true);
   // the flash and the smoke
   m.particles(power >= 2 && breaks ? 'explosion_big' : 'explosion', cx, cy, cz, 1, 0);
   m.particles('explosion', cx, cy, cz, Math.round(power * 4), power * 0.6);

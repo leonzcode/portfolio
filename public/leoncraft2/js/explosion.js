@@ -10,9 +10,20 @@
    every block it passes through and 0.225 a step; a block is destroyed if a
    ray still has intensity left there. TNT caught in it is lit with a short
    fuse (10 to 29 ticks). Destroyed blocks drop their loot with a chance of
-   1 / power when `decay` is on (creepers, beds, respawn anchors; TNT drops
-   everything since 1.21, the tntExplosionDropDecay rule being off). An
-   explosion centred in water or lava breaks no blocks.
+   1 / power when `decay` is on: by the game's three rules (dropDecay below),
+   blockExplosionDropDecay for beds, respawn anchors and end crystals,
+   mobExplosionDropDecay for creepers, fireballs and the wither, and
+   tntExplosionDropDecay for TNT and TNT minecarts. The game leaves that last
+   one off since 1.20.3; Leon asked for TNT to lose some of its drops, so here
+   it is on unless /gamerule turns it off. What the blocks drop is gathered
+   into stacks of up to 16 of a kind before it is thrown out, as the game's
+   ServerExplosion does (addOrAppendStack). An explosion centred in water or
+   lava breaks no blocks.
+
+   Items and experience orbs lying in the blast are hurt as other entities
+   are (they have 5 health, so most near a blast go; a nether star does not),
+   before the blocks go, so what the blast itself breaks out survives it and a
+   chain of TNT blows up what the earlier ones dropped (drops.js blast).
 
    Entities: everything within 2 x power is hurt by
      impact = (1 - distance / (2 x power)) x exposure
@@ -25,8 +36,8 @@
    Fire (beds, respawn anchors, fireballs): each destroyed cell that is air
    afterwards, with a solid block under it, catches fire one time in three.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=99';
-import { WORLD_FX } from './world.js?v=99';
+import { B, BLOCKS, FLUID } from './blocks.js?v=100';
+import { WORLD_FX } from './world.js?v=100';
 
 /* Blast resistance from the wiki where it is not the block's hardness. Worked out the first time it
    is wanted, or when the page is next idle: its 34 passes over every block took 11-15 ms here, and
@@ -72,6 +83,15 @@ function makeRes() {
   res(n => n === 'water' || n === 'lava', 100);
 }
 if (typeof requestIdleCallback === 'function') requestIdleCallback(() => { if (!resMade) makeRes(); }, { timeout: 5000 });
+
+/* Whether the blocks an explosion of this kind ('block', 'mob' or 'tnt') breaks lose some of their drops: the
+   world's game rule (commands.js RULES has the same defaults, for /gamerule; a server sends its own rules). */
+export const DECAY_RULES = { block: 'blockExplosionDropDecay', mob: 'mobExplosionDropDecay', tnt: 'tntExplosionDropDecay' };
+const DECAY_DEFAULT = { blockExplosionDropDecay: true, mobExplosionDropDecay: true, tntExplosionDropDecay: true };
+export function dropDecay(kind) {
+  const name = DECAY_RULES[kind] || DECAY_RULES.block, g = window.__lc2 && window.__lc2.game, r = g && g.rules;
+  return r && typeof r[name] === 'boolean' ? r[name] : DECAY_DEFAULT[name];
+}
 
 // resistance set from outside, ahead of the table (a minigame's blast-proof glass: net/hub.js)
 export const RES_OVERRIDE = new Map();
@@ -196,15 +216,38 @@ export function explode(world, x, y, z, power, o) {
     hurtOne(box, dmg => { if (e.hurt) e.hurt(dmg, 'explosion'); }, (vx, vy, vz) => { if (e.push) e.push(vx, vy, vz); else if (e.vel) { e.vel.x += vx; e.vel.y += vy; e.vel.z += vz; } });
   }
   if (L && L.entities && typeof L.entities.explosion === 'function') L.entities.explosion(x, y, z, power, o);
+  // the items and orbs lying in it, before the blocks go (so what it breaks out is not blown up by it)
+  const D = L && L.game && L.game.drops;
+  if (D && D.blast && power > 0) D.blast(x, y, z, power, box => exposure(world, x, y, z, box));
 
   /* ---- the blocks go ---- */
   // (RIP Computer: the flash and the smoke, and each block below bursting into pieces as it goes: render/realism.js)
   if (WORLD_FX.blast) WORLD_FX.blast(x, y, z, power);
-  const decay = o.decay !== undefined ? o.decay : true;
+  // (a kind of explosion, 'tnt', 'mob' or 'block', goes by that game rule; true or false says it outright)
+  const decay = typeof o.decay === 'string' ? dropDecay(o.decay) : o.decay !== undefined ? !!o.decay : dropDecay('block');
   const cells = [...hit.values()];
   // shuffled, as the game does, so drops and chains do not come out in ray order
   for (let i = cells.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = cells[i]; cells[i] = cells[j]; cells[j] = t; }
   const chance = decay ? 1 / power : 1;
+  // what the blocks drop is gathered into stacks of up to 16 and thrown out after (drops.js popFrom)
+  const gathering = !!(D && sim && !D.gather);
+  if (gathering) D.gather = [];
+  try { breakCells(world, sim, cells, chance, o, rnd); }
+  finally { if (gathering) D.scatter(); }
+  if (sim && sim.fluids) for (const [bx, by, bz] of cells) sim.fluids.around(bx, by, bz);
+  /* ---- fire ---- */
+  if (o.fire && sim) {
+    for (const [bx, by, bz] of cells) {
+      if (Math.floor(rnd() * 3) !== 0) continue;
+      if (world.get(bx, by, bz)) continue;
+      const below = world.get(bx, by - 1, bz);
+      if (below && BLOCKS[below].solid && BLOCKS[below].shape === 'cube' && BLOCKS[below].pass === 'opaque') sim.set(bx, by, bz, B.fire, 0);
+    }
+  }
+  if (sim && sim.onExplosion) sim.onExplosion(x, y, z, power, cells.length, o);
+  return { blocks: cells.length, cells, entities: pushed };
+}
+function breakCells(world, sim, cells, chance, o, rnd) {
   for (const [bx, by, bz] of cells) {
     const b = world.get(bx, by, bz);
     if (!b) continue;
@@ -222,16 +265,4 @@ export function explode(world, x, y, z, power, o) {
       sim.destroy(bx, by, bz, !(BLAST_FILTER.noDrops && BLAST_FILTER.noDrops()), chance);
     } else world.set(bx, by, bz, 0, 0);
   }
-  if (sim && sim.fluids) for (const [bx, by, bz] of cells) sim.fluids.around(bx, by, bz);
-  /* ---- fire ---- */
-  if (o.fire && sim) {
-    for (const [bx, by, bz] of cells) {
-      if (Math.floor(rnd() * 3) !== 0) continue;
-      if (world.get(bx, by, bz)) continue;
-      const below = world.get(bx, by - 1, bz);
-      if (below && BLOCKS[below].solid && BLOCKS[below].shape === 'cube' && BLOCKS[below].pass === 'opaque') sim.set(bx, by, bz, B.fire, 0);
-    }
-  }
-  if (sim && sim.onExplosion) sim.onExplosion(x, y, z, power, cells.length, o);
-  return { blocks: cells.length, cells, entities: pushed };
 }

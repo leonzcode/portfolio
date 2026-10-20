@@ -116,7 +116,8 @@ def main(src):
             transmute.append([res, ing(d['input']), ing(d['material']), cat, group, lo, hi, 1 if d.get('add_material_count_to_result') else 0])
         elif t in ('smelting', 'blasting', 'smoking', 'campfire_cooking'):
             res, n = result(d['result'])
-            cooking.append([t, ing(d['ingredient']), res, n, d.get('experience', 0), d.get('cookingtime', 200), cat, group])
+            # (the game's own default cooking time for each kind when a recipe gives none: AbstractCookingRecipe's serializers)
+            cooking.append([t, ing(d['ingredient']), res, n, d.get('experience', 0), d.get('cookingtime', {'smelting': 200, 'blasting': 100, 'smoking': 100}.get(t, 100)), cat, group])
         elif t == 'stonecutting':
             res, n = result(d['result'])
             cutting.append([ing(d['ingredient']), res, n])

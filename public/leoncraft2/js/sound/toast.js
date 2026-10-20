@@ -7,8 +7,8 @@
    track's: "author - title" for Leoncraft's own music, the game's own name
    for it with the player's own Minecraft sounds (from its en_us.json).
 --------------------------------------------------------------------------- */
-import { Music } from './music.js?v=99';
-import { SoundPacks } from './packs.js?v=99';
+import { Music } from './music.js?v=100';
+import { SoundPacks } from './packs.js?v=100';
 
 const SHOW = 5000, SLIDE = 250;
 
