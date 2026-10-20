@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Braess's Paradox Simulator</title>
+<meta name="description" content="Pick any city street on Earth and simulate its rush hour on the real road network, then find the roads whose closure would make everyone's trip faster: live instances of Braess's paradox.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&family=Roboto:wght@400;500&display=swap">
+<link rel="stylesheet" href="vendor/maplibre-gl.css?v=1">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<div id="map" aria-label="Map"></div>
+<canvas id="cars"></canvas>
+
+<aside class="panel closed" id="panel" aria-label="Places">
+  <div class="panel-bar"></div>
+  <div class="grab" id="grab"></div>
+  <div class="panel-scroll" id="pscroll"></div>
+  <button class="collapse" id="collapse" aria-label="Collapse side panel"><svg viewBox="0 0 24 24"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+</aside>
+
+<div class="top">
+  <div class="search" id="search">
+    <div class="search-row">
+      <button class="ib" id="menuBtn" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg></button>
+      <input id="q" type="text" placeholder="Search a city or street" autocomplete="off" spellcheck="false" aria-label="Search a city or street">
+      <button class="ib" id="clearQ" aria-label="Clear search" hidden><svg viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+      <button class="ib" id="goQ" aria-label="Search"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg></button>
+      <span class="sep"></span>
+      <button class="ib go-run" id="runTop" aria-label="Simulate this place" title="Simulate this place"><svg viewBox="0 0 24 24"><path d="M20 10h-3V8.86c1.72-.45 3-2 3-3.86h-3V4c0-.55-.45-1-1-1H8c-.55 0-1 .45-1 1v1H4c0 1.86 1.28 3.41 3 3.86V10H4c0 1.86 1.28 3.41 3 3.86V15H4c0 1.86 1.28 3.41 3 3.86V20c0 .55.45 1 1 1h8c.55 0 1-.45 1-1v-1.14c1.72-.45 3-2 3-3.86h-3v-1.14c1.72-.45 3-2 3-3.86zm-8 9a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0-5a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0-5a2 2 0 0 1-2-2c0-1.11.9-2 2-2a2 2 0 1 1 0 4z"/></svg></button>
+    </div>
+    <div class="sugg" id="sugg" role="listbox"></div>
+  </div>
+  <div class="chips" id="chips"></div>
+</div>
+
+<div class="rail">
+  <button class="btn" id="locate" data-tip="Your location" aria-label="Your location"><svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.99 8.99 0 0 0 13 3.06V1h-2v2.06A8.99 8.99 0 0 0 3.06 11H1v2h2.06A8.99 8.99 0 0 0 11 20.94V23h2v-2.06A8.99 8.99 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/></svg></button>
+  <div class="zoom">
+    <button class="zbtn" id="zin" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
+    <div class="zsep"></div>
+    <button class="zbtn" id="zout" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/></svg></button>
+  </div>
+</div>
+
+<button class="layers" id="layersBtn" aria-label="Layers" aria-haspopup="true">
+  <div class="tiles" id="layersThumb"></div>
+  <div class="layers-lbl"><svg viewBox="0 0 24 24"><path d="M11.99 18.54l-7.37-5.73L3 14.07l9 7 9-7-1.63-1.27-7.38 5.74zM12 16l7.36-5.73L21 9l-9-7-9 7 1.63 1.27L12 16z"/></svg>Layers</div>
+</button>
+<div class="lmenu" id="lmenu" hidden role="dialog" aria-label="Layers"></div>
+
+<div class="legend" id="legend" hidden>
+  <span>Simulated traffic</span><span class="dim">Fast</span>
+  <span class="scale"><i style="background:var(--t-fast)"></i><i style="background:var(--t-med)"></i><i style="background:var(--t-slow)"></i><i style="background:var(--t-jam)"></i></span>
+  <span class="dim">Slow</span><span class="br"></span><span>Braess road</span>
+</div>
+
+<div class="card" id="card" hidden></div>
+<div class="foot" id="foot"></div>
+<div class="toast" id="toast" role="status"></div>
+<div class="scrim" id="scrim" hidden></div>
+<nav class="drawer" id="drawer" aria-label="Menu"></nav>
+
+<script src="vendor/maplibre-gl.js?v=1"></script>
+<script src="mapstyle.js?v=1"></script>
+<script src="engine.js?v=1"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>
