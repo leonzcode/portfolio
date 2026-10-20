@@ -14,7 +14,7 @@
  * ===================================================================== */
 (function () {
 const E = window.BraessEngine;
-const V = '?v=3';
+const V = '?v=4';
 const $ = id => document.getElementById(id);
 const clamp = E.clamp;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -52,7 +52,9 @@ const I = {
 };
 const svg = (d, cls) => `<svg viewBox="0 0 24 24"${cls ? ` class="${cls}"` : ''}><path d="${d}"/></svg>`;
 const PIN_SVG = '<svg viewBox="0 0 27 43"><path d="M13.5 0C6 0 0 6 0 13.5 0 23.6 13.5 43 13.5 43S27 23.6 27 13.5C27 6 21 0 13.5 0z" fill="#ea4335"/><path d="M13.5 1C6.6 1 1 6.6 1 13.5c0 9.4 12.5 27.7 12.5 27.7S26 22.9 26 13.5C26 6.6 20.4 1 13.5 1z" fill="none" stroke="#b31412" stroke-width="1"/><circle cx="13.5" cy="13.5" r="4.6" fill="#7d0b0b"/></svg>';
-const TRAFFIC = { fast: '#4cb860', med: '#ffa040', slow: '#ec3a2c', jam: '#8a1d18' };
+const TRAFFIC_T = { light: { fast: '#4cb860', med: '#ffa040', slow: '#ec3a2c', jam: '#8a1d18' }, dark: { fast: '#4cb860', med: '#ffa040', slow: '#ec3a2c', jam: '#b3261e' } };
+const TRAFFIC = Object.assign({}, TRAFFIC_T.light);
+const trafficColor = () => ['step', ['get', 'vc'], TRAFFIC.fast, 0.6, TRAFFIC.med, 0.85, TRAFFIC.slow, 1.1, TRAFFIC.jam];
 const vcColor = vc => vc < 0.6 ? TRAFFIC.fast : vc < 0.85 ? TRAFFIC.med : vc < 1.1 ? TRAFFIC.slow : TRAFFIC.jam;
 const vcWord = vc => vc < 0.6 ? 'Light traffic' : vc < 0.85 ? 'Moderate traffic' : vc < 1.1 ? 'Heavy traffic' : 'Stop-and-go traffic';
 const HW_NAME = { motorway: 'Motorway', trunk: 'Major highway', primary: 'Main road', secondary: 'Through road', tertiary: 'Local through road', unclassified: 'Minor road',
@@ -69,7 +71,23 @@ const S = {
   net: null, netKey: '', res: null, resKey: '', busy: null, running: false, run: 0, pool: null,
   tab: 'overview', sort: 'popular', hot: [], selRoad: null,
   opt: Object.assign({ sat: false, traffic: true, cars: true, sweep: true }, store.get('opt', {})),
+  theme: ['light', 'dark'].includes(store.get('theme', 'auto')) ? store.get('theme', 'auto') : 'auto',
+  dark: document.documentElement.getAttribute('data-theme') === 'dark',
 };
+
+/* ------------------------------- theme ------------------------------- */
+/* Light, Dark or Automatic. Automatic follows the site's own light and dark
+   switch when the page is shown inside leonzhao.dev (the parent page's
+   html.dark), else what that switch was last set to here, else the device.
+   The inline script in index.html makes the same choice before the first
+   paint; setTheme() changes the map's paint and the page's colours in place. */
+const deviceDark = matchMedia('(prefers-color-scheme: dark)');
+function autoSource() {
+  try { if (parent !== window && parent.document) return { dark: parent.document.documentElement.classList.contains('dark'), from: 'site' }; } catch {}
+  try { const t = localStorage.getItem('theme'); if (t === 'dark' || t === 'light') return { dark: t === 'dark', from: 'site' }; } catch {}
+  return { dark: deviceDark.matches, from: 'device' };
+}
+const wantDark = () => S.theme === 'auto' ? autoSource().dark : S.theme === 'dark';
 const offsetOf = lng => Math.round(lng / 15);   // the local clock, estimated from longitude
 function localNow(lng) {
   const d = new Date(), h = d.getUTCHours() + d.getUTCMinutes() / 60 + offsetOf(lng);
@@ -82,7 +100,7 @@ function dayTypeAt(lng) {
 
 /* -------------------------------- map -------------------------------- */
 const map = new maplibregl.Map({
-  container: 'map', style: window.BRAESS_MAP_STYLE, center: [10, 28], zoom: 1.7, minZoom: 1, maxZoom: 19.5,
+  container: 'map', style: window.BRAESS_MAP_STYLES[S.dark ? 'dark' : 'light'], center: [10, 28], zoom: 1.7, minZoom: 1, maxZoom: 19.5,
   attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, maxPitch: 0, renderWorldCopies: true,
 });
 map.touchZoomRotate.disableRotation();
@@ -104,17 +122,46 @@ ready.then(() => {
   add({ id: 'net-wait', type: 'line', source: 'net', filter: ['all', ['==', ['get', 'a'], 1], ['==', ['get', 'r'], 0]], layout: { 'line-cap': 'round' }, paint: { 'line-color': '#8ab4f8', 'line-width': width(0.75), 'line-opacity': 0.6 } });
   add({ id: 'sweep', type: 'line', source: 'sweep', filter: ['<', ['get', 'k'], 0], layout: { 'line-cap': 'round' }, paint: { 'line-color': ['get', 'c'], 'line-width': width(1), 'line-opacity': 0.95 } });
   add({ id: 'traffic', type: 'line', source: 'net', filter: ['all', ['==', ['get', 'a'], 1], ['==', ['get', 'r'], 1]], layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['get', 'vc'] },
-    paint: { 'line-color': ['step', ['get', 'vc'], TRAFFIC.fast, 0.6, TRAFFIC.med, 0.85, TRAFFIC.slow, 1.1, TRAFFIC.jam], 'line-width': width(1), 'line-opacity': ['interpolate', ['linear'], ['get', 'fl'], 0, 0.35, 30, 0.95] } });
+    paint: { 'line-color': trafficColor(), 'line-width': width(1), 'line-opacity': ['interpolate', ['linear'], ['get', 'fl'], 0, 0.35, 30, 0.95] } });
   add({ id: 'sel', type: 'line', source: 'sel', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#1a73e8', 'line-width': width(2.6), 'line-opacity': 0.35 } });
   add({ id: 'braess-glow', type: 'line', source: 'braess', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#a142f4', 'line-width': width(4.2), 'line-opacity': 0.32, 'line-blur': 3 } });
   add({ id: 'braess-base', type: 'line', source: 'braess', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': width(1.9) } });
   add({ id: 'braess', type: 'line', source: 'braess', layout: { 'line-cap': 'butt' }, paint: { 'line-color': '#8430ce', 'line-width': width(1.6), 'line-dasharray': [0, 4, 3] } });
+  add(carLayer);
   // wide, invisible lines that take the clicks
   add({ id: 'hit', type: 'line', source: 'net', filter: ['==', ['get', 'a'], 1], paint: { 'line-color': '#000', 'line-opacity': 0, 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 8, 17, 22] } });
   setSat(S.opt.sat);
   showTraffic(S.opt.traffic);
+  setTheme(true);
   animateDash();
 });
+// our own layers' colours in each theme (the base map's come from mapstyle.js)
+const OVERLAY = {
+  light: { 'area-fill': { 'fill-color': '#1a73e8', 'fill-opacity': 0.05 }, 'area-line': { 'line-color': '#1a73e8' }, 'net-off': { 'line-color': '#9aa0a6', 'line-opacity': 0.55 },
+    'net-wait': { 'line-color': '#8ab4f8' }, sel: { 'line-color': '#1a73e8' }, 'braess-glow': { 'line-color': '#a142f4' }, 'braess-base': { 'line-color': '#ffffff' }, braess: { 'line-color': '#8430ce' } },
+  dark: { 'area-fill': { 'fill-color': '#8ab4f8', 'fill-opacity': 0.06 }, 'area-line': { 'line-color': '#8ab4f8' }, 'net-off': { 'line-color': '#9aa0a6', 'line-opacity': 0.4 },
+    'net-wait': { 'line-color': '#8ab4f8' }, sel: { 'line-color': '#8ab4f8' }, 'braess-glow': { 'line-color': '#c58af9' }, 'braess-base': { 'line-color': '#2d1f40' }, braess: { 'line-color': '#dcb6fc' } },
+};
+function setTheme(force) {
+  const dark = wantDark(), name = dark ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', name);
+  if (dark === S.dark && !force) return;
+  S.dark = dark;
+  Object.assign(TRAFFIC, TRAFFIC_T[name]);
+  if (map.getLayer('background')) {
+    for (const l of window.BRAESS_MAP_STYLES[name].layers) for (const k in l.paint || {}) map.setPaintProperty(l.id, k, l.paint[k]);
+    for (const id in OVERLAY[name]) if (map.getLayer(id)) for (const k in OVERLAY[name][id]) map.setPaintProperty(id, k, OVERLAY[name][id][k]);
+    if (map.getLayer('traffic')) map.setPaintProperty('traffic', 'line-color', trafficColor());
+    map.triggerRepaint();
+  }
+  drawLayersThumb();
+  if (!$('lmenu').hidden) renderLayersMenu();
+  if ($('drawer').classList.contains('on')) renderDrawer();
+}
+function chooseTheme(t) { S.theme = t; store.set('theme', t); setTheme(); }
+deviceDark.addEventListener && deviceDark.addEventListener('change', () => setTheme());
+addEventListener('storage', e => { if (e.key === 'theme' || e.key === null) setTheme(); });
+try { if (parent !== window) new MutationObserver(() => setTheme()).observe(parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch {}
 // the Braess lines' dashes march along them
 const DASHES = [[0, 4, 3], [0.5, 4, 2.5], [1, 4, 2], [1.5, 4, 1.5], [2, 4, 1], [2.5, 4, 0.5], [3, 4, 0], [0, 0.5, 3, 3.5], [0, 1, 3, 3], [0, 1.5, 3, 2.5], [0, 2, 3, 2], [0, 2.5, 3, 1.5], [0, 3, 3, 1], [0, 3.5, 3, 0.5]];
 function animateDash() {
@@ -949,12 +996,33 @@ function stopSweep() {
 }
 
 /* ----------------------------- moving cars ----------------------------- */
-const cv = $('cars'), cx = cv.getContext('2d');
-let cars = [], carEdges = null, carCum = null, carTot = 0, carNet = null, carCost = null, carFlows = null;
-function sizeCars() { const d = devicePixelRatio || 1; cv.width = innerWidth * d; cv.height = innerHeight * d; cx.setTransform(d, 0, 0, d, 0, 0); }
-addEventListener('resize', sizeCars); sizeCars();
+/* The cars are drawn by the map itself (a custom WebGL layer), in the same
+   frame and through the same camera as the roads, so they stay on their
+   streets while the map is dragged, zoomed or flown. Their places are kept in
+   Web Mercator relative to the network's middle and scaled up (float32 alone
+   would put them a few pixels off at street zoom). On a two-way street each
+   car keeps to its own side of the traffic line, on the right, or on the left
+   where traffic drives on the left. Their size follows the traffic line's. */
+const MERC_K = 2 ** 20;
+// rough boxes [west, south, east, north] of the places that drive on the left
+const LEFT_HAND = [[-11, 49.8, 2, 61], [129, 30, 146, 46], [68, 6, 90, 36], [60.8, 23.5, 77.8, 37.1], [88, 20.5, 92.7, 26.7], [79.5, 5.9, 82, 9.9],
+  [112, -44, 154, -10], [166, -48, 179, -34], [113.8, 22.1, 114.5, 22.6], [99.5, 0.8, 119.5, 7.5], [97.3, 5.6, 105.7, 20.5], [95, -11, 141, 0.8],
+  [16, -35, 33, -22], [29, -12, 42, 5], [32.2, 34.5, 34.7, 35.8], [14.1, 35.8, 14.6, 36.1]];
+const drivesLeft = (lat, lng) => LEFT_HAND.some(([w, s, e, n]) => lng >= w && lng <= e && lat >= s && lat <= n);
+const mercX = lng => (180 + lng) / 360;
+const mercY = lat => { const s = Math.sin(lat * D2R); return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI); };
+let cars = [], carEdges = null, carCum = null, carTot = 0, carNet = null, carCost = null, carXY = null, carSide = 1, carOX = 0, carOY = 0, carOLng = 0, carT = 0;
 function startCars(net, flows, cost) {
-  carNet = net; carCost = cost; carFlows = flows; cars = [];
+  carNet = net; carCost = cost; cars = [];
+  let la = 0, lo = 0;
+  for (const s of net.segs) { la += s.pts[0][0]; lo += s.pts[0][1]; }
+  la /= net.segs.length; lo /= net.segs.length;
+  carOLng = lo; carOX = mercX(lo); carOY = mercY(la); carSide = drivesLeft(la, lo) ? -1 : 1;
+  carXY = net.segs.map(s => {
+    const xy = new Float64Array(s.pts.length * 2);
+    for (let i = 0; i < s.pts.length; i++) { xy[2 * i] = (mercX(s.pts[i][1]) - carOX) * MERC_K; xy[2 * i + 1] = (mercY(s.pts[i][0]) - carOY) * MERC_K; }
+    return xy;
+  });
   const ed = [], w = [];
   let tot = 0;
   for (let e = 0; e < net.m; e++) { const veh = flows[e] * cost[e]; if (veh > 1e-4) { ed.push(e); w.push(veh); tot += veh; } }
@@ -965,8 +1033,9 @@ function startCars(net, flows, cost) {
   carTot = acc;
   const N = clamp(Math.round(tot * Math.min(1, innerWidth * innerHeight / (1440 * 900))), 60, 900);
   for (let i = 0; i < N; i++) cars.push(spawnCar());
+  map.triggerRepaint();
 }
-function stopCars() { cars = []; carNet = null; }
+function stopCars() { cars = []; carNet = null; map.triggerRepaint(); }
 function spawnCar() {
   const r = Math.random() * carTot;
   let lo = 0, hi = carCum.length - 1;
@@ -974,36 +1043,93 @@ function spawnCar() {
   const e = carEdges[lo], s = carNet.segs[carNet.eSeg[e]];
   return { e, d: Math.random() * s.lenM, v: Math.max((carNet.eLen[e] / Math.max(carCost[e], 1e-9)) / 3.6, 0.4) };
 }
-function along(seg, d) {
-  const { pts, cum } = seg;
-  let i = 1;
-  while (i < cum.length - 1 && cum[i] < d) i++;
-  const t = clamp((d - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1), 0, 1);
-  return [pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t, pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t];
+// the traffic line's width in pixels (app.js width(1), the same stops and curve)
+const LW = [[11, 0.45], [14, 1], [17, 2.3], [19, 4]];
+function lineW(z, w) {
+  if (z <= 11) return 0.45 * w;
+  if (z >= 19) return 4 * w;
+  let i = 0;
+  while (z > LW[i + 1][0]) i++;
+  const [z0, a] = LW[i], [z1, b] = LW[i + 1], t = (1.6 ** (z - z0) - 1) / (1.6 ** (z1 - z0) - 1);
+  return (a + (b - a) * t) * w;
 }
-let lastT = 0;
-function drawCars(t) {
-  requestAnimationFrame(drawCars);
-  const dt = Math.min((t - lastT) / 1000, 0.05);
-  lastT = t;
-  cx.clearRect(0, 0, innerWidth, innerHeight);
-  if (!carNet || !cars.length || !S.opt.cars || !S.opt.traffic || map.isZooming()) return;
-  const z = map.getZoom();
-  if (z < 12.5) return;
-  const small = innerWidth <= 720, rad = (z >= 16 ? 3 : z >= 14.5 ? 2.4 : 1.8) * (small ? 0.7 : 1);
-  cx.beginPath();
-  for (const c of cars) {
-    c.d += c.v * dt * 14;
-    const seg = carNet.segs[carNet.eSeg[c.e]];
-    if (c.d >= seg.lenM) { Object.assign(c, spawnCar()); continue; }
-    const ll = along(seg, carNet.eFwd[c.e] ? c.d : seg.lenM - c.d), pt = map.project(ll);
-    if (pt.x < -5 || pt.y < -5 || pt.x > innerWidth + 5 || pt.y > innerHeight + 5) continue;
-    cx.moveTo(pt.x + rad, pt.y); cx.arc(pt.x, pt.y, rad, 0, 6.2832);
-  }
-  cx.fillStyle = '#ffffff'; cx.fill();
-  cx.lineWidth = 1.1; cx.strokeStyle = 'rgba(32,33,36,.85)'; cx.stroke();
-}
-requestAnimationFrame(t => { lastT = t; requestAnimationFrame(drawCars); });
+// (the outline's width is worked out here: a uniform in both shaders would need the same precision in both)
+const CAR_VS = `attribute vec3 aP; uniform mat4 uM; uniform float uPR; varying float vD; varying float vW;
+void main() { gl_Position = uM * vec4(aP.xy, 0.0, 1.0); vD = aP.z * uPR; vW = clamp(vD * 0.22, 0.8 * uPR, 1.15 * uPR); gl_PointSize = vD + 2.0; }`;
+const CAR_FS = `precision mediump float; uniform vec4 uFill; uniform vec4 uLine; uniform float uA; varying float vD; varying float vW;
+void main() {
+  float r = length(gl_PointCoord - 0.5) * (vD + 2.0), R = vD * 0.5, sw = vW;
+  vec4 c = mix(uLine, uFill, clamp(R - sw - r + 0.5, 0.0, 1.0));
+  float a = clamp(R - r + 0.5, 0.0, 1.0) * c.a * uA;
+  if (a <= 0.0) discard;
+  gl_FragColor = vec4(c.rgb * a, a);
+}`;
+const carLayer = {
+  id: 'cars', type: 'custom', renderingMode: '2d',
+  onAdd(m, gl) {
+    const sh = (type, src) => { const o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o); return o; };
+    const p = gl.createProgram();
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, CAR_VS)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, CAR_FS)); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.warn('cars: ' + gl.getProgramInfoLog(p)); return; }
+    this.p = p; this.aP = gl.getAttribLocation(p, 'aP');
+    this.u = {}; for (const k of ['uM', 'uPR', 'uFill', 'uLine', 'uA']) this.u[k] = gl.getUniformLocation(p, k);
+    this.buf = gl.createBuffer(); this.data = new Float32Array(900 * 3); this.mat = new Float32Array(16);
+  },
+  render(gl, M) {
+    const now = performance.now(), dt = Math.min((now - carT) / 1000, 0.05);
+    carT = now;
+    if (!this.p || !carNet || !cars.length || !S.opt.cars || !S.opt.traffic) return;
+    const z = map.getZoom(), fade = clamp((z - 12) / 0.8, 0, 1);
+    if (fade <= 0) return;
+    if (this.data.length < cars.length * 3) this.data = new Float32Array(cars.length * 3);
+    const D = this.data, toU = MERC_K / (512 * 2 ** z);
+    let n = 0;
+    for (const c of cars) {
+      c.d += c.v * dt * 14;
+      const si = carNet.eSeg[c.e], seg = carNet.segs[si];
+      if (c.d >= seg.lenM) { Object.assign(c, spawnCar()); continue; }
+      const fwd = carNet.eFwd[c.e], d = fwd ? c.d : seg.lenM - c.d, cum = seg.cum, xy = carXY[si];
+      let i = 1;
+      while (i < cum.length - 1 && cum[i] < d) i++;
+      const t = clamp((d - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1), 0, 1);
+      const x0 = xy[2 * i - 2], y0 = xy[2 * i - 1], x1 = xy[2 * i], y1 = xy[2 * i + 1];
+      let x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t;
+      const lw = lineW(z, seg.w);
+      let size;
+      if (!seg.oneway) {
+        // keep to the right (or left) of the way it is going: right of (dx, dy) is (-dy, dx) with y pointing south
+        let dx = x1 - x0, dy = y1 - y0;
+        if (!fwd) { dx = -dx; dy = -dy; }
+        const L = Math.hypot(dx, dy) || 1, off = 0.24 * lw * toU * carSide;
+        x += -dy / L * off; y += dx / L * off;
+        size = clamp(0.55 * lw, 3.6, 10);
+      } else size = clamp(0.65 * lw, 3.6, 11);
+      D[n++] = x; D[n++] = y; D[n++] = size;
+    }
+    if (n) {
+      // the map's matrix moved to the network's middle (in doubles) and scaled to our units; the world copy in view
+      const ox = carOX + Math.round((map.getCenter().lng - carOLng) / 360), oy = carOY, k = 1 / MERC_K, U = this.mat;
+      this.ox = ox; this.oy = oy;
+      for (let j = 0; j < 8; j++) U[j] = M[j] * k;
+      for (let j = 8; j < 12; j++) U[j] = M[j];
+      for (let j = 0; j < 4; j++) U[12 + j] = M[j] * ox + M[4 + j] * oy + M[12 + j];
+      gl.useProgram(this.p);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+      gl.bufferData(gl.ARRAY_BUFFER, D.subarray(0, n), gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(this.aP);
+      gl.vertexAttribPointer(this.aP, 3, gl.FLOAT, false, 0, 0);
+      gl.uniformMatrix4fv(this.u.uM, false, U);
+      gl.uniform1f(this.u.uPR, map.getPixelRatio());
+      gl.uniform1f(this.u.uA, fade);
+      if (S.dark) { gl.uniform4f(this.u.uFill, 0.91, 0.92, 0.93, 1); gl.uniform4f(this.u.uLine, 0.05, 0.06, 0.07, 0.9); }
+      else { gl.uniform4f(this.u.uFill, 1, 1, 1, 1); gl.uniform4f(this.u.uLine, 0.125, 0.13, 0.14, 0.85); }
+      gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.drawArrays(gl.POINTS, 0, n / 3);
+      gl.disableVertexAttribArray(this.aP);
+    }
+    map.triggerRepaint();
+  },
+};
 
 /* ------------------------- controls, layers, drawer -------------------- */
 $('zin').onclick = () => map.zoomIn();
@@ -1013,26 +1139,28 @@ $('locate').onclick = () => {
   $('locate').classList.add('has');
   navigator.geolocation.getCurrentPosition(pos => openPoint(pos.coords.latitude, pos.coords.longitude, false), () => { $('locate').classList.remove('has'); toast('Your location is not available.'); }, { timeout: 10000 });
 };
-const DEFAULT_SWATCH = `<svg viewBox="0 0 56 56" width="56" height="56"><rect width="56" height="56" fill="#f3f3f1"/><path d="M-4 40 C 14 30, 30 44, 60 26" stroke="#9ccdf3" stroke-width="7" fill="none"/><rect x="34" y="4" width="16" height="14" fill="#c8e8c4"/><path d="M0 18 H56 M20 0 V56 M0 46 L56 8" stroke="#fff" stroke-width="3.5"/><path d="M0 18 H56" stroke="#fcd47a" stroke-width="2.5"/></svg>`;
+const swatch = () => { const C = window.BRAESS_MAP_COLORS[S.dark ? 'dark' : 'light']; return `<svg viewBox="0 0 56 56" width="56" height="56"><rect width="56" height="56" fill="${C.land}"/><path d="M-4 40 C 14 30, 30 44, 60 26" stroke="${C.water}" stroke-width="7" fill="none"/><rect x="34" y="4" width="16" height="14" fill="${C.park}"/><path d="M0 18 H56 M20 0 V56 M0 46 L56 8" stroke="${C.minor}" stroke-width="3.5"/><path d="M0 18 H56" stroke="${C.motorway}" stroke-width="2.5"/></svg>`; };
 function drawLayersThumb() {
   const c = map.getCenter();
-  $('layersThumb').innerHTML = S.opt.sat ? `<div style="position:absolute;left:-36px;top:-36px">${DEFAULT_SWATCH.replace(/56"/g, '72"')}</div>` : tilesHTML(c.lat, c.lng, clamp(Math.round(map.getZoom()) + 1, 3, 17), 72, 72);
+  $('layersThumb').innerHTML = S.opt.sat ? `<div style="position:absolute;left:-36px;top:-36px">${swatch().replace(/56"/g, '72"')}</div>` : tilesHTML(c.lat, c.lng, clamp(Math.round(map.getZoom()) + 1, 3, 17), 72, 72);
 }
 map.on('moveend', () => { if (!S.opt.sat) drawLayersThumb(); drawScale(); });
 function renderLayersMenu() {
   const c = map.getCenter(), z = clamp(Math.round(map.getZoom()) + 1, 3, 17);
   const opt = (k, t) => `<button class="lopt${S.opt[k] ? ' on' : ''}" data-o="${k}">${t}<span class="switch"></span></button>`;
   $('lmenu').innerHTML = `<h3>Map type</h3><div class="ltypes">
-    <button class="ltype${S.opt.sat ? '' : ' on'}" data-t="map"><span class="sw">${DEFAULT_SWATCH}</span>Default</button>
+    <button class="ltype${S.opt.sat ? '' : ' on'}" data-t="map"><span class="sw">${swatch()}</span>Default</button>
     <button class="ltype${S.opt.sat ? ' on' : ''}" data-t="sat"><span class="sw"><span class="tiles" style="position:absolute;left:50%;top:50%">${tilesHTML(c.lat, c.lng, z, 56, 56)}</span></span>Satellite</button></div>
-    <h3>Map details</h3>${opt('traffic', 'Simulated traffic')}${opt('cars', 'Moving cars')}${opt('sweep', 'Show the route search')}`;
+    <h3>Map details</h3>${opt('traffic', 'Simulated traffic')}${opt('cars', 'Moving cars')}${opt('sweep', 'Show the route search')}
+    <button class="lopt${S.dark ? ' on' : ''}" data-dark="1">Dark mode<span class="switch"></span></button>`;
 }
 $('layersBtn').onclick = e => { e.stopPropagation(); const m = $('lmenu'); m.hidden = !m.hidden; if (!m.hidden) renderLayersMenu(); };
 $('lmenu').addEventListener('click', e => {
   e.stopPropagation();
   const t = e.target.closest('[data-t]'), o = e.target.closest('[data-o]');
   if (t) setSat(t.dataset.t === 'sat');
-  if (o) { const k = o.dataset.o; S.opt[k] = !S.opt[k]; store.set('opt', S.opt); if (k === 'traffic') showTraffic(S.opt.traffic); if (k === 'sweep' && !S.opt.sweep) stopSweep(); }
+  if (o) { const k = o.dataset.o; S.opt[k] = !S.opt[k]; store.set('opt', S.opt); if (k === 'traffic') showTraffic(S.opt.traffic); if (k === 'sweep' && !S.opt.sweep) stopSweep(); map.triggerRepaint(); }
+  if (e.target.closest('[data-dark]')) chooseTheme(S.dark ? 'light' : 'dark');
   renderLayersMenu();
 });
 document.addEventListener('click', e => { if (!$('lmenu').hidden && !$('lmenu').contains(e.target) && e.target !== $('layersBtn')) $('lmenu').hidden = true; });
@@ -1043,6 +1171,9 @@ function renderDrawer() {
     <button class="dr-item" data-d="share">${svg(I.share)}<span>Share this view</span></button>
     <div class="dr-sep"></div>
     <button class="dr-item" data-d="sat">${svg(I.globe)}<span>${S.opt.sat ? 'Default map' : 'Satellite'}</span></button>
+    <div class="dr-item dr-static">${svg(S.dark ? I.moon : I.sun)}<span>Theme</span></div>
+    <div class="dr-theme"><div class="seg" role="group" aria-label="Theme">${[['light', 'Light'], ['dark', 'Dark'], ['auto', 'Automatic']].map(([k, t]) => `<button data-th="${k}" aria-pressed="${S.theme === k}">${t}</button>`).join('')}</div>
+      <div class="dr-hint">${S.theme === 'auto' ? (autoSource().from === 'site' ? 'Automatic follows the light and dark switch on leonzhao.dev.' : 'Automatic follows your device.') : S.theme === 'dark' ? 'Always dark.' : 'Always light.'}</div></div>
     <div class="dr-sep"></div>
     <div class="dr-note">Roads and places © OpenStreetMap contributors. Base map by OpenFreeMap and OpenMapTiles, satellite pictures by Esri, search by Photon and Nominatim. Traffic is a model, not live data.</div>`;
 }
@@ -1055,6 +1186,8 @@ function drawer(on) {
 $('menuBtn').onclick = () => drawer(true);
 $('scrim').onclick = () => drawer(false);
 $('drawer').addEventListener('click', e => {
+  const th = e.target.closest('[data-th]');
+  if (th) { chooseTheme(th.dataset.th); renderDrawer(); return; }
   const d = e.target.closest('[data-d]');
   if (!d) return;
   const k = d.dataset.d;
@@ -1115,6 +1248,6 @@ async function boot() {
   else if (isFinite(lat) && isFinite(lng) && params.get('lat')) { fromURL(); openPoint(lat, lng, true, true); }
   else { renderHome(); openPanel(true); fitHot(false); }
 }
-window.__braess = { S, map, simulate, openHot, openPlace, goHome };
+window.__braess = { S, map, simulate, openHot, openPlace, goHome, carLayer, setTheme: chooseTheme };
 boot();
 })();
