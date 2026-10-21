@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gas Properties Lab — Kinetic Theory, Pressure &amp; the Gas Laws</title>
 <style>
-  :root{ --panel:#fff; --panel-border:#a7a7a7; --ink:#111; --sky1:#e9f2f8; --sky2:#cfe2ef; --nav:#37475a; --blue:#2f83d6; }
+  :root{ --panel:#fff; --panel-border:#a7a7a7; --ink:#111; --sky1:#e9f2f8; --sky2:#cfe2ef; --blue:#2f83d6; }
   *{ box-sizing:border-box; }
   html,body{ margin:0; height:100%; background:#c4cdd6; font-family:'Helvetica Neue',Arial,'Segoe UI',sans-serif; color:var(--ink); overflow:hidden; }
   #fit{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
   #sim{ width:1300px; height:720px; position:relative; transform-origin:center center; background:linear-gradient(#f4f8fb,#dfeaf2); box-shadow:0 6px 30px rgba(0,0,0,.25); }
-  #play{ position:absolute; left:0; top:0; right:0; bottom:46px; background:linear-gradient(180deg,var(--sky1),var(--sky2)); overflow:hidden; }
+  #play{ position:absolute; left:0; top:0; right:0; bottom:0; background:linear-gradient(180deg,var(--sky1),var(--sky2)); overflow:hidden; }
   .panel{ position:absolute; background:var(--panel); border:1px solid var(--panel-border); border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,.14); padding:10px 13px; }
   .panel h3{ margin:0 0 7px; font-size:14px; font-weight:700; color:#1c1c1c; }
   .panel h3 span{ font-weight:400; font-size:11.5px; color:#7a7a7a; }
@@ -37,9 +37,6 @@
   #recBtn.on{ color:#fff; background:linear-gradient(#e2685c,#c0392b); border-color:#8f2418; }
   #reset{ position:absolute; right:16px; bottom:16px; width:48px; height:48px; border-radius:50%; background:radial-gradient(circle at 35% 30%,#ffe98a,#f4c223); border:1px solid #b9860c; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,.3); display:flex; align-items:center; justify-content:center; }
   #reset:hover{ filter:brightness(1.05); }
-  #nav{ position:absolute; left:0; right:0; bottom:0; height:46px; background:var(--nav); display:flex; align-items:center; padding:0 16px; color:#fff; }
-  #nav .title{ font-size:15.5px; font-weight:700; } #nav .title span{ opacity:.7; font-weight:400; }
-  #nav .spacer{ flex:1; } #nav .mark{ font-size:12px; opacity:.75; }
   canvas{ display:block; }
 </style>
 </head>
@@ -50,7 +47,7 @@
     <canvas id="box" width="448" height="428" style="position:absolute; left:18px; top:16px;"></canvas>
     <div class="panel" style="left:18px; top:456px; width:448px;">
       <h3 style="margin-bottom:5px;">Speed distribution <span>&mdash; measured against Maxwell&ndash;Boltzmann</span></h3>
-      <canvas id="hist" width="424" height="152" style="width:424px;height:152px;"></canvas>
+      <canvas id="hist" width="424" height="205" style="width:424px;height:205px;"></canvas>
     </div>
 
     <!-- MIDDLE: P-V diagram (recordable) + live values -->
@@ -59,9 +56,9 @@
         <h3 style="margin:0;">P&ndash;V diagram <span>— traces the process path</span></h3>
         <div><button id="recBtn" class="mini">● Record</button> <button id="clrBtn" class="mini">Clear</button></div>
       </div>
-      <canvas id="pv" width="406" height="326" style="width:406px;height:326px;"></canvas>
+      <canvas id="pv" width="406" height="369" style="width:406px;height:369px;"></canvas>
     </div>
-    <div class="panel" style="left:486px; top:400px; width:430px;">
+    <div class="panel" style="left:486px; top:443px; width:430px;">
       <div class="phead">
         <h3 style="margin:0;">Live values <span>— PV = nRT · Q = &Delta;U + W</span></h3>
         <button id="workConv" class="mini">W: by gas</button>
@@ -101,10 +98,6 @@
       <svg viewBox="0 0 24 24" width="27" height="27" fill="none" stroke="#6a4a00" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
     </button>
   </div>
-  <div id="nav">
-    <div class="title">Gas Properties <span>&nbsp;·&nbsp; Kinetic Theory, Pressure &amp; the Gas Laws</span></div>
-    <div class="spacer"></div><div class="mark">AP Physics 2 · thermodynamics</div>
-  </div>
 </div></div>
 
 <script>
@@ -123,7 +116,7 @@ const countLabel=el('countLabel'),tempLabel=el('tempLabel'),volLabel=el('volLabe
 const playPauseBtn=el('playPause'),recBtn=el('recBtn'),clrBtn=el('clrBtn'),workConv=el('workConv');
 
 const RADIUS=4, BINS=44, TRAILFADE=0.25;
-const SPEED_MAX=190;                            // the speed axis never rescales, so heating the gas visibly
+const SPEED_MAX=190;                            // neither axis ever rescales, so heating the gas visibly
                                                 // slides the whole curve right and flattens it, the way the
                                                 // figure in a textbook does
 let histEMA=new Array(BINS).fill(0);            // a running average of each bin: a few hundred particles is a
@@ -135,6 +128,11 @@ const N2MOL=100, VOL_SCALE=8000, R_GAS=8.314, ENERGY_SCALE=R_GAS/(N2MOL*KE_PER_T
 const CXL=62, CYW=300, CXR=CXL+CYW, BASEY=344;  // piston-in-cylinder geometry
 const GH_MIN=50, GH_MAX=276, VMIN=CYW*GH_MIN, VMAX=CYW*GH_MAX;
 const T_MIN=0.1, T_MAX=8;                       // the ends of the temperature slider's travel
+// The speed graph's height scale, fixed. Every curve holds the whole gas (its area is always 1),
+// so a hotter gas's wider curve has to be a lower one, and the peak f(most probable) = e^(-1/2)/a
+// falls as 1/sqrt(T). The scale is set by the coldest gas the slider allows, so its tall narrow
+// peak still fits and every warmer one sits lower.
+const PEAK_MAX=Math.exp(-0.5)/Math.sqrt(KE_PER_T*T_MIN);
 
 let particleCount=+countSlider.value, temperature=+tempSlider.value;
 let showVectors=showVec.checked, showTrail=showTrails.checked, showHits=showHitsChk.checked;
@@ -407,7 +405,7 @@ function drawHistogram(){
   // particles are carrying, so the curve is drawn from the gas's own measured energy.
   const a=Math.max(1e-6, Math.sqrt(getAverageKE()));
   const f=v=>(v/(a*a))*Math.exp(-(v*v)/(2*a*a));
-  const yScale=(PH*0.86)/Math.max(1e-9, f(a));
+  const yScale=(PH*0.94)/PEAK_MAX;
   const Y=d=>B-Math.min(PH, d*yScale);
 
   // grid, then the axis it hangs from
@@ -444,7 +442,7 @@ function drawHistogram(){
   for(let v=0; v<=SPEED_MAX; v+=40){ const xx=X(v); hctx.fillText(String(v), xx, B+12); }
   hctx.fillText('speed  (sim units)', (L+R)/2, Hh-4);
   hctx.save(); hctx.translate(9, (T+B)/2); hctx.rotate(-Math.PI/2);
-  hctx.fillText('particles', 0, 0); hctx.restore();
+  hctx.fillText('fraction of particles', 0, 0); hctx.restore();
 
   // the numbers behind the three dashed lines
   hctx.textAlign='right'; hctx.fillStyle='#5a636b';
