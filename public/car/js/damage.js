@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=31';
+import { FX } from './damagefx.js?v=32';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -1183,9 +1183,9 @@ function finTexture() {
 }
 const BAY_FINS = new THREE.MeshStandardMaterial({ name: 'damage_radiator', color: 0xffffff, roughness: 0.6, metalness: 0.3, map: finTexture() });
 const BAY_ENGINE = new THREE.MeshStandardMaterial({ name: 'damage_engine', color: 0x2a2b2d, roughness: 0.5, metalness: 0.7 });
-const BAY_DARK = new THREE.MeshStandardMaterial({ name: 'damage_bay', color: 0x55585c, roughness: 0.85, metalness: 0.05, side: THREE.BackSide });
+const BAY_DARK = new THREE.MeshStandardMaterial({ name: 'damage_bay', color: 0x45474a, roughness: 0.95, metalness: 0.0, envMapIntensity: 0.35, side: THREE.BackSide });
 // an engine bay's parts, coloured per part (plastic, aluminium, rubber, the coolant tank, the white absorber)
-const BAY_PARTS = new THREE.MeshStandardMaterial({ name: 'damage_bay_parts', vertexColors: true, roughness: 0.5, metalness: 0.12 });
+const BAY_PARTS = new THREE.MeshStandardMaterial({ name: 'damage_bay_parts', vertexColors: true, roughness: 0.6, metalness: 0.1, envMapIntensity: 0.6 });
 // a curtain airbag: pale grey nylon, a little see-through
 const CURTAIN = new THREE.MeshStandardMaterial({ name: 'damage_curtain', color: 0x9ea6a1, roughness: 0.9, metalness: 0, transparent: true, opacity: 0.94, side: THREE.DoubleSide, depthWrite: false });
 const BAG = new THREE.MeshStandardMaterial({ name: 'damage_airbag', color: 0xcfcec8, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
@@ -1563,6 +1563,8 @@ class CarDamage {
         const want = 0.2 * clamp((sh - 0.38) / 0.12, 0, 1);
         bz && (bz.edgeAdd = Math.max(0, want - (this.lidEdge || 0)));
         if (bz && bz.edgeAdd > 0.003) { this.lidEdge = (this.lidEdge || 0) + bz.edgeAdd; if (!bulgeAdd) bulgeAdd = 1e-6; }
+        // and past 0.45 m the front third folds right back (once)
+        if (bz && Dc > 0.45 && !this.lidFolded) { this.lidFolded = true; bz.fold = 1.95; bz.edgeAdd = Math.max(bz.edgeAdd || 0, 0.004); if (!bulgeAdd) bulgeAdd = 1e-6; }
       }
       if (!bulgeAdd) bz = null;
     }
@@ -1679,7 +1681,8 @@ class CarDamage {
             }
           }
           // the bonnet buckles up into a peak (the lid only, not the glass behind it)
-          if (bulgeAdd > 0 && !glass && inBulge(rest[i3], rest[i3 + 1], rest[i3 + 2])) {
+          // (the lid's own skin only: the bay's parts under it, struts and air box, were swung up with its fold into spikes)
+          if (bulgeAdd > 0 && !glass && !inner && inBulge(rest[i3], rest[i3 + 1], rest[i3 + 2])) {
             const zr = rest[i3 + 2];
             const xi = clamp(Math.abs(zr - bz.zEdge) / bz.len, 0, 1);
             const ap = clamp(bz.apex + bz.skew * (rest[i3] / Math.max(0.4, A.hw)) * 0.5, 0.2, 0.75);
@@ -1696,7 +1699,12 @@ class CarDamage {
               lidF[i] = 0.001;
               if (xi < 0.4) {
                 const f = 1 - xi / 0.4, side = 0.6 + 0.4 * clamp((bz.skew >= 0 ? 1 : -1) * rest[i3] / Math.max(0.4, A.hw), -1, 1);
-                dy += bz.edgeAdd * f * f * side; dz += bz.edgeAdd * 0.45 * f * side; lidF[i] = Math.max(0.001, f * side);
+                if (bz.fold > 0 && xi < 0.36) {
+                  // turned about a line across the lid a third of the way back: up, then back over itself
+                  const d = (0.36 - xi) * bz.len, th = bz.fold * (0.75 + 0.25 * side);
+                  dy += d * Math.sin(th) + bz.edgeAdd * 0.5 * side; dz += (bz.frontHit ? 1 : -1) * d * (1 - Math.cos(th));
+                } else { dy += bz.edgeAdd * f * f * side; dz += bz.edgeAdd * 0.45 * f * side; }
+                lidF[i] = Math.max(0.001, f * side);
               }
             }
           }
@@ -1955,7 +1963,7 @@ class CarDamage {
         }
       }
       // a deep frontal knocks the near headlamp out of its mounts and splits the bumper cover's lower part open
-      if (imp.side === 'front' && !this.npc && this.front > 0.4 && !this.cracks.deep) {
+      if (imp.side === 'front' && !this.npc && (this.front > 0.4 || res.maxU > 0.42) && !this.cracks.deep) {
         this.cracks.deep = true;
         const near = this.bonnetSkew >= 0 ? 'R' : 'L';
         const L = A.lamps.find(q => q.role === 'head' && q.side === near && q.center.z < 0) || A.lamps.find(q => q.role === 'head' && q.center.z < 0);
@@ -1965,7 +1973,12 @@ class CarDamage {
           this.later('headlamp', jb => this.detachGen(jb, 'headlamp', imp, { kind: 'part', box: lb, test: (x, y, z) => lb.containsPoint(_a.set(x, y, z)), skip: e => !!e.mesh.userData.dmgBay }));
         }
         const bz = A.bumpers.front, yH = bz.y0 + (bz.y1 - bz.y0) * 0.5, self = this;
-        if (this.front > 0.45) {
+        if (res.maxU > 0.45) {
+          const sgn = near === 'R' ? 1 : -1, zArch = A.zFA - A.wheelR * 0.85, yTop = A.belt + 0.06, yBot = bz.y1 - 0.04;
+          const wb = new THREE.Box3(new THREE.Vector3(sgn < 0 ? -A.hw - 0.3 : A.hw * 0.52, yBot, A.box.min.z - 0.4), new THREE.Vector3(sgn < 0 ? -A.hw * 0.52 : A.hw + 0.3, yTop, zArch));
+          this.later('wingfront', jb => this.detachGen(jb, 'wingfront', imp, { kind: 'part', box: wb, test: (x, y, z) => wb.containsPoint(_a.set(x, y, z)), skip: e => !!e.mesh.userData.dmgBay || e.role === 'glass' }));
+        }
+        if (this.front > 0.45 && false) {
           const sgn = near === 'R' ? 1 : -1, amt = Math.min(0.12, 0.06 + (this.front - 0.45) * 0.4), wz0 = this.curFront(), wz1 = A.zA - 0.1;
           this.later('wingout', function* (jb) {
             for (const e of self.list()) {
@@ -2537,7 +2550,10 @@ class CarDamage {
     const top = Math.max(0.45, this.topAt(0, (front + back) / 2) - 0.07), bot = Math.max(0.18, A.wheelR * 0.6), hw = Math.max(0.35, A.hw - 0.16);
     const box = (w, h, d, sx, sy, sz, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d, sx, sy, sz), mat); m.position.set(x, y, z); m.userData.dmgBay = true; m.castShadow = false; m.receiveShadow = true; g.add(m); return m; };
     // the bay's walls seen from inside (fine enough to be bent to the body's shape below)
-    box(hw * 2, top - bot, back - front - 0.08, 14, 5, 8, BAY_DARK, 0, (top + bot) / 2, (front + back) / 2 + 0.04);
+    const wall = box(hw * 2, top - bot, back - front - 0.08, 14, 5, 8, BAY_DARK, 0, (top + bot) / 2, (front + back) / 2 + 0.04);
+    { const wg = wall.geometry, ix = wg.index.array, keep = [];
+      for (const gr of wg.groups) if (gr.materialIndex !== 2 && gr.materialIndex !== 5) for (let i = gr.start; i < gr.start + gr.count; i++) keep.push(ix[i]);
+      wg.setIndex(keep); wg.clearGroups(); }
     // what is in it, by its size: the condenser and radiator behind the grille (one mesh), then the engine with its
     // cover, intake and air box, the strut towers, battery, coolant tank, hoses, and the bumper's white absorber (all
     // one vertex-coloured mesh). A car with its engine elsewhere (the 930's is at the back, the Roadster and the Semi
@@ -2730,7 +2746,7 @@ class CarDamage {
     this.lampsBroken.clear();
     this.doors = []; this.hard = null; this.windows = null; this.winState = null; this.pending = null;
     this.entries = null; this.A = null;
-    this.damaged = false; this.crushTotal = this.front = this.rear = this.left = this.right = this.roof = this.engine = this.bonnetH = this.bootH = this.roofDrop = this.wingDone = 0; this.cracks = {};
+    this.damaged = false; this.crushTotal = this.front = this.rear = this.left = this.right = this.roof = this.engine = this.bonnetH = this.bootH = this.roofDrop = this.wingDone = this.lidEdge = 0; this.lidFolded = false; this.cracks = {};
     this.stamps.length = 0;
     if (this.vehicle) { this.vehicle.powerK = 1; }
     this.readied = false;
@@ -3402,7 +3418,7 @@ export class Damage {
       if (rd.bay && side === 'front' && res && res.maxU > 0.02) {
         try {
           const A = rd.A, map = yield* rd.skinMapGen(job, A.box.min.z, Math.min(A.zA, A.box.min.z + 2));
-          for (const e of rd.entries) if (e.mesh.userData.dmgBay && e.cur && !e.partOf) rd.fitBay(e, map, 0.03, false);
+          for (const e of rd.entries) if (e.mesh.userData.dmgBay && e.cur && !e.partOf && e.mesh.material !== BAY_DARK) rd.fitBay(e, map, 0.03, false);
         } catch (e) { console.warn('bay fit', e); }
       }
     };
