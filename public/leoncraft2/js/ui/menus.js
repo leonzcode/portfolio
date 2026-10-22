@@ -26,18 +26,18 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=100';
-import { Packs } from './pack.js?v=100';
-import { Account } from '../net/account.js?v=100';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=100';
-import { packArtSummary } from '../entities/packart.js?v=100';
-import { LanScreen } from './lan.js?v=100';
-import { parseSeed } from '../gen/random.js?v=100';
-import { SOUND_CREDITS } from '../sound/credits.js?v=100';
-import { SkinGalleryScreen, skinCredits } from './skins.js?v=100';
-import { SkinsScreen } from './skinmenu.js?v=100';
-import { FlatCustomizeScreen } from './flat.js?v=100';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=100';
+} from './gui.js?v=101';
+import { Packs } from './pack.js?v=101';
+import { Account } from '../net/account.js?v=101';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=101';
+import { packArtSummary } from '../entities/packart.js?v=101';
+import { LanScreen } from './lan.js?v=101';
+import { parseSeed } from '../gen/random.js?v=101';
+import { SOUND_CREDITS } from '../sound/credits.js?v=101';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=101';
+import { SkinsScreen } from './skinmenu.js?v=101';
+import { FlatCustomizeScreen } from './flat.js?v=101';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=101';
 
 const PI = Math.PI;
 
@@ -406,7 +406,7 @@ export class SelectWorldScreen extends Screen {
     if (this.importing) return;
     this.importing = true; this.lc1B.active = false; this.lc1B.message = 'Importing...'; this.gui.markDirty();
     const done = msg => { this.importing = false; if (this.lc1B) { this.lc1B.active = true; this.lc1B.message = 'Import from Leoncraft 1'; } this.gui.markDirty(); if (msg) this.gui.open(new NoticeScreen('Import from Leoncraft 1', msg)); };
-    import('../lc1/spimport.js?v=100').then(m => {
+    import('../lc1/spimport.js?v=101').then(m => {
       const saves = m.lc1Saves();
       if (!saves.length) return done('There is no Leoncraft 1 world in this browser.');
       return m.importLC1(saves[0].key, Worlds).then(r => {
@@ -741,9 +741,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=100';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=100';
-import { minimapButtons } from './minimap.js?v=100';
+export { VideoSettingsScreen } from './video.js?v=101';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=101';
+import { minimapButtons } from './minimap.js?v=101';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }

@@ -11,12 +11,12 @@
    spectral one 10 seconds of Glowing. Stuck in a block it stays for a
    minute (1200 ticks). Thrown things fall 0.03 a tick and drag 0.99.
 --------------------------------------------------------------------------- */
-import { Entity, r3 } from './entity.js?v=100';
-import { rayBox } from './terrain.js?v=100';
-import { register } from './mobs.js?v=100';
-import { FLUID } from '../blocks.js?v=100';
-import { POTIONS } from '../brewing.js?v=100';
-import { applyPotion, splashPotion, lingeringPotion } from './mobfx.js?v=100';
+import { Entity, r3 } from './entity.js?v=101';
+import { rayBox } from './terrain.js?v=101';
+import { register } from './mobs.js?v=101';
+import { FLUID } from '../blocks.js?v=101';
+import { POTIONS } from '../brewing.js?v=101';
+import { applyPotion, splashPotion, lingeringPotion } from './mobfx.js?v=101';
 
 const R = () => Math.random();
 const gauss = () => { let u = 0, v = 0; while (!u) u = R(); while (!v) v = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
@@ -111,8 +111,8 @@ export class Arrow extends Projectile {
     }
     super.stuckTick();
   }
-  // a piercing arrow passes the mobs it has already gone through
-  skip(e) { return !!(this.pierced && this.pierced.has(e.id === undefined ? 'player' : e.id)); }
+  // a piercing arrow passes the mobs it has already gone through, and any arrow what it has bounced off
+  skip(e) { const k = e.id === undefined ? 'player' : e.id; return !!((this.pierced && this.pierced.has(k)) || (this.bounced && this.bounced.has(k))); }
   hitEntity(e, speed) {
     let dmg = Math.ceil(Math.max(0, Math.min(speed * this.base, 2147483647)));
     if (this.crit) dmg += Math.floor(R() * (Math.floor(dmg / 2) + 2));
@@ -146,7 +146,10 @@ export class Arrow extends Projectile {
       return true;
     }
     if (this.pierce > 0) return true;
-    // bounced off (an entity still in its hurt window): back the way it came, slowly
+    // bounced off (a raised shield, or an entity still in its hurt window): back the way it came, slowly, and never
+    // into the same one again (it was left on the edge of their box, so it hit again every tick and the hit landed
+    // the moment the shield came down)
+    (this.bounced || (this.bounced = new Set())).add(e.id === undefined ? 'player' : e.id);
     this.vel.multiplyScalar(-0.1);
     this.yaw += Math.PI;
     return false;
