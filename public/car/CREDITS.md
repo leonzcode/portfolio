@@ -24,9 +24,32 @@ partly replaced at run time (car paint, glass, chrome, lamp glow) by `js/cars.js
 | `models/milano.glb`, `models/milano_npc.glb` | Milano '95 - Low poly model | Daniel Zhabotinsky | https://sketchfab.com/3d-models/milano-95-low-poly-model-122a22d210234596ad23623588d0d166 | CC BY 4.0 |
 | `models/shvan_npc.glb` | Shvan '92 - Low poly model | Daniel Zhabotinsky | https://sketchfab.com/3d-models/shvan-92-low-poly-model-09d718c9cf72401b8534d265a06a803f | CC BY 4.0 |
 | `models/conquer_npc.glb` | Conquer '89 Pickup - Low poly model | Daniel Zhabotinsky | https://sketchfab.com/3d-models/conquer-89-pickup-low-poly-model-6c48c94be8974dc7a5932f697c0ba68f | CC BY 4.0 |
+| `models/ferrari458.glb`, `models/ferrari458_npc.glb` | Ferrari 458 Italia | vicent091036 | https://sketchfab.com/3d-models/ferrari-458-italia-57bf6cc56931426e87494f554df1dab6 (the copy prepared for the three.js examples, `examples/models/gltf/ferrari.glb`, was used) | CC BY 4.0 (see the note below) |
+| `models/roadster.glb`, `models/roadster_npc.glb` | Tesla Roadster 2020 | metarex.4d | https://sketchfab.com/3d-models/tesla-roadster-2020-1fbf29e297bd4a17ac39a00a378441d8 | CC BY 4.0 |
+| `models/gallardo.glb`, `models/gallardo_npc.glb` | Lamborghini Gallardo 2010 | Artem P (temp0.crazy) | https://sketchfab.com/3d-models/ff0eb2242d0e42eb8b7034b4db639e56 | CC BY 4.0 |
+| `models/schoolbus.glb`, `models/schoolbus_npc.glb` | School Bus Conversion (an International IC CE) | steun | https://sketchfab.com/3d-models/21b7e85f54024a6888bb168f21bbb2e1 | CC BY 4.0 |
+| `models/semi.glb`, `models/semi_npc.glb` | Tesla Semi | Oleksii Rozumnyi (Oleksii.Rozumnyi) | https://sketchfab.com/3d-models/39ffc7c746184e0c9ebd5bbcd0b405dd | CC BY 4.0 |
+
+The cars added on 2026-10-22 were checked the same way (Sketchfab's model API on 2026-10-21/22), with these notes and
+changes beyond the list above:
+
+- Ferrari 458 Italia: the Sketchfab page has since been taken down, so the licence could not be read on it again. The
+  record is CC Attribution in the Objaverse crawl of that page (licence slug "by"), and three.js lists the same file
+  as "CC-BY 4.0, External License" with that link (mrdoob/three.js issue 23089). The round tail lamps were tinted red.
+- Lamborghini Gallardo: the author credits the brake disc and caliper to another Blend Swap user and the tyre sidewall
+  texture to a DeviantArt user; neither page could confirm a licence, so the discs, the calipers and the tyre textures
+  were taken out (the tyres are plain rubber). The steering wheel was cut out of the interior so it turns.
+- School bus: the model is a camper conversion of a school bus. The camper fittings inside (beds, cupboards, fridge,
+  cushions, floor) were removed and 22 green vinyl bench seats for children (our own geometry) and lamp lenses over the
+  painted rear lamps were added.
+- Tesla Semi: lamp lenses added at the back of the frame; a simple steering wheel is drawn at run time by `js/cars.js`.
+- Tesla Roadster: the brake calipers stay with the body (they do not turn with the wheels).
+- Milano '95, Porsche 911 and Conquer '89: the front wheels, which their authors posed turned 18 to 30 degrees, were
+  turned straight again so they spin true (2026-10-21).
 
 The licences cover the 3D models only. Car makers' names, badges and designs may be trademarks of their owners;
-the models are fan-made and not endorsed by Volvo, Porsche or General Motors.
+the models are fan-made and not endorsed by Volvo, Porsche, General Motors, Ferrari, Lamborghini, Tesla or
+Navistar (International).
 
 ## Environment map
 
@@ -83,3 +106,33 @@ the curb's lighter grey are added at run time in the shaders). Licence checked o
 
 Road layout, lanes, crossings, signals and signs: OpenStreetMap data, (c) OpenStreetMap contributors, ODbL,
 fetched at run time through the Overpass API (`js/osm.js`); nothing is stored in the repo.
+
+## People (`models/people/`, used by `js/people.js`, `js/person.js`, `js/poses.js`, `js/peds.js`, `js/lookui.js`)
+
+| What | Source | Author | Licence |
+|---|---|---|---|
+| 41 rigged people (`models/people/*.glb`: adults of both sexes in many outfits, and children) | Microsoft Rocketbox Avatar Library, https://github.com/microsoft/Microsoft-Rocketbox (`Assets/Avatars/Adults`, `Children`, `Professions`) | Microsoft Research and the Rocketbox team (Markus Wojcik and others) | MIT (`LICENSE.md` in the repository, checked 2026-10-21): "Copyright (c) 2020 Microsoft" |
+| 65 motion-captured clips (`models/people/anims.bin`: idles, walks, runs, angry gestures, waving, phone, talking, sitting down and standing up, crouching, opening a door...) | the same repository, `Assets/Animations` | Microsoft Research / Rocketbox | MIT |
+
+What we changed: each avatar's FBX was converted in Blender 4.1 (the high detail mesh, about 7 to 9k triangles, and a
+decimated copy at about 1.5 to 2k for distance; the children's `Bip02` bones renamed `Bip01` so one set of clips
+drives everyone; Draco compression), textures cut from 2048 TGA to 1024 JPG (colour), 512 JPG (normal), 256 JPG
+(roughness from the specular map) and 512 PNG (hair). The clips were resampled (10 to 30 frames a second), cut to
+loop, reduced to the body's bones and packed into one file; the region masks (`*_m.png`, `*_h.png`) that let shirts,
+trousers, shoes, hair and skin take other colours were made here from the meshes' UVs and bone weights. The clips for
+driving, a fist, pointing, crossed arms, jumping, stumbling, lying down, getting up, getting in and out of a seat and
+being pulled out are made at run time from these poses (`js/poses.js`). Three avatars (Business_Female_01,
+Construction_Male_01, Female_Adult_04) are not included (Blender's importer failed on them).
+
+MIT licence text for the Rocketbox files:
+
+> Copyright (c) 2020 Microsoft. Permission is hereby granted, free of charge, to any person obtaining a copy of this
+> software and associated documentation files (the "Software"), to deal in the Software without restriction,
+> including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following
+> conditions: The above copyright notice and this permission notice shall be included in all copies or substantial
+> portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+> INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+> NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+> SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

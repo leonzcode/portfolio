@@ -24,7 +24,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=15';
+import { unproject } from './geo.js?v=16';
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -136,7 +136,7 @@ export let style = { region: 'other', yellowCentre: false };
 // ---------------------------------------------------------------- materials
 let MATS = null;
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=15');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=16');
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -357,9 +357,9 @@ function classify(w, region, dense = 0, twin = null, room = null) {
   if (t.surface && UNPAVED.has(t.surface)) return null;
   if (hw === 'service' && (t.service === 'driveway' || t.access === 'private') && !t.lanes) { /* keep, narrow */ }
   if (t.highway === 'construction' || t.construction) return null;
-  // elevated roads (layer 2 and up on bridges: city expressways and their flyovers) cannot be placed from a
-  // terrain model and ends alone; drawn at ground height they lie over the streets below, so they are left out
-  if (yes(t.bridge) && (num(t.layer) || 0) >= 2) return null;
+  // (elevated roads, layer 2 and up on bridges, were left out here: a terrain model and their ends alone put them
+  // at ground height over the streets below. bridgeDecks now raises every deck over what it crosses, lowest layer
+  // first, so they are kept)
   let oneway = t.oneway === 'yes' || t.oneway === '1' || t.oneway === 'true' || t.oneway === '-1' ||
     t.junction === 'roundabout' || t.junction === 'circular' || ((hw === 'motorway' || hw === 'motorway_link') && t.oneway !== 'no');
   const reverse = t.oneway === '-1';
@@ -996,10 +996,14 @@ async function computeHeights(bbox) {
     if (found.length) { let a = 0, b = 0; for (const [h, d] of found) { a += h / Math.max(d, 1); b += 1 / Math.max(d, 1); } n.h = a / b; }
     else if (soft.length) {
       // a bridge no ground road joins (a long crossing cut off by the loaded area): one level deck at the
-      // height of its end inside the loaded area (the lowest such end if several; the lowest end at all if none)
+      // height of its end inside the loaded area (the highest such end if several: the other ends are where the
+      // data was cut, over water or a valley, and their ground is far under the deck)
       const softIn = soft.filter(q => q[2]), pool = softIn.length ? softIn : soft;
-      n.h = Math.min(...pool.map(q => q[0]));
+      n.h = Math.max(...pool.map(q => q[0]));
     } else { const g = sampleGround(n.x, n.z); if (g != null) n.h = g; }
+    // the height this node had when its bridge was first built in this drive, if it was: kept (deckMem)
+    n.frozen = false;
+    if (S.smooth) { const m = deckMem().get(deckKey(n)); if (m != null) { n.h = m; n.frozen = true; } }
   }
   // junctions by place, for roads that pass over a junction they do not belong to
   const jg = new Map(), JC = 40;
@@ -1079,8 +1083,200 @@ async function computeHeights(bbox) {
     }
     for (let i = 0; i < N; i++) e.ph[i] += bias;
   }
+  // 5. bridge decks: raised over what they cross, the roads at their ends ramped up to meet them
+  try { await bridgeDecks(edgeIn); } catch (err) { console.warn('bridge decks', err); }
 }
 const MAX_GRADE = 0.33, NET_GRADE = 0.25;
+
+// ---------------------------------------------------------------- bridge decks
+// A deck starts from the roads it joins at its ends and is raised over whatever it crosses: a road under it gets
+// BR_CLEAR (4.8 m of headroom and the deck's own depth), the ground BR_GROUND, spread along the deck at BR_GRADE so
+// it rises on a vertical curve. Where a deck has to stand higher than the road it starts from, and that road is the
+// only one there, the road is ramped up to meet it (at BR_RAMP, steeper when it is short); a junction at a bridge's
+// end stays where it is. Decks are worked out from the lowest layer up, so one over another clears it. In the
+// photographed world the deck is read from the photographs (sampled from above) instead.
+// The heights bridges' nodes (their ends, by place to the metre) were first given in this drive: later builds, as
+// the area round the car is built again, reuse them, so a deck and the road on it never jump under a car (a long
+// bridge's ends used to be worked out again from whichever roads were loaded at the time: 4.7 m on the Bay
+// Bridge's approach). Only nodes not seen before are worked out; a new drop (another origin) starts afresh.
+const DECK_MEM = new Map(); let DECK_ORIGIN = '';
+const deckKey = (n) => Math.round(n.x) + ',' + Math.round(n.z);
+function deckMem() {
+  const o = unproject(0, 0), k = o.lat.toFixed(6) + ',' + o.lon.toFixed(6);
+  if (k !== DECK_ORIGIN || DECK_MEM.size > 50000) { DECK_ORIGIN = k; DECK_MEM.clear(); }
+  return DECK_MEM;
+}
+const BR_CLEAR = 5.6, BR_GROUND = 0.5, BR_GRADE = 0.06, BR_RAMP = 0.07, BR_RAMP_MAX = 0.12, BR_END = 12, BR_MAXH = 30;
+async function bridgeDecks(edgeIn) {
+  const nodes = S.nodes;
+  const B = S.edges.filter(e => e.c.bridge && e.px && e.px.length >= 2 && edgeIn(e));
+  if (!B.length) return;
+  const nodeOf = (e, end) => nodes.get(end ? e.ids[e.ids.length - 1] : e.ids[0]);
+  const anchored = (n) => n.ends.some(x => !x.e.c.bridge);
+  const approach = (n) => { let a = null; for (const x of n.ends) if (!x.e.c.bridge) { if (a) return null; a = x; } return a; };
+  if (!S.smooth) { for (const e of B) { await Y(); deckFromMesh(e, nodeOf(e, 0), nodeOf(e, 1)); } return; }
+  // every road piece by place, for what passes under a deck
+  const C = 24, grid = new Map();
+  for (const f of S.edges) {
+    if (!f.px || f.px.length < 2) continue;
+    for (let j = 1; j < f.px.length; j++) gridAdd(grid, Math.min(f.px[j - 1], f.px[j]), Math.min(f.pz[j - 1], f.pz[j]), Math.max(f.px[j - 1], f.px[j]), Math.max(f.pz[j - 1], f.pz[j]), [f, j], C);
+  }
+  await Y();
+  const layers = [...new Set(B.map(e => e.c.layer))].sort((a, b) => a - b);
+  let raisedN = 0, crossN = 0;
+  for (const layer of layers) {
+    const group = B.filter(e => e.c.layer === layer), req = new Map(), raised = [];
+    // what each deck has to clear, sample by sample
+    for (const e of group) {
+      await Y();
+      const N = e.px.length, R = new Float64Array(N).fill(-Infinity), cr = [], seen = new Set();
+      const ends = new Set([e.ids[0], e.ids[e.ids.length - 1]]);
+      const n0 = nodeOf(e, 0), n1 = nodeOf(e, 1), L = Math.max(1e-3, e.len);
+      const lin = (s) => lerp(planeAt(n0, e.px[0], e.pz[0]), planeAt(n1, e.px[N - 1], e.pz[N - 1]), s / L);
+      for (let i = 1; i < N; i++) {
+        const ax = e.px[i - 1], az = e.pz[i - 1], rx = e.px[i] - ax, rz = e.pz[i] - az;
+        for (let gi = Math.floor(Math.min(ax, ax + rx) / C); gi <= Math.floor(Math.max(ax, ax + rx) / C); gi++) for (let gj = Math.floor(Math.min(az, az + rz) / C); gj <= Math.floor(Math.max(az, az + rz) / C); gj++) {
+          const l = grid.get(gi * 73856093 ^ gj * 19349663); if (!l) continue;
+          for (const [f, j] of l) {
+            if (f === e || (f.c.bridge && f.c.layer >= layer)) continue;
+            if (ends.has(f.ids[0]) || ends.has(f.ids[f.ids.length - 1])) continue; // a road joined to this one
+            const key = f.id * 100000 + j; if (seen.has(key)) continue;
+            const sx = f.px[j] - f.px[j - 1], sz = f.pz[j] - f.pz[j - 1], den = rx * sz - rz * sx;
+            if (Math.abs(den) < 1e-9) continue;
+            const qx = f.px[j - 1] - ax, qz = f.pz[j - 1] - az, t = (qx * sz - qz * sx) / den, u = (qx * rz - qz * rx) / den;
+            if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+            seen.add(key);
+            const s = e.ps[i - 1] + (e.ps[i] - e.ps[i - 1]) * t, h = f.ph[j - 1] + (f.ph[j] - f.ph[j - 1]) * u + BR_CLEAR;
+            if (h - lin(s) > BR_MAXH) continue; // a data error, not a road under the deck
+            const sinA = Math.abs(den) / (Math.hypot(rx, rz) * Math.hypot(sx, sz) || 1);
+            cr.push({ s, h, w: (f.c.hw + 1.5) / Math.max(0.3, sinA) });
+          }
+        }
+      }
+      crossN += cr.length;
+      const a0 = anchored(n0), a1 = anchored(n1);
+      for (let i = 0; i < N; i++) {
+        const s = e.ps[i];
+        let r = -Infinity;
+        for (const c of cr) r = Math.max(r, c.h - Math.max(0, Math.abs(s - c.s) - c.w) * BR_GRADE);
+        // the ground under it, away from where it meets the roads on the ground at its ends
+        if ((!a0 || s > BR_END) && (!a1 || e.len - s > BR_END)) {
+          const w = e.c.hw * 0.8; let g = -Infinity;
+          for (const o of [-w, 0, w]) { const h = sampleGround(e.px[i] + e.nx[i] * o, e.pz[i] + e.nz[i] * o); if (h != null && h > g) g = h; }
+          if (g > -Infinity && g + BR_GROUND - lin(s) < BR_MAXH) r = Math.max(r, g + BR_GROUND);
+        }
+        R[i] = r;
+      }
+      req.set(e, R);
+    }
+    // the ends: a node only bridges meet at rises as needed; a bridge's end on the ground rises (with a ramp on
+    // the road before it) when that road is the only one there
+    for (const e of group) for (const end of [0, 1]) {
+      const n = nodeOf(e, end), R = req.get(e), other = nodeOf(e, 1 - end), mem = deckMem().get(deckKey(n));
+      let need = R[end ? R.length - 1 : 0];
+      // (never a deck steeper than BR_RAMP_MAX: a bridge's end on the ground rises to meet a high other end)
+      if (anchored(n) && !anchored(other)) need = Math.max(need, other.h - BR_RAMP_MAX * e.len);
+      // a height this node had in an earlier build of this drive is kept, whatever this build would make of it
+      if (mem != null) { if (!anchored(n)) continue; need = mem; }
+      if (!(need > -Infinity) || need <= n.h + 0.25) continue;
+      if (!anchored(n)) { n.h = need; continue; }
+      const a = approach(n); if (!a) continue;
+      const f = a.e, far = a.atStart ? f.ph[f.ph.length - 1] : f.ph[0], want = Math.min(need, far + BR_RAMP_MAX * f.len);
+      if (want <= n.h + 0.25) continue;
+      n.h = want; if (n.plane) n.plane[0] = want;
+      n.ramp = a; if (!raised.includes(n)) raised.push(n);
+    }
+    // the decks: straight between their ends, raised to what they must clear (never steeper than an end can
+    // climb), then rounded
+    for (const e of group) {
+      await Y();
+      const N = e.px.length, R = req.get(e), n0 = nodeOf(e, 0), n1 = nodeOf(e, 1), L = Math.max(1e-3, e.len), bias = rankBias(e);
+      const h0 = planeAt(n0, e.px[0], e.pz[0]), h1 = planeAt(n1, e.px[N - 1], e.pz[N - 1]);
+      const P = new Array(N);
+      for (let i = 0; i < N; i++) {
+        const s = e.ps[i], l = lerp(h0, h1, s / L);
+        P[i] = Math.max(l, Math.min(R[i], h0 + BR_RAMP_MAX * s, h1 + BR_RAMP_MAX * (L - s)));
+      }
+      smoothProfile(e, P, 14, 2, (i) => e.ps[i] < 0.5 || e.ps[i] > L - 0.5);
+      for (let i = 0; i < N; i++) { e.ph[i] = P[i] + bias; e.pc[i] = 0; }
+    }
+    // the ramps up to raised ends
+    for (const n of raised) {
+      const a = n.ramp, f = a.e, M = f.px.length;
+      const far = a.atStart ? f.ph[M - 1] : f.ph[0];
+      const G = Math.min(BR_RAMP_MAX, Math.max(BR_RAMP, (n.h - far) / Math.max(1, f.len) * 1.05));
+      let reach = 0;
+      for (let i = 0; i < M; i++) {
+        const d = a.atStart ? f.ps[i] : f.len - f.ps[i], t = n.h + rankBias(f) - G * d;
+        if (t > f.ph[i]) { f.ph[i] = t; if (d > reach) reach = d; }
+      }
+      // a vertical curve at the ramp's foot
+      const P = f.ph.slice();
+      smoothProfile(f, P, 10, 2, (i) => { const d = a.atStart ? f.ps[i] : f.len - f.ps[i]; return d < 0.5 || d > reach + 14 || (a.atStart ? f.len - f.ps[i] : f.ps[i]) < (a.atStart ? f.set1 : f.set0) + 0.5; });
+      for (let i = 0; i < M; i++) f.ph[i] = Math.max(P[i], f.ph[i] - 0.4);
+      f.ramp = (f.ramp || 0) | (a.atStart ? 1 : 2);
+      raisedN++;
+    }
+  }
+  // a node a higher layer raised (a deck of another layer joining it) after a lower deck was worked out from it:
+  // that deck's end goes up to it, the rest of it following linearly (it was a step of metres)
+  let mended = 0;
+  for (const e of B) {
+    const N = e.px.length, n0 = nodeOf(e, 0), n1 = nodeOf(e, 1), bias = rankBias(e), L = Math.max(1e-3, e.len);
+    const d0 = planeAt(n0, e.px[0], e.pz[0]) + bias - e.ph[0], d1 = planeAt(n1, e.px[N - 1], e.pz[N - 1]) + bias - e.ph[N - 1];
+    if (Math.abs(d0) < 0.05 && Math.abs(d1) < 0.05) continue;
+    for (let i = 0; i < N; i++) { const t = e.ps[i] / L; e.ph[i] += d0 * (1 - t) + d1 * t; }
+    mended++;
+  }
+  // the heights every bridge's ends were given, kept for later builds (only ones not known yet are added)
+  const mem = deckMem();
+  for (const e of B) for (const end of [0, 1]) { const n = nodeOf(e, end), k = deckKey(n); if (!mem.has(k) && Number.isFinite(n.h)) mem.set(k, n.h); }
+  S.bridgeStats = { decks: B.length, crossings: crossN, ramps: raisedN, mended, remembered: mem.size };
+}
+// a triangular average over W metres each way, passes times, leaving the samples fixed(i) says
+function smoothProfile(e, P, W, passes, fixed) {
+  const N = P.length; if (N < 3) return;
+  for (let pass = 0; pass < passes; pass++) {
+    const q = P.slice();
+    let lo = 0, hi = 0;
+    for (let i = 0; i < N; i++) {
+      if (fixed(i)) continue;
+      while (lo < i && e.ps[lo] < e.ps[i] - W) lo++;
+      if (hi < lo) hi = lo;
+      while (hi + 1 < N && e.ps[hi + 1] <= e.ps[i] + W) hi++;
+      let sw = 0, sh = 0;
+      for (let j = lo; j <= hi; j++) { const w = 1 - Math.abs(e.ps[j] - e.ps[i]) / W; if (w > 0) { sw += w; sh += w * P[j]; } }
+      if (sw > 0) q[i] = sh / sw;
+    }
+    for (let i = 0; i < N; i++) P[i] = q[i];
+  }
+}
+// the photographed world: the deck where the photographs have it, sampled from just above the straight line
+// between its ends (cars and lamp posts on it filtered out), blended into its ends' planes
+function deckFromMesh(e, n0, n1) {
+  const N = e.px.length, L = Math.max(1e-3, e.len), bias = rankBias(e);
+  const h0 = planeAt(n0, e.px[0], e.pz[0]), h1 = planeAt(n1, e.px[N - 1], e.pz[N - 1]);
+  const raw = new Array(N).fill(null), w = e.c.hw * 0.6;
+  for (let i = 0; i < N; i++) {
+    const l = lerp(h0, h1, e.ps[i] / L), v = [];
+    for (const o of [-w, -w / 2, 0, w / 2, w]) {
+      let h = null; try { h = S.groundAt(e.px[i] + e.nx[i] * o, e.pz[i] + e.nz[i] * o, l + 6); } catch (err) { h = null; }
+      if (h != null && isFinite(h) && h > l - 3 && h < l + 6.5) v.push(h);
+    }
+    if (v.length >= 2) raw[i] = pct(v, 0.3);
+  }
+  if (!raw.some(v => v != null)) return;
+  for (let i = 0; i < N; i++) if (raw[i] == null) {
+    let a = i - 1; while (a >= 0 && raw[a] == null) a--; let b = i + 1; while (b < N && raw[b] == null) b++;
+    raw[i] = a < 0 ? raw[b] : b >= N ? raw[a] : lerp(raw[a], raw[b], (i - a) / (b - a));
+  }
+  const P = raw.slice();
+  smoothProfile(e, P, 7, 2, () => false);
+  for (let i = 0; i < N; i++) {
+    const s = e.ps[i], w0 = Math.min(1, s / 10), w1 = Math.min(1, (L - s) / 10), wt = Math.min(w0, w1);
+    e.ph[i] = lerp(lerp(h0, h1, s / L), P[i], wt * wt * (3 - 2 * wt)) + bias; e.pc[i] = 0;
+  }
+}
 
 // ---------------------------------------------------------------- crossings, stops, signals
 function onEdgeAt(nodeId) { // [{ e, i (index in e.ids), s }]
@@ -1310,7 +1506,17 @@ function buildSignals() {
     const p = at(a.e, a.s), dirSign = a.toEnd ? 1 : -1;
     const heading = (Math.atan2(p.tx * dirSign, -p.tz * dirSign) * 180 / Math.PI + 360) % 360;
     const side = S.leftHand ? -1 : 1, off = a.e.c.hw + 0.7;
-    sg.push({ id: a.node, kind: a.kind, x: p.x, z: p.z, heading, px: p.x + p.nx * dirSign * side * off, pz: p.z + p.nz * dirSign * side * off, inferred: !!a.inferred });
+    sg.push({ id: a.node, kind: a.kind, x: p.x, z: p.z, heading, px: p.x + p.nx * dirSign * side * off, pz: p.z + p.nz * dirSign * side * off, inferred: !!a.inferred, junction: a.junction });
+  }
+  // all-way stops: every road coming into the junction has a stop line (in the US an ALL WAY plaque goes under
+  // each sign)
+  const stopsAt = new Map();
+  for (const a of S.approaches) if (a.kind === 'stop' && a.junction != null) stopsAt.set(a.junction, (stopsAt.get(a.junction) || 0) + 1);
+  for (const s of sg) {
+    if (s.kind !== 'stop' || s.junction == null) continue;
+    const J = S.nodes.get(s.junction); if (!J) continue;
+    let incoming = 0; for (const x of J.ends) if ((x.atStart ? x.e.c.lanesB : x.e.c.lanesF) > 0) incoming++;
+    s.allWay = incoming >= 3 && (stopsAt.get(s.junction) || 0) >= incoming;
   }
   S.signs = sg;
 }
@@ -1357,11 +1563,13 @@ function emitJunction(j) {
   let tris;
   try { tris = THREE.ShapeUtils.triangulateShape(v2, []); } catch (err) { return; }
   const base = ol.map(p => B.v(p.x, p.h + LIFT, p.z, p.x * UVS, p.z * UVS, [0, 0, 0]));
+  const onBridge = j.E.every(x => x.e.c.bridge) ? 1 : 0; // a junction up on a bridge (surfaceAt can leave decks out)
   for (const t of tris) {
     const a = ol[t[0]], b = ol[t[1]], c = ol[t[2]];
     const cross = (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
     if (cross < 0) B.tri(base[t[0]], base[t[1]], base[t[2]]); else B.tri(base[t[0]], base[t[2]], base[t[1]]);
     S.tris.push(a.x, a.z, a.h + LIFT, b.x, b.z, b.h + LIFT, c.x, c.z, c.h + LIFT);
+    S.triB.push(onBridge);
   }
   for (let i = 0; i < ol.length; i++) { const a = ol[i], b = ol[(i + 1) % ol.length]; S.outl.push(a.x, a.z, b.x, b.z, a.cut ? 0 : a.curb ? 2 : 1); }
 }
@@ -1534,19 +1742,36 @@ function emitStopLines() {
 }
 function emitCurbs(e) {
   const c = e.c;
-  if (!c.curbL && !c.curbR) return;
+  if (!c.curbL && !c.curbR && !c.bridge) return;
   const sa = e.set0, sb = e.len - e.set1;
   if (sb - sa < 0.3) return;
   const pts = sliceLite(e, sa, sb);
   for (const side of [-1, 1]) {
     if (side < 0 ? !c.curbL : !c.curbR) continue;
     const line = pts.map(p => ({ x: p.x + p.nx * side * c.hw * p.mk, z: p.z + p.nz * side * c.hw * p.mk, h: p.h + (p.c || 0) * side * c.hw * p.mk, nx: p.nx * side, nz: p.nz * side, mk: p.mk }));
-    emitCurbLine(line, side < 0 ? c.swWL : c.swWR, e.id);
+    // (on a bridge the pavement is level across and no wider than its deck)
+    if (c.bridge) emitCurbLine(line, Math.min(3.5, side < 0 ? c.swWL : c.swWR), e.id, true);
+    else emitCurbLine(line, side < 0 ? c.swWL : c.swWR, e.id);
+  }
+  // a bridge side with no pavement: a ledge from the carriageway to the parapet (drawn, and driven on)
+  if (c.bridge) for (const side of [-1, 1]) {
+    if (side < 0 ? c.curbL : c.curbR) continue;
+    const o0 = c.hw, o1 = side < 0 ? c.deckL : c.deckR, LH = 0.12;
+    let prev = null;
+    for (const p of pts) {
+      const k = p.mk || 1, y = p.h + LIFT + (p.c || 0) * side * o0 * k;
+      const ax = p.x + p.nx * side * o0 * k, az = p.z + p.nz * side * o0 * k, bx = p.x + p.nx * side * o1 * k, bz = p.z + p.nz * side * o1 * k;
+      const B = tileB('curb', p.x, p.z), nf = [-p.nx * side, 0, -p.nz * side];
+      const v = { B, a0: B.v(ax, y - 0.05, az, p.s * 0.5, 0, null, null, nf), a1: B.v(ax, y + LH, az, p.s * 0.5, 0.06, null, null, nf), t0: B.v(ax, y + LH, az, p.s * 0.5, 0.06), t1: B.v(bx, y + LH, bz, p.s * 0.5, 0.06 + (o1 - o0) * 0.5), x: ax, z: az, X: bx, Z: bz, y: y + LH };
+      if (prev && prev.B === B) { B.quad(prev.a0, v.a0, v.a1, prev.a1); B.quad(prev.t0, v.t0, v.t1, prev.t1); }
+      if (prev && S.sidewalks) S.pav.push(prev.x, prev.z, prev.y, v.x, v.z, v.y, v.X, v.Z, v.y, prev.x, prev.z, prev.y, v.X, v.Z, v.y, prev.X, prev.Z, prev.y);
+      prev = v;
+    }
   }
 }
 // line: [{x, z, h, nx, nz}] with n pointing away from the road
 // line: [{x, z, h, nx, nz, mk}] along a carriageway edge, n pointing away from the road
-function emitCurbLine(line0, paveW, edgeId = -1) {
+function emitCurbLine(line0, paveW, edgeId = -1, flat = false) {
   if (line0.length < 2) return;
   const fine = [line0[0]];
   for (let i = 1; i < line0.length; i++) {
@@ -1561,9 +1786,9 @@ function emitCurbLine(line0, paveW, edgeId = -1) {
     else run.push(b);
   }
   if (run.length > 1) out.push(run);
-  for (const r of out) emitCurbRun(r, paveW);
+  for (const r of out) emitCurbRun(r, paveW, flat);
 }
-function emitCurbRun(line, paveW) {
+function emitCurbRun(line, paveW, flat = false) {
   if (line.length < 2) return;
   let s = 0, prev = null;
   const verts = (B, p, s) => {
@@ -1590,7 +1815,7 @@ function emitCurbRun(line, paveW) {
     }
     prev = { B, v };
   }
-  if (paveW && S.sidewalks) S.paveLines.push({ line, w: paveW });
+  if (paveW && S.sidewalks) S.paveLines.push({ line, w: paveW, flat });
 }
 
 // ---------------------------------------------------------------- pavements (open world only)
@@ -1640,7 +1865,7 @@ function onCarriageway(x, z, except = -1) {
   return false;
 }
 // A paved strip from the curb top outward; quads are dropped where they would lie on a carriageway or in a building.
-function emitPavement(line0, W) {
+function emitPavement(line0, W, flat = false) {
   // the curb line is sparse on straight runs: cut it to 4 m pieces so the trimming below can follow roads and walls
   const line = [line0[0]];
   for (let i = 1; i < line0.length; i++) {
@@ -1678,7 +1903,7 @@ function emitPavement(line0, W) {
     // the outer edge follows the ground (a pavement on a hillside slopes with it), never far from the kerb top
     // (at most 35 cm below the kerb across its width: a ground sample under a city's rooftops can be metres out,
     // and a pavement falling 1.2 m beside the road was a ditch that rolled the car)
-    const outer = (C, y) => { const g = sampleGround(C[0], C[1]); return g == null ? y : Math.max(y - 0.35, Math.min(y + 0.4, g + 0.05)); };
+    const outer = (C, y) => { if (flat) return y; const g = sampleGround(C[0], C[1]); return g == null ? y : Math.max(y - 0.35, Math.min(y + 0.4, g + 0.05)); };
     const oa = outer(C0, ya), ob = outer(C1, yb);
     const P = (p, o, y, k, u) => { const x = p.x + p.nx * o * k, z = p.z + p.nz * o * k; return B.v(x, y, z, u, o); };
     B.quad(P(a, CURB_W, ya, ka, sa), P(b, CURB_W, yb, kb, sb), P(b, w, ob, kb, sb), P(a, w, oa, ka, sa));
@@ -1783,7 +2008,9 @@ async function buildMeshes(bbox) {
     if (dirty && !dirty.has(key.split(':')[1])) S.meshes.set(key, m); else S.toRemove.push(m);
   }
   TILES.clear();
-  S.tris = []; S.outl = []; S.paveLines = []; S.pav = [];
+  S.tris = []; S.triB = []; S.outl = []; S.paveLines = []; S.pav = [];
+  // a bridge's deck reaches past its carriageway: to the pavement's outer edge, or a ledge where it has none
+  for (const e of S.edges) if (e.c.bridge) { const c = e.c; c.deckL = c.hw + (c.curbL ? Math.min(3.5, c.swWL) : 0.6); c.deckR = c.hw + (c.curbR ? Math.min(3.5, c.swWR) : 0.6); }
   for (const e of S.edges) { DIRTY = dirty; emitRibbon(e, e.set0, e.len - e.set1); await Y(); }
   DIRTY = dirty;
   ST('m-junctions');
@@ -1804,7 +2031,8 @@ async function buildMeshes(bbox) {
     // corner curbs: runs of curb points (outline segments flagged curb)
     let run = [];
     const cw = j.E.reduce((m, x) => Math.max(m, Math.min(x.e.c.swWL, x.e.c.swWR)), 1.5);
-    const flush = () => { if (run.length > 1) emitCurbLine(run, cw); run = []; };
+    const flat = j.E.every(x => x.e.c.bridge);
+    const flush = () => { if (run.length > 1) emitCurbLine(run, flat ? Math.min(3.5, cw) : cw, -1, flat); run = []; };
     for (let i = 0; i <= ol.length; i++) {
       const p = ol[i % ol.length], q = ol[(i + 1) % ol.length];
       if (p.curb) {
@@ -1820,7 +2048,7 @@ async function buildMeshes(bbox) {
   }
   await Y(); DIRTY = dirty; ST('m-pave');
   if (S.sidewalks) {
-    for (const pl of S.paveLines) { DIRTY = dirty; emitPavement(pl.line, pl.w); await Y(); }
+    for (const pl of S.paveLines) { DIRTY = dirty; emitPavement(pl.line, pl.w, pl.flat); await Y(); }
     DIRTY = dirty;
     ST('m-ped'); await emitPedAreas(dirty); await Y(); DIRTY = dirty; ST('m-pavgrid');
     const pav = new Float64Array(S.pav);
@@ -1887,7 +2115,7 @@ async function buildSurfaceIndex() {
     const sa = e.set0, sb = e.len - e.set1;
     if (sb - sa < 0.02) continue;
     const pts = sliceLite(e, sa, sb, 24);
-    const fl = (e.c.curbL ? 1 : 0) | (e.c.curbR ? 2 : 0);
+    const fl = (e.c.curbL ? 1 : 0) | (e.c.curbR ? 2 : 0) | (e.c.bridge ? 4 : 0);
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1], b = pts[i];
       seg.push(a.x, a.z, b.x, b.z, a.h + LIFT, b.h + LIFT, e.c.hw, fl, e.id, a.c || 0, b.c || 0);
@@ -1910,7 +2138,7 @@ async function buildSurfaceIndex() {
     const r = CURB_W + 1;
     gridAdd(grid, Math.min(outl[i], outl[i + 2]) - r, Math.min(outl[i + 1], outl[i + 3]) - r, Math.max(outl[i], outl[i + 2]) + r, Math.max(outl[i + 1], outl[i + 3]) + r, 1e9 + i, CELL);
   }
-  S.segs = segs; S.trisA = tris; S.outlA = outl; S.grid = grid;
+  S.segs = segs; S.trisA = tris; S.outlA = outl; S.grid = grid; S.triBA = new Uint8Array(S.triB || []);
   // edge centreline grid for nearestEdge
   const eg = new Map();
   for (const e of S.edges) {
@@ -1920,21 +2148,27 @@ async function buildSurfaceIndex() {
   S.edgeGrid = eg;
 }
 
-const RES = { h: null, onRoad: false, edge: Infinity, curbH: 0 };
+const RES = { h: null, onRoad: false, edge: Infinity, curbH: 0, bridge: false, nearH: null, nearD: Infinity };
 const SURF_CAND = [];
-// surfaceAt(x, z, yHint?) -> { h, onRoad, edge, curbH }
+const LEVEL = 2.5; // with a hint, edges, kerbs and pavements further than this above or below it are another level
+// surfaceAt(x, z, yHint?, skip?) -> { h, onRoad, edge, curbH, bridge }
+//   bridge: the piece under the point is a bridge deck. skip: 1 leaves bridge decks out (what lies on the ground),
+//   2 keeps the piece nearest the hint however far from it. nearH, nearD: off the road, the nearest piece on the
+//   hint's level (its height extended to the point) and how far away it is.
+//   With a hint, the edge, kerb and pavement found are on the hint's level (not a deck overhead or a road under it).
 //   onRoad: inside a carriageway or junction. h: the road surface height there (with the lift), or on a curb the
 //   curb top. edge: metres to the nearest carriageway edge (negative inside). curbH: 0.15 when the point is on a
 //   curb top or a pavement (h already includes it), else 0. Off the road, curbs and pavements h is null: use
 //   world.groundAt there. Where pieces overlap (bridges, forks on a hill),
 //   yHint (the wheel's last height) picks the nearest one, and a deck more than 1.5 m from yHint is ignored. The returned object is reused: copy what you keep.
-export function surfaceAt(x, z, yHint) {
-  const r = RES; r.h = null; r.onRoad = false; r.edge = Infinity; r.curbH = 0;
+export function surfaceAt(x, z, yHint, skip = 0) {
+  const r = RES; r.h = null; r.onRoad = false; r.edge = Infinity; r.curbH = 0; r.bridge = false; r.nearH = null; r.nearD = Infinity;
   const Lv = LIVE;
   const l = Lv.grid.get(gkey(x, z, CELL));
   if (!l) return r;
-  const segs = Lv.segs, tris = Lv.trisA, outl = Lv.outlA, pav = Lv.pavA;
-  let bestH = null, bestInside = Infinity, nearH = null, nearEdge = Infinity, nearCurb = false;
+  const segs = Lv.segs, tris = Lv.trisA, outl = Lv.outlA, pav = Lv.pavA, triB = Lv.triBA;
+  let bestH = null, bestInside = Infinity, nearH = null, nearEdge = Infinity, nearCurb = false, bestB = false;
+  const level = (h) => yHint == null || Math.abs(h - yHint) < LEVEL;
   // where pieces overlap (bridges, forks on a hill) the one nearest the hint wins; with no hint the highest
   const pick = (h) => {
     if (bestH == null) return true;
@@ -1942,7 +2176,7 @@ export function surfaceAt(x, z, yHint) {
     return Math.abs(h - yHint) < Math.abs(bestH - yHint);
   };
   let inJunction = false;
-  let pavH = null;
+  let pavH = null, triNearD = Infinity, triNearH = null;
   // every piece the point is in, with how deep inside it is: where two roads' ribbons overlap outside a junction
   // (wide avenues meeting at a shallow angle) at heights a little apart, the surface is their blend weighted by
   // depth, so neither piece's edge is a step
@@ -1951,17 +2185,22 @@ export function surfaceAt(x, z, yHint) {
   for (let k = 0; k < l.length; k++) {
     const id = l[k];
     if (id >= 2e9) {
-      if (pavH != null) continue;
       const i = id - 2e9;
       const x0 = pav[i], z0 = pav[i + 1], x1 = pav[i + 3], z1 = pav[i + 4], x2 = pav[i + 6], z2 = pav[i + 7];
       const det = (z1 - z2) * (x0 - x2) + (x2 - x1) * (z0 - z2);
       if (Math.abs(det) < 1e-9) continue;
       const w0 = ((z1 - z2) * (x - x2) + (x2 - x1) * (z - z2)) / det, w1 = ((z2 - z0) * (x - x2) + (x0 - x2) * (z - z2)) / det, w2 = 1 - w0 - w1;
-      if (w0 >= -1e-4 && w1 >= -1e-4 && w2 >= -1e-4) pavH = w0 * pav[i + 2] + w1 * pav[i + 5] + w2 * pav[i + 8];
+      if (w0 >= -1e-4 && w1 >= -1e-4 && w2 >= -1e-4) {
+        // (a bridge's pavement over a pavement on the ground: the one on the hint's level)
+        const ph = w0 * pav[i + 2] + w1 * pav[i + 5] + w2 * pav[i + 8];
+        if (!level(ph)) continue;
+        if (pavH == null || (yHint != null ? Math.abs(ph - yHint) < Math.abs(pavH - yHint) : ph > pavH)) pavH = ph;
+      }
       continue;
     }
     if (id >= 1e9) continue;
     if (id >= 0) {
+      if ((skip & 1) && (segs[id + 7] & 4)) continue;
       const ax = segs[id], az = segs[id + 1], bx = segs[id + 2], bz = segs[id + 3];
       const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz;
       let t = L2 > 0 ? ((x - ax) * dx + (z - az) * dz) / L2 : 0;
@@ -1979,7 +2218,7 @@ export function surfaceAt(x, z, yHint) {
         // only a fallback: used when no piece covers the point properly (below)
         if (extH == null || (yHint != null ? Math.abs(h - yHint) < Math.abs(extH - yHint) : h > extH)) { extH = h; extIn = ed; }
       } else if (ed <= 0 && t >= -0.02 && t <= 1.02) {
-        if (pick(h)) bestH = h;
+        if (pick(h)) { bestH = h; bestB = (segs[id + 7] & 4) !== 0; }
         if (ed < bestInside) bestInside = ed;
         // depth also counts from the open end of a road's last piece (where its ribbon stops short of a junction)
         let dep = -ed;
@@ -1988,8 +2227,8 @@ export function surfaceAt(x, z, yHint) {
           if (id < 11 || segs[id - 3] !== eid) dep = Math.min(dep, Math.max(0, (t + 0.02) * len));
           if (id + 11 >= segs.length || segs[id + 19] !== eid) dep = Math.min(dep, Math.max(0, (1.02 - t) * len));
         }
-        cand.push(h, dep);
-      } else if (ed < nearEdge && t >= Math.min(tlo, -0.05) && t <= Math.max(thi, 1.05)) {
+        cand.push(h, dep, (segs[id + 7] & 4) ? 1 : 0);
+      } else if (ed < nearEdge && t >= Math.min(tlo, -0.05) && t <= Math.max(thi, 1.05) && level(h)) {
         nearEdge = ed; nearH = h;
         const side = (x - ax) * dz - (z - az) * dx; // >0: left of a->b? (x right-handed in xz with z south)
         const fl = segs[id + 7];
@@ -2000,15 +2239,25 @@ export function surfaceAt(x, z, yHint) {
       }
     } else {
       const i = -1 - id;
+      if ((skip & 1) && triB && triB[i / 9]) continue;
       const x0 = tris[i], z0 = tris[i + 1], x1 = tris[i + 3], z1 = tris[i + 4], x2 = tris[i + 6], z2 = tris[i + 7];
       const det = (z1 - z2) * (x0 - x2) + (x2 - x1) * (z0 - z2);
       if (Math.abs(det) < 1e-9) continue;
       const w0 = ((z1 - z2) * (x - x2) + (x2 - x1) * (z - z2)) / det, w1 = ((z2 - z0) * (x - x2) + (x0 - x2) * (z - z2)) / det, w2 = 1 - w0 - w1;
       if (w0 >= -1e-4 && w1 >= -1e-4 && w2 >= -1e-4) {
         const h = w0 * tris[i + 2] + w1 * tris[i + 5] + w2 * tris[i + 8];
-        if (pick(h)) bestH = h;
+        if (pick(h)) { bestH = h; bestB = !!(triB && triB[i / 9]); }
         inJunction = true;
-        cand.push(h, -1); // a junction's depth comes from its outline, below
+        cand.push(h, -1, triB && triB[i / 9] ? 1 : 0); // a junction's depth comes from its outline, below
+      } else if (w0 > -0.6 && w1 > -0.6 && w2 > -0.6) {
+        // just outside a junction's piece: how far, and its plane's height there (r.nearH, for drive.ground)
+        const A2 = Math.abs(det);
+        let d = 0;
+        if (w0 < 0) d = Math.max(d, -w0 * A2 / Math.hypot(x2 - x1, z2 - z1));
+        if (w1 < 0) d = Math.max(d, -w1 * A2 / Math.hypot(x0 - x2, z0 - z2));
+        if (w2 < 0) d = Math.max(d, -w2 * A2 / Math.hypot(x1 - x0, z1 - z0));
+        const h = w0 * tris[i + 2] + w1 * tris[i + 5] + w2 * tris[i + 8];
+        if (d < triNearD && level(h)) { triNearD = d; triNearH = h; }
       }
     }
   }
@@ -2024,14 +2273,19 @@ export function surfaceAt(x, z, yHint) {
     const d = Math.hypot(x - ax - dx * t, z - az - dz * t);
     if (d < olD) { olD = d; olCurb = outl[i + 4] === 2; }
   }
-  if (bestH == null && extH != null) { bestH = extH; bestInside = extIn; }
   // a road deck far above or below the wheel (another leg of a hairpin, a bridge overhead) is not this road
-  if (bestH != null && yHint != null && Math.abs(bestH - yHint) > 1.5) { bestH = null; bestInside = Infinity; inJunction = false; }
-  if (bestH != null && cand.length > 2) {
+  // (skip 2: the nearest piece however far, for carrying a car with a road whose height changed)
+  const far = (h) => yHint != null && Math.abs(h - yHint) > 1.5 && !(skip & 2);
+  if (bestH != null && far(bestH)) { bestH = null; bestInside = Infinity; inJunction = false; }
+  // the outside of a bend between two pieces of one road: the fallback, also when another road at another level
+  // overlaps the point (it used to win there and then be dropped as too far from the wheel: a hole the car fell in)
+  if (extH != null && !far(extH) && (bestH == null || (yHint != null && Math.abs(extH - yHint) + 0.3 < Math.abs(bestH - yHint)))) { bestH = extH; bestInside = extIn; inJunction = false; cand.length = 0; }
+  if (bestH != null && cand.length > 3) {
     // pieces on the chosen level (within 0.8 m of it), each weighted by its depth inside, up to 3 m
     let sw = 0, sh = 0;
-    for (let k = 0; k < cand.length; k += 2) {
-      const h = cand[k]; if (Math.abs(h - bestH) > 0.8) continue;
+    // (never a deck with the road under it: a deck coming down low over a road beside it made steps of both)
+    for (let k = 0; k < cand.length; k += 3) {
+      const h = cand[k]; if (Math.abs(h - bestH) > 0.8 || (cand[k + 2] === 1) !== bestB) continue;
       const d = cand[k + 1] < 0 ? (olD === Infinity ? 3 : olD) : cand[k + 1];
       const w = Math.min(3, d) + 1e-3;
       sw += w; sh += w * h;
@@ -2039,7 +2293,7 @@ export function surfaceAt(x, z, yHint) {
     if (sw > 0) bestH = sh / sw;
   }
   if (bestH != null) {
-    r.onRoad = true; r.h = bestH;
+    r.onRoad = true; r.h = bestH; r.bridge = bestB;
     // distances to the sides of the pieces are upper bounds of the depth inside the road: take the smallest
     const jd = olD === Infinity ? -CELL : -olD;
     r.edge = !inJunction ? bestInside : bestInside !== Infinity ? Math.max(bestInside, jd) : jd;
@@ -2049,6 +2303,8 @@ export function surfaceAt(x, z, yHint) {
   let ed = nearEdge, curb = nearCurb, h = nearH;
   if (olD < ed) { ed = olD; curb = olCurb; }
   r.edge = ed; r.h = null;
+  // the nearest piece on this level and how far it is (a crack between pieces, a turn cutting a junction's corner)
+  if (triNearD < nearEdge) { r.nearD = triNearD; r.nearH = triNearH; } else if (nearH != null) { r.nearD = Math.max(0, nearEdge); r.nearH = nearH; }
   if (curb && ed >= 0 && ed <= CURB_W && h != null) { r.curbH = CURB_H; r.h = h + CURB_H; }
   else if (pavH != null) {
     // next to a road its pavement is at its kerb top: a strip of another road's pavement lower down (two roads
@@ -2292,6 +2548,7 @@ async function doBuild(data, opts) {
   // the open world (drive.js passes sidewalks only there) stands on a smooth terrain model: median, no low filter
   S.smooth = S.sidewalks || !!(opts.world && opts.world.mode === 'open');
   LIFT = opts.lift != null ? opts.lift : 0.03;
+  S.lift = LIFT;
   S.data = data;
   // photogrammetry has parked cars and bumps baked in: a low percentile; smooth terrain (the open world): the median
   S.pct = opts.groundPercentile != null ? opts.groundPercentile : (opts.world && opts.world.mode === 'open') ? 0.5 : 0.25;
@@ -2357,7 +2614,7 @@ async function doReheight(b) {
   S = Object.assign(newState(L), {
     edges: L.edges, nodes: L.nodes, junctions: L.junctions, crossings: L.crossings, approaches: L.approaches, graph: L.graph,
     signals: L.signals, signalGroups: L.signalGroups, signs: L.signs, data: L.data, sidewalks: L.sidewalks, pct: L.pct, smooth: L.smooth,
-    bgrid: L.bgrid, bpolys: L.bpolys, laneGrid: L.laneGrid,
+    bgrid: L.bgrid, bpolys: L.bpolys, laneGrid: L.laneGrid, lift: L.lift,
   });
   await computeHeights(b);
   await buildMeshes(b);

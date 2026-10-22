@@ -2,11 +2,11 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=15';
-import { World } from './world.js?v=15';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=15';
-import { Sky } from './sky.js?v=15';
-import { Drive } from './drive.js?v=15';
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=16';
+import { World } from './world.js?v=16';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=16';
+import { Sky } from './sky.js?v=16';
+import { Drive } from './drive.js?v=16';
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -171,7 +171,7 @@ if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
 async function openMap() {
   try {
-    const M = await import('./mapui.js?v=15');
+    const M = await import('./mapui.js?v=16');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();
@@ -212,10 +212,12 @@ async function openMap() {
 G.openMap = openMap;
 G.onFrame = () => {
   if (mapui && drive.active && drive.car && (G.frames % 15 === 0)) {
-    const v = drive.car.vehicle, o = v.origin(), g = toLatLon(o), R = drive.roadsObj;
+    // (on foot, onfoot.js: where the person is and which way it faces)
+    const F = drive.onfoot && drive.onfoot.active ? drive.onfoot : null;
+    const v = drive.car.vehicle, o = F ? F.focus() : v.origin(), g = toLatLon(o), R = drive.roadsObj;
     // the street under the car from the map data, for when the address lookup has no answer
     const n = R && R.nearestEdge ? R.nearestEdge(o.x, o.z, 15) : null, t = n && n.edge && n.edge.way && n.edge.way.tags;
-    mapui.updateCar({ lat: g.lat, lon: g.lon, heading: v.heading, speed: v.fwdSpeed, road: (t && t.name) || '' });
+    mapui.updateCar({ lat: g.lat, lon: g.lon, heading: F ? F.heading() : v.heading, speed: F ? 0 : v.fwdSpeed, road: (t && t.name) || '' });
   }
 };
 if (Q.has('free') && Q.has('lat')) startWorld(+Q.get('lat'), +Q.get('lon')).then(m => { G.mode = m; });

@@ -12,9 +12,9 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=15';
-import { patchBaked } from './baked.js?v=15';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME } from './facade.js?v=15';
+import { frame, project } from './geo.js?v=16';
+import { patchBaked } from './baked.js?v=16';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME } from './facade.js?v=16';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -479,7 +479,12 @@ function emit(P, ctx, W, R, img) {
   for (const p of outer) { const g = ground0(p[0], p[1]); if (g < gmin) gmin = g; }
   const base = P.baseY ?? gmin;
   P.baseY = base;
-  const yBot = minH > 0.3 ? base + minH : gmin - 1.2;
+  // a part of a bridge (a pier or abutment the map draws as a building) whose top is at the deck a lane runs over:
+  // not drawn, it would stand in the road
+  if (P.b.passY != null && isFinite(P.b.passY) && base + H < P.b.passY + 2) return;
+  // (a bridge tower standing across a deck: drawn from 5.5 m over the deck, so the road passes under it)
+  if (P.b.passY != null && isFinite(P.b.passY) && P.b.passY + 5.5 - base > minH && P.b.passY + 5.5 - base < eave - 3) P.minH = P.b.passY + 5.5 - base;
+  const yBot = P.minH > 0.3 ? base + P.minH : gmin - 1.2;
   const terms = roofTerms(P);
   const yEave = base + eave;
   const seed = Math.floor(P.r4 * 997);   // a whole number: the shader hashes it
@@ -626,7 +631,7 @@ function emit(P, ctx, W, R, img) {
     }
   }
   // the underside of a raised part
-  if (minH > 0.3) {
+  if (P.minH > 0.3) {
     const { pts, tris } = triangulate(outer, holes);
     const ids = pts.map(p => W.v(p.x, yBot, p.y, 0, -1, 0, wc, 0, 0, 0, -1e4, base, fh, gh, seed, STYLE.SOFFIT, 0));
     for (const t of tris) {
@@ -866,6 +871,19 @@ function roadIndex(list) {
   };
 }
 
+// A building's heights for its collision and its roof (collide.js roofAt): the walls from its base (or the
+// underside of an overhang) to the eave, the roof's height at any point over its plan
+const ROOFS = new Map(); // building id -> its roof, for cells reused by a later build
+function roofInfo(P) {
+  const base = P.baseY, terms = roofTerms(P), eave = base + P.eave, top = base + P.H;
+  const under = P.minH > 0.3 ? base + P.minH : null;
+  const at = terms && P.shape !== 'flat' && P.roofH > 0.05 ? (x, z) => eave + roofAt(P, terms, x, z) : null;
+  return { base, eave, top, under, at };
+}
+// (the walls block up to a metre under the roof's edge: a car landing on the roof dips a little into it on its
+// springs, and was pushed sideways off the roof by its own building's wall)
+function applyRoof(sh, info) { sh.roof = info; sh.y0 = info.under != null ? info.under : -1e4; sh.y1 = Math.max(info.eave - 1.0, (info.under != null ? info.under : info.base) + 1.6); }
+
 export function build(list, opts = {}) {
   const { scene, world, collide, imagery } = opts;
   const groundAt = opts.groundAt || (world ? (x, z) => world.groundAt(x, z) : () => 0);
@@ -879,7 +897,7 @@ export function build(list, opts = {}) {
   const RD = opts.roads;
   if (RD && !Array.isArray(RD) && typeof RD.nearestEdge === 'function') ctx.nearRoad = (x, z) => RD.nearestEdge(x, z, 80);
   else if (Array.isArray(RD) || Array.isArray(opts.roadList)) ctx.nearRoad = roadIndex(Array.isArray(RD) ? RD : opts.roadList);
-  const recs = [], handles = [];
+  const recs = [], handles = [], shapeOf = new Map(); // shapeOf: building record -> its collision polygon
   let disposed = false, done = false;
   const stats = { buildings: 0, cells: 0, reused: 0, triangles: 0, lean: [], ms: 0 };
   // older builds stay on screen until this one is ready, then go in one step
@@ -905,8 +923,11 @@ export function build(list, opts = {}) {
   // collision now (cheap, no heights needed): every footprint the car can reach
   if (collide && collide.addPolygon) {
     for (const c of cells.values()) for (const b of c.list) {
-      if ((b.minHeight || 0) > 3 || (b.minLevel || 0) > 1 || b.open) continue;
-      try { const h = collide.addPolygon(b.outer.map(p => [p[0], p[1]]), -1e4, 1e4, 'building'); if (h != null) handles.push(h); } catch (e) { /* collide not ready */ }
+      if (b.open) continue;
+      // (until its heights are known (the cell's plan, below) a building blocks at any height; one that starts up in
+      // the air (an overhang, a part on another) blocks nothing until then)
+      const high = (b.minHeight || 0) > 3 || (b.minLevel || 0) > 1;
+      try { const h = collide.addPolygon(b.outer.map(p => [p[0], p[1]]), high ? 1e4 : -1e4, 1e4, 'building'); if (h != null) { handles.push(h); shapeOf.set(b, h); } } catch (e) { /* collide not ready */ }
     }
   }
 
@@ -949,7 +970,7 @@ export function build(list, opts = {}) {
 
   async function buildCell(c) {
     const old = built.get(c.sig);
-    if (old) { old.refs.add(handle); recs.push(old); stats.reused++; stats.buildings += old.n; if (progressive) show(old); return; }
+    if (old) { old.refs.add(handle); recs.push(old); stats.reused++; stats.buildings += old.n; if (progressive) show(old); for (const b of c.list) { const sh = shapeOf.get(b), info = ROOFS.get(b.id); if (sh && info) applyRoof(sh, info); } return; }
     ctx.density = c.density;
     const plans = [];
     for (const b of c.list) { const P = plan(b, ctx); if (P) plans.push(P); await slice('L625'); if (disposed) return; }
@@ -987,6 +1008,8 @@ export function build(list, opts = {}) {
       P.wallColour = wallColour(P, mean, face);
       P.fallbackRoof = mean ? new THREE.Color().setRGB(mean[0], mean[1], mean[2], THREE.SRGBColorSpace) : defaultRoof(P, ctx);
       emit(P, ctx, W, R, img);
+      // its collision now has its real height (base to the walls' top) and a roof a car can stand on
+      try { const sh = shapeOf.get(P.b); if (sh) { const info = roofInfo(P); if (ROOFS.size > 40000) ROOFS.clear(); ROOFS.set(P.b.id, info); applyRoof(sh, info); stats.roofs = (stats.roofs || 0) + 1; } } catch (e) { /* no roof: the wall stays full height */ }
       await slice('L655');
       if (disposed) { if (img) img.texture.dispose(); return; }
     }

@@ -50,7 +50,9 @@ export class CarCamera {
     let fov = this.fovBase;
     if (this.view === 'chase' || this.view === 'far') {
       const far = this.view === 'far';
-      const d = (far ? 9.5 : 6.2) * this.dist + car.rig.dims.length * 0.35, hgt = (far ? 3.4 : 2.0) * Math.sqrt(this.dist);
+      // (a flying car, flight.js: a little further back and higher, so the jets and the ground below show)
+      const fk = (v && v.flyCam) || 0;
+      const d = ((far ? 9.5 : 6.2) * this.dist + car.rig.dims.length * 0.35) * (1 + 0.22 * fk), hgt = (far ? 3.4 : 2.0) * Math.sqrt(this.dist) + 1.2 * fk + Math.max(0, car.rig.dims.height - 2) * 0.9; // (over a bus's or a truck's roof)
       // follow the direction of travel more than the nose, so a slide shows
       const flat = new THREE.Vector3(fwd.x, 0, fwd.z).normalize();
       const vel = new THREE.Vector3(v.v.x, 0, v.v.z);
@@ -58,7 +60,7 @@ export class CarCamera {
       if (!this.ready) this.dirS = flat.clone(); else this.dirS.lerp(flat, 1 - Math.exp(-dt * 4)).normalize();
       const dir = this.dirS.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
       const want = base.clone().addScaledVector(dir, -d).add(new THREE.Vector3(0, hgt, 0));
-      const target = base.clone().addScaledVector(dir, 2.5).add(new THREE.Vector3(0, 1.1 + this.pitchOff * 3, 0));
+      const target = base.clone().addScaledVector(dir, 2.5).add(new THREE.Vector3(0, 1.1 + Math.max(0, car.rig.dims.height - 2) * 0.55 + this.pitchOff * 3, 0));
       // keep it out of walls and buildings
       if (world) {
         const from = base.clone().add(new THREE.Vector3(0, 1.4, 0)), to = want.clone().sub(from), len = to.length();
@@ -68,6 +70,9 @@ export class CarCamera {
         if (input.others) for (const c of input.others) {
           const ax = from.x, az = from.z, bx = want.x, bz = want.z, dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz;
           const t = L2 > 0 ? THREE.MathUtils.clamp(((c.x - ax) * dx + (c.z - az) * dz) / L2, 0, 1) : 0;
+          // (a car well below the line of sight, as under a flying car, is not in the way)
+          const co = c.obj, top = co && Number.isFinite(co.y) ? co.y + ((co.rig && co.rig.dims && co.rig.dims.height) || 1.6) + 0.5 : null;
+          if (top !== null && from.y + (want.y - from.y) * t > top) continue;
           if (Math.hypot(ax + dx * t - c.x, az + dz * t - c.z) < c.r + 0.5 && t > 0.15) {
             const keep = Math.max(1.6, Math.sqrt(L2) * t - c.r - 0.8);
             want.copy(from).addScaledVector(to, keep); want.y = Math.max(want.y, from.y + 0.6);

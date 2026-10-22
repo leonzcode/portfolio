@@ -1,18 +1,18 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=15';
-import { Collide } from './collide.js?v=15';
-import { Vehicle } from './vehicle.js?v=15';
-import { CarCamera } from './camera.js?v=15';
-import { Hud } from './hud.js?v=15';
-import { CarSound } from './sound.js?v=15';
-import { CutMask } from './cutmask.js?v=15';
-import * as SIG from './signals.js?v=15';
-import { Parked } from './parked.js?v=15';
-import { Skids } from './skids.js?v=15';
-import { StreetSigns } from './streetsigns.js?v=15';
-import { Landmarks, filterBuildings } from './landmarks.js?v=15';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=16';
+import { Collide } from './collide.js?v=16';
+import { Vehicle } from './vehicle.js?v=16';
+import { CarCamera } from './camera.js?v=16';
+import { Hud } from './hud.js?v=16';
+import { CarSound } from './sound.js?v=16';
+import { CutMask } from './cutmask.js?v=16';
+import * as SIG from './signals.js?v=16';
+import { Parked } from './parked.js?v=16';
+import { Skids } from './skids.js?v=16';
+import { StreetSigns } from './streetsigns.js?v=16';
+import { Landmarks, filterBuildings } from './landmarks.js?v=16';
 
 const STEP = 1 / 120;
 const GLIFT = 0.15; // how far under Google's road ours is drawn
@@ -40,6 +40,8 @@ export class Drive {
     this.sound = new CarSound();
     this.skids = new Skids(G.scene);
     this.signs = new StreetSigns(G.scene);
+    // what happens to cars and people (crash damage, broken glass, people hit), for the modules that react to it
+    this.events = new THREE.EventDispatcher();
     // finer ground arrived (Google's tiles refine as the car comes near): re-sample the roads there, in batches
     this.dirty = null; this.dirtyT = 0;
     this.world.addEventListener('ground-changed', e => {
@@ -57,33 +59,44 @@ export class Drive {
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
     const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=15'), tryImport('./osm.js?v=15'), tryImport('./roads.js?v=15'), tryImport('./props.js?v=15'),
-      tryImport('./buildings.js?v=15'), tryImport('./trees.js?v=15'), tryImport('./traffic.js?v=15'), tryImport('./imagery.js?v=15')]);
+      tryImport('./cars.js?v=16'), tryImport('./osm.js?v=16'), tryImport('./roads.js?v=16'), tryImport('./props.js?v=16'),
+      tryImport('./buildings.js?v=16'), tryImport('./trees.js?v=16'), tryImport('./traffic.js?v=16'), tryImport('./imagery.js?v=16')]);
+    const dmgMod = this.damage ? null : await tryImport('./damage.js?v=16');
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
+    // crash damage (damage.js), set up before any car is made: every car's paint and glass get ready for it
+    if (dmgMod && dmgMod.Damage && !this.damage) { try { this.damage = new dmgMod.Damage(this); } catch (e) { console.warn('damage', e); } }
     // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
     if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); const M = this.bldgObj && this.bldgObj.material; if (M) { M.envMap = t; M.needsUpdate = true; } return t; }).catch(() => null);
     // a test page can send OSM queries through a local caching proxy
     const ov = new URLSearchParams(location.search).get('overpass');
     if (ov && osm && osm.setFetcher) osm.setFetcher(q => fetch(ov + '?data=' + encodeURIComponent(q)).then(r => { if (!r.ok) throw new Error('overpass ' + r.status); return r.json(); }));
+    // the Roadster's thrusters (flight.js): Space flies a car whose catalogue entry has fly: true
+    if (!this.flight) { const FL = await tryImport('./flight.js?v=16'); try { if (FL && FL.Flight && !this.flight) this.flight = new FL.Flight(this); } catch (e) { console.warn('flight', e); } }
+    // the player on foot (E gets out and in) and the people in every car (onfoot.js, occupants.js)
+    if (!this.onfoot) { const OF = await tryImport('./onfoot.js?v=16'); try { if (OF && OF.OnFoot && !this.onfoot) this.onfoot = new OF.OnFoot(this); } catch (e) { console.warn('onfoot', e); } }
+    // "Your look" (lookui.js): P or the car chooser opens it
+    if (!this.lookui) { const LU = await tryImport('./lookui.js?v=16'); try { if (LU && LU.LookUI && !this.lookui) this.lookui = new LU.LookUI(this); } catch (e) { console.warn('lookui', e); } }
     this.G.mods = this.mods;
   }
 
   key(e) {
     if (!this.active || e.target.tagName === 'INPUT') return;
     if (e.repeat) return;
+    // E gets out of the car and into another; on foot the person has its own keys (onfoot.js)
+    if (this.onfoot) { try { if (this.onfoot.key(e)) return; } catch (er) { console.warn('onfoot key', er); } }
     switch (e.code) {
       case 'KeyC': this.hud.flash(this.cam.next(e.shiftKey ? -1 : 1) && this.cam.name); break;
       case 'KeyV': this.hud.flash(this.cam.next(-1) && this.cam.name); break;
-      case 'KeyQ': this.signal = this.signal === -1 ? 0 : -1; break;
-      case 'KeyE': this.signal = this.signal === 1 ? 0 : 1; break;
+      case 'KeyQ': case 'Comma': this.signal = this.signal === -1 ? 0 : -1; break;
+      case 'Period': this.signal = this.signal === 1 ? 0 : 1; break;
       case 'KeyX': this.signal = this.signal === 2 ? 0 : 2; break;
       case 'KeyL': this.headlights = !this.headlights; this.hud.flash(this.headlights ? 'Headlights on' : 'Headlights off'); break;
-      case 'KeyR': this.respawn(); break;
+      case 'KeyR': if (this.damage && this.car) this.damage.repair(this.car.rig); this.respawn(); break;
       case 'KeyH': this.hud.toggleHelp(); break;
       case 'KeyM': this.hud.flash(this.sound.toggle() ? 'Sound on' : 'Sound off'); break;
-      case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': case 'Digit5': case 'Digit6': case 'Digit7': case 'Digit8': {
+      case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': case 'Digit5': case 'Digit6': case 'Digit7': case 'Digit8': case 'Digit9': case 'Digit0': {
         const list = this.mods.cars ? this.mods.cars.CARS.filter(c => !c.npcOnly) : [];
-        const c = list[+e.code.slice(5) - 1];
+        const c = list[(+e.code.slice(5) || 10) - 1]; // 0 is the tenth car
         if (c) this.setCar(c.id);
         break;
       }
@@ -147,6 +160,8 @@ export class Drive {
   }
 
   input(dt) {
+    // nobody at the wheel (getting out, on foot): the car holds itself (onfoot.js)
+    if (this.onfoot && this.onfoot.active) { const r = this.onfoot.carInput(dt); if (r) return r; }
     if (this.auto && this.roadsObj) return this.autoInput(dt);
     const k = this.keys, pad = navigator.getGamepads ? [...navigator.getGamepads()].find(p => p && p.connected) : null;
     let thr = (k.has('KeyW') || k.has('ArrowUp')) ? 1 : 0, brk = (k.has('KeyS') || k.has('ArrowDown')) ? 1 : 0;
@@ -187,6 +202,8 @@ export class Drive {
     const warm = C && C.TRAFFIC ? Promise.all([...new Set(C.TRAFFIC)].map(id => C.loadCar(id, { npc: true }).catch(() => null))) : null;
     if (this.mods.props && this.mods.props.preload && !this.propsReady) { this.propsReady = true; this.mods.props.preload().catch(e => console.warn('props preload', e)); }
     const dataP = this.fetchArea(0, 0, true);
+    // the pedestrians' models and clips come in while the world loads (peds.js; started below)
+    if (!/[?&]nopeds/.test(location.search)) tryImport('./peds.js?v=16').then(PD => { try { if (PD && PD.Peds && !this.peds) this.peds = new PD.Peds(this); if (this.peds) this.peds.prepare().catch(e => console.warn('peds prepare', e)); } catch (e) { console.warn('peds', e); } });
     this.mode = await this.G.startWorld(lat, lon);
     mark('world');
     this.hud.loading('Loading streets', 0.35);
@@ -198,19 +215,22 @@ export class Drive {
     this.hud.loading('Getting the car ready', 0.8);
     await carP;
     mark('car');
-    let x = 0, z = 0, hd = heading;
+    let x = 0, z = 0, hd = heading, y0 = null;
     const R = this.roadsObj;
     const p = this.roadSpot(0, 0, heading);
-    if (p) { x = p.x; z = p.z; hd = p.heading; }
+    if (p) { x = p.x; z = p.z; hd = p.heading; y0 = p.y ?? null; }
     await this.waitGround(x, z, hd);
     mark('ground');
-    this.spawn(x, z, hd);
+    this.spawn(x, z, hd, y0);
     if (warm) await warm;
     if (this.carEnvP) await this.carEnvP;
     this.makeTraffic();
     mark('warm');
     if (this.traffic && this.traffic.preload) { this.hud.loading('Getting the traffic ready', 0.9); await this.traffic.preload(this.G.renderer, this.camera); }
     mark('traffic');
+    // pedestrians on the pavements (peds.js), made before the shaders are built so theirs are built too
+    if (!/[?&]nopeds/.test(location.search)) { try { if (!this.peds) { const PD = await tryImport('./peds.js?v=16'); if (PD && PD.Peds && !this.peds) this.peds = new PD.Peds(this); } if (this.peds) { this.hud.loading('Getting the people ready', 0.93); await this.peds.start(); } } catch (e) { console.warn('peds', e); } }
+    mark('peds');
     // every shader the scene needs, built in the background (in parallel where the browser can) before the first
     // frame is drawn; 15 s at most
     await this.compileScene(this.scene, null, 15000);
@@ -258,8 +278,9 @@ export class Drive {
     return this.world.groundAt(x, z) || 0;
   }
 
-  spawn(x, z, heading) {
-    const y = this.ground(x, z) ?? 0;
+  // (yHint: the lane's own height, so a car put on a street under a bridge stands on the street, not the deck)
+  spawn(x, z, heading, yHint = null) {
+    const y = (yHint != null ? this.ground(x, z, yHint + 0.3) : null) ?? this.ground(x, z) ?? 0;
     this.car.vehicle.place(x, y, z, heading);
     // no traffic car left where the player's car now stands
     try { if (this.traffic && this.traffic.clearNear) this.traffic.clearNear(x, z, 7); } catch (e) {}
@@ -272,10 +293,10 @@ export class Drive {
   respawn() {
     if (!this.car) return;
     const v = this.car.vehicle, o = v.origin();
-    let x = o.x, z = o.z, hd = v.heading;
+    let x = o.x, z = o.z, hd = v.heading, yh = null;
     const p = this.roadSpot(x, z, hd);
     if (p) {
-      x = p.x; z = p.z; hd = p.heading;
+      x = p.x; z = p.z; hd = p.heading; yh = p.y ?? null;
       // stuck against something on the lane (a wall where the map's road and building disagree, a car):
       // further along the lane if it is clear there, else facing back the way the car came
       if (p.lane && this.wallAhead(x, z, hd, p.y)) {
@@ -284,12 +305,12 @@ export class Drive {
         for (let ds = 8; ds <= 40 && !moved; ds += 4) {
           const s = s0 + ds; if (s > L.len - 2) break;
           const q = lanePoint(L, s);
-          if (!this.wallAhead(q.x, q.z, q.heading, q.y) && !this.wallAhead(q.x, q.z, q.heading, q.y, -4)) { x = q.x; z = q.z; hd = q.heading; moved = true; }
+          if (!this.wallAhead(q.x, q.z, q.heading, q.y) && !this.wallAhead(q.x, q.z, q.heading, q.y, -4)) { x = q.x; z = q.z; hd = q.heading; yh = q.y; moved = true; }
         }
-        if (!moved) { const q = this.roadSpot(x, z, (hd + 180) % 360); if (q) { x = q.x; z = q.z; hd = q.heading; } else hd = (hd + 180) % 360; }
+        if (!moved) { const q = this.roadSpot(x, z, (hd + 180) % 360); if (q) { x = q.x; z = q.z; hd = q.heading; yh = q.y ?? yh; } else hd = (hd + 180) % 360; }
       }
     }
-    this.spawn(x, z, hd);
+    this.spawn(x, z, hd, yh);
   }
 
   // something solid within a few metres in front of a car standing at (x, z) facing hd (behind it with a negative reach)
@@ -379,7 +400,17 @@ export class Drive {
     if (r && r.onRoad) return r.h + lift;
     // on a kerb or pavement surfaceAt's height already includes the kerb
     if (r && r.curbH > 0 && Number.isFinite(r.h)) return r.h + lift;
+    // a car up on a building (it jumped, flew or fell there): the roof under the wheel (beside the building, below
+    // its walls' top, the wall stops the car instead)
+    const roof = this.collide && this.collide.roofAt ? this.collide.roofAt(x, z, yHint) : null;
+    if (roof !== null) return roof;
+    const nearH = r ? r.nearH : null, nearD = r ? r.nearD : Infinity;
     const w = this.world.groundAt(x, z, yHint);
+    // just off the road (a crack between two of its pieces, a turn cutting a junction's corner) where the ground is
+    // well under it (a road on a bridge, a ramp or a hillside) or, in the open map's coarse terrain, over it: the
+    // road's own level, so a wheel never drops into a gap beside the road or hits a bank there
+    // (1.6 m out over a drop, 1 m under a bank)
+    if (nearH !== null && nearD < 1.6 && (w === null || w < nearH + lift - 0.4 || (nearD < 1.0 && this.mode !== 'google' && w > nearH + 0.4))) return nearH + lift;
     if (r && Number.isFinite(r.h) && r.edge !== undefined && r.edge !== null && r.edge < 14) {
       if (w === null) return r.h;
       if (this.mode === 'google') return w;
@@ -389,6 +420,23 @@ export class Drive {
     }
     if (w === null && r && Number.isFinite(r.h)) return r.h;
     return w;
+  }
+
+  // the top of a building in Google's mesh, a little under it (rays down through points inside its footprint; the
+  // median of what they hit): its collision stops there, so a car up on the roof is not pushed off it
+  meshRoof(b) {
+    const P = b.outer; if (!P || P.length < 3 || !this.world.raycast) return 1e4;
+    let cx = 0, cz = 0; for (const [x, z] of P) { cx += x; cz += z; } cx /= P.length; cz /= P.length;
+    const top = (this.car ? this.car.vehicle.pos.y : 0) + 700, hits = [];
+    const dn = this._dn || (this._dn = new THREE.Vector3(0, -1, 0)), o = this._ro || (this._ro = new THREE.Vector3());
+    for (let k = 0; k <= Math.min(4, P.length - 1); k++) {
+      const q = k === 0 ? [cx, cz] : P[Math.floor((k - 1) * P.length / 4)], x = cx + (q[0] - cx) * 0.6, z = cz + (q[1] - cz) * 0.6;
+      const h = this.world.raycast(o.set(x, top, z), dn, 1600);
+      if (h && h.point) hits.push(h.point.y);
+    }
+    if (hits.length < 2) return 1e4;
+    hits.sort((a, c) => a - c);
+    return hits[hits.length >> 1] - 1.0; // (a metre under: a car landing there dips into it on its springs)
   }
 
   // build an object's shaders without holding the page (KHR_parallel_shader_compile), for the scene it will be
@@ -453,9 +501,10 @@ export class Drive {
       const o = old.vehicle.origin(), g = this.ground(o.x, o.z, o.y);
       vehicle.place(o.x, (g === null || !Number.isFinite(g)) ? o.y : g, o.z, old.vehicle.heading);
       this.prevPos = vehicle.pos.clone(); this.prevQ = vehicle.q.clone(); this.acc = 0;
-      // the car left behind is kept, ready, for switching back
+      // the car left behind is kept, ready, for switching back (as new: damage.js)
       this.scene.remove(old.rig.object);
-      if (old.id && !this.spare[old.id] && old.rig.object) this.spare[old.id] = old.rig; else if (old.rig.dispose) old.rig.dispose();
+      if (this.damage) this.damage.reset(old.rig);
+      if (old.id && !old.npc && !this.spare[old.id] && old.rig.object) this.spare[old.id] = old.rig; else if (old.rig.dispose) old.rig.dispose();
     }
     if (this.carEnv && rig.setEnvMap) rig.setEnvMap(this.carEnv);
     this.scene.add(rig.object);
@@ -480,7 +529,7 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=15').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=16').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;
@@ -522,6 +571,18 @@ export class Drive {
     if (this.mods.roads) await swap('roadsObj', () => this.mods.roads.build(data, ctx));
     mark('roads');
     ctx.roads = this.roadsObj;
+    // the road under the car can come out at another height in the new area (a long bridge's deck, worked out again
+    // from the roads now loaded at its ends): the car goes with it, so it is neither left in the air nor buried
+    try {
+      const v = this.car && this.active && !(this.onfoot && this.onfoot.active) ? this.car.vehicle : null, R = this.roadsObj;
+      if (v && R && R.surfaceAt && v.wheels.some(w => w.contact)) {
+        const o = v.origin(), r = R.surfaceAt(o.x, o.z, o.y, 2);
+        const dy = r && r.onRoad ? r.h + (this.mode === 'google' ? GLIFT : 0) - o.y : 0;
+        if (Math.abs(dy) > 0.12 && Math.abs(dy) < 80) { v.pos.y += dy + 0.03; if (this.prevPos) this.prevPos.y += dy + 0.03; for (const w of v.wheels) { w.gx = NaN; w.ge = undefined; } }
+      }
+    } catch (e) { console.warn('carry car', e); }
+    // bridges: decks, parapets and piers under the roads the map marks as bridges (bridges.js; collision in both worlds)
+    try { if (!this.mods.bridges) this.mods.bridges = await tryImport('./bridges.js?v=16'); if (this.mods.bridges && this.roadsObj) await swap('bridgesObj', () => this.mods.bridges.build(this.roadsObj, { scene: this.scene, collide, groundAt: (a, b) => this.world.groundAt(a, b), mode: this.mode, buildings: data.buildings })); } catch (e) { console.warn('bridges', e); }
     try { times.openN = openBuildings(data.buildings, this.roadsObj); } catch (e) { console.warn('open buildings', e); }
     this.lastData = data;
     // Google's mesh has cars baked into the streets: cut the carriageways out of it so our road shows
@@ -531,8 +592,9 @@ export class Drive {
       if (!this.cut) this.cut = new CutMask();
       const R = this.roadsObj, open = this.mode === 'open';
       const edges = R && R._debug ? (R._debug().edges || null) : null;
-      const surf = R && R.surfaceAt ? (a, b) => { const r = R.surfaceAt(a, b); return open || !r.onRoad ? r : { onRoad: true, h: r.h + GLIFT }; } : null;
-      this.cut.build(x, z, data.roads || [], surf, open ? ground : null, open ? { edges, junctions: R && R._debug ? R._debug().junctions : null, widthScale: 0.86, cap: 'butt', parking: false, top: 3.5, below: 0.6 } : { edges, widthScale: 1.0, top: 4.2, below: -0.2 });
+      // (the road on the ground where a bridge passes over it: its height is the one the terrain must be cut to)
+      const surf = R && R.surfaceAt ? (a, b) => { let r = R.surfaceAt(a, b, undefined, 1); if (!r.onRoad) r = R.surfaceAt(a, b); return open || !r.onRoad ? r : { onRoad: true, h: r.h + GLIFT }; } : null;
+      this.cut.build(x, z, data.roads || [], surf, open ? ground : null, open ? { edges, junctions: R && R._debug ? R._debug().junctions : null, widthScale: 0.86, cap: 'butt', parking: false, top: 3.5, below: 0.6, bridges: true } : { edges, widthScale: 1.0, top: 4.2, below: -0.2 });
     } catch (e) { console.warn('cut mask', e); }
     if (this.mods.props) await swap('propsObj', () => this.mods.props.build(data, ctx));
     mark('props');
@@ -556,8 +618,9 @@ export class Drive {
       try { if (!this.landmarks) this.landmarks = new Landmarks(this.scene); this.landmarks.build({ cx: x, cz: z, collide, ground: (a, b) => this.ground(a, b) }); } catch (e) { console.warn('landmarks', e); }
       if (this.mods.trees) await swap('treesObj', () => this.mods.trees.build(data, ctx));
     } else {
-      // building footprints still stop the car where Google's mesh has them
-      for (const b of data.buildings || []) if (!b.part && !b.open && (b.height === null || b.height > 2)) collide.addPolygon(b.outer, -1e4, 1e4, 'building');
+      // building footprints still stop the car where Google's mesh has them, up to their roofs (found by a ray down
+      // through the mesh the first time a car comes near one): a car up on a roof drives on the mesh's roof
+      for (const b of data.buildings || []) if (!b.part && !b.open && (b.height === null || b.height > 2)) { const s = collide.addPolygon(b.outer, -1e4, 1e4, 'building'); if (s) s.lazy = () => this.meshRoof(b); }
     }
     this.collide = collide;
     // the new area's road can lie a little higher than the old one under the car (its heights are worked out
@@ -574,6 +637,8 @@ export class Drive {
     mark('all');
     this.G.lastBuild = times;
     if (this.active) { if (this.traffic && this.traffic.rebind && this.roadsObj && this.roadsObj.graph) { try { this.traffic.rebind(); } catch (e) { console.warn('rebind', e); this.makeTraffic(); } } else this.makeTraffic(); }
+    // the pedestrians onto the new area's pavements (peds.js)
+    if (this.peds && this.active) { try { this.peds.rebuild(); } catch (e) { console.warn('peds', e); } }
   }
 
   makeTraffic() {
@@ -590,6 +655,8 @@ export class Drive {
 
   clearArea() {
     for (const k of ['roadsObj', 'propsObj', 'bldgObj', 'treesObj']) { if (this[k] && this[k].dispose) this[k].dispose(); this[k] = null; }
+    if (this.damage) { try { this.damage.clearDebris(); } catch (e) {} }
+    if (this.bridgesObj && this.bridgesObj.dispose) { try { this.bridgesObj.dispose(); } catch (e) {} this.bridgesObj = null; }
     if (this.traffic && this.traffic.dispose) this.traffic.dispose();
     this.traffic = null;
     this.collide = new Collide();
@@ -598,6 +665,8 @@ export class Drive {
     if (this.parked) this.parked.clear();
     if (this.skids) this.skids.clear();
     if (this.signs) this.signs.clear();
+    if (this.peds) { try { this.peds.clear(); } catch (e) { console.warn('peds clear', e); } }
+    if (this.onfoot) { try { this.onfoot.reset(); } catch (e) { console.warn('onfoot reset', e); } }
   }
 
   update(dt) {
@@ -605,22 +674,29 @@ export class Drive {
     SIG.tick(dt);
     const inp = this.input(dt);
     const v = this.car.vehicle;
-    const others = this.traffic && this.traffic.colliders ? this.traffic.colliders() : null;
+    const others = this.onfoot && this.onfoot.others ? this.onfoot.others(this.traffic) : (this.traffic && this.traffic.colliders ? this.traffic.colliders() : null); // (with the cars the player left, onfoot.js)
     const env = { ground: (x, z, y) => this.ground(x, z, y), collide: this.collide, others };
+    // the Roadster's thrusters: Space is thrust on a car that flies (flight.js)
+    if (this.flight) { try { this.flight.before(dt, inp, env); } catch (e) { console.warn('flight', e); } }
     this.acc += dt;
     let n = 0;
     if (!this.prevPos) { this.prevPos = v.pos.clone(); this.prevQ = v.q.clone(); }
-    while (this.acc >= STEP && n < 12) { this.prevPos.copy(v.pos); this.prevQ.copy(v.q); v.step(STEP, inp, env); this.acc -= STEP; n++; }
+    while (this.acc >= STEP && n < 12) { this.prevPos.copy(v.pos); this.prevQ.copy(v.q); v.step(STEP, inp, env); if (this.damage) { try { this.damage.step(v, STEP, env); } catch (e) { if (!this.dmgErr) { console.warn('damage step', e); this.dmgErr = true; } } } this.acc -= STEP; n++; }
     if (n === 12) this.acc = 0;
     if (v.hits.length) { for (const h of v.hits) if (h.other && h.other.obj && this.traffic && this.traffic.bumped) this.traffic.bumped(h.other.obj, h); const big = v.hits.reduce((a, h) => Math.max(a, h.speed), 0); if (big > 4) this.hud.bump(big); if (big > 1.5 && performance.now() - (this.lastHit || 0) > 250) { this.sound.hit(big); this.lastHit = performance.now(); } }
     // fell out of the world: back to the road
-    const o = v.origin();
-    const g = this.ground(o.x, o.z);
-    if ((g !== null && o.y < g - 6) || v.pos.y < -2000 || !Number.isFinite(v.pos.x)) this.respawn();
+    // (on foot, the world, the shadows and the traffic follow the person; the car left behind stays put)
+    const foot = !!(this.onfoot && this.onfoot.active);
+    const o = foot ? this.onfoot.focus() : v.origin();
+    // (the ground on the car's own level: a bridge deck overhead is not where it should be; with nothing under it at
+    // all (Google's mesh), the lowest surface there)
+    let g = this.ground(o.x, o.z, o.y + 1);
+    if (g === null) { const gl = this.ground(o.x, o.z); if (gl !== null && o.y < gl - 6) g = gl; }
+    if (!foot && ((g !== null && o.y < g - 6) || v.pos.y < -2000 || !Number.isFinite(v.pos.x))) this.respawn();
     // on its side or roof and not moving: back on its wheels after two seconds
     const upY = new THREE.Vector3(0, 1, 0).applyQuaternion(v.q).y;
     this.flipT = upY < 0.45 && v.speed < 3 ? (this.flipT || 0) + dt : 0;
-    if (this.flipT > 2) { this.flipT = 0; this.hud.flash('Back on the road'); this.respawn(); }
+    if (this.flipT > 2 && !foot) { this.flipT = 0; this.hud.flash('Back on the road'); this.respawn(); }
     // the model, drawn between the last two physics steps so it glides however the frames fall
     const rig = this.car.rig, a = Math.min(1, this.acc / STEP);
     const q = this.drawQ || (this.drawQ = new THREE.Quaternion());
@@ -637,12 +713,18 @@ export class Drive {
     const look = v.look();
     look.signal = this.signal; look.headlights = this.headlights; look.dt = dt;
     rig.update(dt, look);
-    this.cam.update(dt, this.car, this.world, { lookBack: this.lookBack, others });
+    // the people: the player walking or getting in and out, everyone in the cars (onfoot.js, occupants.js)
+    if (this.onfoot) { try { this.onfoot.update(dt); } catch (e) { console.warn('onfoot', e); } }
+    if (!(this.onfoot && this.onfoot.camOwned)) this.cam.update(dt, this.car, this.world, { lookBack: this.lookBack, others });
+    // the thrusters' jets, puffs, plate, shake, gauge and sound (flight.js)
+    if (this.flight) { try { this.flight.frame(dt); } catch (e) { console.warn('flight', e); } }
     this.G.sky.update(this.camera, o);
     if (this.traffic) this.traffic.update(dt, { x: o.x, z: o.z, heading: v.heading, speed: v.fwdSpeed, vehicle: v });
+    if (this.peds) { try { this.peds.update(dt); } catch (e) { console.warn('peds', e); } }
     if (this.propsObj && this.propsObj.update) this.propsObj.update(dt, this.camera);
     if (this.parked) this.parked.update(this.camera);
     this.skids.update(dt, v, (x, z, y) => this.ground(x, z, y));
+    if (this.damage) { try { this.damage.update(dt); } catch (e) { if (!this.dmgErr2) { console.warn('damage', e); this.dmgErr2 = true; } } }
     // re-sample road heights where finer ground came in, at most every 3 s, and the cut mask with them
     this.dirtyT -= dt;
     if (this.dirty && this.dirtyT <= 0 && this.roadsObj && this.roadsObj.reheight) {
@@ -686,7 +768,7 @@ function openBuildings(list, R) {
   const M = 0.3; // how near a lane's middle a wall may come before it counts as across the lane
   const G = 16, grid = new Map();
   for (const b of list) {
-    if (b.open || b.part || !b.outer || b.outer.length < 3) continue;
+    if (b.open || !b.outer || b.outer.length < 3) continue; // (parts too: only a bridge's lane opens one, below)
     let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
     for (const p of b.outer) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < z0) z0 = p[1]; if (p[1] > z1) z1 = p[1]; }
     b._bb = [x0 - M, z0 - M, x1 + M, z1 + M];
@@ -717,12 +799,14 @@ function openBuildings(list, R) {
   for (const L of lanes) {
     const P = L.pts; if (!P || P.length < 2) continue;
     if (L.kind === 'junction' || !through(L)) continue; // turns at junctions: a driver steers round a corner building
+    // (a building a bridge's lane passes through, a bridge tower across the deck: buildings.js starts it over the deck)
+    L.bridge = !!(edges && edges[L.edge] && edges[L.edge].c.bridge);
     for (let k = 1; k < P.length; k++) {
       const ax = P[k - 1].x, az = P[k - 1].z, dx = P[k].x - ax, dz = P[k].z - az, m = Math.min(2000, Math.max(1, Math.ceil(Math.hypot(dx, dz))));
       for (let t = 0; t <= m; t++) {
         const x = ax + dx * t / m, z = az + dz * t / m;
         const l = grid.get(Math.floor(x / G) * 73856093 ^ Math.floor(z / G) * 19349663);
-        if (l) for (const b of l) { if (b.open) continue; const bb = b._bb; if (x > bb[0] && x < bb[2] && z > bb[1] && z < bb[3] && near(b.outer, x, z)) { b.open = true; n++; } }
+        if (l) for (const b of l) { if (b.open || (b.part && !L.bridge)) continue; const bb = b._bb; if (x > bb[0] && x < bb[2] && z > bb[1] && z < bb[3] && near(b.outer, x, z)) { b.open = true; n++; if (L.bridge) b.passY = Math.max(b.passY ?? -Infinity, P[k - 1].y + (P[k].y - P[k - 1].y) * t / m); } }
       }
     }
   }

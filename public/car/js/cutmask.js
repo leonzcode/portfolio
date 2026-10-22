@@ -3,7 +3,7 @@
 // baked.js throws away mesh fragments over a carriageway between just under the road and uCutTop above it, so
 // our own road surface (and our own traffic) shows instead. Areas are redrawn as the car moves.
 import * as THREE from 'three';
-import { bakedUniforms } from './baked.js?v=15';
+import { bakedUniforms } from './baked.js?v=16';
 
 const WIDTH = { motorway: 3.6, trunk: 3.5, primary: 3.4, secondary: 3.3, tertiary: 3.2, unclassified: 3, residential: 3, living_street: 2.8, service: 3, motorway_link: 3.5, trunk_link: 3.4, primary_link: 3.3, secondary_link: 3.2, tertiary_link: 3.1 };
 const LANES = { motorway: 2, trunk: 2, primary: 2, secondary: 2, tertiary: 2, unclassified: 2, residential: 2, living_street: 2, service: 1 };
@@ -55,8 +55,10 @@ export class CutMask {
       // flat ends: a round cap reaches past a junction's corners, where there is no road to show through the cut
       g.lineCap = opts.cap || 'round';
       for (const e of opts.edges) {
-        if (!e.c || e.c.bridge || !e.pts || e.pts.length < 2) continue;
-        g.lineWidth = 2 * e.c.hw * ws * k;
+        // (bridges only when asked, in the open map: the terrain is cut under a deck too, so where a deck comes down to
+        // meet the ground the coarse terrain does not poke up through it; Google's own deck stays)
+        if (!e.c || (e.c.bridge && !opts.bridges) || !e.pts || e.pts.length < 2) continue;
+        g.lineWidth = (e.c.bridge && e.c.deckL ? e.c.deckL + e.c.deckR : 2 * e.c.hw) * ws * k;
         g.beginPath();
         e.pts.forEach(([x, z], i) => { const px = (x - x0) * k, pz = (z - z0) * k; if (i) g.lineTo(px, pz); else g.moveTo(px, pz); });
         g.stroke();

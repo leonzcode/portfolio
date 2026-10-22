@@ -15,10 +15,11 @@ export class Hud {
         <div class="hud-keys-h">Controls <button class="hud-x" aria-label="Close">&times;</button></div>
         <dl>
           <dt>W / &uarr;</dt><dd>Accelerate</dd><dt>S / &darr;</dt><dd>Brake, hold to reverse</dd>
-          <dt>A D / &larr; &rarr;</dt><dd>Steer</dd><dt>Space</dt><dd>Handbrake</dd>
+          <dt>A D / &larr; &rarr;</dt><dd>Steer</dd><dt>Space</dt><dd>Handbrake; in the Roadster, hold to fly</dd><dt>Shift</dt><dd>Thruster boost (Roadster)</dd>
           <dt>C</dt><dd>Change view</dd><dt>B</dt><dd>Look back</dd><dt>Drag</dt><dd>Look around</dd>
-          <dt>Q / E</dt><dd>Left / right signal</dd><dt>X</dt><dd>Hazard lights</dd><dt>L</dt><dd>Headlights</dd>
-          <dt>1 to 5</dt><dd>Change car</dd><dt>R</dt><dd>Back on the road</dd><dt>M</dt><dd>Sound on or off</dd><dt>H</dt><dd>Show or hide this</dd>
+          <dt>E</dt><dd>Get out, or get in a car</dd><dt>P</dt><dd>Your look</dd>
+          <dt>, / .</dt><dd>Left / right signal</dd><dt>X</dt><dd>Hazard lights</dd><dt>L</dt><dd>Headlights</dd>
+          <dt>1 to 0</dt><dd>Change car</dd><dt>R</dt><dd>Back on the road</dd><dt>M</dt><dd>Sound on or off</dd><dt>H</dt><dd>Show or hide this</dd>
         </dl>
       </div>
       <div class="hud-load"><div class="hud-load-card"><div class="hud-spin"></div><div class="hud-load-t">Loading</div><div class="hud-bar"><i></i></div></div></div>
@@ -68,8 +69,8 @@ export class Hud {
     const C = this.drive.mods.cars, box = this.$('.hud-cars');
     if (!C) return;
     const list = C.CARS.filter(c => !c.npcOnly), cur = this.drive.carId;
-    const KIND = { sedan: 'Sedan', sports: 'Sports car', pickup: 'Pickup', hatchback: 'Hatchback', van: 'Van', suv: 'SUV' };
-    this.$('.hud-cars-l').innerHTML = list.map((c, i) => `<button data-id="${c.id}" class="${c.id === cur ? 'on' : ''}"><b>${c.name}</b><small>${KIND[c.kind] || c.kind || ''} &middot; key ${i + 1}</small></button>`).join('');
+    const KIND = { sedan: 'Sedan', sports: 'Sports car', pickup: 'Pickup', hatchback: 'Hatchback', van: 'Van', suv: 'SUV', supercar: 'Supercar', electric: 'Electric sports car', bus: 'School bus', truck: 'Semi truck' };
+    this.$('.hud-cars-l').innerHTML = list.map((c, i) => `<button data-id="${c.id}" class="${c.id === cur ? 'on' : ''}"><b>${c.name}</b><small>${KIND[c.kind] || c.kind || ''}${i < 10 ? ` &middot; key ${(i + 1) % 10}` : ''}</small></button>`).join('');
     const spec = list.find(c => c.id === cur);
     const paints = spec && spec.paints ? spec.paints : [];
     this.$('.hud-cars-p').innerHTML = paints.map(p => `<button data-paint="${p}" style="background:#${p.toString(16).padStart(6, '0')}" aria-label="Paint"></button>`).join('');
