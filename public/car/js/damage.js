@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=19';
+import { FX } from './damagefx.js?v=20';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -106,11 +106,11 @@ const PAINT_FS_MAIN = `
     vec4 d = texture2D(uDmgMap, uvX) * wt.x + texture2D(uDmgMap, uvY) * wt.y + texture2D(uDmgMap, uvZ) * wt.z;
     // paint cracked off along the sharpest creases: a few flakes of primer, fewer of bare metal (centimetre flakes:
     // finer ones read as black and white noise over a dented door from a few metres)
-    float cr = smoothstep(0.82, 1.0, vDs);
+    float cr = smoothstep(0.93, 1.0, vDs);
     float fl = dmgNoise(vDp * 16.0) * 0.7 + dmgNoise(vDp * 42.0 + 3.7) * 0.3;
-    d.g = max(d.g, cr * smoothstep(0.7, 0.74, fl));
+    d.g = max(d.g, cr * smoothstep(0.76, 0.8, fl));
     d.r = max(d.r, cr * cr * smoothstep(0.76, 0.8, fl) * 0.4);
-    d.b = max(d.b, smoothstep(0.3, 0.9, vDs) * 0.22);
+    d.b = max(d.b, smoothstep(0.4, 0.95, vDs) * 0.1);
     d.a = max(d.a, smoothstep(0.2, 0.8, vDs) * 0.16);
     vec3 primer = vec3(0.46, 0.46, 0.44), bare = vec3(0.6, 0.6, 0.61);
     float sc = clamp(d.b, 0.0, 1.0), pr = clamp(d.g, 0.0, 1.0), mt = clamp(d.r, 0.0, 1.0);
@@ -1557,7 +1557,7 @@ class CarDamage {
     const rank = e => e.role === 'paint' ? 0 : e.role === 'lamp' || e.role === 'glass' ? 2 : e.role === 'body' ? (A.interior && A.interior[this.entries.indexOf(e)] ? 3 : 1) : 4;
     near.sort((a, b) => rank(a) - rank(b));
     const res = { windows: new Map(), maxU: 0, uAt: null };
-    const foldMax = Math.min(0.12, 0.22 * Math.min(Dc, 0.55));
+    const foldMax = Math.min(0.12, 0.22 * Math.min(Dc, 0.55)) * (Math.abs(Nz) > 0.6 ? 0.6 : 1);
     const frontal = Math.abs(Nz) > 0.6 && Math.abs(Ny) < 0.5;
     const stats = { own: 0, refine: 0, move: 0, normals: 0, newVerts: 0, zone: 0, moved: 0, prof: this.mgr.prof ? [] : null };
     // the work: each mesh subdivided where it bends, its points moved, its normals again; it yields whenever the
@@ -1600,13 +1600,14 @@ class CarDamage {
                 // (the folds go with how much the metal there gave: a cabin pushed back whole does not crinkle)
                 const env = Math.min(1, u * 25) * Math.min(1, R * 16) * clamp(cAt(sg) * 1.6, 0.15, 1);
                 // wrinkles in the crushed sheet
-                if (!glass) u += R * 0.09 * wave(rx * 9.1 + seed + wave(ry * 7.3 + rz * 5.1) * 1.7) * wave(rz * 8.3 - ry * 4.7 + seed + 1.57) * env;
+                if (!glass) u += R * (Math.abs(Nz) > 0.6 || pole ? 0.04 : 0.09) * wave(rx * 9.1 + seed + wave(ry * 7.3 + rz * 5.1) * 1.7) * wave(rz * 8.3 - ry * 4.7 + seed + 1.57) * env;
                 dx = Nx * u; dy = Ny * u; dz = Nz * u;
                 if (!glass && !inner && sideHit && pole) {
-                  // a door wrapped round a pole: creases drawn in towards it (chevrons), deepest beside it
+                  // a door wrapped round a pole: upright creases beside it, as the pole's own line (the Crown's front door
+                  // folded in vertical pleats each side of the pole, the panels a hand's width away still flat)
                   const at = t < 0 ? -t : t;
-                  const amp = foldMax * 0.6 * env * Math.exp(-at / 0.45) * (0.7 + 0.3 * wave(ry * 4.1 + seed));
-                  const f = tri((b + 0.55 * at) / (lam * 0.9) + phase) * amp;
+                  const amp = foldMax * 0.7 * env * Math.exp(-at / 0.18) * (0.7 + 0.3 * wave(ry * 4.1 + seed));
+                  const f = tri(at / (lam * 0.55) + phase + 0.12 * wave(b * 3.7 + seed)) * amp;
                   dx += Nx * f; dy += Ny * f; dz += Nz * f;
                 } else if (!glass && !inner && sideHit) {
                   // a side folds round the impactor in upright creases
@@ -1641,7 +1642,7 @@ class CarDamage {
             pk = Math.pow(Math.max(0, pk), 0.6);
             const lat = 0.55 + 0.45 * Math.cos(Math.PI * 0.5 * clamp(rest[i3] / Math.max(0.4, A.hw), -1, 1));
             // the lid's front lifts a little too (its catch lets go)
-            const lift = bulgeAdd * (pk * lat + (xi < 0.2 ? 0.35 * (1 - xi / 0.2) : 0));
+            const lift = bulgeAdd * (pk * lat + (xi < 0.3 ? 0.7 * (1 - xi / 0.3) : 0));
             dy += lift;
             dz += (bz.frontHit ? -1 : 1) * lift * 0.12;
           }
@@ -1744,12 +1745,14 @@ class CarDamage {
         // (in NCAP's 56 km/h full frontal the windscreen usually stays whole: it cracks from a bent frame, a hit
         // near it, or crashes well past that energy)
         const frontal = imp.side === 'front' ? (E > 4e5 ? 0.5 : E > 2.6e5 ? 0.2 : 0) : 0;
-        const s = dist * 18 + (nearHit ? 0.6 : 0) + (E > 4e5 ? 0.6 : E > 2.6e5 ? 0.2 : 0) + frontal + (roll ? 0.7 : 0);
+        const poleSide = imp.kind === 'pole' && (imp.side === 'left' || imp.side === 'right') && w.kind === 'front' && res && res.maxU > 0.25 ? 0.65 : 0;
+        const s = dist * 18 + (nearHit ? 0.6 : 0) + (E > 4e5 ? 0.6 : E > 2.6e5 ? 0.2 : 0) + frontal + (roll ? 0.7 : 0) + poleSide;
         if (s > 0.5) { this.crackWindow(w, imp, res, s); yield; }
       } else {
         // a door pushed in twists its window frame: the side windows on the struck side burst
-        const struck = w.kind === 'side' && res && ((imp.side === 'left' && w.side === 'L') || (imp.side === 'right' && w.side === 'R')) && w.box.distanceToPoint(hp) < 0.9 ? res.maxU * 3 * (0.6 + Math.random() * 0.6) : 0;
-        const s = dist * 25 + (nearHit ? 0.9 : 0) + (roll ? 0.8 * Math.random() + 0.3 : 0) + (E > 6e5 ? 0.4 : 0) + struck;
+        const reach = imp.kind === 'pole' ? 0.35 : 0.9;
+        const struck = w.kind === 'side' && res && ((imp.side === 'left' && w.side === 'L') || (imp.side === 'right' && w.side === 'R')) && w.box.distanceToPoint(hp) < reach ? res.maxU * 3 * (0.6 + Math.random() * 0.6) : 0;
+        const s = dist * (imp.kind === 'pole' ? 12 : 25) + (nearHit ? 0.9 : 0) + (roll ? 0.8 * Math.random() + 0.3 : 0) + (E > 6e5 ? 0.4 : 0) + struck;
         if (s > 0.85) { this.breakWindow(w, imp, res); yield; }
       }
     }
@@ -1785,7 +1788,7 @@ class CarDamage {
         const p = this.parts.get('bumper' + which);
         if (um > 0.1 && !p) {
           const free = side === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(side);
-          if (um > 0.38 || (um > 0.26 && Math.random() < 0.4)) this.later('bumper' + which, jb => this.detachGen(jb, 'bumper' + which, imp, { kind: 'bumper', test: (x, y, z) => z > bz.z0 && z < bz.z1 && y > bz.y0 && y < bz.y1, which }));
+          if (um > 0.7 || (um > 0.55 && Math.random() < 0.4)) this.later('bumper' + which, jb => this.detachGen(jb, 'bumper' + which, imp, { kind: 'bumper', test: (x, y, z) => z > bz.z0 && z < bz.z1 && y > bz.y0 && y < bz.y1, which }));
           else this.later('bumper' + which, jb => this.hangBumperGen(jb, which, free, um));
         } else if (p && p.state === 'hang' && um > 0.12) this.later('bumper' + which, jb => this.detachGen(jb, 'bumper' + which, imp, { kind: 'bumper', which }));
       }
@@ -1816,7 +1819,7 @@ class CarDamage {
         if ((bigFR && Math.random() < (dd.front ? 0.25 : 0.12)) || (roll && Math.random() < 0.2) || (sideNear && Math.random() < 0.15)) this.later('door' + i, jb => this.forceDoorGen(jb, i, imp));
       }
       // a hard front crash tears the grille out (the radiator behind it shows)
-      if (imp.side === 'front' && res.maxU > 0.3 && this.bay && !this.parts.has('grille')) {
+      if (imp.side === 'front' && res.maxU > 0.62 && this.bay && !this.parts.has('grille')) {
         const bz = A.bumpers.front, cf = this.curFront(), tp = this;
         const gbox = new THREE.Box3(new THREE.Vector3(-A.hw * 0.66, bz.y1 - 0.03, cf - 0.05), new THREE.Vector3(A.hw * 0.66, A.yCowl, cf + 0.32));
         this.later('grille', jb => this.detachGen(jb, 'grille', imp, { kind: 'part', box: gbox, skip: e => !!e.mesh.userData.dmgBay, test: (x, y, z) => z < cf + 0.32 && y > bz.y1 - 0.03 && Math.abs(x) < A.hw * 0.66 && y < tp.topAt(x, z) - 0.035 }));
@@ -2084,7 +2087,8 @@ class CarDamage {
     // it drops at its free end until that end is on the road
     const reach = 2 * (A.hw - 0.15), drop = py - 0.03;
     p.angMax = Math.min(0.7, Math.asin(clamp(drop / reach, 0, 1)) + 0.05);
-    p.ang = 0; p.angV = 0; p.target = Math.min(p.angMax, 0.18 + u * 1.2);
+    // (a cover pushed in by a full width crash sags at one end; it drops to the road only when torn far back)
+    p.ang = 0; p.angV = 0; p.target = Math.min(p.angMax, 0.12 + u * 0.55);
     p.swing = (which === 'front' ? -1 : 1) * rnd(0.04, 0.16);
     p.drag = 0;
     this.mgr.fx.sound.crunch(0.4);
@@ -3173,6 +3177,12 @@ export class Damage {
       const vel = rd.velocityAt(imp.world);
       this.fx.sparkBurst(imp.world, vel, Math.round(Math.min(40, imp.speed * 2)), rd.groundY(imp.world), 1);
       this.fx.puff('dust', imp.world.x, imp.world.y, imp.world.z, vel.x * 0.2, 0.4, vel.z * 0.2);
+      // bits of black plastic (clips, grille slats, liner) on the road after a hard front or rear crash, as on the
+      // floor round every NCAP car
+      if ((side === 'front' || side === 'rear') && D > 0.25) {
+        const out = imp.normal ? imp.normal.clone().negate().setY(0.3) : new THREE.Vector3(0, 0.3, 0);
+        this.fx.shardBurst(imp.world, vel, out, rd.groundY(imp.world), Math.round(clamp(D * 30, 6, 22)), [0x141416, 0x1e1f21, 0x2b2c2f, 0x3a3b3e], 0.06);
+      }
     }
     const ev = { type: 'impact', car: rd.rig, vehicle: vehicle || null, point: imp.world ? imp.world.clone() : rd.toWorld(imp.P), normal: imp.normal ? imp.normal.clone() : imp.N.clone().applyQuaternion(rd.root.getWorldQuaternion(_q)), speed: imp.speed, energy: imp.energy, side, rollover: !!imp.rollover, crush: res ? res.maxU : D };
     const tE = performance.now();

@@ -25,7 +25,7 @@ export function loadPeople(drive) {
   Hp = (async () => {
     if (!/[?&]standin/.test(location.search)) {
       try {
-        const M = await import('./people.js?v=19');
+        const M = await import('./people.js?v=20');
         if (M && M.People && typeof M.People.createPerson === 'function') {
           const P = M.People;
           await P.load(drive && drive.G ? drive.G.renderer : undefined, drive ? drive.camera : undefined);
@@ -36,7 +36,7 @@ export function loadPeople(drive) {
         }
       } catch (e) { console.warn('people module', e && e.message); }
     }
-    const M = await import('./standin.js?v=19');
+    const M = await import('./standin.js?v=20');
     H = wrapStandin(M);
     return H;
   })();
@@ -387,7 +387,9 @@ export class Occupants {
     for (const e of rd.entries) {
       if (!e.cur || !e.rest || (e.role !== 'paint' && e.role !== 'body' && e.role !== 'glass')) continue;
       const r = e.rest, c = e.cur, n = Math.min(r.length, c.length);
-      for (let i = 0; i < n; i += 6) {
+      // every fifth point: a scan of every other one held a frame for about 17 ms after a crash, and the roof's and
+      // the side's dents are many points wide
+      for (let i = 0; i < n; i += 15) {
         const y = r[i + 1]; if (y < lo) continue;
         const x = r[i], z = r[i + 2], dy = y - c[i + 1], din = Math.abs(x) - Math.abs(c[i]);
         if (dy < 0.015 && din < 0.015) continue;
@@ -586,12 +588,14 @@ export class Occupants {
     // let go of what is no longer wanted
     for (const R of [...this.recs.values()]) if (!want.has(R)) this.release(R);
     // make, show and pose
-    let vis = 0;
+    let vis = 0, measured = false;
     for (const R of want) {
       if (!R.made && !R.making) this.make(R);
       // after a crash (or a repair): where everyone sits again
       const now = performance.now();
-      if ((R.crushCheck && R.crushCheck.length && now > R.crushCheck[0]) || (R.intr && R.rig && R.rig._dmg && !R.rig._dmg.damaged)) {
+      // one car a frame (a T-bone checks both cars at the same moments)
+      if (!measured && ((R.crushCheck && R.crushCheck.length && now > R.crushCheck[0]) || (R.intr && R.rig && R.rig._dmg && !R.rig._dmg.damaged))) {
+        measured = true;
         if (R.crushCheck) R.crushCheck.shift();
         try { this.measureCrush(R); } catch (e) { R.intr = null; }
         for (const o of R.people) if (o.state === 'seated') this.place(R, o);
