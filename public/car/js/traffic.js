@@ -3,8 +3,8 @@
 // and signals for it, stops at red lights (signals.js, the same timing the lights show), waits at stop signs, gives
 // way at junctions without lights, slows for the player's car in its path, and stops with its hazards on when hit.
 import * as THREE from 'three';
-import * as SIG from './signals.js?v=29';
-import { frame } from './geo.js?v=29';
+import * as SIG from './signals.js?v=30';
+import { frame } from './geo.js?v=30';
 
 const AMERICAN = new Set(['s10', 'conquer', 'shvan', 'schoolbus', 'semi']);
 const inAmericas = () => frame.lat > 14 && frame.lat < 72 && frame.lon > -170 && frame.lon < -52;
@@ -73,7 +73,31 @@ export class Traffic {
     // built off the scene (for its lights), so no frame is drawn with shaders still to build
     const tmp = new THREE.Group(); for (const r of rigs) tmp.add(r.object);
     try { if (renderer.compileAsync) await Promise.race([renderer.compileAsync(tmp, camera, this.scene), new Promise(r => setTimeout(r, 10000))]); } catch (e) {}
-    for (const r of rigs) { tmp.remove(r.object); this.freeRig(r); }
+    // kept for the one frame the drive draws behind its loading card (warmAt, then endWarm): that frame uploads their
+    // textures and builds their shadow programs, near and far models both, which the background build cannot do (a
+    // traffic school bus's far model first drawn in play took a 69 ms frame: 21 ms of texture upload and a new depth
+    // program)
+    this.warm = { tmp, rigs };
+  }
+
+  // the preloaded models put a few metres under the ground round (x, y, z), every level of detail shown and none culled
+  warmAt(x, y, z) {
+    const W = this.warm; if (!W) return;
+    W.lods = [];
+    W.rigs.forEach((r, i) => { r.object.position.set(x + (i % 4 - 1.5) * 7, y - 6, z + (Math.floor(i / 4) - 1) * 7); r.object.updateMatrixWorld(true); });
+    W.tmp.traverse(o => {
+      if (o.isLOD) { W.lods.push(o); o.autoUpdate = false; for (const l of o.levels) l.object.visible = true; }
+      if (o.isMesh && o.frustumCulled) { o.frustumCulled = false; (W.culled || (W.culled = [])).push(o); }
+    });
+    this.scene.add(W.tmp);
+  }
+  endWarm() {
+    const W = this.warm; if (!W) return;
+    this.warm = null;
+    this.scene.remove(W.tmp);
+    for (const o of W.culled || []) o.frustumCulled = true;
+    for (const lod of W.lods || []) { lod.autoUpdate = true; lod.levels.forEach((l, i) => { l.object.visible = i === 0; }); }
+    for (const r of W.rigs) { W.tmp.remove(r.object); this.freeRig(r); }
   }
 
   // a way on from the end of a lane: junction lanes lead to a road lane
