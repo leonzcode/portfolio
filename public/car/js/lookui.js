@@ -4,7 +4,7 @@
 // ({ type: 'look', look } on drive.events).
 //   const ui = new LookUI(drive); ui.open(); ui.close(); ui.toggle()
 import * as THREE from 'three';
-import { People } from './people.js?v=16';
+import { People } from './people.js?v=17';
 
 const KEY = 'car_look';
 const SKIN = ['#f6d7c3', '#eac0a0', '#d4a07a', '#b07a52', '#8a5636', '#5e3a24', '#3f271a'];
@@ -220,6 +220,8 @@ export class LookUI {
       this.person.play('idle', { fade: 0 });
     } else this.person.setLook(l);
     this.frameCam();
+    // the preview's shaders built in the background (its own context): no long frame for the game behind
+    if (this.R.compileAsync) { const n = this.compiling = (this.compiling || 0) + 1; this.R.compileAsync(this.scene, this.cam).catch(() => {}).finally(() => { if (this.compiling === n) this.compiling = 0; }); }
   }
 
   makeStage() {
@@ -266,7 +268,7 @@ export class LookUI {
       if (w && h && (cv.width !== Math.round(w * R.getPixelRatio()) || cv.height !== Math.round(h * R.getPixelRatio()))) { R.setSize(w, h, false); this.cam.aspect = w / h; this.cam.updateProjectionMatrix(); }
       if (this.spin && !reduce) this.yaw += dt * 0.35;
       if (this.person) { this.person.object.rotation.y = Math.PI + this.yaw; this.person.update(dt); }
-      R.render(this.scene, this.cam);
+      if (!this.compiling) R.render(this.scene, this.cam);
     };
     f();
   }

@@ -2,7 +2,7 @@
 // and finds its crowns (treedetect.js), so none of it runs on the page's thread.
 //   in:  { id, job: { map: { zoom, tx0, ty0, nx, ny, gx0, gy0, kx, kz, x0, z0, x1, z1 }, opts } }
 //   out: { id, res: { list, canopyCells } } or { id, error }
-import { detect } from './treedetect.js?v=16';
+import { detect } from './treedetect.js?v=17';
 
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const tiles = new Map();

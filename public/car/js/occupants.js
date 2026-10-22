@@ -11,6 +11,7 @@ import * as THREE from 'three';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4(), _c = new THREE.Vector3(), _e = new THREE.Euler();
 const UP = new THREE.Vector3(0, 1, 0), X_AXIS = new THREE.Vector3(1, 0, 0);
+const ROOF_COLS = new Map(); // model -> the roof's height over each seat
 export const RECLINE = 0.22;
 
 // ------------------------------------------------------------------------------------------------------------
@@ -24,7 +25,7 @@ export function loadPeople(drive) {
   Hp = (async () => {
     if (!/[?&]standin/.test(location.search)) {
       try {
-        const M = await import('./people.js?v=16');
+        const M = await import('./people.js?v=17');
         if (M && M.People && typeof M.People.createPerson === 'function') {
           const P = M.People;
           await P.load(drive && drive.G ? drive.G.renderer : undefined, drive ? drive.camera : undefined);
@@ -35,7 +36,7 @@ export function loadPeople(drive) {
         }
       } catch (e) { console.warn('people module', e && e.message); }
     }
-    const M = await import('./standin.js?v=16');
+    const M = await import('./standin.js?v=17');
     H = wrapStandin(M);
     return H;
   })();
@@ -299,13 +300,107 @@ export class Occupants {
     const off = seatOffset(p);
     p._sitOff = off.clone(); // (the way in and out of a seat uses it)
     const th = o.kid || isBus(R.rig) ? 0.12 : RECLINE;
-    o.baseQ = (o.baseQ || new THREE.Quaternion()).setFromAxisAngle(X_AXIS, th);
     p._recline = th;
+    // the top of the head from the hips, in the person's own frame (the skull's top is about 0.2 m over the head bone)
+    const hb = p.bone && p.bone('head');
+    let vTop = null;
+    if (hb) { p.object.updateMatrixWorld(true); vTop = p.object.worldToLocal(hb.getWorldPosition(new THREE.Vector3())).sub(off); vTop.y += 0.2 * (p.height || 1.75) / 1.75; }
+    const fit = this.fit(R, o, th, vTop);
+    o.baseQ = (o.baseQ || new THREE.Quaternion()).copy(fit.q);
+    o.hipAt = fit.hip; o.hidden = fit.hide;
     p.object.quaternion.copy(o.baseQ);
     const r = off.applyQuaternion(o.baseQ);
-    p.object.position.set(s.x - r.x, s.y - r.y, s.z - r.z - 0.04);
+    p.object.position.copy(fit.hip).sub(r);
     if (o.model !== p.model || !o.placed) this.shade(p, this.shadeOf(R));
     o.model = p.model; o.placed++; o.jbase = null;
+  }
+
+  // Where a seated person goes and how they lean so the head stays under the roof (tall people slouch: hips a little
+  // forward, leaning back further), and after a crash under the roof as it was pushed in, and away from a side that
+  // came in: slumped sideways towards the middle of the car (forward on a middle seat), as an occupant knocked out
+  // in a crash is. Nothing fits (the roof down on the seat): hidden.
+  fit(R, o, recline, vTop) {
+    const s = R.seats[o.seat];
+    const I = R.intr && R.intr[o.seat];
+    const sx = s.side === 'L' ? -1 : s.side === 'R' ? 1 : 0;
+    const side = I ? Math.min(0.35, I.side) : 0;
+    const hip0 = new THREE.Vector3(s.x - sx * side, s.y, s.z - 0.04);
+    const q = new THREE.Quaternion().setFromAxisAngle(X_AXIS, recline);
+    if (this.noFit) return { q, hip: new THREE.Vector3(s.x, s.y, s.z - 0.04), hide: false }; // (tests: as before)
+    const col = this.roofCols(R);
+    const top = col ? col[o.seat] : null;
+    if (!vTop || top === null || top === undefined) return { q, hip: hip0, hide: false };
+    const lim = top - 0.08 - (I ? I.roof : 0) - (I && I.roof > 0.02 ? 0.03 : 0);
+    const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), v = new THREE.Vector3();
+    const slumpAxis = sx ? new THREE.Vector3(0, 0, 1) : X_AXIS, slumpSign = sx ? sx : -1;
+    for (const ts of [0, 0.12, 0.24, 0.36, 0.5, 0.65, 0.8, 0.95, 1.1, 1.25]) {
+      for (const tb of [0, 0.08, 0.16, 0.24, 0.34, 0.45]) {
+        qa.setFromAxisAngle(slumpAxis, slumpSign * ts); qb.setFromAxisAngle(X_AXIS, recline + tb);
+        qa.multiply(qb);
+        const hip = hip0.clone(); hip.z -= tb * 0.45; hip.y -= tb * 0.1;
+        v.copy(vTop).applyQuaternion(qa);
+        if (hip.y + v.y <= lim) return { q: qa.clone(), hip, hide: false };
+      }
+      if (!I) break; // (no crash: a slouch only, never a slump)
+    }
+    // no crash and still too tall: as low as a slouch goes; after a crash with nowhere to fit: hidden
+    if (!I) { qb.setFromAxisAngle(X_AXIS, recline + 0.45); const hip = hip0.clone(); hip.z -= 0.2; hip.y -= 0.045; return { q: qb.clone(), hip, hide: false }; }
+    return { q, hip: hip0, hide: true };
+  }
+
+  // the top of the car's roof over each seat (outer skin, at rest), or null where the seat is open to the sky; from
+  // the model's own points, once per model
+  roofCols(R) {
+    const rig = R.rig;
+    if (!rig || !rig.object) return null;
+    if (rig._roofCols && rig._roofColsN === R.seats.length) return rig._roofCols;
+    const key = (rig.id || (rig.spec && rig.spec.id) || '?') + (rig.npc ? ':n' : ':p') + ':' + R.seats.length;
+    if (ROOF_COLS.has(key)) { rig._roofCols = ROOF_COLS.get(key); rig._roofColsN = R.seats.length; return rig._roofCols; }
+    const seats = R.seats, cols = seats.map(() => -Infinity);
+    rig.object.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(rig.object.matrixWorld).invert(), M = new THREE.Matrix4(), v = new THREE.Vector3();
+    rig.object.traverse(m => {
+      if (!m.isMesh || m.isSkinnedMesh || m.isInstancedMesh || m.name === 'contact_shadow' || m.name === 'shadow_proxy' || !m.geometry || !m.geometry.attributes.position) return;
+      for (let a = m, k = 0; a && k < 8; a = a.parent, k++) { if (a.userData && a.userData.person) return; if (a.name === 'person' || a.name === 'far' || /^lamp_|^dmgpart_/.test(a.name)) return; }
+      M.multiplyMatrices(inv, m.matrixWorld);
+      const pos = m.geometry.attributes.position, n = pos.count;
+      for (let i = 0; i < n; i += 2) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(M);
+        for (let k = 0; k < seats.length; k++) { const s = seats[k]; if (v.y > cols[k] && Math.abs(v.x - s.x) < 0.18 && v.z > s.z - 0.1 && v.z < s.z + 0.35) cols[k] = v.y; }
+      }
+    });
+    const H = rig.dims ? rig.dims.height : 1.45;
+    const out = cols.map(c => Number.isFinite(c) && c > H - 0.2 ? c : null);
+    ROOF_COLS.set(key, out);
+    rig._roofCols = out; rig._roofColsN = seats.length;
+    return out;
+  }
+
+  // how far the crash pushed the roof down over each seat and a side in beside it (damage.js moves the body's points:
+  // its own copies of them before and after, in the car's frame)
+  measureCrush(R) {
+    const rig = R.rig, rd = rig && rig._dmg;
+    if (!rd || !rd.entries || !rd.damaged) { R.intr = null; return; }
+    const S = R.seats, cols = this.roofCols(R) || [];
+    const out = S.map(() => ({ roof: 0, side: 0 }));
+    const lo = Math.min(...S.map(s => s.y)) + 0.15;
+    for (const e of rd.entries) {
+      if (!e.cur || !e.rest || (e.role !== 'paint' && e.role !== 'body' && e.role !== 'glass')) continue;
+      const r = e.rest, c = e.cur, n = Math.min(r.length, c.length);
+      for (let i = 0; i < n; i += 6) {
+        const y = r[i + 1]; if (y < lo) continue;
+        const x = r[i], z = r[i + 2], dy = y - c[i + 1], din = Math.abs(x) - Math.abs(c[i]);
+        if (dy < 0.015 && din < 0.015) continue;
+        for (let k = 0; k < S.length; k++) {
+          const s = S[k], dz = z - (s.z + 0.12);
+          if (dz < -0.55 || dz > 0.55) continue;
+          const O = out[k], t = cols[k];
+          if (dy > O.roof && Math.abs(x - s.x) < 0.4 && t !== null && t !== undefined && y > t - 0.12) O.roof = dy;
+          if (din > O.side && s.side !== 'C' && Math.sign(x) === Math.sign(s.x) && Math.abs(x) > Math.abs(s.x) + 0.12 && y > s.y + 0.1) O.side = din;
+        }
+      }
+    }
+    R.intr = out;
   }
 
   // how far the hips are from the seat's hip point (a model that arrived late, or a pose measured too early)
@@ -315,7 +410,8 @@ export class Occupants {
     const root = this.rootOf(R);
     root.updateWorldMatrix(true, false); h.updateWorldMatrix(true, false);
     _c.setFromMatrixPosition(h.matrixWorld); root.worldToLocal(_c);
-    return Math.hypot(_c.x - s.x, _c.y - s.y, _c.z - (s.z - 0.04));
+    const a = o.hipAt || _w.set(s.x, s.y, s.z - 0.04);
+    return Math.hypot(_c.x - a.x, _c.y - a.y, _c.z - a.z);
   }
 
   // a driver's hands on the steering wheel (the player's car has one; for the others it is where it would be)
@@ -493,6 +589,13 @@ export class Occupants {
     let vis = 0;
     for (const R of want) {
       if (!R.made && !R.making) this.make(R);
+      // after a crash (or a repair): where everyone sits again
+      const now = performance.now();
+      if ((R.crushCheck && R.crushCheck.length && now > R.crushCheck[0]) || (R.intr && R.rig && R.rig._dmg && !R.rig._dmg.damaged)) {
+        if (R.crushCheck) R.crushCheck.shift();
+        try { this.measureCrush(R); } catch (e) { R.intr = null; }
+        for (const o of R.people) if (o.state === 'seated') this.place(R, o);
+      }
       const root = this.rootOf(R);
       // hidden past the distance a traffic car's far model takes over (its glass is part of the body there)
       root.updateWorldMatrix(true, false);
@@ -502,7 +605,7 @@ export class Occupants {
       for (const o of R.people) {
         if (o.state !== 'seated') continue;
         const p = o.person;
-        p.object.visible = (show || o.player) && !this.hideAll;
+        p.object.visible = (show || o.player) && !this.hideAll && !o.hidden;
         // behind glass a few metres off, the cheaper model does (the player's own always the detailed one)
         if (!o.player && p.setLod) { const want = d < 9 ? 'near' : 'far'; if (o.lod !== want) { o.lod = want; try { p.setLod(want); } catch (e) {} } }
         if (p.object.visible) vis++;
@@ -559,6 +662,8 @@ export class Occupants {
     // one crash comes as several hits (a few circles of the body, a bounce): one roll of the dice per crash, again
     // only for a harder hit
     const now = performance.now();
+    // the people kept under a roof pushed in (measured once the crush is done, and again as parts settle)
+    if (speed > 4) R.crushCheck = [now + 120, now + 700, now + 2000];
     if (now - (R.crashAt || 0) < 1200 && speed < (R.crashSpeed || 0) * 1.2) return;
     R.crashAt = now; R.crashSpeed = speed;
     // who goes out: unbelted people in a hard crash, a few belted ones in a very hard one or a rollover
@@ -569,6 +674,7 @@ export class Occupants {
       let p = o.belted ? THREE.MathUtils.smoothstep(speed, 24, 45) * 0.3 : THREE.MathUtils.smoothstep(speed, 10, 28) * 0.9;
       if (roll) p = Math.min(0.95, p + (o.belted ? 0.12 : 0.55));
       if (this.forceEject) p = 1;
+      if (this.noEject) p = 0; // (tests)
       if (Math.random() < p) out.push(o);
     }
     out.forEach((o, k) => { if (k === 0) this.eject(R, o, e); else setTimeout(() => { if (R.people.includes(o)) this.eject(R, o, e); }, 40 + k * 60); });

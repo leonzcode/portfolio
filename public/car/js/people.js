@@ -27,10 +27,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { Person, BONES } from './person.js?v=16';
-import { buildPoses } from './poses.js?v=16';
+import { Person, BONES } from './person.js?v=17';
+import { buildPoses } from './poses.js?v=17';
 
-const V = '?v=16';
+const V = '?v=17';
 const DIR = new URL('../models/people/', import.meta.url).href;
 const DRACO = new URL('../vendor/three/addons/libs/draco/gltf/', import.meta.url).href;
 
@@ -87,6 +87,30 @@ export const People = {
     for (const b of bases.values()) { const m = this.instance(b, this.DEFAULT_LOOK); g.add(m.root); }
     const cam = camera || this.camera || new THREE.PerspectiveCamera();
     try { await Promise.race([renderer.compileAsync(g, cam, scene || undefined), new Promise(r => setTimeout(r, 8000))]); } catch (e) { console.warn('people compile', e); }
+  },
+
+  // Every shader a person can need, built before play: drive.start compiles the scene and then draws one frame behind
+  // the loading card, which builds the shadow map's programs for what casts a shadow then (compileAsync does not
+  // build those). A few people (one with hair cards, one without, each plain and recoloured, near and far meshes all
+  // shown) go into the scene under the ground at `at` for that frame; dispose() takes them out after.
+  warmup(scene, at) {
+    const g = new THREE.Group(); g.name = 'people-warmup';
+    const all = [...bases.values()];
+    const hair = all.find(b => b.scene.getObjectByProperty('isSkinnedMesh', true) && hasKind(b, 'hair')) || all[0];
+    const bare = all.find(b => !hasKind(b, 'hair')) || null;
+    const colours = { skin: '#8a5636', hairColour: '#b48a58', topColour: '#2a4d7a', bottomColour: '#6d5a43', shoesColour: '#f0f0ee' };
+    let i = 0;
+    for (const b of [hair, bare]) {
+      if (!b) continue;
+      for (const look of [{ base: b.id }, { base: b.id, ...colours }]) {
+        const m = this.instance(b, this.fixLook(look));
+        for (const o of [...m.lod0, ...m.lod1]) { o.visible = true; o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; }
+        m.root.position.set((at ? at.x : 0) + (i % 2) * 0.8, (at ? at.y : 0) - 4, (at ? at.z : 0) + (i >> 1) * 0.8);
+        g.add(m.root); i++;
+      }
+    }
+    scene.add(g);
+    return { group: g, dispose: () => { if (g.parent) g.parent.remove(g); g.traverse(o => { if (o.isSkinnedMesh && o.skeleton && o.skeleton.boneTexture) o.skeleton.dispose(); }); } };
   },
 
   createPerson(look = this.DEFAULT_LOOK, opts = {}) {
@@ -196,6 +220,8 @@ export const People = {
   clip(name, sex = 'm') { return clips ? (clips.get(name + '.' + sex) || clips.get(name)) : null; },
   release() {}
 };
+
+function hasKind(b, kind) { let f = false; b.scene.traverse(o => { if (o.isSkinnedMesh && o.userData.kind === kind) f = true; }); return f; }
 
 // shirt, trouser and hair colours people really wear
 const TOPS = ['#1d2433', '#f2f2ee', '#a01c22', '#2a4d7a', '#3d5a3a', '#6b6f75', '#c9a227', '#7a2e5a', '#d86a2b', '#101010', '#8fb4d9', '#e7c9c1', '#4b3a2a', '#2e8b88'];

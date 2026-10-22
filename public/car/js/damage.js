@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=16';
+import { FX } from './damagefx.js?v=17';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -104,13 +104,14 @@ const PAINT_FS_MAIN = `
     vec2 uvY = uDmgO2.xy + vec2(q.z, q.x) * uDmgS;
     vec2 uvZ = (vDn.z < 0.0 ? uDmgO2.zw : uDmgO3) + vec2(q.x, q.y) * uDmgS;
     vec4 d = texture2D(uDmgMap, uvX) * wt.x + texture2D(uDmgMap, uvY) * wt.y + texture2D(uDmgMap, uvZ) * wt.z;
-    // paint cracked off along creases: flakes of primer and a few of bare metal
-    float cr = smoothstep(0.5, 1.0, vDs);
-    float fl = dmgNoise(vDp * 38.0) * 0.65 + dmgNoise(vDp * 110.0 + 3.7) * 0.35;
-    d.g = max(d.g, cr * smoothstep(0.6, 0.66, fl));
-    d.r = max(d.r, cr * cr * smoothstep(0.72, 0.77, fl) * 0.5);
-    d.b = max(d.b, smoothstep(0.2, 0.8, vDs) * 0.3);
-    d.a = max(d.a, smoothstep(0.1, 0.6, vDs) * 0.28);
+    // paint cracked off along the sharpest creases: a few flakes of primer, fewer of bare metal (centimetre flakes:
+    // finer ones read as black and white noise over a dented door from a few metres)
+    float cr = smoothstep(0.7, 1.0, vDs);
+    float fl = dmgNoise(vDp * 16.0) * 0.7 + dmgNoise(vDp * 42.0 + 3.7) * 0.3;
+    d.g = max(d.g, cr * smoothstep(0.66, 0.7, fl));
+    d.r = max(d.r, cr * cr * smoothstep(0.76, 0.8, fl) * 0.4);
+    d.b = max(d.b, smoothstep(0.3, 0.9, vDs) * 0.22);
+    d.a = max(d.a, smoothstep(0.2, 0.8, vDs) * 0.16);
     vec3 primer = vec3(0.46, 0.46, 0.44), bare = vec3(0.6, 0.6, 0.61);
     float sc = clamp(d.b, 0.0, 1.0), pr = clamp(d.g, 0.0, 1.0), mt = clamp(d.r, 0.0, 1.0);
     // scuffed clear coat: a lighter, duller paint; then primer; then bare steel
@@ -264,7 +265,8 @@ void main() {
     float r = length(q);
     float nz = vn(q * 5.0 + seed * 7.0) * 0.5 + vn(q * 13.0 + seed) * 0.5;
     float body = 1.0 - smoothstep(0.55, 1.0, r + (nz - 0.5) * 0.6);
-    float chips = step(0.62, vn(q * 22.0 + seed * 3.0)) * body;
+    // (chips where it was hit hardest, in flakes: finer ones read as noise from a few metres)
+    float chips = step(0.66, vn(q * 9.0 + seed * 3.0)) * body * (1.0 - smoothstep(0.25, 0.75, r));
     o = vec4(chips * vVal.x * step(0.7, nz), chips * vVal.y, body * vVal.z, body * vVal.w);
   }
   if (max(max(o.r, o.g), max(o.b, o.a)) < 0.003) discard;
@@ -591,6 +593,43 @@ function makeJob(rd, gen, onDone) {
 }
 
 
+// the points next to a cut's boundary moved onto it: each edge with one end in and one out is searched for where it
+// crosses, and the nearer end goes there. The cut then runs along the boundary instead of zigzagging round whole
+// triangles (an opened door showed a ragged dark fringe of trim and seal triangles all round its outline).
+function* snapGen(job, e, test) {
+  const c = e.cur; if (!c || !e.geo || !e.geo.index) return 0;
+  const idx = e.geo.index.array, n = c.length / 3;
+  const ins = new Int8Array(n);
+  for (let i = 0; i < n; i++) { if ((i & 8191) === 8191 && performance.now() >= job.deadline) yield; ins[i] = test(c[i * 3], c[i * 3 + 1], c[i * 3 + 2]) ? 1 : 0; }
+  let best = null, moved = 0;
+  for (let t = 0; t < idx.length; t += 3) {
+    if ((t % 24576) === 24573 && performance.now() >= job.deadline) yield;
+    for (let k = 0; k < 3; k++) {
+      const a = idx[t + k], b = idx[t + (k + 1) % 3];
+      if (ins[a] === ins[b]) continue;
+      // where along a -> b the test changes (bisection)
+      const a3 = a * 3, b3 = b * 3, ia = ins[a];
+      let lo = 0, hi = 1;
+      for (let it = 0; it < 7; it++) { const m = (lo + hi) / 2; if ((test(c[a3] + (c[b3] - c[a3]) * m, c[a3 + 1] + (c[b3 + 1] - c[a3 + 1]) * m, c[a3 + 2] + (c[b3 + 2] - c[a3 + 2]) * m) ? 1 : 0) === ia) lo = m; else hi = m; }
+      const f = (lo + hi) / 2, v = f < 0.5 ? a : b, d = f < 0.5 ? f : 1 - f;
+      if (!best) { best = new Float32Array(n * 4); for (let i = 0; i < n; i++) best[i * 4 + 3] = 2; }
+      if (d < best[v * 4 + 3]) { best[v * 4] = c[a3] + (c[b3] - c[a3]) * f; best[v * 4 + 1] = c[a3 + 1] + (c[b3 + 1] - c[a3 + 1]) * f; best[v * 4 + 2] = c[a3 + 2] + (c[b3 + 2] - c[a3 + 2]) * f; best[v * 4 + 3] = d; }
+    }
+  }
+  if (!best) return 0;
+  const r = e.rest;
+  for (let v = 0; v < n; v++) {
+    if (best[v * 4 + 3] > 1) continue;
+    const v3 = v * 3, dx = best[v * 4] - c[v3], dy = best[v * 4 + 1] - c[v3 + 1], dz = best[v * 4 + 2] - c[v3 + 2];
+    c[v3] += dx; c[v3 + 1] += dy; c[v3 + 2] += dz;
+    // (the rest shape moves with it, so the paint map and later crushes do not see it as stretched)
+    if (r && r !== c) { r[v3] += dx; r[v3 + 1] += dy; r[v3 + 2] += dz; }
+    moved++;
+  }
+  if (moved) e.writePositions();
+  return moved;
+}
+
 // triangles stretched far past their own size by a crush are taken out of the mesh: a sheet that long would have
 // torn (a hole shows, where a long thin needle of stretched skin showed before)
 function* tearGen(job, e, dirty, coarse = false) {
@@ -774,9 +813,10 @@ function* analyseGen(job, rd) {
     const pos = P[k], idx = E[k].srcIndex(), n = pos.length / 3, nt = idx.length / 3;
     // weld by position (1 mm)
     const weld = new Int32Array(n), wm = new Map();
-    for (let i = 0; i < n; i++) { const kk = Math.round(pos[i * 3] * 1000) + ',' + Math.round(pos[i * 3 + 1] * 1000) + ',' + Math.round(pos[i * 3 + 2] * 1000); let w = wm.get(kk); if (w === undefined) { w = i; wm.set(kk, w); } weld[i] = w; }
+    for (let i = 0; i < n; i++) { if ((i & 2047) === 2047 && performance.now() >= job.deadline) yield; const kk = Math.round(pos[i * 3] * 1000) + ',' + Math.round(pos[i * 3 + 1] * 1000) + ',' + Math.round(pos[i * 3 + 2] * 1000); let w = wm.get(kk); if (w === undefined) { w = i; wm.set(kk, w); } weld[i] = w; }
     const cls = new Int8Array(nt), area = new Float32Array(nt), cen = new Float32Array(nt * 3);
     for (let t = 0; t < nt; t++) {
+      if ((t & 4095) === 4095 && performance.now() >= job.deadline) yield;
       const a = idx[t * 3], b = idx[t * 3 + 1], c = idx[t * 3 + 2];
       _a.set(pos[b * 3] - pos[a * 3], pos[b * 3 + 1] - pos[a * 3 + 1], pos[b * 3 + 2] - pos[a * 3 + 2]);
       _b.set(pos[c * 3] - pos[a * 3], pos[c * 3 + 1] - pos[a * 3 + 1], pos[c * 3 + 2] - pos[a * 3 + 2]);
@@ -790,11 +830,13 @@ function* analyseGen(job, rd) {
     const par = new Int32Array(nt); for (let t = 0; t < nt; t++) par[t] = t;
     const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
     const byV = new Map();
+    if (performance.now() >= job.deadline) yield;
     for (let t = 0; t < nt; t++) for (let j = 0; j < 3; j++) {
       const w = weld[idx[t * 3 + j]], key2 = w * 8 + cls[t];
       const o = byV.get(key2); if (o === undefined) byV.set(key2, t); else { const ra = find(o), rb = find(t); if (ra !== rb) par[ra] = rb; }
     }
     const comp = new Map();
+    if (performance.now() >= job.deadline) yield;
     for (let t = 0; t < nt; t++) {
       const r = find(t); let c = comp.get(r);
       if (!c) comp.set(r, c = { tris: [], area: 0, cls: cls[t], box: new THREE.Box3(), cen: new THREE.Vector3() });
@@ -810,7 +852,9 @@ function* analyseGen(job, rd) {
       if (best && bd < 0.08) { best.tris.push(...s.tris); best.box.union(s.box); } else if (s.area > 0.004) big.push(s);
     }
     const wid = new Int16Array(n).fill(-1);
+    if (performance.now() >= job.deadline) yield;
     for (const c of big) {
+      if (performance.now() >= job.deadline) yield;
       // the window's plane (fitted to its points): its normal and two axes along it
       let sx = 0, sy = 0, sz = 0, cnt = 0; const cv = [0, 0, 0, 0, 0, 0];
       const vs = new Set(); for (const t of c.tris) for (let j = 0; j < 3; j++) vs.add(idx[t * 3 + j]);
@@ -847,9 +891,12 @@ function* analyseGen(job, rd) {
       else if (c.y < belt - 0.04 || w.box.max.y < belt + 0.06) w.kind = 'lens';
       else if (Math.abs(n.x) > 0.6) w.kind = 'side';
       else if (Math.abs(n.y) > 0.975 && w.area > 0.25) w.kind = 'roof';
+      // (a panoramic roof curves down at its ends: still the roof while it is over the cabin, not the rear window)
+      else if (Math.abs(n.y) > 0.8 && w.area > 0.15 && c.y > belt + 0.2 && c.z < zMid + 0.6 && c.z > zMid - 1.2) w.kind = 'roof';
       else w.kind = c.z < zMid ? 'front' : 'rear';
       w.side = w.kind === 'side' ? (c.x < 0 ? 'L' : 'R') : 'C';
-      w.laminated = w.kind === 'front';
+      // laminated glass cracks and stays: the windscreen, and roof glass (it does not rain into the cabin)
+      w.laminated = w.kind === 'front' || w.kind === 'roof';
     }
     // the two faces of one pane (separate pieces in some models) are one window
     const alias = new Map();
@@ -1001,6 +1048,32 @@ function* analyseGen(job, rd) {
       else if (sg < 0) b.max.x = -(A.hwBelt - 0.03); else b.min.x = A.hwBelt - 0.03;
     }
     if (cnt) { b.expandByScalar(0.015); A.mirrors.push({ side: sg < 0 ? 'L' : 'R', box: b }); }
+  }
+  // a bus's or a truck's mirrors: big heads on arms out past the cab's sides, up high, round the windscreen
+  if (A.mirrors.length < 2 && d.height > 2.2) {
+    for (const sg of [-1, 1]) {
+      if (A.mirrors.some(m => (m.side === 'L') === (sg < 0))) continue;
+      const xs = [];
+      for (let k = 0; k < E.length; k++) {
+        if (!P[k] || E[k].role === 'far' || E[k].role === 'proxy') continue;
+        const p = P[k];
+        for (let i = 0; i < p.length; i += 3) { const y = p[i + 1], z = p[i + 2]; if (y > 1.0 && y < A.roofY - 0.2 && z > A.zA + 0.3 && z < A.zA + 1.5 && p[i] * sg > 0) xs.push(p[i] * sg); }
+      }
+      if (xs.length < 20) continue;
+      xs.sort((a, b) => a - b);
+      const ref = xs[Math.floor(xs.length * 0.9)];
+      const b = new THREE.Box3(); let cnt = 0;
+      for (let k = 0; k < E.length; k++) {
+        if (!P[k] || E[k].role === 'far' || E[k].role === 'proxy') continue;
+        const p = P[k];
+        for (let i = 0; i < p.length; i += 3) { const x = p[i], y = p[i + 1], z = p[i + 2]; if (y > 1.0 && z < A.zA + 0.6 && x * sg > ref + 0.05) { b.expandByPoint(_v.set(x, y, z)); cnt++; } }
+      }
+      const sz = b.getSize(_a);
+      if (cnt < 6 || sz.x > 0.8 || sz.y > 1.5 || sz.z > 2.0) continue;
+      if (sg < 0) b.max.x = -(ref + 0.03); else b.min.x = ref + 0.03;
+      b.expandByScalar(0.015);
+      A.mirrors.push({ side: sg < 0 ? 'L' : 'R', box: b });
+    }
   }
   // the side's profile: how far out the body reaches at each height (a wall scrapes the widest parts first)
   {
@@ -1280,7 +1353,7 @@ class CarDamage {
 
   // the crack map for the glass: a canvas with a slot per window
   crackReady() {
-    if (this.crack) return this.crack;
+    if (this.crack) { if (this.crack.fresh) { this.crack.fresh = false; this.applyUniforms(); } return this.crack; }
     const A = this.analysis();
     const S = this.npc ? 256 : 512, c = document.createElement('canvas'); c.width = c.height = S;
     // a canvas kept in memory (an accelerated one is read back from the graphics card to upload: a fifth of a second)
@@ -1732,6 +1805,7 @@ class CarDamage {
       if (!this.npc || true) {
         if ((imp.side === 'front' || imp.side === 'rear' && sp > 12) && sp > 7 && res.maxU > 0.12) this.deployBags('front');
         if ((imp.side === 'left' || imp.side === 'right') && sp > 5 && res.maxU > 0.08) this.deployBags(imp.side === 'left' ? 'L' : 'R');
+        if (imp.side === 'roof' && res) this.roofDrop = (this.roofDrop || 0) + res.maxU;
         if (imp.side === 'roof' || imp.rollover) { this.deployBags('L'); this.deployBags('R'); }
       }
       // the engine: steam from the radiator, then smoke, then flames
@@ -1894,7 +1968,12 @@ class CarDamage {
       }
       // a coarse mesh is split along the boundary first, for a clean edge (a fine one is cut as it is)
       // (every mesh: even a fine one has long strips, trim and shut lines, that would stick out of an open door)
-      if (!opts.noRefine) { if (e.role === 'glass') this.ownGlass(e); else e.own(); if (performance.now() >= job.deadline) yield; yield* refineGen(job, e, edgeOf, Math.max(0.06, Math.min(e.L * 2, 0.1)), 3); }
+      if (!opts.noRefine) {
+        if (e.role === 'glass') this.ownGlass(e); else e.own(); if (performance.now() >= job.deadline) yield;
+        yield* refineGen(job, e, edgeOf, Math.max(0.06, Math.min(e.L * 2, 0.1)), 3);
+        // and the cut made straight along the boundary
+        yield* snapGen(job, e, test);
+      }
       const g0 = e.ownGeo();
       const P = e.cur || (e._sp || (e._sp = e.srcPositions()));
       const idx = g0.index.array, ni = idx.length;
@@ -2210,7 +2289,8 @@ class CarDamage {
 
   // the engine bay: a dark box with a radiator and an engine in it, inside the front (put in before a front crush,
   // so it crushes with the rest; it shows where the bumper and grille are torn off)
-  addBay() {
+  addBay() { runSync(this.addBayGen(SYNC)); }
+  *addBayGen(job) {
     if (this.bay) return;
     const A = this.analysis(), E = this.list();
     const parent = this.rig.model && this.rig.model.isObject3D ? this.rig.model : this.root;
@@ -2219,14 +2299,63 @@ class CarDamage {
     if (back - front < 0.45) return;
     const top = Math.max(0.45, this.topAt(0, (front + back) / 2) - 0.07), bot = Math.max(0.18, A.wheelR * 0.6), hw = Math.max(0.35, A.hw - 0.16);
     const box = (w, h, d, sx, sy, sz, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d, sx, sy, sz), mat); m.position.set(x, y, z); m.userData.dmgBay = true; m.castShadow = false; m.receiveShadow = true; g.add(m); return m; };
-    // the bay's walls seen from inside, the radiator across its front, the engine in the middle
-    box(hw * 2, top - bot, back - front - 0.08, 6, 3, 6, BAY_DARK, 0, (top + bot) / 2, (front + back) / 2 + 0.04);
-    box(hw * 1.7, (top - bot) * 0.75, 0.05, 8, 4, 1, BAY_FINS, 0, bot + (top - bot) * 0.45, front + 0.2);
+    // the bay's walls seen from inside, the radiator across its front, the engine in the middle (fine enough to be
+    // bent to the body's shape below)
+    box(hw * 2, top - bot, back - front - 0.08, 14, 5, 8, BAY_DARK, 0, (top + bot) / 2, (front + back) / 2 + 0.04);
+    box(hw * 1.7, (top - bot) * 0.75, 0.05, 14, 5, 1, BAY_FINS, 0, bot + (top - bot) * 0.45, front + 0.2);
     box(Math.min(0.75, hw * 1.1), (top - bot) * 0.6, Math.min(0.55, (back - front) * 0.45), 4, 3, 4, BAY_ENGINE, 0, bot + (top - bot) * 0.38, front + 0.2 + Math.min(0.55, (back - front) * 0.45) / 2 + 0.12);
     parent.add(g);
     g.updateMatrixWorld(true);
-    for (const m of g.children) { m.updateMatrix(); const e = new Entry(this, m, 'body'); e.L = 0.08; e.prefined = true; E.push(e); }
+    const mine = [];
+    for (const m of g.children) { m.updateMatrix(); const e = new Entry(this, m, 'body'); e.L = 0.08; e.prefined = true; e.own(); mine.push(e); }
     this.bay = g;
+    // the boxes kept inside the body as it is now: a car's front is rounded, and a square box out to the bumper's
+    // front showed its corners through the wings (a dark slab standing at the front corner after a crash)
+    const map = yield* this.skinMapGen(job, front, back);
+    for (const e of mine) { this.fitBay(e, map, 0.07, true); E.push(e); }
+  }
+  // the body's skin over the front: how far forward it reaches at each height and width (4 cm cells), how far out at
+  // each height and length
+  *skinMapGen(job, z0, z1) {
+    const A = this.A, C = 0.04, NX = Math.ceil((2 * A.hw + 0.2) / C), NY = Math.ceil((A.roofY + 0.1) / C), NZ = Math.ceil((z1 - z0 + 0.2) / C);
+    const fz = new Float32Array(NX * NY).fill(Infinity), sx = new Float32Array(NY * NZ).fill(-1), x0 = -A.hw - 0.1, zs = z0 - 0.1;
+    for (const e of this.list()) {
+      if (e.role === 'proxy' || e.role === 'far' || e.role === 'glass' || e.partOf || e.mesh.userData.dmgBay || A.interior[this.entries.indexOf(e)]) continue;
+      if (e.box && (e.box.min.z > z1 || e.box.max.z < z0) && !e.cur) continue;
+      const P = e.cur || (e._sp || (e._sp = e.srcPositions()));
+      for (let i = 0; i < P.length; i += 3) {
+        if ((i & 32767) === 32766 && performance.now() >= job.deadline) yield;
+        const x = P[i], y = P[i + 1], z = P[i + 2];
+        if (z > z1 || z < zs) continue;
+        const iy = Math.floor(y / C); if (iy < 0 || iy >= NY) continue;
+        const ix = Math.floor((x - x0) / C); if (ix >= 0 && ix < NX) { const k = iy * NX + ix; if (z < fz[k]) fz[k] = z; }
+        const iz = Math.floor((z - zs) / C); if (iz >= 0 && iz < NZ) { const k = iy * NZ + iz, ax = x < 0 ? -x : x; if (ax > sx[k]) sx[k] = ax; }
+      }
+    }
+    return { C, NX, NY, NZ, x0, zs, fz, sx };
+  }
+  // a bay box's points moved inside the skin: behind its front (by gap), within its sides, under the bonnet
+  fitBay(e, M, gap, rest) {
+    const c = e.cur; if (!c) return;
+    const { C, NX, NY, NZ, x0, zs, fz, sx } = M;
+    for (let i = 0; i < c.length; i += 3) {
+      let x = c[i], y = c[i + 1], z = c[i + 2];
+      const iy = Math.floor(y / C), ix = Math.floor((x - x0) / C);
+      // the skin's front here: the nearest cells that have any (a grille's holes have none)
+      let f = Infinity;
+      for (let r = 1; r <= 3 && f === Infinity; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const yy = iy + dy, xx = ix + dx; if (yy < 0 || yy >= NY || xx < 0 || xx >= NX) continue; const v = fz[yy * NX + xx]; if (v < f) f = v; }
+      if (f < Infinity && z < f + gap) z = f + gap;
+      const iz = Math.floor((z - zs) / C);
+      let w = Infinity;
+      for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) { const yy = iy + dy, zz = iz + dz; if (yy < 0 || yy >= NY || zz < 0 || zz >= NZ) continue; const v = sx[yy * NZ + zz]; if (v >= 0 && v < w) w = v; }
+      if (w < Infinity && Math.abs(x) > w - 0.06) x = Math.sign(x) * Math.max(0, w - 0.06);
+      const t = this.topAt(x, z);
+      if (t > 0 && y > t - 0.05) y = Math.max(0.1, t - 0.05);
+      c[i] = x; c[i + 1] = y; c[i + 2] = z;
+      if (rest && e.rest) { e.rest[i] = x; e.rest[i + 1] = y; e.rest[i + 2] = z; }
+    }
+    e.writePositions();
+    if (e.geo) e.geo.computeVertexNormals();
   }
   // airbags: the two in front (wheel and dashboard) or a side's curtain, fired and then sagging
   deployBags(which) {
@@ -2265,6 +2394,7 @@ class CarDamage {
       if (z1 - z0 < 0.3 || y1 - y0 < 0.1) return;
       const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), sg * Math.PI / 2);
       add(curtainGeometry(), new THREE.Vector3(sg * (inner - 0.07), (y0 + y1) / 2, (z0 + z1) / 2), new THREE.Vector3(z1 - z0, y1 - y0, 1), q, 'curtain');
+      const b = this.bags[this.bags.length - 1]; b.baseY = b.mesh.position.y;
     }
     this.damaged = true;
     this.mgr.emit({ type: 'airbag', car: this.rig, which });
@@ -2276,7 +2406,12 @@ class CarDamage {
       // out in about 30 ms, then (the front ones) vented down to a soft sag over half a second
       const k = t < 0.03 ? t / 0.03 : b.kind === 'front' ? 1 - 0.45 * Math.min(1, (t - 0.08) / 0.5) * (t > 0.08 ? 1 : 0) : 1;
       if (b.kind === 'front') b.mesh.scale.set(f.x * k, f.y * (0.75 + 0.25 * k), f.z * k);
-      else b.mesh.scale.set(f.x * Math.min(1, t / 0.03), f.y * Math.min(1, t / 0.03), 1);
+      else {
+        // (a roof pushed down takes the curtain with it, squashed: it hung from the roof rail)
+        const drop = Math.min(f.y * 0.8, (this.roofDrop || 0) * 0.85);
+        b.mesh.scale.set(f.x * Math.min(1, t / 0.03), Math.max(0.05, f.y - drop) * Math.min(1, t / 0.03), 1);
+        if (b.baseY !== undefined) b.mesh.position.y = b.baseY - drop / 2;
+      }
     }
   }
 
@@ -2298,7 +2433,8 @@ class CarDamage {
     if (this._setPaint) { rig.setPaint = this._setPaint; this._setPaint = null; }
     this.mats = null;
     if (this.atlas) { this.atlas.rt.dispose(); this.atlas = null; }
-    if (this.crack) { this.crack.tex.dispose(); this.crack = null; }
+    // (the player's crack map is kept, cleared, so the next crash does not upload a new one)
+    if (this.crack) { if (this.npc) { this.crack.tex.dispose(); this.crack = null; } else { this.crack.g.clearRect(0, 0, this.crack.S, this.crack.S); this.crack.tex.needsUpdate = true; this.crack.fresh = true; } }
     // wheels
     this.wheels.forEach((st, i) => {
       const rw = rig._w && rig._w[i]; if (!rw) return;
@@ -2328,7 +2464,7 @@ class CarDamage {
     this.lampsBroken.clear();
     this.doors = []; this.hard = null; this.windows = null; this.winState = null; this.pending = null;
     this.entries = null; this.A = null;
-    this.damaged = false; this.crushTotal = this.front = this.rear = this.left = this.right = this.roof = this.engine = this.bonnetH = this.bootH = 0;
+    this.damaged = false; this.crushTotal = this.front = this.rear = this.left = this.right = this.roof = this.engine = this.bonnetH = this.bootH = this.roofDrop = 0;
     this.stamps.length = 0;
     if (this.vehicle) { this.vehicle.powerK = 1; }
     this.readied = false;
@@ -2504,7 +2640,9 @@ export class Damage {
       const idle = window.requestIdleCallback || (f => setTimeout(f, 300));
       // (the doors are cut out when first wanted: getting in or out, or a crash; cutting all four here held the
       // frame for up to a fifth of a second each, just after a drop)
-      const steps = [() => rd.analysis(), () => this.warmUp(), () => this.presplit(rd)];
+      // (the windscreen's crack map is made and sent to the graphics card now: its first upload, 12 to 22 ms, was in
+      // the crash's frames)
+      const steps = [() => rd.analysis(), () => this.warmUp(), () => { const C = rd.crackReady(); if (this.drive.G && this.drive.G.renderer && this.drive.G.renderer.initTexture) this.drive.G.renderer.initTexture(C.tex); }, () => this.presplit(rd)];
       const next = () => {
         const f = steps.shift(); if (!f) return;
         if (!this.drive.car || this.drive.car.rig !== car.rig) return;
@@ -2873,8 +3011,7 @@ export class Damage {
     // the crush, the paint round it and what it breaks: one piece of work for this car, after anything it is still
     // doing, spread over the frames after the hit (the first slice of it now)
     const work = function* (job) {
-      if (side === 'front' && D > 0.2 && !rd.npc) { try { rd.addBay(); } catch (e) { console.warn('engine bay', e); } }
-      if (side === 'front' && D > 0.2 && rd.npc && D > 0.3) { try { rd.addBay(); } catch (e) { console.warn('engine bay', e); } }
+      if (side === 'front' && D > (rd.npc ? 0.3 : 0.2)) { try { yield* rd.addBayGen(job); } catch (e) { console.warn('engine bay', e); } }
       if (D > 0.004) {
         try { res = rd.crush(imp); } catch (e) { console.warn('crush', e); }
         // the outside first; what breaks right after it; the inside and the shadow's stand-in last
@@ -2883,12 +3020,19 @@ export class Damage {
       if (res && res.uAt) {
         // paint at the hit: chipped and scuffed round it
         const n = imp.N.clone().negate();
-        rd.scratch(res.uAt, res.uAt.clone().addScaledVector(new THREE.Vector3(0, 1, 0).cross(n).normalize(), 0.01), n, 0.06 + D * 0.7, [0.12, 0.4, 0.7, 0.3], 1);
+        rd.scratch(res.uAt, res.uAt.clone().addScaledVector(new THREE.Vector3(0, 1, 0).cross(n).normalize(), 0.01), n, 0.05 + D * 0.35, [0.1, 0.35, 0.45, 0.25], 1);
       }
       if (res && res.maxU > 0.003) { try { rd.atlasReady(); } catch (e) { console.warn('damage atlas', e); } }
       yield* rd.consequencesGen(job, imp, res);
       if (vehicle) vehicle.powerK = self.powerOf(rd);
       if (res && res.work) { yield* res.work(job, 'in'); res.finish(); }
+      // nothing of the bay ahead of the crushed front (where the skin is still there)
+      if (rd.bay && side === 'front' && res && res.maxU > 0.02) {
+        try {
+          const A = rd.A, map = yield* rd.skinMapGen(job, A.box.min.z, Math.min(A.zA, A.box.min.z + 2));
+          for (const e of rd.entries) if (e.mesh.userData.dmgBay && e.cur && !e.partOf) rd.fitBay(e, map, 0.03, false);
+        } catch (e) { console.warn('bay fit', e); }
+      }
     };
     const job = makeJob(rd, work);
     // background subdividing of this car stops (it only ever pauses where nothing is half changed)
@@ -2897,7 +3041,8 @@ export class Damage {
     else {
       const busy = this.jobs.some(j => j.rd === rd);
       this.jobs.push(job);
-      if (!busy) { job.run(5); if (job.done) this.jobs.splice(this.jobs.indexOf(job), 1); }
+      // (the player's own crush starts in this frame; another car's waits for the next, so two in one frame do not stack)
+      if (!busy && !rd.npc) { job.run(5); if (job.done) this.jobs.splice(this.jobs.indexOf(job), 1); }
     }
     if (vehicle) vehicle.powerK = Math.min(vehicle.powerK ?? 1, this.powerOf(rd));
     if (imp.speed > 3) this.fx.sound.crunch(Math.min(1, imp.speed / 18));
