@@ -9,6 +9,7 @@ const G = 9.81;
 const _v = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
 const _f = new THREE.Vector3(), _t = new THREE.Vector3(), _r = new THREE.Vector3(), _n = new THREE.Vector3();
 const _m3 = new THREE.Matrix3(), _q = new THREE.Quaternion();
+const _gp = new THREE.Vector3(), _gr = new THREE.Vector3(), _gv = new THREE.Vector3(), _gs = new THREE.Vector3(), _gt = new THREE.Vector3(), _gc = new THREE.Vector3(), _gy = new THREE.Vector3(0, 1, 0);
 
 export const DEFAULTS = {
   mass: 1550, comHeight: 0.52, power: 220e3, torque: 420, redline: 6800, idle: 850,
@@ -38,8 +39,11 @@ export class Vehicle {
     this.steer = 0; this.steerIn = 0; this.gear = 1; this.rpm = p.idle; this.throttle = 0; this.brake = 0; this.reverse = false;
     this.handbrake = 0; this.speed = 0; this.fwdSpeed = 0; this.shiftT = 0; this.revWait = 0; this.hits = []; this.airTime = 0;
     this.circles = [];
-    const n = Math.max(3, Math.ceil(L / W) + 1), r = W / 2 * 0.96;
-    for (let i = 0; i < n; i++) this.circles.push({ o: -(L / 2 - r) + (L - 2 * r) * i / (n - 1), r, x: 0, z: 0, y0: 0, y1: 0 });
+    // centred on the body, not the axles (a bus hangs out further behind its rear axle than in front); long
+    // vehicles get closer circles, so their sides are not scalloped
+    const n = Math.max(3, Math.ceil(L / (L > 6.5 ? W * 0.6 : W)) + 1), r = W / 2 * 0.96;
+    const oc = Number.isFinite(d.front) && Number.isFinite(d.rear) ? (d.front - d.rear) / 2 : 0;
+    for (let i = 0; i < n; i++) this.circles.push({ o: oc - (L / 2 - r) + (L - 2 * r) * i / (n - 1), r, x: 0, z: 0, y0: 0, y1: 0 });
   }
 
   // put the body at a point on the ground facing a heading (degrees clockwise from north)
@@ -113,6 +117,7 @@ export class Vehicle {
     let driveF = thr * tq * ratio * 0.88 / wheelR;
     driveF = Math.min(driveF, thr * p.power / Math.max(3, Math.abs(this.fwdSpeed)));
     if (this.shiftT > 0.2) driveF *= 0.25;
+    if (this.powerK !== undefined && this.powerK < 1) driveF *= this.powerK; // a damaged engine (damage.js)
     if (this.rpm > p.redline * 1.02 || kmh > p.topSpeed || (this.reverse && kmh > 32)) driveF = 0;
     const nDriven = this.wheels.filter(w => w.driven).length;
 
@@ -124,6 +129,7 @@ export class Vehicle {
     let grounded = 0;
     const L0 = p.travelUp;
     for (const w of this.wheels) {
+      if (w.gone) { w.contact = false; w.load = 0; w.x = -p.travelDown; continue; } // torn off in a crash (damage.js)
       // the top of the wheel's travel, in the world
       const mount = _b.copy(w.rest).sub(this.com).addScaledVector(_c.set(0, 1, 0), L0).applyQuaternion(this.q).add(this.pos);
       const gx = mount.x, gz = mount.z;
@@ -173,6 +179,7 @@ export class Vehicle {
       const n = w.gn;
       let wf = fwd.clone();
       if (w.steer) wf.applyAxisAngle(up, this.steer);
+      if (w.toe) wf.applyAxisAngle(up, w.toe); // bent in a crash (damage.js)
       wf.addScaledVector(n, -wf.dot(n)).normalize();
       const ws = wf.clone().cross(n).normalize(); // to the right
       const vc = this.v.clone().add(_v.copy(this.w).cross(rel));
@@ -213,6 +220,12 @@ export class Vehicle {
       T.add(relG.cross(Fg)).add(rel.cross(Fn));
     }
     this.airTime = grounded ? 0 : this.airTime + dt;
+    // forces from outside the car's own physics: the Roadster's thrusters (flight.js sets this.ext)
+    if (this.ext) { try { this.ext(this, F, T, dt, grounded, up, fwd, right); } catch (e) { console.warn('vehicle ext', e); this.ext = null; } }
+    // the body's corners on the ground: on its side or roof the car slides on its body (damage.js sets this)
+    if (this.bodyForces) { try { this.bodyForces(dt, env, F, T, up); } catch (e) { console.warn('body forces', e); this.bodyForces = null; } }
+    // a fall faster than the springs take: the body itself stopped by the ground (see floorGuard)
+    try { this.floorGuard(dt, env, up); } catch (e) { if (!this._fgErr) { console.warn('floor guard', e); this._fgErr = true; } }
 
     // integrate
     this.v.addScaledVector(F, dt / m);
@@ -266,6 +279,7 @@ export class Vehicle {
     }
     if (env.walls) env.walls(this, list);
     this.wallContacts(env, list);
+    this.touch = list; // everything in contact this step, for scraping (damage.js)
     // deepest push per circle, then impulses
     for (const h of list) {
       const n = _n.set(h.nx, 0, h.nz);
@@ -297,6 +311,69 @@ export class Vehicle {
       const rj = rel.clone().cross(J);
       this.w.add(this.invI(_a, rj.x, rj.y, rj.z).multiplyScalar(0.6));
       this.hits.push({ j, nx: n.x, nz: n.z, px: h.px, pz: h.pz, other: h.other, shape: h.shape, speed: -vn });
+    }
+  }
+
+  // The springs hold a car that lands at up to about 8 m/s; faster (a jump, off a bridge's end or a roof, a car
+  // thrown in a crash), the step after they bottom out the wheels see the road as a wall and the car fell through.
+  // Here the body's corners (bumpers, sills, roof) meet the ground as a rigid body does: a corner about to pass into
+  // the surface while falling loses its speed into it at once (a little bounce), with friction along it, and the
+  // rebound of the crushed springs is taken out for a moment after. Armed only after a real fall (all wheels off
+  // the ground, dropping faster than 3 m/s) or with the car on its side or roof, so ordinary driving never meets it.
+  // A surface already well over a corner (a roof the car is under, a deck overhead) is not one it fell onto.
+  // Lying on a side or roof is damage.js's bodyForces where it is attached; without it these corners hold the car.
+  floorGuard(dt, env, up) {
+    if (this.airTime > 0.05 && this.v.y < -3) this.guardT = 0.8;
+    const tipped = up.y < 0.4;
+    if (this.slamT > 0) {
+      // after a hard landing the crushed springs, bump stops and tyres take the energy: no trampoline rebound
+      this.slamT -= dt;
+      if (this.v.y > 0) this.v.y *= Math.exp(-dt * 14);
+      this.w.multiplyScalar(Math.exp(-dt * 3));
+    }
+    if (!(this.guardT > 0) && !tipped) return;
+    this.guardT -= dt;
+    if (!this.guardPts) {
+      const d = this.rig.dims || {}, W = (d.width || this.wid) / 2 * 0.92, L = d.length || this.len;
+      const zf = -(Number.isFinite(d.front) ? d.front : L / 2) * 0.92, zr = (Number.isFinite(d.rear) ? d.rear : L / 2) * 0.92;
+      const yr = Math.max(0.8, (d.height || this.hgt || 1.4) * 0.92);
+      this.guardPts = [];
+      for (const x of [-W, W]) for (const z of [zf, 0, zr]) this.guardPts.push({ p: new THREE.Vector3(x, z === 0 ? 0.17 : 0.3, z) }, { p: new THREE.Vector3(x, yr, z) });
+    }
+    const m = this.p.mass, rest = tipped && !this.bodyForces;
+    let maxPen = 0, hit = 0, hx = 0, hy = 0, hz = 0;
+    for (const gp of this.guardPts) {
+      const P = _gp.copy(gp.p).sub(this.com).applyQuaternion(this.q).add(this.pos);
+      const r = _gr.copy(P).sub(this.pos);
+      const vp = _gv.copy(this.w).cross(r).add(this.v), vn = vp.y;
+      if (vn >= (rest ? 0 : -1)) continue;
+      // the surface under the corner (from just over it: a roof or deck it is falling onto, not one far above)
+      const g = env.ground(P.x, P.z, P.y + 0.5);
+      if (g === null || g === undefined || !Number.isFinite(g)) continue;
+      const pen = g - (P.y + vn * dt); // (where it would be after this step)
+      if (pen <= 0 || g - P.y > 0.6) continue;
+      if (g - P.y > maxPen) maxPen = g - P.y;
+      _gs.copy(r).cross(_gy); this.invI(_gt, _gs.x, _gs.y, _gs.z);
+      const j = -(1 + 0.1) * vn / (1 / m + _gs.copy(_gt).cross(r).y);
+      this.v.y += j / m; this.w.addScaledVector(_gt, j);
+      // friction: scraping along the road
+      _gs.set(vp.x, 0, vp.z);
+      const vt = _gs.length();
+      if (vt > 0.02) {
+        _gs.divideScalar(-vt);
+        _gc.copy(r).cross(_gs); this.invI(_gt, _gc.x, _gc.y, _gc.z);
+        const jt = Math.min(0.5 * j, vt / (1 / m + _gc.copy(_gt).cross(r).dot(_gs)));
+        this.v.addScaledVector(_gs, jt / m); this.w.addScaledVector(_gt, jt);
+      }
+      this.guardN = (this.guardN || 0) + 1;
+      if (-vn > hit) { hit = -vn; hx = P.x; hy = g; hz = P.z; }
+    }
+    // (lifted out of the ground only where nothing else does it: damage.js's springs push a body out themselves)
+    if (maxPen > 0.005 && !this.bodyForces) this.pos.y += Math.min(maxPen, 0.4) * 0.5;
+    if (hit > 3) {
+      // for the other modules: a hard landing (where, how fast) for denting the floor or the roof
+      this.groundHit = { speed: hit, x: hx, y: hy, z: hz, t: performance.now() };
+      this.slamT = 0.5; this.guardT = Math.max(this.guardT, 0.6);
     }
   }
 

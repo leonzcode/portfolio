@@ -10,17 +10,24 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { fixWheels, addExtraWheels, updateExtraWheels } from './wheels.js?v=16';
 
 const MODELS = new URL('../models/', import.meta.url).href;
 const DRACO = new URL('../vendor/three/addons/libs/draco/gltf/', import.meta.url).href;
 
 // physics keys match vehicle.js DEFAULTS
+// seats: hip points of seated people in the car's frame (driver first), measured on the models (rays onto the
+//   cushions and backrests, scratchpad car2/vehicles); door: the door's index in doors, or -1; kid: a child's seat
+// doors: hinge (a point on the axis), axis (a positive angle about it swings the door out), open (degrees), side,
+//   box (the door's region, for cutting it out of the body)
 export const CARS = [
   {
     id: 'volvos90', name: 'Volvo S90', kind: 'sedan', file: 'volvos90.glb', npcFile: 'volvos90_npc.glb', mass: 2000,
     paint: 0x1c2733, paints: [0x1c2733, 0xd9dcdf, 0x0d0d0f, 0x5b6770, 0x7a1d22, 0x2c3e57],
     cabinDark: 0.84,
     physics: { power: 233e3, torque: 400, drive: 'awd', comHeight: 0.55, maxSteer: 33, steerRatio: 15.8, brake: 15000 },
+    seats: [{x: -0.395, y: 0.509, z: 0.025, side: 'L', door: 0}, {x: 0.405, y: 0.507, z: 0.037, side: 'R', door: 1}, {x: -0.4, y: 0.543, z: 0.997, side: 'L', door: 2}, {x: 0, y: 0.565, z: 0.984, side: 'C', door: -1}, {x: 0.4, y: 0.541, z: 0.988, side: 'R', door: 3}],
+    doors: [{hinge: [-0.885, 0.825, -0.767], axis: [0, -1, 0], open: 68, side: 'L', box: [[-0.925, 0.29, -0.797], [-0.7, 1.36, 0.379]]}, {hinge: [0.885, 0.825, -0.767], axis: [0, 1, 0], open: 68, side: 'R', box: [[0.7, 0.29, -0.797], [0.925, 1.36, 0.379]]}, {hinge: [-0.89, 0.83, 0.281], axis: [0, -1, 0], open: 70, side: 'L', box: [[-0.93, 0.3, 0.251], [-0.72, 1.36, 1.264]]}, {hinge: [0.89, 0.83, 0.281], axis: [0, 1, 0], open: 70, side: 'R', box: [[0.72, 0.3, 0.251], [0.93, 1.36, 1.264]]}],
     credit: '"Volvo S90 Recharge (Free)" by lazercar, CC BY 4.0',
   },
   {
@@ -30,6 +37,9 @@ export const CARS = [
     wheel: { pos: [-0.35, 0.75, -0.30], tilt: 24, r: 0.19 },
     paint: 0xb8babd, paints: [0xb8babd, 0x9b1b1e, 0x101012, 0xd7cfae, 0x1f3a2c, 0x2a4a7a],
     physics: { power: 191e3, torque: 330, drive: 'rwd', comHeight: 0.46, maxSteer: 32, steerRatio: 16.5, gears: [3.18, 1.83, 1.21, 0.89], final: 4.0, mu: 1.0, redline: 6500 },
+    // the model has no seats (a black panel at the sills hides an empty cabin): hip points from the eye and floor
+    seats: [{x: -0.35, y: 0.34, z: 0.1, side: 'L', door: 0}, {x: 0.35, y: 0.34, z: 0.1, side: 'R', door: 1}, {x: -0.3, y: 0.36, z: 0.78, side: 'L', door: 0, kid: true}, {x: 0.3, y: 0.36, z: 0.78, side: 'R', door: 1, kid: true}],
+    doors: [{hinge: [-0.81, 0.7, -0.57], axis: [0, -1, 0], open: 65, side: 'L', box: [[-0.85, 0.22, -0.6], [-0.64, 1.18, 0.5]]}, {hinge: [0.81, 0.7, -0.57], axis: [0, 1, 0], open: 65, side: 'R', box: [[0.64, 0.22, -0.6], [0.85, 1.18, 0.5]]}],
     credit: '"FREE 1975 Porsche 911 (930) Turbo" by Lionsharp Studios, CC BY 4.0',
   },
   {
@@ -38,34 +48,102 @@ export const CARS = [
     recolor: { interior: { color: 0x3a3834, roughness: 0.8, metalness: 0 }, black: { color: 0x161616, roughness: 0.6, metalness: 0.1 } },
     paint: 0xb3261e, paints: [0xb3261e, 0xe8e8e4, 0x1b1d22, 0x2f4f7f, 0x6d6f70, 0x2d4a33],
     physics: { power: 134e3, torque: 340, drive: 'rwd', comHeight: 0.62, maxSteer: 35, steerRatio: 17, gears: [3.06, 1.63, 1.0, 0.7], final: 3.42, redline: 5200 },
+    seats: [{x: -0.4, y: 0.671, z: 0.073, side: 'L', door: 0}, {x: 0.4, y: 0.671, z: 0.073, side: 'R', door: 1}],
+    doors: [{hinge: [-0.84, 1.02, -0.83], axis: [0, -1, 0], open: 66, side: 'L', box: [[-0.88, 0.42, -0.86], [-0.64, 1.62, 0.32]]}, {hinge: [0.84, 1.02, -0.83], axis: [0, 1, 0], open: 66, side: 'R', box: [[0.64, 0.42, -0.86], [0.88, 1.62, 0.32]]}],
     credit: '"Chevrolet S10" by Luquita (speedmodel), CC BY 4.0',
   },
   {
     id: 'fairheaven', name: "Fairheaven LT '80", kind: 'sedan', file: 'fairheaven.glb', npcFile: 'fairheaven_npc.glb', mass: 1600, cabinDark: 0.35,
     paint: 0x6e1f24, paints: [0x6e1f24, 0xc9c3b4, 0x2b3a55, 0x3b4a3a, 0x8c8f91, 0x1a1a1c, 0x9a7b4f],
     physics: { power: 100e3, torque: 300, drive: 'rwd', comHeight: 0.55, maxSteer: 36, steerRatio: 18, gears: [2.46, 1.46, 1.0], final: 2.73, redline: 4600, mu: 0.95 },
+    seats: [{x: -0.34, y: 0.553, z: 0.06, side: 'L', door: 0}, {x: 0.34, y: 0.553, z: 0.062, side: 'R', door: 1}, {x: -0.37, y: 0.55, z: 0.83, side: 'L', door: 2}, {x: 0, y: 0.55, z: 0.841, side: 'C', door: -1}, {x: 0.37, y: 0.551, z: 0.829, side: 'R', door: 3}],
+    doors: [{hinge: [-0.83, 0.775, -0.744], axis: [0, -1, 0], open: 68, side: 'L', box: [[-0.87, 0.29, -0.774], [-0.64, 1.26, 0.296]]}, {hinge: [0.83, 0.775, -0.744], axis: [0, 1, 0], open: 68, side: 'R', box: [[0.64, 0.29, -0.774], [0.87, 1.26, 0.296]]}, {hinge: [-0.83, 0.775, 0.282], axis: [0, -1, 0], open: 70, side: 'L', box: [[-0.87, 0.29, 0.253], [-0.64, 1.26, 1.122]]}, {hinge: [0.83, 0.775, 0.282], axis: [0, 1, 0], open: 70, side: 'R', box: [[0.64, 0.29, 0.253], [0.87, 1.26, 1.122]]}],
     credit: "\"Fairheaven LT '80 - Low poly model\" by Daniel Zhabotinsky, CC BY 4.0",
   },
   {
     id: 'milano', name: "Milano '95", kind: 'hatchback', file: 'milano.glb', npcFile: 'milano_npc.glb', mass: 1000, cabinDark: 0.4,
     paint: 0x1f3a3a, paints: [0x1f3a3a, 0xc8ccd0, 0x8a1c1c, 0x23324f, 0xe0d9c6, 0x505357, 0x3d5f2e],
     physics: { power: 66e3, torque: 130, drive: 'fwd', comHeight: 0.5, maxSteer: 36, steerRatio: 16, gears: [3.4, 1.9, 1.3, 0.95, 0.76], final: 4.1, redline: 6200, mu: 0.95 },
+    seats: [{x: -0.33, y: 0.476, z: -0.048, side: 'L', door: 0}, {x: 0.33, y: 0.476, z: -0.021, side: 'R', door: 1}, {x: -0.36, y: 0.525, z: 0.712, side: 'L', door: 0}, {x: 0.36, y: 0.529, z: 0.715, side: 'R', door: 1}],
+    doors: [{hinge: [-0.765, 0.825, -0.786], axis: [0, -1, 0], open: 68, side: 'L', box: [[-0.805, 0.24, -0.816], [-0.6, 1.41, 0.48]]}, {hinge: [0.765, 0.83, -0.786], axis: [0, 1, 0], open: 68, side: 'R', box: [[0.6, 0.25, -0.816], [0.805, 1.41, 0.48]]}],
     credit: "\"Milano '95 - Low poly model\" by Daniel Zhabotinsky, CC BY 4.0",
+  },
+  {
+    id: 'ferrari458', name: 'Ferrari 458 Italia', kind: 'supercar', file: 'ferrari458.glb', npcFile: 'ferrari458_npc.glb', mass: 1485, cabinDark: 0.6,
+    // the model's lenses are untinted: the round tail lamps are red glass
+    recolor: { lamp_tail: { color: 0x7a0a08 }, lamp_brake: { color: 0x7a0a08 } },
+    paint: 0xb0100f, paints: [0xb0100f, 0xe8b400, 0x0b0b0c, 0xe6e6e2, 0x5f6366, 0x1c2b52],
+    // 4.5 V8, 419 kW at 9000 rpm, 540 Nm, seven-speed twin-clutch, 325 km/h
+    physics: { power: 419e3, torque: 540, drive: 'rwd', comHeight: 0.45, maxSteer: 32, steerRatio: 11.9, gears: [3.08, 2.19, 1.63, 1.29, 1.03, 0.84, 0.69], final: 4.44, redline: 9000, idle: 1000, mu: 1.25, brake: 17000, cd: 0.33, area: 1.95, topSpeed: 325 },
+    seats: [{x: -0.36, y: 0.386, z: -0.097, side: 'L', door: 0}, {x: 0.36, y: 0.385, z: -0.097, side: 'R', door: 1}],
+    doors: [{hinge: [-0.935, 0.66, -0.83], axis: [0, -1, 0], open: 65, side: 'L', box: [[-0.975, 0.2, -0.86], [-0.72, 1.12, 0.3]]}, {hinge: [0.935, 0.66, -0.83], axis: [0, 1, 0], open: 65, side: 'R', box: [[0.72, 0.2, -0.86], [0.975, 1.12, 0.3]]}],
+    credit: '"Ferrari 458 Italia" by vicent091036 (Sketchfab), CC BY 4.0, as prepared for the three.js examples',
+  },
+  {
+    id: 'roadster', name: 'Tesla Roadster (2nd generation)', kind: 'electric', file: 'roadster.glb', npcFile: 'roadster_npc.glb', mass: 1900, cabinDark: 0.6,
+    fly: true, // the SpaceX package's cold-gas thrusters (flight.js)
+    // the model has no number plate: the recess for one is centred here on the tail (a US plate is 0.305 x 0.152 m)
+    plate: { pos: [0, 0.565, 2.235], size: [0.305, 0.152] },
+    eye: [-0.37, 1.0, 0.19],
+    seats: [{x: -0.37, y: 0.39, z: 0.17, side: 'L', door: 0}, {x: 0.37, y: 0.39, z: 0.17, side: 'R', door: 1}],
+    doors: [{hinge: [-0.835, 0.635, -0.861], axis: [0, -1, 0], open: 70, side: 'L', box: [[-0.875, 0.18, -0.891], [-0.65, 1.09, 0.421]]}, {hinge: [0.835, 0.635, -0.861], axis: [0, 1, 0], open: 70, side: 'R', box: [[0.65, 0.18, -0.891], [0.875, 1.09, 0.421]]}],
+    paint: 0xa3101a, paints: [0xa3101a, 0xe9e9e7, 0x0c0c0e, 0x8f9499, 0x1d3f7a],
+    // three motors, all-wheel drive, one reduction gear: Tesla's figures were 0 to 97 km/h in 1.9 s and over 400 km/h
+    physics: { power: 1100e3, torque: 2600, drive: 'awd', comHeight: 0.42, maxSteer: 33, steerRatio: 12, gears: [1], final: 5.8, redline: 18000, idle: 300, mu: 1.4, brake: 19000, cd: 0.27, area: 1.9, topSpeed: 400 },
+    credit: '"Tesla Roadster 2020" by metarex.4d (Sketchfab), CC BY 4.0',
+  },
+  {
+    id: 'gallardo', name: 'Lamborghini Gallardo', kind: 'supercar', file: 'gallardo.glb', npcFile: 'gallardo_npc.glb', mass: 1500, cabinDark: 0.6,
+    paint: 0xf0b000, paints: [0xf0b000, 0xe2520f, 0x5aae22, 0x0c0c0d, 0xe8e8e6, 0xa50f0f, 0x7d8084],
+    // LP560-4: 5.2 V10, 412 kW at 8000 rpm, 540 Nm, four-wheel drive, six-speed e-gear, 325 km/h
+    physics: { power: 412e3, torque: 540, drive: 'awd', comHeight: 0.45, maxSteer: 32, steerRatio: 13, gears: [3.09, 2.11, 1.57, 1.24, 1.07, 0.94], final: 3.54, redline: 8250, idle: 1000, mu: 1.25, brake: 17000, cd: 0.33, area: 1.95, topSpeed: 325 },
+    seats: [{x: -0.33, y: 0.4, z: -0.22, side: 'L', door: 0}, {x: 0.33, y: 0.4, z: -0.22, side: 'R', door: 1}],
+    doors: [{hinge: [-0.895, 0.635, -0.834], axis: [0, -1, 0], open: 66, side: 'L', box: [[-0.935, 0.2, -0.864], [-0.7, 1.07, 0.406]]}, {hinge: [0.895, 0.635, -0.834], axis: [0, 1, 0], open: 66, side: 'R', box: [[0.7, 0.2, -0.864], [0.935, 1.07, 0.406]]}],
+    credit: '"Lamborghini Gallardo 2010" by Artem P (temp0.crazy, Sketchfab), CC BY 4.0',
+  },
+  {
+    id: 'schoolbus', name: 'School bus', kind: 'bus', file: 'schoolbus.glb', npcFile: 'schoolbus_npc.glb', mass: 12500, cabinDark: 0.3, eye: [-0.55, 2.3, -2.25],
+    // an International IC CE: 7.6 l diesel, 194 kW, 976 Nm, five-speed automatic, governed to 105 km/h; air brakes
+    physics: { power: 194e3, torque: 976, drive: 'rwd', comHeight: 1.1, maxSteer: 48, steerRatio: 20, gears: [3.1, 1.81, 1.41, 1.0, 0.71], final: 5.29, redline: 2600, idle: 700, mu: 0.75, brake: 60000, cd: 0.65, area: 7.0, topSpeed: 105, arb: 200000, springHz: 1.3 },
+    // the driver, then forty-four children two to a bench, eleven rows each side of the aisle; all use the front door
+    seats: [{x: -0.574, y: 1.615, z: -2.46, side: 'L', door: 0}, ...[-1.368, -0.658, 0.052, 0.762, 1.472, 2.182, 2.892, 3.602, 4.312, 5.022, 5.732].flatMap(z =>
+      [[-0.91, 'L'], [-0.43, 'L'], [0.43, 'R'], [0.92, 'R']].map(([x, side]) => ({ x, y: 1.59, z, side, door: 0, kid: true })))],
+    // the entry door, right side by the driver (a folding door: one leaf here)
+    doors: [{hinge: [1.21, 1.49, -2.7], axis: [0, 1, 0], open: 90, side: 'R', box: [[1.15, 0.32, -2.713], [1.25, 2.65, -2.028]]}],
+    credit: '"School Bus Conversion" by steun (Sketchfab), CC BY 4.0; the camper fittings taken out, children\'s bench seats and rear lamp lenses added',
+  },
+  {
+    // a tractor unit with two driven rear axles: the physics drives the first (wheel_RL/RR), the second (wheel_RL2/RR2)
+    // turns with it
+    id: 'semi', name: 'Tesla Semi', kind: 'truck', file: 'semi.glb', npcFile: 'semi_npc.glb', mass: 10500, cabinDark: 0.3,
+    // electric, motors on the rear axles, one reduction gear, governed to 105 km/h
+    physics: { power: 800e3, torque: 2600, drive: 'rwd', comHeight: 1.0, maxSteer: 45, steerRatio: 20, gears: [1], final: 9.8, redline: 12000, idle: 300, mu: 0.8, brake: 50000, cd: 0.36, area: 9.0, topSpeed: 105, arb: 160000, springHz: 1.4 },
+    // the model has no cab interior: the driver sits in the middle, as in the real truck; a steering wheel is built
+    eye: [0, 2.15, -1.05], wheel: { pos: [0, 1.75, -1.45], tilt: 40, r: 0.22 },
+    seats: [{x: 0, y: 1.45, z: -0.95, side: 'C', door: 0}, {x: 0.55, y: 1.42, z: -0.4, side: 'R', door: 1}],
+    doors: [{hinge: [-1.21, 1.475, -1.02], axis: [0, -1, 0], open: 75, side: 'L', box: [[-1.25, 0.6, -1.05], [-1.02, 2.35, -0.3]]}, {hinge: [1.21, 1.475, -1.02], axis: [0, 1, 0], open: 75, side: 'R', box: [[1.02, 0.6, -1.05], [1.25, 2.35, -0.3]]}],
+    credit: '"Tesla Semi" by Oleksii Rozumnyi (Sketchfab), CC BY 4.0; rear lamp lenses added',
   },
   {
     id: 'shvan', name: "Shvan '92 van", kind: 'van', file: 'shvan_npc.glb', npcFile: 'shvan_npc.glb', mass: 2100, npcOnly: true,
     paint: 0xe6e6e2, paints: [0xe6e6e2, 0x1b1d22, 0x6b7378, 0x2b3f63, 0x7d2a22, 0xb9ad8f],
+    seats: [{x: -0.4, y: 0.968, z: -0.853, side: 'L', door: 0}, {x: 0.4, y: 0.973, z: -0.853, side: 'R', door: 1}],
+    doors: [{hinge: [-0.908, 1.205, -1.507], axis: [0, -1, 0], open: 70, side: 'L', box: [[-0.948, 0.5, -1.537], [-0.79, 1.91, -0.506]]}, {hinge: [0.906, 1.215, -1.507], axis: [0, 1, 0], open: 70, side: 'R', box: [[0.79, 0.51, -1.537], [0.946, 1.92, -0.506]]}, {hinge: [-0.908, 1.2, -0.486], axis: [0, -1, 0], open: 90, side: 'L', box: [[-0.948, 0.49, -0.516], [-0.78, 1.91, 0.887]]}, {hinge: [0.906, 1.21, -0.486], axis: [0, 1, 0], open: 90, side: 'R', box: [[0.78, 0.5, -0.516], [0.946, 1.92, 0.887]]}],
     credit: "\"Shvan '92 - Low poly model\" by Daniel Zhabotinsky, CC BY 4.0",
   },
   {
     id: 'conquer', name: "Conquer '89 pickup", kind: 'pickup', file: 'conquer_npc.glb', npcFile: 'conquer_npc.glb', mass: 1800, npcOnly: true,
     paint: 0xd8d2c0, paints: [0xd8d2c0, 0x3a4b5e, 0x7b2020, 0x2a2b2d, 0x4f5f45, 0x98999b],
+    seats: [{x: -0.36, y: 0.841, z: -0.008, side: 'L', door: 0}, {x: 0.36, y: 0.845, z: -0.006, side: 'R', door: 1}],
+    doors: [{hinge: [-0.787, 1.065, -0.759], axis: [0, -1, 0], open: 66, side: 'L', box: [[-0.827, 0.47, -0.789], [-0.62, 1.66, 0.279]]}, {hinge: [0.776, 1.075, -0.759], axis: [0, 1, 0], open: 66, side: 'R', box: [[0.62, 0.48, -0.789], [0.816, 1.67, 0.279]]}],
     credit: "\"Conquer '89 Pickup - Low poly model\" by Daniel Zhabotinsky, CC BY 4.0",
   },
 ];
 
-// traffic: the cheap versions of every car, weighted towards ordinary ones
-export const TRAFFIC = ['fairheaven', 'milano', 'shvan', 'conquer', 'volvos90', 's10', 'fairheaven', 'milano', 'volvos90', 'porsche930'];
+// traffic: the cheap versions of every car, weighted towards ordinary ones (each name is one ticket; the supercars,
+// the bus and the truck have one ticket in about twenty-five)
+const ORDINARY = ['fairheaven', 'milano', 'shvan', 'conquer', 'volvos90', 's10', 'fairheaven', 'milano', 'volvos90', 'porsche930'];
+export const TRAFFIC = [...ORDINARY, ...ORDINARY, 'ferrari458', 'roadster', 'gallardo', 'schoolbus', 'semi'];
 
 const byId = id => CARS.find(c => c.id === id);
 
@@ -85,7 +163,7 @@ function loader() {
 const templates = new Map(); // file -> Promise<{ scene, info }>
 function loadTemplate(file) {
   if (!templates.has(file)) {
-    templates.set(file, loader().loadAsync(MODELS + file + '?v=15').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
+    templates.set(file, loader().loadAsync(MODELS + file + '?v=16').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
   }
   return templates.get(file);
 }
@@ -166,6 +244,8 @@ function prepareTemplate(scene) {
     });
     o.material = Array.isArray(o.material) ? out : out[0];
   });
+  // wheels posed steered or off their hub would wobble when they spin: straighten them (wheels.js)
+  try { info.wheels = fixWheels(scene); } catch (e) { console.warn('wheel check', e); }
   scene.updateMatrixWorld(true);
   return { scene, info };
 }
@@ -250,7 +330,7 @@ function lampMaterial(src, role, level) {
 export async function makeEnvironment(renderer, { file = 'env/wide_street_01_1k.hdr' } = {}) {
   const pm = new THREE.PMREMGenerator(renderer);
   try {
-    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=15');
+    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=16');
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     const env = pm.fromEquirectangular(hdr).texture;
     env.userData.source = hdr; // the garage shows it as a backdrop
@@ -481,8 +561,12 @@ export async function loadCar(id, opts = {}) {
   const tpl = await loadTemplate(file);
   let proxyTpl = null;
   if (!npc && spec.npcFile && spec.npcFile !== file && opts.shadowProxy !== false) proxyTpl = await loadTemplate(spec.npcFile).catch(() => null);
-  return new CarRig(spec, tpl, { ...opts, npc, proxyTpl });
+  const rig = new CarRig(spec, tpl, { ...opts, npc, proxyTpl });
+  // modules that set up every new car before its shaders are built (damage.js: paint and glass, door pivots)
+  for (const f of rigHooks) { try { f(rig); } catch (e) { console.warn('rig hook', e); } }
+  return rig;
 }
+export const rigHooks = [];
 
 // A soft dark patch on the road under every car, where the sky's light does not reach under the body: what makes a
 // car sit on the road rather than hover over it (the sun's shadow alone leaves the ground under it lit from the side).
@@ -572,6 +656,9 @@ class CarRig {
       this.wheels.push({ pos, radius, steer: k[0] === 'F' });
       this._w.push({ pivot, spin, rest: pos.y });
     }
+    // a long vehicle's other wheels (wheel_RL2...) turn with the physics wheel they are named after
+    this._xw = [];
+    try { this._xw = addExtraWheels(this, model); } catch (e) { console.warn('extra wheels', e); }
 
     // dims from the body and wheels
     model.updateMatrixWorld(true);
@@ -878,6 +965,7 @@ class CarRig {
       w.pivot.rotation.y = W[i].steer ? (i === 0 ? aL : aR) : 0;
       w.pivot.position.y = w.rest + (s.susp ? (s.susp[i] || 0) : 0);
     }
+    if (this._xw.length) updateExtraWheels(this._xw, s, aL, aR);
     // steering wheel about its column
     if (this._steer) {
       _q.setFromAxisAngle(this._steer.axis, s.steeringWheel || 0);

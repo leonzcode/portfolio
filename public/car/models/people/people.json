@@ -1,0 +1,769 @@
+{
+ "source": "Microsoft Rocketbox Avatar Library (MIT)",
+ "models": [
+  {
+   "id": "f_business_03",
+   "file": "f_business_03.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Brown suit, skirt",
+   "src": "Business_Female_03",
+   "h": 1.743,
+   "hip": 0.923,
+   "regions": {
+    "top": "#69564b",
+    "bottom": "#534239",
+    "shoes": "#4f4840",
+    "skin": "#cf9c84",
+    "hair": "#130e0b"
+   },
+   "mask": "f_business_03_m.png",
+   "headMask": "f_business_03_h.png"
+  },
+  {
+   "id": "m_business_02",
+   "file": "m_business_02.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Navy suit",
+   "src": "Business_Male_02",
+   "h": 1.822,
+   "hip": 0.895,
+   "regions": {
+    "top": "#2d2d37",
+    "bottom": "#232429",
+    "shoes": "#1c1c1d",
+    "skin": "#b28065",
+    "hair": "#120f0c"
+   },
+   "mask": "m_business_02_m.png",
+   "headMask": "m_business_02_h.png"
+  },
+  {
+   "id": "m_business_06",
+   "file": "m_business_06.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "White shirt, black trousers",
+   "src": "Business_Male_06",
+   "h": 1.809,
+   "hip": 0.895,
+   "regions": {
+    "top": "#dddddd",
+    "bottom": "#121212",
+    "shoes": "#100f0e",
+    "skin": "#be846f"
+   },
+   "mask": "m_business_06_m.png",
+   "headMask": "m_business_06_h.png"
+  },
+  {
+   "id": "m_delivery_01",
+   "file": "m_delivery_01.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Red check shirt, jeans",
+   "src": "Delivery_Male_01",
+   "h": 1.815,
+   "hip": 0.895,
+   "regions": {
+    "top": "#7b1f1f",
+    "bottom": "#4b595f",
+    "shoes": "#171817",
+    "skin": "#c38367"
+   },
+   "mask": "m_delivery_01_m.png",
+   "headMask": "m_delivery_01_h.png"
+  },
+  {
+   "id": "f_adult_01",
+   "file": "f_adult_01.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Pink shirt, jeans",
+   "src": "Female_Adult_01",
+   "h": 1.739,
+   "hip": 0.923,
+   "regions": {
+    "top": "#c46c78",
+    "bottom": "#39505d",
+    "shoes": "#282d29",
+    "skin": "#d4a289",
+    "hair": "#98714b"
+   },
+   "mask": "f_adult_01_m.png",
+   "headMask": "f_adult_01_h.png"
+  },
+  {
+   "id": "f_adult_02",
+   "file": "f_adult_02.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "White shirt, denim skirt",
+   "src": "Female_Adult_02",
+   "h": 1.731,
+   "hip": 0.923,
+   "regions": {
+    "top": "#b6b7ab",
+    "bottom": "#283439",
+    "shoes": "#151410",
+    "skin": "#d7a182",
+    "hair": "#22150d"
+   },
+   "mask": "f_adult_02_m.png",
+   "headMask": "f_adult_02_h.png"
+  },
+  {
+   "id": "f_adult_03",
+   "file": "f_adult_03.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Purple top, jeans",
+   "src": "Female_Adult_03",
+   "h": 1.739,
+   "hip": 0.923,
+   "regions": {
+    "top": "#853a7a",
+    "bottom": "#1e1e1a",
+    "shoes": "#1a1913",
+    "skin": "#cd9981",
+    "hair": "#14100d"
+   },
+   "mask": "f_adult_03_m.png",
+   "headMask": "f_adult_03_h.png"
+  },
+  {
+   "id": "f_adult_05",
+   "file": "f_adult_05.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Pale pink shirt, jeans",
+   "src": "Female_Adult_05",
+   "h": 1.736,
+   "hip": 0.923,
+   "regions": {
+    "top": "#dcaaa1",
+    "bottom": "#344e5a",
+    "shoes": "#1e2424",
+    "skin": "#cd9277",
+    "hair": "#1a110d"
+   },
+   "mask": "f_adult_05_m.png",
+   "headMask": "f_adult_05_h.png"
+  },
+  {
+   "id": "f_adult_06",
+   "file": "f_adult_06.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Headscarf, long dress",
+   "src": "Female_Adult_06",
+   "h": 1.735,
+   "hip": 0.923,
+   "regions": {
+    "top": "#726139",
+    "bottom": "#5e4f2d",
+    "shoes": "#23201b",
+    "skin": "#c18d6b",
+    "hair": "#d7d6d4"
+   },
+   "mask": "f_adult_06_m.png",
+   "headMask": "f_adult_06_h.png"
+  },
+  {
+   "id": "f_adult_07",
+   "file": "f_adult_07.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Brown jacket, jeans",
+   "src": "Female_Adult_07",
+   "h": 1.722,
+   "hip": 0.923,
+   "regions": {
+    "top": "#2f1f18",
+    "bottom": "#4d5356",
+    "shoes": "#191310",
+    "skin": "#cf9c84",
+    "hair": "#21120b"
+   },
+   "mask": "f_adult_07_m.png",
+   "headMask": "f_adult_07_h.png"
+  },
+  {
+   "id": "f_adult_08",
+   "file": "f_adult_08.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Grey top, jeans",
+   "src": "Female_Adult_08",
+   "h": 1.735,
+   "hip": 0.923,
+   "regions": {
+    "top": "#7f7e77",
+    "bottom": "#334352",
+    "shoes": "#26221d",
+    "skin": "#d3a188",
+    "hair": "#302117"
+   },
+   "mask": "f_adult_08_m.png",
+   "headMask": "f_adult_08_h.png"
+  },
+  {
+   "id": "f_adult_09",
+   "file": "f_adult_09.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Grey blazer, trousers",
+   "src": "Female_Adult_09",
+   "h": 1.735,
+   "hip": 0.923,
+   "regions": {
+    "top": "#5a4c3f",
+    "bottom": "#151612",
+    "shoes": "#38302c",
+    "skin": "#ce9878",
+    "hair": "#453122"
+   },
+   "mask": "f_adult_09_m.png",
+   "headMask": "f_adult_09_h.png"
+  },
+  {
+   "id": "f_adult_11",
+   "file": "f_adult_11.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Brown dress",
+   "src": "Female_Adult_11",
+   "h": 1.736,
+   "hip": 0.923,
+   "regions": {
+    "top": "#301e17",
+    "bottom": "#2a1912",
+    "shoes": "#2c1c17",
+    "skin": "#c48f6d",
+    "hair": "#1b120e"
+   },
+   "mask": "f_adult_11_m.png",
+   "headMask": "f_adult_11_h.png"
+  },
+  {
+   "id": "f_adult_12",
+   "file": "f_adult_12.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Black hoodie, shorts",
+   "src": "Female_Adult_12",
+   "h": 1.726,
+   "hip": 0.923,
+   "regions": {
+    "top": "#1c1e1a",
+    "bottom": "#202d32",
+    "shoes": "#2e5f39",
+    "skin": "#cc9982",
+    "hair": "#351e14"
+   },
+   "mask": "f_adult_12_m.png",
+   "headMask": "f_adult_12_h.png"
+  },
+  {
+   "id": "f_adult_13",
+   "file": "f_adult_13.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Grey jacket, jeans",
+   "src": "Female_Adult_13",
+   "h": 1.751,
+   "hip": 0.923,
+   "regions": {
+    "top": "#4c4b46",
+    "bottom": "#2b3746",
+    "shoes": "#25292d",
+    "skin": "#d4a289",
+    "hair": "#b79165"
+   },
+   "mask": "f_adult_13_m.png",
+   "headMask": "f_adult_13_h.png"
+  },
+  {
+   "id": "f_adult_14",
+   "file": "f_adult_14.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Beige jacket, trousers",
+   "src": "Female_Adult_14",
+   "h": 1.739,
+   "hip": 0.923,
+   "regions": {
+    "top": "#857c6c",
+    "bottom": "#1e2427",
+    "shoes": "#23201d",
+    "skin": "#c99273",
+    "hair": "#4c3524"
+   },
+   "mask": "f_adult_14_m.png",
+   "headMask": "f_adult_14_h.png"
+  },
+  {
+   "id": "f_adult_15",
+   "file": "f_adult_15.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Blue blouse, skirt",
+   "src": "Female_Adult_15",
+   "h": 1.739,
+   "hip": 0.923,
+   "regions": {
+    "top": "#464b67",
+    "bottom": "#141311",
+    "shoes": "#1d1a18",
+    "skin": "#cc967e",
+    "hair": "#5a3820"
+   },
+   "mask": "f_adult_15_m.png",
+   "headMask": "f_adult_15_h.png"
+  },
+  {
+   "id": "f_adult_17",
+   "file": "f_adult_17.glb",
+   "sex": "f",
+   "kid": false,
+   "label": "Green T-shirt, light jeans",
+   "src": "Female_Adult_17",
+   "h": 1.751,
+   "hip": 0.923,
+   "regions": {
+    "top": "#5e9c76",
+    "bottom": "#819eaa",
+    "shoes": "#526455",
+    "skin": "#d4a289",
+    "hair": "#946c46"
+   },
+   "mask": "f_adult_17_m.png",
+   "headMask": "f_adult_17_h.png"
+  },
+  {
+   "id": "f_child_01",
+   "file": "f_child_01.glb",
+   "sex": "f",
+   "kid": true,
+   "label": "Pink top, jeans",
+   "src": "Female_Child_01",
+   "h": 1.431,
+   "hip": 0.757,
+   "regions": {
+    "top": "#bb07a5",
+    "bottom": "#99a4b1",
+    "shoes": "#94799a",
+    "skin": "#d4a38a"
+   },
+   "mask": "f_child_01_m.png",
+   "headMask": "f_child_01_h.png"
+  },
+  {
+   "id": "f_child_02",
+   "file": "f_child_02.glb",
+   "sex": "f",
+   "kid": true,
+   "label": "Green coat, scarf",
+   "src": "Female_Child_02",
+   "h": 1.437,
+   "hip": 0.757,
+   "regions": {
+    "top": "#4d5d47",
+    "bottom": "#3e4b38",
+    "shoes": "#24211c",
+    "skin": "#c78b63"
+   },
+   "mask": "f_child_02_m.png",
+   "headMask": "f_child_02_h.png"
+  },
+  {
+   "id": "m_adult_01",
+   "file": "m_adult_01.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "White polo, shorts",
+   "src": "Male_Adult_01",
+   "h": 1.823,
+   "hip": 0.895,
+   "regions": {
+    "top": "#b8aea4",
+    "bottom": "#8f7759",
+    "shoes": "#585858",
+    "skin": "#be8876",
+    "hair": "#271910"
+   },
+   "mask": "m_adult_01_m.png",
+   "headMask": "m_adult_01_h.png"
+  },
+  {
+   "id": "m_adult_02",
+   "file": "m_adult_02.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Beige jumper, trousers",
+   "src": "Male_Adult_02",
+   "h": 1.822,
+   "hip": 0.895,
+   "regions": {
+    "top": "#ab9781",
+    "bottom": "#24201a",
+    "shoes": "#282721",
+    "skin": "#cd9a84",
+    "hair": "#201711"
+   },
+   "mask": "m_adult_02_m.png",
+   "headMask": "m_adult_02_h.png"
+  },
+  {
+   "id": "m_adult_03",
+   "file": "m_adult_03.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Grey jacket, black trousers",
+   "src": "Male_Adult_03",
+   "h": 1.806,
+   "hip": 0.895,
+   "regions": {
+    "top": "#4f483f",
+    "bottom": "#181817",
+    "shoes": "#262626",
+    "skin": "#bf846e",
+    "hair": "#80604f"
+   },
+   "mask": "m_adult_03_m.png",
+   "headMask": "m_adult_03_h.png"
+  },
+  {
+   "id": "m_adult_04",
+   "file": "m_adult_04.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Black jacket, jeans",
+   "src": "Male_Adult_04",
+   "h": 1.868,
+   "hip": 0.895,
+   "regions": {
+    "top": "#242520",
+    "bottom": "#3b3428",
+    "shoes": "#504f50",
+    "skin": "#925f3f",
+    "hair": "#221913"
+   },
+   "mask": "m_adult_04_m.png",
+   "headMask": "m_adult_04_h.png"
+  },
+  {
+   "id": "m_adult_05",
+   "file": "m_adult_05.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Beige vest, brown trousers",
+   "src": "Male_Adult_05",
+   "h": 1.812,
+   "hip": 0.895,
+   "regions": {
+    "top": "#464a33",
+    "bottom": "#443429",
+    "shoes": "#534027",
+    "skin": "#ca8d6c",
+    "hair": "#291f18"
+   },
+   "mask": "m_adult_05_m.png",
+   "headMask": "m_adult_05_h.png"
+  },
+  {
+   "id": "m_adult_06",
+   "file": "m_adult_06.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Red jumper, jeans",
+   "src": "Male_Adult_06",
+   "h": 1.831,
+   "hip": 0.895,
+   "regions": {
+    "top": "#a42e2c",
+    "bottom": "#232a2c",
+    "shoes": "#3e454a",
+    "skin": "#bb856d",
+    "hair": "#372518"
+   },
+   "mask": "m_adult_06_m.png",
+   "headMask": "m_adult_06_h.png"
+  },
+  {
+   "id": "m_adult_07",
+   "file": "m_adult_07.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Dark jacket, jeans",
+   "src": "Male_Adult_07",
+   "h": 1.82,
+   "hip": 0.895,
+   "regions": {
+    "top": "#3e3c37",
+    "bottom": "#29373f",
+    "shoes": "#212a29",
+    "skin": "#bb7855",
+    "hair": "#160c06"
+   },
+   "mask": "m_adult_07_m.png",
+   "headMask": "m_adult_07_h.png"
+  },
+  {
+   "id": "m_adult_08",
+   "file": "m_adult_08.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Blue shirt, dark trousers",
+   "src": "Male_Adult_08",
+   "h": 1.825,
+   "hip": 0.895,
+   "regions": {
+    "top": "#8ca3b8",
+    "bottom": "#25282e",
+    "shoes": "#191a19",
+    "skin": "#be876f",
+    "hair": "#2a1b13"
+   },
+   "mask": "m_adult_08_m.png",
+   "headMask": "m_adult_08_h.png"
+  },
+  {
+   "id": "m_adult_09",
+   "file": "m_adult_09.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Black T-shirt, jeans",
+   "src": "Male_Adult_09",
+   "h": 1.821,
+   "hip": 0.895,
+   "regions": {
+    "top": "#242329",
+    "bottom": "#5e6b6f",
+    "shoes": "#484a4b",
+    "skin": "#cd9a7c",
+    "hair": "#16110e"
+   },
+   "mask": "m_adult_09_m.png",
+   "headMask": "m_adult_09_h.png"
+  },
+  {
+   "id": "m_adult_10",
+   "file": "m_adult_10.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Red jacket, black trousers",
+   "src": "Male_Adult_10",
+   "h": 1.829,
+   "hip": 0.895,
+   "regions": {
+    "top": "#6e2220",
+    "bottom": "#272727",
+    "shoes": "#1e1e1e",
+    "skin": "#d2905f",
+    "hair": "#120a03"
+   },
+   "mask": "m_adult_10_m.png",
+   "headMask": "m_adult_10_h.png"
+  },
+  {
+   "id": "m_adult_11",
+   "file": "m_adult_11.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Dark T-shirt, jeans",
+   "src": "Male_Adult_11",
+   "h": 1.802,
+   "hip": 0.895,
+   "regions": {
+    "top": "#2e2b23",
+    "bottom": "#526672",
+    "shoes": "#353727",
+    "skin": "#e2a085"
+   },
+   "mask": "m_adult_11_m.png",
+   "headMask": "m_adult_11_h.png"
+  },
+  {
+   "id": "m_adult_12",
+   "file": "m_adult_12.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Denim jacket, jeans",
+   "src": "Male_Adult_12",
+   "h": 1.806,
+   "hip": 0.895,
+   "regions": {
+    "top": "#353c44",
+    "bottom": "#6c7981",
+    "shoes": "#525f68",
+    "skin": "#583d36"
+   },
+   "mask": "m_adult_12_m.png",
+   "headMask": "m_adult_12_h.png"
+  },
+  {
+   "id": "m_adult_13",
+   "file": "m_adult_13.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Patterned jumper, jeans",
+   "src": "Male_Adult_13",
+   "h": 1.805,
+   "hip": 0.895,
+   "regions": {
+    "top": "#5d5d5d",
+    "bottom": "#344044",
+    "shoes": "#3a342a",
+    "skin": "#b47b66"
+   },
+   "mask": "m_adult_13_m.png",
+   "headMask": "m_adult_13_h.png"
+  },
+  {
+   "id": "m_adult_14",
+   "file": "m_adult_14.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Grey jacket, khakis",
+   "src": "Male_Adult_14",
+   "h": 1.795,
+   "hip": 0.895,
+   "regions": {
+    "top": "#6f7067",
+    "bottom": "#968162",
+    "shoes": "#42271b",
+    "skin": "#c08772"
+   },
+   "mask": "m_adult_14_m.png",
+   "headMask": "m_adult_14_h.png"
+  },
+  {
+   "id": "m_adult_15",
+   "file": "m_adult_15.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "White kurta",
+   "src": "Male_Adult_15",
+   "h": 1.818,
+   "hip": 0.895,
+   "regions": {
+    "top": "#d6cec1",
+    "bottom": "#c0b9ac",
+    "shoes": "#534032",
+    "skin": "#a27051"
+   },
+   "mask": "m_adult_15_m.png",
+   "headMask": "m_adult_15_h.png"
+  },
+  {
+   "id": "m_adult_16",
+   "file": "m_adult_16.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Blue T-shirt, jeans",
+   "src": "Male_Adult_16",
+   "h": 1.809,
+   "hip": 0.895,
+   "regions": {
+    "top": "#445b77",
+    "bottom": "#4d5e6d",
+    "shoes": "#373a39",
+    "skin": "#ce9a7d"
+   },
+   "mask": "m_adult_16_m.png",
+   "headMask": "m_adult_16_h.png"
+  },
+  {
+   "id": "m_adult_17",
+   "file": "m_adult_17.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Blue and white hoodie",
+   "src": "Male_Adult_17",
+   "h": 1.812,
+   "hip": 0.895,
+   "regions": {
+    "top": "#023071",
+    "bottom": "#283437",
+    "shoes": "#7d7968",
+    "skin": "#996649"
+   },
+   "mask": "m_adult_17_m.png",
+   "headMask": "m_adult_17_h.png"
+  },
+  {
+   "id": "m_adult_18",
+   "file": "m_adult_18.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Grey hoodie, trousers",
+   "src": "Male_Adult_18",
+   "h": 1.813,
+   "hip": 0.895,
+   "regions": {
+    "top": "#756e64",
+    "bottom": "#1c1b1b",
+    "shoes": "#1e1f1b",
+    "skin": "#724535"
+   },
+   "mask": "m_adult_18_m.png",
+   "headMask": "m_adult_18_h.png"
+  },
+  {
+   "id": "m_adult_20",
+   "file": "m_adult_20.glb",
+   "sex": "m",
+   "kid": false,
+   "label": "Brown jacket, jeans",
+   "src": "Male_Adult_20",
+   "h": 1.805,
+   "hip": 0.895,
+   "regions": {
+    "top": "#39271f",
+    "bottom": "#26292d",
+    "shoes": "#1f2023",
+    "skin": "#c48770"
+   },
+   "mask": "m_adult_20_m.png",
+   "headMask": "m_adult_20_h.png"
+  },
+  {
+   "id": "m_child_01",
+   "file": "m_child_01.glb",
+   "sex": "m",
+   "kid": true,
+   "label": "Blue hoodie, jeans",
+   "src": "Male_Child_01",
+   "h": 1.434,
+   "hip": 0.707,
+   "regions": {
+    "top": "#1a598f",
+    "bottom": "#63767e",
+    "shoes": "#8b8c8b",
+    "skin": "#cc9882"
+   },
+   "mask": "m_child_01_m.png",
+   "headMask": "m_child_01_h.png"
+  },
+  {
+   "id": "m_child_02",
+   "file": "m_child_02.glb",
+   "sex": "m",
+   "kid": true,
+   "label": "Orange T-shirt, shorts",
+   "src": "Male_Child_02",
+   "h": 1.425,
+   "hip": 0.707,
+   "regions": {
+    "top": "#9b5134",
+    "bottom": "#463b34",
+    "shoes": "#352822",
+    "skin": "#633d31"
+   },
+   "mask": "m_child_02_m.png",
+   "headMask": "m_child_02_h.png"
+  }
+ ]
+}

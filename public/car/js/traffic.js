@@ -3,10 +3,10 @@
 // and signals for it, stops at red lights (signals.js, the same timing the lights show), waits at stop signs, gives
 // way at junctions without lights, slows for the player's car in its path, and stops with its hazards on when hit.
 import * as THREE from 'three';
-import * as SIG from './signals.js?v=15';
-import { frame } from './geo.js?v=15';
+import * as SIG from './signals.js?v=16';
+import { frame } from './geo.js?v=16';
 
-const AMERICAN = new Set(['s10', 'conquer', 'shvan']);
+const AMERICAN = new Set(['s10', 'conquer', 'shvan', 'schoolbus', 'semi']);
 const inAmericas = () => frame.lat > 14 && frame.lat < 72 && frame.lon > -170 && frame.lon < -52;
 const nearNYC = () => Math.abs(frame.lat - 40.74) < 0.25 && Math.abs(frame.lon + 73.95) < 0.3;
 const PAINTS = [0xf2f2f0, 0xf2f2f0, 0x111214, 0x111214, 0x8c9096, 0xb8bcc2, 0x55595f, 0x1e3a6b, 0x7a1418, 0x24402c, 0xc9b99a, 0x3d4a5c, 0x9a2a1d, 0xe8e2d0];
@@ -98,13 +98,16 @@ export class Traffic {
     if ((model === 'volvos90' || model === 'fairheaven') && nearNYC() && Math.random() < 0.35) color = 0xf2b705;
     const rig = await this.C.loadCar(model, { npc: true, color });
     if (this.carEnv && rig.setEnvMap) rig.setEnvMap(this.carEnv);
-    rig.model = model;
+    // (the pool's key: rig.model stays the rig's own model group, which damage.js and flight.js use)
+    rig.modelId = model;
     return rig;
   }
   freeRig(rig) {
     this.group.remove(rig.object);
-    if (!this.pool.has(rig.model)) this.pool.set(rig.model, []);
-    this.pool.get(rig.model).push(rig);
+    if (rig.onFree) { try { rig.onFree(); } catch (e) {} } // a crashed car goes back to the pool as new (damage.js)
+    const key = rig.modelId || rig.id;
+    if (!this.pool.has(key)) this.pool.set(key, []);
+    this.pool.get(key).push(rig);
   }
 
   // road lanes near the player, refreshed every two seconds
@@ -236,6 +239,8 @@ export class Traffic {
       // the player's car alongside, overlapping this one: wait rather than grind along its side
       gap = 0; lv = 0;
     }
+    // cars the player left in the lane, a car being taken (onfoot.js sets this)
+    if (this.extraAhead) { try { const r = this.extraAhead(c, gap, lv); if (r) { gap = r.gap; lv = r.lv; } } catch (e) {} }
     return { gap, lv };
   }
 
@@ -310,7 +315,7 @@ export class Traffic {
     o.position.set(c.x, y + 0.02 + (c.off.lengthSq() > 0.01 ? 0 : this.yLift), c.z);
     _e.set(pitch, -yaw - c.offYaw, 0, 'YXZ');
     o.quaternion.setFromEuler(_e);
-    c.spin += c.v * dt / 0.33;
+    c.spin = (c.spin + c.v * dt / ((c.rig.wheels && c.rig.wheels[2] && c.rig.wheels[2].radius) || 0.33)) % (Math.PI * 2); // each model's own wheel size
     const steer = THREE.MathUtils.clamp(-(this.curv(c)) * 2.7, -0.6, 0.6);
     c.rig.update(dt, { speed: c.v, wheelSpin: [c.spin, c.spin, c.spin, c.spin], steer, steeringWheel: steer * 14, susp: [0, 0, 0, 0], brake: c.brake, reverse: false, signal: c.signal, headlights: false });
   }
@@ -342,6 +347,12 @@ export class Traffic {
     for (const c of this.list) {
       const fx = Math.sin(c.yaw + c.offYaw), fz = -Math.cos(c.yaw + c.offYaw), o = c.len * 0.27, r = 0.95;
       const vx = fx * c.v + c.push.x, vz = fz * c.v + c.push.y;
+      if (c.len > 6.5 && c.rig.dims) {
+        // a bus or a truck: a row of circles as wide as it is, centred on its body
+        const d = c.rig.dims, R = d.width / 2 * 0.95, oc = (d.front - d.rear) / 2, n = Math.ceil(d.length / (R * 1.3)) + 1;
+        for (let i = 0; i < n; i++) { const t = oc - (d.length / 2 - R) + (d.length - 2 * R) * i / (n - 1); out.push({ x: c.x + fx * t, z: c.z + fz * t, r: R, vx, vz, obj: c }); }
+        continue;
+      }
       out.push({ x: c.x + fx * o, z: c.z + fz * o, r, vx, vz, obj: c }, { x: c.x - fx * o, z: c.z - fz * o, r, vx, vz, obj: c });
     }
     return out;

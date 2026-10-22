@@ -17,8 +17,8 @@
 // placed with yaw H (heading degrees) its front faces heading H.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { frame, dirHeading } from './geo.js?v=15';
-import * as SIG from './signals.js?v=15';
+import { frame, dirHeading } from './geo.js?v=16';
+import * as SIG from './signals.js?v=16';
 
 const D2R = Math.PI / 180;
 const BIN = 500;
@@ -233,14 +233,15 @@ function haloTexture() {
   g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
   const t = new THREE.CanvasTexture(c); return t;
 }
-// Sign atlas, 4 x 2 cells of 256 px: 0 STOP, 1 YIELD, 2 give way (plain), 3 GIVE WAY (UK), 4 Japanese stop,
-// 5 bus stop plate, 6 sign back (bare metal), 7 shelter poster.
+// Sign atlas, 4 x 3 cells of 256 px: 0 STOP, 1 YIELD, 2 give way (plain), 3 GIVE WAY (UK), 4 Japanese stop,
+// 5 bus stop plate, 6 sign back (bare metal), 7 shelter poster, 8 ALL WAY plaque (its top third).
+const ATLAS_ROWS = 3;
 function signAtlas() {
-  const c = canvas(1024, 512), g = c.getContext('2d');
+  const c = canvas(1024, 256 * ATLAS_ROWS), g = c.getContext('2d');
   const cell = (k) => [(k % 4) * 256, Math.floor(k / 4) * 256];
   const poly = (cx, cy, R, n, a0) => { g.beginPath(); for (let i = 0; i < n; i++) { const a = a0 + i * 2 * Math.PI / n; const x = cx + R * Math.cos(a), y = cy - R * Math.sin(a); i ? g.lineTo(x, y) : g.moveTo(x, y); } g.closePath(); };
   const RED = '#c4122f', SANS = 'Arial, Helvetica, sans-serif';
-  g.fillStyle = '#8f969c'; g.fillRect(0, 0, 1024, 512);
+  g.fillStyle = '#8f969c'; g.fillRect(0, 0, 1024, 256 * ATLAS_ROWS);
   { const [x, y] = cell(0), cx = x + 128, cy = y + 128;
     poly(cx, cy, 128, 8, Math.PI / 8); g.fillStyle = '#fff'; g.fill();
     poly(cx, cy, 119, 8, Math.PI / 8); g.fillStyle = RED; g.fill();
@@ -275,11 +276,16 @@ function signAtlas() {
     g.fillStyle = '#f5f5f0'; g.beginPath(); g.arc(x + 170, y + 80, 34, 0, 7); g.fill();
     g.fillStyle = '#163a5c'; g.font = `bold 34px ${SANS}`; g.textAlign = 'left'; g.fillText('SUMMER', x + 20, y + 200);
     g.font = `20px ${SANS}`; g.fillText('sale now on', x + 22, y + 228); }
+  { const [x, y] = cell(8), H = 85; // the plaque under an all-way stop (MUTCD R1-3P, 18 x 6 in)
+    g.fillStyle = '#fff'; g.beginPath(); g.roundRect(x, y, 256, H, 8); g.fill();
+    g.fillStyle = RED; g.beginPath(); g.roundRect(x + 5, y + 5, 246, H - 10, 6); g.fill();
+    g.fillStyle = '#fff'; g.font = `bold 52px ${SANS}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.save(); g.translate(x + 128, y + H / 2 + 2); g.scale(1, 1.05); g.fillText('ALL WAY', 0, 0); g.restore(); }
   const t = canvasTex(c); t.generateMipmaps = true;
   return t;
 }
-const CELLUV = (k) => [(k % 4) / 4, 1 - (Math.floor(k / 4) + 1) / 2];
-function remapUV(g, k) { const [u0, v0] = CELLUV(k), uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) / 4 * 0.995 + 0.0006, v0 + uv.getY(i) / 2 * 0.995 + 0.0012); return g; }
+const CELLUV = (k) => [(k % 4) / 4, 1 - (Math.floor(k / 4) + 1) / ATLAS_ROWS];
+function remapUV(g, k) { const [u0, v0] = CELLUV(k), uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) / 4 * 0.995 + 0.0006, v0 + uv.getY(i) / ATLAS_ROWS * 0.995 + 0.0012); return g; }
 
 // ---------------------------------------------------------------- materials
 let MAT = null;
@@ -314,7 +320,7 @@ function materials() {
     needles: noFlip(S({ vertexColors: true, map: tex.needle, alphaTest: 0.5, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.85, metalness: 0 })),
     hedge: S({ vertexColors: true, map: tex.hedge, roughness: 0.95, metalness: 0 }),
     chain: S({ map: tex.chain, alphaTest: 0.4, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.45, metalness: 0.8, color: 0xc4c8cc }),
-    sign: S({ vertexColors: true, map: tex.signs, roughness: 0.4, metalness: 0.1 }),
+    sign: S({ vertexColors: true, map: tex.signs, roughness: 0.55, metalness: 0.05 }),
     glass: new THREE.MeshPhysicalMaterial({ color: 0xd8e6ea, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }),
     wire: S({ color: 0x232323, roughness: 0.55, metalness: 0.4 }),
     lens: new THREE.MeshBasicMaterial({ toneMapped: false }),
@@ -459,8 +465,32 @@ function signG(shape, size, cell) {
   else if (shape === 'tri') face = new THREE.CircleGeometry(size / Math.sqrt(3), 3, -Math.PI / 2);
   else face = new THREE.PlaneGeometry(size, size * 1.0);
   const back = face.clone();
-  b.add(remapUV(face.rotateY(Math.PI), cell), 0xffffff, mat(0, 0, -0.004));
-  b.add(remapUV(back, 6), 0xffffff, mat(0, 0, 0.004));
+  // a real plate: 12 mm of aluminium between the face and the back, its rim bare metal
+  const T = 0.006;
+  b.add(remapUV(face.rotateY(Math.PI), cell), 0xffffff, mat(0, 0, -T));
+  b.add(remapUV(back, 6), 0xffffff, mat(0, 0, T));
+  if (shape === 'oct' || shape === 'tri') {
+    const n = shape === 'oct' ? 8 : 3, R = shape === 'oct' ? size / 2 / Math.cos(Math.PI / 8) : size / Math.sqrt(3), a0 = shape === 'oct' ? Math.PI / 8 : -Math.PI / 2;
+    const pos = [], nrm = [], uv = [], idx = [];
+    for (let k = 0; k < n; k++) {
+      const a = a0 + k * 2 * Math.PI / n, c = a0 + (k + 1) * 2 * Math.PI / n, m = (a + c) / 2;
+      const x0 = Math.cos(a) * R, y0 = Math.sin(a) * R, x1 = Math.cos(c) * R, y1 = Math.sin(c) * R, i = pos.length / 3;
+      pos.push(x0, y0, -T, x1, y1, -T, x1, y1, T, x0, y0, T);
+      for (let j = 0; j < 4; j++) { nrm.push(Math.cos(m), Math.sin(m), 0); uv.push(0.5, 0.5); }
+      idx.push(i, i + 1, i + 2, i, i + 2, i + 3);
+    }
+    const rim = new THREE.BufferGeometry();
+    rim.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); rim.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3)); rim.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); rim.setIndex(idx);
+    b.add(remapUV(rim, 6), 0xd8dcdf);
+  }
+  return b.build();
+}
+// the ALL WAY plaque under an all-way stop (18 x 6 in), front -z
+function plaqueG() {
+  const b = new GB(), f = new THREE.PlaneGeometry(0.46, 0.153), uv = f.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setY(i, 2 / 3 + uv.getY(i) / 3);
+  b.add(remapUV(f.rotateY(Math.PI), 8), 0xffffff, mat(0, 0, -0.005));
+  b.add(remapUV(new THREE.PlaneGeometry(0.46, 0.153), 6), 0xffffff, mat(0, 0, 0.005));
   return b.build();
 }
 PARTDEF.signStop = () => ({ geo: signG('oct', 0.76, 0), mat: M().sign, cast: true, color: false });
@@ -468,6 +498,9 @@ PARTDEF.signYield = () => ({ geo: signG('tri', 0.91, 1), mat: M().sign, cast: tr
 PARTDEF.signGive = () => ({ geo: signG('tri', 0.9, 2), mat: M().sign, cast: true, color: false });
 PARTDEF.signGiveUK = () => ({ geo: signG('tri', 0.9, 3), mat: M().sign, cast: true, color: false });
 PARTDEF.signStopJP = () => ({ geo: signG('tri', 0.8, 4), mat: M().sign, cast: true, color: false });
+PARTDEF.signAllWay = () => ({ geo: plaqueG(), mat: M().sign, cast: true, color: false });
+// a square steel sign post (US), its two faces across the road; elsewhere the round tube
+PARTDEF.signPostSq = () => ({ geo: new GB().add(new THREE.CylinderGeometry(1, 1, 1, 4, 1, true).rotateY(Math.PI / 4).translate(0, 0.5, 0)).build(), mat: M().steel, cast: true, color: true });
 PARTDEF.signBus = () => {
   const b = new GB(), f = new THREE.PlaneGeometry(0.45, 0.45), k = f.clone();
   b.add(remapUV(f.rotateY(Math.PI), 5), 0xffffff, mat(0, 0, -0.006));
@@ -874,6 +907,15 @@ function heightAt(x, z) {
   const r = S.roads;
   if (r && r.surfaceAt) {
     try { const s = r.surfaceAt(x, z); if (s && s.h != null && isFinite(s.h) && s.h > h && s.h - h < 0.6) h = s.h; } catch (e) {}
+    // a thing beside a bridge's carriageway (a lamp, a sign on its pavement) stands on the deck, unless a road on the
+    // ground passes right there (then it is under the bridge)
+    try {
+      const e = r.nearestEdge ? r.nearestEdge(x, z, 14) : null, c = e && e.edge && e.edge.c;
+      if (c && c.bridge && e.dist < Math.max(c.deckL || 0, c.deckR || 0, e.halfWidth) + 1.2 && e.h > h + 1) {
+        const g = r.surfaceAt(x, z, h, 1);
+        if (!(g && (g.onRoad || g.edge < 3))) h = e.h + 0.15;
+      }
+    } catch (e) {}
   }
   return h;
 }
@@ -893,7 +935,8 @@ function sample(rec) {
 // traffic or a sign sticking out of a wall.
 function misplaced(x, z) {
   const r = S.roads;
-  if (r && typeof r.surfaceAt === 'function') { try { const q = r.surfaceAt(x, z); if (q && q.onRoad && q.edge < -0.6) return 'road'; } catch (e) {} }
+  // (on the level the thing stands on: a lamp on the street under a bridge is not on the bridge's deck)
+  if (r && typeof r.surfaceAt === 'function') { try { const hh = heightAt(x, z), q = r.surfaceAt(x, z, hh == null ? undefined : hh); if (q && q.onRoad && q.edge < -0.6) return 'road'; } catch (e) {} }
   if (S.bld && S.bld.inside(x, z, 0.3)) return 'building';
   return null;
 }
@@ -1246,17 +1289,37 @@ function signPart(kind) {
 }
 function placeSign(sg) {
   const [name, size] = signPart(sg.kind);
-  const px = sg.px ?? sg.x, pz = sg.pz ?? sg.z;
+  let px = sg.px ?? sg.x, pz = sg.pz ?? sg.z;
+  // a post whose spot lies on a carriageway (the corner of a junction, a slip road beside it) or in a building
+  // moves out from the road along the kerb's normal until it is clear (it used to be left out: a stop line with no
+  // sign)
+  const R0 = S.roads;
+  if (R0 && R0.surfaceAt && sg.x != null && Math.hypot(px - sg.x, pz - sg.z) > 0.5) {
+    const vx = px - sg.x, vz = pz - sg.z, l = Math.hypot(vx, vz), hd = sg.heading * D2R, bx = -Math.sin(hd), bz = Math.cos(hd);
+    // further out from the road, and back along it (away from the junction ahead, where a cross street can lie)
+    let done = false;
+    for (const back of [0, 1.5, 3, 4.5, 6, 8]) {
+      for (const dd of [0, 0.4, 0.9, 1.5, 2.2]) {
+        const x = px + vx / l * dd + bx * back, z = pz + vz / l * dd + bz * back;
+        let q = null; try { q = R0.surfaceAt(x, z); } catch (e) { q = null; }
+        if ((!q || !q.onRoad || q.edge > -0.3) && !(S.bld && S.bld.inside(x, z, 0.3))) { px = x; pz = z; done = true; break; }
+      }
+      if (done) break;
+    }
+  }
   const yaw = (sg.heading + 180) % 360;
-  const bottom = S.region === 'us' ? 2.13 : 2.0, cy = bottom + size / 2;
-  const postC = S.region === 'us' ? new THREE.Color(0.6, 0.62, 0.63) : new THREE.Color(0.55, 0.57, 0.58);
-  const d = sg.heading * D2R, fx = Math.sin(d) * 0.04, fz = -Math.cos(d) * 0.04; // face just in front of the post
+  const us = S.region === 'us', bottom = us ? 2.13 : 2.0, cy = bottom + size / 2;
+  const all = us && sg.kind === 'stop' && sg.allWay; // the ALL WAY plaque under an all-way stop
+  const postC = us ? new THREE.Color(0.6, 0.62, 0.63) : new THREE.Color(0.55, 0.57, 0.58);
+  const d = sg.heading * D2R, fx = Math.sin(d) * 0.042, fz = -Math.cos(d) * 0.042; // face just in front of the post
   const rec = addRec([[px, pz]], (r) => {
     const y = r.ys[0];
-    emit('tube', segMat(px, y - 0.3, pz, px, y + cy + size * 0.35, pz, 0.03), postC);
+    if (us) emit('signPostSq', segMat(px, y - 0.3, pz, px, y + cy + size * 0.3, pz, 0.036), postC);
+    else emit('tube', segMat(px, y - 0.3, pz, px, y + cy + size * 0.35, pz, 0.035), postC);
     emit(name, base(px - fx, y + cy, pz - fz, yaw));
+    if (all) emit('signAllWay', base(px - fx, y + bottom - 0.11, pz - fz, yaw));
   });
-  circle(rec, px, pz, 0.05, cy + size / 2);
+  circle(rec, px, pz, 0.07, cy + size / 2);
 }
 function placeCrossing(p) {
   const t = p.tags || {};

@@ -1,6 +1,10 @@
 // Static things the car hits, in plan (x, z) with a height range: building footprints (polygons, concave is
 // fine), fences, walls and rails (thick segments), poles, hydrants, trees, bollards (circles). Kept in a grid
 // of 16 m cells. The car is a row of circles along its body; `contacts(circles)` gives each overlap's push-out.
+// A building's polygon blocks from its base (or the underside of an overhang) to its walls' top, so a car above it
+// is not stopped by it; `roofAt(x, z, yHint)` is the roof such a car stands on (shape.roof: { eave, top, at(x, z) },
+// set by buildings.js). A shape with `lazy` (Google's mesh: its top found by a ray when first needed) has y1 = 1e4
+// until a car comes near it.
 const CELL = 16;
 
 export class Collide {
@@ -21,7 +25,7 @@ export class Collide {
     if (!points || points.length < 3) return null;
     let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
     for (const [x, z] of points) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
-    return this._add({ k: 0, p: points, y0, y1, tag }, x0, z0, x1, z1);
+    return this._add({ k: 0, p: points, y0, y1, tag, bb: [x0, z0, x1, z1] }, x0, z0, x1, z1);
   }
   addSegment(a, b, thickness = 0.2, y0 = -1e4, y1 = 1e4, tag) {
     const r = thickness / 2;
@@ -49,6 +53,7 @@ export class Collide {
     for (const c of circles) { x0 = Math.min(x0, c.x - c.r); x1 = Math.max(x1, c.x + c.r); z0 = Math.min(z0, c.z - c.r); z1 = Math.max(z1, c.z + c.r); }
     const out = [];
     for (const s of this.near(x0, z0, x1, z1)) {
+      if (s.lazy) { const f = s.lazy; s.lazy = null; try { const t = f(); if (Number.isFinite(t)) s.y1 = t; } catch (e) {} }
       for (let i = 0; i < circles.length; i++) {
         const c = circles[i];
         if (c.y1 < s.y0 || c.y0 > s.y1) continue;
@@ -57,6 +62,24 @@ export class Collide {
       }
     }
     return out;
+  }
+
+  // The roof under (x, z) for a wheel at yHint: the highest building roof whose plan holds the point, where the
+  // wheel is at or over the top of its walls (less `up`: a car landing on it, or rolling on it). null when none:
+  // a car beside a building (below its walls' top) is stopped by the wall and stands on the ground.
+  roofAt(x, z, yHint, up = 0.6) {
+    if (yHint == null || !Number.isFinite(yHint)) return null;
+    const l = this.grid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL)); if (!l) return null;
+    let best = null;
+    for (const s of l) {
+      const rf = s.roof;
+      if (!rf || s.dead || yHint < rf.eave - up) continue;
+      const b = s.bb; if (b && (x < b[0] || x > b[2] || z < b[1] || z > b[3])) continue;
+      if (!inside(s.p, x, z)) continue;
+      const h = rf.at ? rf.at(x, z) : rf.top;
+      if (Number.isFinite(h) && (best === null || h > best)) best = h;
+    }
+    return best;
   }
 }
 
