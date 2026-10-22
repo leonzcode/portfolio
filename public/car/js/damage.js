@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=23';
+import { FX } from './damagefx.js?v=24';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -464,6 +464,7 @@ class Entry {
     g.morphAttributes = {};
     g.dispose();
     this.geo = null; this.rest = this.restN = this.cur = this.strain = this.win = null; this.owned.clear();
+    this.prefined = false; this.fine = undefined;
     this.mesh.visible = true;
   }
 }
@@ -651,7 +652,7 @@ function* tearGen(job, e, dirty, coarse = false) {
       const rx = r[p3] - r[q3], ry = r[p3 + 1] - r[q3 + 1], rz = r[p3 + 2] - r[q3 + 2];
       // (fine triangles only: a coarse one stretched reads as a smooth dent, and taking it out leaves a jagged hole)
       const cl = cx * cx + cy * cy + cz * cz, rl = Math.sqrt(rx * rx + ry * ry + rz * rz), lim = rl * 2.6 + 0.1;
-      if ((coarse || rl < 0.2) && cl > lim * lim) bad = true;
+      if ((coarse || rl < 0.09) && cl > lim * lim) bad = true;
     }
     if (!bad) continue;
     if (!owned) { idx = e.ownIndex().array; owned = true; }
@@ -704,6 +705,9 @@ function* renormalGen(job, e, dirty) {
     const dx = uy * vz - uz * vy, dy = uz * vx - ux * vz, dz = ux * vy - uy * vx;
     ux = rest[b] - rest[a]; uy = rest[b + 1] - rest[a + 1]; uz = rest[b + 2] - rest[a + 2]; vx = rest[c] - rest[a]; vy = rest[c + 1] - rest[a + 1]; vz = rest[c + 2] - rest[a + 2];
     const rx = uy * vz - uz * vy, ry = uz * vx - ux * vz, rz = ux * vy - uy * vx;
+    // (a long sliver turned over by a corner pushed across it is no guide to the surface: left out, or its far,
+    // unmoved corners took its flipped normal, dark streaks across a whole door)
+    if (dx * rx + dy * ry + dz * rz < 0) continue;
     if (aff[ia]) { sd[a] += dx; sd[a + 1] += dy; sd[a + 2] += dz; sr[a] += rx; sr[a + 1] += ry; sr[a + 2] += rz; }
     if (aff[ib]) { sd[b] += dx; sd[b + 1] += dy; sd[b + 2] += dz; sr[b] += rx; sr[b + 1] += ry; sr[b + 2] += rz; }
     if (aff[ic]) { sd[c] += dx; sd[c + 1] += dy; sd[c + 2] += dz; sr[c] += rx; sr[c + 1] += ry; sr[c + 2] += rz; }
@@ -1522,6 +1526,11 @@ class CarDamage {
     const cx0 = 0, cy0 = A.belt * 0.6, cz0 = (A.zA + A.zC) / 2;
     // the bonnet (or boot lid) buckling up: how much shorter it gets
     const frontHit = Nz > 0.6, rearHit = Nz < -0.6;
+    // the wings between the front wheels and the windscreen pillars buckle out and up in a hard frontal (the
+    // structure behind them is pushed back: NHTSA's 56 km/h cars show the wing kinked over and behind the wheel)
+    const wingAmp = frontHit && Math.abs(Ny) < 0.5 && !this.npc ? 0.07 * clamp((Dc - 0.25) / 0.3, 0, 1) - (this.wingDone || 0) : 0;
+    const wz0 = A.zFA - A.wheelR * 0.3, wz1 = A.zA - 0.05, wy0 = A.wheelR * 1.15, wy1 = A.belt + 0.04;
+    if (wingAmp > 0.005) this.wingDone = (this.wingDone || 0) + wingAmp;
     let bulgeAdd = 0, bz = null;
     if ((frontHit || rearHit) && Math.abs(Ny) < 0.5) {
       const zEdge = frontHit ? A.box.min.z + 0.12 : A.box.max.z - 0.12, zEnd = frontHit ? A.zA : A.zC;
@@ -1577,9 +1586,10 @@ class CarDamage {
         const inner = (A.interior && A.interior[self.entries.indexOf(e)]) || !!e.mesh.userData.dmgBay;
         if (e.role === 'glass') self.ownGlass(e); else e.own();
         if (performance.now() >= job.deadline) yield;
-        if (e.role !== 'proxy' && e.role !== 'far' && !inner && !e.prefined) {
-          if (e.fine === undefined) e.fine = meanEdge(e) < e.L * 0.8;
-          if (!e.fine) { const before = e.cur.length, tr = performance.now(); yield* refineGen(job, e, willMove, e.L, self.npc ? 2 : 3); stats.newVerts += (e.cur.length - before) / 3; stats.refine += performance.now() - tr; }
+        // every outside mesh split where this crush moves it (a mesh fine on average can still have long triangles
+        // across a door or a bonnet: moved at one corner, they made flat facets and dark streaks, and no crease)
+        if (e.role !== 'proxy' && e.role !== 'far' && !inner) {
+          const before = e.cur.length, tr = performance.now(); yield* refineGen(job, e, willMove, e.L, self.npc ? 2 : 3); stats.newVerts += (e.cur.length - before) / 3; stats.refine += performance.now() - tr;
         }
         let tm = performance.now();
         const c = e.cur, rest = e.rest, n = c.length / 3;
@@ -1624,7 +1634,7 @@ class CarDamage {
                   const ad = ax * Nx + ay * Ny + az * Nz; ax -= Nx * ad; ay -= Ny * ad; az -= Nz * ad;
                   const al = Math.sqrt(ax * ax + ay * ay + az * az);
                   if (al > 1e-3) {
-                    const amp = foldMax * env * (0.6 + 0.4 * wave(rx * 3.1 + seed) * wave(ry * 2.7 + rz * 3.3 + 1.57));
+                    const amp = foldMax * env * (0.6 + 0.4 * wave(rx * 3.1 + seed) * wave(ry * 2.7 + rz * 3.3 + 1.57)) * (frontal && Math.abs(rx) > A.hw * 0.55 && ry > A.wheelR ? 1.7 : 1);
                     const ph = phase + 0.45 * wave(t * 2.3 + seed) + 0.3 * wave(b * 3.1 - t * 1.3);
                     // the sheet buckles out more than in (a crushed wing splays and stands up)
                     const f = (tri(sg / lam + ph) + 0.55) * amp / al;
@@ -1637,6 +1647,15 @@ class CarDamage {
               }
             }
           }
+          if (wingAmp > 0.005 && !glass && !inner) {
+            const xr = rest[i3], yr = rest[i3 + 1], zr = rest[i3 + 2], ax = xr < 0 ? -xr : xr;
+            if (ax > A.hw * 0.68 && yr > wy0 && yr < wy1 && zr > wz0 && zr < wz1) {
+              const fz = (zr - wz0) / (wz1 - wz0), fy = (yr - wy0) / (wy1 - wy0);
+              // one kink over the wheel's back and a smaller one before the pillar, strongest at the wing's top
+              const k = Math.max(0, Math.sin(Math.PI * fz)) * (0.65 + 0.35 * Math.sin(Math.PI * 3 * fz + 0.6)) * (0.35 + 0.65 * fy) * Math.min(1, (ax - A.hw * 0.68) / (A.hw * 0.2));
+              dx += (xr < 0 ? -1 : 1) * wingAmp * k; dy += wingAmp * 0.6 * k; dz += wingAmp * 0.3 * k;
+            }
+          }
           // the bonnet buckles up into a peak (the lid only, not the glass behind it)
           if (bulgeAdd > 0 && !glass && inBulge(rest[i3], rest[i3 + 1], rest[i3 + 2])) {
             const zr = rest[i3 + 2];
@@ -1646,7 +1665,8 @@ class CarDamage {
             pk = Math.max(0, pk);
             const lat = 0.8 + 0.2 * Math.cos(Math.PI * 0.5 * clamp(rest[i3] / Math.max(0.4, A.hw), -1, 1));
             // the lid's front lifts a little too (its catch lets go)
-            const lift = bulgeAdd * (pk * lat + (xi < 0.3 ? 0.7 * (1 - xi / 0.3) : 0));
+            // (the front edge raised less than the ridge, so the lid reads as a tent from any side, not a raised plate)
+            const lift = bulgeAdd * (pk * lat + (xi < 0.25 ? 0.4 * (1 - xi / 0.25) : 0));
             dy += lift;
             dz += (bz.frontHit ? -1 : 1) * lift * 0.12;
           }
@@ -1664,6 +1684,7 @@ class CarDamage {
           if (Dc > 0.4 && e.geo.boundingSphere) e.geo.boundingSphere.radius = Math.max(e.geo.boundingSphere.radius, (e.src.boundingSphere ? e.src.boundingSphere.radius : 3) + 0.6);
           // (the engine bay's boxes, the cabin's trim and unpainted plastics may tear anywhere: a hole there shows little;
           // a long stretched triangle of a liner stood out of a crushed corner as a dark flap)
+          // (painted sheet tears only in small pieces, now that it is split where it moves: gaps, not big holes)
           if (e.role !== 'proxy' && e.role !== 'far' && Dc > 0.12) stats.torn = (stats.torn || 0) + (yield* tearGen(job, e, dirty, inner || (e.role === 'body' && !e.isPaint())));
           // the normals after (the cabin's own trim keeps its normals: it moves little and is mostly out of sight)
           if (e.role !== 'proxy' && e.role !== 'far' && !inner) later.push([e, dirty]);
@@ -1901,7 +1922,8 @@ class CarDamage {
     if (lens) fx.shardBurst(wpts[0], vel, outN, gy, Math.round(10 + area * 200), [0xd8e2e6, 0xc9d4d8, 0xeef4f6], 0.025);
     else {
       const n = Math.round(clamp(area * 2600, 120, mgr.npcCap(this) ? 260 : 900));
-      fx.glassBurst(wpts, vel, outN.clone().multiplyScalar(imp.side === 'roof' ? 0.6 : 0.9), gy, n);
+      const inward = w.kind === 'side' && ((imp.side === 'left' && w.side === 'L') || (imp.side === 'right' && w.side === 'R'));
+      fx.glassBurst(wpts, vel, outN.clone().multiplyScalar(imp.side === 'roof' ? 0.6 : inward ? 0.25 : 0.9), gy, inward ? Math.round(n * 0.3) : n);
       // and some onto the seats, inside
       if (!this.npc) {
         if (!this.cabin) this.cabin = fx.cabinBits(this.rig.model && this.rig.model.isObject3D ? this.rig.model : this.root);
@@ -2520,7 +2542,7 @@ class CarDamage {
     this.lampsBroken.clear();
     this.doors = []; this.hard = null; this.windows = null; this.winState = null; this.pending = null;
     this.entries = null; this.A = null;
-    this.damaged = false; this.crushTotal = this.front = this.rear = this.left = this.right = this.roof = this.engine = this.bonnetH = this.bootH = this.roofDrop = 0;
+    this.damaged = false; this.crushTotal = this.front = this.rear = this.left = this.right = this.roof = this.engine = this.bonnetH = this.bootH = this.roofDrop = this.wingDone = 0;
     this.stamps.length = 0;
     if (this.vehicle) { this.vehicle.powerK = 1; }
     this.readied = false;
@@ -2698,7 +2720,7 @@ export class Damage {
       // frame for up to a fifth of a second each, just after a drop)
       // (the windscreen's crack map is made and sent to the graphics card now: its first upload, 12 to 22 ms, was in
       // the crash's frames)
-      const steps = [() => rd.analysis(), () => this.warmUp(), () => { const C = rd.crackReady(); if (this.drive.G && this.drive.G.renderer && this.drive.G.renderer.initTexture) this.drive.G.renderer.initTexture(C.tex); }, () => this.predoor(rd), () => this.presplit(rd)];
+      const steps = [() => rd.analysis(), () => this.warmUp(), () => { const C = rd.crackReady(); if (this.drive.G && this.drive.G.renderer && this.drive.G.renderer.initTexture) this.drive.G.renderer.initTexture(C.tex); }, () => this.presplit(rd), () => this.predoor(rd)];
       const next = () => {
         const f = steps.shift(); if (!f) return;
         if (!this.drive.car || this.drive.car.rig !== car.rig) return;
@@ -2716,7 +2738,7 @@ export class Damage {
     if (rd.doorState(0).pivot) return;
     const job = makeJob(rd, function* (jb) { job.started = true; yield* rd.doorNodeGen(jb, 0); });
     job.door = 0; rd.doorJob = job;
-    this.bg.unshift(job);
+    this.bg.push(job);
   }
   // the player's coarse outside meshes subdivided ahead (a little each frame, while nothing else is going on), so a
   // crash only has to move points
@@ -3499,8 +3521,8 @@ export class Damage {
     this.bg = this.bg.filter(j => j.rd !== rd); rd.doorJob = null;
     try { rd.reset(); } catch (e) { console.warn('damage reset', e); }
     this.trafficDamaged = this.trafficDamaged.filter(r => r !== rd);
-    // the player's driver's door cut out again ahead (R puts the car back as new)
-    if (this.drive.car && this.drive.car.rig === rig && rd.readied) { try { this.predoor(rd); } catch (e) {} }
+    // the player's outside subdivided again and the driver's door cut out again, ahead (R puts the car back as new)
+    if (this.drive.car && this.drive.car.rig === rig && rd.readied) { try { this.presplit(rd); this.predoor(rd); } catch (e) {} }
   }
   repair(rig) { this.reset(rig); }
   clearDebris() { this.fx.clear(); for (const rec of this.parkedRecs.slice()) this.dropParked(rec, true); this._plist = null; }
