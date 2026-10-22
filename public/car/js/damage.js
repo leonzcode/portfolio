@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=17';
+import { FX } from './damagefx.js?v=18';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -611,7 +611,10 @@ function* snapGen(job, e, test) {
       const a3 = a * 3, b3 = b * 3, ia = ins[a];
       let lo = 0, hi = 1;
       for (let it = 0; it < 7; it++) { const m = (lo + hi) / 2; if ((test(c[a3] + (c[b3] - c[a3]) * m, c[a3 + 1] + (c[b3 + 1] - c[a3 + 1]) * m, c[a3 + 2] + (c[b3 + 2] - c[a3 + 2]) * m) ? 1 : 0) === ia) lo = m; else hi = m; }
-      const f = (lo + hi) / 2, v = f < 0.5 ? a : b, d = f < 0.5 ? f : 1 - f;
+      const f = (lo + hi) / 2, v = f < 0.5 ? a : b;
+      // (in metres: a long edge's end is never pulled far, or one long sliver of a triangle reached to the road)
+      const el = Math.hypot(c[b3] - c[a3], c[b3 + 1] - c[a3 + 1], c[b3 + 2] - c[a3 + 2]), d = (f < 0.5 ? f : 1 - f) * el;
+      if (d > 0.06) continue;
       if (!best) { best = new Float32Array(n * 4); for (let i = 0; i < n; i++) best[i * 4 + 3] = 2; }
       if (d < best[v * 4 + 3]) { best[v * 4] = c[a3] + (c[b3] - c[a3]) * f; best[v * 4 + 1] = c[a3 + 1] + (c[b3 + 1] - c[a3 + 1]) * f; best[v * 4 + 2] = c[a3 + 2] + (c[b3 + 2] - c[a3 + 2]) * f; best[v * 4 + 3] = d; }
     }
@@ -1982,7 +1985,20 @@ class CarDamage {
       for (let t = 0; t < ni; t += 3) {
         if ((t % 49152) === 49149 && performance.now() >= job.deadline) yield;
         const ia = idx[t], ib = idx[t + 1], ic = idx[t + 2], a = ia * 3, b = ib * 3, cc = ic * 3;
-        if (test((P[a] + P[b] + P[cc]) / 3, (P[a + 1] + P[b + 1] + P[cc + 1]) / 3, (P[a + 2] + P[b + 2] + P[cc + 2]) / 3)) { inside[nIn++] = ia; inside[nIn++] = ib; inside[nIn++] = ic; }
+        // (its middle in the part, and none of its corners far outside the part's box: a long sliver of a triangle
+        // reaching to the road went with a door and swung out)
+        let out = rbox && (!rbox.containsPoint(_v.set(P[a], P[a + 1], P[a + 2])) || !rbox.containsPoint(_v.set(P[b], P[b + 1], P[b + 2])) || !rbox.containsPoint(_v.set(P[cc], P[cc + 1], P[cc + 2])));
+        // a door leaves the sill's top with the body: faces looking up along the box's bottom (the door's own hem
+        // looks down and goes with it)
+        if (!out && opts.door && opts.box) {
+          const yb = opts.box.min.y, cy = (P[a + 1] + P[b + 1] + P[cc + 1]) / 3;
+          if (cy < yb + 0.15) {
+            const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[cc] - P[a], vy = P[cc + 1] - P[a + 1], vz = P[cc + 2] - P[a + 2];
+            const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, nl = Math.hypot(nx, ny, nz) || 1;
+            if (ny / nl > 0.6) out = true;
+          }
+        }
+        if (!out && test((P[a] + P[b] + P[cc]) / 3, (P[a + 1] + P[b + 1] + P[cc + 1]) / 3, (P[a + 2] + P[b + 2] + P[cc + 2]) / 3)) { inside[nIn++] = ia; inside[nIn++] = ib; inside[nIn++] = ic; }
         else { keep[nKeep++] = ia; keep[nKeep++] = ib; keep[nKeep++] = ic; }
       }
       if (!nIn) continue;
@@ -2077,6 +2093,15 @@ class CarDamage {
         p.group.position.add(c); p.group.updateMatrix();
       }
     }
+    // a grille torn out lies down flat: its slats, crushed to different depths, stood up from it like a comb
+    if (name === 'grille' && p.entries) {
+      for (const pe of p.entries) {
+        const c = pe.cur; if (!c || !c.length) continue;
+        let mz = 0; for (let i = 2; i < c.length; i += 3) mz += c[i]; mz /= c.length / 3;
+        for (let i = 2; i < c.length; i += 3) c[i] = mz + (c[i] - mz) * 0.15;
+        pe.writePositions(); if (pe.geo) pe.geo.computeVertexNormals();
+      }
+    }
     if (opts.hang && opts.kind === 'mirror') {
       // a mirror on its wires: it swings down against the door
       p.state = 'dangle'; p.ang = 0; p.angV = rnd(3, 6); p.dangleT = rnd(3, 12);
@@ -2115,7 +2140,13 @@ class CarDamage {
   }
 
   // a door's pivot: cut out of the body (once), hinged at its front edge; rotation.y > 0 opens it outward
-  doorNode(i) { const st = this.doorState(i); if (!st.pivot && this.mgr.jobs.some(j => j.rd === this)) this.mgr.flushRig(this); return runSync(this.doorNodeGen(SYNC, i)); }
+  doorNode(i) {
+    const st = this.doorState(i);
+    // (the driver's door may be being cut in the background already: finished now rather than cut twice)
+    if (!st.pivot && this.doorJob && !this.doorJob.done && this.doorJob.door === i) { try { this.doorJob.run(1e9); } catch (e) {} }
+    if (!st.pivot && this.mgr.jobs.some(j => j.rd === this)) this.mgr.flushRig(this);
+    return runSync(this.doorNodeGen(SYNC, i));
+  }
   *doorNodeGen(job, i) {
     const doors = this.doorList(), dd = doors[i];
     if (!dd) return null;
@@ -2123,7 +2154,7 @@ class CarDamage {
     if (st.pivot) return st.pivot;
     const name = 'door' + i;
     // the pivot sits on the hinge; rig.setDoor(i, k) turns it about the hinge axis, outwards on either side
-    const p = yield* this.cutGen(job, name, dd.test, dd.hinge, { box: dd.box });
+    const p = yield* this.cutGen(job, name, dd.test, dd.hinge, { box: dd.box, door: true });
     if (st.pivot) return st.pivot;
     // an inner group for the sag of a door that hangs off a bent hinge
     const sag = new THREE.Group(); sag.name = 'door_sag';
@@ -2642,7 +2673,7 @@ export class Damage {
       // frame for up to a fifth of a second each, just after a drop)
       // (the windscreen's crack map is made and sent to the graphics card now: its first upload, 12 to 22 ms, was in
       // the crash's frames)
-      const steps = [() => rd.analysis(), () => this.warmUp(), () => { const C = rd.crackReady(); if (this.drive.G && this.drive.G.renderer && this.drive.G.renderer.initTexture) this.drive.G.renderer.initTexture(C.tex); }, () => this.presplit(rd)];
+      const steps = [() => rd.analysis(), () => this.warmUp(), () => { const C = rd.crackReady(); if (this.drive.G && this.drive.G.renderer && this.drive.G.renderer.initTexture) this.drive.G.renderer.initTexture(C.tex); }, () => this.predoor(rd), () => this.presplit(rd)];
       const next = () => {
         const f = steps.shift(); if (!f) return;
         if (!this.drive.car || this.drive.car.rig !== car.rig) return;
@@ -2653,6 +2684,14 @@ export class Damage {
       };
       idle(next, { timeout: 1500 });
     }
+  }
+  // the driver's door cut out ahead, a little each frame (the first E froze the game for up to half a second to do it)
+  predoor(rd) {
+    if (!rd.doorList || !rd.doorList().length) return;
+    if (rd.doorState(0).pivot) return;
+    const job = makeJob(rd, function* (jb) { job.started = true; yield* rd.doorNodeGen(jb, 0); });
+    job.door = 0; rd.doorJob = job;
+    this.bg.unshift(job);
   }
   // the player's coarse outside meshes subdivided ahead (a little each frame, while nothing else is going on), so a
   // crash only has to move points
@@ -2858,8 +2897,19 @@ export class Damage {
       this.parkedGroup.add(rig.object);
       rig.update(0, { speed: 0, wheelSpin: [0, 0, 0, 0], steer: 0, steeringWheel: 0, susp: [0, 0, 0, 0], brake: 0, reverse: false, signal: 0, headlights: false });
       o.skip = true; P.frame = 0; // the instances are filled again without it on the next update
-      const rec = { rig, x: o.x, y: o.y, z: o.z, yaw: o.heading * Math.PI / 180, offYaw: 0, v: 0, push: new THREE.Vector2(), spinV: 0, hitT: 0, len: rig.dims.length, parked: o, mass: (rig.spec && rig.spec.mass) || 1500 };
+      const rec = { rig, x: o.x, y: o.y, z: o.z, ox: o.x, oz: o.z, yaw: o.heading * Math.PI / 180, offYaw: 0, v: 0, push: new THREE.Vector2(), spinV: 0, hitT: 0, len: rig.dims.length, parked: o, mass: (rig.spec && rig.spec.mass) || 1500 };
       o._dmgRec = rec;
+      const OF = this.drive.onfoot, Veh = this.drive.car && this.drive.car.vehicle && this.drive.car.vehicle.constructor;
+      if (OF && OF.addLeft && Veh) {
+        try {
+          const veh = new Veh(rig, OF.physOf ? OF.physOf(o.model) : {});
+          const g = this.drive.ground(o.x, o.z, o.y);
+          veh.place(o.x, Number.isFinite(g) ? g : o.y, o.z, o.heading);
+          rec.veh = veh; rec.mass = (veh.p && veh.p.mass) || rec.mass;
+          rec.left = OF.addLeft({ rig, vehicle: veh, id: o.model, npc: true, kind: 'left', fromParked: true });
+          this.unblock(o.x, o.z);
+        } catch (e) { console.warn('parked car body', e); rec.veh = null; rec.left = null; }
+      }
       this.parkedRecs.push(rec);
       // at most eight: the farthest goes back to being an instance
       while (this.parkedRecs.length > 8) {
@@ -2874,31 +2924,76 @@ export class Damage {
   dropParked(rec, keepSkip = false) {
     this.parkedRecs = this.parkedRecs.filter(r => r !== rec);
     const o = rec.parked;
-    if (o) { if (!keepSkip) o.skip = false; o._dmgRec = null; o._dmgWake = null; }
+    // (one with a body of its own that has moved off its spot leaves the spot empty)
+    const moved = rec.veh && (rec.x - rec.ox) ** 2 + (rec.z - rec.oz) ** 2 > 0.25;
+    if (o) { if (!keepSkip && !moved) o.skip = false; o._dmgRec = null; o._dmgWake = null; }
     if (this.drive.parked) this.drive.parked.frame = 0;
     this.trafficDamaged = this.trafficDamaged.filter(rd => rd.rig !== rec.rig);
+    let gone = false;
+    if (rec.left) { const OF = this.drive.onfoot, k = OF && OF.parked ? OF.parked.indexOf(rec.left) : -1; if (k >= 0) OF.parked.splice(k, 1); else gone = true; }
+    if (gone) { this.rigs.delete(rec.rig._dmg); return; } // (the on-foot module let it go already)
     if (rec.rig._dmg) { try { rec.rig._dmg.reset(); } catch (e) {} this.rigs.delete(rec.rig._dmg); }
     rec.rig.dispose();
   }
+  // a parked car's fixed outline in the collision world taken away (it moves on its own body now)
+  unblock(x, z) {
+    const C = this.drive.collide; if (!C || !C.near) return;
+    for (const sh of C.near(x - 0.5, z - 0.5, x + 0.5, z + 0.5)) {
+      if (sh.tag !== 'parked' || sh.dead || !sh.p) continue;
+      let inside = false; const P = sh.p;
+      for (let i = 0, j = P.length - 1; i < P.length; j = i++) if ((P[i][1] > z) !== (P[j][1] > z) && x < (P[j][0] - P[i][0]) * (z - P[i][1]) / (P[j][1] - P[i][1]) + P[i][0]) inside = !inside;
+      if (inside) C.remove(sh);
+    }
+  }
   parkedHit(h, v, prd) {
     const o = this.parkedAt(h.px, h.pz); if (!o) return;
-    const hit = { px: h.px, pz: h.pz, nx: h.nx, nz: h.nz, speed: h.speed };
+    const hit = { px: h.px, pz: h.pz, nx: h.nx, nz: h.nz, speed: h.speed, j: h.j };
     // several steps of one crash are one impact
     const now = performance.now();
     if (o._dmgLastHit && now - o._dmgLastHit < 400) return;
     o._dmgLastHit = now;
-    this.wakeParked(o).then(rec => { if (rec && rec.rig.object.parent) this.trafficHit(rec, v, hit, prd); });
+    this.wakeParked(o).then(rec => {
+      if (!rec || !rec.rig.object.parent) return;
+      this.trafficHit(rec, v, hit, prd);
+      this.shove(rec, hit, prd.mass || 1800);
+    });
+  }
+  // a push on a parked car's body: what the hit gave the player's car back, given to it (as far as a plastic crash
+  // shares speed: both end up near a common speed), with a turn from how far off its middle it was hit
+  shove(rec, hit, mOther) {
+    const veh = rec.veh; if (!veh) return;
+    const m = rec.mass || 1500, vn = Math.max(0, hit.speed || 0);
+    // the common speed of a plastic crash, a little more for the bounce
+    // (not capped by what the player's car took back: it met the parked car's fixed outline, as a wall)
+    const dv = Math.min(14, vn * mOther / (m + mOther));
+    const Jx = -hit.nx * dv * m, Jz = -hit.nz * dv * m;
+    veh.v.x += Jx / m; veh.v.z += Jz / m;
+    const d = rec.rig.dims || { length: 4.6, width: 1.8 }, I = m * (d.length * d.length + d.width * d.width) / 12;
+    const rx = hit.px - veh.pos.x, rz = hit.pz - veh.pos.z;
+    if (veh.w) veh.w.y += (rz * Jx - rx * Jz) / I * 0.8;
+    if (rec.left) { rec.left.asleep = false; rec.left.still = 0; }
   }
   // the parked list rebuilt with the area: the cars already swapped keep their places
   parkedTidy() {
+    const OF = this.drive.onfoot;
+    for (const rec of this.parkedRecs) {
+      if (!rec.left) continue;
+      if (!OF || !OF.parked || !OF.parked.includes(rec.left)) { rec.lost = true; continue; }
+      const pr = rec.left.proxy; if (pr) { rec.x = pr.x; rec.z = pr.z; rec.y = pr.y; rec.yaw = pr.yaw; }
+    }
+    if (this.parkedRecs.some(r => r.lost)) {
+      for (const rec of this.parkedRecs.filter(r => r.lost)) { this.parkedRecs = this.parkedRecs.filter(r => r !== rec); this.trafficDamaged = this.trafficDamaged.filter(rd => rd.rig !== rec.rig); this.rigs.delete(rec.rig._dmg); if (rec.parked) { rec.parked._dmgRec = null; } }
+    }
     const P = this.drive.parked;
     if (!P || !P.list || P.list === this._plist) return;
     this._plist = P.list;
     for (const rec of this.parkedRecs.slice()) {
       const old = rec.parked;
-      const o = P.list.find(n => n.K && n.model === old.model && (n.x - rec.x) ** 2 + (n.z - rec.z) ** 2 < 0.36);
+      // (by the spot it was parked in: it may have been shoved off it)
+      const o = P.list.find(n => n.K && n.model === old.model && (n.x - rec.ox) ** 2 + (n.z - rec.oz) ** 2 < 0.36);
       if (!o) { this.dropParked(rec, true); continue; }
       rec.parked = o; o._dmgRec = rec; o._dmgWake = Promise.resolve(rec); o.skip = true; P.frame = 0;
+      if (rec.veh) this.unblock(o.x, o.z);
     }
   }
 
@@ -3035,7 +3130,9 @@ export class Damage {
       }
     };
     const job = makeJob(rd, work);
-    // background subdividing of this car stops (it only ever pauses where nothing is half changed)
+    // background subdividing of this car stops (it only ever pauses where nothing is half changed); a door being cut
+    // out ahead is finished first if it was started (a half cut door would be left in pieces)
+    if (rd.doorJob && !rd.doorJob.done) { if (rd.doorJob.started) { try { rd.doorJob.run(1e9); } catch (e) {} } else rd.doorJob = null; }
     this.bg = this.bg.filter(j => j.rd !== rd);
     if (imp.sync) { this.flushRig(rd); job.run(1e9); }
     else {
@@ -3348,8 +3445,13 @@ export class Damage {
   // back to new
   reset(rig) {
     if (!rig || !rig._dmg) return;
-    try { rig._dmg.reset(); } catch (e) { console.warn('damage reset', e); }
-    this.trafficDamaged = this.trafficDamaged.filter(rd => rd !== rig._dmg);
+    const rd = rig._dmg;
+    if (rd.doorJob && !rd.doorJob.done && rd.doorJob.started) { try { rd.doorJob.run(1e9); } catch (e) {} }
+    this.bg = this.bg.filter(j => j.rd !== rd); rd.doorJob = null;
+    try { rd.reset(); } catch (e) { console.warn('damage reset', e); }
+    this.trafficDamaged = this.trafficDamaged.filter(r => r !== rd);
+    // the player's driver's door cut out again ahead (R puts the car back as new)
+    if (this.drive.car && this.drive.car.rig === rig && rd.readied) { try { this.predoor(rd); } catch (e) {} }
   }
   repair(rig) { this.reset(rig); }
   clearDebris() { this.fx.clear(); for (const rec of this.parkedRecs.slice()) this.dropParked(rec, true); this._plist = null; }
