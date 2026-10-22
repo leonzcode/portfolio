@@ -52,7 +52,7 @@ export class CarCamera {
       const far = this.view === 'far';
       // (a flying car, flight.js: a little further back and higher, so the jets and the ground below show)
       const fk = (v && v.flyCam) || 0;
-      const d = ((far ? 9.5 : 6.2) * this.dist + car.rig.dims.length * 0.35) * (1 + 0.22 * fk), hgt = (far ? 3.4 : 2.0) * Math.sqrt(this.dist) + 1.2 * fk + Math.max(0, car.rig.dims.height - 2) * 0.9; // (over a bus's or a truck's roof)
+      const d = ((far ? 9.5 : 6.2) * this.dist + car.rig.dims.length * 0.35 + (car.rig.camBack || 0)) * (1 + 0.22 * fk), hgt = (far ? 3.4 : 2.0) * Math.sqrt(this.dist) + 1.2 * fk + Math.max(0, car.rig.dims.height - 2) * 0.9 + (car.rig.camUp || 0); // (over a bus's or a truck's roof; over a trailer, trailer.js sets camUp/camBack)
       // follow the direction of travel more than the nose, so a slide shows
       const flat = new THREE.Vector3(fwd.x, 0, fwd.z).normalize();
       const vel = new THREE.Vector3(v.v.x, 0, v.v.z);

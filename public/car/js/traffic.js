@@ -3,8 +3,8 @@
 // and signals for it, stops at red lights (signals.js, the same timing the lights show), waits at stop signs, gives
 // way at junctions without lights, slows for the player's car in its path, and stops with its hazards on when hit.
 import * as THREE from 'three';
-import * as SIG from './signals.js?v=18';
-import { frame } from './geo.js?v=18';
+import * as SIG from './signals.js?v=19';
+import { frame } from './geo.js?v=19';
 
 const AMERICAN = new Set(['s10', 'conquer', 'shvan', 'schoolbus', 'semi']);
 const inAmericas = () => frame.lat > 14 && frame.lat < 72 && frame.lon > -170 && frame.lon < -52;
@@ -241,6 +241,8 @@ export class Traffic {
     }
     // cars the player left in the lane, a car being taken (onfoot.js sets this)
     if (this.extraAhead) { try { const r = this.extraAhead(c, gap, lv); if (r) { gap = r.gap; lv = r.lv; } } catch (e) {} }
+    // trailers in its way (trailer.js)
+    if (this.trailerAhead) { try { const r = this.trailerAhead(c, gap, lv); if (r) { gap = r.gap; lv = r.lv; } } catch (e) {} }
     return { gap, lv };
   }
 
@@ -355,6 +357,8 @@ export class Traffic {
       }
       out.push({ x: c.x + fx * o, z: c.z + fz * o, r, vx, vz, obj: c }, { x: c.x - fx * o, z: c.z - fz * o, r, vx, vz, obj: c });
     }
+    // the traffic semis' trailers (trailer.js)
+    if (this.extraColliders) { try { this.extraColliders(out); } catch (e) {} }
     return out;
   }
 
