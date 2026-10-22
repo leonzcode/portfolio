@@ -2,11 +2,11 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=27';
-import { World } from './world.js?v=27';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=27';
-import { Sky } from './sky.js?v=27';
-import { Drive } from './drive.js?v=27';
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=28';
+import { World } from './world.js?v=28';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=28';
+import { Sky } from './sky.js?v=28';
+import { Drive } from './drive.js?v=28';
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -142,9 +142,17 @@ function loop(now) {
   if (!G.paused) {
     world.update();
     bakedUniforms.uCamPos.value.copy(camera.position);
+    // for 1.2 s after a crash the sun's shadow map is drawn every other frame (the frames right after an impact were
+    // 45 to 60 ms on the GTX 745 against about 30, most of it drawing); a frame between keeps the last map and the
+    // matrix it was drawn with
+    const dmg = G.drive && G.drive.damage;
+    const shadowNow = !(dmg && now - (dmg.lastImpactT || -1e9) < 1200) || (G.frames & 1) === 0;
+    renderer.shadowMap.autoUpdate = shadowNow;
     // the shadow matrix the photographed surfaces read must be this frame's (the shadow box follows the car)
-    if (sky.sun.castShadow) { sky.sun.updateMatrixWorld(); sky.sun.target.updateMatrixWorld(); sky.sun.shadow.updateMatrices(sky.sun); }
-    syncBaked(sky.sun);
+    if (shadowNow) {
+      if (sky.sun.castShadow) { sky.sun.updateMatrixWorld(); sky.sun.target.updateMatrixWorld(); sky.sun.shadow.updateMatrices(sky.sun); }
+      syncBaked(sky.sun);
+    }
     // while a drop loads, nothing is drawn: a shader first met in a draw is built there and then, and that held
     // the page still for seconds (the drive builds them all in the background before the car is shown)
     // (never for more than 40 s, whatever happened to the drop)
@@ -171,7 +179,7 @@ if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
 async function openMap() {
   try {
-    const M = await import('./mapui.js?v=27');
+    const M = await import('./mapui.js?v=28');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();
