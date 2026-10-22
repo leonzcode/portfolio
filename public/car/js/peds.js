@@ -6,7 +6,7 @@
 //   const peds = new Peds(drive); await peds.start(); peds.update(dt) each frame; peds.rebuild() after a new area
 //   (new roads); peds.clear(); peds.list (each { p: Person, state, ... }); peds.max (cap, default 34)
 import * as THREE from 'three';
-import { People } from './people.js?v=24';
+import { People } from './people.js?v=25';
 
 const LINES = {
   hit: ['Hey!', 'Watch it!', 'Are you crazy?', 'Slow down!', 'You hit me!', 'Ow!', 'What are you doing?!', 'Look where you are going!', 'Learn to drive!', 'Unbelievable!'],
