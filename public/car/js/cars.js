@@ -10,7 +10,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { fixWheels, addExtraWheels, updateExtraWheels } from './wheels.js?v=17';
+import { fixWheels, addExtraWheels, updateExtraWheels } from './wheels.js?v=18';
 
 const MODELS = new URL('../models/', import.meta.url).href;
 const DRACO = new URL('../vendor/three/addons/libs/draco/gltf/', import.meta.url).href;
@@ -98,7 +98,7 @@ export const CARS = [
     // LP560-4: 5.2 V10, 412 kW at 8000 rpm, 540 Nm, four-wheel drive, six-speed e-gear, 325 km/h
     physics: { power: 412e3, torque: 540, drive: 'awd', comHeight: 0.45, maxSteer: 32, steerRatio: 13, gears: [3.09, 2.11, 1.57, 1.24, 1.07, 0.94], final: 3.54, redline: 8250, idle: 1000, mu: 1.25, brake: 17000, cd: 0.33, area: 1.95, topSpeed: 325 },
     seats: [{x: -0.33, y: 0.4, z: -0.22, side: 'L', door: 0}, {x: 0.33, y: 0.4, z: -0.22, side: 'R', door: 1}],
-    doors: [{hinge: [-0.895, 0.635, -0.834], axis: [0, -1, 0], open: 66, side: 'L', box: [[-0.935, 0.2, -0.864], [-0.7, 1.07, 0.406]]}, {hinge: [0.895, 0.635, -0.834], axis: [0, 1, 0], open: 66, side: 'R', box: [[0.7, 0.2, -0.864], [0.935, 1.07, 0.406]]}],
+    doors: [{hinge: [-0.895, 0.635, -0.834], axis: [0, -1, 0], open: 66, side: 'L', box: [[-0.935, 0.31, -0.864], [-0.7, 1.07, 0.406]]}, {hinge: [0.895, 0.635, -0.834], axis: [0, 1, 0], open: 66, side: 'R', box: [[0.7, 0.31, -0.864], [0.935, 1.07, 0.406]]}],
     credit: '"Lamborghini Gallardo 2010" by Artem P (temp0.crazy, Sketchfab), CC BY 4.0',
   },
   {
@@ -163,7 +163,7 @@ function loader() {
 const templates = new Map(); // file -> Promise<{ scene, info }>
 function loadTemplate(file) {
   if (!templates.has(file)) {
-    templates.set(file, loader().loadAsync(MODELS + file + '?v=17').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
+    templates.set(file, loader().loadAsync(MODELS + file + '?v=18').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
   }
   return templates.get(file);
 }
@@ -330,7 +330,7 @@ function lampMaterial(src, role, level) {
 export async function makeEnvironment(renderer, { file = 'env/wide_street_01_1k.hdr' } = {}) {
   const pm = new THREE.PMREMGenerator(renderer);
   try {
-    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=17');
+    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=18');
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     const env = pm.fromEquirectangular(hdr).texture;
     env.userData.source = hdr; // the garage shows it as a backdrop
