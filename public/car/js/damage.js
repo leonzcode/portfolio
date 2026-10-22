@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=24';
+import { FX } from './damagefx.js?v=25';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -1166,7 +1166,7 @@ function doorsFrom(rd, A, sides) {
 // ---------------------------------------------------------------------------------------------------------
 // one car's damage
 
-const BROKEN_LENS = new THREE.MeshStandardMaterial({ name: 'damage_broken_lens', color: 0x1a1a1a, roughness: 0.6, metalness: 0.4 });
+const BROKEN_LENS = new THREE.MeshStandardMaterial({ name: 'damage_broken_lens', color: 0x8c9096, roughness: 0.32, metalness: 0.85 });
 // what is behind the grille (the models are hollow): radiator fins, the engine, the dark of the bay
 let _finTex = null;
 function finTexture() {
@@ -1218,7 +1218,7 @@ class CarDamage {
     this.damaged = false; this.parts = new Map(); this.doors = [];
     this.windows = null; this.queue = [];
     this.crushTotal = 0; this.front = 0; this.rear = 0; this.left = 0; this.right = 0; this.roof = 0;
-    this.engine = 0; this.bonnetH = 0; this.bootH = 0; this.bonnetApex = rnd(0.38, 0.55); this.bonnetSkew = rnd(-0.25, 0.25);
+    this.engine = 0; this.bonnetH = 0; this.bootH = 0; this.cracks = {}; this.bonnetApex = rnd(0.5, 0.62); this.bonnetSkew = rnd(-0.25, 0.25);
     this.hard = null; this.atlas = null; this.crack = null; this.mats = null;
     this.lampsBroken = new Set(); this.wheels = [{}, {}, {}, {}];
     this.scrapeT = 0; this.lastImpact = 0;
@@ -1541,7 +1541,7 @@ class CarDamage {
       const R = Math.min(reachAt(x * Tx + y * Ty + z * Tz, x * Bx + y * By + z * Bz), Dc), u = Math.max(0, R - shAt(sg));
       const prev = frontHit ? this.bonnetH : this.bootH;
       const sh = (frontHit ? this.front : this.rear) + u;
-      const h = Math.min(len * 0.36, 0.85 * Math.sqrt(Math.max(0, (len / 2) ** 2 - ((len - Math.min(sh, len * 0.8)) / 2) ** 2)));
+      const h = Math.min(len * 0.45, 1.0 * Math.sqrt(Math.max(0, (len / 2) ** 2 - ((len - Math.min(sh, len * 0.8)) / 2) ** 2)));
       if (h > prev + 0.002) bulgeAdd = h - prev;
       bz = { zEdge, zEnd, len, frontHit, apex: this.bonnetApex, skew: this.bonnetSkew + (Px / Math.max(0.5, A.hw)) * 0.2 };
       if (frontHit) { this.bonnetH = Math.max(prev, h); this.front = sh; } else { this.bootH = Math.max(prev, h); this.rear = sh; }
@@ -1811,9 +1811,18 @@ class CarDamage {
           if (u > um) { um = u; side = fx; }
         }
         const p = this.parts.get('bumper' + which);
-        if (um > 0.1 && !p) {
+        // cracks across the cover where it was pushed in (dark hairlines in the paint)
+        if (um > 0.1 && !this.cracks[which]) {
+          this.cracks[which] = true;
+          const n = new THREE.Vector3(0, 0, which === 'front' ? -1 : 1), zf = which === 'front' ? bz.z0 + 0.06 : bz.z1 - 0.06;
+          for (let k = 0; k < 3 + Math.round(um * 4); k++) {
+            const x = rnd(-0.75, 0.75) * A.hw, y = rnd(bz.y0 + 0.05, bz.y1 - 0.03), L = rnd(0.08, 0.22), ang = rnd(-1.2, 1.2);
+            this.scratch(new THREE.Vector3(x, y, zf), new THREE.Vector3(x + Math.cos(ang) * L, y + Math.sin(ang) * L * 0.6, zf), n, 0.005, [0, 0.15, 0.05, 1], 0);
+          }
+        }
+        if (um > (which === 'front' ? 0.55 : 0.5) && !p) {
           const free = side === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(side);
-          if (um > 0.7 || (um > 0.55 && Math.random() < 0.4)) this.later('bumper' + which, jb => this.detachGen(jb, 'bumper' + which, imp, { kind: 'bumper', test: (x, y, z) => z > bz.z0 && z < bz.z1 && y > bz.y0 && y < bz.y1, which }));
+          if (um > 0.8 || (um > 0.68 && Math.random() < 0.4)) this.later('bumper' + which, jb => this.detachGen(jb, 'bumper' + which, imp, { kind: 'bumper', test: (x, y, z) => z > bz.z0 && z < bz.z1 && y > bz.y0 && y < bz.y1, which }));
           else this.later('bumper' + which, jb => this.hangBumperGen(jb, which, free, um));
         } else if (p && p.state === 'hang' && um > 0.12) this.later('bumper' + which, jb => this.detachGen(jb, 'bumper' + which, imp, { kind: 'bumper', which }));
       }
@@ -1842,6 +1851,18 @@ class CarDamage {
         // (struck doors stay latched in NHTSA's side tests: one springs only in a far harder side crash)
         const sideNear = (imp.side === 'left' && dd.side === 'L' || imp.side === 'right' && dd.side === 'R') && res.maxU > 0.55 && dd.box.distanceToPoint(hp) < 0.6;
         if ((bigFR && Math.random() < (dd.front ? 0.25 : 0.12)) || (roll && Math.random() < 0.2) || (sideNear && Math.random() < 0.15)) this.later('door' + i, jb => this.forceDoorGen(jb, i, imp));
+        // a pole at a door's trailing edge splits it from the pillar: the door stands a few centimetres ajar there,
+        // its folded skin and the dark door structure showing in the gap (NHTSA's side pole photos)
+        else if (imp.kind === 'pole' && res.maxU > 0.2 && ((imp.side === 'left' && dd.side === 'L') || (imp.side === 'right' && dd.side === 'R')) && Math.abs(dd.box.max.z - hp.z) < 0.45) {
+          const self = this;
+          this.later('door' + i, function* (jb) {
+            const st = self.doorState(i);
+            if (st.forced) return;
+            yield* self.doorNodeGen(jb, i);
+            if (st.forced || !st.pivot) return;
+            st.forced = true; st.target = 0.07 + Math.min(0.06, res.maxU * 0.1); st.sagT = 0.01;
+          });
+        }
       }
       // a hard front crash tears the grille out (the radiator behind it shows)
       if (imp.side === 'front' && res.maxU > 0.62 && this.bay && !this.parts.has('grille')) {
@@ -2542,7 +2563,7 @@ class CarDamage {
     this.lampsBroken.clear();
     this.doors = []; this.hard = null; this.windows = null; this.winState = null; this.pending = null;
     this.entries = null; this.A = null;
-    this.damaged = false; this.crushTotal = this.front = this.rear = this.left = this.right = this.roof = this.engine = this.bonnetH = this.bootH = this.roofDrop = this.wingDone = 0;
+    this.damaged = false; this.crushTotal = this.front = this.rear = this.left = this.right = this.roof = this.engine = this.bonnetH = this.bootH = this.roofDrop = this.wingDone = 0; this.cracks = {};
     this.stamps.length = 0;
     if (this.vehicle) { this.vehicle.powerK = 1; }
     this.readied = false;
