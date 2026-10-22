@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=20';
+import { FX } from './damagefx.js?v=21';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -2720,8 +2720,11 @@ export class Damage {
     const A = rd.analysis(), self = this;
     this.bg.push(makeJob(rd, function* (job) {
       for (const e of rd.list()) {
-        if (e.prefined || e.role === 'proxy' || e.role === 'far' || e.partOf || A.interior[rd.entries.indexOf(e)]) continue;
         if (rd.mgr.drive.car && rd.mgr.drive.car.rig !== rd.rig) return;
+        // the cabin's trim made the car's own too (no subdividing): owned in a crash, its new buffers were uploaded
+        // in the frames after it
+        if (!e.prefined && !e.partOf && e.role !== 'proxy' && e.role !== 'far' && e.role !== 'glass' && A.interior[rd.entries.indexOf(e)]) { if (!e.cur) { e.own(); yield; } continue; }
+        if (e.prefined || e.role === 'proxy' || e.role === 'far' || e.partOf || A.interior[rd.entries.indexOf(e)]) continue;
         if (e.role === 'glass') rd.ownGlass(e); else e.own();
         if (e.fine === undefined) e.fine = meanEdge(e) < e.L * 0.8;
         yield;
@@ -2729,6 +2732,9 @@ export class Damage {
         e.prefined = true;
         yield;
       }
+      // the paint's damage map made now too (its render target and every painted mesh's attributes were set up in a
+      // crash's frames)
+      if (!rd.mgr.drive.car || rd.mgr.drive.car.rig === rd.rig) { try { rd.atlasReady(); } catch (e) {} }
     }));
   }
   // the crush's code run once on a small stand-in car, so the first real crash does not wait for the browser to
