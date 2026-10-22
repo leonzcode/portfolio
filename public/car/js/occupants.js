@@ -25,7 +25,7 @@ export function loadPeople(drive) {
   Hp = (async () => {
     if (!/[?&]standin/.test(location.search)) {
       try {
-        const M = await import('./people.js?v=26');
+        const M = await import('./people.js?v=27');
         if (M && M.People && typeof M.People.createPerson === 'function') {
           const P = M.People;
           await P.load(drive && drive.G ? drive.G.renderer : undefined, drive ? drive.camera : undefined);
@@ -36,7 +36,7 @@ export function loadPeople(drive) {
         }
       } catch (e) { console.warn('people module', e && e.message); }
     }
-    const M = await import('./standin.js?v=26');
+    const M = await import('./standin.js?v=27');
     H = wrapStandin(M);
     return H;
   })();
@@ -470,7 +470,7 @@ export class Occupants {
       const seat = R.seats[i];
       const isKid = !!seat.kid || (kid && i > 0);
       const look = R.looks[i] || (R.looks[i] = h.randomLook({ kid: isKid }));
-      while (this.makeQ >= MAKE_PER_FRAME) await new Promise(r => requestAnimationFrame(r));
+      while (this.makeQ >= MAKE_PER_FRAME || performance.now() < (this.calmUntil || 0)) await new Promise(r => requestAnimationFrame(r));
       this.makeQ++;
       let p = null;
       try { p = await h.create(look, { lod: 'low', kid: isKid, seated: true }); } catch (e) { console.warn('person', e); }
@@ -590,7 +590,8 @@ export class Occupants {
     // make, show and pose
     let vis = 0, measured = false;
     for (const R of want) {
-      if (!R.made && !R.making) this.make(R);
+      const calm = performance.now() < (this.calmUntil || 0);
+      if (!R.made && !R.making && !calm) this.make(R);
       // after a crash (or a repair): where everyone sits again
       const now = performance.now();
       // one car a frame (a T-bone checks both cars at the same moments)
@@ -611,7 +612,7 @@ export class Occupants {
         const p = o.person;
         p.object.visible = (show || o.player) && !this.hideAll && !o.hidden;
         // behind glass a few metres off, the cheaper model does (the player's own always the detailed one)
-        if (!o.player && p.setLod) { const want = d < 9 ? 'near' : 'far'; if (o.lod !== want) { o.lod = want; try { p.setLod(want); } catch (e) {} } }
+        if (!o.player && p.setLod && !calm) { const want = d < 9 ? 'near' : 'far'; if (o.lod !== want) { o.lod = want; try { p.setLod(want); } catch (e) {} } }
         if (p.object.visible) vis++;
         else if (!o.player) continue;
         // a sitting pose needs few new frames: the player's every frame, the near ones now and then (breathing,
@@ -629,7 +630,60 @@ export class Occupants {
     this.stats.visible = vis; this.stats.cars = want.size;
     // the thrown and the fleeing
     this.looseStep(dt);
+    try { this.warmStep(); } catch (e) { if (!this.warmErr) { this.warmErr = true; console.warn('people warm-up', e); } }
   }
+
+  // Every person's meshes drawn once in the background, before anything needs them: the first draw of a mesh uploads
+  // its geometry (a few MB for a model's near version), and of a person its bones' texture, which held the frames
+  // after a crash (people thrown out switching to their near model, pedestrians and occupants coming into view as the
+  // camera swings). One mesh (or person) a frame, drawn where it is with culling off for one frame, shrunk to a point
+  // so nothing shows; pedestrians (peds.js) and the people in and out of cars alike.
+  warmStep() {
+    const W = this.warm || (this.warm = { mesh: new WeakSet(), tex: new WeakSet(), cur: [], n: 0, nt: 0 });
+    for (const m of W.cur) { m.visible = m.userData._wv; m.frustumCulled = m.userData._wf; }
+    W.cur.length = 0;
+    if (performance.now() < (this.calmUntil || 0)) return;
+    const D = this.drive;
+    // the people in cars first (nearest cars first, as made), then whoever is out of a car, then the pedestrians
+    const shown = o => { for (let a = o, k = 0; a && k < 12; a = a.parent, k++) if (!a.visible) return false; return true; };
+    // first the pictures (a head's colour map is 1024 square: one a frame, uploaded with renderer.initTexture), then
+    // the meshes
+    const R3 = D.G && D.G.renderer;
+    const SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap'];
+    const texP = p => {
+      if (!R3 || !R3.initTexture || !p || !p.model) return false;
+      for (const m of [...(p.model.lod0 || []), ...(p.model.lod1 || [])]) for (const mt of [].concat(m.material)) {
+        if (!mt) continue;
+        for (const k of SLOTS) { const t = mt[k]; if (t && t.isTexture && !W.tex.has(t)) { W.tex.add(t); if (t.image) { R3.initTexture(t); W.nt++; return true; } } }
+      }
+      return false;
+    };
+    if (D.onfoot && texP(D.onfoot.person)) return;
+    for (const R of this.recs.values()) for (const o of R.people) if (texP(o.person)) return;
+    for (const L of this.loose) if (texP(L.person)) return;
+    if (D.peds && D.peds.list) for (const P of D.peds.list) if (texP(P.p)) return;
+    const tryP = p => {
+      if (!p || !p.model || !p.object || !shown(p.object)) return false;
+      for (const m of p.model.lod0 || []) if (!W.mesh.has(m)) return this.warmMesh(W, m);
+      for (const m of p.model.lod1 || []) if (!W.mesh.has(m)) return this.warmMesh(W, m);
+      return false;
+    };
+    if (D.onfoot && tryP(D.onfoot.person)) return;
+    for (const R of this.recs.values()) for (const o of R.people) if (tryP(o.person)) return;
+    for (const L of this.loose) if (tryP(L.person)) return;
+    if (D.peds && D.peds.list) for (const P of D.peds.list) if (tryP(P.p)) return;
+  }
+  // one mesh drawn this frame whatever the camera sees (its geometry, textures and bones' texture uploaded), then
+  // back as it was next frame; it is drawn where the person is, over the model already showing
+  warmMesh(W, m) {
+    W.mesh.add(m); W.n++;
+    const U = m.userData;
+    U._wv = m.visible; U._wf = m.frustumCulled;
+    m.visible = true; m.frustumCulled = false;
+    W.cur.push(m);
+    return true;
+  }
+
 
   // ----------------------------------------------------------------------------------------------------------
   // crashes
@@ -647,6 +701,9 @@ export class Occupants {
   impact(e) {
     const rig = e.car || (e.vehicle && e.vehicle.rig);
     if (!rig) return;
+    // the frames after a crash are the heaviest: no new people made, no level of detail changed, no warming up for
+    // a couple of seconds (each is a first draw: geometry, textures, bones' texture)
+    if ((e.speed || 0) > 4) this.calmUntil = performance.now() + 2500;
     const R = this.recs.get(rig);
     const speed = e.speed || 0;
     const roll = !!e.rollover;

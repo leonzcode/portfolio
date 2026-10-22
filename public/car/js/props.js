@@ -17,8 +17,8 @@
 // placed with yaw H (heading degrees) its front faces heading H.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { frame, dirHeading } from './geo.js?v=26';
-import * as SIG from './signals.js?v=26';
+import { frame, dirHeading } from './geo.js?v=27';
+import * as SIG from './signals.js?v=27';
 
 const D2R = Math.PI / 180;
 const BIN = 500;
