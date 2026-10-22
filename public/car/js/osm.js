@@ -22,7 +22,7 @@
 //              power_pole, power_tower, utility_pole, bench, waste_basket, bus_stop, tree, post_box, telephone,
 //              bollard, gate, barrier (other barrier nodes), recycling, bicycle_parking, vending, mini_roundabout,
 //              turning_circle, motorway_junction
-import { project, unproject, frame } from './geo.js?v=20';
+import { project, unproject, frame } from './geo.js?v=21';
 
 export const CELL = 500;
 const ENDPOINTS = [
