@@ -6,7 +6,7 @@
 //   const peds = new Peds(drive); await peds.start(); peds.update(dt) each frame; peds.rebuild() after a new area
 //   (new roads); peds.clear(); peds.list (each { p: Person, state, ... }); peds.max (cap, default 34)
 import * as THREE from 'three';
-import { People } from './people.js?v=16';
+import { People } from './people.js?v=17';
 
 const LINES = {
   hit: ['Hey!', 'Watch it!', 'Are you crazy?', 'Slow down!', 'You hit me!', 'Ow!', 'What are you doing?!', 'Look where you are going!', 'Learn to drive!', 'Unbelievable!'],
@@ -58,6 +58,8 @@ export class Peds {
     // a first crowd round the start, so the street is not empty on arrival
     const want = this.target();
     for (let i = 0; i < want * 3 && this.list.length < want; i++) this.spawn(true);
+    // every person's shaders, the shadow map's too, made in the frame drawn behind the loading card
+    if (!/[?&]nowarm/.test(location.search)) try { if (this.warm) this.warm.dispose(); this.warm = People.warmup(D.scene, this.anchor()); this.warmFrames = 3; } catch (e) { console.warn('people warm-up', e); }
     // their shaders built with the rest of the scene (drive.start compiles the scene after this)
     this.moreT = 8;
   }
@@ -324,6 +326,7 @@ export class Peds {
 
   _update(dt) {
     this.frame++;
+    if (this.warm && --this.warmFrames <= 0) { this.warm.dispose(); this.warm = null; }
     const o = this.anchor();
     // more variety as the drive goes on
     this.moreT -= dt;
@@ -658,6 +661,7 @@ export class Peds {
   }
 
   dispose() {
+    if (this.warm) { this.warm.dispose(); this.warm = null; }
     this.clear();
     this.scene.remove(this.group);
     this.bubbles.dispose();
