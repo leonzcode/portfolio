@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=26';
+import { FX } from './damagefx.js?v=27';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -471,7 +471,7 @@ class Entry {
 
 // subdivide the triangles whose edges are longer than L where `want(x, y, z)` says (edge middles, car frame), so a
 // bend has vertices to bend with. Every long edge is split in both triangles that share it (no cracks).
-function* refineGen(job, e, want, L, maxPasses = 4) {
+function* refineGen(job, e, want, L, maxPasses = 4, ends = false) {
   const g = e.own();
   let changed = false;
   for (let pass = 0; pass < maxPasses; pass++) {
@@ -503,7 +503,8 @@ function* refineGen(job, e, want, L, maxPasses = 4) {
       const a3 = a * 3, b3 = b * 3;
       const dx = cur[a3] - cur[b3], dy = cur[a3 + 1] - cur[b3 + 1], dz = cur[a3 + 2] - cur[b3 + 2];
       if (dx * dx + dy * dy + dz * dz <= L2) return false;
-      return want((cur[a3] + cur[b3]) * 0.5, (cur[a3 + 1] + cur[b3 + 1]) * 0.5, (cur[a3 + 2] + cur[b3 + 2]) * 0.5);
+      if (want((cur[a3] + cur[b3]) * 0.5, (cur[a3 + 1] + cur[b3 + 1]) * 0.5, (cur[a3 + 2] + cur[b3 + 2]) * 0.5)) return true;
+      return ends && (want(cur[a3], cur[a3 + 1], cur[a3 + 2]) || want(cur[b3], cur[b3 + 1], cur[b3 + 2]));
     };
     for (let t = 0, k = 0; t < nt; t += 3, k++) {
       if ((k & 2047) === 2047 && performance.now() >= job.deadline) yield;
@@ -1496,6 +1497,7 @@ class CarDamage {
       if (bs - 0.2 > s0) break;
       const p = e.cur || (e._sp || (e._sp = e.srcPositions()));
       for (let i = 0; i < p.length; i += 3) {
+        if ((i % 24576) === 24573 && performance.now() >= job.deadline) yield;
         const x = p[i] - Px, y = p[i + 1] - Py, z = p[i + 2] - Pz;
         const s = x * Nx + y * Ny + z * Nz;
         if (s > s0) continue;
@@ -1593,7 +1595,7 @@ class CarDamage {
         // every outside mesh split where this crush moves it (a mesh fine on average can still have long triangles
         // across a door or a bonnet: moved at one corner, they made flat facets and dark streaks, and no crease)
         if (e.role !== 'proxy' && e.role !== 'far' && !inner) {
-          const before = e.cur.length, tr = performance.now(); yield* refineGen(job, e, willMove, e.L, self.npc ? 2 : 3); stats.newVerts += (e.cur.length - before) / 3; stats.refine += performance.now() - tr;
+          const before = e.cur.length, tr = performance.now(); yield* refineGen(job, e, willMove, e.L, self.npc ? 2 : 4, true); stats.newVerts += (e.cur.length - before) / 3; stats.refine += performance.now() - tr;
         }
         let tm = performance.now();
         const c = e.cur, rest = e.rest, n = c.length / 3;
@@ -1826,7 +1828,7 @@ class CarDamage {
         }
         if (um > 0.15 && !p && !this.cracks[which + 'sag']) {
           this.cracks[which + 'sag'] = true;
-          const sgx = side === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(side), amt = Math.min(0.05, 0.02 + um * 0.04);
+          const sgx = side === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(side), amt = Math.min(0.09, 0.045 + um * 0.07), zs = which === 'front' ? -1 : 1;
           for (const e of this.list()) {
             if (!e.cur || e.partOf || e.role === 'glass' || e.role === 'proxy' || e.role === 'far' || e.mesh.userData.dmgBay) continue;
             const c = e.cur, r = e.rest; let any = false; const dirty = new Uint8Array(c.length / 3);
@@ -1836,7 +1838,7 @@ class CarDamage {
               if (x < A.hw * 0.35 || y > bz.y0 + (bz.y1 - bz.y0) * 0.55 || z < bz.z0 - 0.25 || z > bz.z1 + 0.25) continue;
               const fx = Math.min(1, (x - A.hw * 0.35) / (A.hw * 0.5)), fy = 1 - Math.min(1, Math.max(0, y - bz.y0) / ((bz.y1 - bz.y0) * 0.55));
               const f = fx * fy;
-              c[k + 1] -= amt * f; c[k] += sgx * amt * 0.5 * f;
+              c[k + 1] -= amt * f * f; c[k] += sgx * amt * 0.6 * f; c[k + 2] += zs * amt * 0.35 * f;
               dirty[k / 3] = 1; any = true;
             }
             if (any) { e.writePositions(); yield* renormalGen(job, e, dirty); }
@@ -1899,6 +1901,18 @@ class CarDamage {
               }
               if (any) { pe.writePositions(); yield* renormalGen(jb, pe, dirty); }
               if (performance.now() >= jb.deadline) yield;
+            }
+            // the door's own inner structure, dark grey, just inside the skin at the split (seen through the gap
+            // instead of the pillar behind)
+            const pe0 = part.entries.find(q => q.role !== 'glass' && q.mesh && q.mesh.parent);
+            if (pe0) {
+              const A = self.A, w = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.1), BAY_ENGINE);
+              w.name = 'dmg_doorinner'; w.userData.dmgOwnGeo = true; w.castShadow = false; w.receiveShadow = true;
+              // (as deep as the crushed skin there, a few centimetres inside it)
+              const wy = Math.min(A.belt - 0.08, Math.max(0.35, yH)), wz = zE - 0.12, du = res.uOf ? res.uOf(sg * A.hwBelt, wy, wz) : 0;
+              w.position.set(sg * (A.hwBelt - 0.09 - du), wy, wz); w.updateMatrix();
+              w.applyMatrix4(new THREE.Matrix4().multiplyMatrices(pe0.mesh.matrix, pe0.c2m));
+              pe0.mesh.parent.add(w);
             }
           });
         }

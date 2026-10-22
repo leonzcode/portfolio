@@ -24,7 +24,7 @@ const RAIL_TOP = 1.15;          // the parapet's collision reaches this far over
 
 let MATS = null;
 function tex(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=26');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=27');
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
   return t;
