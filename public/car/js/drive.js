@@ -1,18 +1,18 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=29';
-import { Collide } from './collide.js?v=29';
-import { Vehicle } from './vehicle.js?v=29';
-import { CarCamera } from './camera.js?v=29';
-import { Hud } from './hud.js?v=29';
-import { CarSound } from './sound.js?v=29';
-import { CutMask } from './cutmask.js?v=29';
-import * as SIG from './signals.js?v=29';
-import { Parked } from './parked.js?v=29';
-import { Skids } from './skids.js?v=29';
-import { StreetSigns } from './streetsigns.js?v=29';
-import { Landmarks, filterBuildings } from './landmarks.js?v=29';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=30';
+import { Collide } from './collide.js?v=30';
+import { Vehicle } from './vehicle.js?v=30';
+import { CarCamera } from './camera.js?v=30';
+import { Hud } from './hud.js?v=30';
+import { CarSound } from './sound.js?v=30';
+import { CutMask } from './cutmask.js?v=30';
+import * as SIG from './signals.js?v=30';
+import { Parked } from './parked.js?v=30';
+import { Skids } from './skids.js?v=30';
+import { StreetSigns } from './streetsigns.js?v=30';
+import { Landmarks, filterBuildings } from './landmarks.js?v=30';
 
 const STEP = 1 / 120;
 const GLIFT = 0.15; // how far under Google's road ours is drawn
@@ -59,9 +59,9 @@ export class Drive {
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
     const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=29'), tryImport('./osm.js?v=29'), tryImport('./roads.js?v=29'), tryImport('./props.js?v=29'),
-      tryImport('./buildings.js?v=29'), tryImport('./trees.js?v=29'), tryImport('./traffic.js?v=29'), tryImport('./imagery.js?v=29')]);
-    const dmgMod = this.damage ? null : await tryImport('./damage.js?v=29');
+      tryImport('./cars.js?v=30'), tryImport('./osm.js?v=30'), tryImport('./roads.js?v=30'), tryImport('./props.js?v=30'),
+      tryImport('./buildings.js?v=30'), tryImport('./trees.js?v=30'), tryImport('./traffic.js?v=30'), tryImport('./imagery.js?v=30')]);
+    const dmgMod = this.damage ? null : await tryImport('./damage.js?v=30');
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
     // crash damage (damage.js), set up before any car is made: every car's paint and glass get ready for it
     if (dmgMod && dmgMod.Damage && !this.damage) { try { this.damage = new dmgMod.Damage(this); } catch (e) { console.warn('damage', e); } }
@@ -71,13 +71,13 @@ export class Drive {
     const ov = new URLSearchParams(location.search).get('overpass');
     if (ov && osm && osm.setFetcher) osm.setFetcher(q => fetch(ov + '?data=' + encodeURIComponent(q)).then(r => { if (!r.ok) throw new Error('overpass ' + r.status); return r.json(); }));
     // the Roadster's thrusters (flight.js): Space flies a car whose catalogue entry has fly: true
-    if (!this.flight) { const FL = await tryImport('./flight.js?v=29'); try { if (FL && FL.Flight && !this.flight) this.flight = new FL.Flight(this); } catch (e) { console.warn('flight', e); } }
+    if (!this.flight) { const FL = await tryImport('./flight.js?v=30'); try { if (FL && FL.Flight && !this.flight) this.flight = new FL.Flight(this); } catch (e) { console.warn('flight', e); } }
     // the semi's trailer (trailer.js; ?notrailer turns it off)
-    if (!this.trailers) { const TL = await tryImport('./trailer.js?v=29'); try { if (TL && TL.Trailers && !this.trailers) this.trailers = new TL.Trailers(this); } catch (e) { console.warn('trailer', e); } }
+    if (!this.trailers) { const TL = await tryImport('./trailer.js?v=30'); try { if (TL && TL.Trailers && !this.trailers) this.trailers = new TL.Trailers(this); } catch (e) { console.warn('trailer', e); } }
     // the player on foot (E gets out and in) and the people in every car (onfoot.js, occupants.js)
-    if (!this.onfoot) { const OF = await tryImport('./onfoot.js?v=29'); try { if (OF && OF.OnFoot && !this.onfoot) this.onfoot = new OF.OnFoot(this); } catch (e) { console.warn('onfoot', e); } }
+    if (!this.onfoot) { const OF = await tryImport('./onfoot.js?v=30'); try { if (OF && OF.OnFoot && !this.onfoot) this.onfoot = new OF.OnFoot(this); } catch (e) { console.warn('onfoot', e); } }
     // "Your look" (lookui.js): P or the car chooser opens it
-    if (!this.lookui) { const LU = await tryImport('./lookui.js?v=29'); try { if (LU && LU.LookUI && !this.lookui) this.lookui = new LU.LookUI(this); } catch (e) { console.warn('lookui', e); } }
+    if (!this.lookui) { const LU = await tryImport('./lookui.js?v=30'); try { if (LU && LU.LookUI && !this.lookui) this.lookui = new LU.LookUI(this); } catch (e) { console.warn('lookui', e); } }
     this.G.mods = this.mods;
   }
 
@@ -205,7 +205,7 @@ export class Drive {
     if (this.mods.props && this.mods.props.preload && !this.propsReady) { this.propsReady = true; this.mods.props.preload().catch(e => console.warn('props preload', e)); }
     const dataP = this.fetchArea(0, 0, true);
     // the pedestrians' models and clips come in while the world loads (peds.js; started below)
-    if (!/[?&]nopeds/.test(location.search)) tryImport('./peds.js?v=29').then(PD => { try { if (PD && PD.Peds && !this.peds) this.peds = new PD.Peds(this); if (this.peds) this.peds.prepare().catch(e => console.warn('peds prepare', e)); } catch (e) { console.warn('peds', e); } });
+    if (!/[?&]nopeds/.test(location.search)) tryImport('./peds.js?v=30').then(PD => { try { if (PD && PD.Peds && !this.peds) this.peds = new PD.Peds(this); if (this.peds) this.peds.prepare().catch(e => console.warn('peds prepare', e)); } catch (e) { console.warn('peds', e); } });
     this.mode = await this.G.startWorld(lat, lon);
     mark('world');
     this.hud.loading('Loading streets', 0.35);
@@ -231,7 +231,7 @@ export class Drive {
     if (this.traffic && this.traffic.preload) { this.hud.loading('Getting the traffic ready', 0.9); await this.traffic.preload(this.G.renderer, this.camera); }
     mark('traffic');
     // pedestrians on the pavements (peds.js), made before the shaders are built so theirs are built too
-    if (!/[?&]nopeds/.test(location.search)) { try { if (!this.peds) { const PD = await tryImport('./peds.js?v=29'); if (PD && PD.Peds && !this.peds) this.peds = new PD.Peds(this); } if (this.peds) { this.hud.loading('Getting the people ready', 0.93); await this.peds.start(); } } catch (e) { console.warn('peds', e); } }
+    if (!/[?&]nopeds/.test(location.search)) { try { if (!this.peds) { const PD = await tryImport('./peds.js?v=30'); if (PD && PD.Peds && !this.peds) this.peds = new PD.Peds(this); } if (this.peds) { this.hud.loading('Getting the people ready', 0.93); await this.peds.start(); } } catch (e) { console.warn('peds', e); } }
     mark('peds');
     // every shader the scene needs, built in the background (in parallel where the browser can) before the first
     // frame is drawn; 15 s at most
@@ -239,7 +239,9 @@ export class Drive {
     await this.compileScene(this.scene, null, 15000);
     // one frame drawn behind the loading card: the shadow pass's shaders (which the background build cannot make)
     // are built here rather than in the first seconds of driving
+    try { if (this.traffic && this.traffic.warmAt && this.car) { const o = this.car.vehicle.origin(); this.traffic.warmAt(o.x, o.y, o.z); } } catch (e) { console.warn('traffic warm', e); }
     try { this.G.renderer.render(this.scene, this.camera); } catch (e) {}
+    try { if (this.traffic && this.traffic.endWarm) this.traffic.endWarm(); } catch (e) { console.warn('traffic warm', e); }
     this.holdRender = false;
     mark('shaders');
     this.active = true;
@@ -535,7 +537,7 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=29').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=30').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;
@@ -588,7 +590,7 @@ export class Drive {
       }
     } catch (e) { console.warn('carry car', e); }
     // bridges: decks, parapets and piers under the roads the map marks as bridges (bridges.js; collision in both worlds)
-    try { if (!this.mods.bridges) this.mods.bridges = await tryImport('./bridges.js?v=29'); if (this.mods.bridges && this.roadsObj) await swap('bridgesObj', () => this.mods.bridges.build(this.roadsObj, { scene: this.scene, collide, groundAt: (a, b) => this.world.groundAt(a, b), mode: this.mode, buildings: data.buildings })); } catch (e) { console.warn('bridges', e); }
+    try { if (!this.mods.bridges) this.mods.bridges = await tryImport('./bridges.js?v=30'); if (this.mods.bridges && this.roadsObj) await swap('bridgesObj', () => this.mods.bridges.build(this.roadsObj, { scene: this.scene, collide, groundAt: (a, b) => this.world.groundAt(a, b), mode: this.mode, buildings: data.buildings })); } catch (e) { console.warn('bridges', e); }
     try { times.openN = openBuildings(data.buildings, this.roadsObj); } catch (e) { console.warn('open buildings', e); }
     this.lastData = data;
     // Google's mesh has cars baked into the streets: cut the carriageways out of it so our road shows
