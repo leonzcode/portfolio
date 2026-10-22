@@ -24,7 +24,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=18';
+import { unproject } from './geo.js?v=19';
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -136,7 +136,7 @@ export let style = { region: 'other', yellowCentre: false };
 // ---------------------------------------------------------------- materials
 let MATS = null;
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=18');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=19');
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -1260,8 +1260,10 @@ function deckFromMesh(e, n0, n1) {
   for (let i = 0; i < N; i++) {
     const l = lerp(h0, h1, e.ps[i] / L), v = [];
     for (const o of [-w, -w / 2, 0, w / 2, w]) {
-      let h = null; try { h = S.groundAt(e.px[i] + e.nx[i] * o, e.pz[i] + e.nz[i] * o, l + 6); } catch (err) { h = null; }
-      if (h != null && isFinite(h) && h > l - 3 && h < l + 6.5) v.push(h);
+      // (from 3 m over the line: anything spanning the deck higher up, a gantry, a footbridge, a building over the
+      // street, was read as the deck, a hump of metres)
+      let h = null; try { h = S.groundAt(e.px[i] + e.nx[i] * o, e.pz[i] + e.nz[i] * o, l + 2.4); } catch (err) { h = null; }
+      if (h != null && isFinite(h) && h > l - 3 && h < l + 3.0) v.push(h);
     }
     if (v.length >= 2) raw[i] = pct(v, 0.3);
   }
