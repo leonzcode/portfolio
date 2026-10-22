@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=21';
+import { FX } from './damagefx.js?v=22';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -1177,7 +1177,7 @@ function finTexture() {
 }
 const BAY_FINS = new THREE.MeshStandardMaterial({ name: 'damage_radiator', color: 0x8a8a8a, roughness: 0.65, metalness: 0.55, map: finTexture() });
 const BAY_ENGINE = new THREE.MeshStandardMaterial({ name: 'damage_engine', color: 0x2a2b2d, roughness: 0.5, metalness: 0.7 });
-const BAY_DARK = new THREE.MeshStandardMaterial({ name: 'damage_bay', color: 0x0d0d0e, roughness: 0.9, metalness: 0.1, side: THREE.BackSide });
+const BAY_DARK = new THREE.MeshStandardMaterial({ name: 'damage_bay', color: 0x26272a, roughness: 0.9, metalness: 0.1, side: THREE.BackSide });
 const BAG = new THREE.MeshStandardMaterial({ name: 'damage_airbag', color: 0xcfcec8, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
 let _bagGeo = null, _curtainGeo = null;
 function bagGeometry() {
@@ -1598,9 +1598,10 @@ class CarDamage {
               if (u > 0) {
                 const rx = rest[i3], ry = rest[i3 + 1], rz = rest[i3 + 2];
                 // (the folds go with how much the metal there gave: a cabin pushed back whole does not crinkle)
-                const env = Math.min(1, u * 25) * Math.min(1, R * 16) * clamp(cAt(sg) * 1.6, 0.15, 1);
+                const lid = bulgeAdd > 0 && !glass && !inner && inBulge(rx, ry, rz);
+                const env = Math.min(1, u * 25) * Math.min(1, R * 16) * clamp(cAt(sg) * 1.6, 0.15, 1) * (lid ? 0.15 : 1);
                 // wrinkles in the crushed sheet
-                if (!glass) u += R * (Math.abs(Nz) > 0.6 || pole ? 0.04 : 0.09) * wave(rx * 9.1 + seed + wave(ry * 7.3 + rz * 5.1) * 1.7) * wave(rz * 8.3 - ry * 4.7 + seed + 1.57) * env;
+                if (!glass && !lid) u += R * (Math.abs(Nz) > 0.6 || pole ? 0.04 : 0.09) * wave(rx * 9.1 + seed + wave(ry * 7.3 + rz * 5.1) * 1.7) * wave(rz * 8.3 - ry * 4.7 + seed + 1.57) * env;
                 dx = Nx * u; dy = Ny * u; dz = Nz * u;
                 if (!glass && !inner && sideHit && pole) {
                   // a door wrapped round a pole: upright creases beside it, as the pole's own line (the Crown's front door
@@ -1639,8 +1640,8 @@ class CarDamage {
             const xi = clamp(Math.abs(zr - bz.zEdge) / bz.len, 0, 1);
             const ap = clamp(bz.apex + bz.skew * (rest[i3] / Math.max(0.4, A.hw)) * 0.5, 0.2, 0.75);
             let pk = xi < ap ? xi / ap : (1 - xi) / (1 - ap);
-            pk = Math.pow(Math.max(0, pk), 0.6);
-            const lat = 0.55 + 0.45 * Math.cos(Math.PI * 0.5 * clamp(rest[i3] / Math.max(0.4, A.hw), -1, 1));
+            pk = Math.max(0, pk);
+            const lat = 0.8 + 0.2 * Math.cos(Math.PI * 0.5 * clamp(rest[i3] / Math.max(0.4, A.hw), -1, 1));
             // the lid's front lifts a little too (its catch lets go)
             const lift = bulgeAdd * (pk * lat + (xi < 0.3 ? 0.7 * (1 - xi / 0.3) : 0));
             dy += lift;
