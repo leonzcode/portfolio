@@ -3,8 +3,8 @@
 // and signals for it, stops at red lights (signals.js, the same timing the lights show), waits at stop signs, gives
 // way at junctions without lights, slows for the player's car in its path, and stops with its hazards on when hit.
 import * as THREE from 'three';
-import * as SIG from './signals.js?v=31';
-import { frame } from './geo.js?v=31';
+import * as SIG from './signals.js?v=32';
+import { frame } from './geo.js?v=32';
 
 const AMERICAN = new Set(['s10', 'conquer', 'shvan', 'schoolbus', 'semi']);
 const inAmericas = () => frame.lat > 14 && frame.lat < 72 && frame.lon > -170 && frame.lon < -52;
