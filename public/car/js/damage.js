@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=28';
+import { FX } from './damagefx.js?v=29';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -1184,6 +1184,10 @@ function finTexture() {
 const BAY_FINS = new THREE.MeshStandardMaterial({ name: 'damage_radiator', color: 0x8a8a8a, roughness: 0.65, metalness: 0.55, map: finTexture() });
 const BAY_ENGINE = new THREE.MeshStandardMaterial({ name: 'damage_engine', color: 0x2a2b2d, roughness: 0.5, metalness: 0.7 });
 const BAY_DARK = new THREE.MeshStandardMaterial({ name: 'damage_bay', color: 0x26272a, roughness: 0.9, metalness: 0.1, side: THREE.BackSide });
+// an engine bay's parts, coloured per part (plastic, aluminium, rubber, the coolant tank, the white absorber)
+const BAY_PARTS = new THREE.MeshStandardMaterial({ name: 'damage_bay_parts', vertexColors: true, roughness: 0.55, metalness: 0.35 });
+// a curtain airbag: pale grey nylon, a little see-through
+const CURTAIN = new THREE.MeshStandardMaterial({ name: 'damage_curtain', color: 0x9ea6a1, roughness: 0.9, metalness: 0, transparent: true, opacity: 0.94, side: THREE.DoubleSide, depthWrite: false });
 const BAG = new THREE.MeshStandardMaterial({ name: 'damage_airbag', color: 0xcfcec8, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
 let _bagGeo = null, _curtainGeo = null;
 function bagGeometry() {
@@ -1467,7 +1471,9 @@ class CarDamage {
       if (pole) {
         const at = t < 0 ? -t : t;
         // (past the pole the sheet wraps round it at a slant: a beam bent round a pole pulls its ends back too)
-        SB_E = at < r ? r - Math.sqrt(r * r - at * at) : r + (at - r) * poleSlope;
+        // (on a side, steep for 15 cm past the pole, then a long shallow slope: the door pushed in broadly round the wrap,
+        // the S60 in NHTSA's side pole test)
+        SB_E = at < r ? r - Math.sqrt(r * r - at * at) : poleSlope > 1 && at > r + 0.15 ? r + 0.15 * poleSlope + (at - r - 0.15) * 0.55 : r + (at - r) * poleSlope;
         SB_O = at > r ? at - r : 0;
         if (b < b0) { SB_E += (b0 - b) * 1.5; SB_O += b0 - b; } else if (b > b1) { SB_E += (b - b1) * 1.5; SB_O += b - b1; }
         return;
@@ -1551,6 +1557,13 @@ class CarDamage {
       if (h > prev + 0.002) bulgeAdd = h - prev;
       bz = { zEdge, zEnd, len, frontHit, apex: this.bonnetApex, skew: this.bonnetSkew + (Px / Math.max(0.5, A.hw)) * 0.2 };
       if (frontHit) { this.bonnetH = Math.max(prev, h); this.front = sh; } else { this.bootH = Math.max(prev, h); this.rear = sh; }
+      // past 0.4 m the lid's catch and hinges give: its front edge stands 15 to 25 cm off the grille, folded back,
+      // higher on one side (the XC90 after NHTSA's 56 km/h)
+      if (frontHit && !this.npc) {
+        const want = 0.2 * clamp((sh - 0.38) / 0.12, 0, 1);
+        bz && (bz.edgeAdd = Math.max(0, want - (this.lidEdge || 0)));
+        if (bz && bz.edgeAdd > 0.003) { this.lidEdge = (this.lidEdge || 0) + bz.edgeAdd; if (!bulgeAdd) bulgeAdd = 1e-6; }
+      }
       if (!bulgeAdd) bz = null;
     }
     // the lowest top over the lid's stretch: anything under it is not on the lid (most points, quickly)
@@ -1601,7 +1614,7 @@ class CarDamage {
         const c = e.cur, rest = e.rest, n = c.length / 3;
         const dirty = new Uint8Array(n);
         const glass = e.role === 'glass';
-        let any = false, maxU = 0;
+        let any = false, maxU = 0, lidF = null;
         for (let i = 0; i < n; i++) {
           if ((i & 1023) === 1023 && performance.now() >= job.deadline) { stats.move += performance.now() - tm; yield; tm = performance.now(); }
           const i3 = i * 3, X = c[i3], Y = c[i3 + 1], Z = c[i3 + 2];
@@ -1617,7 +1630,7 @@ class CarDamage {
               if (u > 0) {
                 const rx = rest[i3], ry = rest[i3 + 1], rz = rest[i3 + 2];
                 // (the folds go with how much the metal there gave: a cabin pushed back whole does not crinkle)
-                const lid = bulgeAdd > 0 && !glass && !inner && inBulge(rx, ry, rz);
+                const lid = (bulgeAdd > 0 && !glass && !inner && inBulge(rx, ry, rz)) || (frontal && !glass && (rx < 0 ? -rx : rx) < A.hw * 0.42 && ry > A.bumpers.front.y1 - 0.06 && ry < A.yCowl && rz < A.box.min.z + 0.35);
                 const env = Math.min(1, u * 25) * Math.min(1, R * 16) * clamp(cAt(sg) * 1.6, 0.15, 1) * (lid ? 0.15 : 1);
                 // wrinkles in the crushed sheet
                 if (!glass && !lid) u += R * (Math.abs(Nz) > 0.6 || pole ? 0.04 : 0.09) * wave(rx * 9.1 + seed + wave(ry * 7.3 + rz * 5.1) * 1.7) * wave(rz * 8.3 - ry * 4.7 + seed + 1.57) * env;
@@ -1675,6 +1688,14 @@ class CarDamage {
             const lift = bulgeAdd * (pk * lat + (xi < 0.25 ? 0.4 * (1 - xi / 0.25) : 0));
             dy += lift;
             dz += (bz.frontHit ? -1 : 1) * lift * 0.12;
+            if (bz.edgeAdd > 0) {
+              if (!lidF) lidF = new Float32Array(n);
+              lidF[i] = 0.001;
+              if (xi < 0.4) {
+                const f = 1 - xi / 0.4, side = 0.6 + 0.4 * clamp((bz.skew >= 0 ? 1 : -1) * rest[i3] / Math.max(0.4, A.hw), -1, 1);
+                dy += bz.edgeAdd * f * f * side; dz += bz.edgeAdd * 0.45 * f * side; lidF[i] = Math.max(0.001, f * side);
+              }
+            }
           }
           // (a front or rear crush splays the sheet out, but not past the car's own width: a bumper's end stood out to
           // the side of a crushed corner as a flap)
@@ -1692,6 +1713,18 @@ class CarDamage {
           // a long stretched triangle of a liner stood out of a crushed corner as a dark flap)
           // (painted sheet tears only in small pieces, now that it is split where it moves: gaps, not big holes)
           if (e.role !== 'proxy' && e.role !== 'far' && Dc > 0.12) stats.torn = (stats.torn || 0) + (yield* tearGen(job, e, dirty, inner || (e.role === 'body' && !e.isPaint()), (e.role === 'paint' || e.isPaint()) ? wingKeep : null));
+          // the lifted lid parts from the grille and the wings at its front: triangles from its lifted edge to the
+          // body round it go (the bay gapes there, as the XC90's)
+          if (lidF && !glass) {
+            const ix = e.ownIndex().array; let cut = 0;
+            for (let t = 0; t < ix.length; t += 3) {
+              if ((t % 24576) === 24573 && performance.now() >= job.deadline) yield;
+              const a = ix[t], b = ix[t + 1], d = ix[t + 2]; if (a === b && b === d) continue;
+              const fa = lidF[a], fb = lidF[b], fd = lidF[d], hi = Math.max(fa, fb, fd);
+              if (hi > 0.25 && (fa === 0 || fb === 0 || fd === 0)) { ix[t + 1] = a; ix[t + 2] = a; cut++; }
+            }
+            if (cut) e.geo.index.needsUpdate = true;
+          }
           // the normals after (the cabin's own trim keeps its normals: it moves little and is mostly out of sight)
           if (e.role !== 'proxy' && e.role !== 'far' && !inner) later.push([e, dirty]);
         }
@@ -1776,7 +1809,8 @@ class CarDamage {
         // (in NCAP's 56 km/h full frontal the windscreen usually stays whole: it cracks from a bent frame, a hit
         // near it, or crashes well past that energy)
         const frontal = imp.side === 'front' ? (E > 4e5 ? 0.5 : E > 2.6e5 ? 0.2 : 0) : 0;
-        const poleSide = imp.kind === 'pole' && (imp.side === 'left' || imp.side === 'right') && w.kind === 'front' && res && res.maxU > 0.25 ? 0.65 : 0;
+        // (the S60's and the Crown's windscreens crazed over their struck half: the A-pillar and roof rail bent at the pole)
+        const poleSide = imp.kind === 'pole' && (imp.side === 'left' || imp.side === 'right') && w.kind === 'front' && res && res.maxU > 0.25 ? 1.8 : 0;
         const s = dist * 18 + (nearHit ? 0.6 : 0) + (E > 4e5 ? 0.6 : E > 2.6e5 ? 0.2 : 0) + frontal + (roll ? 0.7 : 0) + poleSide;
         if (s > 0.5) { this.crackWindow(w, imp, res, s); yield; }
       } else {
@@ -1896,7 +1930,7 @@ class CarDamage {
                 const fy = 1 - Math.min(1, Math.abs(r[k + 1] - yH) / 0.42); if (fy <= 0) continue;
                 const f = Math.min(1, back / 0.16) * fy;
                 // forward off the pillar (a gap of up to 8 cm), the lip folded out at the very edge
-                c[k + 2] -= 0.12 * f; c[k] += sg * 0.09 * f * f; c[k + 1] += 0.01 * f;
+                c[k + 2] -= 0.07 * f; c[k] += sg * 0.05 * f * f; c[k + 1] += 0.01 * f;
                 dirty[k / 3] = 1; any = true;
               }
               if (any) { pe.writePositions(); yield* renormalGen(jb, pe, dirty); }
@@ -1916,6 +1950,35 @@ class CarDamage {
             }
           });
         }
+      }
+      // a deep frontal knocks the near headlamp out of its mounts and splits the bumper cover's lower part open
+      if (imp.side === 'front' && !this.npc && this.front > 0.4 && !this.cracks.deep) {
+        this.cracks.deep = true;
+        const near = this.bonnetSkew >= 0 ? 'R' : 'L';
+        const L = A.lamps.find(q => q.role === 'head' && q.side === near && q.center.z < 0) || A.lamps.find(q => q.role === 'head' && q.center.z < 0);
+        if (L) {
+          const du = res.uOf ? res.uOf(L.center.x, L.center.y, L.center.z) : 0;
+          const lb = L.box.clone().expandByScalar(0.035); lb.min.z += du; lb.max.z += du + 0.05;
+          this.later('headlamp', jb => this.detachGen(jb, 'headlamp', imp, { kind: 'part', box: lb, test: (x, y, z) => lb.containsPoint(_a.set(x, y, z)), skip: e => !!e.mesh.userData.dmgBay }));
+        }
+        const bz = A.bumpers.front, yH = bz.y0 + (bz.y1 - bz.y0) * 0.5, self = this;
+        this.later('bumpersplit', function* (jb) {
+          for (const e of self.list()) {
+            if (!e.cur || e.partOf || e.role === 'glass' || e.role === 'proxy' || e.role === 'far' || e.mesh.userData.dmgBay) continue;
+            const c = e.cur, r = e.rest; let any = false; const dirty = new Uint8Array(c.length / 3);
+            for (let k = 0; k < c.length; k += 3) {
+              if ((k % 24576) === 24573 && performance.now() >= jb.deadline) yield;
+              const x = r[k], y = r[k + 1], z = r[k + 2];
+              if (y > yH || y < bz.y0 - 0.05 || z > bz.z1 + 0.05 || Math.abs(x) > A.hw * 0.78) continue;
+              const t = (yH - y) / (yH - bz.y0 + 0.05), fx = 1 - Math.pow(Math.abs(x) / (A.hw * 0.78), 3);
+              // hanging forward and down from its upper edge
+              c[k + 1] -= 0.05 * t * fx; c[k + 2] -= 0.12 * t * fx;
+              dirty[k / 3] = 1; any = true;
+            }
+            if (any) { e.writePositions(); yield* renormalGen(jb, e, dirty); }
+            if (performance.now() >= jb.deadline) yield;
+          }
+        });
       }
       // a hard front crash tears the grille out (the radiator behind it shows)
       if (imp.side === 'front' && res.maxU > 0.62 && this.bay && !this.parts.has('grille')) {
@@ -2451,11 +2514,39 @@ class CarDamage {
     if (back - front < 0.45) return;
     const top = Math.max(0.45, this.topAt(0, (front + back) / 2) - 0.07), bot = Math.max(0.18, A.wheelR * 0.6), hw = Math.max(0.35, A.hw - 0.16);
     const box = (w, h, d, sx, sy, sz, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d, sx, sy, sz), mat); m.position.set(x, y, z); m.userData.dmgBay = true; m.castShadow = false; m.receiveShadow = true; g.add(m); return m; };
-    // the bay's walls seen from inside, the radiator across its front, the engine in the middle (fine enough to be
-    // bent to the body's shape below)
+    // the bay's walls seen from inside (fine enough to be bent to the body's shape below)
     box(hw * 2, top - bot, back - front - 0.08, 14, 5, 8, BAY_DARK, 0, (top + bot) / 2, (front + back) / 2 + 0.04);
-    box(hw * 1.7, (top - bot) * 0.75, 0.05, 14, 5, 1, BAY_FINS, 0, bot + (top - bot) * 0.45, front + 0.2);
-    box(Math.min(0.75, hw * 1.1), (top - bot) * 0.6, Math.min(0.55, (back - front) * 0.45), 4, 3, 4, BAY_ENGINE, 0, bot + (top - bot) * 0.38, front + 0.2 + Math.min(0.55, (back - front) * 0.45) / 2 + 0.12);
+    // what is in it, by its size: the condenser and radiator behind the grille (one mesh), then the engine with its
+    // cover, intake and air box, the strut towers, battery, coolant tank, hoses, and the bumper's white absorber (all
+    // one vertex-coloured mesh). A car with its engine elsewhere (the 930's is at the back, the Roadster and the Semi
+    // are electric) has a flat motor or a luggage tray instead.
+    const H = top - bot, Lb = back - front, id = this.rig.id || '', noEngine = /porsche930|roadster|semi/.test(id);
+    const fins = new THREE.Mesh(mergeParts([
+      [new THREE.BoxGeometry(hw * 1.75, H * 0.72, 0.035, 12, 4, 1), 0, bot + H * 0.42, front + 0.14],
+      [new THREE.BoxGeometry(hw * 1.65, H * 0.7, 0.05, 12, 4, 1), 0, bot + H * 0.42, front + 0.21],
+    ], false), BAY_FINS);
+    fins.userData.dmgBay = true; fins.castShadow = false; fins.receiveShadow = true; g.add(fins);
+    const P = [], C = (geo, x, y, z, col, rx = 0, rz = 0) => P.push([geo, x, y, z, col, rx, rz]);
+    const bz0 = A.bumpers.front, absY = (bz0.y0 + bz0.y1) / 2;
+    C(new THREE.BoxGeometry(hw * 1.7, Math.max(0.08, (bz0.y1 - bz0.y0) * 0.45), 0.08, 8, 1, 1), 0, absY, front + 0.07, 0xdcdcd6);
+    if (!noEngine) {
+      const ew = Math.min(0.72, hw * 1.05), eh = H * 0.5, ed = Math.min(0.55, Lb * 0.4), ez = front + 0.3 + ed / 2;
+      C(new THREE.BoxGeometry(ew, eh, ed, 3, 2, 3), 0, bot + 0.06 + eh / 2, ez, 0x8a8d92);
+      C(new THREE.BoxGeometry(ew * 0.86, 0.07, ed * 0.8, 3, 1, 3), 0, bot + 0.06 + eh + 0.035, ez, 0x1b1c1e);
+      C(new THREE.CylinderGeometry(0.05, 0.05, ew * 0.9, 10, 1), 0, bot + 0.06 + eh * 0.85, ez - ed / 2 - 0.05, 0x202124, 0, Math.PI / 2);
+      C(new THREE.BoxGeometry(0.28, 0.16, 0.3, 2, 1, 2), hw * 0.62, bot + H * 0.72, ez, 0x18191b);
+      C(new THREE.BoxGeometry(0.24, 0.19, 0.17, 1, 1, 1), -hw * 0.62, bot + H * 0.6, back - 0.2, 0x111214);
+      C(new THREE.BoxGeometry(0.14, 0.12, 0.13, 1, 1, 1), hw * 0.62, bot + H * 0.66, back - 0.22, 0xd8d3c4);
+      for (const sx of [-1, 1]) C(new THREE.CylinderGeometry(0.085, 0.1, H * 0.75, 10, 2), sx * (hw - 0.09), bot + H * 0.42, back - 0.1, 0x4c4f53);
+      C(new THREE.CylinderGeometry(0.024, 0.024, 0.34, 8, 3), hw * 0.35, bot + H * 0.55, front + 0.33, 0x0e0e0f, Math.PI / 2 - 0.35, 0.2);
+      C(new THREE.CylinderGeometry(0.024, 0.024, 0.3, 8, 3), -hw * 0.3, bot + H * 0.3, front + 0.32, 0x0e0e0f, Math.PI / 2 + 0.3, -0.15);
+    } else {
+      // a flat motor and its inverter low down, or the 930's luggage tray
+      C(new THREE.BoxGeometry(hw * 1.5, 0.08, Lb * 0.6, 4, 1, 4), 0, bot + 0.05, front + Lb * 0.5, 0x1c1d1f);
+      if (!/porsche930/.test(id)) C(new THREE.BoxGeometry(hw * 0.9, H * 0.3, Lb * 0.3, 2, 1, 2), 0, bot + 0.09 + H * 0.15, front + Lb * 0.55, 0x6f7276);
+    }
+    const parts = new THREE.Mesh(mergeParts(P, true), BAY_PARTS);
+    parts.userData.dmgBay = true; parts.castShadow = false; parts.receiveShadow = true; g.add(parts);
     parent.add(g);
     g.updateMatrixWorld(true);
     const mine = [];
@@ -2546,6 +2637,7 @@ class CarDamage {
       if (z1 - z0 < 0.3 || y1 - y0 < 0.1) return;
       const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), sg * Math.PI / 2);
       add(curtainGeometry(), new THREE.Vector3(sg * (inner - 0.07), (y0 + y1) / 2, (z0 + z1) / 2), new THREE.Vector3(z1 - z0, y1 - y0, 1), q, 'curtain');
+      this.bags[this.bags.length - 1].mesh.material = CURTAIN; this.bags[this.bags.length - 1].mesh.renderOrder = 2;
       const b = this.bags[this.bags.length - 1]; b.baseY = b.mesh.position.y;
     }
     this.damaged = true;
@@ -2648,6 +2740,31 @@ function overlap(a, b) {
   return { nx, nz, pen: best, px: nx * mn + tx * mt, pz: nz * mn + tz * mt };
 }
 
+// several part geometries as one (each moved, turned and, with colours, painted); a bay's parts are one draw
+function mergeParts(list, colours) {
+  const pos = [], nor = [], uv = [], col = [], idx = [];
+  const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(), V = new THREE.Vector3(), Nm = new THREE.Matrix3(), c = new THREE.Color();
+  for (const it of list) {
+    const [geo, x, y, z, hex, rx, rz] = colours ? it : [it[0], it[1], it[2], it[3], 0, 0, 0];
+    E.set(rx || 0, 0, rz || 0); Q.setFromEuler(E); M.compose(V.set(x, y, z), Q, new THREE.Vector3(1, 1, 1)); Nm.getNormalMatrix(M);
+    geo.applyMatrix4(M);
+    const base = pos.length / 3, p = geo.attributes.position, n = geo.attributes.normal, u = geo.attributes.uv;
+    if (colours) c.setHex(hex).convertSRGBToLinear();
+    for (let i = 0; i < p.count; i++) {
+      pos.push(p.getX(i), p.getY(i), p.getZ(i)); nor.push(n.getX(i), n.getY(i), n.getZ(i)); uv.push(u ? u.getX(i) : 0, u ? u.getY(i) : 0);
+      if (colours) col.push(c.r, c.g, c.b);
+    }
+    const ix = geo.index ? geo.index.array : null;
+    if (ix) for (let i = 0; i < ix.length; i++) idx.push(ix[i] + base); else for (let i = 0; i < p.count; i++) idx.push(i + base);
+    geo.dispose();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  if (colours) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  return g;
+}
+
 function bumperBox(A, bz) { return new THREE.Box3(new THREE.Vector3(A.box.min.x - 0.1, bz.y0, bz.z0), new THREE.Vector3(A.box.max.x + 0.1, bz.y1, bz.z1)); }
 
 // a laminated windscreen's crack: radial cracks from the hit, rings joining them, a crushed star in the middle
@@ -2710,7 +2827,7 @@ export class Damage {
     this.lastCrush = null; this.n = { impacts: 0, scrapes: 0 };
     // the extra materials (broken lens, engine bay, airbags) built with the scene: a speck of each, drawn far under
     // the ground (an object that is not visible is not compiled, and its shader was then built in the crash's frame)
-    for (const m of [BROKEN_LENS, BAY_FINS, BAY_ENGINE, BAY_DARK, BAG]) {
+    for (const m of [BROKEN_LENS, BAY_FINS, BAY_ENGINE, BAY_DARK, BAG, BAY_PARTS, CURTAIN]) {
       const hold = new THREE.Mesh(new THREE.BoxGeometry(0.001, 0.001, 0.001), m); hold.name = 'damage_holder';
       hold.position.set(0, -5000, 0); hold.frustumCulled = false; hold.castShadow = false; hold.receiveShadow = true;
       this.fx.group.add(hold);

@@ -27,10 +27,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { Person, BONES } from './person.js?v=28';
-import { buildPoses } from './poses.js?v=28';
+import { Person, BONES } from './person.js?v=29';
+import { buildPoses } from './poses.js?v=29';
 
-const V = '?v=28';
+const V = '?v=29';
 const DIR = new URL('../models/people/', import.meta.url).href;
 const DRACO = new URL('../vendor/three/addons/libs/draco/gltf/', import.meta.url).href;
 
