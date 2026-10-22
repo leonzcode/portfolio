@@ -2,7 +2,7 @@
 // (OpenMapTiles schema, OpenStreetMap data, no key, served from a CDN). Fewer tags than Overpass (no lanes,
 // hydrants or signals) but it answers in a second. Decodes Mapbox Vector Tiles itself and returns the same store
 // shape as osm.js (roads with made-up node ids shared where lines meet, buildings with heights).
-import { project } from './geo.js?v=30';
+import { project } from './geo.js?v=31';
 
 const TILEJSON = 'https://tiles.openfreemap.org/planet';
 const Z = 14;
