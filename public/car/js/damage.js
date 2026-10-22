@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=30';
+import { FX } from './damagefx.js?v=31';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -1175,17 +1175,17 @@ function finTexture() {
   if (_finTex) return _finTex;
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const g = c.getContext('2d', { willReadFrequently: true });
-  g.fillStyle = '#1c1c1c'; g.fillRect(0, 0, 64, 64);
-  for (let y = 0; y < 64; y += 4) { g.fillStyle = y % 8 ? '#3a3a3a' : '#525252'; g.fillRect(0, y, 64, 2); }
-  for (let x = 0; x < 64; x += 16) { g.fillStyle = '#121212'; g.fillRect(x, 0, 2, 64); }
+  g.fillStyle = '#5c5f62'; g.fillRect(0, 0, 64, 64);
+  for (let y = 0; y < 64; y += 4) { g.fillStyle = y % 8 ? '#7d8084' : '#979a9e'; g.fillRect(0, y, 64, 2); }
+  for (let x = 0; x < 64; x += 16) { g.fillStyle = '#2e3032'; g.fillRect(x, 0, 2, 64); }
   _finTex = new THREE.CanvasTexture(c); _finTex.wrapS = _finTex.wrapT = THREE.RepeatWrapping; _finTex.repeat.set(6, 3); _finTex.colorSpace = THREE.SRGBColorSpace;
   return _finTex;
 }
-const BAY_FINS = new THREE.MeshStandardMaterial({ name: 'damage_radiator', color: 0x8a8a8a, roughness: 0.65, metalness: 0.55, map: finTexture() });
+const BAY_FINS = new THREE.MeshStandardMaterial({ name: 'damage_radiator', color: 0xffffff, roughness: 0.6, metalness: 0.3, map: finTexture() });
 const BAY_ENGINE = new THREE.MeshStandardMaterial({ name: 'damage_engine', color: 0x2a2b2d, roughness: 0.5, metalness: 0.7 });
-const BAY_DARK = new THREE.MeshStandardMaterial({ name: 'damage_bay', color: 0x26272a, roughness: 0.9, metalness: 0.1, side: THREE.BackSide });
+const BAY_DARK = new THREE.MeshStandardMaterial({ name: 'damage_bay', color: 0x55585c, roughness: 0.85, metalness: 0.05, side: THREE.BackSide });
 // an engine bay's parts, coloured per part (plastic, aluminium, rubber, the coolant tank, the white absorber)
-const BAY_PARTS = new THREE.MeshStandardMaterial({ name: 'damage_bay_parts', vertexColors: true, roughness: 0.55, metalness: 0.35 });
+const BAY_PARTS = new THREE.MeshStandardMaterial({ name: 'damage_bay_parts', vertexColors: true, roughness: 0.5, metalness: 0.12 });
 // a curtain airbag: pale grey nylon, a little see-through
 const CURTAIN = new THREE.MeshStandardMaterial({ name: 'damage_curtain', color: 0x9ea6a1, roughness: 0.9, metalness: 0, transparent: true, opacity: 0.94, side: THREE.DoubleSide, depthWrite: false });
 const BAG = new THREE.MeshStandardMaterial({ name: 'damage_airbag', color: 0xcfcec8, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
@@ -1641,7 +1641,10 @@ class CarDamage {
                   const at = t < 0 ? -t : t;
                   const amp = foldMax * 0.7 * env * Math.exp(-at / 0.18) * (0.7 + 0.3 * wave(ry * 4.1 + seed));
                   const f = tri(at / (lam * 0.55) + phase + 0.12 * wave(b * 3.7 + seed)) * amp;
-                  dx += Nx * f; dy += Ny * f; dz += Nz * f;
+                  // and away from it, over the door's lower half, long creases along the door
+                  const amp2 = ry < A.belt - 0.05 ? foldMax * 0.3 * env * (1 - Math.exp(-at / 0.2)) * Math.exp(-at / 0.8) : 0;
+                  const f2 = amp2 > 0 ? tri(ry / (lam * 0.8) + phase * 0.7 + 0.15 * wave(t * 2.3 + seed)) * amp2 : 0;
+                  dx += Nx * (f + f2); dy += Ny * (f + f2); dz += Nz * (f + f2);
                 } else if (!glass && !inner && sideHit) {
                   // a side folds round the impactor in upright creases
                   const amp = foldMax * 0.7 * env * (0.6 + 0.4 * wave(ry * 4.1 + seed));
@@ -1962,6 +1965,25 @@ class CarDamage {
           this.later('headlamp', jb => this.detachGen(jb, 'headlamp', imp, { kind: 'part', box: lb, test: (x, y, z) => lb.containsPoint(_a.set(x, y, z)), skip: e => !!e.mesh.userData.dmgBay }));
         }
         const bz = A.bumpers.front, yH = bz.y0 + (bz.y1 - bz.y0) * 0.5, self = this;
+        if (this.front > 0.45) {
+          const sgn = near === 'R' ? 1 : -1, amt = Math.min(0.12, 0.06 + (this.front - 0.45) * 0.4), wz0 = this.curFront(), wz1 = A.zA - 0.1;
+          this.later('wingout', function* (jb) {
+            for (const e of self.list()) {
+              if (!e.cur || e.partOf || e.role === 'glass' || e.role === 'proxy' || e.role === 'far' || e.mesh.userData.dmgBay || A.interior[self.entries.indexOf(e)]) continue;
+              const c = e.cur, r = e.rest; let any = false; const dirty = new Uint8Array(c.length / 3);
+              for (let k = 0; k < c.length; k += 3) {
+                if ((k % 24576) === 24573 && performance.now() >= jb.deadline) yield;
+                const x = r[k] * sgn, y = r[k + 1], z = c[k + 2];
+                if (x < A.hw * 0.55 || y < bz.y1 - 0.05 || y > A.belt + 0.05 || z > wz1) continue;
+                const fz = Math.max(0, Math.min(1, (wz1 - z) / Math.max(0.2, wz1 - wz0))), fx = Math.min(1, (x - A.hw * 0.55) / (A.hw * 0.3)), f = fz * fx;
+                c[k] += sgn * amt * f; c[k + 2] += amt * 0.5 * f; c[k + 1] -= amt * 0.15 * f;
+                dirty[k / 3] = 1; any = true;
+              }
+              if (any) { e.writePositions(); yield* renormalGen(jb, e, dirty); }
+              if (performance.now() >= jb.deadline) yield;
+            }
+          });
+        }
         this.later('bumpersplit', function* (jb) {
           for (const e of self.list()) {
             if (!e.cur || e.partOf || e.role === 'glass' || e.role === 'proxy' || e.role === 'far' || e.mesh.userData.dmgBay) continue;
@@ -2525,28 +2547,28 @@ class CarDamage {
       [new THREE.BoxGeometry(hw * 1.75, H * 0.72, 0.035, 12, 4, 1), 0, bot + H * 0.42, front + 0.14],
       [new THREE.BoxGeometry(hw * 1.65, H * 0.7, 0.05, 12, 4, 1), 0, bot + H * 0.42, front + 0.21],
     ], false), BAY_FINS);
-    fins.userData.dmgBay = true; fins.castShadow = false; fins.receiveShadow = true; g.add(fins);
+    fins.userData.dmgBay = true; fins.castShadow = false; fins.receiveShadow = false; g.add(fins);
     const P = [], C = (geo, x, y, z, col, rx = 0, rz = 0) => P.push([geo, x, y, z, col, rx, rz]);
     const bz0 = A.bumpers.front, absY = (bz0.y0 + bz0.y1) / 2;
     C(new THREE.BoxGeometry(hw * 1.7, Math.max(0.08, (bz0.y1 - bz0.y0) * 0.45), 0.08, 8, 1, 1), 0, absY, front + 0.07, 0xdcdcd6);
     if (!noEngine) {
       const ew = Math.min(0.72, hw * 1.05), eh = H * 0.5, ed = Math.min(0.55, Lb * 0.4), ez = front + 0.3 + ed / 2;
-      C(new THREE.BoxGeometry(ew, eh, ed, 3, 2, 3), 0, bot + 0.06 + eh / 2, ez, 0x8a8d92);
-      C(new THREE.BoxGeometry(ew * 0.86, 0.07, ed * 0.8, 3, 1, 3), 0, bot + 0.06 + eh + 0.035, ez, 0x1b1c1e);
-      C(new THREE.CylinderGeometry(0.05, 0.05, ew * 0.9, 10, 1), 0, bot + 0.06 + eh * 0.85, ez - ed / 2 - 0.05, 0x202124, 0, Math.PI / 2);
-      C(new THREE.BoxGeometry(0.28, 0.16, 0.3, 2, 1, 2), hw * 0.62, bot + H * 0.72, ez, 0x18191b);
-      C(new THREE.BoxGeometry(0.24, 0.19, 0.17, 1, 1, 1), -hw * 0.62, bot + H * 0.6, back - 0.2, 0x111214);
+      C(new THREE.BoxGeometry(ew, eh, ed, 3, 2, 3), 0, bot + 0.06 + eh / 2, ez, 0xc2c4c6);
+      C(new THREE.BoxGeometry(ew * 0.86, 0.07, ed * 0.8, 3, 1, 3), 0, bot + 0.06 + eh + 0.035, ez, 0x474849);
+      C(new THREE.CylinderGeometry(0.05, 0.05, ew * 0.9, 10, 1), 0, bot + 0.06 + eh * 0.85, ez - ed / 2 - 0.05, 0xb4b7ba, 0, Math.PI / 2);
+      C(new THREE.BoxGeometry(0.28, 0.16, 0.3, 2, 1, 2), hw * 0.62, bot + H * 0.72, ez, 0x444546);
+      C(new THREE.BoxGeometry(0.24, 0.19, 0.17, 1, 1, 1), -hw * 0.62, bot + H * 0.6, back - 0.2, 0x3e3f40);
       C(new THREE.BoxGeometry(0.14, 0.12, 0.13, 1, 1, 1), hw * 0.62, bot + H * 0.66, back - 0.22, 0xd8d3c4);
-      for (const sx of [-1, 1]) C(new THREE.CylinderGeometry(0.085, 0.1, H * 0.75, 10, 2), sx * (hw - 0.09), bot + H * 0.42, back - 0.1, 0x4c4f53);
-      C(new THREE.CylinderGeometry(0.024, 0.024, 0.34, 8, 3), hw * 0.35, bot + H * 0.55, front + 0.33, 0x0e0e0f, Math.PI / 2 - 0.35, 0.2);
-      C(new THREE.CylinderGeometry(0.024, 0.024, 0.3, 8, 3), -hw * 0.3, bot + H * 0.3, front + 0.32, 0x0e0e0f, Math.PI / 2 + 0.3, -0.15);
+      for (const sx of [-1, 1]) C(new THREE.CylinderGeometry(0.085, 0.1, H * 0.75, 10, 2), sx * (hw - 0.09), bot + H * 0.42, back - 0.1, 0x8c8f92);
+      C(new THREE.CylinderGeometry(0.024, 0.024, 0.34, 8, 3), hw * 0.35, bot + H * 0.55, front + 0.33, 0x37383a, Math.PI / 2 - 0.35, 0.2);
+      C(new THREE.CylinderGeometry(0.024, 0.024, 0.3, 8, 3), -hw * 0.3, bot + H * 0.3, front + 0.32, 0x37383a, Math.PI / 2 + 0.3, -0.15);
     } else {
       // a flat motor and its inverter low down, or the 930's luggage tray
       C(new THREE.BoxGeometry(hw * 1.5, 0.08, Lb * 0.6, 4, 1, 4), 0, bot + 0.05, front + Lb * 0.5, 0x1c1d1f);
       if (!/porsche930/.test(id)) C(new THREE.BoxGeometry(hw * 0.9, H * 0.3, Lb * 0.3, 2, 1, 2), 0, bot + 0.09 + H * 0.15, front + Lb * 0.55, 0x6f7276);
     }
     const parts = new THREE.Mesh(mergeParts(P, true), BAY_PARTS);
-    parts.userData.dmgBay = true; parts.castShadow = false; parts.receiveShadow = true; g.add(parts);
+    parts.userData.dmgBay = true; parts.castShadow = false; parts.receiveShadow = false; g.add(parts);
     parent.add(g);
     g.updateMatrixWorld(true);
     const mine = [];
