@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=22';
+import { FX } from './damagefx.js?v=23';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -1439,7 +1439,8 @@ class CarDamage {
   }
 
   // ---- the crush: imp { P, N (car frame, N into the car), D, kind 'flat'|'pole'|'car'|'ground', r, t0, t1, b0, b1, edge }
-  crush(imp) {
+  crush(imp) { return runSync(this.crushGen(SYNC, imp)); }
+  *crushGen(job, imp) {
     const A = this.analysis(), E = this.list();
     const T0 = performance.now();
     const N = imp.N.clone().normalize(), P = imp.P;
@@ -1486,6 +1487,7 @@ class CarDamage {
     const boxS = e => { const b = e.cur ? (e._bb || e.box) : e.box; let m = Infinity; for (let k = 0; k < 8; k++) { const s = ((k & 1 ? b.max.x : b.min.x) - Px) * Nx + ((k & 2 ? b.max.y : b.min.y) - Py) * Ny + ((k & 4 ? b.max.z : b.min.z) - Pz) * Nz; if (s < m) m = s; } return m; };
     const byS = E.filter(e => e.role !== 'proxy' && e.role !== 'far').map(e => [boxS(e), e]).sort((a, b) => a[0] - b[0]);
     for (const [bs, e] of byS) {
+      if (performance.now() >= job.deadline) yield;
       if (bs - 0.2 > s0) break;
       const p = e.cur || (e._sp || (e._sp = e.srcPositions()));
       for (let i = 0; i < p.length; i += 3) {
@@ -1503,6 +1505,7 @@ class CarDamage {
     const STEP = 0.01, NS = 520, Sh = new Float32Array(NS + 1);
     const lc = new THREE.Vector3(Px, Py, Pz).addScaledVector(N, s0);
     if (Math.abs(Ny) < 0.8) lc.y = clamp(Number.isFinite(b0) && Number.isFinite(b1) ? (b0 + b1) / 2 : (imp.yMid ?? A.belt * 0.65), 0.25, A.belt);
+    if (performance.now() >= job.deadline) yield;
     for (let i = 1; i <= NS; i++) {
       const sg = i * STEP - STEP / 2;
       Sh[i] = Sh[i - 1] + 0.88 * this.compliance(lc.x + Nx * sg, lc.y + Ny * sg, lc.z + Nz * sg, N) * STEP;
@@ -1701,8 +1704,8 @@ class CarDamage {
       this.mgr.lastCrush = ms; res.ms = ms;
     };
     res.work = work; res.finish = finish;
-    const job = makeJob(this, work, finish);
-    res.job = job; this.job = job;
+    const cjob = makeJob(this, work, finish);
+    res.job = cjob; this.job = cjob;
     return res;
   }
   // could this entry be in the crushed zone (a quick test of its box against the slab along the push)
@@ -2762,6 +2765,8 @@ export class Damage {
     ANALYSIS.delete('_warm:npc:' + (rd.entries ? rd.entries.length : 0));
     this.warmMs = Math.round(performance.now() - T0);
   }
+  // the crash sounds' noise buffer made once the car's sound has started (the first crunch made it, 2 ms, in a crash)
+  soundReady() { try { const S = this.fx.sound; if (S && S.ctx && !S.buf) S.noise(1); } catch (e) {} }
   powerOf(rd) { return clamp(1 - Math.max(0, rd.engine - 0.15) * 1.1, 0.12, 1); }
 
   // ---- after each physics step of the player's car
@@ -3137,7 +3142,7 @@ export class Damage {
     const work = function* (job) {
       if (side === 'front' && D > (rd.npc ? 0.3 : 0.2)) { try { yield* rd.addBayGen(job); } catch (e) { console.warn('engine bay', e); } }
       if (D > 0.004) {
-        try { res = rd.crush(imp); } catch (e) { console.warn('crush', e); }
+        try { res = yield* rd.crushGen(job, imp); } catch (e) { console.warn('crush', e); }
         // the outside first; what breaks right after it; the inside and the shadow's stand-in last
         if (res && res.work) yield* res.work(job, 'out');
       }
@@ -3175,10 +3180,11 @@ export class Damage {
       const busy = this.jobs.some(j => j.rd === rd);
       this.jobs.push(job);
       // (the player's own crush starts in this frame; another car's waits for the next, so two in one frame do not stack)
-      if (!busy && !rd.npc) { job.run(5); if (job.done) this.jobs.splice(this.jobs.indexOf(job), 1); }
+      // (nothing of it in the crash's own frame: the impact's sound, sparks and events are enough for that frame)
     }
     if (vehicle) vehicle.powerK = Math.min(vehicle.powerK ?? 1, this.powerOf(rd));
     if (imp.speed > 3) this.fx.sound.crunch(Math.min(1, imp.speed / 18));
+    this.soundReady();
     // sparks and a puff of dust at the hit
     if (imp.world && imp.speed > 4) {
       const vel = rd.velocityAt(imp.world);
@@ -3413,6 +3419,7 @@ export class Damage {
   update(dt) {
     const tU = performance.now();
     this.updateBody(dt);
+    if (!this._sndT || performance.now() > this._sndT) { this._sndT = performance.now() + 1000; if (!this.jobs.length) this.soundReady(); }
     // how long damage took each frame (the last 240, for tests)
     const ms = performance.now() - tU;
     (this.frameMs || (this.frameMs = [])).push(+ms.toFixed(2)); if (this.frameMs.length > 240) this.frameMs.shift();
@@ -3424,7 +3431,7 @@ export class Damage {
     // crushes still being worked through, 4 ms a frame
     if (this.jobs.length) {
       // (a little more in the first half second after a crash, so the crush shows sooner)
-      const tEnd = performance.now() + (performance.now() - (this.lastImpactT || 0) < 500 ? 6 : 4);
+      const tEnd = performance.now() + (performance.now() - (this.lastImpactT || 0) < 500 ? 5 : 4);
       while (this.jobs.length && performance.now() < tEnd) { const j = this.jobs[0]; let done = true; try { done = j.run(tEnd - performance.now()); } catch (e) { console.warn('crush job', e); } if (done) this.jobs.shift(); else break; }
     } else if (this.bg.length) {
       // background work, 2 ms a frame, only while no crash is being worked through
