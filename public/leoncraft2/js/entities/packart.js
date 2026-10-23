@@ -2,11 +2,12 @@
    Leoncraft 2 - pictures for the atlas of mobs and things that come from
    files rather than being painted (entities/mobart.js setArtImage).
 
-   The paintings: our own art draws every one (entities/items2.js). Where
-   Pixel Perfection CE has a painting of its own under the game's name and
-   at its size, that is used instead (textures/paintings.png, packed by the
-   texture build; CC BY-SA 4.0, credited in textures/LICENSE.txt and on the
-   Credits screen). The newer paintings it does not have keep our art.
+   The paintings: each of the game's paintings is a famous painting out of
+   copyright, at the game's size for it (textures/famous_paintings.jpg and
+   .json, from Wikimedia Commons by tools/leoncraft2/build_paintings.py; the
+   list, with each painter, is on the Credits screen and in
+   textures/LICENSE.txt), at sixty-four pixels a block. Our own drawn scenes
+   (entities/items2.js) show until the sheet is in.
 
    A player's own copy of the game (or any resource pack) opened on the
    Resource Packs screen (ui/pack.js) gives:
@@ -22,9 +23,9 @@
        the level's badge, all from the pack once its villager skin fits, so
        a villager never wears our clothes over the game's skin.
 --------------------------------------------------------------------------- */
-import { setArtImage, artSize, artMask, artNames } from './mobart.js?v=101';
-import { PAINTING_VARIANTS } from '../items.js?v=101';
-import { resolver, packFiles } from '../ui/pack.js?v=101';
+import { setArtImage, artSize, artMask, artNames } from './mobart.js?v=102';
+import { PAINTING_VARIANTS, PAINTING_PX } from '../items.js?v=102';
+import { resolver, packFiles } from '../ui/pack.js?v=102';
 
 const RAW = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
 function pixels(src, sx, sy, sw, sh, w, h, tile) {
@@ -45,20 +46,22 @@ const LEVELS = ['stone', 'iron', 'gold', 'emerald', 'diamond'];
 
 export async function loadEntityArt(base, ver, packs) {
   SUMMARY = null;
-  // our paintings
+  // our paintings: the famous ones
   try {
-    const [where, sheet] = await Promise.all([
-      fetch(base + 'paintings.json' + ver).then(r => r.json()),
-      fetch(base + 'paintings.png' + ver).then(r => r.blob()).then(decode),
+    const [info, sheet] = await Promise.all([
+      fetch(base + 'famous_paintings.json' + ver).then(r => r.json()),
+      fetch(base + 'famous_paintings.jpg' + ver).then(r => r.blob()).then(decode),
     ]);
-    if (sheet) for (const [n, [x, y, w, h]] of Object.entries(where)) if (n !== 'back') setArtImage('painting_' + n, pixels(sheet, x, y, w, h, w, h));
+    // (each already at its size, PAINTING_PX a block; the paintings' textures may not be registered yet: setArtImage keeps them)
+    if (sheet) for (const [n, [x, y, w, h]] of Object.entries(info.where || {})) setArtImage('painting_' + n, pixels(sheet, x, y, w, h, w, h));
   } catch (e) { console.warn('paintings', e); }
   if (!packs || !packs.length) return;
   const find = resolver(packs);
-  // the pack's paintings, at sixteen pixels a block whatever size they are drawn at, and the back tiled a block at a time
+  // the pack's paintings over ours (a pixel of a sixteen-a-block one is four of ours across), and the back tiled a block at a time
   await Promise.all(PAINTING_VARIANTS.map(async ([n, w, h]) => {
     const b = await find('assets/minecraft/textures/painting/' + n + '.png'), bmp = b && await decode(b);
-    if (bmp) setArtImage('painting_' + n, pixels(bmp, 0, 0, bmp.width, bmp.height, w * 16, h * 16));
+    if (!bmp) return;
+    setArtImage('painting_' + n, pixels(bmp, 0, 0, bmp.width, bmp.height, w * PAINTING_PX, h * PAINTING_PX));
   }));
   const back = await find('assets/minecraft/textures/painting/back.png'), bb = back && await decode(back);
   if (bb) setArtImage('painting_back', pixels(bb, 0, 0, bb.width, bb.width, 64, 64, 16));

@@ -27,18 +27,18 @@
    useExtra(manager, itemName, target, take, build) is the manager's last
    try at a right click (entities/manager.js useHeld).
 --------------------------------------------------------------------------- */
-import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=101';
-import { Projectile } from './projectiles.js?v=101';
-import { register, TYPES } from './mobs.js?v=101';
-import { model } from './mobs2.js?v=101';
-import { addArt } from './mobart.js?v=101';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=101';
-import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, maxDamage } from '../items.js?v=101';
-import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=101';
-import { LegacyRandom } from '../gen/random.js?v=101';
-import { fireworkColour } from '../crafting.js?v=101';
-import { rayBox } from './terrain.js?v=101';
-import { lootStack } from '../containers.js?v=101';
+import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=102';
+import { Projectile } from './projectiles.js?v=102';
+import { register, TYPES } from './mobs.js?v=102';
+import { model } from './mobs2.js?v=102';
+import { addArt } from './mobart.js?v=102';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=102';
+import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, PAINTING_PX, maxDamage } from '../items.js?v=102';
+import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=102';
+import { LegacyRandom } from '../gen/random.js?v=102';
+import { fireworkColour } from '../crafting.js?v=102';
+import { rayBox } from './terrain.js?v=102';
+import { lootStack } from '../containers.js?v=102';
 const THREE = window.THREE;
 
 const PI = Math.PI;
@@ -251,9 +251,9 @@ const PAINTINGS = PAINTING_VARIANTS;
 /* Each picture our own, from the name's seed: one of four scenes (rolling
    hills by day, a sea at sunset, a night with a moon and stars, a few bold
    shapes), in flat bands of colour with a pixel of grain, a sun or moon,
-   trees or figures, and a dark frame. Where Pixel Perfection CE has a
-   painting of the same name (or a player opened their own copy of the game)
-   that picture is drawn over this one (entities/packart.js). */
+   trees or figures, and a dark frame: a stand-in until the famous painting
+   that variant shows (textures/famous_paintings.jpg), or a player's own copy
+   of the game's, is drawn over it (entities/packart.js). */
 const SCENES = [
   { sky: [0x7ab0e0, 0xb8d8f0], far: 0x6a9a5a, near: 0x4a7a3a, ground: 0x8a6a40, sun: 0xf8e8a0 },
   { sky: [0xd8784a, 0xf0c070], far: 0x3a5a8a, near: 0x2a4a7a, ground: 0x1a3a6a, sun: 0xf8d060 },
@@ -475,16 +475,26 @@ function paintPicture(p, name, w, h) {
   for (let x = 0; x < W; x++) { p.px(x, 0, 0x5a3a20); p.px(x, H - 1, 0x4a2e18); }
   for (let y = 0; y < H; y++) { p.px(0, y, 0x5a3a20); p.px(W - 1, y, 0x4a2e18); }
 }
+/* The pictures are famous paintings out of copyright (textures/famous_paintings.jpg, drawn over these by
+   entities/packart.js) at sixty-four pixels a block, as the first Leoncraft has them: at the game's sixteen a
+   photographed Mona Lisa is a smudge with a face-shaped area in it. The picture's plane takes four texture pixels to
+   each of its model's (entitymesh.js modelGeometry), so the model keeps the game's sizes. Until the sheet is in, or
+   if it never comes, each shows the scene above, drawn a model pixel to every four of its texture's. */
+const PAINT_RES = PAINTING_PX / 16;
+function scaled(p) {
+  const px = (x, y, c, a) => { x = Math.floor(x) * PAINT_RES; y = Math.floor(y) * PAINT_RES; for (let j = 0; j < PAINT_RES; j++) for (let i = 0; i < PAINT_RES; i++) p.px(x + i, y + j, c, a); };
+  return { px, shade: (c, k) => p.shade(c, k), fill: (x, y, w, h, c, amt = 0.08) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) px(x + i, y + j, p.shade(c, 1 + (p.r() - 0.5) * 2 * amt)); } };
+}
 const sizes = new Set(PAINTINGS.map(([, w, h]) => w + 'x' + h));
 for (const s of sizes) {
   const [w, h] = s.split('x').map(Number), W = w * 16, H = h * 16;
   // the back: a wooden board a pixel thick; the picture: a plane on its front
   model('painting_' + s, [{ name: 'board', pivot: [0, 24, 0], boxes: [[-W / 2, -H, 0, W, H, 1, 0, 0]] }]);
   // the picture a tenth of a pixel off the board, its front alone (its back lay in the same place and flickered with it)
-  model('painting_' + s + '_face', [{ name: 'board', pivot: [0, 24, 0], boxes: [[-W / 2, -H, -0.1, W, H, 0, 0, 0, 0, false, false, true]] }]);
+  model('painting_' + s + '_face', [{ name: 'board', pivot: [0, 24, 0], boxes: [[-W / 2, -H, -0.1, W, H, 0, 0, 0, 0, false, false, true, PAINT_RES]] }]);
 }
 addArt('painting_back', [64, 64], p => { p.fill(0, 0, 64, 64, 0x8a6a40, 0.1); for (let y = 0; y < 64; y += 4) p.fill(0, y, 64, 1, 0x6a4e2e); });
-for (const [n, w, h] of PAINTINGS) addArt('painting_' + n, [Math.max(64, w * 32), Math.max(64, h * 16)], p => { p.clear(0, 0, w * 32, h * 16); paintPicture(p, n, w, h); });
+for (const [n, w, h] of PAINTINGS) addArt('painting_' + n, [w * 16 * PAINT_RES, h * 16 * PAINT_RES], p => paintPicture(scaled(p), n, w, h));
 export class Painting extends Entity {
   static W = 1; static H = 1; static TEX = 'painting_back'; static NO_PUSH = true; static SHADOW = 0;
   constructor(m, type) { super(m, type); this.variant = 'kebab'; this.face = [0, 0, -1]; this.block = null; this.gravity = 0; this.checkT = 0; }
@@ -565,7 +575,7 @@ const pickW = list => { let t = 0; for (const [, w] of list) t += w; let r = R()
 // the enchantments random loot may carry (the table's and the treasure ones), in the game's order
 const ON_RANDOM_LOOT = ORDER.concat(['binding_curse', 'vanishing_curse', 'frost_walker', 'mending']);
 const BIOME_NAMES = [];
-import('../biomes.js?v=101').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
+import('../biomes.js?v=102').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
 export class FishingBobber extends Projectile {
   static W = 0.25; static H = 0.25; static MODEL = 'bobber'; static TEX = 'bobber';
   constructor(m, type) {

@@ -1,0 +1,663 @@
+{
+  "_": "Leoncraft 2's paintings: for each of the game's painting variants (items.js PAINTING_VARIANTS, the game's own sizes in blocks), a famous painting that is out of copyright, from Wikimedia Commons. focus is where the crop to the frame's shape is centred (0..1 across and down the original). build_paintings.py reads this.",
+  "paintings": [
+    {
+      "v": "kebab",
+      "w": 1,
+      "h": 1,
+      "title": "Self-Portrait",
+      "artist": "Vincent van Gogh",
+      "year": "1887",
+      "q": "Vincent van Gogh Self-Portrait 1887 Art Institute of Chicago",
+      "focus": [
+        0.5,
+        0.42
+      ],
+      "file": "File:Vincent van Gogh - Self-Portrait - Google Art Project (454045).jpg"
+    },
+    {
+      "v": "aztec",
+      "w": 1,
+      "h": 1,
+      "title": "Self-Portrait with Two Circles",
+      "artist": "Rembrandt",
+      "year": "c. 1665",
+      "q": "Rembrandt Self-Portrait with Two Circles Kenwood",
+      "focus": [
+        0.5,
+        0.38
+      ],
+      "file": "File:Rembrandt Self-portrait (Kenwood).jpg"
+    },
+    {
+      "v": "alban",
+      "w": 1,
+      "h": 1,
+      "title": "Young Hare",
+      "artist": "Albrecht Dürer",
+      "year": "1502",
+      "q": "Albrecht Dürer Young Hare 1502 Albertina",
+      "focus": [
+        0.5,
+        0.55
+      ],
+      "file": "File:Albrecht Dürer - Hare, 1502 - Google Art Project.jpg"
+    },
+    {
+      "v": "aztec2",
+      "w": 1,
+      "h": 1,
+      "title": "Fine Wind, Clear Morning",
+      "artist": "Katsushika Hokusai",
+      "year": "c. 1831",
+      "q": "Hokusai Fine Wind Clear Morning Red Fuji",
+      "focus": [
+        0.56,
+        0.5
+      ],
+      "file": "File:Katsushika Hokusai, published by Nishimuraya Yohachi (Eijudō) - Fine Wind, Clear Weather (Gaifū kaisei), also known as Red Fuji, from the series Thirty-six Views o... - Google Art Project - Cropped.jpg"
+    },
+    {
+      "v": "bomb",
+      "w": 1,
+      "h": 1,
+      "title": "Medusa",
+      "artist": "Caravaggio",
+      "year": "1597",
+      "q": "Caravaggio Medusa Uffizi",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Medusa-Caravaggio (Uffizi).jpg"
+    },
+    {
+      "v": "plant",
+      "w": 1,
+      "h": 1,
+      "title": "Almond Blossoms",
+      "artist": "Vincent van Gogh",
+      "year": "1890",
+      "q": "Vincent van Gogh Almond Blossom 1890 Van Gogh Museum",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Amandelbloesem - s0176V1962 - Van Gogh Museum.jpg"
+    },
+    {
+      "v": "wasteland",
+      "w": 1,
+      "h": 1,
+      "title": "The Gleaners",
+      "artist": "Jean-François Millet",
+      "year": "1857",
+      "q": "Jean-François Millet Gleaners 1857 Orsay",
+      "focus": [
+        0.42,
+        0.55
+      ],
+      "file": "File:Jean-François Millet - Gleaners - Google Art Project 2.jpg"
+    },
+    {
+      "v": "meditative",
+      "w": 1,
+      "h": 1,
+      "title": "Girl with a Pearl Earring",
+      "artist": "Johannes Vermeer",
+      "year": "c. 1665",
+      "q": "Vermeer Girl with a Pearl Earring Mauritshuis",
+      "focus": [
+        0.5,
+        0.45
+      ],
+      "file": "File:1665 Girl with a Pearl Earring.jpg"
+    },
+    {
+      "v": "pool",
+      "w": 2,
+      "h": 1,
+      "title": "Water Lilies",
+      "artist": "Claude Monet",
+      "year": "1906",
+      "q": "Claude Monet Water Lilies 1906 Ryerson Art Institute",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Claude Monet - Water Lilies - 1906, Ryerson.jpg"
+    },
+    {
+      "v": "courbet",
+      "w": 2,
+      "h": 1,
+      "title": "Whistler's Mother",
+      "artist": "James McNeill Whistler",
+      "year": "1871",
+      "q": "Whistler Arrangement in Grey and Black No. 1 Mother",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Whistlers Mother high res.jpg"
+    },
+    {
+      "v": "sea",
+      "w": 2,
+      "h": 1,
+      "title": "The Great Wave off Kanagawa",
+      "artist": "Katsushika Hokusai",
+      "year": "c. 1831",
+      "q": "Great Wave off Kanagawa Hokusai Metropolitan Museum",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Tsunami by hokusai 19th century.jpg"
+    },
+    {
+      "v": "sunset",
+      "w": 2,
+      "h": 1,
+      "title": "Impression, Sunrise",
+      "artist": "Claude Monet",
+      "year": "1872",
+      "q": "Claude Monet Impression Sunrise Marmottan",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Monet - Impression, Sunrise.jpg"
+    },
+    {
+      "v": "creebet",
+      "w": 2,
+      "h": 1,
+      "title": "Wheatfield with Crows",
+      "artist": "Vincent van Gogh",
+      "year": "1890",
+      "q": "Vincent van Gogh Wheatfield with Crows 1890",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Korenveld met kraaien - s0149V1962 - Van Gogh Museum.jpg"
+    },
+    {
+      "v": "wanderer",
+      "w": 1,
+      "h": 2,
+      "title": "Wanderer above the Sea of Fog",
+      "artist": "Caspar David Friedrich",
+      "year": "c. 1818",
+      "q": "Caspar David Friedrich Wanderer above the sea of fog",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Caspar David Friedrich - Wanderer above the sea of fog.jpg"
+    },
+    {
+      "v": "graham",
+      "w": 1,
+      "h": 2,
+      "title": "Mona Lisa",
+      "artist": "Leonardo da Vinci",
+      "year": "c. 1503-1506",
+      "q": "Mona Lisa Leonardo da Vinci C2RMF retouched",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Mona Lisa, by Leonardo da Vinci, from C2RMF retouched.jpg"
+    },
+    {
+      "v": "prairie_ride",
+      "w": 1,
+      "h": 2,
+      "title": "The Scream",
+      "artist": "Edvard Munch",
+      "year": "1893",
+      "q": "Edvard Munch The Scream 1893 National Gallery of Norway",
+      "focus": [
+        0.44,
+        0.5
+      ],
+      "file": "File:Edvard Munch, 1893, The Scream, oil, tempera and pastel on cardboard, 91 x 73 cm, National Gallery of Norway.jpg"
+    },
+    {
+      "v": "match",
+      "w": 2,
+      "h": 2,
+      "title": "The Starry Night",
+      "artist": "Vincent van Gogh",
+      "year": "1889",
+      "q": "Van Gogh Starry Night Google Art Project",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Van Gogh - Starry Night - Google Art Project.jpg"
+    },
+    {
+      "v": "bust",
+      "w": 2,
+      "h": 2,
+      "title": "The Kiss",
+      "artist": "Gustav Klimt",
+      "year": "1907-1908",
+      "q": "Gustav Klimt The Kiss 1907 Belvedere",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:The Kiss - Gustav Klimt - Google Cultural Institute.jpg"
+    },
+    {
+      "v": "stage",
+      "w": 2,
+      "h": 2,
+      "title": "Composition VIII",
+      "artist": "Wassily Kandinsky",
+      "year": "1923",
+      "q": "Kandinsky Composition VIII 1923 Guggenheim",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Vassily Kandinsky, 1923 - Composition 8, huile sur toile, 140 cm x 201 cm, Musée Guggenheim, New York.jpg"
+    },
+    {
+      "v": "void",
+      "w": 2,
+      "h": 2,
+      "title": "Black Square",
+      "artist": "Kazimir Malevich",
+      "year": "1915",
+      "q": "Kazimir Malevich Black Suprematic Square 1915 Tretyakov",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Kazimir Malevich, 1915, Black Suprematic Square, oil on linen canvas, 79.5 x 79.5 cm, Tretyakov Gallery, Moscow.jpg"
+    },
+    {
+      "v": "skull_and_roses",
+      "w": 2,
+      "h": 2,
+      "title": "Skull of a Skeleton with Burning Cigarette",
+      "artist": "Vincent van Gogh",
+      "year": "1886",
+      "q": "Van Gogh Skull of a Skeleton with Burning Cigarette",
+      "focus": [
+        0.5,
+        0.45
+      ],
+      "file": "File:Vincent van Gogh - Head of a skeleton with a burning cigarette - Google Art Project.jpg"
+    },
+    {
+      "v": "wither",
+      "w": 2,
+      "h": 2,
+      "title": "Isle of the Dead",
+      "artist": "Arnold Böcklin",
+      "year": "1880",
+      "q": "Arnold Böcklin Isle of the Dead 1880 Basel",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Arnold Böcklin - Die Toteninsel I (Basel, Kunstmuseum).jpg"
+    },
+    {
+      "v": "baroque",
+      "w": 2,
+      "h": 2,
+      "title": "The Calling of Saint Matthew",
+      "artist": "Caravaggio",
+      "year": "1600",
+      "q": "Caravaggio The Calling of Saint Matthew Contarelli",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:The Calling of Saint Matthew-Caravaggo (1599-1600).jpg"
+    },
+    {
+      "v": "humble",
+      "w": 2,
+      "h": 2,
+      "title": "The Angelus",
+      "artist": "Jean-François Millet",
+      "year": "1857-1859",
+      "q": "Jean-François Millet The Angelus Orsay",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Jean-François Millet - The Angelus - Google Art Project.jpg"
+    },
+    {
+      "v": "bouquet",
+      "w": 3,
+      "h": 3,
+      "title": "Vase of Flowers in a Window",
+      "artist": "Ambrosius Bosschaert",
+      "year": "c. 1618",
+      "q": "Ambrosius Bosschaert Bouquet of Flowers on a Ledge Getty",
+      "focus": [
+        0.5,
+        0.42
+      ],
+      "file": "File:Ambrosius Bosschaert de Oude - Vase of Flowers in a Window - 679 - Mauritshuis.jpg"
+    },
+    {
+      "v": "cavebird",
+      "w": 3,
+      "h": 3,
+      "title": "The Magpie",
+      "artist": "Claude Monet",
+      "year": "1868-1869",
+      "q": "Claude Monet The Magpie 1869 Orsay",
+      "focus": [
+        0.36,
+        0.5
+      ],
+      "file": "File:Claude Monet - The Magpie - Google Art Project.jpg"
+    },
+    {
+      "v": "cotan",
+      "w": 3,
+      "h": 3,
+      "title": "Still Life with Quince, Cabbage, Melon and Cucumber",
+      "artist": "Juan Sánchez Cotán",
+      "year": "1602",
+      "q": "Juan Sánchez Cotán Still Life with Quince Cabbage Melon and Cucumber San Diego",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Juan Sánchez Cotán - Still Life with Quince, Cabbage, Melon, and Cucumber, 1602.jpg"
+    },
+    {
+      "v": "endboss",
+      "w": 3,
+      "h": 3,
+      "title": "Saint George and the Dragon",
+      "artist": "Raphael",
+      "year": "c. 1506",
+      "q": "Raphael Saint George and the Dragon Louvre",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Raphael - Saint George and the Dragon - Google Art Project.jpg"
+    },
+    {
+      "v": "fern",
+      "w": 3,
+      "h": 3,
+      "title": "Surprised!",
+      "artist": "Henri Rousseau",
+      "year": "1891",
+      "q": "Henri Rousseau Surprised Tiger in a Tropical Storm National Gallery",
+      "focus": [
+        0.45,
+        0.5
+      ],
+      "file": "File:Surprised-Rousseau.jpg"
+    },
+    {
+      "v": "owlemons",
+      "w": 3,
+      "h": 3,
+      "title": "The Little Owl",
+      "artist": "Albrecht Dürer",
+      "year": "1508",
+      "q": "Albrecht Dürer Little Owl 1508 Albertina",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Dürer, Albrecht - Kleine Eule - 1508.jpg"
+    },
+    {
+      "v": "sunflowers",
+      "w": 3,
+      "h": 3,
+      "title": "Sunflowers",
+      "artist": "Vincent van Gogh",
+      "year": "1888",
+      "q": "Vincent van Gogh Sunflowers 1888 National Gallery London",
+      "focus": [
+        0.5,
+        0.45
+      ],
+      "file": "File:Vincent van Gogh - Sunflowers (1888, National Gallery London).jpg"
+    },
+    {
+      "v": "tides",
+      "w": 3,
+      "h": 3,
+      "title": "The Ninth Wave",
+      "artist": "Ivan Aivazovsky",
+      "year": "1850",
+      "q": "Ivan Aivazovsky The Ninth Wave 1850",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Aivazovsky, Ivan - The Ninth Wave.jpg"
+    },
+    {
+      "v": "dennis",
+      "w": 3,
+      "h": 3,
+      "title": "Whistlejacket",
+      "artist": "George Stubbs",
+      "year": "c. 1762",
+      "q": "George Stubbs Whistlejacket National Gallery",
+      "focus": [
+        0.5,
+        0.45
+      ],
+      "file": "File:Whistlejacket by George Stubbs edit.jpg"
+    },
+    {
+      "v": "backyard",
+      "w": 3,
+      "h": 4,
+      "title": "The Swing",
+      "artist": "Jean-Honoré Fragonard",
+      "year": "1767",
+      "q": "Fragonard The Swing Wallace Collection",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Joean Honoré Fragonard - The Swing.jpg"
+    },
+    {
+      "v": "pond",
+      "w": 3,
+      "h": 4,
+      "title": "Bridge over a Pond of Water Lilies",
+      "artist": "Claude Monet",
+      "year": "1899",
+      "q": "Claude Monet Bridge over a Pond of Water Lilies 1899 Metropolitan",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Bridge Over a Pond of Water Lilies, Claude Monet 1899.jpg"
+    },
+    {
+      "v": "fighters",
+      "w": 4,
+      "h": 2,
+      "title": "The Battle of San Romano",
+      "artist": "Paolo Uccello",
+      "year": "c. 1438-1440",
+      "q": "Paolo Uccello Battle of San Romano National Gallery London",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:San Romano Battle (Paolo Uccello, London) 01.jpg"
+    },
+    {
+      "v": "changing",
+      "w": 4,
+      "h": 2,
+      "title": "The Birth of Venus",
+      "artist": "Sandro Botticelli",
+      "year": "c. 1485",
+      "q": "Sandro Botticelli La nascita di Venere Google Art Project",
+      "focus": [
+        0.5,
+        0.45
+      ],
+      "file": "File:Sandro Botticelli - La nascita di Venere - Google Art Project - edited.jpg"
+    },
+    {
+      "v": "finding",
+      "w": 4,
+      "h": 2,
+      "title": "The Creation of Adam",
+      "artist": "Michelangelo",
+      "year": "c. 1512",
+      "q": "Michelangelo Creation of Adam Sistine Chapel",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:'Adam's Creation Sistine Chapel ceiling' by Michelangelo JBU33cut.jpg"
+    },
+    {
+      "v": "lowmist",
+      "w": 4,
+      "h": 2,
+      "title": "The Monk by the Sea",
+      "artist": "Caspar David Friedrich",
+      "year": "1808-1810",
+      "q": "Caspar David Friedrich Der Mönch am Meer",
+      "focus": [
+        0.5,
+        0.55
+      ],
+      "file": "File:Caspar David Friedrich - Der Mönch am Meer - Google Art Project.jpg"
+    },
+    {
+      "v": "passage",
+      "w": 4,
+      "h": 2,
+      "title": "The Last Supper",
+      "artist": "Leonardo da Vinci",
+      "year": "1495-1498",
+      "q": "Leonardo da Vinci The Last Supper high res Santa Maria delle Grazie",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Leonardo da Vinci - The Last Supper high res.jpg"
+    },
+    {
+      "v": "skeleton",
+      "w": 4,
+      "h": 3,
+      "title": "The Triumph of Death",
+      "artist": "Pieter Bruegel the Elder",
+      "year": "c. 1562",
+      "q": "Pieter Bruegel the Elder The Triumph of Death Prado",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:The Triumph of Death by Pieter Bruegel the Elder.jpg"
+    },
+    {
+      "v": "donkey_kong",
+      "w": 4,
+      "h": 3,
+      "title": "The Night Watch",
+      "artist": "Rembrandt",
+      "year": "1642",
+      "q": "Rembrandt The Night Watch Rijksmuseum",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:La ronda de noche, por Rembrandt van Rijn.jpg"
+    },
+    {
+      "v": "pointer",
+      "w": 4,
+      "h": 4,
+      "title": "The School of Athens",
+      "artist": "Raphael",
+      "year": "1509-1511",
+      "q": "Raphael School of Athens Vatican",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:\"The School of Athens\" by Raffaello Sanzio da Urbino.jpg"
+    },
+    {
+      "v": "pigscene",
+      "w": 4,
+      "h": 4,
+      "title": "Netherlandish Proverbs",
+      "artist": "Pieter Bruegel the Elder",
+      "year": "1559",
+      "q": "Pieter Bruegel the Elder Netherlandish Proverbs Berlin",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Pieter Brueghel the Elder - The Dutch Proverbs - Google Art Project.jpg"
+    },
+    {
+      "v": "burning_skull",
+      "w": 4,
+      "h": 4,
+      "title": "The Burning of the Houses of Lords and Commons",
+      "artist": "J. M. W. Turner",
+      "year": "1834-1835",
+      "q": "Turner Burning of the Houses of Lords and Commons Philadelphia",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Joseph Mallord William Turner, English - The Burning of the Houses of Lords and Commons, October 16, 1834 - Google Art Project.jpg"
+    },
+    {
+      "v": "orb",
+      "w": 4,
+      "h": 4,
+      "title": "The Ambassadors",
+      "artist": "Hans Holbein the Younger",
+      "year": "1533",
+      "q": "Hans Holbein the Younger The Ambassadors National Gallery",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:Hans Holbein the Younger - The Ambassadors - Google Art Project.jpg"
+    },
+    {
+      "v": "unpacked",
+      "w": 4,
+      "h": 4,
+      "title": "The Garden of Earthly Delights",
+      "artist": "Hieronymus Bosch",
+      "year": "c. 1490-1510",
+      "q": "Hieronymus Bosch The Garden of Earthly Delights Prado triptych",
+      "focus": [
+        0.5,
+        0.5
+      ],
+      "file": "File:The Garden of Earthly Delights by Bosch High Resolution.jpg"
+    }
+  ]
+}

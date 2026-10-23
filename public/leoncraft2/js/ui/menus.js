@@ -26,18 +26,19 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=101';
-import { Packs } from './pack.js?v=101';
-import { Account } from '../net/account.js?v=101';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=101';
-import { packArtSummary } from '../entities/packart.js?v=101';
-import { LanScreen } from './lan.js?v=101';
-import { parseSeed } from '../gen/random.js?v=101';
-import { SOUND_CREDITS } from '../sound/credits.js?v=101';
-import { SkinGalleryScreen, skinCredits } from './skins.js?v=101';
-import { SkinsScreen } from './skinmenu.js?v=101';
-import { FlatCustomizeScreen } from './flat.js?v=101';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=101';
+} from './gui.js?v=102';
+import { Packs } from './pack.js?v=102';
+import { Account } from '../net/account.js?v=102';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=102';
+import { packArtSummary } from '../entities/packart.js?v=102';
+import { LanScreen } from './lan.js?v=102';
+import { parseSeed } from '../gen/random.js?v=102';
+import { SOUND_CREDITS } from '../sound/credits.js?v=102';
+import { PAINTING_ART } from '../paintingdata.js?v=102';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=102';
+import { SkinsScreen } from './skinmenu.js?v=102';
+import { FlatCustomizeScreen } from './flat.js?v=102';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=102';
 
 const PI = Math.PI;
 
@@ -406,7 +407,7 @@ export class SelectWorldScreen extends Screen {
     if (this.importing) return;
     this.importing = true; this.lc1B.active = false; this.lc1B.message = 'Importing...'; this.gui.markDirty();
     const done = msg => { this.importing = false; if (this.lc1B) { this.lc1B.active = true; this.lc1B.message = 'Import from Leoncraft 1'; } this.gui.markDirty(); if (msg) this.gui.open(new NoticeScreen('Import from Leoncraft 1', msg)); };
-    import('../lc1/spimport.js?v=101').then(m => {
+    import('../lc1/spimport.js?v=102').then(m => {
       const saves = m.lc1Saves();
       if (!saves.length) return done('There is no Leoncraft 1 world in this browser.');
       return m.importLC1(saves[0].key, Worlds).then(r => {
@@ -741,9 +742,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=101';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=101';
-import { minimapButtons } from './minimap.js?v=101';
+export { VideoSettingsScreen } from './video.js?v=102';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=102';
+import { minimapButtons } from './minimap.js?v=102';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -1029,7 +1030,7 @@ export class LanguageScreen extends OptionsListScreen {
 const CREDITS = [
   ['Leoncraft 2', 0xFFFF55], ['Made by Leon Zhao.'], [''],
   ['Textures', 0xFFFF55],
-  ['Block textures, GUI art, the font and the older paintings:'],
+  ['Block textures, GUI art and the font:'],
   ['Pixel Perfection by XSSheep, in its Community Edition,'], ['by XSSheep and contributors.'],
   ['github.com/Athemis/PixelPerfectionCE', 0, 'https://github.com/Athemis/PixelPerfectionCE'],
   ['Newer blocks, many items, the leggings and the trim colours:'], ['Pixel Perfection Legacy, by Nova_Wostra.'],
@@ -1045,6 +1046,7 @@ const CREDITS = [
   ['Leoncraft packs, recolours and extends them, and shares'], ['those changes under the same licence.'],
   ['The title logo is drawn from the pack\'s stone texture.'], [''],
   ['@sounds'],
+  ['@paintings'],
   ['@skins'],
   ['Maps', 0xFFFF55],
   ['Leonpixel\'s Prop Hunt map, Hillside: from "Hide and Seek Minigame"'], ['by Tert, GNU GPL version 3 (joined, cut and changed for the game).'],
@@ -1079,6 +1081,15 @@ const CREDITS = [
   ['Not approved by or associated with Mojang or Microsoft.', 0xA0A0A0],
 ];
 
+// the famous paintings every painting shows (js/paintingdata.js, written by tools/leoncraft2/build_paintings.py)
+function paintingCredits() {
+  const out = [['Paintings', 0xFFFF55], ['Every painting shows a famous painting in the public domain, photographed, from Wikimedia Commons (each marked public domain there), cropped to the game\'s sizes for its paintings:']];
+  for (const [title, by, year] of Object.values(PAINTING_ART)) out.push([title + ', ' + by + ' (' + year + ')']);
+  out.push(['Where each picture came from: textures/PAINTINGS.txt.']);
+  out.push(['commons.wikimedia.org', 0, 'https://commons.wikimedia.org/']);
+  out.push(['']);
+  return out;
+}
 // the recordings Leoncraft's own sounds and music are made from (js/sound/credits.js, written by tools/leoncraft2/build_sounds.py)
 function soundCredits() {
   const out = [['Sounds and Music', 0xFFFF55], ['Made from these openly licensed recordings (cut, pitched and levelled for the game):']];
@@ -1119,6 +1130,7 @@ export class CreditsScreen extends OptionsListScreen {
     const g = this.gui;
     for (const [t, c, url] of CREDITS) {
       if (t === '@skins') { for (const r of skinCredits()) for (const line of r[2] ? [r[0]] : g.font.wrap(r[0], Math.min(300, this.width - 20))) list.entries.push(new TextRow(line, r[1] || WHITE, r[2] || null)); continue; }
+      if (t === '@paintings') { for (const r of paintingCredits()) for (const line of r[2] ? [r[0]] : g.font.wrap(r[0], Math.min(300, this.width - 20))) list.entries.push(new TextRow(line, r[1] || WHITE, r[2] || null)); continue; }
       if (t === '@sounds') { for (const r of soundCredits()) for (const line of r[2] ? [r[0]] : g.font.wrap(r[0], Math.min(300, this.width - 20))) list.entries.push(new TextRow(line, r[1] || WHITE, r[2] || null)); continue; }
       for (const line of url ? [t] : g.font.wrap(t, Math.min(300, this.width - 20))) list.entries.push(new TextRow(line, c || WHITE, url || null));
     }

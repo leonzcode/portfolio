@@ -1,0 +1,618 @@
+{
+ "res": 64,
+ "where": {
+  "burning_skull": [
+   0,
+   0,
+   256,
+   256
+  ],
+  "orb": [
+   256,
+   0,
+   256,
+   256
+  ],
+  "pigscene": [
+   512,
+   0,
+   256,
+   256
+  ],
+  "pointer": [
+   768,
+   0,
+   256,
+   256
+  ],
+  "unpacked": [
+   0,
+   256,
+   256,
+   256
+  ],
+  "backyard": [
+   256,
+   256,
+   192,
+   256
+  ],
+  "pond": [
+   448,
+   256,
+   192,
+   256
+  ],
+  "donkey_kong": [
+   640,
+   256,
+   256,
+   192
+  ],
+  "skeleton": [
+   0,
+   512,
+   256,
+   192
+  ],
+  "bouquet": [
+   256,
+   512,
+   192,
+   192
+  ],
+  "cavebird": [
+   448,
+   512,
+   192,
+   192
+  ],
+  "cotan": [
+   640,
+   512,
+   192,
+   192
+  ],
+  "dennis": [
+   832,
+   512,
+   192,
+   192
+  ],
+  "endboss": [
+   0,
+   704,
+   192,
+   192
+  ],
+  "fern": [
+   192,
+   704,
+   192,
+   192
+  ],
+  "owlemons": [
+   384,
+   704,
+   192,
+   192
+  ],
+  "sunflowers": [
+   576,
+   704,
+   192,
+   192
+  ],
+  "tides": [
+   768,
+   704,
+   192,
+   192
+  ],
+  "changing": [
+   0,
+   896,
+   256,
+   128
+  ],
+  "fighters": [
+   256,
+   896,
+   256,
+   128
+  ],
+  "finding": [
+   512,
+   896,
+   256,
+   128
+  ],
+  "lowmist": [
+   768,
+   896,
+   256,
+   128
+  ],
+  "passage": [
+   0,
+   1024,
+   256,
+   128
+  ],
+  "baroque": [
+   256,
+   1024,
+   128,
+   128
+  ],
+  "bust": [
+   384,
+   1024,
+   128,
+   128
+  ],
+  "humble": [
+   512,
+   1024,
+   128,
+   128
+  ],
+  "match": [
+   640,
+   1024,
+   128,
+   128
+  ],
+  "skull_and_roses": [
+   768,
+   1024,
+   128,
+   128
+  ],
+  "stage": [
+   896,
+   1024,
+   128,
+   128
+  ],
+  "void": [
+   0,
+   1152,
+   128,
+   128
+  ],
+  "wither": [
+   128,
+   1152,
+   128,
+   128
+  ],
+  "graham": [
+   256,
+   1152,
+   64,
+   128
+  ],
+  "prairie_ride": [
+   320,
+   1152,
+   64,
+   128
+  ],
+  "wanderer": [
+   384,
+   1152,
+   64,
+   128
+  ],
+  "courbet": [
+   448,
+   1152,
+   128,
+   64
+  ],
+  "creebet": [
+   576,
+   1152,
+   128,
+   64
+  ],
+  "pool": [
+   704,
+   1152,
+   128,
+   64
+  ],
+  "sea": [
+   832,
+   1152,
+   128,
+   64
+  ],
+  "sunset": [
+   0,
+   1280,
+   128,
+   64
+  ],
+  "alban": [
+   128,
+   1280,
+   64,
+   64
+  ],
+  "aztec": [
+   192,
+   1280,
+   64,
+   64
+  ],
+  "aztec2": [
+   256,
+   1280,
+   64,
+   64
+  ],
+  "bomb": [
+   320,
+   1280,
+   64,
+   64
+  ],
+  "kebab": [
+   384,
+   1280,
+   64,
+   64
+  ],
+  "meditative": [
+   448,
+   1280,
+   64,
+   64
+  ],
+  "plant": [
+   512,
+   1280,
+   64,
+   64
+  ],
+  "wasteland": [
+   576,
+   1280,
+   64,
+   64
+  ]
+ },
+ "credits": {
+  "kebab": {
+   "title": "Self-Portrait",
+   "artist": "Vincent van Gogh",
+   "year": "1887",
+   "source": "https://commons.wikimedia.org/wiki/File:Vincent_van_Gogh_-_Self-Portrait_-_Google_Art_Project_(454045).jpg",
+   "licence": "Public domain"
+  },
+  "aztec": {
+   "title": "Self-Portrait with Two Circles",
+   "artist": "Rembrandt",
+   "year": "c. 1665",
+   "source": "https://commons.wikimedia.org/wiki/File:Rembrandt_Self-portrait_(Kenwood).jpg",
+   "licence": "Public domain"
+  },
+  "alban": {
+   "title": "Young Hare",
+   "artist": "Albrecht Dürer",
+   "year": "1502",
+   "source": "https://commons.wikimedia.org/wiki/File:Albrecht_D%C3%BCrer_-_Hare,_1502_-_Google_Art_Project.jpg",
+   "licence": "Public domain"
+  },
+  "aztec2": {
+   "title": "Fine Wind, Clear Morning",
+   "artist": "Katsushika Hokusai",
+   "year": "c. 1831",
+   "source": "https://commons.wikimedia.org/wiki/File:Katsushika_Hokusai,_published_by_Nishimuraya_Yohachi_(Eijud%C5%8D)_-_Fine_Wind,_Clear_Weather_(Gaif%C5%AB_kaisei),_also_known_as_Red_Fuji,_from_the_series_Thirty-six_Views_o..._-_Google_Art_Project_-_Cropped.jpg",
+   "licence": "Public domain"
+  },
+  "bomb": {
+   "title": "Medusa",
+   "artist": "Caravaggio",
+   "year": "1597",
+   "source": "https://commons.wikimedia.org/wiki/File:Medusa-Caravaggio_(Uffizi).jpg",
+   "licence": "Public domain"
+  },
+  "plant": {
+   "title": "Almond Blossoms",
+   "artist": "Vincent van Gogh",
+   "year": "1890",
+   "source": "https://commons.wikimedia.org/wiki/File:Amandelbloesem_-_s0176V1962_-_Van_Gogh_Museum.jpg",
+   "licence": "Public domain"
+  },
+  "wasteland": {
+   "title": "The Gleaners",
+   "artist": "Jean-François Millet",
+   "year": "1857",
+   "source": "https://commons.wikimedia.org/wiki/File:Jean-Fran%C3%A7ois_Millet_-_Gleaners_-_Google_Art_Project_2.jpg",
+   "licence": "Public domain"
+  },
+  "meditative": {
+   "title": "Girl with a Pearl Earring",
+   "artist": "Johannes Vermeer",
+   "year": "c. 1665",
+   "source": "https://commons.wikimedia.org/wiki/File:1665_Girl_with_a_Pearl_Earring.jpg",
+   "licence": "Public domain"
+  },
+  "pool": {
+   "title": "Water Lilies",
+   "artist": "Claude Monet",
+   "year": "1906",
+   "source": "https://commons.wikimedia.org/wiki/File:Claude_Monet_-_Water_Lilies_-_1906,_Ryerson.jpg",
+   "licence": "Public domain"
+  },
+  "courbet": {
+   "title": "Whistler's Mother",
+   "artist": "James McNeill Whistler",
+   "year": "1871",
+   "source": "https://commons.wikimedia.org/wiki/File:Whistlers_Mother_high_res.jpg",
+   "licence": "Public domain"
+  },
+  "sea": {
+   "title": "The Great Wave off Kanagawa",
+   "artist": "Katsushika Hokusai",
+   "year": "c. 1831",
+   "source": "https://commons.wikimedia.org/wiki/File:Tsunami_by_hokusai_19th_century.jpg",
+   "licence": "Public domain"
+  },
+  "sunset": {
+   "title": "Impression, Sunrise",
+   "artist": "Claude Monet",
+   "year": "1872",
+   "source": "https://commons.wikimedia.org/wiki/File:Monet_-_Impression,_Sunrise.jpg",
+   "licence": "Public domain"
+  },
+  "creebet": {
+   "title": "Wheatfield with Crows",
+   "artist": "Vincent van Gogh",
+   "year": "1890",
+   "source": "https://commons.wikimedia.org/wiki/File:Korenveld_met_kraaien_-_s0149V1962_-_Van_Gogh_Museum.jpg",
+   "licence": "Public domain"
+  },
+  "wanderer": {
+   "title": "Wanderer above the Sea of Fog",
+   "artist": "Caspar David Friedrich",
+   "year": "c. 1818",
+   "source": "https://commons.wikimedia.org/wiki/File:Caspar_David_Friedrich_-_Wanderer_above_the_sea_of_fog.jpg",
+   "licence": "Public domain"
+  },
+  "graham": {
+   "title": "Mona Lisa",
+   "artist": "Leonardo da Vinci",
+   "year": "c. 1503-1506",
+   "source": "https://commons.wikimedia.org/wiki/File:Mona_Lisa,_by_Leonardo_da_Vinci,_from_C2RMF_retouched.jpg",
+   "licence": "Public domain"
+  },
+  "prairie_ride": {
+   "title": "The Scream",
+   "artist": "Edvard Munch",
+   "year": "1893",
+   "source": "https://commons.wikimedia.org/wiki/File:Edvard_Munch,_1893,_The_Scream,_oil,_tempera_and_pastel_on_cardboard,_91_x_73_cm,_National_Gallery_of_Norway.jpg",
+   "licence": "Public domain"
+  },
+  "match": {
+   "title": "The Starry Night",
+   "artist": "Vincent van Gogh",
+   "year": "1889",
+   "source": "https://commons.wikimedia.org/wiki/File:Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
+   "licence": "Public domain"
+  },
+  "bust": {
+   "title": "The Kiss",
+   "artist": "Gustav Klimt",
+   "year": "1907-1908",
+   "source": "https://commons.wikimedia.org/wiki/File:The_Kiss_-_Gustav_Klimt_-_Google_Cultural_Institute.jpg",
+   "licence": "Public domain"
+  },
+  "stage": {
+   "title": "Composition VIII",
+   "artist": "Wassily Kandinsky",
+   "year": "1923",
+   "source": "https://commons.wikimedia.org/wiki/File:Vassily_Kandinsky,_1923_-_Composition_8,_huile_sur_toile,_140_cm_x_201_cm,_Mus%C3%A9e_Guggenheim,_New_York.jpg",
+   "licence": "Public domain"
+  },
+  "void": {
+   "title": "Black Square",
+   "artist": "Kazimir Malevich",
+   "year": "1915",
+   "source": "https://commons.wikimedia.org/wiki/File:Kazimir_Malevich,_1915,_Black_Suprematic_Square,_oil_on_linen_canvas,_79.5_x_79.5_cm,_Tretyakov_Gallery,_Moscow.jpg",
+   "licence": "Public domain"
+  },
+  "skull_and_roses": {
+   "title": "Skull of a Skeleton with Burning Cigarette",
+   "artist": "Vincent van Gogh",
+   "year": "1886",
+   "source": "https://commons.wikimedia.org/wiki/File:Vincent_van_Gogh_-_Head_of_a_skeleton_with_a_burning_cigarette_-_Google_Art_Project.jpg",
+   "licence": "Public domain"
+  },
+  "wither": {
+   "title": "Isle of the Dead",
+   "artist": "Arnold Böcklin",
+   "year": "1880",
+   "source": "https://commons.wikimedia.org/wiki/File:Arnold_B%C3%B6cklin_-_Die_Toteninsel_I_(Basel,_Kunstmuseum).jpg",
+   "licence": "Public domain"
+  },
+  "baroque": {
+   "title": "The Calling of Saint Matthew",
+   "artist": "Caravaggio",
+   "year": "1600",
+   "source": "https://commons.wikimedia.org/wiki/File:The_Calling_of_Saint_Matthew-Caravaggo_(1599-1600).jpg",
+   "licence": "Public domain"
+  },
+  "humble": {
+   "title": "The Angelus",
+   "artist": "Jean-François Millet",
+   "year": "1857-1859",
+   "source": "https://commons.wikimedia.org/wiki/File:Jean-Fran%C3%A7ois_Millet_-_The_Angelus_-_Google_Art_Project.jpg",
+   "licence": "Public domain"
+  },
+  "bouquet": {
+   "title": "Vase of Flowers in a Window",
+   "artist": "Ambrosius Bosschaert",
+   "year": "c. 1618",
+   "source": "https://commons.wikimedia.org/wiki/File:Ambrosius_Bosschaert_de_Oude_-_Vase_of_Flowers_in_a_Window_-_679_-_Mauritshuis.jpg",
+   "licence": "Public domain"
+  },
+  "cavebird": {
+   "title": "The Magpie",
+   "artist": "Claude Monet",
+   "year": "1868-1869",
+   "source": "https://commons.wikimedia.org/wiki/File:Claude_Monet_-_The_Magpie_-_Google_Art_Project.jpg",
+   "licence": "Public domain"
+  },
+  "cotan": {
+   "title": "Still Life with Quince, Cabbage, Melon and Cucumber",
+   "artist": "Juan Sánchez Cotán",
+   "year": "1602",
+   "source": "https://commons.wikimedia.org/wiki/File:Juan_S%C3%A1nchez_Cot%C3%A1n_-_Still_Life_with_Quince,_Cabbage,_Melon,_and_Cucumber,_1602.jpg",
+   "licence": "Public domain"
+  },
+  "endboss": {
+   "title": "Saint George and the Dragon",
+   "artist": "Raphael",
+   "year": "c. 1506",
+   "source": "https://commons.wikimedia.org/wiki/File:Raphael_-_Saint_George_and_the_Dragon_-_Google_Art_Project.jpg",
+   "licence": "Public domain"
+  },
+  "fern": {
+   "title": "Surprised!",
+   "artist": "Henri Rousseau",
+   "year": "1891",
+   "source": "https://commons.wikimedia.org/wiki/File:Surprised-Rousseau.jpg",
+   "licence": "Public domain"
+  },
+  "owlemons": {
+   "title": "The Little Owl",
+   "artist": "Albrecht Dürer",
+   "year": "1508",
+   "source": "https://commons.wikimedia.org/wiki/File:D%C3%BCrer,_Albrecht_-_Kleine_Eule_-_1508.jpg",
+   "licence": "Public domain"
+  },
+  "sunflowers": {
+   "title": "Sunflowers",
+   "artist": "Vincent van Gogh",
+   "year": "1888",
+   "source": "https://commons.wikimedia.org/wiki/File:Vincent_van_Gogh_-_Sunflowers_(1888,_National_Gallery_London).jpg",
+   "licence": "Public domain"
+  },
+  "tides": {
+   "title": "The Ninth Wave",
+   "artist": "Ivan Aivazovsky",
+   "year": "1850",
+   "source": "https://commons.wikimedia.org/wiki/File:Aivazovsky,_Ivan_-_The_Ninth_Wave.jpg",
+   "licence": "Public domain"
+  },
+  "dennis": {
+   "title": "Whistlejacket",
+   "artist": "George Stubbs",
+   "year": "c. 1762",
+   "source": "https://commons.wikimedia.org/wiki/File:Whistlejacket_by_George_Stubbs_edit.jpg",
+   "licence": "Public domain"
+  },
+  "backyard": {
+   "title": "The Swing",
+   "artist": "Jean-Honoré Fragonard",
+   "year": "1767",
+   "source": "https://commons.wikimedia.org/wiki/File:Joean_Honor%C3%A9_Fragonard_-_The_Swing.jpg",
+   "licence": "Public domain"
+  },
+  "pond": {
+   "title": "Bridge over a Pond of Water Lilies",
+   "artist": "Claude Monet",
+   "year": "1899",
+   "source": "https://commons.wikimedia.org/wiki/File:Bridge_Over_a_Pond_of_Water_Lilies,_Claude_Monet_1899.jpg",
+   "licence": "Public domain"
+  },
+  "fighters": {
+   "title": "The Battle of San Romano",
+   "artist": "Paolo Uccello",
+   "year": "c. 1438-1440",
+   "source": "https://commons.wikimedia.org/wiki/File:San_Romano_Battle_(Paolo_Uccello,_London)_01.jpg",
+   "licence": "Public domain"
+  },
+  "changing": {
+   "title": "The Birth of Venus",
+   "artist": "Sandro Botticelli",
+   "year": "c. 1485",
+   "source": "https://commons.wikimedia.org/wiki/File:Sandro_Botticelli_-_La_nascita_di_Venere_-_Google_Art_Project_-_edited.jpg",
+   "licence": "Public domain"
+  },
+  "finding": {
+   "title": "The Creation of Adam",
+   "artist": "Michelangelo",
+   "year": "c. 1512",
+   "source": "https://commons.wikimedia.org/wiki/File:%27Adam%27s_Creation_Sistine_Chapel_ceiling%27_by_Michelangelo_JBU33cut.jpg",
+   "licence": "Public domain"
+  },
+  "lowmist": {
+   "title": "The Monk by the Sea",
+   "artist": "Caspar David Friedrich",
+   "year": "1808-1810",
+   "source": "https://commons.wikimedia.org/wiki/File:Caspar_David_Friedrich_-_Der_M%C3%B6nch_am_Meer_-_Google_Art_Project.jpg",
+   "licence": "Public domain"
+  },
+  "passage": {
+   "title": "The Last Supper",
+   "artist": "Leonardo da Vinci",
+   "year": "1495-1498",
+   "source": "https://commons.wikimedia.org/wiki/File:Leonardo_da_Vinci_-_The_Last_Supper_high_res.jpg",
+   "licence": "Public domain"
+  },
+  "skeleton": {
+   "title": "The Triumph of Death",
+   "artist": "Pieter Bruegel the Elder",
+   "year": "c. 1562",
+   "source": "https://commons.wikimedia.org/wiki/File:The_Triumph_of_Death_by_Pieter_Bruegel_the_Elder.jpg",
+   "licence": "Public domain"
+  },
+  "donkey_kong": {
+   "title": "The Night Watch",
+   "artist": "Rembrandt",
+   "year": "1642",
+   "source": "https://commons.wikimedia.org/wiki/File:La_ronda_de_noche,_por_Rembrandt_van_Rijn.jpg",
+   "licence": "Public domain"
+  },
+  "pointer": {
+   "title": "The School of Athens",
+   "artist": "Raphael",
+   "year": "1509-1511",
+   "source": "https://commons.wikimedia.org/wiki/File:%22The_School_of_Athens%22_by_Raffaello_Sanzio_da_Urbino.jpg",
+   "licence": "Public domain"
+  },
+  "pigscene": {
+   "title": "Netherlandish Proverbs",
+   "artist": "Pieter Bruegel the Elder",
+   "year": "1559",
+   "source": "https://commons.wikimedia.org/wiki/File:Pieter_Brueghel_the_Elder_-_The_Dutch_Proverbs_-_Google_Art_Project.jpg",
+   "licence": "Public domain"
+  },
+  "burning_skull": {
+   "title": "The Burning of the Houses of Lords and Commons",
+   "artist": "J. M. W. Turner",
+   "year": "1834-1835",
+   "source": "https://commons.wikimedia.org/wiki/File:Joseph_Mallord_William_Turner,_English_-_The_Burning_of_the_Houses_of_Lords_and_Commons,_October_16,_1834_-_Google_Art_Project.jpg",
+   "licence": "Public domain"
+  },
+  "orb": {
+   "title": "The Ambassadors",
+   "artist": "Hans Holbein the Younger",
+   "year": "1533",
+   "source": "https://commons.wikimedia.org/wiki/File:Hans_Holbein_the_Younger_-_The_Ambassadors_-_Google_Art_Project.jpg",
+   "licence": "Public domain"
+  },
+  "unpacked": {
+   "title": "The Garden of Earthly Delights",
+   "artist": "Hieronymus Bosch",
+   "year": "c. 1490-1510",
+   "source": "https://commons.wikimedia.org/wiki/File:The_Garden_of_Earthly_Delights_by_Bosch_High_Resolution.jpg",
+   "licence": "Public domain"
+  }
+ }
+}

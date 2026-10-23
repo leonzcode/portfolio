@@ -36,12 +36,12 @@
    Lava hurts a cart 4 a tick and sets it alight, a fire block 1 (soul fire
    2); alight it takes 1 a second; water puts it out. 40 damage breaks it.
 --------------------------------------------------------------------------- */
-import { Entity, Living, DEG, wrap } from './entity.js?v=101';
-import { register } from './mobs.js?v=101';
-import { MODELS } from './mobmodels.js?v=101';
-import { addArt } from './mobart.js?v=101';
-import { BLOCKS, B } from '../blocks.js?v=101';
-import { riderDrop } from './boat.js?v=101';
+import { Entity, Living, DEG, wrap } from './entity.js?v=102';
+import { register } from './mobs.js?v=102';
+import { MODELS } from './mobmodels.js?v=102';
+import { addArt } from './mobart.js?v=102';
+import { BLOCKS, B } from '../blocks.js?v=102';
+import { riderDrop } from './boat.js?v=102';
 
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];      // north, east, south, west (as models.js)
 const RAIL = new Uint8Array(4096), POWERED = new Uint8Array(4096), SOURCE = new Uint8Array(4096);
@@ -72,7 +72,8 @@ const cartModel = {
 };
 cartModel.index = { tub: 0 };
 MODELS.minecart = cartModel;
-addArt('minecart', [64, 64], p => {
+// (80 wide: the floor's box, 16 x 2 x 20, lays out 72 pixels across)
+addArt('minecart', [80, 64], p => {
   const iron = 0x8c8c8c, dark = 0x5a5a5a, light = 0xb4b4b4;
   p.box(0, 0, 16, 2, 20, { all: dark, top: 0x6e6e6e }, 0.08);
   p.box(0, 22, 16, 8, 2, { all: iron }, 0.06);

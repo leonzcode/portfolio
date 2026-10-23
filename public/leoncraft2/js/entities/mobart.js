@@ -13,7 +13,7 @@
 
    Also here: the particle sheet (smoke puffs, crits, hearts, flames...).
 --------------------------------------------------------------------------- */
-import { ATLAS } from '../render/entitymesh.js?v=101';
+import { ATLAS } from '../render/entitymesh.js?v=102';
 
 /* ---- a little painting kit ---- */
 function rng(seed) {
@@ -22,9 +22,11 @@ function rng(seed) {
 }
 const hex = c => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
 class Painter {
-  constructor(img, ox, oy, seed) { this.img = img; this.ox = ox; this.oy = oy; this.r = rng(seed); }
+  constructor(img, ox, oy, seed, w = ATLAS, h = ATLAS) { this.img = img; this.ox = ox; this.oy = oy; this.r = rng(seed); this.w = w; this.h = h; this.over = null; }
   px(x, y, c, a = 255) {
     x = Math.floor(x); y = Math.floor(y);
+    // never past its own texture (the atlas is packed tight: a speckle a row over would land on the texture under it)
+    if (x < 0 || y < 0 || x >= this.w || y >= this.h) { const o = this.over || (this.over = [0, 0]); o[0] = Math.max(o[0], x + 1); o[1] = Math.max(o[1], y + 1); return; }
     const X = this.ox + x, Y = this.oy + y;
     if (X < 0 || Y < 0 || X >= ATLAS || Y >= ATLAS) return;
     const o = (Y * ATLAS + X) * 4, d = this.img.data;
@@ -69,18 +71,27 @@ class Painter {
   }
 }
 
-/* ---- where each texture sits: slots of 64 x 64 in the atlas ---- */
+/* ---- where each texture sits in the atlas ----
+   A skyline of 16 pixel columns: each texture goes where its bottom edge would be highest up (the leftmost of those),
+   in the order the textures are painted, so it always comes out the same. (It was a grid of 64 x 64 cells, a tall
+   texture taking every cell of the rows under it: two thirds of the atlas held a quarter of it in pictures, and the
+   paintings at sixty-four pixels a block would not have fitted.) */
 export const SLOTS = {};
-let nextSlot = 0;
+const COL = 16;
+let sky = null;
 function slot(name, w, h) {
-  const per = ATLAS / 64;
-  const tall = Math.ceil(h / 64), wide = Math.ceil(w / 64);
-  // keep big ones on one row and one column of slots
-  while ((nextSlot % per) + wide > per) nextSlot++;
-  const sx = nextSlot % per, sy = Math.floor(nextSlot / per);
-  SLOTS[name] = [sx * 64, sy * 64];
-  nextSlot += wide;
-  if (tall > 1) nextSlot += per * (tall - 1);   // crude, but nothing is drawn over it
+  const cols = ATLAS / COL, n = Math.ceil(w / COL);
+  if (!sky) sky = new Int32Array(cols);
+  let best = 0, bestY = Infinity;
+  for (let x = 0; x + n <= cols; x++) {
+    let y = 0;
+    for (let i = 0; i < n; i++) if (sky[x + i] > y) y = sky[x + i];
+    if (y < bestY) { bestY = y; best = x; }
+  }
+  const top = bestY + Math.ceil(h / COL) * COL;
+  if (top > ATLAS) console.error('mob atlas full at', name);
+  for (let i = 0; i < n; i++) sky[best + i] = top;
+  SLOTS[name] = [best * COL, bestY];
   return SLOTS[name];
 }
 
@@ -396,13 +407,15 @@ let painting = null;               // the one under way: { n, names, i, img, see
 function paintAtlas(ms) {
   const n = Object.keys(SIZES).length;
   // every atlas is packed from its first slot, or later ones run off the edge
-  if (!painting || painting.n !== n) { nextSlot = 0; painting = { n, names: Object.keys(SIZES), i: 0, img: new ImageData(ATLAS, ATLAS), seed: 1 }; }
+  if (!painting || painting.n !== n) { sky = null; painting = { n, names: Object.keys(SIZES), i: 0, img: new ImageData(ATLAS, ATLAS), seed: 1 }; }
   const p = painting, t0 = performance.now();
   while (p.i < p.names.length) {
     const name = p.names[p.i++];
     const [w, h] = SIZES[name];
     const [x, y] = slot(name, w, h);
-    try { ART[name](new Painter(p.img, x, y, 0x9e3779b1 ^ (p.seed++ * 2654435761))); } catch (e) { console.error('mob art', name, e); }
+    const pt = new Painter(p.img, x, y, 0x9e3779b1 ^ (p.seed++ * 2654435761), w, h);
+    try { ART[name](pt); } catch (e) { console.error('mob art', name, e); }
+    if (pt.over) console.warn('mob art drew outside its slot', name, w + 'x' + h, 'reached', pt.over.join('x'));
     if (IMAGES.has(name)) blitImage(p.img, name, IMAGES.get(name));
     if (ms !== undefined && p.i < p.names.length && performance.now() - t0 > ms) return null;
   }
@@ -429,9 +442,11 @@ function blitImage(img, name, src) {
   }
 }
 export function setArtImage(name, src) {
-  if (!SIZES[name]) return false;
+  /* kept even before its texture is registered: the paintings' pictures arrive while the title is up, and the
+     paintings themselves (entities/items2.js) come with the game's parts after it; the atlas is painted again
+     then, with this drawn over it (paintAtlas) */
   IMAGES.set(name, src);
-  if (painted && SLOTS[name]) blitImage(painted.img, name, src);
+  if (SIZES[name] && painted && SLOTS[name]) blitImage(painted.img, name, src);
   return true;
 }
 export const artSize = name => SIZES[name] || null;
