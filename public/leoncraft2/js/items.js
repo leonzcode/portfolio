@@ -17,8 +17,8 @@
    Tool, armour, food and fuel numbers are the Minecraft Wiki's (Java Edition,
    October 2026); the list itself is minecraft-data's (js/itemdata.js).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from './blocks.js?v=101';
-import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=101';
+import { B, BLOCKS, MAX_ID } from './blocks.js?v=102';
+import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=102';
 
 export const ITEM_BASE = MAX_ID;          // 4096: the first id that is not a block
 export const ITEMS = [];
@@ -253,10 +253,12 @@ export const STEW_EFFECTS = {
   open_eyeblossom: ['blindness', 220], closed_eyeblossom: ['nausea', 140],
 };
 /* The paintings, by name, width and height in blocks (the game's placeable
-   ones; each picture is Pixel Perfection CE's or our own, entities/packart.js
-   and items2.js, or the game's from a player's own copy). A painting item may
-   carry one (variant), placed only where it fits, else a random one of the
-   largest that fit. */
+   ones, at the game's sizes; each picture is a famous painting out of
+   copyright, paintingdata.js and textures/famous_paintings.jpg, or the game's
+   from a player's own copy). A painting item may carry one (variant), placed
+   only where it fits, else a random one of the largest that fit. */
+// a painting's picture, in pixels a block (the first Leoncraft's sixty-four; the game draws its own at sixteen)
+export const PAINTING_PX = 64;
 export const PAINTING_VARIANTS = [
   ['kebab', 1, 1], ['aztec', 1, 1], ['alban', 1, 1], ['aztec2', 1, 1], ['bomb', 1, 1], ['plant', 1, 1], ['wasteland', 1, 1], ['meditative', 1, 1],
   ['pool', 2, 1], ['courbet', 2, 1], ['sea', 2, 1], ['sunset', 2, 1], ['creebet', 2, 1],

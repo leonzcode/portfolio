@@ -907,32 +907,8 @@ with open(os.path.join(OUT, 'composed.json'), 'w', encoding='utf-8') as fh:
     json.dump({k: v for k, v in sorted(CUTS.items()) if k in manifest}, fh, separators=(',', ':'))
 
 # ---------------------------------------------------------------- paintings
-# Pixel Perfection CE's own paintings, under the game's names and at its sizes (16 pixels a block). They are the
-# pack's own pictures: a pixel audit against the game's paintings (2026-10-07) found no pixel in common and no
-# likeness in their layout. (Pixel Perfection Legacy's paintings are the game's own, so none of those is used.)
-# Packed into one picture for entities/items2.js; the paintings the pack does not have are drawn by the game.
-PAINT_DIR = os.path.join(TEX, 'painting')
-if os.path.isdir(PAINT_DIR):
-    pics = []
-    for f in sorted(os.listdir(PAINT_DIR)):
-        if f.endswith('.png') and not f.startswith('paintings_'):
-            pics.append((f[:-4], Image.open(os.path.join(PAINT_DIR, f)).convert('RGBA')))
-    pics.sort(key=lambda p: (-p[1].size[1], p[0]))
-    W, x, y, row, where = 256, 0, 0, 0, {}
-    for n, im in pics:
-        w, h = im.size
-        if x + w > W:
-            x, y, row = 0, y + row, 0
-        where[n] = [x, y, w, h]
-        x += w
-        row = max(row, h)
-    sheet = Image.new('RGBA', (W, y + row), (0, 0, 0, 0))
-    for n, im in pics:
-        sheet.paste(im, tuple(where[n][:2]))
-    sheet.save(os.path.join(OUT, 'paintings.png'), optimize=True)
-    with open(os.path.join(OUT, 'paintings.json'), 'w', encoding='utf-8') as fh:
-        json.dump(where, fh, separators=(',', ':'))
-    print('paintings:', len(where))
+# The paintings are famous paintings out of copyright now (tools/leoncraft2/build_paintings.py writes
+# famous_paintings.jpg); Pixel Perfection CE's own paintings are no longer packed.
 # the beacon's beam (Pixel Perfection CE's; checked against the game's: no pixel in common), for js/sim/beams.js
 if os.path.exists(os.path.join(ENTITY, 'beacon_beam.png')):
     Image.open(os.path.join(ENTITY, 'beacon_beam.png')).convert('RGBA').save(os.path.join(OUT, 'beacon_beam.png'), optimize=True)

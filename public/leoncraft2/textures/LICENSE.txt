@@ -36,12 +36,11 @@ Changes made for Leoncraft 2:
   and composed into 16x16 layers (chest, trapped chest, ender chest, the 16
   beds and shulker boxes, eight sign woods, five mob heads); the player head
   is taken from the game's own original skin (below);
-- paintings.png holds Pixel Perfection CE's own paintings (the 26 older
-  ones, under the game's names and at its sizes) packed into one picture;
-  checked pixel by pixel against the game's paintings (October 2026), they
-  share none of its pixels. (Pixel Perfection Legacy's paintings are copies
-  of the game's, so none of those is used.) The newer paintings are drawn by
-  Leoncraft's own code;
+- famous_paintings.jpg is not from a pack: every painting shows a famous
+  painting in the public domain, photographed, from Wikimedia Commons, at the
+  game's sizes for its paintings; PAINTINGS.txt lists each one with its page
+  there. (No pack's paintings are used: Pixel Perfection Legacy's are copies
+  of the game's.)
 - beacon_beam.png, the beacon's beam, is Pixel Perfection CE's own
   (textures/entity/beacon_beam.png in that pack); checked pixel by pixel
   against the game's beam (October 2026), it shares none of its pixels;

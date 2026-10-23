@@ -15,9 +15,9 @@
    the cell's own (lightNear), with no corner shading; for the frame or two it
    shows, that is all the difference there is.
 --------------------------------------------------------------------------- */
-import { BLOCKS } from './blocks.js?v=101';
-import { blockGeometry } from './render/blockmesh.js?v=101';
-import { lightNear } from './lightlevel.js?v=101';
+import { BLOCKS } from './blocks.js?v=102';
+import { blockGeometry } from './render/blockmesh.js?v=102';
+import { lightNear } from './lightlevel.js?v=102';
 const THREE = window.THREE;
 const SHAPES = new Set(['cube', 'slab', 'stairs']);
 const MAX = 256, LIFE = 4000;

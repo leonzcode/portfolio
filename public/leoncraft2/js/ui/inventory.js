@@ -34,17 +34,18 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=101';
-import { Screen, TextField, WHITE } from './gui.js?v=101';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=101';
-import { matchGrid, consumeGrid } from '../crafting.js?v=101';
-import { enchName, ENCH } from '../enchanting.js?v=101';
-import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=101';
-import { patternLines, drawBannerIcon } from '../banners.js?v=101';
-import { mapLines } from '../maps.js?v=101';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=101';
-import { dialPicture, usePicture } from '../dials.js?v=101';
-import { RecipeBook } from './recipebook.js?v=101';
+import { BLOCKS, B } from '../blocks.js?v=102';
+import { Screen, TextField, WHITE } from './gui.js?v=102';
+import { PAINTING_ART } from '../paintingdata.js?v=102';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=102';
+import { matchGrid, consumeGrid } from '../crafting.js?v=102';
+import { enchName, ENCH } from '../enchanting.js?v=102';
+import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=102';
+import { patternLines, drawBannerIcon } from '../banners.js?v=102';
+import { mapLines } from '../maps.js?v=102';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=102';
+import { dialPicture, usePicture } from '../dials.js?v=102';
+import { RecipeBook } from './recipebook.js?v=102';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -532,7 +533,10 @@ export function stackTooltip(st, advanced, creative) {
   if (it && it.name === 'ominous_bottle') lines.push('§9Bad Omen' + ((st.amp | 0) > 0 ? ' ' + ['II', 'III', 'IV', 'V'][(st.amp | 0) - 1] : '') + ' (01:40:00)');
   if (it && it.name === 'painting') {
     const v = st.variant && PAINTING_VARIANTS.find(p => p[0] === st.variant);
-    if (v) lines.push('§e' + title(v[0]), '§f' + v[1] + 'x' + v[2]);
+    // the famous painting it shows (paintingdata.js), as the game gives a painting's title and author
+    const art = v && PAINTING_ART[v[0]];
+    if (art) lines.push('§e' + art[0], '§7' + art[1] + ', ' + art[2], '§f' + v[1] + 'x' + v[2]);
+    else if (v) lines.push('§e' + title(v[0]), '§f' + v[1] + 'x' + v[2]);
     else lines.push('§7Random variant');
   }
   const fwLines = fw => {
