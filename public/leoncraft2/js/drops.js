@@ -39,15 +39,15 @@
      dropItem(world, x, y, z, 'diamond', 2)     from anywhere (mob loot...)
      giveXp(x, y, z, 7)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=103';
-import { collisionBoxes } from './models.js?v=103';
-import { LEVEL, FALLING } from './world-const.js?v=103';
-import { lightNear } from './lightlevel.js?v=103';
-import { glints } from './render/armor.js?v=103';
-import { setGlint } from './render/glint.js?v=103';
-import { DIMS } from './dims.js?v=103';
-import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=103';
-import { blockGeometry, intAttribute } from './render/blockmesh.js?v=103';
+import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=104';
+import { collisionBoxes } from './models.js?v=104';
+import { LEVEL, FALLING } from './world-const.js?v=104';
+import { lightNear } from './lightlevel.js?v=104';
+import { glints } from './render/armor.js?v=104';
+import { setGlint } from './render/glint.js?v=104';
+import { DIMS } from './dims.js?v=104';
+import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=104';
+import { blockGeometry, intAttribute } from './render/blockmesh.js?v=104';
 const THREE = window.THREE;
 
 const ITEM_W = 0.125, ITEM_H = 0.25;           // half width, height
@@ -348,12 +348,27 @@ export class Drops {
     if (d < 1e-6) return;
     e.vel.x += nx / d * 0.03; e.vel.z += nz / d * 0.03;
   }
-  // stuck inside a block (it was placed on top of us): out the top
-  _unstick(e) {
-    const w = this.world, x = Math.floor(e.pos.x), y = Math.floor(e.pos.y + 0.1), z = Math.floor(e.pos.z);
-    const b = w.get(x, y, z);
-    if (b && SOLID[b] && BLOCKS[b].shape === 'cube') { e.vel.y = 0.1; e.pos.y = Math.max(e.pos.y, y + 1 - 0.05); return true; }
-    return false;
+  /* Stuck inside a whole block (one was put down on it, or it went into a wall): out through the nearest side whose
+     neighbour is not a whole block, north, south, west, east or up (never down; up when every side is shut), as the
+     game's moveTowardsClosestSpace picks it. It always went out the top, so an item inside a wall rose through it a
+     block a tick and came out on top of the wall. */
+  _unstick(e, hw = ITEM_W, h = ITEM_H) {
+    const w = this.world, p = e.pos, my = p.y + h / 2, x = Math.floor(p.x), y = Math.floor(my), z = Math.floor(p.z);
+    const whole = b => !!b && !!SOLID[b] && BLOCKS[b].shape === 'cube';
+    if (!whole(w.get(x, y, z))) return false;
+    const fx = p.x - x, fz = p.z - z;
+    let side = 4, best = Infinity;
+    const ways = [[0, -1, fz], [0, 1, 1 - fz], [-1, 0, fx], [1, 0, 1 - fx]];
+    for (let k = 0; k < 4; k++) {
+      const [dx, dz, d] = ways[k];
+      if (d < best && !whole(w.get(x + dx, y, z + dz))) { best = d; side = k; }
+    }
+    if (side === 4 || (1 - (my - y) < best && !whole(w.get(x, y + 1, z)))) { e.vel.y = 0.1; p.y = Math.max(p.y, y + 1 - 0.05); return true; }
+    // (just past that face, with a little push out of it)
+    const [dx, dz] = ways[side];
+    if (dx) { p.x = dx < 0 ? x - hw - 0.01 : x + 1 + hw + 0.01; e.vel.x = dx * 0.1; }
+    else { p.z = dz < 0 ? z - hw - 0.01 : z + 1 + hw + 0.01; e.vel.z = dz * 0.1; }
+    return true;
   }
   /* Water (1) or lava (2) round the box, measured from the fluid's surface
      as the player's is (player.js): a still block is 8/9 deep. Sets e.depth,
@@ -514,7 +529,7 @@ export class Drops {
       if (fl === 1 && o.depth > ORB_H * 0.85) { o.vel.x *= 0.99; o.vel.z *= 0.99; if (o.vel.y < 0.06) o.vel.y += 5e-4; }
       else o.vel.y -= 0.03;
       if (fl === 2) { o.vel.set((Math.random() - Math.random()) * 0.2, 0.2, (Math.random() - Math.random()) * 0.2); }
-      this._unstick(o);
+      this._unstick(o, ORB_W / 2, ORB_H);
       if (this.others && (o.age % 20 === 1 || o.follow)) {
         /* On a server it goes to the player it already follows while they are
            within 8 blocks, or else the nearest one within 8 (the game's

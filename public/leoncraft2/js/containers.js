@@ -38,12 +38,12 @@
    pair seen from behind it (its partner is clockwise of its facing), 2 the
    right (partner anticlockwise; this one holds the top rows), 3 single.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, OPAQUE } from './blocks.js?v=103';
-import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=103';
-import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=103';
-import { cookingRecipe, remainderOf } from './crafting.js?v=103';
-import { fire } from './dispense.js?v=103';
-import { MAPS, fillPreview } from './maps.js?v=103';
+import { B, BLOCKS, OPAQUE } from './blocks.js?v=104';
+import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=104';
+import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=104';
+import { cookingRecipe, remainderOf } from './crafting.js?v=104';
+import { fire } from './dispense.js?v=104';
+import { MAPS, fillPreview } from './maps.js?v=104';
 
 export const SIZES = { chest: 27, trapped_chest: 27, copper_chest: 27, barrel: 27, shulker_box: 27, furnace: 3, smoker: 3, blast_furnace: 3,
   dispenser: 9, dropper: 9, crafter: 9, hopper: 5, brewing_stand: 5 };
