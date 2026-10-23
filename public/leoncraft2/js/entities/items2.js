@@ -27,18 +27,18 @@
    useExtra(manager, itemName, target, take, build) is the manager's last
    try at a right click (entities/manager.js useHeld).
 --------------------------------------------------------------------------- */
-import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=103';
-import { Projectile } from './projectiles.js?v=103';
-import { register, TYPES } from './mobs.js?v=103';
-import { model } from './mobs2.js?v=103';
-import { addArt } from './mobart.js?v=103';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=103';
-import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, PAINTING_PX, maxDamage } from '../items.js?v=103';
-import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=103';
-import { LegacyRandom } from '../gen/random.js?v=103';
-import { fireworkColour } from '../crafting.js?v=103';
-import { rayBox } from './terrain.js?v=103';
-import { lootStack } from '../containers.js?v=103';
+import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=104';
+import { Projectile } from './projectiles.js?v=104';
+import { register, TYPES } from './mobs.js?v=104';
+import { model } from './mobs2.js?v=104';
+import { addArt } from './mobart.js?v=104';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=104';
+import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS, PAINTING_PX, maxDamage } from '../items.js?v=104';
+import { ENCH, ORDER, isPrimary, selectEnchants } from '../enchanting.js?v=104';
+import { LegacyRandom } from '../gen/random.js?v=104';
+import { fireworkColour } from '../crafting.js?v=104';
+import { rayBox } from './terrain.js?v=104';
+import { lootStack } from '../containers.js?v=104';
 const THREE = window.THREE;
 
 const PI = Math.PI;
@@ -495,6 +495,14 @@ for (const s of sizes) {
 }
 addArt('painting_back', [64, 64], p => { p.fill(0, 0, 64, 64, 0x8a6a40, 0.1); for (let y = 0; y < 64; y += 4) p.fill(0, y, 64, 1, 0x6a4e2e); });
 for (const [n, w, h] of PAINTINGS) addArt('painting_' + n, [w * 16 * PAINT_RES, h * 16 * PAINT_RES], p => paintPicture(scaled(p), n, w, h));
+/* What a painting hangs on: a solid block, or a sign (standing, on a wall, hanging; not a banner). The game counts its
+   signs as solid for this (forceSolidOn), which keeps the old secret door working: signs in a doorway, a painting hung
+   on them, and you walk through the picture. (Hanging signs are let in here too; whether the game's are, we did not check.) */
+export function holdsPainting(b) {
+  if (SOLID[b]) return true;
+  const d = BLOCKS[b];
+  return !!d && (d.shape === 'sign' || d.shape === 'wall_sign') && !d.banner;
+}
 export class Painting extends Entity {
   static W = 1; static H = 1; static TEX = 'painting_back'; static NO_PUSH = true; static SHADOW = 0;
   constructor(m, type) { super(m, type); this.variant = 'kebab'; this.face = [0, 0, -1]; this.block = null; this.gravity = 0; this.checkT = 0; }
@@ -523,14 +531,21 @@ export class Painting extends Entity {
       const [x, y, z] = this.block;
       // (a wall in a chunk not loaded yet is not gone: one come in by a teleport, or handed over by a server, waits for it)
       if (this.m.t.loaded && !this.m.t.loaded(x, z)) return;
-      if (!SOLID[this.m.t.get(x, y, z)]) { this.m.dropAt(this, 'painting', 1); this.remove(); }
+      if (!holdsPainting(this.m.t.get(x, y, z))) { this.drop(); this.remove(); }
     }
   }
   hurt(amount, source) {
     if (this.removed) return false;
-    if (this.m.mode !== 'creative' || !(source && source.player)) this.m.dropAt(this, 'painting', 1);
+    if (this.m.mode !== 'creative' || !(source && source.player)) this.drop();
     this.remove();
     return true;
+  }
+  /* The item comes out 0.15 in front of the picture, as the game's hanging things drop theirs. From the picture's own
+     place, a sixteenth off the wall, a quarter of the item's box was in the wall, its hop often carried it right in
+     (23 breaks of 40 in a test), and it came out on top of the wall (drops.js _unstick only went up), out of sight. */
+  drop() {
+    const f = this.face || [0, 0, 0];
+    this.m.dropItemAt(this.pos.x + f[0] * 0.15, this.pos.y + Math.min(this.h, 1) * 0.5, this.pos.z + f[2] * 0.15, 'painting', 1, false, true);
   }
   layers(out) { out.push(['painting_' + this.size + '_face', 'painting_' + this.variant, null, false, true]); }
   toJSON() { const o = super.toJSON(); o.vr = this.variant; o.fc = this.face; o.bl = this.block; return o; }
@@ -538,13 +553,13 @@ export class Painting extends Entity {
 }
 Painting.MODEL = 'painting_1x1';
 register('painting', Painting);
-// the biggest pictures that fit on the wall at (x, y, z) facing out of face: a solid wall behind, nothing in front
+// the biggest pictures that fit on the wall at (x, y, z) facing out of face: a solid wall (or signs) behind, nothing in front
 function paintingFits(m, x, y, z, face, w, h) {
   const T = m.t, rx = -face[2], rz = face[0];
   const x0 = -Math.floor((w - 1) / 2), y0 = -Math.floor((h - 1) / 2);
   for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) {
     const ax = x + rx * (x0 + i), ay = y + y0 + j, az = z + rz * (x0 + i);
-    if (!SOLID[T.get(ax, ay, az)]) return false;
+    if (!holdsPainting(T.get(ax, ay, az))) return false;
     const b = T.get(ax + face[0], ay, az + face[2]);
     if (b && (SOLID[b] || FLUID[b])) return false;
   }
@@ -575,7 +590,7 @@ const pickW = list => { let t = 0; for (const [, w] of list) t += w; let r = R()
 // the enchantments random loot may carry (the table's and the treasure ones), in the game's order
 const ON_RANDOM_LOOT = ORDER.concat(['binding_curse', 'vanishing_curse', 'frost_walker', 'mending']);
 const BIOME_NAMES = [];
-import('../biomes.js?v=103').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
+import('../biomes.js?v=104').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
 export class FishingBobber extends Projectile {
   static W = 0.25; static H = 0.25; static MODEL = 'bobber'; static TEX = 'bobber';
   constructor(m, type) {

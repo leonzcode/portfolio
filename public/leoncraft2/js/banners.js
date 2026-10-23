@@ -13,8 +13,8 @@
    creeper's face, a skull, a flower, a globe...). Ten need a banner pattern
    item in the loom; the rest need only a dye.
 --------------------------------------------------------------------------- */
-import { ITEMS, I } from './items.js?v=103';
-import { dyeColour } from './crafting.js?v=103';
+import { ITEMS, I } from './items.js?v=104';
+import { dyeColour } from './crafting.js?v=104';
 
 export const FW = 20, FH = 40;
 export const COLOURS = ['white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink', 'gray', 'light_gray', 'cyan', 'purple', 'blue', 'brown', 'green', 'red', 'black'];

@@ -18,9 +18,9 @@
    Nothing here does anything but change Options; settings.js puts each
    change into effect at once, while you play.
 --------------------------------------------------------------------------- */
-import { Button, Slider, CycleButton, WidgetRow, OptionsListScreen, onOff, WHITE } from './gui.js?v=103';
-import { SHADER_LEVELS } from '../render/looks.js?v=103';
-import { MinimapSettingsScreen } from './minimap.js?v=103';
+import { Button, Slider, CycleButton, WidgetRow, OptionsListScreen, onOff, WHITE } from './gui.js?v=104';
+import { SHADER_LEVELS } from '../render/looks.js?v=104';
+import { MinimapSettingsScreen } from './minimap.js?v=104';
 
 /* ------------------------------ helpers ------------------------------ */
 

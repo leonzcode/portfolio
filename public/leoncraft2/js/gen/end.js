@@ -30,13 +30,13 @@
    The obsidian platform, the gateways, the crystals and the dragon belong to
    the fight (js/dim/endfight.js), not to the terrain.
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=103';
-import { CH, H, Y0, VOL, idx } from '../world-const.js?v=103';
-import { BIO } from '../biomes.js?v=103';
-import { rng, mix32, NormalNoise, hash3 } from '../noise.js?v=103';
-import { Simplex, Blended } from './noise.js?v=103';
-import { LegacyRandom, seedLong } from './random.js?v=103';
-import { BlendedNoise, yGradient, squeeze } from './blended.js?v=103';
+import { B } from '../blocks.js?v=104';
+import { CH, H, Y0, VOL, idx } from '../world-const.js?v=104';
+import { BIO } from '../biomes.js?v=104';
+import { rng, mix32, NormalNoise, hash3 } from '../noise.js?v=104';
+import { Simplex, Blended } from './noise.js?v=104';
+import { LegacyRandom, seedLong } from './random.js?v=104';
+import { BlendedNoise, yGradient, squeeze } from './blended.js?v=104';
 
 const I = y => y - Y0;
 const lerp = (a, b, t) => a + (b - a) * t;
