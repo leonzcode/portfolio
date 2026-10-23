@@ -16,13 +16,13 @@
    is pluggable (makeSource): with the vanilla generator plugged in, the
    answers are the real game's.
 --------------------------------------------------------------------------- */
-import { SETS, BIOMES_OF, STRONGHOLD_BIASED, MONUMENT_SURROUNDING, SET_OF, FAMILY, potentialChunk, isStructureChunk, heightOf, SEA_LEVEL } from './placement.js?v=102';
-import { JRand, toLong, largeFeature } from './rand.js?v=102';
-import { strongholdPieces } from './stronghold.js?v=102';
-import { fortressPieces } from './fortress.js?v=102';
-import { mineshaftPieces } from './mineshaft.js?v=102';
-import { ChunkWriter } from './piece.js?v=102';
-import { PLANS } from './builds/index.js?v=102';
+import { SETS, BIOMES_OF, STRONGHOLD_BIASED, MONUMENT_SURROUNDING, SET_OF, FAMILY, potentialChunk, isStructureChunk, heightOf, SEA_LEVEL } from './placement.js?v=103';
+import { JRand, toLong, largeFeature } from './rand.js?v=103';
+import { strongholdPieces } from './stronghold.js?v=103';
+import { fortressPieces } from './fortress.js?v=103';
+import { mineshaftPieces } from './mineshaft.js?v=103';
+import { ChunkWriter } from './piece.js?v=103';
+import { PLANS } from './builds/index.js?v=103';
 
 // how far (in chunks) a structure's pieces can reach from its start chunk
 const REACH = {

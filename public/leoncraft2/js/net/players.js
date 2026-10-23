@@ -24,14 +24,16 @@
    an admin account, [OWNER] in gold for the server's owner (rankTag). The
    server decides it and sends it with the player (lc2.js tagOf), so nobody
    can give themselves one; it shows over their head, in the Tab list and in
-   their chat lines.
+   their chat lines. In a Leonpixel game with a tag of its own (a team's
+   letter, [BUILDER]) the role still shows in the Tab list and in chat, and
+   the game's tag alone over the head (headTag).
 --------------------------------------------------------------------------- */
-import { Avatar, invisLook } from '../render/avatar.js?v=102';
-import { pieceLook, armorSheet } from '../render/armor.js?v=102';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=102';
-import { DRAW, I, stackFromJSON } from '../items.js?v=102';
-import { B, BLOCKS } from '../blocks.js?v=102';
-import { walkers } from '../render/realism.js?v=102';
+import { Avatar, invisLook } from '../render/avatar.js?v=103';
+import { pieceLook, armorSheet } from '../render/armor.js?v=103';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=103';
+import { DRAW, I, stackFromJSON } from '../items.js?v=103';
+import { B, BLOCKS } from '../blocks.js?v=103';
+import { walkers } from '../render/realism.js?v=103';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -53,10 +55,19 @@ function titleTag(key) {
   const name = TITLE_NAMES[m[1]] || m[1].replace(/_/g, ' ').replace(/\b[a-z]/g, c => c.toUpperCase()), c = m[2] === '1' ? '§6' : m[2] === '2' ? '§h' : '§g';
   return c + '[' + name + ' #' + m[2] + '] §r';
 }
-export const rankTag = tag => {
-  if (typeof tag === 'string' && tag.indexOf('|') >= 0) { const i = tag.indexOf('|'); return titleTag(tag.slice(i + 1)) + baseTag(tag.slice(0, i)); }
-  return baseTag(tag);
-};
+/* A tag may join a Leonpixel game's (a team's letter, builder) and the role with a "+" ("team:c:R+admin", lc2.js
+   tagOf): the Tab list and chat show both, the role first (a team's letter colours the name after it); over a head
+   the game's alone, as before (headTag). */
+const GAME_TAG = t => t === 'builder' || /^team:/.test(t);
+function split(tag) {
+  let base = typeof tag === 'string' ? tag : '', title = '';
+  const i = base.indexOf('|');
+  if (i >= 0) { title = titleTag(base.slice(i + 1)); base = base.slice(0, i); }
+  const parts = base.split('+').filter(Boolean);
+  return { title, roles: parts.filter(t => !GAME_TAG(t)), game: parts.filter(GAME_TAG) };
+}
+export const rankTag = tag => { const t = split(tag); return t.title + t.roles.map(baseTag).join('') + t.game.map(baseTag).join(''); };
+export const headTag = tag => { const t = split(tag); return t.title + (t.game.length ? t.game : t.roles).map(baseTag).join(''); };
 
 // the flags each position carries (net/net.js sends them)
 export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024, SPEC: 2048, INVIS: 4096, FIRE: 8192, SPIN: 16384, GLOW: 32768 };
@@ -181,7 +192,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=102', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=103', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
     av.setCape(r.capeUrl || '').catch(() => {});
   }
@@ -204,7 +215,7 @@ export class RemotePlayers {
   /* ---- the name over their head ---- */
   tagOf(r) {
     if (r.tag) return r.tag;
-    const f = this.font, name = rankTag(r.rank) + (r.name || '');
+    const f = this.font, name = headTag(r.rank) + (r.name || '');
     const w = (f ? f.width(name) : name.length * 6) + 2, h = 10, k = 4;
     const t = document.createElement('canvas'); t.width = w; t.height = h;
     if (f) f.draw(t.getContext('2d'), name, 1, 1, 0xFFFFFF, false);
@@ -414,7 +425,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=102', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=103', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;

@@ -27,7 +27,7 @@
    "while trying to escape" form; a fall longer than 5 blocks says where it
    started (a ladder, vines, scaffolding) or "fell from a high place".
 --------------------------------------------------------------------------- */
-import { Account } from './net/account.js?v=102';
+import { Account } from './net/account.js?v=103';
 
 const D = (exh, msg, o) => Object.assign({ exh, msg, armor: true, effects: true, resistance: true, enchant: true, invul: false, scale: 'mob' }, o || {});
 const PASS = { armor: false };
