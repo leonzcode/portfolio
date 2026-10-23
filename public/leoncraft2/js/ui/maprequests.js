@@ -13,8 +13,8 @@
    editor on now, with who and when it last changed; Spectate looks round
    it without changing anything.
 --------------------------------------------------------------------------- */
-import { Screen, Button, WHITE, GREY } from './gui.js?v=102';
-import { mapRequests, mapReview } from '../net/net.js?v=102';
+import { Screen, Button, WHITE, GREY } from './gui.js?v=103';
+import { mapRequests, mapReview } from '../net/net.js?v=103';
 
 const PER_PAGE = 6;
 const STATUS = { draft: '§7Draft', pending: '§eWaiting', approved: '§aApproved', denied: '§cDenied' };

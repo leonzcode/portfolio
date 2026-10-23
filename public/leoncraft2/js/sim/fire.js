@@ -21,8 +21,8 @@
    it does nothing, as in the game. It lights TNT; campfires and candles
    are details.js's, portals dim/realms.js's.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=102';
-import { catchOf, burnOf } from '../flame.js?v=102';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=103';
+import { catchOf, burnOf } from '../flame.js?v=103';
 
 const RI = (s, n) => Math.floor(s.rng() * n);
 const NB6 = [[1, 0, 0], [-1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1]];
