@@ -28,12 +28,12 @@
    letter, [BUILDER]) the role still shows in the Tab list and in chat, and
    the game's tag alone over the head (headTag).
 --------------------------------------------------------------------------- */
-import { Avatar, invisLook } from '../render/avatar.js?v=108';
-import { pieceLook, armorSheet } from '../render/armor.js?v=108';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=108';
-import { DRAW, I, stackFromJSON } from '../items.js?v=108';
-import { B, BLOCKS } from '../blocks.js?v=108';
-import { walkers } from '../render/realism.js?v=108';
+import { Avatar, invisLook } from '../render/avatar.js?v=109';
+import { pieceLook, armorSheet } from '../render/armor.js?v=109';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=109';
+import { DRAW, I, stackFromJSON } from '../items.js?v=109';
+import { B, BLOCKS } from '../blocks.js?v=109';
+import { walkers } from '../render/realism.js?v=109';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -192,7 +192,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=108', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=109', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
     av.setCape(r.capeUrl || '').catch(() => {});
   }
@@ -425,7 +425,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=108', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=109', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;

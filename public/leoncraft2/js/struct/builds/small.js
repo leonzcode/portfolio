@@ -34,9 +34,9 @@
    Abandoned camps (26.x): a wool tent in the biome's colour, its wood for
    the logs and benches, a campfire, a bedroll, and a chest or barrel.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=108';
-import { footprint, surfacePrint, door, bed, torch, make, rng, weather, DX, DZ } from './util.js?v=108';
-import { blockPosLong } from '../rand.js?v=108';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=109';
+import { footprint, surfacePrint, door, bed, torch, make, rng, weather, DX, DZ } from './util.js?v=109';
+import { blockPosLong } from '../rand.js?v=109';
 
 export const PLANS = {};
 

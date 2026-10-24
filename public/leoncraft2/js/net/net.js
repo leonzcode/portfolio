@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=108';
-import { idx, H } from '../world-const.js?v=108';
-import { DIMS, DIM_IDS } from '../dims.js?v=108';
-import { Save } from '../save.js?v=108';
-import { itemName, stackToJSON, stackFromJSON, maxStack } from '../items.js?v=108';
-import { glints } from '../render/armor.js?v=108';
-import { containerKind } from '../containers.js?v=108';
-import { getSkinSettings } from '../render/avatar.js?v=108';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=108';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=108';
-import { Y0 } from '../world-const.js?v=108';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=108';
-import { Projectile } from '../entities/projectiles.js?v=108';
-import { Combat } from '../combat/combat.js?v=108';
-import { Vehicles } from './vehicles.js?v=108';
-import { Mobs, Orbs } from './mobs.js?v=108';
-import { Events } from './events.js?v=108';
-import { EndSync } from './endfight.js?v=108';
-import { Hub } from './hub.js?v=108';
-import { Account, wsBase, httpBase } from './account.js?v=108';
-import { rankTag } from './players.js?v=108';
+import { B, BLOCKS } from '../blocks.js?v=109';
+import { idx, H } from '../world-const.js?v=109';
+import { DIMS, DIM_IDS } from '../dims.js?v=109';
+import { Save } from '../save.js?v=109';
+import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=109';
+import { glints } from '../render/armor.js?v=109';
+import { containerKind } from '../containers.js?v=109';
+import { getSkinSettings } from '../render/avatar.js?v=109';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=109';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=109';
+import { Y0 } from '../world-const.js?v=109';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=109';
+import { Projectile } from '../entities/projectiles.js?v=109';
+import { Combat } from '../combat/combat.js?v=109';
+import { Vehicles } from './vehicles.js?v=109';
+import { Mobs, Orbs } from './mobs.js?v=109';
+import { Events } from './events.js?v=109';
+import { EndSync } from './endfight.js?v=109';
+import { Hub } from './hub.js?v=109';
+import { Account, wsBase, httpBase } from './account.js?v=109';
+import { rankTag } from './players.js?v=109';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -473,6 +473,9 @@ export class Net {
     this.pending = new Map();        // "d:x,y,z" (or "c"/"t" + d:x,y,z for chests and signs) -> { s, prev }
     this.outB = [[], [], []];        // blocks to send, per dimension
     this.outC = new Map();           // "d:x,y,z" -> [d, container or null]
+    this.ctMine = new Map();         // "d:x,y,z" -> { hd, s }: what your hands moved in a container, until the server takes it
+    this.handOut = new Map();        // "d:x,y,z" -> Map(item key -> count): what your hands took out (minus what they put in) this frame
+    this.handSnap = new Map();       // container record -> its tally at the end of the last tick, for those a screen shows
     this.outT = new Map();           // "d:x,y,z" -> [d, detail entry or null]
     this.outFx = [];                 // blocks you broke by hand, for their pieces on the others' screens
     this.items = [new Map(), new Map(), new Map()];   // the items lying about, per dimension: number -> record
@@ -710,7 +713,7 @@ export class Net {
          at the next save, and the page connects again by itself once the line goes (lost) */
       case 'restart':
         this.restarting = true;
-        if (this.ctx && this.ctx.chat) this.ctx.chat.add('§eThe server is restarting for an update. You will be connected again in a few seconds.', 0xFFFFFF);
+        if (this.ctx && this.ctx.chat) this.ctx.chat.add('§eLeon has updated the game! §7The server is restarting: you will be back in a few seconds.', 0xFFFFFF);
         if (this.game && this.game.ready) this.quickSave(true);
         return;
       case 'fx': if (this.game && this.game.ready) this.effects(m); return;
@@ -791,8 +794,26 @@ export class Net {
     const C = g.containers;
     if (C && C !== this.hc) {
       this.hc = C;
-      const changed = C.changed, remove = C.remove;
-      C.changed = function (c) { changed.call(this, c); if (!net.applying && c) net.queueC(c.x, c.y, c.z, c); };
+      const changed = C.changed, remove = C.remove, tick = C.tick;
+      C.changed = function (c) {
+        changed.call(this, c);
+        if (net.applying || !c) return;
+        if (this.byHand > 0) net.handMoved(c);
+        net.queueC(c.x, c.y, c.z, c, this.byHand > 0);
+      };
+      /* A hopper moves things on one page only, the one whose chunk it is (the player nearest): run on every page
+         near it, a page a moment behind moved what another had already moved, and a hopper's record going from
+         empty to holding one item and back to empty looked unchanged to the server's check (ctClash), so the item
+         came out twice. */
+      const hopperTick = C.hopperTick;
+      C.hopperTick = function (h) { return net.ownsAt(h.x, h.z) ? hopperTick.call(this, h) : false; };
+      // (what each container an open screen shows held once a tick's furnaces and hoppers are done)
+      C.tick = function () {
+        const r = tick.apply(this, arguments), snap = new Map();
+        for (const s of net.ctx.gui.stack) for (const c of s.records || []) snap.set(c, tallyStacks(c.slots));
+        net.handSnap = snap;
+        return r;
+      };
       C.remove = function (x, y, z) { const out = remove.call(this, x, y, z); if (!net.applying) net.queueC(x, y, z, null); return out; };
     }
     const D = g.details;
@@ -919,6 +940,8 @@ export class Net {
       if (!s || s.d !== D || (s.f & F.DEAD)) continue;
       const d2 = (s.x - mx) ** 2 + (s.z - mz) ** 2;
       if ((d2 < mine || (d2 === mine && r.id < this.id)) && d2 < 128 * 128) return false;
+      // (joined hidden, nobody else knows you are there to leave it to you: anyone near has it)
+      if (this.hidden && d2 < 128 * 128) return false;
     }
     return true;
   }
@@ -1192,9 +1215,9 @@ export class Net {
     this.outB[d].push(x, y, z, name, m & 255);
     if (w.urgent && !this.flushSoon) { this.flushSoon = true; queueMicrotask(() => { this.flushSoon = false; if (this.ws && this.game) this.flush(); }); }
   }
-  queueC(x, y, z, c) {
-    const d = dimCode(this.game.dim), k = d + ':' + key3(x, y, z);
-    this.outC.set(k, [d, x, y, z, c]);
+  queueC(x, y, z, c, hand) {
+    const d = dimCode(this.game.dim), k = d + ':' + key3(x, y, z), was = this.outC.get(k);
+    this.outC.set(k, [d, x, y, z, c, !!hand || !!(was && was[5])]);
     this.pending.set('c' + k, { s: this.seq + 1 });
   }
   queueT(x, y, z, e) {
@@ -1216,10 +1239,19 @@ export class Net {
       for (let i = 0; i < e.length; i += 5 * 8192) msgs.push({ t: 'b', d, e: e.slice(i, i + 5 * 8192) });
       this.outB[d] = [];
     }
-    for (const [, [d, x, y, z, c]] of this.outC) {
-      const o = c ? packContainer(c) : null, k = key3(x, y, z);
+    for (const [, [d, x, y, z, c, hand]] of this.outC) {
+      const o = c ? packContainer(c) : null, k = key3(x, y, z), prev = this.ct[d].get(k);
       if (o) this.ct[d].set(k, o); else this.ct[d].delete(k);
-      msgs.push({ t: 'ct', d, p: [x, y, z], o });
+      /* (with the check of what it was made from, the record as this page last had it: the server keeps a change
+         only if that is what it keeps now, mlhub lc2.js ctClash; one made by hand is remembered until it is taken,
+         to be undone if it is not) */
+      const msg = { t: 'ct', d, p: [x, y, z], o, b: prev ? recHash(prev) : '' }, moved = this.handOut.get(d + ':' + k);
+      this.handOut.delete(d + ':' + k);
+      if (hand && moved) {
+        const hd = [...moved].filter(e => e[1]);
+        if (hd.length) { msg.h = hd; this.ctMine.set(d + ':' + k, { hd, s }); }
+      }
+      msgs.push(msg);
     }
     this.outC.clear();
     for (const [, [d, x, y, z, e]] of this.outT) {
@@ -1329,9 +1361,11 @@ export class Net {
     const g = this.game;
     switch (m.t) {
       case 'b': this.stats.gotB += m.e.length / 5; this.blocks(m.d, m.e); return;
-      case 'ack': for (const [k, p] of this.pending) if (p.s <= m.s) this.pending.delete(k); return;
+      case 'ack': for (const [k, p] of this.pending) if (p.s <= m.s) this.pending.delete(k); for (const [k, p] of this.ctMine) if (p.s <= m.s) this.ctMine.delete(k); return;
       case 'rej': this.rejected(m.d, m.e); return;
-      case 'ct': this.container(m.d, m.p, m.o); return;
+      case 'ct': this.container(m.d, m.p, m.o, m.gone || m.clash); return;
+      // a change of yours by hand that was lost: the chest was destroyed from how it was before it (the server's ctGone)
+      case 'ctundo': this.undoHand(m.hd); return;
       case 'dt': this.detail(m.d, m.p, m.o); return;
       case 'chat':
         if (m.system) this.ctx.chat.add(m.text, m.colour !== undefined ? m.colour : 0xFFFF55);
@@ -1585,6 +1619,9 @@ export class Net {
       if (b === undefined || y < 0 || y >= H) continue;
       // a change of yours the server has not answered yet is newer than this one
       if (this.pending.has(d + ':' + key3(x, y, z))) continue;
+      // (a container's record goes with its block from what is kept for this dimension too, or it came back the next
+      // time the dimension was put together, in a chest put down there later: what was spilled, twice)
+      if (!containerKind(b)) this.ct[d].delete(key3(x, y, z));
       if (here && w.loaded(x, z)) {
         const ob = w.get(x, y, z);
         const near = !!quick && w.near(Math.floor(x / 16), Math.floor(z / 16));
@@ -1613,13 +1650,24 @@ export class Net {
     }
     if (!this.warnedRej) { this.warnedRej = true; this.ctx.chat.add('The server could not keep some of your changes.', 0xFF5555); }
   }
-  container(d, p, o) {
+  /* (lost: the server turned a change of yours down, the chest being gone or changed by someone else at the same
+     moment; what it keeps comes with it, and beats your own change, which is undone if you made it by hand) */
+  container(d, p, o, lost) {
     if (!Array.isArray(p)) return;
     const [x, y, z] = p, k = key3(x, y, z);
+    if (lost) {
+      this.pending.delete('c' + d + ':' + k);
+      const mine = this.ctMine.get(d + ':' + k);
+      if (mine) { this.ctMine.delete(d + ':' + k); this.undoHand(mine.hd); }
+      this.handOut.delete(d + ':' + k);
+    }
     if (this.pending.has('c' + d + ':' + k)) return;
+    const g = this.game, C = g.containers, here = dimCode(g.dim) === d && C && g.world && !g.world.dead;
+    // a record for a block that is not that container here (a change sent just before the chest went on another
+    // page): nothing to keep it in, so it is not kept (a chest put down there later would have it)
+    if (o && here && g.world.loaded(x, z) && containerKind(g.world.get(x, y, z)) !== o.k) { this.ct[d].delete(k); dropContainer(C, x, y, z); return; }
     if (o) this.ct[d].set(k, o); else this.ct[d].delete(k);
-    const g = this.game, C = g.containers;
-    if (dimCode(g.dim) !== d || !C) return;
+    if (!here) return;
     this.applying = true;
     try {
       if (!o) dropContainer(C, x, y, z);
@@ -1629,6 +1677,7 @@ export class Net {
         const sl = (o.s || []).map(stackFromJSON);
         // in place: a chest someone has open shows the change at once
         for (let i = 0; i < c.slots.length; i++) c.slots[i] = sl[i] || null;
+        if (this.handSnap.has(c)) this.handSnap.set(c, tallyStacks(c.slots));
         C.looted.add(k);
         if ('burn' in c) { Object.assign(c, { burn: o.b | 0, burnMax: o.bm | 0, cook: o.c | 0, cookMax: o.cm || 200, lastInput: c.slots[0] ? c.slots[0].id : 0 }); c.used = o.u && typeof o.u === 'object' ? o.u : {}; C.lit.add(c); }
         if (o.k === 'brewing_stand') { Object.assign(c, { fuel: o.f | 0, brew: o.w | 0, ingredient: o.g | 0 }); C.lit.add(c); }
@@ -1637,6 +1686,40 @@ export class Net {
       }
     } finally { this.applying = false; }
     if (this.ctx.gui.isOpen()) this.ctx.gui.markDirty();
+  }
+  /* A change you made to a container by hand that the server could not keep (someone else changed it, or it was
+     destroyed, at the same moment): what you took out goes back out of what you carry, what you put in comes back to
+     you (dropped at your feet if there is no room), so nothing is had twice and nothing is lost. */
+  undoHand(hd) {
+    const inv = this.game && this.game.inv;
+    if (!inv || !Array.isArray(hd)) return;
+    let any = false;
+    for (const e of hd.slice(0, 64)) {
+      if (!Array.isArray(e) || typeof e[0] !== 'string' || !Number.isInteger(e[1]) || !e[1]) continue;
+      let a;
+      try { a = JSON.parse(e[0]); } catch (err) { continue; }
+      if (!Array.isArray(a)) continue;
+      a.splice(1, 0, Math.min(Math.abs(e[1]), 64 * 54));
+      const st = stackFromJSON(a);
+      if (!st) continue;
+      any = true;
+      // (more than one stack's worth goes back a stack at a time)
+      if (e[1] > 0) takeBack(inv, st);
+      else for (let left = st.count, max = maxStack(st.id); left > 0; left -= max) inv.placeBack(Object.assign({}, st, { count: Math.min(max, left) }));
+    }
+    if (any) { inv.changed(); if (this.ctx.gui.isOpen()) this.ctx.gui.markDirty(); }
+  }
+  // a click's own change to a container: its tally against the one at the end of the last tick (or as last sent)
+  handMoved(c) {
+    const d = dimCode(this.game.dim), k = d + ':' + key3(c.x, c.y, c.z), now = tallyStacks(c.slots);
+    const was = this.handSnap.get(c) || tallyStacks(((this.ct[d].get(key3(c.x, c.y, c.z)) || {}).s || []).map(stackFromJSON));
+    let acc = this.handOut.get(k);
+    if (!acc) this.handOut.set(k, acc = new Map());
+    for (const key of new Set([...was.keys(), ...now.keys()])) {
+      const n = (was.get(key) || 0) - (now.get(key) || 0);
+      if (n) acc.set(key, (acc.get(key) || 0) + n);
+    }
+    this.handSnap.set(c, now);
   }
   detail(d, p, o) {
     if (!Array.isArray(p)) return;
@@ -1720,6 +1803,32 @@ for (const k of ['spinTick', 'chargeTick', 'smashed']) {
   Combat.prototype[k] = function () { const a = arguments; return withPlayers(this.m, () => f.apply(this, a)); };
 }
 // a container gone with its block on someone else's machine: forgotten here, nothing spilled
+/* A short check of a container's record, FNV-1a over its JSON (the same as mlhub lc2.js recHash): what a change was
+   made from goes with it */
+function recHash(o) {
+  const s = JSON.stringify(o);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+// how many of each item (by everything but its count) a list of stacks holds
+function tallyStacks(list) {
+  const m = new Map();
+  for (const s of list || []) {
+    if (!s) continue;
+    const a = stackToJSON(s), key = JSON.stringify([a[0]].concat(a.slice(2)));
+    m.set(key, (m.get(key) || 0) + a[1]);
+  }
+  return m;
+}
+// up to st.count of that item out of what you carry: the stack on the mouse first, then the inventory, the off hand
+function takeBack(inv, st) {
+  let left = st.count;
+  const from = (get, set) => { const s = get(); if (!left || !s || !sameItem(s, st)) return; const n = Math.min(left, s.count); s.count -= n; left -= n; if (s.count <= 0) set(null); };
+  from(() => inv.carried, v => { inv.carried = v; });
+  for (let i = inv.slots.length - 1; i >= 0 && left; i--) from(() => inv.slots[i], v => { inv.slots[i] = v; });
+  from(() => inv.offhand, v => { inv.offhand = v; });
+}
 function dropContainer(C, x, y, z) {
   const k = key3(x, y, z), c = C.map.get(k);
   if (!c) return;

@@ -11,12 +11,12 @@
    spectral one 10 seconds of Glowing. Stuck in a block it stays for a
    minute (1200 ticks). Thrown things fall 0.03 a tick and drag 0.99.
 --------------------------------------------------------------------------- */
-import { Entity, r3 } from './entity.js?v=108';
-import { rayBox } from './terrain.js?v=108';
-import { register } from './mobs.js?v=108';
-import { FLUID } from '../blocks.js?v=108';
-import { POTIONS } from '../brewing.js?v=108';
-import { applyPotion, splashPotion, lingeringPotion } from './mobfx.js?v=108';
+import { Entity, r3 } from './entity.js?v=109';
+import { rayBox } from './terrain.js?v=109';
+import { register } from './mobs.js?v=109';
+import { FLUID } from '../blocks.js?v=109';
+import { POTIONS } from '../brewing.js?v=109';
+import { applyPotion, splashPotion, lingeringPotion } from './mobfx.js?v=109';
 
 const R = () => Math.random();
 const gauss = () => { let u = 0, v = 0; while (!u) u = R(); while (!v) v = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
@@ -46,7 +46,9 @@ export class Projectile extends Entity {
       let hit = null, te = tb;
       this.m.forNear(p.x, p.z, sp + 3, e => {
         if (e === this || e === this.owner && this.age < 5 || e.removed || e.dead || e instanceof Projectile || !e.hurt || (this.owner && e.vehicle === this.owner) || (this.skip && this.skip(e))) return;
-        const t = rayBox(p.x, p.y, p.z, dx, dy, dz, e.pos.x - e.hw - 0.3, e.pos.y - 0.3, e.pos.z - e.hw - 0.3, e.pos.x + e.hw + 0.3, e.pos.y + e.h + 0.3, e.pos.z + e.hw + 0.3);
+        const b = e.pickBox ? e.pickBox(0.3) : null;
+        const t = b ? rayBox(p.x, p.y, p.z, dx, dy, dz, b[0], b[1], b[2], b[3], b[4], b[5])
+          : rayBox(p.x, p.y, p.z, dx, dy, dz, e.pos.x - e.hw - 0.3, e.pos.y - 0.3, e.pos.z - e.hw - 0.3, e.pos.x + e.hw + 0.3, e.pos.y + e.h + 0.3, e.pos.z + e.hw + 0.3);
         if (t < te) { te = t; hit = e; }
       });
       const P = this.m.player;

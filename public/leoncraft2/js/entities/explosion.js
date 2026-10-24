@@ -19,13 +19,13 @@
    (impact^2 + impact) / 2 x 7 x 2 x power + 1, and it is pushed away from
    the centre by the impact (towards its eyes, for the living).
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, B } from '../blocks.js?v=108';
-import { blastResistance } from './terrain.js?v=108';
-import { breakAt } from '../place.js?v=108';
-import { BLAST_FILTER, dropDecay, exposure as seenBy } from '../explosion.js?v=108';
-import { WORLD_FX } from '../world.js?v=108';
-import { dropOf } from '../survival.js?v=108';
-import { Living } from './entity.js?v=108';
+import { BLOCKS, FLUID, B } from '../blocks.js?v=109';
+import { blastResistance } from './terrain.js?v=109';
+import { breakAt } from '../place.js?v=109';
+import { BLAST_FILTER, dropDecay, exposure as seenBy } from '../explosion.js?v=109';
+import { WORLD_FX } from '../world.js?v=109';
+import { dropOf } from '../survival.js?v=109';
+import { Living } from './entity.js?v=109';
 
 const R = () => Math.random();
 // the 1352 ray directions, made once
@@ -101,11 +101,11 @@ export function explode(m, cx, cy, cz, power, source, o = {}) {
       e.vel.x += vx * k; e.vel.y += vy * k; e.vel.z += vz * k;
     }
   };
-  if (P && P.alive() && !P.creative()) push(P, true);
-  m.forNear(cx, cz, r2 + 2, e => { if (!e.removed && e !== (source && source.attacker)) push(e, false); });
-  // the items and orbs lying in it, before the blocks go (so what it breaks out is not blown up by it)
+  // the items and orbs lying in it, before the entities and the blocks go (so what they drop is not blown up by it)
   const L = window.__lc2, D = L && L.game && L.game.drops;
   if (D && D.blast && power > 0) D.blast(cx, cy, cz, power, box => seenBy(W, cx, cy, cz, box));
+  if (P && P.alive() && !P.creative()) push(P, true);
+  m.forNear(cx, cz, r2 + 2, e => { if (!e.removed && e !== (source && source.attacker)) push(e, false); });
   // the blocks go, some dropping (RIP Computer: bursting into pieces, with a flash and smoke: render/realism.js)
   if (WORLD_FX.blast) WORLD_FX.blast(cx, cy, cz, power);
   // (a TNT minecart is TNT; anything else that comes here, creepers, fireballs a ghast threw, the wither, is a mob's)

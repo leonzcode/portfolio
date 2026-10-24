@@ -38,12 +38,12 @@
    pair seen from behind it (its partner is clockwise of its facing), 2 the
    right (partner anticlockwise; this one holds the top rows), 3 single.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, OPAQUE } from './blocks.js?v=108';
-import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=108';
-import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=108';
-import { cookingRecipe, remainderOf } from './crafting.js?v=108';
-import { fire } from './dispense.js?v=108';
-import { MAPS, fillPreview } from './maps.js?v=108';
+import { B, BLOCKS, OPAQUE } from './blocks.js?v=109';
+import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=109';
+import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=109';
+import { cookingRecipe, remainderOf } from './crafting.js?v=109';
+import { fire } from './dispense.js?v=109';
+import { MAPS, fillPreview } from './maps.js?v=109';
 
 export const SIZES = { chest: 27, trapped_chest: 27, copper_chest: 27, barrel: 27, shulker_box: 27, furnace: 3, smoker: 3, blast_furnace: 3,
   dispenser: 9, dropper: 9, crafter: 9, hopper: 5, brewing_stand: 5 };
@@ -441,6 +441,8 @@ export class Containers {
         if (!s) continue;
         if (this.insertOne(to, s, side)) {
           s.count--; if (s.count <= 0) h.slots[i] = null;
+          // (the hopper itself changed too: on a server the others kept the item in it and passed it on again)
+          this.changed(h);
           moved = true;
         }
       }

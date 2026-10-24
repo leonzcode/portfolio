@@ -36,8 +36,8 @@
    Fire (beds, respawn anchors, fireballs): each destroyed cell that is air
    afterwards, with a solid block under it, catches fire one time in three.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=108';
-import { WORLD_FX } from './world.js?v=108';
+import { B, BLOCKS, FLUID } from './blocks.js?v=109';
+import { WORLD_FX } from './world.js?v=109';
 
 /* Blast resistance from the wiki where it is not the block's hardness. Worked out the first time it
    is wanted, or when the page is next idle: its 34 passes over every block took 11-15 ms here, and
@@ -179,9 +179,13 @@ export function explode(world, x, y, z, power, o) {
     }
   }
   /* ---- entities: hurt and pushed by what reaches them ---- */
+  // (the items and orbs lying in it first, before the entities and blocks go: what a minecart or a mob it breaks
+  // drops, and what the blocks drop, is not blown up by the same blast, as the game's ServerExplosion has it)
+  const L = window.__lc2;
+  const D = L && L.game && L.game.drops;
+  if (D && D.blast && power > 0) D.blast(x, y, z, power, box => exposure(world, x, y, z, box));
   const reach = power * 2;
   const pushed = [];
-  const L = window.__lc2;
   const hurtOne = (box, onHurt, onPush, self) => {
     const ex = (box[0] + box[3]) / 2, ey = box[1], ez = (box[2] + box[5]) / 2;
     const fx = ex - x, fy = (box[1] + 1.62 * 0) - y, fz = ez - z;
@@ -206,19 +210,29 @@ export function explode(world, x, y, z, power, o) {
       if (g && g.mode !== 'creative' && g.survival) g.survival.hurt(dmg, { type: o.source === 'bad_respawn_point' ? 'bad_respawn_point' : 'explosion', x, z, attacker: o.source && o.source.hurt ? o.source : null });
     }, (vx, vy, vz) => { if (!p.flying) { p.vel.x += vx; p.vel.y += vy; p.vel.z += vz; } }, true);
   }
-  // mobs and other bodies (window.__lc2.entities from the mobs code; our TNT and falling blocks)
-  const lists = [];
-  if (L && L.entities && typeof L.entities.inBox === 'function') lists.push(L.entities.inBox(x - reach, y - reach, z - reach, x + reach, y + reach, z + reach));
-  if (sim && sim.bodies) lists.push(sim.bodies.list);
-  for (const list of lists) for (const e of list || []) {
+  /* Mobs, minecarts, boats, paintings and the rest the entities hold (entities/manager.js), by the same sums, as
+     entities/explosion.js does for a creeper's: this asked the manager for an inBox it never had, so TNT, beds and
+     anchors hurt nothing but you (a cow beside lit TNT kept its health, a chest minecart its chest). Who lit the TNT
+     is the attacker, for the death message. */
+  const E = L && L.entities;
+  if (E && typeof E.forNear === 'function') {
+    const src = o.source && typeof o.source === 'object' ? o.source : null;
+    const by = src && src.by && typeof src.by === 'object' ? src.by : src && src.hurt ? src : null;
+    const hit = { type: 'explosion', attacker: by, x, z, noKnock: true, explosion: true };
+    E.forNear(x, z, reach + 2, e => {
+      if (e.removed || e.dead || e === o.source || e === E.player || e.isPlayer || !e.pos) return;
+      const hw = typeof e.hw === 'number' ? e.hw : 0.3, h = typeof e.h === 'number' ? e.h : 1;
+      const k = 1 - (e.constructor.EXPLOSION_KB_RESIST ? e.kbResist || 0 : 0);
+      hurtOne(e.pickBox ? e.pickBox() : [e.pos.x - hw, e.pos.y, e.pos.z - hw, e.pos.x + hw, e.pos.y + h, e.pos.z + hw], dmg => { if (e.hurt) e.hurt(dmg, hit); },
+        (vx, vy, vz) => { if (e.vel && !e.removed) { e.vel.x += vx * k; e.vel.y += vy * k; e.vel.z += vz * k; } });
+    });
+  }
+  // our own lit TNT and falling blocks
+  if (sim && sim.bodies) for (const e of sim.bodies.list || []) {
     if (e === o.source) continue;
     const box = e.box ? e.box() : [e.x - 0.49, e.y, e.z - 0.49, e.x + 0.49, e.y + 0.98, e.z + 0.49];
     hurtOne(box, dmg => { if (e.hurt) e.hurt(dmg, 'explosion'); }, (vx, vy, vz) => { if (e.push) e.push(vx, vy, vz); else if (e.vel) { e.vel.x += vx; e.vel.y += vy; e.vel.z += vz; } });
   }
-  if (L && L.entities && typeof L.entities.explosion === 'function') L.entities.explosion(x, y, z, power, o);
-  // the items and orbs lying in it, before the blocks go (so what it breaks out is not blown up by it)
-  const D = L && L.game && L.game.drops;
-  if (D && D.blast && power > 0) D.blast(x, y, z, power, box => exposure(world, x, y, z, box));
 
   /* ---- the blocks go ---- */
   // (RIP Computer: the flash and the smoke, and each block below bursting into pieces as it goes: render/realism.js)
