@@ -872,7 +872,7 @@ model('axolotl', [
   { name: 'leftHind', parent: 'body', pivot: [3.5, 1, -1], boxes: [[-2, 0, 0, 3, 5, 0, 2, 13]] },
   { name: 'rightFront', parent: 'body', pivot: [-3.5, 1, -8], boxes: [[-1, 0, 0, 3, 5, 0, 2, 13]] },
   { name: 'leftFront', parent: 'body', pivot: [3.5, 1, -8], boxes: [[-2, 0, 0, 3, 5, 0, 2, 13]] },
-  { name: 'tail', parent: 'body', pivot: [0, 0, 1], boxes: [[0, -3, 0, 0, 5, 12, 2, 19]] },
+  { name: 'tail', parent: 'body', pivot: [0, 0, 1], boxes: [[0, -3, 0, 0, 5, 12, 14, 7]] },
 ], (m, P, A) => {
   const I = m.index, f = A.age * 0.3;
   set(P, I.head, RY, A.yaw * 0.5);
