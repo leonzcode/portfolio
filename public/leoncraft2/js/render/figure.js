@@ -28,10 +28,10 @@
    picture is asked for when the mouse moves, and 20 times a second for the
    arms' sway, only while the screen showing it is open.
 --------------------------------------------------------------------------- */
-import { AVATAR_HEAD, AVATAR_VS, ARMOR_OVERLAY } from './avatar.js?v=104';
-import { GLINT, SHEET_W, SHEET_H } from './armor.js?v=104';
-import { setGlint } from './glint.js?v=104';
-import { MobFigure } from './mobfigure.js?v=104';
+import { AVATAR_HEAD, AVATAR_VS, ARMOR_OVERLAY } from './avatar.js?v=105';
+import { GLINT, SHEET_W, SHEET_H } from './armor.js?v=105';
+import { setGlint } from './glint.js?v=105';
+import { MobFigure } from './mobfigure.js?v=105';
 const THREE = window.THREE;
 const PI = Math.PI, DEG = PI / 180;
 const MODEL_SCALE = 0.9375 / 16;

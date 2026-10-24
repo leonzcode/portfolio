@@ -26,13 +26,13 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=104';
-import { ConfirmScreen } from './menus.js?v=104';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=104';
-import { Account } from '../net/account.js?v=104';
-import { LoginScreen, AccountScreen } from './account.js?v=104';
-import { parseSeed } from '../gen/random.js?v=104';
-import { MapRequestsScreen } from './maprequests.js?v=104';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=105';
+import { ConfirmScreen } from './menus.js?v=105';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=105';
+import { Account } from '../net/account.js?v=105';
+import { LoginScreen, AccountScreen } from './account.js?v=105';
+import { parseSeed } from '../gen/random.js?v=105';
+import { MapRequestsScreen } from './maprequests.js?v=105';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
@@ -587,6 +587,58 @@ export class ConnectingScreen extends Screen {
   }
   render(g, mx, my, dt) {
     g.centered(this.text, this.width / 2, Math.floor(this.height / 2) - 50, WHITE);
+    super.render(g, mx, my, dt);
+  }
+}
+
+/* ---- the connection lost without a kick: connecting again by itself ----
+   The server restarting for an update (it says so first: net.js 'restart'), or a
+   line that dropped. Tried again every two seconds for three minutes, the world
+   you were in turning behind it; once in you are where the server last had you
+   (your record is sent the moment it says it is restarting). A server that turns
+   you away (full, a ban, a password, a session run out) is handled as a join
+   from the list is. */
+export class ReconnectScreen extends Screen {
+  constructor(again, reason) {
+    super(again.restart ? 'Server restarting' : 'Connection Lost');
+    this.again = again; this.reason = reason || '';
+    this.text = again.restart ? 'The server is restarting for an update...' : 'Connecting again...';
+    this.closeOnEsc = false; this.animates = true;
+    this.until = Date.now() + 180000; this.started = false; this.cancelled = false;
+  }
+  init() {
+    const W = this.width, H = this.height;
+    this.add(new Button(W / 2 - 100, Math.floor(H / 4) + 132, 200, 20, 'Back to server list', () => this.toList(false)));
+    // (a restart takes a moment to stop and start: the first try waits a little longer then)
+    if (!this.started) { this.started = true; setTimeout(() => this.attempt(), this.again.restart ? 2000 : 500); }
+  }
+  attempt() {
+    if (this.cancelled) return;
+    const a = this.again;
+    Net.connect(a.id, a.pw, a.watch).then(net => {
+      if (this.cancelled) { net.close(); return; }
+      this.text = 'Joining world...';
+      if (this.hooks.play) this.hooks.play(net.entry(), { isNew: false });
+    }, err => {
+      if (this.cancelled) return;
+      const down = !err || err.kind === SERVER_DOWN || err.reason === 'Timed out' || err.reason === 'Connection refused';
+      if (down && Date.now() < this.until) { this.text = 'Waiting for the server to come back...'; setTimeout(() => this.attempt(), 2000); return; }
+      if (down) { this.gui.replace(new DisconnectedScreen('Connection Lost', this.reason || 'Connection lost')); return; }
+      this.toList(true);
+    });
+  }
+  // back to the server list (and, turned away, joining from it, which asks for a password or a log in, or says why)
+  toList(join) {
+    this.cancelled = true;
+    const g = this.gui, a = this.again, list = new MultiplayerScreen();
+    g.back(); g.open(list);
+    if (join) list.join({ id: a.id, name: a.name || 'the server', kind: a.pw ? 'private' : 'public' }, a.pw, a.watch);
+  }
+  onEscape() { this.toList(false); }
+  render(g, mx, my, dt) {
+    const y = Math.floor(this.height / 2) - 50;
+    g.centered(this.title, this.width / 2, y - 18, GREY);
+    g.centered(this.text, this.width / 2, y, WHITE);
     super.render(g, mx, my, dt);
   }
 }

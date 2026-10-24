@@ -13,7 +13,7 @@
    at least two tall, and done (stage 1) at 16 tall, or with a 1 in 4 chance
    from 11.
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=104';
+import { B } from '../blocks.js?v=105';
 
 export const AGE = 1, STAGE = 8, LEAVES_SHIFT = 4;
 export const NONE = 0, SMALL = 1, LARGE = 2;
