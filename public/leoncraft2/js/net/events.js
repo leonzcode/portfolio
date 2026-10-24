@@ -43,19 +43,19 @@
                    fishing (their line, from the rod in their hand to the
                    bobber where it floats)
 --------------------------------------------------------------------------- */
-import { Sound } from '../sound/sound.js?v=105';
-import { MobSounds } from '../sound/mobsounds.js?v=105';
-import { Ambience } from '../sound/ambient.js?v=105';
-import { B, BLOCKS } from '../blocks.js?v=105';
-import { selectionBoxes } from '../models.js?v=105';
-import { exposure } from '../explosion.js?v=105';
-import { WORLD_FX } from '../world.js?v=105';
-import { Overlay } from '../render/overlay.js?v=105';
-import { F } from './players.js?v=105';
-import { Potion } from '../entities/projectiles.js?v=105';
-import { splashPotion, lingeringPotion } from '../entities/mobfx.js?v=105';
-import { POTIONS } from '../brewing.js?v=105';
-import { EFFECTS } from '../effects.js?v=105';
+import { Sound } from '../sound/sound.js?v=106';
+import { MobSounds } from '../sound/mobsounds.js?v=106';
+import { Ambience } from '../sound/ambient.js?v=106';
+import { B, BLOCKS } from '../blocks.js?v=106';
+import { selectionBoxes } from '../models.js?v=106';
+import { exposure } from '../explosion.js?v=106';
+import { WORLD_FX } from '../world.js?v=106';
+import { Overlay } from '../render/overlay.js?v=106';
+import { F } from './players.js?v=106';
+import { Potion } from '../entities/projectiles.js?v=106';
+import { splashPotion, lingeringPotion } from '../entities/mobfx.js?v=106';
+import { POTIONS } from '../brewing.js?v=106';
+import { EFFECTS } from '../effects.js?v=106';
 const THREE = window.THREE;
 
 let active = null, quiet = 0;
