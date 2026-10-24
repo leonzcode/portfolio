@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=104';
-import { idx, H } from '../world-const.js?v=104';
-import { DIMS, DIM_IDS } from '../dims.js?v=104';
-import { Save } from '../save.js?v=104';
-import { itemName, stackToJSON, stackFromJSON, maxStack } from '../items.js?v=104';
-import { glints } from '../render/armor.js?v=104';
-import { containerKind } from '../containers.js?v=104';
-import { getSkinSettings } from '../render/avatar.js?v=104';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=104';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=104';
-import { Y0 } from '../world-const.js?v=104';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=104';
-import { Projectile } from '../entities/projectiles.js?v=104';
-import { Combat } from '../combat/combat.js?v=104';
-import { Vehicles } from './vehicles.js?v=104';
-import { Mobs, Orbs } from './mobs.js?v=104';
-import { Events } from './events.js?v=104';
-import { EndSync } from './endfight.js?v=104';
-import { Hub } from './hub.js?v=104';
-import { Account, wsBase, httpBase } from './account.js?v=104';
-import { rankTag } from './players.js?v=104';
+import { B, BLOCKS } from '../blocks.js?v=105';
+import { idx, H } from '../world-const.js?v=105';
+import { DIMS, DIM_IDS } from '../dims.js?v=105';
+import { Save } from '../save.js?v=105';
+import { itemName, stackToJSON, stackFromJSON, maxStack } from '../items.js?v=105';
+import { glints } from '../render/armor.js?v=105';
+import { containerKind } from '../containers.js?v=105';
+import { getSkinSettings } from '../render/avatar.js?v=105';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=105';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=105';
+import { Y0 } from '../world-const.js?v=105';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=105';
+import { Projectile } from '../entities/projectiles.js?v=105';
+import { Combat } from '../combat/combat.js?v=105';
+import { Vehicles } from './vehicles.js?v=105';
+import { Mobs, Orbs } from './mobs.js?v=105';
+import { Events } from './events.js?v=105';
+import { EndSync } from './endfight.js?v=105';
+import { Hub } from './hub.js?v=105';
+import { Account, wsBase, httpBase } from './account.js?v=105';
+import { rankTag } from './players.js?v=105';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -435,6 +435,8 @@ export class Net {
       let ws;
       try { ws = new WebSocket(url); } catch (e) { reject({ reason: FAIL_TEXT.down[1], kind: SERVER_DOWN }); return; }
       const net = new Net(ws);
+      // (kept for connecting again by itself if the line goes without a kick: lost, ui/multiplayer.js ReconnectScreen)
+      net.again = { id: server, pw: password || '', watch: !!watch };
       let done = false, opened = false;
       const end = (ok, v) => { if (done) return; done = true; clearTimeout(timer); ok ? resolve(v) : reject(v); };
       /* (a page held up past the 30 seconds, by a busy machine, can have the
@@ -632,7 +634,16 @@ export class Net {
     if (!this.game) return;
     const ctx = this.ctx;
     this.close();
-    ctx.disconnected(reason);
+    ctx.disconnected(reason, this.kickReason ? null : this.rejoinTo());
+  }
+  /* Where to connect again when the line went without a kick (the server restarting
+     for an update, a connection that dropped): this server again, or Leonpixel from
+     one of its Death Swap worlds, which a restart deletes. */
+  rejoinTo() {
+    const a = this.again, s = this.server || {};
+    if (!a) return null;
+    const ds = !!s.hub && a.id !== 'hub';
+    return { id: ds ? 'hub' : a.id, pw: ds ? '' : a.pw, watch: ds ? false : a.watch, name: ds ? 'Leonpixel' : s.name, restart: !!this.restarting };
   }
 
   /* ---- what arrives ---- */
@@ -683,6 +694,13 @@ export class Net {
         return;
       }
       case 'kicked': this.kickReason = m.reason; return;
+      /* the server is stopping to restart (an update going in): your record sent now, not
+         at the next save, and the page connects again by itself once the line goes (lost) */
+      case 'restart':
+        this.restarting = true;
+        if (this.ctx && this.ctx.chat) this.ctx.chat.add('§eThe server is restarting for an update. You will be connected again in a few seconds.', 0xFFFFFF);
+        if (this.game && this.game.ready) this.quickSave(true);
+        return;
       case 'fx': if (this.game && this.game.ready) this.effects(m); return;
       case 'ev': this.events.receive(m); return;
       // the mobs' news in the order it came, with their positions (which go straight to the puppets)
@@ -1261,9 +1279,9 @@ export class Net {
      within two seconds of your inventory changing (something thrown, picked
      up, put in a chest), so a page that closes without a word cannot leave
      the server holding things that are also lying on the ground. */
-  quickSave() {
+  quickSave(now) {
     const g = this.game, sv = g.survival, dead = !!(sv && sv.dead);
-    const due = dead !== this.wasDead || (++this.qsT % 40 === 0 && g.inv.toJSON && JSON.stringify(g.inv.toJSON()) !== this.invSig);
+    const due = now || dead !== this.wasDead || (++this.qsT % 40 === 0 && g.inv.toJSON && JSON.stringify(g.inv.toJSON()) !== this.invSig);
     this.wasDead = dead;
     if (!due || !this.pdata || !g.inv.toJSON) return;
     const P = g.player, inventory = g.inv.toJSON();
