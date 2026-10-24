@@ -25,8 +25,8 @@
    Villagers (one per bed), an iron golem by the well and a cat are left as
    entities.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=107';
-import { footprint, overlaps, door, bed, torch, gableZ, gableX, DX, DZ, rng } from './util.js?v=107';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=108';
+import { footprint, overlaps, door, bed, torch, gableZ, gableX, DX, DZ, rng } from './util.js?v=108';
 
 export const PLANS = {};
 

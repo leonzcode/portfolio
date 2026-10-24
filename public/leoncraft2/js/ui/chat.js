@@ -8,8 +8,8 @@
    Down walk back through what you sent. A command gets the game's
    suggestions as it is typed (ChatScreen).
 --------------------------------------------------------------------------- */
-import { Screen, TextField } from './gui.js?v=107';
-import { execute, suggestions, commandDef } from '../commands.js?v=107';
+import { Screen, TextField } from './gui.js?v=108';
+import { execute, suggestions, commandDef } from '../commands.js?v=108';
 
 const LINE = 9, KEEP = 100, WIDTH = 320;
 const ROWS = 10;           // suggestions shown at once (the list scrolls past that)

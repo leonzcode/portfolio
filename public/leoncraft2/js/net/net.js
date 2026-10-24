@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=107';
-import { idx, H } from '../world-const.js?v=107';
-import { DIMS, DIM_IDS } from '../dims.js?v=107';
-import { Save } from '../save.js?v=107';
-import { itemName, stackToJSON, stackFromJSON, maxStack } from '../items.js?v=107';
-import { glints } from '../render/armor.js?v=107';
-import { containerKind } from '../containers.js?v=107';
-import { getSkinSettings } from '../render/avatar.js?v=107';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=107';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=107';
-import { Y0 } from '../world-const.js?v=107';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=107';
-import { Projectile } from '../entities/projectiles.js?v=107';
-import { Combat } from '../combat/combat.js?v=107';
-import { Vehicles } from './vehicles.js?v=107';
-import { Mobs, Orbs } from './mobs.js?v=107';
-import { Events } from './events.js?v=107';
-import { EndSync } from './endfight.js?v=107';
-import { Hub } from './hub.js?v=107';
-import { Account, wsBase, httpBase } from './account.js?v=107';
-import { rankTag } from './players.js?v=107';
+import { B, BLOCKS } from '../blocks.js?v=108';
+import { idx, H } from '../world-const.js?v=108';
+import { DIMS, DIM_IDS } from '../dims.js?v=108';
+import { Save } from '../save.js?v=108';
+import { itemName, stackToJSON, stackFromJSON, maxStack } from '../items.js?v=108';
+import { glints } from '../render/armor.js?v=108';
+import { containerKind } from '../containers.js?v=108';
+import { getSkinSettings } from '../render/avatar.js?v=108';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=108';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=108';
+import { Y0 } from '../world-const.js?v=108';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=108';
+import { Projectile } from '../entities/projectiles.js?v=108';
+import { Combat } from '../combat/combat.js?v=108';
+import { Vehicles } from './vehicles.js?v=108';
+import { Mobs, Orbs } from './mobs.js?v=108';
+import { Events } from './events.js?v=108';
+import { EndSync } from './endfight.js?v=108';
+import { Hub } from './hub.js?v=108';
+import { Account, wsBase, httpBase } from './account.js?v=108';
+import { rankTag } from './players.js?v=108';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -132,6 +132,9 @@ export async function listServers() {
 export const createServer = o => post('/lc2/create', o);
 export const editServer = o => post('/lc2/edit', o);
 export const deleteServer = id => post('/lc2/delete', { id });
+// server requests (Create Server for anyone but an admin or a mod asks for one): your own and, for an admin or a mod, every one waiting; and a decision
+export const srvRequests = () => post('/lc2/srvrequests', {});
+export const srvReview = (id, approve, note) => post('/lc2/srvreview', { id, approve: !!approve, note: note || '' });
 // Leon Network's Map Requests (mods and admins): the players' maps waiting for approval, and a decision on one
 export const mapRequests = () => post('/lc2/hub/requests', {});
 export const mapReview = (game, id, ok, why) => post('/lc2/hub/review', { game, id, ok, why: why || '' });

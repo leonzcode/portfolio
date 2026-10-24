@@ -26,15 +26,25 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=107';
-import { ConfirmScreen } from './menus.js?v=107';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=107';
-import { Account } from '../net/account.js?v=107';
-import { LoginScreen, AccountScreen } from './account.js?v=107';
-import { parseSeed } from '../gen/random.js?v=107';
-import { MapRequestsScreen } from './maprequests.js?v=107';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=108';
+import { ConfirmScreen } from './menus.js?v=108';
+import { Net, listServers, createServer, editServer, deleteServer, srvRequests, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=108';
+import { Account } from '../net/account.js?v=108';
+import { LoginScreen, AccountScreen } from './account.js?v=108';
+import { parseSeed } from '../gen/random.js?v=108';
+import { MapRequestsScreen } from './maprequests.js?v=108';
 
 const PW_KEY = 'lc2_pw_';
+/* Server requests, as the first Leoncraft has them: anyone but an admin or a mod asks for a server
+   (Request Server), and it is made when one of them approves it (ui/maprequests.js, the Servers tab).
+   Your own show at the end of the list: waiting, and an answer for ten minutes from when your list
+   first has it (the server keeps that time, so it is not shown again on another browser). The password
+   you gave is kept by the request's number and carried to the server it became (lc2_reqpw). */
+const REQ_PW = 'lc2_reqpw';
+const readMap = k => { try { return JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (e) { return {}; } };
+const writeMap = (k, m) => { try { localStorage.setItem(k, JSON.stringify(m)); } catch (e) { /* this visit only */ } };
+const staffHere = () => Account.admin || Account.mod;
+const reqAgo = t => { const s = Math.max(0, (Date.now() - (t || 0)) / 1000); return s < 90 ? 'just now' : s < 5400 ? Math.round(s / 60) + ' min ago' : s < 129600 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' days ago'; };
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
 const keepPassword = (id, pw) => { try { if (pw) localStorage.setItem(PW_KEY + id, pw); else localStorage.removeItem(PW_KEY + id); } catch (e) {} };
 const MODE_NAMES = { survival: 'Survival', creative: 'Creative', adventure: 'Adventure' };
@@ -118,6 +128,24 @@ function pickIcon() {
 }
 
 /* ---- one server in the list ---- */
+class RequestEntry {
+  constructor(r) { this.r = r; this.s = { id: 'req:' + r.id, request: true, name: r.name }; }
+  render(g, list, i, top, left, width) {
+    const r = this.r;
+    g.text(g.font.trim(r.name, width - 40), left + 35, top + 1, 0xA0A0A0, false);
+    const line1 = r.state === 'pending' ? '\u00a7eWaiting for an admin or mod to approve it' : r.state === 'approved' ? '\u00a7aApproved: it is in the list now'
+      : '\u00a7cTurned down' + (r.note ? ': \u00a77' + r.note : '');
+    g.text(g.font.trim(line1, width - 40), left + 35, top + 12, 0x808080, false);
+    g.text(g.font.trim('Asked ' + reqAgo(r.createdAt) + ', ' + (MODE_NAMES[r.mode] || 'Survival') + ' Mode' + (r.kind === 'private' ? ', Private' : ''), width - 40), left + 35, top + 21, 0x808080, false);
+    // (a paper with a clock face: a server still to be made)
+    g.fill(left + 4, top + 2, left + 28, top + 30, 0xFF6E6E6E);
+    g.fill(left + 6, top + 4, left + 26, top + 28, 0xFFC6C6C6);
+    g.fill(left + 15, top + 8, left + 17, top + 17, 0xFF404040);
+    g.fill(left + 15, top + 15, left + 22, top + 17, 0xFF404040);
+  }
+  mouseClicked() { return false; }
+}
+
 class ServerEntry {
   constructor(s, screen) { this.s = s; this.screen = screen; }
   // the pin (right of the middle line) and the move arrows (the right edge, middle and bottom line)
@@ -216,17 +244,19 @@ export class MultiplayerScreen extends Screen {
     this.joinB = this.add(new Button(W / 2 - 154, H - 52, 100, 20, 'Join Server', () => { const s = this.sel(); if (s) this.join(s); }));
     if (Account.guest) this.add(new Button(W / 2 - 50, H - 52, 100, 20, 'Log In', () => g.open(new LoginScreen(null)), 'You are playing as ' + Account.name + '. Log in or make an account.'));
     else this.add(new Button(W / 2 - 50, H - 52, 100, 20, Account.name || 'Account', () => g.open(new AccountScreen()), 'Your account: change your password, or log out'));
-    this.add(new Button(W / 2 + 54, H - 52, 100, 20, 'Create Server', () => g.open(new CreateServerScreen())));
+    // (anyone but an admin or a mod asks for a server: it is made once one of them approves it)
+    this.add(new Button(W / 2 + 54, H - 52, 100, 20, staffHere() ? 'Create Server' : 'Request Server', () => g.open(new CreateServerScreen()),
+      staffHere() ? null : 'Ask for a server of your own: an admin or a mod reads every request before the server is made'));
     this.editB = this.add(new Button(W / 2 - 154, H - 28, 70, 20, 'Settings', () => { const s = this.sel(); if (s && s.canEdit) g.open(new ServerSettingsScreen(s)); }));
     this.delB = this.add(new Button(W / 2 - 74, H - 28, 70, 20, 'Delete', () => this.remove()));
     this.add(new Button(W / 2 + 4, H - 28, 70, 20, 'Refresh', () => this.refresh()));
     this.add(new Button(W / 2 + 80, H - 28, 75, 20, 'Back', () => g.back()));
-    // mods and admins: the players' Leon Network maps waiting for approval (Spectate joins the network to look round one)
-    if (Account.admin || Account.mod) this.add(new Button(W - 92, 6, 86, 20, 'Map Requests', () => g.open(new MapRequestsScreen(() => {
+    // mods and admins: the servers players asked for, and the players' Leon Network maps, waiting for approval (Spectate joins the network to look round a map)
+    this.reqB = staffHere() ? this.add(new Button(W - 92, 6, 86, 20, 'Requests', () => g.open(new MapRequestsScreen(() => {
       const hub = this.servers.find(x => x.id === 'hub');
       if (!hub) { window.__lc2HubAction = null; return; }
       g.back(); this.join(hub);
-    })), 'Maps made by players for Leonpixel, waiting to be approved'));
+    })), 'Servers players asked for, and maps made by players for Leonpixel, waiting to be approved')) : null;
     /* admins: into the server picked without anyone knowing (mlhub lc2.js onJoin hidden): nobody is told, sees
        or hears you anywhere, and only a /msg you send reaches a player. Not Leonpixel, whose games count you. */
     this.hiddenB = Account.admin ? this.add(new Button(6, 6, 86, 20, 'Join Hidden', () => { const s = this.sel(); if (s && !s.hub) this.join(s, undefined, false, true); },
@@ -237,8 +267,8 @@ export class MultiplayerScreen extends Screen {
   sel() { const e = this.list.selected; return e ? e.s : null; }
   updateButtons() {
     const s = this.sel();
-    this.joinB.active = !!s;
-    if (this.hiddenB) this.hiddenB.active = !!(s && !s.hub);
+    this.joinB.active = !!s && !s.request;
+    if (this.hiddenB) this.hiddenB.active = !!(s && !s.hub && !s.request);
     this.editB.active = !!(s && s.canEdit);
     this.delB.active = !!(s && s.canEdit && s.id !== 'main');
     this.editB.tooltip = this.delB.tooltip = s && !s.canEdit ? 'Only the owner of a server can change it' : null;
@@ -302,7 +332,8 @@ export class MultiplayerScreen extends Screen {
     savePrefs(this.prefs);
   }
   fill() {
-    this.list.entries = this.shown().map(s => new ServerEntry(s, this));
+    const q = this.query.trim().toLowerCase();
+    this.list.entries = this.shown().map(s => new ServerEntry(s, this)).concat((this.reqRows || []).filter(r => !q || r.name.toLowerCase().includes(q)).map(r => new RequestEntry(r)));
     this.list.selected = this.list.entries.find(e => e.s.id === this.selectedId) || null;
     this.list.setScroll(this.list.scroll);
     this.updateButtons();
@@ -313,8 +344,9 @@ export class MultiplayerScreen extends Screen {
     if (this.gui) this.gui.markDirty();
     this.status2 = '';
     try {
-      const [r, p] = await Promise.all([listServers(), accountPrefs().catch(() => null)]);
+      const [r, p, q] = await Promise.all([listServers(), accountPrefs().catch(() => null), Account.guest || !Account.token ? null : srvRequests().catch(() => null)]);
       this.servers = r.servers; this.ping = r.ping; this.status = '';
+      this.requests(q);
       if (p) { this.prefs = p; try { localStorage.setItem(LIST_KEY, JSON.stringify(p)); } catch (e) {} }
     } catch (e) {
       // nothing answering, or an mc server without Leoncraft 2 on it yet: said plainly (net.js FAIL_TEXT)
@@ -323,19 +355,35 @@ export class MultiplayerScreen extends Screen {
     }
     this.fill();
   }
+  /* your own requests as rows, waiting and answered (an approved one's password carried to its server); for an
+     admin or a mod, how many wait, on the Requests button */
+  requests(q) {
+    const rows = [];
+    if (q && q.ok) {
+      const pws = readMap(REQ_PW);
+      for (const r of q.mine || []) {
+        if (r.state === 'approved' && r.serverId && pws[r.id]) { keepPassword(r.serverId, pws[r.id]); delete pws[r.id]; }
+        rows.push(r);
+      }
+      writeMap(REQ_PW, pws);
+      if (this.reqB) this.reqB.message = q.pending && q.pending.length ? 'Requests (' + q.pending.length + ')' : 'Requests';
+    }
+    this.reqRows = rows;
+  }
   remove() {
     const s = this.sel(), g = this.gui;
     if (!s || !s.canEdit) return;
     g.open(new ConfirmScreen('Are you sure you want to remove this server?', "'" + s.name + "' will be lost forever! (A long time!)", 'Delete', 'Cancel', async yes => {
       g.back();
       if (!yes) return;
-      try { const r = await deleteServer(s.id); if (r && r.error) this.message = r.error; } catch (e) { this.message = 'Could not reach the server.'; }
+      try { const r = await deleteServer(s.id); if (r && r.error) { this.message = r.error; this.messageOk = false; } } catch (e) { this.message = 'Could not reach the server.'; this.messageOk = false; }
       this.selectedId = null;
       this.refresh();
     }));
   }
   // join: the password kept for it (or none), and ask for one if it is wrong
   join(s, password, watch, hidden) {
+    if (s && s.request) return;
     const g = this.gui, pw = watch ? '' : password !== undefined ? password : savedPassword(s.id);
     // (the owner, an admin and a mod go in without it: the server lets them; anyone may watch as a spectator without it)
     if (s.kind === 'private' && !pw && !s.canEdit && !s.free && !watch) { g.open(new PasswordScreen(s, false)); return; }
@@ -364,7 +412,7 @@ export class MultiplayerScreen extends Screen {
       g.centered(this.status, this.width / 2, y - (this.status2 ? 5 : 0), this.status2 ? 0xAA0000 : GREY);
       if (this.status2) for (const [i, l] of g.font.wrap(this.status2, this.width - 50).entries()) g.centered(l, this.width / 2, y + 6 + i * 10, GREY);
     }
-    if (this.message) g.centered(this.message, this.width / 2, this.height - 64 - 4 - 9, 0xFF5555);
+    if (this.message) g.centered(this.message, this.width / 2, this.height - 64 - 4 - 9, this.messageOk ? 0x55FF55 : 0xFF5555);
   }
   keyPressed(e) {
     if (super.keyPressed(e)) return true;
@@ -387,7 +435,10 @@ export class MultiplayerScreen extends Screen {
 /* ---- Create Server, and Edit Server for the one who made it ---- */
 export class CreateServerScreen extends Screen {
   constructor(editing) {
-    super(editing ? 'Edit Server Info' : 'Create Server');
+    // (anyone but an admin or a mod asks: the first Leoncraft's Request a Server, with a reason)
+    const asks = !editing && !staffHere();
+    super(editing ? 'Edit Server Info' : asks ? 'Request a Server' : 'Create Server');
+    this.asks = asks;
     const e = this.editing = editing || null;
     this.kind = e ? e.kind : 'public';
     this.mode = e ? e.mode : 'survival';
@@ -398,12 +449,15 @@ export class CreateServerScreen extends Screen {
     this.motdField = new TextField(0, 0, 200, 20, { value: e ? e.motd || '' : '', maxLength: 60, hint: 'A line under the name' });
     this.pwField = new TextField(0, 0, 200, 20, { value: '', maxLength: 32, hint: e ? 'Leave blank to keep it' : 'Needed to join', onEnter: () => this.done() });
     this.seedField = new TextField(0, 0, 200, 20, { value: '', maxLength: 32, hint: 'Leave blank for a random seed', onEnter: () => this.done() });
+    this.reasonField = new TextField(0, 0, 200, 20, { value: '', maxLength: 200, hint: 'Optional', onEnter: () => this.done() });
     this.error = '';
   }
   init() {
     const W = this.width, H = this.height, g = this.gui, x = Math.floor(W / 2 - 100);
     // a quarter of the way down where there is room, never so low the buttons run into the fields
-    const contentH = 32 * (this.editing ? 3 : 4) + 24 * (this.editing ? 3 : 2);
+    // (a request on a screen wide enough: the password and the seed side by side, the reason the width of both under them)
+    const wide = this.asks && W >= 424;
+    const contentH = 32 * (this.editing ? 3 : this.asks && !wide ? 5 : 4) + 24 * (this.editing ? 3 : 2);
     let y = Math.max(28, Math.min(Math.floor(H / 4) - 36, H - 28 - 22 - contentH));
     this.labels = [];
     const field = (label, f) => { this.labels.push([label, x, y]); f.x = x; f.y = y + 10; this.add(f); y += 32; };
@@ -422,11 +476,26 @@ export class CreateServerScreen extends Screen {
         tooltip: () => 'Only operators can break, place or use blocks this close to the world spawn' }));
       y += 24;
     }
-    field('Password', this.pwField);
+    if (wide) {
+      const lx = Math.floor(W / 2 - 204), rx = Math.floor(W / 2 + 4);
+      this.labels.push(['Password', lx, y], ['Seed for the World Generator', rx, y]);
+      this.pwField.x = lx; this.pwField.y = y + 10; this.seedField.x = rx; this.seedField.y = y + 10;
+      this.add(this.pwField); this.add(this.seedField); y += 32;
+      this.labels.push(['Why do you want this server?', lx, y]);
+      this.reasonField.x = lx; this.reasonField.y = y + 10; this.reasonField.w = 408;
+      this.add(this.reasonField); y += 32;
+    } else {
+      field('Password', this.pwField);
+      if (!this.editing) field('Seed for the World Generator', this.seedField);
+      if (this.asks) field('Why do you want this server?', this.reasonField);
+      this.reasonField.w = 200;
+    }
     this.pwField.active = this.kind === 'private';
-    if (!this.editing) field('Seed for the World Generator', this.seedField);
     const by = Math.min(H - 28, y + 20);
-    this.add(new Button(W / 2 - 100, by, 98, 20, this.editing ? 'Done' : 'Create', () => this.done()));
+    // (the line saying who reads it, only where it clears the last field)
+    this.hintFits = by - 12 >= y;
+    this.add(new Button(W / 2 - 100, by, 98, 20, this.editing ? 'Done' : this.asks ? 'Send Request' : 'Create', () => this.done(),
+      this.asks ? 'An admin or mod reads every request before the server is made' : null));
     this.add(new Button(W / 2 + 2, by, 98, 20, 'Cancel', () => g.back()));
     this.errY = by - 12;
   }
@@ -436,26 +505,34 @@ export class CreateServerScreen extends Screen {
     if (!name) { this.error = 'Give your server a name.'; this.gui.markDirty(); return; }
     const pw = this.pwField.value;
     if (this.kind === 'private' && !pw && !(this.editing && this.editing.kind === 'private')) { this.error = 'A private server needs a password.'; this.gui.markDirty(); return; }
-    this.busy = true; this.error = this.editing ? 'Saving...' : 'Creating...'; this.gui.markDirty();
+    this.busy = true; this.error = this.editing ? 'Saving...' : this.asks ? 'Sending...' : 'Creating...'; this.gui.markDirty();
     let r;
     try {
       const o = { name, motd: this.motdField.value.trim(), kind: this.kind, mode: this.mode, cheats: this.cheats, spawnProt: this.prot };
       if (pw) o.password = pw;
       if (this.editing) { o.id = this.editing.id; r = await editServer(o); }
-      else { o.seed = parseSeed(this.seedField.value); r = await createServer(o); }
+      else { o.seed = parseSeed(this.seedField.value); if (this.asks) o.reason = this.reasonField.value.trim(); r = await createServer(o); }
     } catch (e) { r = { error: 'Could not reach the server.' }; }
     this.busy = false;
     if (!r || r.error) { this.error = (r && r.error) || 'Something went wrong.'; this.gui.markDirty(); return; }
-    if (this.kind === 'private' && pw) keepPassword(this.editing ? this.editing.id : r.id, pw);
     const parent = this.parent;
+    if (r.requested) {
+      // (sent: the password kept for the server it becomes, and the list says so)
+      if (this.kind === 'private' && pw) { const m = readMap(REQ_PW); m[r.id] = pw; writeMap(REQ_PW, m); }
+      this.gui.back();
+      if (parent instanceof MultiplayerScreen) { parent.message = 'Request sent. An admin or mod will look at it.'; parent.messageOk = true; parent.refresh(); }
+      return;
+    }
+    if (this.kind === 'private' && pw) keepPassword(this.editing ? this.editing.id : r.id, pw);
     this.gui.back();
-    if (parent instanceof MultiplayerScreen) { parent.selectedId = this.editing ? this.editing.id : r.id; parent.message = ''; parent.refresh(); }
+    if (parent instanceof MultiplayerScreen) { parent.selectedId = this.editing ? this.editing.id : r.id; parent.message = ''; parent.messageOk = false; parent.refresh(); }
   }
   render(g, mx, my, dt) {
     g.centered(this.title, this.width / 2, 17, WHITE);
     for (const [t, x, y] of this.labels) g.text(t, x, y, GREY);
     super.render(g, mx, my, dt);
     if (this.error) g.centered(this.error, this.width / 2, this.errY, this.busy ? GREY : 0xFF5555);
+    else if (this.asks && this.hintFits) g.centered('An admin or mod reads every request before the server is made.', this.width / 2, this.errY, GREY);
   }
 }
 
