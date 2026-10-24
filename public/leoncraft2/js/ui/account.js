@@ -13,11 +13,33 @@
    Admin (admin accounts only): every account (ban and unban, reset a
    password, delete) and every server (give it to another owner, delete it).
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, ScrollList, WHITE, GREY } from './gui.js?v=109';
-import { Account, NO_CONNECTION } from '../net/account.js?v=109';
+import { Screen, Button, TextField, ScrollList, WHITE, GREY } from './gui.js?v=110';
+import { Account, NO_CONNECTION } from '../net/account.js?v=110';
 
 const RED = 0xFF5555;
 const fmtDate = t => { if (!t) return 'never'; const d = new Date(t); return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
+// a day, short: Oct 23 (this year) or Oct 23 2025
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dayShort = t => { if (!t) return '?'; const d = new Date(t); return MON[d.getMonth()] + ' ' + d.getDate() + (d.getFullYear() === new Date().getFullYear() ? '' : ' ' + d.getFullYear()); };
+const playedShort = sec => { const m = Math.floor(sec / 60), h = Math.floor(m / 60); return h >= 100 ? h + 'h' : h ? h + 'h ' + (m % 60) + 'm' : m + 'm'; };
+/* The Admin screen's accounts in an order of your choosing (kept in localStorage lc2_admin_sort): by name, by when
+   they were made, by when they last played (anyone on now first) or how long they have played on every server
+   together (mlhub lc2accounts.js addPlayed), or by their last login */
+const ADMIN_SORTS = [['az', 'A to Z'], ['za', 'Z to A'], ['newest', 'Newest'], ['oldest', 'Oldest'], ['last', 'Last Played'], ['played', 'Most Played'], ['login', 'Last Login']];
+const ADMIN_SORT_KEY = 'lc2_admin_sort';
+const lowName = a => String(a.name || '').toLowerCase();
+const byName = (a, b) => (lowName(a) < lowName(b) ? -1 : lowName(a) > lowName(b) ? 1 : 0);
+const lastOf = a => (a.online ? Infinity : a.lastPlayed || 0);
+const ADMIN_ORDER = {
+  az: byName, za: (a, b) => byName(b, a),
+  newest: (a, b) => (b.createdAt || 0) - (a.createdAt || 0) || byName(a, b),
+  oldest: (a, b) => (a.createdAt || 0) - (b.createdAt || 0) || byName(a, b),
+  // (Infinity less Infinity is NaN, which falls through to the name)
+  last: (a, b) => lastOf(b) - lastOf(a) || byName(a, b),
+  played: (a, b) => (b.played || 0) - (a.played || 0) || byName(a, b),
+  login: (a, b) => (b.lastLogin || 0) - (a.lastLogin || 0) || byName(a, b),
+};
+function keptAdminSort() { try { const v = localStorage.getItem(ADMIN_SORT_KEY); return ADMIN_ORDER[v] ? v : 'az'; } catch (e) { return 'az'; } }
 
 /* Before the title's buttons work: open the login screen unless an account is
    ready (logged in, or the kept session trusted offline), then go on. */
@@ -195,11 +217,17 @@ class YesNo extends Screen {
 
 /* ---- Admin ---- */
 class AccountRow {
-  constructor(a) { this.a = a; }
+  constructor(a, sort) { this.a = a; this.sort = sort; }
   render(g, list, i, top, left, width) {
     const a = this.a;
-    g.text((a.admin ? '§c[ADMIN] §f' : a.mod ? '§2[MOD] §f' : '') + a.name + (a.online ? ' §a(online)' : ''), left + 2, top + 1, WHITE, false);
-    g.text(g.font.trim(a.banned ? '§cBanned: ' + a.banned : 'Last login ' + fmtDate(a.lastLogin) + ', made ' + fmtDate(a.createdAt), width - 6), left + 2, top + 12, 0x808080, false);
+    g.text((a.admin ? '§c[OWNER] §f' : a.staffAdmin ? '§c[ADMIN] §f' : a.mod ? '§2[MOD] §f' : '') + a.name + (a.online ? ' §a(online)' : ''), left + 2, top + 1, WHITE, false);
+    // (time played is unknown until the server has counted the old records: then it is left out)
+    const parts = [];
+    if (typeof a.played === 'number') parts.push('Played ' + playedShort(a.played));
+    parts.push(this.sort === 'login' ? 'last login ' + dayShort(a.lastLogin) : a.online ? 'on now' : a.lastPlayed ? 'last played ' + dayShort(a.lastPlayed) : 'never played');
+    parts.push('made ' + dayShort(a.createdAt));
+    const line = parts.join(' · ');
+    g.text(g.font.trim(a.banned ? '§cBanned: ' + a.banned : line.charAt(0).toUpperCase() + line.slice(1), width - 6), left + 2, top + 12, 0x808080, false);
   }
 }
 class ServerRow {
@@ -213,10 +241,22 @@ class ServerRow {
   }
 }
 export class AdminScreen extends Screen {
-  constructor() { super('Admin'); this.tab = 'accounts'; this.rows = []; this.msg = 'Loading...'; this.bad = false; this.selName = null; }
+  constructor() { super('Admin'); this.tab = 'accounts'; this.rows = []; this.msg = 'Loading...'; this.bad = false; this.selName = null; this.query = ''; this.sort = keptAdminSort(); }
   init() {
     const W = this.width, H = this.height, g = this.gui;
-    this.list = this.add(new ScrollList(0, 32, W, H - 64 - 32, 24, { rowWidth: 305, selectable: true, onSelect: e => { this.selName = e ? this.keyOf(e) : null; this.buttons(); } }));
+    // the accounts: a search over their names, and the order (the list starts under them)
+    const top = this.tab === 'accounts' ? 52 : 32;
+    if (this.tab === 'accounts') {
+      this.search = this.add(new TextField(W / 2 - 154, 31, 200, 16, { value: this.query, maxLength: 16, hint: 'Search names...', onChange: v => { this.query = v; this.fill(); } }));
+      const label = () => 'Sort: ' + (ADMIN_SORTS.find(x => x[0] === this.sort) || ADMIN_SORTS[0])[1];
+      this.sortB = this.add(new Button(W / 2 + 50, 29, 104, 20, label(), () => {
+        const i = ADMIN_SORTS.findIndex(x => x[0] === this.sort);
+        this.sort = ADMIN_SORTS[(i + 1) % ADMIN_SORTS.length][0];
+        try { localStorage.setItem(ADMIN_SORT_KEY, this.sort); } catch (e) { /* this visit only */ }
+        this.sortB.message = label(); this.fill();
+      }, 'Change the order of the accounts: by name, when they were made, when they last played, how long they have played on every server together, or their last login'));
+    } else this.search = this.sortB = null;
+    this.list = this.add(new ScrollList(0, top, W, H - 64 - top, 24, { rowWidth: 305, selectable: true, onSelect: e => { this.selName = e ? this.keyOf(e) : null; this.buttons(); } }));
     this.tabB = this.add(new Button(W / 2 - 154, 6, 150, 20, 'Accounts', () => { this.tab = 'accounts'; this.selName = null; this.refresh(); g.replace(this); }));
     this.tabS = this.add(new Button(W / 2 + 4, 6, 150, 20, 'Servers', () => { this.tab = 'servers'; this.selName = null; this.refresh(); g.replace(this); }));
     this.tabB.active = this.tab !== 'accounts'; this.tabS.active = this.tab !== 'servers';
@@ -231,10 +271,17 @@ export class AdminScreen extends Screen {
       this.b4 = this.add(new Button(W / 2 + 4, by, 150, 20, 'Delete Server', () => this.sdel()));
       this.b2 = this.b3 = null;
     }
-    // (only the Leon account makes and removes mods: the server checks it too)
-    this.modB = null;
+    /* (only the Leon account makes and removes mods; the owner (the account marked admin, Leon) makes and removes
+       admins: a mod with every command on every server, who may also join a server hidden. The server checks both) */
+    this.modB = this.adminB = null;
+    const ADMIN_TIP = 'An admin is a mod with every command on every server, who may also join a server hidden';
     if (this.tab === 'accounts' && String(Account.name || '').toLowerCase() === 'leon') {
-      this.modB = this.add(new Button(W / 2 - 154, H - 28, 100, 20, 'Make Mod', () => this.mod(), 'A mod sees and joins every server, private ones and Leonpixel too, without a password'));
+      this.modB = this.add(new Button(W / 2 - 154, H - 28, 74, 20, 'Make Mod', () => this.mod(), 'A mod sees and joins every server, private ones and Leonpixel too, without a password'));
+      this.adminB = this.add(new Button(W / 2 - 76, H - 28, 74, 20, 'Make Admin', () => this.staffAdmin(), ADMIN_TIP));
+      this.add(new Button(W / 2 + 2, H - 28, 74, 20, 'Refresh', () => this.refresh()));
+      this.add(new Button(W / 2 + 80, H - 28, 74, 20, 'Done', () => g.back()));
+    } else if (this.tab === 'accounts') {
+      this.adminB = this.add(new Button(W / 2 - 154, H - 28, 100, 20, 'Make Admin', () => this.staffAdmin(), ADMIN_TIP));
       this.add(new Button(W / 2 - 50, H - 28, 100, 20, 'Refresh', () => this.refresh()));
       this.add(new Button(W / 2 + 54, H - 28, 100, 20, 'Done', () => g.back()));
     } else {
@@ -246,8 +293,14 @@ export class AdminScreen extends Screen {
   }
   keyOf(e) { return e.a ? e.a.name : e.s.id; }
   sel() { const e = this.list.selected; return e ? (e.a || e.s) : null; }
+  // the accounts the search finds, in the order picked
+  shown() {
+    if (this.tab !== 'accounts') return this.rows;
+    const q = this.query.trim().toLowerCase();
+    return this.rows.filter(r => !q || lowName(r).includes(q)).sort(ADMIN_ORDER[this.sort] || byName);
+  }
   fill() {
-    this.list.entries = this.rows.map(r => (this.tab === 'accounts' ? new AccountRow(r) : new ServerRow(r)));
+    this.list.entries = this.shown().map(r => (this.tab === 'accounts' ? new AccountRow(r, this.sort) : new ServerRow(r)));
     this.list.selected = this.list.entries.find(e => this.keyOf(e) === this.selName) || null;
     this.list.setScroll(this.list.scroll);
     this.buttons();
@@ -257,7 +310,9 @@ export class AdminScreen extends Screen {
     const s = this.sel();
     for (const b of [this.b1, this.b2, this.b3, this.b4]) if (b) b.active = !!s;
     if (s && this.tab === 'accounts') { this.b1.active = !s.admin && !s.banned; this.b2.active = !!s.banned; this.b4.active = !s.admin; }
-    if (this.modB) { this.modB.active = !!s && !s.admin; this.modB.message = s && s.mod ? 'Remove Mod' : 'Make Mod'; }
+    // (Make Mod on an admin makes them a plain mod; Remove Admin makes them a player again)
+    if (this.modB) { this.modB.active = !!s && !s.admin; this.modB.message = s && s.mod && !s.staffAdmin ? 'Remove Mod' : 'Make Mod'; }
+    if (this.adminB) { this.adminB.active = !!s && !s.admin; this.adminB.message = s && s.staffAdmin ? 'Remove Admin' : 'Make Admin'; }
     if (s && this.tab === 'servers') this.b4.active = s.id !== 'main';
   }
   async refresh() {
@@ -275,7 +330,8 @@ export class AdminScreen extends Screen {
     if (!this.bad) { this.msg = text; this.bad = !ok; }
     if (this.gui) this.gui.markDirty();
   }
-  mod() { const s = this.sel(); if (s && !s.admin) this.run('mod', { name: s.name, on: !s.mod }, s.mod ? s.name + ' is no longer a mod' : s.name + ' is a mod now'); }
+  mod() { const s = this.sel(), off = s && s.mod && !s.staffAdmin; if (s && !s.admin) this.run('mod', { name: s.name, on: !off }, off ? s.name + ' is no longer a mod' : s.name + ' is a mod now'); }
+  staffAdmin() { const s = this.sel(); if (s && !s.admin) this.run('staffadmin', { name: s.name, on: !s.staffAdmin }, s.staffAdmin ? s.name + ' is no longer an admin' : s.name + ' is an admin now'); }
   act(op) { const s = this.sel(); if (s) this.run(op, { name: s.name }, op === 'unban' ? 'Unbanned ' + s.name : 'Done'); }
   ban() { const s = this.sel(); if (s) this.gui.open(new AskScreen('Ban ' + s.name, 'Reason (shown to them)', v => this.run('ban', { name: s.name, reason: v }, 'Banned ' + s.name), { max: 200 })); }
   reset() { const s = this.sel(); if (s) this.gui.open(new AskScreen('Reset Password', 'A new password for ' + s.name + ' (6 or more characters)', v => this.run('reset', { name: s.name, password: v }, 'Reset the password of ' + s.name), { password: true })); }
@@ -285,5 +341,6 @@ export class AdminScreen extends Screen {
   render(g, mx, my, dt) {
     super.render(g, mx, my, dt);
     if (this.msg) g.centered(this.msg, this.width / 2, this.height - 64 - 4 - 9, this.bad ? RED : GREY);
+    else if (this.tab === 'accounts' && this.query.trim() && !this.list.entries.length && this.rows.length) g.centered('No account has that in its name', this.width / 2, 70, GREY);
   }
 }

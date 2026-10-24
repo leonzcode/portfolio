@@ -65,6 +65,8 @@ export const Account = {
   get token() { return this.session ? this.session.token : ''; },
   get admin() { return !!(this.session && this.session.admin); },
   get mod() { return !!(this.session && this.session.mod); },
+  // an admin Leon made (shown [ADMIN]; Leon himself, the owner, is admin): a mod with every command, who may join hidden
+  get staffAdmin() { return !!(this.session && this.session.staffAdmin); },
   // playing as a guest: no account, a name of Guest_ and four digits (a server may give another if that one is in use)
   get guest() { return !!(this.session && this.session.guest); },
   playAsGuest() {
@@ -79,8 +81,17 @@ export const Account = {
   onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   changed() { for (const fn of listeners) { try { fn(this); } catch (e) { console.error(e); } } },
   keep(r) {
-    this.session = { name: r.name, token: r.token, admin: !!r.admin, mod: !!r.mod, at: Date.now() };
+    this.session = { name: r.name, token: r.token, admin: !!r.admin, mod: !!r.mod, staffAdmin: !!r.staffAdmin, at: Date.now() };
     write(this.session); this.checked = true; this.offline = false; this.changed();
+  },
+  // the roles the server list's answer gives (made a mod or an admin since the session was checked): true when one changed
+  roles(me) {
+    const s = this.session;
+    if (!s || s.guest || !me || me.name !== s.name) return false;
+    const r = { admin: !!me.admin, mod: !!me.mod, staffAdmin: !!me.staffAdmin };
+    if (r.admin === !!s.admin && r.mod === !!s.mod && r.staffAdmin === !!s.staffAdmin) return false;
+    this.session = Object.assign({}, s, r); write(this.session); this.changed();
+    return true;
   },
   forget() { this.session = null; write(null); this.checked = false; this.offline = false; this.changed(); },
 
@@ -98,7 +109,7 @@ export const Account = {
     if (!s) { this.checked = false; this.changed(); return false; }
     if (s.guest) { this.checked = true; this.offline = false; this.changed(); return true; }
     const r = await call('/lc2/account/me', { token: s.token });
-    if (r.ok) { this.session = Object.assign({}, s, { name: r.name, admin: !!r.admin, mod: !!r.mod }); write(this.session); this.checked = true; this.offline = false; this.changed(); return true; }
+    if (r.ok) { this.session = Object.assign({}, s, { name: r.name, admin: !!r.admin, mod: !!r.mod, staffAdmin: !!r.staffAdmin }); write(this.session); this.checked = true; this.offline = false; this.changed(); return true; }
     if (r.code === 'down') { this.offline = true; this.changed(); return 'offline'; }
     // stale, forged, banned or deleted: log in again (a ban is said on the login screen)
     this.forget();

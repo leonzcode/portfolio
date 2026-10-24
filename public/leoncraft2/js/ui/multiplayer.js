@@ -26,13 +26,13 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=109';
-import { ConfirmScreen } from './menus.js?v=109';
-import { Net, listServers, createServer, editServer, deleteServer, srvRequests, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=109';
-import { Account } from '../net/account.js?v=109';
-import { LoginScreen, AccountScreen } from './account.js?v=109';
-import { parseSeed } from '../gen/random.js?v=109';
-import { MapRequestsScreen } from './maprequests.js?v=109';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=110';
+import { ConfirmScreen } from './menus.js?v=110';
+import { Net, listServers, createServer, editServer, deleteServer, srvRequests, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=110';
+import { Account } from '../net/account.js?v=110';
+import { LoginScreen, AccountScreen } from './account.js?v=110';
+import { parseSeed } from '../gen/random.js?v=110';
+import { MapRequestsScreen } from './maprequests.js?v=110';
 
 const PW_KEY = 'lc2_pw_';
 /* Server requests, as the first Leoncraft has them: anyone but an admin or a mod asks for a server
@@ -257,9 +257,9 @@ export class MultiplayerScreen extends Screen {
       if (!hub) { window.__lc2HubAction = null; return; }
       g.back(); this.join(hub);
     })), 'Servers players asked for, and maps made by players for Leonpixel, waiting to be approved')) : null;
-    /* admins: into the server picked without anyone knowing (mlhub lc2.js onJoin hidden): nobody is told, sees
-       or hears you anywhere, and only a /msg you send reaches a player. Not Leonpixel, whose games count you. */
-    this.hiddenB = Account.admin ? this.add(new Button(6, 6, 86, 20, 'Join Hidden', () => { const s = this.sel(); if (s && !s.hub) this.join(s, undefined, false, true); },
+    /* admins (Leon and the admins he makes): into the server picked without anyone knowing (mlhub lc2.js onJoin hidden): nobody is told,
+       sees or hears you anywhere, and only a /msg you send reaches a player. Not Leonpixel, whose games count you. */
+    this.hiddenB = Account.admin || Account.staffAdmin ? this.add(new Button(6, 6, 86, 20, 'Join Hidden', () => { const s = this.sel(); if (s && !s.hub) this.join(s, undefined, false, true); },
       'Join the server picked without anyone knowing you are there: nobody sees you in the world, the Tab list, the server list or /list, and only a /msg you send reaches a player')) : null;
     this.fill();
     if (!this.loaded) { this.loaded = true; this.refresh(); }
@@ -341,11 +341,14 @@ export class MultiplayerScreen extends Screen {
   }
   async refresh() {
     this.status = 'Pinging...'; this.ping = -1;
+    let roles = false;
     if (this.gui) this.gui.markDirty();
     this.status2 = '';
     try {
       const [r, p, q] = await Promise.all([listServers(), accountPrefs().catch(() => null), Account.guest || !Account.token ? null : srvRequests().catch(() => null)]);
       this.servers = r.servers; this.ping = r.ping; this.status = '';
+      // (made a mod or an admin since the session was checked: the buttons for it come at once, below)
+      roles = Account.roles(r.me);
       this.requests(q);
       if (p) { this.prefs = p; try { localStorage.setItem(LIST_KEY, JSON.stringify(p)); } catch (e) {} }
     } catch (e) {
@@ -354,6 +357,7 @@ export class MultiplayerScreen extends Screen {
       this.servers = []; this.status = t[0]; this.status2 = t[1];
     }
     this.fill();
+    if (roles && this.gui && this.gui.screen === this) this.gui.replace(this);
   }
   /* your own requests as rows, waiting and answered (an approved one's password carried to its server); for an
      admin or a mod, how many wait, on the Requests button */
