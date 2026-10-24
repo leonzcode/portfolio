@@ -23,7 +23,7 @@
    block light where it is now (looked up each tick), so torch smoke is lit
    by the torch and campfire smoke darkens as it rises at night.
 --------------------------------------------------------------------------- */
-import { keepParticle } from '../render/particles.js?v=109';
+import { keepParticle } from '../render/particles.js?v=110';
 const N = 4096;
 const R = () => Math.random();
 

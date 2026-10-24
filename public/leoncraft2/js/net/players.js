@@ -28,12 +28,12 @@
    letter, [BUILDER]) the role still shows in the Tab list and in chat, and
    the game's tag alone over the head (headTag).
 --------------------------------------------------------------------------- */
-import { Avatar, invisLook } from '../render/avatar.js?v=109';
-import { pieceLook, armorSheet } from '../render/armor.js?v=109';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=109';
-import { DRAW, I, stackFromJSON } from '../items.js?v=109';
-import { B, BLOCKS } from '../blocks.js?v=109';
-import { walkers } from '../render/realism.js?v=109';
+import { Avatar, invisLook } from '../render/avatar.js?v=110';
+import { pieceLook, armorSheet } from '../render/armor.js?v=110';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=110';
+import { DRAW, I, stackFromJSON } from '../items.js?v=110';
+import { B, BLOCKS } from '../blocks.js?v=110';
+import { walkers } from '../render/realism.js?v=110';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -43,7 +43,7 @@ const PI = Math.PI;
 const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
 const idOf = name => !name ? 0 : (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
 // the rank tag before a name, in colour codes (the name after it goes back to the line's own colour)
-const RANKS = { admin: '\u00a7c[ADMIN] \u00a7r', mod: '\u00a72[MOD] \u00a7r', owner: '\u00a76[OWNER] \u00a7r', builder: '\u00a7b[BUILDER] \u00a7r' };   // (builder: Leon Network's, the maker of the map being played and their building team)
+const RANKS = { netowner: '\u00a7c[OWNER] \u00a7r', admin: '\u00a7c[ADMIN] \u00a7r', mod: '\u00a72[MOD] \u00a7r', owner: '\u00a76[OWNER] \u00a7r', builder: '\u00a7b[BUILDER] \u00a7r' };   // (builder: Leon Network's, the maker of the map being played and their building team)
 // (Leon Network's team tag, 'team:<colour code>:<letter>': the letter in bold and the name in the team's colour)
 const baseTag = tag => RANKS[tag] || (typeof tag === 'string' && /^team:[0-9a-f]:[A-Z]$/.test(tag) ? '§' + tag[5] + '§l' + tag[7] + ' §r§' + tag[5] : '');
 // a Leonpixel leaderboard title worn, after a "|" in the tag ("admin|bedwars:1"): [Bed Wars #1] in gold, #2 silver, #3 bronze
@@ -192,7 +192,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=109', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=110', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
     av.setCape(r.capeUrl || '').catch(() => {});
   }
@@ -425,7 +425,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=109', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=110', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;

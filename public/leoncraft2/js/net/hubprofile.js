@@ -89,7 +89,7 @@ export function makeProfile(K) {
         this.put(10 + (i % 7) + Math.floor(i / 7) * 9, st, [t.text, '§7Shown before your name', '§7in chat and over your head' + (P.rank ? ',' : '.'), ...(P.rank ? ['§7instead of your rank.'] : []), '', on ? '§aYou are wearing this title!' : '§eClick to wear it!'], () => hub.send({ k: 'title', key: on ? '' : t.key }));
       });
       // a rank counts as one of the choices: shown when no title is worn (one or the other, never both)
-      const RANK = { admin: '§c[ADMIN]', mod: '§2[MOD]' }[P.rank];
+      const RANK = { netowner: '§c[OWNER]', admin: '§c[ADMIN]', mod: '§2[MOD]' }[P.rank];
       if (RANK) {
         const st = named(['nether_star', 'name_tag'], '§fShow Your Rank: ' + RANK);
         if (st) { if (!P.chosen) st.ench = { unbreaking: 1 }; this.put(49, st, ['§fShow Your Rank: ' + RANK, '§7Your rank before your name', '§7instead of a title.', '', !P.chosen ? '§aYou are showing your rank!' : '§eClick to show it!'], () => hub.send({ k: 'title', key: '' })); }
