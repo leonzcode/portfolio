@@ -11,16 +11,16 @@
    the fish's way (mobs3.js). Numbers from the Minecraft Wiki (Java Edition);
    the shapes are boxes in the game's units, the textures our own.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=109';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=110';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=109';
-import { Animal, Monster, register, TYPES } from './mobs.js?v=109';
-import { model } from './mobs2.js?v=109';
-import { addArt } from './mobart.js?v=109';
-import { MODELS } from './mobmodels.js?v=109';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=109';
-import { activeDrops } from '../drops.js?v=109';
-import { ITEMS, I } from '../items.js?v=109';
+  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=110';
+import { Animal, Monster, register, TYPES } from './mobs.js?v=110';
+import { model } from './mobs2.js?v=110';
+import { addArt } from './mobart.js?v=110';
+import { MODELS } from './mobmodels.js?v=110';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=110';
+import { activeDrops } from '../drops.js?v=110';
+import { ITEMS, I } from '../items.js?v=110';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -872,7 +872,7 @@ model('axolotl', [
   { name: 'leftHind', parent: 'body', pivot: [3.5, 1, -1], boxes: [[-2, 0, 0, 3, 5, 0, 2, 13]] },
   { name: 'rightFront', parent: 'body', pivot: [-3.5, 1, -8], boxes: [[-1, 0, 0, 3, 5, 0, 2, 13]] },
   { name: 'leftFront', parent: 'body', pivot: [3.5, 1, -8], boxes: [[-2, 0, 0, 3, 5, 0, 2, 13]] },
-  { name: 'tail', parent: 'body', pivot: [0, 0, 1], boxes: [[0, -3, 0, 0, 5, 12, 2, 19]] },
+  { name: 'tail', parent: 'body', pivot: [0, 0, 1], boxes: [[0, -3, 0, 0, 5, 12, 14, 7]] },
 ], (m, P, A) => {
   const I = m.index, f = A.age * 0.3;
   set(P, I.head, RY, A.yaw * 0.5);
@@ -1067,7 +1067,7 @@ export class ZombieNautilus extends Nautilus {
 register('zombie_nautilus', ZombieNautilus);
 // the mount screen, fetched once (ui/containers.js leads back to the entities, so not imported at the top)
 let MountScreenRef = null;
-import('../ui/containers.js?v=109').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
+import('../ui/containers.js?v=110').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
 // nautilus armour: bands of the metal round the shell and a plate over its back
 const NAUT_ARMOR_ART = { copper: [0xc8764a, 0x8a4a2a], iron: [0xd8d8d8, 0x9a9a9a], golden: [0xf8d84a, 0xc89a20], diamond: [0x5ae8e0, 0x2aa8a0], netherite: [0x4a4248, 0x2a2428] };
 for (const k in NAUT_ARMOR_ART) addArt('nautilus_armor_' + k, [64, 64], p => {
