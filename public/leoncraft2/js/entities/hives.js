@@ -19,10 +19,10 @@
    The bees inside are kept with the dimension's block entities (details.js
    registerExtra).
 --------------------------------------------------------------------------- */
-import { B, SOLID, FLUID } from '../blocks.js?v=107';
-import { CH } from '../world-const.js?v=107';
-import { I } from '../items.js?v=107';
-import { registerExtra } from '../details.js?v=107';
+import { B, SOLID, FLUID } from '../blocks.js?v=108';
+import { CH } from '../world-const.js?v=108';
+import { I } from '../items.js?v=108';
+import { registerExtra } from '../details.js?v=108';
 
 const R = Math.random, RI = n => Math.floor(Math.random() * n);
 const FRONT = [[0, -1], [1, 0], [0, 1], [-1, 0]];        // facing north, east, south, west
