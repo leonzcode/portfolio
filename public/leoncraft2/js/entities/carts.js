@@ -29,15 +29,15 @@
                an operator in creative sets the command with a click
                (ui/commandcart.js); it keeps what the command said last
 --------------------------------------------------------------------------- */
-import { Minecart } from './minecart.js?v=108';
-import { register } from './mobs.js?v=108';
-import { MODELS } from './mobmodels.js?v=108';
-import { addArt } from './mobart.js?v=108';
-import { B } from '../blocks.js?v=108';
-import { stackToJSON, stackFromJSON, maxStack } from '../items.js?v=108';
-import { spill, lootStack } from '../containers.js?v=108';
-import { ChestScreen, HopperScreen } from '../ui/containers.js?v=108';
-import { CommandCartScreen } from '../ui/commandcart.js?v=108';
+import { Minecart } from './minecart.js?v=109';
+import { register } from './mobs.js?v=109';
+import { MODELS } from './mobmodels.js?v=109';
+import { addArt } from './mobart.js?v=109';
+import { B } from '../blocks.js?v=109';
+import { stackToJSON, stackFromJSON, maxStack } from '../items.js?v=109';
+import { spill, lootStack } from '../containers.js?v=109';
+import { ChestScreen, HopperScreen } from '../ui/containers.js?v=109';
+import { CommandCartScreen } from '../ui/commandcart.js?v=109';
 
 const R = () => Math.random(), RI = n => Math.floor(Math.random() * n);
 
@@ -141,13 +141,14 @@ class ChestCart extends BlockCart {
     if (!H || !H.open || this.removed) return;
     H.open(this.constructor === HopperCart ? new HopperScreen(H.inv, H.icons, this.slots, null) : new ChestScreen(H.inv, H.icons, this.slots, this.title(), null));
     if (this.constructor === HopperCart && H.gui && H.gui.screen) H.gui.screen.title = this.title();
+    if (H.keptToEntity && H.gui) H.keptToEntity(H.gui.screen, this);
   }
   // the loot, once: its stacks into their slots
   fill() {
     const L = this.loot;
     if (!L) return Promise.resolve();
     this.loot = null;
-    return import('../struct/loot.js?v=108').then(mod => {
+    return import('../struct/loot.js?v=109').then(mod => {
       for (const e of mod.rollLoot(L.table, L.seed, { size: this.slots.length })) {
         const st = lootStack(e);
         if (st && e.slot >= 0 && e.slot < this.slots.length && !this.slots[e.slot]) this.slots[e.slot] = st;
@@ -340,7 +341,7 @@ class CommandCart extends BlockCart {
     ctx.cheats = true;
     ctx.say = (t, c) => said.push([String(t), c]);
     ctx.playerName = '@';
-    import('../commands.js?v=108').then(mod => {
+    import('../commands.js?v=109').then(mod => {
       if (this.removed) return;
       // the player stands where the cart is for the command, and back after (unless it moved them)
       const was = P.pos.clone(), at = this.pos.clone();

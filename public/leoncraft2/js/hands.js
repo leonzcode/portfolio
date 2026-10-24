@@ -28,28 +28,28 @@
    wear on mobs (wearHeld), worn-out tools break into pieces, and Mending
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=108';
-import { setLodestoneCheck } from './dials.js?v=108';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=108';
-import { breakTicks, wearFor } from './mining.js?v=108';
-import { blockDrops } from './loot.js?v=108';
-import { containerKind, spill } from './containers.js?v=108';
-import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=108';
-import { isPotion, drinkPotion } from './brewing.js?v=108';
-import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=108';
-import { BeaconScreen } from './ui/beacon.js?v=108';
-import { STORE as BEACON_POWERS } from './sim/beacon.js?v=108';
-import { MerchantScreen } from './ui/merchant.js?v=108';
-import { hives } from './entities/hives.js?v=108';
-import { LoomScreen } from './ui/loom.js?v=108';
-import { CartographyScreen } from './ui/cartography.js?v=108';
-import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=108';
-import { countShelves } from './enchanting.js?v=108';
-import { wear } from './ui/inventory.js?v=108';
-import { BookScreen } from './ui/book.js?v=108';
-import { breaksInCreative } from './modes.js?v=108';
-import { boxOpened, bellRang } from './sim/lids.js?v=108';
-import { Account } from './net/account.js?v=108';
+import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=109';
+import { setLodestoneCheck } from './dials.js?v=109';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=109';
+import { breakTicks, wearFor } from './mining.js?v=109';
+import { blockDrops } from './loot.js?v=109';
+import { containerKind, spill } from './containers.js?v=109';
+import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=109';
+import { isPotion, drinkPotion } from './brewing.js?v=109';
+import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=109';
+import { BeaconScreen } from './ui/beacon.js?v=109';
+import { STORE as BEACON_POWERS } from './sim/beacon.js?v=109';
+import { MerchantScreen } from './ui/merchant.js?v=109';
+import { hives } from './entities/hives.js?v=109';
+import { LoomScreen } from './ui/loom.js?v=109';
+import { CartographyScreen } from './ui/cartography.js?v=109';
+import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=109';
+import { countShelves } from './enchanting.js?v=109';
+import { wear } from './ui/inventory.js?v=109';
+import { BookScreen } from './ui/book.js?v=109';
+import { breaksInCreative } from './modes.js?v=109';
+import { boxOpened, bellRang } from './sim/lids.js?v=109';
+import { Account } from './net/account.js?v=109';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // what a full bucket pours out (the fish buckets are water with a fish in it)
@@ -232,7 +232,62 @@ export class Hands {
   }
 
   /* ---- right click on a block ---- */
+  /* A screen the click opens is kept to its block, as the game's menus are (stillValid): it closes once the
+     block is gone (either half of a large chest, or the container's record, when the chest went on another
+     player's page) or you are more than 4 blocks past your reach from it (Player.canInteractWithBlock(pos, 4.0)).
+     Left open, a chest blown up while you looked in it showed what had just spilled onto the ground, all still
+     there to take: twice the items. main.js closes the screen in its tick. */
   useOn(hit) {
+    const gui = this.gui, before = gui && gui.screen;
+    const r = this.useOnBlock(hit);
+    const s = gui && gui.screen;
+    if (s && s !== before && !s.stillValid) {
+      s.stillValid = this.keptTo(hit);
+      // (the container records it shows, so what a click moves can be told from what a hopper or furnace did: net.js)
+      const C = this.containers, k = C && containerKind(this.world.get(hit.x, hit.y, hit.z));
+      if (k) { const p = C.partner(hit.x, hit.y, hit.z); s.records = [C.peek(hit.x, hit.y, hit.z), p && C.peek(p[0], p[1], p[2])].filter(Boolean); }
+    }
+    return r;
+  }
+  keptTo(hit) {
+    const w = this.world, C = this.containers, b0 = w.get(hit.x, hit.y, hit.z), kind = containerKind(b0);
+    const cells = [[hit.x, hit.y, hit.z]];
+    if (kind && C) { const p = C.partner(hit.x, hit.y, hit.z); if (p) cells.push(p); }
+    // (what the screen shows of each: the record it opened on; a new or missing one is not it)
+    const recs = cells.map(([x, y, z]) => (kind && C ? C.peek(x, y, z) : null));
+    // (an anvil chipped as it is used is still an anvil)
+    const family = b => { const n = BLOCKS[b] ? BLOCKS[b].name : ''; return /anvil$/.test(n) ? 'anvil' : n; };
+    const was = family(b0);
+    return () => {
+      if (this.world !== w) return false;
+      for (let i = 0; i < cells.length; i++) {
+        const [x, y, z] = cells[i], b = w.get(x, y, z);
+        if (kind ? containerKind(b) !== kind : family(b) !== was) return false;
+        if (recs[i] && C.peek(x, y, z) !== recs[i]) return false;
+      }
+      return this.inReach(hit.x, hit.y, hit.z, hit.x + 1, hit.y + 1, hit.z + 1, this.creative ? 5 : 4.5);
+    };
+  }
+  // a box within `range` plus 4 blocks of the eyes (the game's block reach is 4.5, 5 in creative; its entity reach 3)
+  inReach(x0, y0, z0, x1, y1, z1, range) {
+    const P = this.player;
+    if (!P || !P.pos) return true;
+    const eye = P.pickEye ? P.pickEye(1) : { x: P.pos.x, y: P.pos.y + 1.62, z: P.pos.z };
+    const r = range + 4, gap = (e, a, b) => Math.max(a - e, 0, e - b);
+    const dx = gap(eye.x, x0, x1), dy = gap(eye.y, y0, y1), dz = gap(eye.z, z0, z1);
+    return dx * dx + dy * dy + dz * dz <= r * r;
+  }
+  // the same for a screen opened on an entity (a chest boat or minecart, a donkey's chest): it closes once the
+  // entity is gone or out of reach, as the game's does (its contents spill when it breaks)
+  keptToEntity(screen, e) {
+    if (!screen) return;
+    screen.stillValid = () => {
+      if (!e || e.removed || e.dead) return false;
+      const p = e.pos, hw = typeof e.hw === 'number' ? e.hw : 0.5, h = typeof e.h === 'number' ? e.h : 1;
+      return this.inReach(p.x - hw, p.y, p.z - hw, p.x + hw, p.y + h, p.z + hw, this.creative ? 5 : 3);
+    };
+  }
+  useOnBlock(hit) {
     const w = this.world, b = hit.b, d = BLOCKS[b];
     if (!d || w.get(hit.x, hit.y, hit.z) !== b) return false;
     const holding = !!this.held || !!this.inv.offhand;
@@ -258,12 +313,14 @@ export class Hands {
     const kind = containerKind(b);
     if (kind) {
       const C = this.containers, x = hit.x, y = hit.y, z = hit.z;
+      // (a change made on the screen is yours, by hand: on a server it is undone if it cannot be kept, net.js undoMine)
+      const hand = fn => (...a) => { C.byHand = (C.byHand | 0) + 1; try { return fn(...a); } finally { C.byHand--; } };
       // the click still counts (the item is not used) when the lid cannot open
       if (C.blocked(x, y, z)) return true;
       if (kind === 'furnace' || kind === 'smoker' || kind === 'blast_furnace') {
         const c = C.at(x, y, z);
         this.open(new FurnaceScreen(this.inv, this.icons, c, {
-          changed: () => C.changed(c),
+          changed: hand(() => C.changed(c)),
           // anything taken out of the output by hand brings all the experience the furnace holds
           tookXp: () => { const xp = C.takeXp(c); if (xp > 0) this.drops.xp(this.player.pos.x, this.player.pos.y + 0.5, this.player.pos.z, xp); },
         }));
@@ -274,18 +331,18 @@ export class Hands {
       if (two) {
         // a large chest: the half on your left as you face it holds the top three rows; one live view of both
         const box = joinSlots(two[0].slots, two[1].slots);
-        const s = new ChestScreen(this.inv, this.icons, box, 'Large Chest', i => C.changed(i < 27 ? two[0] : two[1]));
+        const s = new ChestScreen(this.inv, this.icons, box, 'Large Chest', hand(i => C.changed(i < 27 ? two[0] : two[1])));
         this.open(s);
         // both halves' lids open (sim/lids.js)
         boxOpened(x, y, z, s, C.partner(x, y, z));
         return true;
       }
-      if (kind === 'hopper') { this.open(new HopperScreen(this.inv, this.icons, c.slots, () => C.changed(c))); return true; }
-      if (kind === 'brewing_stand') { this.open(new BrewingScreen(this.inv, this.icons, c, { changed: () => C.changed(c) })); return true; }
-      if (kind === 'dispenser' || kind === 'dropper') { this.open(new DispenserScreen(this.inv, this.icons, c.slots, kind === 'dropper' ? 'Dropper' : 'Dispenser', () => C.changed(c))); return true; }
-      if (kind === 'crafter') { this.open(new CrafterScreen(this.inv, this.icons, c, { changed: () => C.changed(c), powered: () => !!(w.meta(x, y, z) & 8) })); return true; }
+      if (kind === 'hopper') { this.open(new HopperScreen(this.inv, this.icons, c.slots, hand(() => C.changed(c)))); return true; }
+      if (kind === 'brewing_stand') { this.open(new BrewingScreen(this.inv, this.icons, c, { changed: hand(() => C.changed(c)) })); return true; }
+      if (kind === 'dispenser' || kind === 'dropper') { this.open(new DispenserScreen(this.inv, this.icons, c.slots, kind === 'dropper' ? 'Dropper' : 'Dispenser', hand(() => C.changed(c)))); return true; }
+      if (kind === 'crafter') { this.open(new CrafterScreen(this.inv, this.icons, c, { changed: hand(() => C.changed(c)), powered: () => !!(w.meta(x, y, z) & 8) })); return true; }
       const title = kind === 'barrel' ? 'Barrel' : kind === 'shulker_box' ? 'Shulker Box' : 'Chest';
-      const s = kind === 'shulker_box' ? new ShulkerScreen(this.inv, this.icons, c.slots, title, () => C.changed(c)) : new ChestScreen(this.inv, this.icons, c.slots, title, () => C.changed(c));
+      const s = kind === 'shulker_box' ? new ShulkerScreen(this.inv, this.icons, c.slots, title, hand(() => C.changed(c))) : new ChestScreen(this.inv, this.icons, c.slots, title, hand(() => C.changed(c)));
       this.open(s);
       // the lid opens, or the barrel shows open, until the screen closes (sim/lids.js)
       boxOpened(x, y, z, s);

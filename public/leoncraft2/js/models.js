@@ -32,8 +32,8 @@
    Fences, walls, panes, rails and redstone work out their shape from their
    neighbours, as Minecraft does when it draws them.
 --------------------------------------------------------------------------- */
-import { burnable } from './flame.js?v=108';
-import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=108';
+import { burnable } from './flame.js?v=109';
+import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=109';
 
 const box = (x0, y0, z0, x1, y1, z1, extra) => {
   const b = { f: [x0, y0, z0], t: [x1, y1, z1] };
