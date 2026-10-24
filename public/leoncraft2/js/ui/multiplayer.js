@@ -26,13 +26,13 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=105';
-import { ConfirmScreen } from './menus.js?v=105';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=105';
-import { Account } from '../net/account.js?v=105';
-import { LoginScreen, AccountScreen } from './account.js?v=105';
-import { parseSeed } from '../gen/random.js?v=105';
-import { MapRequestsScreen } from './maprequests.js?v=105';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=106';
+import { ConfirmScreen } from './menus.js?v=106';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=106';
+import { Account } from '../net/account.js?v=106';
+import { LoginScreen, AccountScreen } from './account.js?v=106';
+import { parseSeed } from '../gen/random.js?v=106';
+import { MapRequestsScreen } from './maprequests.js?v=106';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
@@ -41,13 +41,26 @@ const MODE_NAMES = { survival: 'Survival', creative: 'Creative', adventure: 'Adv
 /* The list's orders (the Sort button cycles them, kept in this browser): your own, the most players on, names A to Z
    and Z to A, newest and oldest. Pinned servers stay on top in their own order whatever the sort. */
 const SORT_KEY = 'lc2_sort';
-const LIST_SORTS = [['yours', 'Your Order'], ['players', 'Most Players'], ['az', 'A to Z'], ['za', 'Z to A'], ['newest', 'Newest'], ['oldest', 'Oldest']];
+// (Most Played only for admins and mods: the server sends the play time to them alone, MultiplayerScreen.sorts)
+const LIST_SORTS = [['yours', 'Your Order'], ['players', 'Most Players'], ['az', 'A to Z'], ['za', 'Z to A'], ['newest', 'Newest'], ['oldest', 'Oldest'], ['played', 'Most Played']];
 const byName = (a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' });
 const LIST_ORDER = {
   players: (a, b) => (b.players | 0) - (a.players | 0) || byName(a, b),
   az: byName, za: (a, b) => byName(b, a),
   newest: (a, b) => (b.createdAt || 0) - (a.createdAt || 0), oldest: (a, b) => (a.createdAt || 0) - (b.createdAt || 0),
+  played: (a, b) => (b.played || 0) - (a.played || 0) || byName(a, b),
 };
+/* What admins and mods see beside each server's name: how long it has been played, every
+   player's time together (counted by the server, with the time before that from the players'
+   own Time Played statistic: mlhub lc2.js seedPlayed), and the day it was made. */
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function playedShort(sec) { const m = Math.floor(sec / 60), h = Math.floor(m / 60); return h >= 100 ? h + 'h' : h ? h + 'h ' + (m % 60) + 'm' : m + 'm'; }
+function playedLong(sec) { const m = Math.floor(sec / 60), h = Math.floor(m / 60), mm = m % 60; return (h ? h + (h === 1 ? ' hour, ' : ' hours, ') : '') + mm + (mm === 1 ? ' minute' : ' minutes'); }
+const madeShort = t => { const d = new Date(t); return MONTHS[d.getMonth()].slice(0, 3) + ' ' + d.getDate() + ' ' + d.getFullYear(); };
+const madeLong = t => { const d = new Date(t); return MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear() + ' at ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+const STAFF_INFO = 0xFF00AAAA;
+// (the first two servers carry 0 and 1 for when they were made: no date known)
+const madeKnown = t => t > 1e12;
 function keptSort() { try { const v = localStorage.getItem(SORT_KEY); return LIST_SORTS.some(s => s[0] === v) ? v : 'yours'; } catch (e) { return 'yours'; } }
 
 /* ---- the list as you keep it: pinned servers at the top in their own order, then the rest in yours. Kept on your
@@ -119,13 +132,19 @@ class ServerEntry {
     if (hovered && inside(sp.pin)) g.setTooltip(s.always ? 'Pinned for everyone' : pinned ? 'Unpin' : 'Pin to the top');
     if (hovered && this.screen.canMove(s, -1)) { drawArrow(g, sp.up[0] + 2, sp.up[1] + 2, true, inside(sp.up) ? 0xFFFFFFFF : 0xFFA0A0A0); if (inside(sp.up)) g.setTooltip('Move up'); }
     if (hovered && this.screen.canMove(s, 1)) { drawArrow(g, sp.down[0] + 2, sp.down[1] + 2, false, inside(sp.down) ? 0xFFFFFFFF : 0xFFA0A0A0); if (inside(sp.down)) g.setTooltip('Move down'); }
-    g.text(g.font.trim(s.name, width - 80), left + 35, top + 1, WHITE, false);
+    // the player count's place, top right (drawn below)
+    const count = s.players + '/' + s.max, cw = g.textWidth(count);
+    // (admins and mods: the play time and the day it was made, between the name and the count)
+    const staff = s.played !== undefined;
+    const info = staff ? [s.played != null ? playedShort(s.played) : '', madeKnown(s.createdAt) ? madeShort(s.createdAt) : ''].filter(Boolean).join(' · ') : '';
+    const iw = info ? g.textWidth(info) : 0, ix = left + width - cw - 22 - iw;
+    g.text(g.font.trim(s.name, info ? ix - 6 - (left + 35) : width - 80), left + 35, top + 1, WHITE, false);
+    if (info) g.text(info, ix, top + 1, STAFF_INFO, false);
     const line1 = s.motd || (s.kind === 'private' ? 'A private server' : 'A public server');
     g.text(g.font.trim(line1, width - 66), left + 35, top + 12, 0x808080, false);
     const line2 = s.hub ? 'Minigame Network' : (MODE_NAMES[s.mode] || 'Survival') + ' Mode' + (s.cheats ? ', Commands' : '') + (s.kind === 'private' ? (s.settings && s.settings.password ? ', Password: ' + s.settings.password : ', Password') : '') + (s.mine ? ', yours' : s.owner ? ', ' + s.owner + "'s" : '');
     g.text(g.font.trim(line2, width - 66), left + 35, top + 21, 0x808080, false);
     // the player count and the signal bars, top right
-    const count = s.players + '/' + s.max, cw = g.textWidth(count);
     g.text(count, left + width - cw - 17, top + 1, 0x808080, false);
     const bars = ping < 0 ? 5 : ping < 150 ? 0 : ping < 300 ? 1 : ping < 600 ? 2 : ping < 1000 ? 3 : 4;
     g.blit('icons', 0, 176 + bars * 8, 10, 8, left + width - 15, top);
@@ -152,6 +171,9 @@ class ServerEntry {
       // the names of who is on, over the count; the time it took over the bars
       if (mx >= left + width - cw - 17 && mx < left + width - 15 && my < top + 9 && s.names && s.names.length) g.setTooltip(s.names);
       else if (mx >= left + width - 15 && mx < left + width - 5 && my < top + 8) g.setTooltip(ping < 0 ? 'No connection' : ping + 'ms');
+      else if (staff && mx >= ix && mx < ix + iw && my < top + 9) g.setTooltip([
+        s.played != null ? 'Played for ' + playedLong(s.played) + ', every player together' : 'Play time not counted yet',
+        madeKnown(s.createdAt) ? 'Created ' + madeLong(s.createdAt) : 'Made before creation dates were kept']);
     }
   }
   mouseClicked(mx, my, button, list) {
@@ -178,10 +200,11 @@ export class MultiplayerScreen extends Screen {
     const W = this.width, H = this.height, g = this.gui;
     // a search over the servers' names, descriptions and owners
     this.search = this.add(new TextField(W / 2 - 154, 31, 200, 16, { value: this.query, maxLength: 48, hint: 'Search servers...', onChange: v => { this.query = v; this.fill(); } }));
+    if (!this.sorts().some(s => s[0] === this.sort)) this.sort = 'yours';
     const sortLabel = () => 'Sort: ' + (LIST_SORTS.find(s => s[0] === this.sort) || LIST_SORTS[0])[1];
     this.sortB = this.add(new Button(W / 2 + 50, 29, 104, 20, sortLabel(), () => {
-      const i = LIST_SORTS.findIndex(s => s[0] === this.sort);
-      this.sort = LIST_SORTS[(i + 1) % LIST_SORTS.length][0];
+      const L = this.sorts(), i = L.findIndex(s => s[0] === this.sort);
+      this.sort = L[(i + 1) % L.length][0];
       try { localStorage.setItem(SORT_KEY, this.sort); } catch (e) { /* this visit only */ }
       this.sortB.message = sortLabel(); this.fill();
     }, 'Change the order of the servers (pinned ones stay on top)'));
@@ -232,6 +255,11 @@ export class MultiplayerScreen extends Screen {
       if (pa) return (pin.has(a.id) ? pin.get(a.id) : -1) - (pin.has(b.id) ? pin.get(b.id) : -1);
       return order ? order(a, b) || at(a.id) - at(b.id) : at(a.id) - at(b.id);
     });
+  }
+  // the sorts offered: Most Played only to admins and mods (whom the server sends the play time)
+  sorts() {
+    const staff = Account.admin || Account.mod || (this.servers || []).some(s => s.played !== undefined);
+    return LIST_SORTS.filter(s => s[0] !== 'played' || staff);
   }
   shown() {
     const q = this.query.trim().toLowerCase(), all = this.arranged();
