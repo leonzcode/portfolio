@@ -24,7 +24,7 @@
    glowstone in the Nether it sets the respawn point; anywhere else it blows
    up like a bed. Respawning at one uses a charge.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=106';
+import { B, BLOCKS } from '../blocks.js?v=107';
 
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];      // north east south west, as the bed's facing bits
 export const bedsWork = dim => !dim || dim === 'overworld';

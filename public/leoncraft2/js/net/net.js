@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=106';
-import { idx, H } from '../world-const.js?v=106';
-import { DIMS, DIM_IDS } from '../dims.js?v=106';
-import { Save } from '../save.js?v=106';
-import { itemName, stackToJSON, stackFromJSON, maxStack } from '../items.js?v=106';
-import { glints } from '../render/armor.js?v=106';
-import { containerKind } from '../containers.js?v=106';
-import { getSkinSettings } from '../render/avatar.js?v=106';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=106';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=106';
-import { Y0 } from '../world-const.js?v=106';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=106';
-import { Projectile } from '../entities/projectiles.js?v=106';
-import { Combat } from '../combat/combat.js?v=106';
-import { Vehicles } from './vehicles.js?v=106';
-import { Mobs, Orbs } from './mobs.js?v=106';
-import { Events } from './events.js?v=106';
-import { EndSync } from './endfight.js?v=106';
-import { Hub } from './hub.js?v=106';
-import { Account, wsBase, httpBase } from './account.js?v=106';
-import { rankTag } from './players.js?v=106';
+import { B, BLOCKS } from '../blocks.js?v=107';
+import { idx, H } from '../world-const.js?v=107';
+import { DIMS, DIM_IDS } from '../dims.js?v=107';
+import { Save } from '../save.js?v=107';
+import { itemName, stackToJSON, stackFromJSON, maxStack } from '../items.js?v=107';
+import { glints } from '../render/armor.js?v=107';
+import { containerKind } from '../containers.js?v=107';
+import { getSkinSettings } from '../render/avatar.js?v=107';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=107';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=107';
+import { Y0 } from '../world-const.js?v=107';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=107';
+import { Projectile } from '../entities/projectiles.js?v=107';
+import { Combat } from '../combat/combat.js?v=107';
+import { Vehicles } from './vehicles.js?v=107';
+import { Mobs, Orbs } from './mobs.js?v=107';
+import { Events } from './events.js?v=107';
+import { EndSync } from './endfight.js?v=107';
+import { Hub } from './hub.js?v=107';
+import { Account, wsBase, httpBase } from './account.js?v=107';
+import { rankTag } from './players.js?v=107';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -426,7 +426,7 @@ export class Net {
                        had Leoncraft 2 (FAIL_TEXT.old)
        closed early    it opened and shut without a word: refused
        30 seconds      Timed out, as the game says it */
-  static connect(server, password, watch) {
+  static connect(server, password, watch, hidden) {
     return new Promise((resolve, reject) => {
       /* (who you are is your session: the server takes the name from your
          account. The session token and the server's password go in the first
@@ -436,14 +436,14 @@ export class Net {
       try { ws = new WebSocket(url); } catch (e) { reject({ reason: FAIL_TEXT.down[1], kind: SERVER_DOWN }); return; }
       const net = new Net(ws);
       // (kept for connecting again by itself if the line goes without a kick: lost, ui/multiplayer.js ReconnectScreen)
-      net.again = { id: server, pw: password || '', watch: !!watch };
+      net.again = { id: server, pw: password || '', watch: !!watch, hidden: !!hidden };
       let done = false, opened = false;
       const end = (ok, v) => { if (done) return; done = true; clearTimeout(timer); ok ? resolve(v) : reject(v); };
       /* (a page held up past the 30 seconds, by a busy machine, can have the
          world waiting in its queue behind this timer: a moment more for it
          before giving up) */
       const timer = setTimeout(() => setTimeout(() => { if (done) return; try { ws.close(); } catch (e) {} end(false, { reason: 'Timed out' }); }, 1500), 30000);
-      ws.onopen = () => { opened = true; try { ws.send(JSON.stringify({ t: 'hello', tok: Account.token, pw: password || '', guest: Account.guest ? Account.name : '', watch: !!watch })); } catch (e) {} };
+      ws.onopen = () => { opened = true; try { ws.send(JSON.stringify({ t: 'hello', tok: Account.token, pw: password || '', guest: Account.guest ? Account.name : '', watch: !!watch, hidden: !!hidden })); } catch (e) {} };
       ws.onmessage = ev => {
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
         if (!done) {
@@ -506,6 +506,8 @@ export class Net {
     this.powers = !!m.powers; this.admin = !!m.admin; this.tag = m.tag || '';
     // watching (in as a spectator with no password): nothing you do is kept or sent, and you stay a spectator
     this.watch = !!m.watch; this.guest = !!m.guest;
+    // joined hidden (an admin: the server tells nobody else anything of you; a /msg you send is all that reaches anyone)
+    this.hidden = !!m.hidden;
     this.rules = m.rules || null;
     // spawn protection: how far round the world spawn you may not change anything (0: none for you, or none here)
     this.prot = m.prot | 0;
@@ -585,6 +587,12 @@ export class Net {
     // Tab held: who is on (players.js PlayerList)
     this.list = new PlayerList(this);
     ctx.gui.overlays.push(this.list);
+    // hidden: a word in the corner the whole time, and what it means once
+    if (this.hidden) {
+      this.hiddenMark = { under: true, animates: false, draw: g => { if (g.hideHud) return; const t = 'Hidden'; g.text(t, g.width - g.textWidth(t) - 2, 2, 0x00AAAA, true); } };
+      ctx.gui.overlays.push(this.hiddenMark);
+      ctx.chat.add('§3You joined hidden. §7Nobody else is told you are here or can see you: not in the world, the Tab list, the server list or /list. Your chat, deaths and advancements stay on your screen; only a /msg you send reaches another player, and they can answer it. You cannot hit players.', 0xFFFFFF);
+    }
     this.onKey = e => {
       if (e.code !== 'Tab') return;
       const down = e.type === 'keydown' && !ctx.gui.isOpen();
@@ -621,6 +629,7 @@ export class Net {
     if (activeNet === this) activeNet = null;
     if (this.players) { this.players.dispose(); this.players = null; }
     if (this.list) { const o = this.ctx.gui.overlays, i = o.indexOf(this.list); if (i >= 0) o.splice(i, 1); this.list = null; }
+    if (this.hiddenMark) { const o = this.ctx.gui.overlays, i = o.indexOf(this.hiddenMark); if (i >= 0) o.splice(i, 1); this.hiddenMark = null; }
     if (this.onKey) { document.removeEventListener('keydown', this.onKey); document.removeEventListener('keyup', this.onKey); this.onKey = null; }
     if (this.unswing) { this.unswing(); this.unswing = null; }
     this.events.detach();
@@ -643,7 +652,7 @@ export class Net {
     const a = this.again, s = this.server || {};
     if (!a) return null;
     const ds = !!s.hub && a.id !== 'hub';
-    return { id: ds ? 'hub' : a.id, pw: ds ? '' : a.pw, watch: ds ? false : a.watch, name: ds ? 'Leonpixel' : s.name, restart: !!this.restarting };
+    return { id: ds ? 'hub' : a.id, pw: ds ? '' : a.pw, watch: ds ? false : a.watch, hidden: ds ? false : !!a.hidden, name: ds ? 'Leonpixel' : s.name, restart: !!this.restarting };
   }
 
   /* ---- what arrives ---- */

@@ -17,10 +17,10 @@
    and the particles (smoke puffs, crits, hearts, flames, explosions), each
    one instanced draw.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=106';
-import { VANILLA } from './vanilla.js?v=106';
-import { lightDefines } from './materials.js?v=106';
-import { GLINT } from './armor.js?v=106';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=107';
+import { VANILLA } from './vanilla.js?v=107';
+import { lightDefines } from './materials.js?v=107';
+import { GLINT } from './armor.js?v=107';
 const THREE = window.THREE;
 
 export const ATLAS = 2048;           // the mob texture atlas, in pixels a side (2048: room for every mob of the game)

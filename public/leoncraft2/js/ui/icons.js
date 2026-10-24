@@ -26,9 +26,9 @@
      const icons = new ItemIcons(albedoImage, { grassMap, foliageMap });
      icons.draw(gui, blockId, x, y);      // GUI pixels, top-left of the slot
 --------------------------------------------------------------------------- */
-import { DRAW, textureLayer } from '../items.js?v=106';
-import { potionColour } from '../brewing.js?v=106';
-import { trimPiece, applyTrim } from '../trims.js?v=106';
+import { DRAW, textureLayer } from '../items.js?v=107';
+import { potionColour } from '../brewing.js?v=107';
+import { trimPiece, applyTrim } from '../trims.js?v=107';
 
 /* pictures coloured per stack: [the layer under, the layer over, which of the two takes the colour (0 the one
    under, 1 the one over)]. A potion's liquid goes under its bottle; dyed leather is its grey picture times the dye
@@ -43,7 +43,7 @@ const TINTED_PARTS = {
   leather_horse_armor: ['layer_leather_horse_armor', 'layer_leather_horse_armor_overlay', 0],
   wolf_armor: ['wolf_armor', 'layer_wolf_armor_overlay', 1],
 };
-import { boxesOf } from '../models.js?v=106';
+import { boxesOf } from '../models.js?v=107';
 
 // face order and texture axes, exactly as the mesher lays textures on faces
 const FACES = [

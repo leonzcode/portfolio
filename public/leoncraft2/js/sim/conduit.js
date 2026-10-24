@@ -20,7 +20,7 @@
    Conduits are only ever put there by a player, so they are in the world's
    edits: those of the columns in sight are looked over once a second.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=106';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=107';
 const THREE = window.THREE;
 
 const CONDUIT = B.conduit, WET = B.lc2_wet_conduit;
@@ -37,7 +37,7 @@ const watery = b => FLUID[b] === 1 || (BLOCKS[b] && BLOCKS[b].waterlogged);
 const TEX = {};
 function tex(name) {
   if (TEX[name]) return TEX[name];
-  const t = new THREE.TextureLoader().load(new URL('../../textures/conduit/' + name + '.png?v=106', import.meta.url).href);
+  const t = new THREE.TextureLoader().load(new URL('../../textures/conduit/' + name + '.png?v=107', import.meta.url).href);
   t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
   if ('colorSpace' in t) t.colorSpace = THREE.SRGBColorSpace;
   return (TEX[name] = t);

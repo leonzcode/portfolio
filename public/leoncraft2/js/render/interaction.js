@@ -13,7 +13,7 @@
    It is stepped at a fixed 60 times a second, whatever the frame rate, and
    slid along with the player a whole texel at a time so nothing smears.
 --------------------------------------------------------------------------- */
-import { FullScreen, rawMat, floatTarget } from './sky.js?v=106';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=107';
 const THREE = window.THREE;
 
 const FS = /* glsl */`

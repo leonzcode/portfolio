@@ -9,7 +9,7 @@
    themselves are ours (js/noise.js), so a seed does not give the game's
    terrain, only terrain shaped the same way.
 --------------------------------------------------------------------------- */
-import { Octaves, rng, mix32, hashStr } from '../noise.js?v=106';
+import { Octaves, rng, mix32, hashStr } from '../noise.js?v=107';
 
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 

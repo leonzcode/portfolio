@@ -26,19 +26,19 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=106';
-import { Packs } from './pack.js?v=106';
-import { Account } from '../net/account.js?v=106';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=106';
-import { packArtSummary } from '../entities/packart.js?v=106';
-import { LanScreen } from './lan.js?v=106';
-import { parseSeed } from '../gen/random.js?v=106';
-import { SOUND_CREDITS } from '../sound/credits.js?v=106';
-import { PAINTING_ART } from '../paintingdata.js?v=106';
-import { SkinGalleryScreen, skinCredits } from './skins.js?v=106';
-import { SkinsScreen } from './skinmenu.js?v=106';
-import { FlatCustomizeScreen } from './flat.js?v=106';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=106';
+} from './gui.js?v=107';
+import { Packs } from './pack.js?v=107';
+import { Account } from '../net/account.js?v=107';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=107';
+import { packArtSummary } from '../entities/packart.js?v=107';
+import { LanScreen } from './lan.js?v=107';
+import { parseSeed } from '../gen/random.js?v=107';
+import { SOUND_CREDITS } from '../sound/credits.js?v=107';
+import { PAINTING_ART } from '../paintingdata.js?v=107';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=107';
+import { SkinsScreen } from './skinmenu.js?v=107';
+import { FlatCustomizeScreen } from './flat.js?v=107';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=107';
 
 const PI = Math.PI;
 
@@ -407,7 +407,7 @@ export class SelectWorldScreen extends Screen {
     if (this.importing) return;
     this.importing = true; this.lc1B.active = false; this.lc1B.message = 'Importing...'; this.gui.markDirty();
     const done = msg => { this.importing = false; if (this.lc1B) { this.lc1B.active = true; this.lc1B.message = 'Import from Leoncraft 1'; } this.gui.markDirty(); if (msg) this.gui.open(new NoticeScreen('Import from Leoncraft 1', msg)); };
-    import('../lc1/spimport.js?v=106').then(m => {
+    import('../lc1/spimport.js?v=107').then(m => {
       const saves = m.lc1Saves();
       if (!saves.length) return done('There is no Leoncraft 1 world in this browser.');
       return m.importLC1(saves[0].key, Worlds).then(r => {
@@ -742,9 +742,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=106';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=106';
-import { minimapButtons } from './minimap.js?v=106';
+export { VideoSettingsScreen } from './video.js?v=107';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=107';
+import { minimapButtons } from './minimap.js?v=107';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }

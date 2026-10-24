@@ -177,7 +177,7 @@ export async function blockTextures(find, manifest) {
 export async function composedTextures(find) {
   const out = new Map();
   let spec;
-  try { spec = await (await fetch(new URL('../../textures/composed.json?v=106', import.meta.url))).json(); } catch (e) { return out; }
+  try { spec = await (await fetch(new URL('../../textures/composed.json?v=107', import.meta.url))).json(); } catch (e) { return out; }
   const pics = new Map();
   for (const [name, [file, cuts, size]] of Object.entries(spec)) {
     if (!pics.has(file)) { const b = await find('assets/minecraft/textures/entity/' + file); pics.set(file, b ? await bitmap(b) : null); }

@@ -23,7 +23,7 @@
    The player's armour is drawn by render/avatar.js with these boxes, the
    mobs' by entities/armorlayer.js through the mob atlas.
 --------------------------------------------------------------------------- */
-import { armorOf, ITEMS } from '../items.js?v=106';
+import { armorOf, ITEMS } from '../items.js?v=107';
 const THREE = window.THREE;
 
 /* the materials, in sheet order, with the file name each one's pictures go by */
@@ -141,7 +141,7 @@ export function armorSheet() {
   ARMOR_MATS.forEach((m, i) => {
     for (const layer of [1, 2]) {
       if (m === 'turtle' && layer === 2) continue;
-      jobs.push(load(base + (FILE[m] || m) + '_layer_' + layer + '.png?v=106').then(im => {
+      jobs.push(load(base + (FILE[m] || m) + '_layer_' + layer + '.png?v=107').then(im => {
         if (!im) return;
         const y = i * 64 + (layer - 1) * 32;
         g.clearRect(0, y, 64, 32);
@@ -153,7 +153,7 @@ export function armorSheet() {
     }
   });
   for (const m in OVERLAYS) for (const layer of OVERLAYS[m]) {
-    jobs.push(load(base + m + '_layer_' + layer + '_overlay.png?v=106').then(im => {
+    jobs.push(load(base + m + '_layer_' + layer + '_overlay.png?v=107').then(im => {
       if (!im) return;
       g.imageSmoothingEnabled = false;
       g.drawImage(im, 0, 0, im.naturalWidth, im.naturalHeight, 0, OVERLAY_ROW * 64 + (layer - 1) * 32, 64, 32);

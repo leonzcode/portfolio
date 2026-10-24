@@ -31,8 +31,8 @@
    (x, y, z) gives out of its face f; signalFrom(x, y, z, f) is the power the
    block at (x, y, z) gets from its neighbour on face f.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from '../blocks.js?v=106';
-import { wireLinks, wireShape } from './states.js?v=106';
+import { B, BLOCKS, MAX_ID } from '../blocks.js?v=107';
+import { wireLinks, wireShape } from './states.js?v=107';
 
 export const F6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
 export const HFACE = [5, 0, 4, 1];             // a horizontal facing (north east south west) -> its face

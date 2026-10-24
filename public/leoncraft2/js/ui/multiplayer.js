@@ -26,13 +26,13 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=106';
-import { ConfirmScreen } from './menus.js?v=106';
-import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=106';
-import { Account } from '../net/account.js?v=106';
-import { LoginScreen, AccountScreen } from './account.js?v=106';
-import { parseSeed } from '../gen/random.js?v=106';
-import { MapRequestsScreen } from './maprequests.js?v=106';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=107';
+import { ConfirmScreen } from './menus.js?v=107';
+import { Net, listServers, createServer, editServer, deleteServer, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=107';
+import { Account } from '../net/account.js?v=107';
+import { LoginScreen, AccountScreen } from './account.js?v=107';
+import { parseSeed } from '../gen/random.js?v=107';
+import { MapRequestsScreen } from './maprequests.js?v=107';
 
 const PW_KEY = 'lc2_pw_';
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
@@ -227,6 +227,10 @@ export class MultiplayerScreen extends Screen {
       if (!hub) { window.__lc2HubAction = null; return; }
       g.back(); this.join(hub);
     })), 'Maps made by players for Leonpixel, waiting to be approved'));
+    /* admins: into the server picked without anyone knowing (mlhub lc2.js onJoin hidden): nobody is told, sees
+       or hears you anywhere, and only a /msg you send reaches a player. Not Leonpixel, whose games count you. */
+    this.hiddenB = Account.admin ? this.add(new Button(6, 6, 86, 20, 'Join Hidden', () => { const s = this.sel(); if (s && !s.hub) this.join(s, undefined, false, true); },
+      'Join the server picked without anyone knowing you are there: nobody sees you in the world, the Tab list, the server list or /list, and only a /msg you send reaches a player')) : null;
     this.fill();
     if (!this.loaded) { this.loaded = true; this.refresh(); }
   }
@@ -234,6 +238,7 @@ export class MultiplayerScreen extends Screen {
   updateButtons() {
     const s = this.sel();
     this.joinB.active = !!s;
+    if (this.hiddenB) this.hiddenB.active = !!(s && !s.hub);
     this.editB.active = !!(s && s.canEdit);
     this.delB.active = !!(s && s.canEdit && s.id !== 'main');
     this.editB.tooltip = this.delB.tooltip = s && !s.canEdit ? 'Only the owner of a server can change it' : null;
@@ -330,13 +335,13 @@ export class MultiplayerScreen extends Screen {
     }));
   }
   // join: the password kept for it (or none), and ask for one if it is wrong
-  join(s, password, watch) {
+  join(s, password, watch, hidden) {
     const g = this.gui, pw = watch ? '' : password !== undefined ? password : savedPassword(s.id);
     // (the owner, an admin and a mod go in without it: the server lets them; anyone may watch as a spectator without it)
     if (s.kind === 'private' && !pw && !s.canEdit && !s.free && !watch) { g.open(new PasswordScreen(s, false)); return; }
     const scr = new ConnectingScreen();
     g.open(scr);
-    Net.connect(s.id, pw, watch).then(net => {
+    Net.connect(s.id, pw, watch, hidden).then(net => {
       if (scr.cancelled) { net.close(); return; }
       if (s.kind === 'private' && !watch) keepPassword(s.id, pw);
       scr.text = 'Joining world...';
@@ -643,7 +648,7 @@ export class ReconnectScreen extends Screen {
   attempt() {
     if (this.cancelled) return;
     const a = this.again;
-    Net.connect(a.id, a.pw, a.watch).then(net => {
+    Net.connect(a.id, a.pw, a.watch, a.hidden).then(net => {
       if (this.cancelled) { net.close(); return; }
       this.text = 'Joining world...';
       if (this.hooks.play) this.hooks.play(net.entry(), { isNew: false });
@@ -660,7 +665,7 @@ export class ReconnectScreen extends Screen {
     this.cancelled = true;
     const g = this.gui, a = this.again, list = new MultiplayerScreen();
     g.back(); g.open(list);
-    if (join) list.join({ id: a.id, name: a.name || 'the server', kind: a.pw ? 'private' : 'public' }, a.pw, a.watch);
+    if (join) list.join({ id: a.id, name: a.name || 'the server', kind: a.pw ? 'private' : 'public' }, a.pw, a.watch, a.hidden);
   }
   onEscape() { this.toList(false); }
   render(g, mx, my, dt) {

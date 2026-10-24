@@ -32,9 +32,9 @@
    block entities (details.js registerExtra), so leaving the world does not
    reset it.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=106';
-import { CH, Y0 } from '../world-const.js?v=106';
-import { registerExtra } from '../details.js?v=106';
+import { B, BLOCKS } from '../blocks.js?v=107';
+import { CH, Y0 } from '../world-const.js?v=107';
+import { registerExtra } from '../details.js?v=107';
 
 const RANGE = 14, SPAWN_RANGE = 4, COOLDOWN = 36000;
 const R = Math.random;
@@ -81,7 +81,7 @@ let LOOT = null, STACK = null;
 function loadLoot() {
   if (LOOT !== null) return;
   LOOT = false;
-  Promise.all([import('./loot.js?v=106'), import('../containers.js?v=106')]).then(([L, Cn]) => { LOOT = L; STACK = Cn.lootStack; }).catch(() => { LOOT = null; });
+  Promise.all([import('./loot.js?v=107'), import('../containers.js?v=107')]).then(([L, Cn]) => { LOOT = L; STACK = Cn.lootStack; }).catch(() => { LOOT = null; });
 }
 function lootItems(table) {
   if (!LOOT) { loadLoot(); return []; }

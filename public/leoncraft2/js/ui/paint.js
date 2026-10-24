@@ -10,10 +10,10 @@
    each change is put on your model and sent to everyone as your skin for the
    game only (net.skinOverride), never kept as your skin setting.
 --------------------------------------------------------------------------- */
-import { Screen, Button, WHITE, GREY } from './gui.js?v=106';
-import { BLOCKS, FLUID } from '../blocks.js?v=106';
-import { H } from '../world-const.js?v=106';
-import { layerPixels } from '../render/blockmesh.js?v=106';
+import { Screen, Button, WHITE, GREY } from './gui.js?v=107';
+import { BLOCKS, FLUID } from '../blocks.js?v=107';
+import { H } from '../world-const.js?v=107';
+import { layerPixels } from '../render/blockmesh.js?v=107';
 
 // the skin's parts in the 64 x 64 layout: every face of each, base layer only
 export const PARTS = {
@@ -54,7 +54,7 @@ function terrain() {
   TERRAIN = { data: null };
   const im = new Image();
   im.onload = () => { const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const x = c.getContext('2d'); x.drawImage(im, 0, 0); TERRAIN.data = x.getImageData(0, 0, im.width, im.height); };
-  im.src = new URL('../../textures/terrain_albedo.png?v=106', import.meta.url).href;
+  im.src = new URL('../../textures/terrain_albedo.png?v=107', import.meta.url).href;
   return TERRAIN;
 }
 terrain();
@@ -94,7 +94,7 @@ export function faceColour(id, face) {
    the one on the screen) and the ray is met with those quads, the pixel worked out as the shaders do. */
 let MESHER = null, MESHING = null;
 export function pickReady() {
-  if (!MESHING) MESHING = import('../mesher.js?v=106').then(m => (MESHER = m), () => null);
+  if (!MESHING) MESHING = import('../mesher.js?v=107').then(m => (MESHER = m), () => null);
   return MESHING;
 }
 const PICK_KINDS = ['opaque', 'cutout', 'translucent', 'plants', 'leafIn', 'fluid'];

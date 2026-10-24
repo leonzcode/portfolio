@@ -4,7 +4,7 @@
    A vanilla block state ("minecraft:snow[layers=2]", { Name, Properties }
    or 26.3's { id, properties }) to this game's block id and meta byte.
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=106';
+import { B } from '../blocks.js?v=107';
 
 const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);
 const FACING = { north: 0, east: 1, south: 2, west: 3 };

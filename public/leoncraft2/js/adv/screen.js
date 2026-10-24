@@ -20,10 +20,10 @@
    The frames, tabs and window are drawn here (pixels of our own), not
    taken from the game.
 --------------------------------------------------------------------------- */
-import { Screen } from '../ui/gui.js?v=106';
-import { drawStack } from '../ui/inventory.js?v=106';
-import { ADV } from './tracker.js?v=106';
-import { iconStack } from './toast.js?v=106';
+import { Screen } from '../ui/gui.js?v=107';
+import { drawStack } from '../ui/inventory.js?v=107';
+import { ADV } from './tracker.js?v=107';
+import { iconStack } from './toast.js?v=107';
 
 const WW = 252, WH = 140, IX = 9, IY = 18, IW = 234, IH = 113;
 const BG = { stone: 'stone', nether: 'netherrack', end: 'end_stone', adventure: 'sandstone_top', husbandry: 'farmland' };
@@ -153,7 +153,7 @@ let tileLoad = null;
 function loadTiles(gui) {
   if (tileLoad) return tileLoad;
   const base = new URL('../../textures/', import.meta.url).href;
-  tileLoad = Promise.all([fetch(base + 'manifest.json?v=106').then(r => r.json()), new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = base + 'terrain_albedo.png?v=106'; })])
+  tileLoad = Promise.all([fetch(base + 'manifest.json?v=107').then(r => r.json()), new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = base + 'terrain_albedo.png?v=107'; })])
     .then(([m, img]) => {
       for (const k in BG) {
         const t = m.textures[BG[k]];

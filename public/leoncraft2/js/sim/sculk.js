@@ -29,8 +29,8 @@
    Meta layouts are in sim/states.js. Sensors and shriekers near the player
    are found by looking over the area round them a layer a tick.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=106';
-import { WEAK, STRONG, SOURCE } from './redstone.js?v=106';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=107';
+import { WEAK, STRONG, SOURCE } from './redstone.js?v=107';
 const THREE = window.THREE;
 
 const SENSOR = B.sculk_sensor, CAL = B.calibrated_sculk_sensor, SHRIEKER = B.sculk_shrieker;

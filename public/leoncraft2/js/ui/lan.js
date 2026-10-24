@@ -11,7 +11,7 @@
    hooks.lan(): { mode, cheats, open } for the world being played;
    hooks.startLan(mode, cheats, port) does the rest (main.js).
 --------------------------------------------------------------------------- */
-import { Screen, Button, CycleButton, TextField, onOff, WHITE } from './gui.js?v=106';
+import { Screen, Button, CycleButton, TextField, onOff, WHITE } from './gui.js?v=107';
 
 const MODE_NAMES = { survival: 'Survival', spectator: 'Spectator', creative: 'Creative', adventure: 'Adventure' };
 const validPort = s => /^\d+$/.test(s) && +s >= 1024 && +s <= 65535;

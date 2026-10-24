@@ -15,7 +15,7 @@
    legs 0,22 (4 x 12 x 4); a hat's brim 30,47 (16 x 16 x 1, its top face
    the brim's top).
 --------------------------------------------------------------------------- */
-import { addArt } from './mobart.js?v=106';
+import { addArt } from './mobart.js?v=107';
 
 // the faces of a box at (u, v) of w x h x d: [x, y, w, h]
 function faces(u, v, w, h, d) {

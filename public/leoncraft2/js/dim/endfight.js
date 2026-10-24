@@ -18,11 +18,11 @@
                   (and its top blown clear), the dragon comes back and the
                   four crystals explode; about 30 seconds in all
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=106';
-import { endSpikes, podiumBlocks } from '../gen/end.js?v=106';
-import { rng, mix32 } from '../noise.js?v=106';
-import { EndCrystal, XpOrb, splitXp } from './entities.js?v=106';
-import { EnderDragon } from './dragon.js?v=106';
+import { B, BLOCKS } from '../blocks.js?v=107';
+import { endSpikes, podiumBlocks } from '../gen/end.js?v=107';
+import { rng, mix32 } from '../noise.js?v=107';
+import { EndCrystal, XpOrb, splitXp } from './entities.js?v=107';
+import { EnderDragon } from './dragon.js?v=107';
 
 const E = y => y + 64;                 // world y -> the engine's index
 
@@ -133,12 +133,15 @@ export class EndFight {
     }
     return best;
   }
-  // a crystal was hit: it explodes (power 6); the dragon loses 10 if it was healing from it
+  /* a crystal was hit: it explodes (power 6); the dragon loses 10 if it was healing from it. The blast is at the
+     crystal's feet, the top of the block it sits on, as the game's EndCrystal.hurtServer has it: that block takes
+     every ray going down, so only what is over it goes. The four that bring the dragon back go off at the end of
+     it breaking nothing (the game's DragonRespawnAnimation, ExplosionInteraction.NONE). */
   crystalDestroyed(c, source) {
     if (c.pillar >= 0) this.s.crystals[c.pillar] = false;
     if (this.dragon && this.dragon.crystal === c) { this.dragon.crystal = null; this.dragon.hurt(10, 'head', 'explosion'); }
     if (c.respawner && this.s.respawn) this.cancelRespawn();
-    this.R.explode(c.pos.x, c.pos.y + 1, c.pos.z, 6, { fire: false, source: 'end_crystal', by: source });
+    this.R.explode(c.pos.x, c.pos.y, c.pos.z, 6, { fire: false, breaks: source !== 'respawn', source: 'end_crystal', by: source });
   }
 
   /* ---- the dragon ---- */

@@ -15,7 +15,7 @@
    lectern (its redstone pulse, what a comparator reads), and Take Book
    beside Done takes it off.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, Widget, WHITE } from './gui.js?v=106';
+import { Screen, Button, TextField, Widget, WHITE } from './gui.js?v=107';
 
 const PAGE_W = 114, LINES = 14, MAX_PAGES = 100, MAX_CHARS = 1024;
 const BLACK = 0x000000;

@@ -28,8 +28,8 @@
                  experience from 7.7 seconds on, 8% every quarter second and
                  the last 20% at the end (12000 the first time, 500 after)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=106';
-import { Entity, mat, cube, colour, boxesTouch, DragonFireball, BreathCloud } from './entities.js?v=106';
+import { B, BLOCKS } from '../blocks.js?v=107';
+import { Entity, mat, cube, colour, boxesTouch, DragonFireball, BreathCloud } from './entities.js?v=107';
 const THREE = window.THREE;
 
 const IMMUNE = new Set(['bedrock', 'obsidian', 'crying_obsidian', 'end_stone', 'iron_bars', 'end_portal_frame', 'end_portal', 'end_gateway',
