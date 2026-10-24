@@ -6,14 +6,14 @@
 <title>Leoncraft 2</title>
 <!-- what the workers need for the title's world, asked for at once (the page's own code and big
      textures are asked for below, by the first script; main.js asks for the same addresses, stamps and all) -->
-<link rel="preload" href="textures/manifest.json?v=106" as="fetch" crossorigin>
-<link rel="preload" href="textures/colormap_grass.png?v=106" as="fetch" crossorigin>
-<link rel="preload" href="textures/colormap_foliage.png?v=106" as="fetch" crossorigin>
+<link rel="preload" href="textures/manifest.json?v=107" as="fetch" crossorigin>
+<link rel="preload" href="textures/colormap_grass.png?v=107" as="fetch" crossorigin>
+<link rel="preload" href="textures/colormap_foliage.png?v=107" as="fetch" crossorigin>
 <script>
   // the workers that make the world, started at once so their code loads beside the page's (world.js startWorkers takes them)
   try {
     const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1)) + 1;
-    const src = 'js/worker.js?v=106';
+    const src = 'js/worker.js?v=107';
     window.__lc2Workers = Array.from({ length: n }, () => new Worker(src, { type: 'module' }));
     /* and they start on the title screen's world at once, each its share (worker.js startPre): its seed and where
        it stands are main.js's MENU_SEED and its spot. On a first visit to this version they make it; when its
@@ -46,13 +46,13 @@
   window.__lc2Go = () => {
     const add = (rel, href, as) => { const l = document.createElement('link'); l.rel = rel; l.href = href; if (as) { l.as = as; l.crossOrigin = 'anonymous'; } document.head.appendChild(l); };
     add('modulepreload', '../legacy/vendor/three-0.163.0.module.js');
-    add('modulepreload', 'js/main.js?v=106');
-    add('preload', 'textures/terrain_albedo.png?v=106', 'fetch');
-    add('preload', 'textures/items.png?v=106', 'fetch');
+    add('modulepreload', 'js/main.js?v=107');
+    add('preload', 'textures/terrain_albedo.png?v=107', 'fetch');
+    add('preload', 'textures/items.png?v=107', 'fetch');
     // Detailed graphics also reads the material map: asked for now too, unless Fast is chosen
     try {
       const o = JSON.parse(localStorage.getItem('lc2_options') || 'null') || {}, q = new URLSearchParams(location.search).get('q') || o.quality;
-      if (q !== 'fast' && q !== 'potato') add('preload', 'textures/terrain_spec.png?v=106', 'fetch');
+      if (q !== 'fast' && q !== 'potato') add('preload', 'textures/terrain_spec.png?v=107', 'fetch');
     } catch (e) { /* main.js asks for it in any case */ }
   };
 </script>
@@ -78,7 +78,7 @@
   if (window.__lc2Up) await window.__lc2Up;
   if (window.__lc2Go) window.__lc2Go();
   window.THREE = await import('../legacy/vendor/three-0.163.0.module.js');
-  await import('./js/main.js?v=106');
+  await import('./js/main.js?v=107');
 </script>
 </body>
 </html>

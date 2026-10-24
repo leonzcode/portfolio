@@ -18,7 +18,7 @@
    sky goes deep blue overhead and pale at the horizon, and the world takes
    its colour from the same sky it is under.
 --------------------------------------------------------------------------- */
-import { COMMON, ATMOS } from './glsl.js?v=106';
+import { COMMON, ATMOS } from './glsl.js?v=107';
 const THREE = window.THREE;
 
 export const SUN_I = 14.0;      // the sun's strength in the scene's units

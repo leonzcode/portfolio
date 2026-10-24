@@ -24,15 +24,15 @@
    after travelling, kept topped up while you stand in a portal; end portals
    and gateways at once.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=106';
-import { Y0 } from '../world-const.js?v=106';
-import { DIMS } from '../dims.js?v=106';
-import { explode } from '../explosion.js?v=106';
-import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=106';
-import { EndFight, gatewayBlocks } from './endfight.js?v=106';
-import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=106';
-import { mix32, rng } from '../noise.js?v=106';
-import { portalSwirl } from './art.js?v=106';
+import { B, BLOCKS } from '../blocks.js?v=107';
+import { Y0 } from '../world-const.js?v=107';
+import { DIMS } from '../dims.js?v=107';
+import { explode } from '../explosion.js?v=107';
+import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=107';
+import { EndFight, gatewayBlocks } from './endfight.js?v=107';
+import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=107';
+import { mix32, rng } from '../noise.js?v=107';
+import { portalSwirl } from './art.js?v=107';
 const THREE = window.THREE;
 
 const E = y => y - Y0;                     // world y -> engine y
@@ -146,7 +146,9 @@ export class Realms {
   }
   crystalDestroyed(c, source) {
     if (this.fight) this.fight.crystalDestroyed(c, source);
-    else this.explode(c.pos.x, c.pos.y + 1, c.pos.z, 6, { source: 'end_crystal', by: source });
+    // (at its feet, the top of the block it sits on, as the game's EndCrystal.hurtServer has it: that block takes
+    // every ray going down, so only what is over it goes)
+    else this.explode(c.pos.x, c.pos.y, c.pos.z, 6, { source: 'end_crystal', by: source });
   }
 
   /* ---- each tick ---- */
@@ -395,12 +397,17 @@ export class Realms {
       return true;
     }
     if (d.use === 'crystal') {
+      /* the game's EndCrystalItem (since 1.13): on obsidian or bedrock, with the cell over it empty; the one over
+         that need not be (the crystal reaches up into it), only free of entities, by the box below (a blast's
+         puff of smoke is no entity in the game, so it does not count). Fire in the cell is let through here,
+         where the game wants air, so the fires a respawn leaves on the exit portal do not keep it from being
+         used again. */
       if (hit.b !== B.obsidian && hit.b !== B.bedrock) return true;
-      const a1 = w.get(hit.x, hit.y + 1, hit.z), a2 = w.get(hit.x, hit.y + 2, hit.z);
-      if ((a1 && a1 !== B.fire) || (a2 && a2 !== B.fire)) return true;
+      const a1 = w.get(hit.x, hit.y + 1, hit.z);
+      if (a1 && a1 !== B.fire) return true;
       const c = new EndCrystal(this, { base: false });
       c.at(hit.x + 0.5, hit.y + 1, hit.z + 0.5);
-      if (this.entities.some(e => !e.dead && boxesTouch(e.box(), [hit.x, hit.y + 1, hit.z, hit.x + 1, hit.y + 3, hit.z + 1]))) return true;
+      if (this.entities.some(e => !e.dead && !(e instanceof Burst) && boxesTouch(e.box(), [hit.x, hit.y + 1, hit.z, hit.x + 1, hit.y + 3, hit.z + 1]))) return true;
       this.add(c);
       this.usedItem(id);
       if (this.fight) this.fight.tryRespawn();

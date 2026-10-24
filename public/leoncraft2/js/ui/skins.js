@@ -10,7 +10,7 @@
    licences are in textures/skin/gallery/gallery.json, textures/LICENSE.txt
    and the Credits screen (SKIN_CREDITS).
 --------------------------------------------------------------------------- */
-import { Screen, Button, WHITE, GREY } from './gui.js?v=106';
+import { Screen, Button, WHITE, GREY } from './gui.js?v=107';
 
 // [file, name, author, licence, number in the database]
 export const SKINS = [
@@ -45,7 +45,7 @@ export const SKINS = [
   // (worn by Leon Network's Chameleon seekers)
   ['swat_agent', 'SWAT Agent', 'Rhys', 'CC BY-SA 3.0', 437],
 ];
-export const skinUrl = file => new URL('../../textures/skin/gallery/' + file + '.png?v=106', import.meta.url).href;
+export const skinUrl = file => new URL('../../textures/skin/gallery/' + file + '.png?v=107', import.meta.url).href;
 
 // the Credits screen's lines for them
 export function skinCredits() {

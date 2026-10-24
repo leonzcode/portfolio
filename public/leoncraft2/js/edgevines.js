@@ -16,8 +16,8 @@
    update sent), before any of these columns is drawn: a column is meshed
    only once all eight round it are here.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=106';
-import { CH, H } from './world-const.js?v=106';
+import { B, BLOCKS } from './blocks.js?v=107';
+import { CH, H } from './world-const.js?v=107';
 
 const SIDES = [[0, -1, 1], [1, 0, 2], [0, 1, 4], [-1, 0, 8]];        // dx, dz, vine bit (models.js VINE_SIDES)
 const MDIRS = [[0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1], [-1, 0, 0], [1, 0, 0]];   // models.js MULTI_DIRS

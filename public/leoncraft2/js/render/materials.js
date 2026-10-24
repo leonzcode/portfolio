@@ -16,7 +16,7 @@
    Detailed draws the terrain with lighter shaders that light per vertex
    (LEAN_VS / LEAN_FS below); the rest is the full chain's.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS, FILTER } from './glsl.js?v=106';
+import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS, FILTER } from './glsl.js?v=107';
 const THREE = window.THREE;
 
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray; precision highp sampler2DShadow;\n`;

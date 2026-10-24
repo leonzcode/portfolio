@@ -6,7 +6,7 @@
    the next line and the up arrow back, and a line takes only as much as fits
    on the board (90 of the font's pixels, 60 on a hanging sign). Done (or Escape) keeps the text.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, WHITE } from './gui.js?v=106';
+import { Screen, Button, TextField, WHITE } from './gui.js?v=107';
 
 let terrain = null;
 function terrainImage(gui) {

@@ -13,8 +13,8 @@
    Admin (admin accounts only): every account (ban and unban, reset a
    password, delete) and every server (give it to another owner, delete it).
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, ScrollList, WHITE, GREY } from './gui.js?v=106';
-import { Account, NO_CONNECTION } from '../net/account.js?v=106';
+import { Screen, Button, TextField, ScrollList, WHITE, GREY } from './gui.js?v=107';
+import { Account, NO_CONNECTION } from '../net/account.js?v=107';
 
 const RED = 0xFF5555;
 const fmtDate = t => { if (!t) return 'never'; const d = new Date(t); return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };

@@ -15,9 +15,9 @@
    short along y, then x, then z, at the first one in the way; walking into
    something no higher than the step lifts the box onto it.
 --------------------------------------------------------------------------- */
-import { BLOCKS, SOLID, FLUID, OPACITY, B } from '../blocks.js?v=106';
-import { collisionBoxes } from '../models.js?v=106';
-import { H } from '../world-const.js?v=106';
+import { BLOCKS, SOLID, FLUID, OPACITY, B } from '../blocks.js?v=107';
+import { collisionBoxes } from '../models.js?v=107';
+import { H } from '../world-const.js?v=107';
 
 const EPS = 1e-7;
 // full solid cubes, which a box can rest on without looking at shapes

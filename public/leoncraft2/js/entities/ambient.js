@@ -31,9 +31,9 @@
    Settings' Particles leaves some out the same way. Cheap: 1334 block reads
    a tick, nothing kept but the campfires near you.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=106';
-import { BIOMES } from '../biomes.js?v=106';
-import { LEVEL, FALLING } from '../world-const.js?v=106';
+import { BLOCKS, B } from '../blocks.js?v=107';
+import { BIOMES } from '../biomes.js?v=107';
+import { LEVEL, FALLING } from '../world-const.js?v=107';
 
 const R = Math.random;
 const KIND = new Uint8Array(BLOCKS.length + 1);

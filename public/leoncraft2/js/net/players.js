@@ -28,12 +28,12 @@
    letter, [BUILDER]) the role still shows in the Tab list and in chat, and
    the game's tag alone over the head (headTag).
 --------------------------------------------------------------------------- */
-import { Avatar, invisLook } from '../render/avatar.js?v=106';
-import { pieceLook, armorSheet } from '../render/armor.js?v=106';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=106';
-import { DRAW, I, stackFromJSON } from '../items.js?v=106';
-import { B, BLOCKS } from '../blocks.js?v=106';
-import { walkers } from '../render/realism.js?v=106';
+import { Avatar, invisLook } from '../render/avatar.js?v=107';
+import { pieceLook, armorSheet } from '../render/armor.js?v=107';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=107';
+import { DRAW, I, stackFromJSON } from '../items.js?v=107';
+import { B, BLOCKS } from '../blocks.js?v=107';
+import { walkers } from '../render/realism.js?v=107';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -192,7 +192,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=106', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=107', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
     av.setCape(r.capeUrl || '').catch(() => {});
   }
@@ -425,7 +425,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=106', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=107', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;
@@ -435,11 +435,11 @@ export class PlayerList {
   draw(g) {
     if (!this.shown || g.hideHud) return;
     const net = this.net, lat = net.lat || {};
-    const rows = [{ name: net.name, rank: net.tag, ping: Math.round(net.rtt), face: net.ctx ? net.ctx.renderer.avatar.canvas : null }];
+    const rows = [{ name: net.name, rank: net.tag, ping: Math.round(net.rtt), face: net.ctx ? net.ctx.renderer.avatar.canvas : null, hidden: !!net.hidden }];
     if (net.players) for (const r of net.players.list.values()) rows.push({ name: r.name, rank: r.rank, ping: lat[r.id] !== undefined ? lat[r.id] : -1, face: r.av && r.av.ready ? r.av.canvas : faceOf(r.skinUrl) });
     rows.sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1));
     // (each shown with its rank tag before it)
-    for (const r of rows) r.shown = rankTag(r.rank) + r.name;
+    for (const r of rows) r.shown = rankTag(r.rank) + r.name + (r.hidden ? ' §3(hidden)' : '');
     const n = rows.length, cols = Math.ceil(n / 20), per = Math.ceil(n / cols);
     let nw = 0;
     for (const r of rows) nw = Math.max(nw, g.textWidth(r.shown));

@@ -11,7 +11,7 @@
 
      shelfLayers(add);    // dim/art.js addDimArt: the layers, filled at once
 --------------------------------------------------------------------------- */
-import { SHELF_MODELS, shelfLayer, shelfPiece } from '../shelfmushroom.js?v=106';
+import { SHELF_MODELS, shelfLayer, shelfPiece } from '../shelfmushroom.js?v=107';
 
 const PICTURES = [
   { pal: [0xb66d51ff, 0xc47851ff, 0xd88350ff, 0xf6ae6cff, 0xecbc85ff, 0xfdd599ff, 0x00000000, 0xeb8f4dff, 0xc8a380ff, 0xb7997eff, 0xf79c55ff, 0xf3ca8bff, 0xdcb181ff, 0xab8d77ff],

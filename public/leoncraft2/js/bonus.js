@@ -4,7 +4,7 @@
    start, a chest of the spawn_bonus_chest loot table (some planks or logs,
    wooden and stone tools, apples, bread, salmon) with a torch on each side.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=106';
+import { B, BLOCKS } from './blocks.js?v=107';
 
 const R = Math.random;
 // the top of a column, if a chest can stand on it (a full solid block, no fluid, room above)
@@ -28,7 +28,7 @@ export async function bonusChest(g, sx, sz) {
     const y = topOf(w, x, z);
     if (y < 0 || w.get(x, y, z) || w.get(x, y + 1, z)) continue;
     w.set(x, y, z, B.chest, 2);
-    const [L, Cn] = await Promise.all([import('./struct/loot.js?v=106'), import('./containers.js?v=106')]);
+    const [L, Cn] = await Promise.all([import('./struct/loot.js?v=107'), import('./containers.js?v=107')]);
     const box = C.at(x, y, z);
     if (box) {
       const stacks = L.rollLoot('spawn_bonus_chest', (R() * 2147483647) | 0, { size: box.slots.length });

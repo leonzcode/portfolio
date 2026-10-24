@@ -27,8 +27,8 @@
    blast. The machine running the fight starts a respawn when the four are
    on the portal, whoever put them there.
 --------------------------------------------------------------------------- */
-import { F } from './players.js?v=106';
-import { EndCrystal, DragonFireball, BreathCloud } from '../dim/entities.js?v=106';
+import { F } from './players.js?v=107';
+import { EndCrystal, DragonFireball, BreathCloud } from '../dim/entities.js?v=107';
 
 const PHASES = ['holding', 'strafe', 'approach', 'landing', 'scanning', 'roar', 'flame', 'takeoff', 'charge', 'dying'];
 const KEY = '0,0,0';
@@ -114,10 +114,11 @@ export class EndSync {
     };
   }
   // whether this machine runs the fight: the lowest numbered player alive in the End
+  // (an admin who joined hidden only while nobody else is there: the others' pages do not know of them, so one of those runs it)
   runner() {
     const net = this.net, list = net.players && net.players.list;
     if (!list) return true;
-    for (const r of list.values()) { const s = r.st; if (s && s.d === 2 && !(s.f & (F.DEAD | F.SPEC)) && r.id < net.id) return false; }
+    for (const r of list.values()) { const s = r.st; if (s && s.d === 2 && !(s.f & (F.DEAD | F.SPEC)) && (r.id < net.id || net.hidden)) return false; }
     return true;
   }
 
@@ -241,8 +242,9 @@ export class EndSync {
     if (k === 'xboom' && RL) {
       const c = RL.entities.find(c => c instanceof EndCrystal && !c.dead && c.pillar < 0 && Math.abs(c.pos.x - e[1]) < 0.5 && Math.abs(c.pos.y - e[2]) < 0.5 && Math.abs(c.pos.z - e[3]) < 0.5);
       if (c) c.dead = true;
-      if (this.net.events) this.net.events.boom(e[1], e[2] + 1, e[3], 6);
-      if (RL.burst) RL.burst(e[1], e[2] + 1, e[3], 4.8);
+      // (at the crystal's feet, as on the machine where it went off: dim/realms.js crystalDestroyed)
+      if (this.net.events) this.net.events.boom(e[1], e[2], e[3], 6);
+      if (RL.burst) RL.burst(e[1], e[2], e[3], 4.8);
       return;
     }
     if (!F) return;
@@ -270,8 +272,8 @@ export class EndSync {
       if (this.running !== false) return;
       F.s.crystals[i] = false;
       if (c && !c.dead) c.dead = true;
-      if (this.net.events) this.net.events.boom(e[1], e[2] + 1, e[3], 6);
-      if (this.F.R && this.F.R.burst) this.F.R.burst(e[1], e[2] + 1, e[3], 4.8);
+      if (this.net.events) this.net.events.boom(e[1], e[2], e[3], 6);
+      if (this.F.R && this.F.R.burst) this.F.R.burst(e[1], e[2], e[3], 4.8);
     }
   }
 }

@@ -29,10 +29,10 @@
    table, read by name below. Maps belong to the world and are saved with
    it (main.js opens and saves them).
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, FLUID } from './blocks.js?v=106';
-import { H } from './world-const.js?v=106';
-import { ITEMS } from './items.js?v=106';
-import { BIOMES } from './biomes.js?v=106';
+import { BLOCKS, B, FLUID } from './blocks.js?v=107';
+import { H } from './world-const.js?v=107';
+import { ITEMS } from './items.js?v=107';
+import { BIOMES } from './biomes.js?v=107';
 
 // the base colours, by id
 const BASE = [null, [127, 178, 56], [247, 233, 163], [199, 199, 199], [255, 0, 0], [160, 160, 255], [167, 167, 167], [0, 124, 0], [255, 255, 255], [164, 168, 184],

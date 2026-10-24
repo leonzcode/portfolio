@@ -21,9 +21,9 @@
    have it. Which tool a block wants and how good it must be come from
    minecraft-data (js/itemdata.js BLOCK_TOOLS).
 --------------------------------------------------------------------------- */
-import { BLOCKS } from './blocks.js?v=106';
-import { BLOCK_TOOLS } from './itemdata.js?v=106';
-import { ITEMS } from './items.js?v=106';
+import { BLOCKS } from './blocks.js?v=107';
+import { BLOCK_TOOLS } from './itemdata.js?v=107';
+import { ITEMS } from './items.js?v=107';
 
 const KIND_BIT = { pickaxe: 1, axe: 2, shovel: 4, hoe: 8, sword: 16, shears: 32 };
 // per block id: [material, harvest bits, lowest tier], looked up once

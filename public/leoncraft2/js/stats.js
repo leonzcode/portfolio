@@ -29,8 +29,8 @@
    method or hook of objects at hand (looked at each tick, so a new
    dimension's mobs and drops are joined as soon as they exist).
 --------------------------------------------------------------------------- */
-import { BLOCKS } from './blocks.js?v=106';
-import { ITEMS, itemId, maxDamage } from './items.js?v=106';
+import { BLOCKS } from './blocks.js?v=107';
+import { ITEMS, itemId, maxDamage } from './items.js?v=107';
 
 const nameOf = id => (ITEMS[id] ? ITEMS[id].name : BLOCKS[id] ? BLOCKS[id].name : '');
 const lc2 = () => (typeof window !== 'undefined' ? window.__lc2 : null);
@@ -246,6 +246,6 @@ export function statsQuit() { if (ONE) ONE.add('leave_game'); }
 export function statsLeave() { ONE = null; }
 export function openStatistics(gui, icons) {
   if (!ONE || !gui) return false;
-  import('./ui/stats.js?v=106').then(m => gui.open(new m.StatisticsScreen(ONE, icons))).catch(e => console.warn('statistics', e));
+  import('./ui/stats.js?v=107').then(m => gui.open(new m.StatisticsScreen(ONE, icons))).catch(e => console.warn('statistics', e));
   return true;
 }

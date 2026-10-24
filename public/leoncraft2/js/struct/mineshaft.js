@@ -8,8 +8,8 @@
    supports, some rails, cobwebs, now and then a chest minecart, and one in
    23 of those without rails is a cave spider nest with its spawner.
 --------------------------------------------------------------------------- */
-import { Box, Piece, Pieces, NORTH, EAST, SOUTH, WEST } from './piece.js?v=106';
-import { largeFeature, JRand } from './rand.js?v=106';
+import { Box, Piece, Pieces, NORTH, EAST, SOUTH, WEST } from './piece.js?v=107';
+import { largeFeature, JRand } from './rand.js?v=107';
 
 const WOOD = { normal: { planks: 'oak_planks', log: 'oak_log', fence: 'oak_fence' }, mesa: { planks: 'dark_oak_planks', log: 'dark_oak_log', fence: 'dark_oak_fence' } };
 

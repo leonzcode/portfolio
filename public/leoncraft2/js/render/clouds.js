@@ -13,7 +13,7 @@
    material maker (the colour and fog are theirs: render/vanilla.js for Fast,
    renderer.js for Detailed); the geometry has a position and a face shade.
 --------------------------------------------------------------------------- */
-import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=106';
+import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=107';
 const THREE = window.THREE;
 export const CLOUD_H = 192, CLOUD_S = 12;
 

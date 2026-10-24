@@ -21,7 +21,7 @@
    never turns on them. summonAt returns the mob, or null when the block
    just put down finished nothing.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=106';
+import { B, BLOCKS } from '../blocks.js?v=107';
 
 const name = (w, x, y, z) => { const d = BLOCKS[w.get(x, y, z)]; return d ? d.name : 'air'; };
 const PUMPKIN = n => n === 'carved_pumpkin' || n === 'jack_o_lantern';

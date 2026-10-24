@@ -21,8 +21,8 @@
    goes through it. Its picture is that pack's end gateway beam. Gateways
    are made by the game, so they are in the edits as well.
 --------------------------------------------------------------------------- */
-import { B, OPACITY } from '../blocks.js?v=106';
-import { H } from '../world-const.js?v=106';
+import { B, OPACITY } from '../blocks.js?v=107';
+import { H } from '../world-const.js?v=107';
 const THREE = window.THREE;
 
 const BEACON = B.beacon, GATEWAY = B.end_gateway;
@@ -37,7 +37,7 @@ for (const [c, hex] of Object.entries(DYE)) for (const n of [c + '_stained_glass
 
 let TEX = null, GTEX = null;
 const loadBeam = f => {
-  const t = new THREE.TextureLoader().load(new URL('../../textures/' + f + '?v=106', import.meta.url).href);
+  const t = new THREE.TextureLoader().load(new URL('../../textures/' + f + '?v=107', import.meta.url).href);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
   return t;

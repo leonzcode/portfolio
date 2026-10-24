@@ -8,7 +8,7 @@
    distances Fast uses: the Nether's thick sphere (a twentieth of the view to
    half of it), the End's last tenth, a boss fight's thick fog.
 --------------------------------------------------------------------------- */
-import { nightVision, shutFog } from '../render/vanilla.js?v=106';
+import { nightVision, shutFog } from '../render/vanilla.js?v=107';
 const THREE = window.THREE;
 const lin = v => Math.pow(v / 255, 2.2);
 const target = new THREE.Vector3();

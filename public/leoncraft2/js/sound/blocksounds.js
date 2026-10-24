@@ -17,7 +17,7 @@
 
    soundType(id) -> { v, p, brk, step, place, hit, fall } (event names), kept per block id.
 --------------------------------------------------------------------------- */
-import { BLOCKS } from '../blocks.js?v=106';
+import { BLOCKS } from '../blocks.js?v=107';
 
 const T = (name, v = 1, p = 1) => ({ v, p, brk: `block.${name}.break`, step: `block.${name}.step`, place: `block.${name}.place`, hit: `block.${name}.hit`, fall: `block.${name}.fall`, name });
 // the types that borrow another's events for some of their five

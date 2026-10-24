@@ -7,11 +7,11 @@
    range, size, loot, experience, and the goals each one runs, in the
    game's priority order.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, looted } from './entity.js?v=106';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, looted } from './entity.js?v=107';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal, EatGrassGoal,
-  MeleeAttackGoal, BowAttackGoal, SwellGoal, LeapGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal } from './ai.js?v=106';
-import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=106';
-import { itemId, armorOf } from '../items.js?v=106';
+  MeleeAttackGoal, BowAttackGoal, SwellGoal, LeapGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal } from './ai.js?v=107';
+import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=107';
+import { itemId, armorOf } from '../items.js?v=107';
 
 const R = () => Math.random();
 const RI = n => Math.floor(Math.random() * n);
@@ -259,7 +259,7 @@ export class Drowned extends Zombie {
 }
 register('drowned', Drowned);
 const BIOME_NAMES = [];
-import('../biomes.js?v=106').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
+import('../biomes.js?v=107').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
 
 /* ---- Zombie villager: a zombie with a villager's face ---- */
 export class ZombieVillager extends Zombie {

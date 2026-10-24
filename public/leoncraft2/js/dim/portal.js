@@ -18,7 +18,7 @@
    End portal frames take an eye of ender each (meta bit 2); twelve with eyes
    round a 3 x 3 space fill it with end portal.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=106';
+import { B, BLOCKS } from '../blocks.js?v=107';
 
 const empty = b => b === 0 || b === B.fire || b === B.soul_fire || b === B.nether_portal;
 const obs = b => b === B.obsidian;
