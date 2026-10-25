@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=111';
-import { idx, H } from '../world-const.js?v=111';
-import { DIMS, DIM_IDS } from '../dims.js?v=111';
-import { Save } from '../save.js?v=111';
-import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=111';
-import { glints } from '../render/armor.js?v=111';
-import { containerKind } from '../containers.js?v=111';
-import { getSkinSettings } from '../render/avatar.js?v=111';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=111';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=111';
-import { Y0 } from '../world-const.js?v=111';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=111';
-import { Projectile } from '../entities/projectiles.js?v=111';
-import { Combat } from '../combat/combat.js?v=111';
-import { Vehicles } from './vehicles.js?v=111';
-import { Mobs, Orbs } from './mobs.js?v=111';
-import { Events } from './events.js?v=111';
-import { EndSync } from './endfight.js?v=111';
-import { Hub } from './hub.js?v=111';
-import { Account, wsBase, httpBase } from './account.js?v=111';
-import { rankTag } from './players.js?v=111';
+import { B, BLOCKS } from '../blocks.js?v=112';
+import { idx, H } from '../world-const.js?v=112';
+import { DIMS, DIM_IDS } from '../dims.js?v=112';
+import { Save } from '../save.js?v=112';
+import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=112';
+import { glints } from '../render/armor.js?v=112';
+import { containerKind } from '../containers.js?v=112';
+import { getSkinSettings } from '../render/avatar.js?v=112';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=112';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=112';
+import { Y0 } from '../world-const.js?v=112';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=112';
+import { Projectile } from '../entities/projectiles.js?v=112';
+import { Combat } from '../combat/combat.js?v=112';
+import { Vehicles } from './vehicles.js?v=112';
+import { Mobs, Orbs } from './mobs.js?v=112';
+import { Events } from './events.js?v=112';
+import { EndSync } from './endfight.js?v=112';
+import { Hub } from './hub.js?v=112';
+import { Account, wsBase, httpBase } from './account.js?v=112';
+import { rankTag } from './players.js?v=112';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -601,7 +601,7 @@ export class Net {
     if (this.hidden) {
       this.hiddenMark = { under: true, animates: false, draw: g => { if (g.hideHud) return; const t = 'Hidden'; g.text(t, g.width - g.textWidth(t) - 2, 2, 0x00AAAA, true); } };
       ctx.gui.overlays.push(this.hiddenMark);
-      ctx.chat.add('§3You joined hidden. §7Nobody else is told you are here or can see you: not in the world, the Tab list, the server list or /list. Your chat, deaths and advancements stay on your screen; only a /msg you send reaches another player, and they can answer it. You cannot hit players.', 0xFFFFFF);
+      ctx.chat.add('§3You joined hidden. §7Nobody else is told you are here or can see you: not in the world, the Tab list, the server list or /list. Other hidden admins see you, and you them, marked (hidden). Your chat, deaths and advancements reach only them; a /msg you send reaches its player, and they can answer it. You cannot hit players.', 0xFFFFFF);
     }
     this.onKey = e => {
       if (e.code !== 'Tab') return;
@@ -1389,7 +1389,8 @@ export class Net {
       case 'chat':
         if (m.system) this.ctx.chat.add(m.text, m.colour !== undefined ? m.colour : 0xFFFF55);
         // (a rank tag before the name, as servers show it: [ADMIN] red, [OWNER] gold)
-        else this.ctx.chat.add('<' + rankTag(m.tag) + m.name + '> ' + m.text);
+        // (and (hidden) after the name of an admin who joined hidden: only the hidden players get their lines)
+        else this.ctx.chat.add('<' + rankTag(m.tag) + m.name + (m.hid ? ' §3(hidden)§r' : '') + '> ' + m.text);
         return;
       case 'time': {
         // the server's clock, moved on by half the time the message took

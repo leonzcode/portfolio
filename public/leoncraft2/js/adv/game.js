@@ -18,29 +18,29 @@
    (where you are, every second; what you carry, when it changes) is looked
    at here in advTick.
 --------------------------------------------------------------------------- */
-import { Progress, ADV, TABS } from './tracker.js?v=111';
-import { AdvToast } from './toast.js?v=111';
-import { AdvancementsScreen } from './screen.js?v=111';
-import { B, BLOCKS, FLUID } from '../blocks.js?v=111';
-import { itemName, itemId, armorOf } from '../items.js?v=111';
-import { BIOMES } from '../biomes.js?v=111';
-import { Y0 } from '../world-const.js?v=111';
-import { register, gameRule } from '../commands.js?v=111';
-import { Living } from '../entities/entity.js?v=111';
-import { TYPES } from '../entities/mobs.js?v=111';
-import { AbstractHorse } from '../entities/mobs4.js?v=111';
-import { Allay } from '../entities/mobs6.js?v=111';
-import { Piglin } from '../entities/nether.js?v=111';
-import { WindCharge } from '../entities/mobs7.js?v=111';
-import { summonAt } from '../entities/summon.js?v=111';
-import { hives } from '../entities/hives.js?v=111';
-import { Merchant, WanderingTrader, CurableZombieVillager } from '../entities/merchant.js?v=111';
-import { FishingBobber } from '../entities/items2.js?v=111';
-import { EnderDragon } from '../dim/dragon.js?v=111';
-import { EndFight } from '../dim/endfight.js?v=111';
-import { ContainerScreen } from '../ui/inventory.js?v=111';
-import { BrewingScreen } from '../ui/containers.js?v=111';
-import { EnchantScreen, SmithingScreen } from '../ui/workstations.js?v=111';
+import { Progress, ADV, TABS } from './tracker.js?v=112';
+import { AdvToast } from './toast.js?v=112';
+import { AdvancementsScreen } from './screen.js?v=112';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=112';
+import { itemName, itemId, armorOf } from '../items.js?v=112';
+import { BIOMES } from '../biomes.js?v=112';
+import { Y0 } from '../world-const.js?v=112';
+import { register, gameRule } from '../commands.js?v=112';
+import { Living } from '../entities/entity.js?v=112';
+import { TYPES } from '../entities/mobs.js?v=112';
+import { AbstractHorse } from '../entities/mobs4.js?v=112';
+import { Allay } from '../entities/mobs6.js?v=112';
+import { Piglin } from '../entities/nether.js?v=112';
+import { WindCharge } from '../entities/mobs7.js?v=112';
+import { summonAt } from '../entities/summon.js?v=112';
+import { hives } from '../entities/hives.js?v=112';
+import { Merchant, WanderingTrader, CurableZombieVillager } from '../entities/merchant.js?v=112';
+import { FishingBobber } from '../entities/items2.js?v=112';
+import { EnderDragon } from '../dim/dragon.js?v=112';
+import { EndFight } from '../dim/endfight.js?v=112';
+import { ContainerScreen } from '../ui/inventory.js?v=112';
+import { BrewingScreen } from '../ui/containers.js?v=112';
+import { EnchantScreen, SmithingScreen } from '../ui/workstations.js?v=112';
 
 let G = null;          // the game being played
 let P = null;          // its player's advancements
@@ -137,7 +137,8 @@ function made(a, how) {
 }
 // the chat line's hover: the name in its colour, then what it asks
 export function hoverOf(a) { return { text: '[' + a.title + ']', lines: [(CODE[a.frame] || '§a') + a.title, ...a.desc.split('\n').map(l => '§f' + l)], colour: TYPE_COLOUR[a.frame] }; }
-const LINE = /^\S+ (has made the advancement|has reached the goal|has completed the challenge) §[a5]\[(.+)\]$/;
+// (a hidden admin's line, which only the other hidden players get, has (hidden) after the name)
+const LINE = /^\S+(?: §3\(hidden\)§r)? (has made the advancement|has reached the goal|has completed the challenge) §[a5]\[(.+)\]$/;
 const FRAME_OF = { 'has made the advancement': 'task', 'has reached the goal': 'goal', 'has completed the challenge': 'challenge' };
 /* (a server's word filter can star out part of a name: Sky's the Limit comes back as S**** the Limit;
    the name is put back when it is one of the game's own, letter for letter apart from the stars, and

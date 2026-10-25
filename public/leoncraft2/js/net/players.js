@@ -28,12 +28,12 @@
    letter, [BUILDER]) the role still shows in the Tab list and in chat, and
    the game's tag alone over the head (headTag).
 --------------------------------------------------------------------------- */
-import { Avatar, invisLook } from '../render/avatar.js?v=111';
-import { pieceLook, armorSheet } from '../render/armor.js?v=111';
-import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=111';
-import { DRAW, I, stackFromJSON } from '../items.js?v=111';
-import { B, BLOCKS } from '../blocks.js?v=111';
-import { walkers } from '../render/realism.js?v=111';
+import { Avatar, invisLook } from '../render/avatar.js?v=112';
+import { pieceLook, armorSheet } from '../render/armor.js?v=112';
+import { setLight as setLightOf, loadedLook, pulledLook } from '../render/held.js?v=112';
+import { DRAW, I, stackFromJSON } from '../items.js?v=112';
+import { B, BLOCKS } from '../blocks.js?v=112';
+import { walkers } from '../render/realism.js?v=112';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -107,7 +107,9 @@ export class RemotePlayers {
   add(p) {
     if (this.list.has(p.id)) this.remove(p.id);
     const r = { id: p.id, name: p.name, rank: p.tag || '', buf: [], est: null, estS: null, win: Infinity, winPrev: Infinity, winAt: 0, late: 0, lateMax: 0, delay: DELAY,
-      av: null, P: null, acc: 0, eq: null, tag: null, hurtUntil: 0, st: null, lat: p.lat | 0 };
+      av: null, P: null, acc: 0, eq: null, tag: null, hurtUntil: 0, st: null, lat: p.lat | 0,
+      // (another admin who joined hidden: the server tells only the other hidden players of them, marked so)
+      hid: !!p.hid };
     this.list.set(p.id, r);
     if (p.st) this.state(p.id, p.st, null);
     // (dead already when you came: no dying to watch)
@@ -192,7 +194,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=111', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=112', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
     av.setCape(r.capeUrl || '').catch(() => {});
   }
@@ -215,7 +217,7 @@ export class RemotePlayers {
   /* ---- the name over their head ---- */
   tagOf(r) {
     if (r.tag) return r.tag;
-    const f = this.font, name = headTag(r.rank) + (r.name || '');
+    const f = this.font, name = headTag(r.rank) + (r.name || '') + (r.hid ? ' §3(hidden)' : '');
     const w = (f ? f.width(name) : name.length * 6) + 2, h = 10, k = 4;
     const t = document.createElement('canvas'); t.width = w; t.height = h;
     if (f) f.draw(t.getContext('2d'), name, 1, 1, 0xFFFFFF, false);
@@ -425,7 +427,7 @@ const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 
 // a face for someone whose model is not loaded here (far off, or in another of Leon Network's games): their skin as the server sent it
 const FACES = new Map();
 function faceOf(url) {
-  const key = url || new URL('../../textures/skin/default.png?v=111', import.meta.url).href;
+  const key = url || new URL('../../textures/skin/default.png?v=112', import.meta.url).href;
   let im = FACES.get(key);
   if (!im) { if (FACES.size > 200) FACES.clear(); im = new Image(); im.src = key; FACES.set(key, im); }
   return im.complete && im.naturalWidth >= 64 ? im : null;
@@ -436,7 +438,7 @@ export class PlayerList {
     if (!this.shown || g.hideHud) return;
     const net = this.net, lat = net.lat || {};
     const rows = [{ name: net.name, rank: net.tag, ping: Math.round(net.rtt), face: net.ctx ? net.ctx.renderer.avatar.canvas : null, hidden: !!net.hidden }];
-    if (net.players) for (const r of net.players.list.values()) rows.push({ name: r.name, rank: r.rank, ping: lat[r.id] !== undefined ? lat[r.id] : -1, face: r.av && r.av.ready ? r.av.canvas : faceOf(r.skinUrl) });
+    if (net.players) for (const r of net.players.list.values()) rows.push({ name: r.name, rank: r.rank, ping: lat[r.id] !== undefined ? lat[r.id] : -1, face: r.av && r.av.ready ? r.av.canvas : faceOf(r.skinUrl), hidden: r.hid });
     rows.sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1));
     // (each shown with its rank tag before it)
     for (const r of rows) r.shown = rankTag(r.rank) + r.name + (r.hidden ? ' §3(hidden)' : '');
