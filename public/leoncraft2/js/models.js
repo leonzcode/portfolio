@@ -32,8 +32,8 @@
    Fences, walls, panes, rails and redstone work out their shape from their
    neighbours, as Minecraft does when it draws them.
 --------------------------------------------------------------------------- */
-import { burnable } from './flame.js?v=112';
-import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=112';
+import { burnable } from './flame.js?v=113';
+import { SHELF_MODELS, shelfKey } from './shelfmushroom.js?v=113';
 
 const box = (x0, y0, z0, x1, y1, z1, extra) => {
   const b = { f: [x0, y0, z0], t: [x1, y1, z1] };
@@ -1453,6 +1453,18 @@ function selectionAt(d, m, nb) {
   if (s === 'cube' || s === 'fluid') return FULL;
   if (s === 'cross' || s === 'pad') return d.shape === 'pad' ? [[1 / 16, 0, 1 / 16, 15 / 16, 1.5 / 16, 15 / 16]] : [[2 / 16, 0, 2 / 16, 14 / 16, 13 / 16, 14 / 16]];
   if (s === 'torch') return [[6 / 16, 0, 6 / 16, 10 / 16, 10 / 16, 10 / 16]];
+  /* a fence gate is outlined as one box across its opening, from the ground to its top, open or shut, as the game's
+     getShape is: picked by its posts and bars alone, a click between the bars went to the block behind */
+  if (s === 'gate') {
+    const b = toBlocks(SHAPES.gate(d, (m | 0) & ~4, nb || (() => null)));
+    if (b.length) {
+      let x0 = 1, z0 = 1, x1 = 0, z1 = 0, y1 = 0;
+      for (const q of b) { x0 = Math.min(x0, q[0]); z0 = Math.min(z0, q[2]); x1 = Math.max(x1, q[3]); y1 = Math.max(y1, q[4]); z1 = Math.max(z1, q[5]); }
+      // (four pixels deep, 6 to 10, as the game's shape: the bars themselves are two)
+      if (z1 - z0 < x1 - x0) { z0 = 6 / 16; z1 = 10 / 16; } else { x0 = 6 / 16; x1 = 10 / 16; }
+      return [[x0, 0, z0, x1, y1, z1]];
+    }
+  }
   if (s === 'snow') return [[0, 0, 0, 1, ((m & 7) + 1) / 8, 1]];
   if (s === 'rail' || s === 'wire') return [[0, 0, 0, 1, 2 / 16, 1]];
   if (s === 'crop') return [[0, 0, 0, 1, 0.5, 1]];

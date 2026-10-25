@@ -17,8 +17,8 @@
    reason given: Approve makes it, theirs; Deny asks for a note to send back
    (mlhub lc2.js /mc/lc2/srvrequests and /srvreview).
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, WHITE, GREY } from './gui.js?v=112';
-import { mapRequests, mapReview, srvRequests, srvReview } from '../net/net.js?v=112';
+import { Screen, Button, TextField, WHITE, GREY } from './gui.js?v=113';
+import { mapRequests, mapReview, srvRequests, srvReview } from '../net/net.js?v=113';
 
 const PER_PAGE = 6;
 const STATUS = { draft: '§7Draft', pending: '§eWaiting', approved: '§aApproved', denied: '§cDenied' };

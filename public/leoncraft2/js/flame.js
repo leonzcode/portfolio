@@ -9,7 +9,7 @@
 --------------------------------------------------------------------------- */
 const RULES = [
   [n => /_planks$/.test(n) && !/crimson|warped/.test(n), 5, 20],
-  [n => /_(slab|stairs|fence|fence_gate)$/.test(n) && /^(oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak|bamboo)/.test(n), 5, 20],
+  [n => /_(slab|stairs|fence|fence_gate)$/.test(n) && /^(oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak|poplar|bamboo)/.test(n), 5, 20],
   [n => /_(log|wood)$/.test(n) && !/crimson|warped/.test(n) || /^stripped_.*_(log|wood)$/.test(n) && !/crimson|warped/.test(n), 5, 5],
   [n => /^(stripped_)?bamboo_block$|^bamboo_(mosaic|mosaic_slab|mosaic_stairs)$/.test(n), 5, 20],
   [(n, d) => d.leaves, 30, 60],

@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=112';
-import { idx, H } from '../world-const.js?v=112';
-import { DIMS, DIM_IDS } from '../dims.js?v=112';
-import { Save } from '../save.js?v=112';
-import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=112';
-import { glints } from '../render/armor.js?v=112';
-import { containerKind } from '../containers.js?v=112';
-import { getSkinSettings } from '../render/avatar.js?v=112';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=112';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=112';
-import { Y0 } from '../world-const.js?v=112';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=112';
-import { Projectile } from '../entities/projectiles.js?v=112';
-import { Combat } from '../combat/combat.js?v=112';
-import { Vehicles } from './vehicles.js?v=112';
-import { Mobs, Orbs } from './mobs.js?v=112';
-import { Events } from './events.js?v=112';
-import { EndSync } from './endfight.js?v=112';
-import { Hub } from './hub.js?v=112';
-import { Account, wsBase, httpBase } from './account.js?v=112';
-import { rankTag } from './players.js?v=112';
+import { B, BLOCKS } from '../blocks.js?v=113';
+import { idx, H } from '../world-const.js?v=113';
+import { DIMS, DIM_IDS } from '../dims.js?v=113';
+import { Save } from '../save.js?v=113';
+import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=113';
+import { glints } from '../render/armor.js?v=113';
+import { containerKind } from '../containers.js?v=113';
+import { getSkinSettings } from '../render/avatar.js?v=113';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=113';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=113';
+import { Y0 } from '../world-const.js?v=113';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=113';
+import { Projectile } from '../entities/projectiles.js?v=113';
+import { Combat } from '../combat/combat.js?v=113';
+import { Vehicles } from './vehicles.js?v=113';
+import { Mobs, Orbs } from './mobs.js?v=113';
+import { Events } from './events.js?v=113';
+import { EndSync } from './endfight.js?v=113';
+import { Hub } from './hub.js?v=113';
+import { Account, wsBase, httpBase } from './account.js?v=113';
+import { rankTag } from './players.js?v=113';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */

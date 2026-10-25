@@ -21,9 +21,9 @@
      out.items   [{ id, count }]
      out.xp      experience points
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=112';
-import { I, ITEMS } from './items.js?v=112';
-import { canHarvest } from './mining.js?v=112';
+import { B, BLOCKS, FLUID } from './blocks.js?v=113';
+import { I, ITEMS } from './items.js?v=113';
+import { canHarvest } from './mining.js?v=113';
 
 const rnd = n => Math.floor(Math.random() * n);
 const between = (a, b) => a + rnd(b - a + 1);
@@ -142,7 +142,9 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
   if (d.leaves || /_leaves$/.test(n)) {
     if (shears || silk) { add(out, d.id, 1); return out; }
     const sap = { oak: 'oak_sapling', spruce: 'spruce_sapling', birch: 'birch_sapling', jungle: 'jungle_sapling', acacia: 'acacia_sapling',
-      dark_oak: 'dark_oak_sapling', cherry: 'cherry_sapling', pale_oak: 'pale_oak_sapling', azalea: 'azalea', flowering_azalea: 'flowering_azalea', poplar: 'poplar_sapling' };
+      dark_oak: 'dark_oak_sapling', cherry: 'cherry_sapling', pale_oak: 'pale_oak_sapling', azalea: 'azalea', flowering_azalea: 'flowering_azalea', poplar: 'poplar_sapling',
+      // (a poplar's leaves come in three colours, and there is no plain poplar_leaves)
+      orange_poplar: 'poplar_sapling', red_poplar: 'poplar_sapling', yellow_poplar: 'poplar_sapling' };
     const kind = n.replace(/_leaves$/, '');
     if (sap[kind] && table(fortune, kind === 'jungle' ? JUNGLE_SAPLING : SAPLING)) add(out, sap[kind], 1);
     if (table(fortune, STICKS)) add(out, 'stick', between(1, 2));

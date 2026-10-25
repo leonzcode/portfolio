@@ -18,9 +18,9 @@
    gives 1 to 3 resin clumps (loot.js), and a natural one (meta 3 and up:
    placed by the trees, gen/trees.js) 20 to 24 experience.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=112';
-import { BIO } from '../biomes.js?v=112';
-import { CH } from '../world-const.js?v=112';
+import { B, BLOCKS } from '../blocks.js?v=113';
+import { BIO } from '../biomes.js?v=113';
+import { CH } from '../world-const.js?v=113';
 
 const R = Math.random;
 const AXIS = [[0, 1, 0], [1, 0, 0], [0, 0, 1]];

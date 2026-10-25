@@ -19,50 +19,50 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=112';
-import { PathFinder, Navigation } from './path.js?v=112';
-import { Particles } from './particles.js?v=112';
-import { Ambient } from './ambient.js?v=112';
-import { Living, Mob, wrap, DEG } from './entity.js?v=112';
-import { TYPES } from './mobs.js?v=112';
-import './projectiles.js?v=112';
-import { placeBoat } from './boat.js?v=112';
-import './mobs2.js?v=112';
-import './mobs3.js?v=112';
-import './mobs4.js?v=112';
-import { wandererTick } from './merchant.js?v=112';
-import { tableBooks } from './tablebook.js?v=112';
-import { explode } from './explosion.js?v=112';
-import { splitXp } from './xporb.js?v=112';
-import { placeMinecart, isRail, Minecart } from './minecart.js?v=112';
-import { CART_ITEMS } from './carts.js?v=112';
-import { fallFrom, FALLS, free } from './fallingblock.js?v=112';
-import { Spawner, DESPAWN } from './spawner.js?v=112';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=112';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=112';
-import { EntityMeshes } from '../render/entitymesh.js?v=112';
-import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=112';
-import { lightNear } from '../lightlevel.js?v=112';
-import { activeDrops } from '../drops.js?v=112';
-import { breakAt } from '../place.js?v=112';
-import { dropOf } from '../survival.js?v=112';
-import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=112';
-import { Combat } from '../combat/combat.js?v=112';
-import { walkers } from '../render/realism.js?v=112';
+import { Terrain } from './terrain.js?v=113';
+import { PathFinder, Navigation } from './path.js?v=113';
+import { Particles } from './particles.js?v=113';
+import { Ambient } from './ambient.js?v=113';
+import { Living, Mob, wrap, DEG } from './entity.js?v=113';
+import { TYPES } from './mobs.js?v=113';
+import './projectiles.js?v=113';
+import { placeBoat } from './boat.js?v=113';
+import './mobs2.js?v=113';
+import './mobs3.js?v=113';
+import './mobs4.js?v=113';
+import { wandererTick } from './merchant.js?v=113';
+import { tableBooks } from './tablebook.js?v=113';
+import { explode } from './explosion.js?v=113';
+import { splitXp } from './xporb.js?v=113';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=113';
+import { CART_ITEMS } from './carts.js?v=113';
+import { fallFrom, FALLS, free } from './fallingblock.js?v=113';
+import { Spawner, DESPAWN } from './spawner.js?v=113';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=113';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=113';
+import { EntityMeshes } from '../render/entitymesh.js?v=113';
+import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=113';
+import { lightNear } from '../lightlevel.js?v=113';
+import { activeDrops } from '../drops.js?v=113';
+import { breakAt } from '../place.js?v=113';
+import { dropOf } from '../survival.js?v=113';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=113';
+import { Combat } from '../combat/combat.js?v=113';
+import { walkers } from '../render/realism.js?v=113';
 // RIP Computer: how long the dead lie (ticks, then a second and a half sinking), how many at once, and what never
 // lies (slimes and magma cubes split into smaller ones, the bosses have deaths of their own)
 const CORPSE_TICKS = 300, MAX_CORPSES = 40;
 const NO_CORPSE = new Set(['slime', 'magma_cube', 'ender_dragon', 'wither', 'armor_stand', 'vex', 'allay']);
-import './nether.js?v=112';
+import './nether.js?v=113';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
-import './mobs5.js?v=112';
-import './mobs6.js?v=112';
-import './mobs7.js?v=112';
-import { DIMS } from '../dims.js?v=112';
-import { armorLayers } from './armorlayer.js?v=112';
-import { MobHeld } from '../render/mobheld.js?v=112';
-import { setSpawnerMob } from '../struct/spawners.js?v=112';
-import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=112';
+import './mobs5.js?v=113';
+import './mobs6.js?v=113';
+import './mobs7.js?v=113';
+import { DIMS } from '../dims.js?v=113';
+import { armorLayers } from './armorlayer.js?v=113';
+import { MobHeld } from '../render/mobheld.js?v=113';
+import { setSpawnerMob } from '../struct/spawners.js?v=113';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=113';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -1232,4 +1232,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=112';
+import { rayBox } from './terrain.js?v=113';

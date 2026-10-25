@@ -197,7 +197,10 @@ the game draws them), and dyed leather is the grey leather (Bauniclonia's,
 or Pixel Perfection CE's for the leggings) times the dye; the shield is
 Pixel Perfection CE's shield texture drawn as the game draws the shield in
 the inventory (its model, turned and scaled the same way); the turtle helmet
-is Bauniclonia's leather cap recoloured; the enchanted golden apple and the
+is Bauniclonia's leather cap recoloured; the poplar boat and poplar boat
+with chest (26.3's poplar, which no pack draws) are Pixel Perfection Legacy's
+oak boat and oak boat with chest, their hull recoloured to the poplar planks
+of these textures (the chest left as it is); the enchanted golden apple and the
 debug stick use the golden apple and the stick.
 
 Armour trims on the item pictures (js/trims.js) are coloured with Pixel

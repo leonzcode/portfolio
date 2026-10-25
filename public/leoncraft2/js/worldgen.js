@@ -30,10 +30,10 @@
       badlands terracotta, snow on peaks, podzol, mycelium, gravel...), then
       deepslate, bedrock, stone blobs and ores, then trees and plants.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=112';
-import { BIO, BIOMES } from './biomes.js?v=112';
-import { NormalNoise, Improved, rng, mix32, hash3, spline, evalSpline } from './noise.js?v=112';
-import { CH, H, Y0, SEA, idx, VOL } from './world-const.js?v=112';
+import { B, BLOCKS } from './blocks.js?v=113';
+import { BIO, BIOMES } from './biomes.js?v=113';
+import { NormalNoise, Improved, rng, mix32, hash3, spline, evalSpline } from './noise.js?v=113';
+import { CH, H, Y0, SEA, idx, VOL } from './world-const.js?v=113';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -295,16 +295,40 @@ function acacia(set, r, x, y, z) {
     }
   }
 }
-function darkOak(set, r, x, y, z) {
+// (a pale oak is the same shape in its own wood: four saplings grow one, as the game's do)
+function darkOak(set, r, x, y, z, log = B.dark_oak_log, leaves = B.dark_oak_leaves) {
   const h = 6 + r.int(3);
-  for (let i = 0; i < h; i++) for (const [a, b] of [[0, 0], [1, 0], [0, 1], [1, 1]]) set(x + a, y + i, z + b, B.dark_oak_log);
+  for (let i = 0; i < h; i++) for (const [a, b] of [[0, 0], [1, 0], [0, 1], [1, 1]]) set(x + a, y + i, z + b, log);
   const top = y + h;
   for (let dy = -2; dy <= 1; dy++) {
     const R = dy === 1 ? 2 : dy === -2 ? 3 : 4;
     for (let dx = -R; dx <= R + 1; dx++) for (let dz = -R; dz <= R + 1; dz++) {
       const ddx = dx <= 0 ? dx : dx - 1, ddz = dz <= 0 ? dz : dz - 1;
       if (ddx * ddx + ddz * ddz > R * R + 1) continue;
-      set(x + dx, top + dy, z + dz, B.dark_oak_leaves, true);
+      set(x + dx, top + dy, z + dz, leaves, true);
+    }
+  }
+}
+/* A poplar from its sapling, after the poplars 26.3 grows in its dappled forests (gen/trees.js, from the game's
+   data): a trunk of 7 to 11, one to four logs off its side below the crown, and a crown 5 or 6 rows tall that is
+   two out from the trunk, one at its top and its bottom two rows, its corners left out and a few edges missing.
+   The leaves are one of the three colours the game's poplars come in (which one a sapling grows is our pick). */
+function poplar(set, r, x, y, z) {
+  const leaves = [B.orange_poplar_leaves, B.red_poplar_leaves, B.yellow_poplar_leaves][r.int(3)];
+  const h = 7 + r.int(5), top = y + h;
+  for (let i = 0; i < h; i++) set(x, y + i, z, B.poplar_log);
+  const n = 1 + r.int(4);
+  for (let k = 0; k < n; k++) {
+    const d = [[1, 0], [-1, 0], [0, 1], [0, -1]][r.int(4)];
+    set(x + d[0], y + Math.max(1, h - 4 - r.int(Math.max(1, h - 4))), z + d[1], B.poplar_log, true);
+  }
+  const fh = 5 + r.int(2);
+  for (let i = 0; i >= -fh - 2; i--) {
+    const R = i === 0 || i <= -fh - 1 ? 1 : 2;
+    for (let dx = -R; dx <= R; dx++) for (let dz = -R; dz <= R; dz++) {
+      const ax = Math.abs(dx), az = Math.abs(dz);
+      if ((ax === R && az === R) || (ax + az >= R && r() < 0.15)) continue;
+      set(x + dx, top + i, z + dz, leaves, true);
     }
   }
 }
@@ -1010,6 +1034,8 @@ export class Gen {
       case 'jungle_bush': bush(set, r, x, y, z, B.jungle_log, B.oak_leaves); break;
       case 'acacia': acacia(set, r, x, y, z); break;
       case 'dark_oak': darkOak(set, r, x, y, z); break;
+      case 'pale_oak': darkOak(set, r, x, y, z, B.pale_oak_log, B.pale_oak_leaves); break;
+      case 'poplar': poplar(set, r, x, y, z); break;
       case 'cherry': cherry(set, r, x, y, z); break;
       case 'mangrove': mangrove(set, r, x, y, z); break;
       case 'swamp_oak': blobTree(set, r, x, y, z, B.oak_log, B.oak_leaves, 5 + r.int(3)); break;
@@ -1040,7 +1066,7 @@ export class Gen {
 }
 // how far each kind of tree's leaves reach from its trunk (the ground it shades from new saplings)
 const CANOPY = { oak: 2, swamp_oak: 3, birch: 2, tall_birch: 2, fancy_oak: 3, spruce: 2, pine: 1, mega_spruce: 4, jungle: 2,
-  mega_jungle: 4, jungle_bush: 2, acacia: 3, dark_oak: 3, cherry: 4, mangrove: 3, mushroom: 0 };
+  mega_jungle: 4, jungle_bush: 2, acacia: 3, dark_oak: 3, pale_oak: 3, poplar: 2, cherry: 4, mangrove: 3, mushroom: 0 };
 function covered(trees, x, z) {
   for (const t of trees) if (Math.abs(t.x - x) <= t.R && Math.abs(t.z - z) <= t.R) return true;
   return false;

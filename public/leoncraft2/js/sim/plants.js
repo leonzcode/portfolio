@@ -36,12 +36,12 @@
                     copper that is younger)
    mushrooms        1 in 25, spread if fewer than five round them, in the dark
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=112';
-import { Gen } from '../worldgen.js?v=112';
-import { randomTick as bambooTick, bambooMeta, SMALL as BAMBOO_SMALL } from './bamboo.js?v=112';
-import { rng } from '../noise.js?v=112';
-import { LEVEL, FALLING } from '../world-const.js?v=112';
-import { vineFaces, vineHolds, VINE_SIDES, VINE_UP, multiFaces, MULTI_DIRS } from '../models.js?v=112';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=113';
+import { Gen } from '../worldgen.js?v=113';
+import { randomTick as bambooTick, bambooMeta, SMALL as BAMBOO_SMALL } from './bamboo.js?v=113';
+import { rng } from '../noise.js?v=113';
+import { LEVEL, FALLING } from '../world-const.js?v=113';
+import { vineFaces, vineHolds, VINE_SIDES, VINE_UP, multiFaces, MULTI_DIRS } from '../models.js?v=113';
 
 const HORIZ = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const R = sim => sim.rng();
@@ -126,7 +126,8 @@ export function installPlants(sim) {
       if (tool === 'shears') return [[n, 1]];
       const sap = { oak_leaves: 'oak_sapling', spruce_leaves: 'spruce_sapling', birch_leaves: 'birch_sapling', jungle_leaves: 'jungle_sapling',
         acacia_leaves: 'acacia_sapling', dark_oak_leaves: 'dark_oak_sapling', cherry_leaves: 'cherry_sapling', pale_oak_leaves: 'pale_oak_sapling',
-        azalea_leaves: 'azalea', flowering_azalea_leaves: 'flowering_azalea' }[n];
+        azalea_leaves: 'azalea', flowering_azalea_leaves: 'flowering_azalea',
+        orange_poplar_leaves: 'poplar_sapling', red_poplar_leaves: 'poplar_sapling', yellow_poplar_leaves: 'poplar_sapling' }[n];
       if (sap && R(s) < (n === 'jungle_leaves' ? 1 / 40 : 1 / 20)) out.push([sap, 1]);
       if (R(s) < 0.02) out.push(['stick', 1 + RI(s, 2)]);
       if ((n === 'oak_leaves' || n === 'dark_oak_leaves') && R(s) < 0.005) out.push(['apple', 1]);
@@ -209,7 +210,7 @@ export function installPlants(sim) {
 
   /* ---- saplings ---- */
   const SAPLING_TREE = { oak_sapling: 'oak', birch_sapling: 'birch', spruce_sapling: 'spruce', jungle_sapling: 'jungle', acacia_sapling: 'acacia',
-    dark_oak_sapling: 'dark_oak', cherry_sapling: 'cherry', pale_oak_sapling: 'dark_oak', mangrove_propagule: 'mangrove' };
+    dark_oak_sapling: 'dark_oak', cherry_sapling: 'cherry', pale_oak_sapling: 'pale_oak', mangrove_propagule: 'mangrove', poplar_sapling: 'poplar' };
   for (const name in SAPLING_TREE) {
     if (B[name] === undefined) continue;
     sim.on(name, {
@@ -234,14 +235,16 @@ export function installPlants(sim) {
     let kind = SAPLING_TREE[name];
     if (!kind) return false;
     let at = [x, z], sq = null;
-    if (kind === 'spruce' || kind === 'jungle' || kind === 'dark_oak') sq = square(x, y, z, b);
-    if (kind === 'dark_oak' && !sq) return false;              // dark oak only grows from four
-    if (sq) { kind = kind === 'spruce' ? 'mega_spruce' : kind === 'jungle' ? 'mega_jungle' : 'dark_oak'; at = sq; }
+    if (kind === 'spruce' || kind === 'jungle' || kind === 'dark_oak' || kind === 'pale_oak') sq = square(x, y, z, b);
+    if ((kind === 'dark_oak' || kind === 'pale_oak') && !sq) return false;   // dark and pale oak only grow from four
+    if (sq) { kind = kind === 'spruce' ? 'mega_spruce' : kind === 'jungle' ? 'mega_jungle' : kind; at = sq; }
     else if (kind === 'oak' && R(sim) < 0.1) kind = 'fancy_oak';
     // work it out first: every log must go where a tree may grow (air, leaves, plants, the saplings)
     const r = rng((Math.random() * 4294967296) >>> 0);
     const puts = [];
-    const set = (px, py, pz, blk, onlyIfAir) => puts.push([px, py, pz, blk, !!onlyIfAir]);
+    // (a mangrove's prop roots, the logs off its trunk, stop where they meet the ground as the game's do: they go only
+    // where there is room, and never stop the tree; they reach two below the propagule, so on dirt it never grew)
+    const set = (px, py, pz, blk, onlyIfAir) => puts.push([px, py, pz, blk, !!onlyIfAir || (kind === 'mangrove' && blk === B.mangrove_log && (px !== at[0] || pz !== at[1]))]);
     try { Gen.prototype.tree.call(null, kind, set, r, at[0], y, at[1]); } catch (e) { console.warn('tree', e); return false; }
     if (!puts.length) return false;
     const free = (px, py, pz) => {
