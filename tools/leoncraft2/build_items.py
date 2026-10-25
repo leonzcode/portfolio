@@ -519,6 +519,59 @@ def picture(name, ce, ppl, packs=None):
     return pull(im, stats_of(name)) if im is not None and packs else im
 
 
+# The woods of 26.3 that minecraft-data 26.1 and the local game's files (26.1.2) do not have: poplar. Its blocks come
+# from build_blocks.py; its boat and chest boat are added here (NEWER_ITEMS, after the pale oak ones, as their
+# recipes in recipedata.js already name them). No pack draws a poplar boat and there are no game colours to pull to,
+# so each picture is the oak one as built above with its wood recoloured to our own poplar planks: the hull's Lab
+# mean moved by poplar planks' mean less oak planks' (both from textures/terrain_albedo.png, so build_textures.py
+# runs first) and its spread scaled by theirs. In the chest boat only the hull's pixels change (those whose colour
+# the plain oak boat has), so the chest stays as every other chest boat's.
+NEWER_ITEMS = [{'n': 'poplar_boat', 'd': 'Poplar Boat', 's': 1}, {'n': 'poplar_chest_boat', 'd': 'Poplar Boat with Chest', 's': 1}]
+NEWER_BOATS = {'poplar_boat': ('oak_boat', 'poplar'), 'poplar_chest_boat': ('oak_chest_boat', 'poplar')}
+
+
+def planks_stats(wood):
+    import numpy as np
+    from PIL import Image
+    from labcolour import lab_stats
+    m = json.load(open(os.path.join(TEX, 'manifest.json'), encoding='utf-8'))
+    k = m['textures'][wood + '_planks']['layer']
+    im = Image.open(os.path.join(TEX, 'terrain_albedo.png')).convert('RGBA').crop((0, k * 16, 16, k * 16 + 16))
+    return np.array(lab_stats([np.asarray(im, np.float32) / 255]), np.float64)
+
+
+def newer_boat(name, ce, ppl, packs=None):
+    import numpy as np
+    from PIL import Image
+    from labcolour import srgb_to_lab, lab_to_srgb
+    base_name, wood = NEWER_BOATS[name]
+    base, plain = picture(base_name, ce, ppl, packs), picture('oak_boat', ce, ppl, packs)
+    if base is None or plain is None:
+        return None
+    a = np.asarray(base.convert('RGBA'), np.float64) / 255
+    b8, pa = np.asarray(base.convert('RGBA')).astype(int), np.asarray(plain.convert('RGBA')).astype(int)
+    mask = b8[..., 3] > 127
+    # (the chest boat is the plain boat with a chest on top: its hull is where it is near the plain boat's colour)
+    if base_name != 'oak_boat':
+        mask &= (pa[..., 3] > 127) & (np.abs(b8[..., :3] - pa[..., :3]).sum(-1) <= 90)
+    if not mask.any():
+        return base
+    o, p = planks_stats('oak'), planks_stats(wood)
+    lab = srgb_to_lab(a[..., :3])
+    mean = lab[mask].mean(0)
+    spread = np.where(o[3:] > 1e-6, p[3:] / np.maximum(o[3:], 1e-6), 1.0)
+    # the lightness moved by the planks' difference; the two colour axes scaled by their ratio, as the other woods'
+    # boats keep about the same share of their planks' colour (oak's yellow 0.73 of its planks', birch's 0.83)
+    to = mean.copy()
+    to[0] = mean[0] + p[0] - o[0]
+    for i in (1, 2):
+        to[i] = mean[i] * p[i] / o[i] if abs(o[i]) >= 2 else mean[i] + p[i] - o[i]
+    new = (lab - mean) * spread + to
+    rgb = np.where(mask[..., None], lab_to_srgb(new), a[..., :3])
+    out = np.concatenate([rgb, a[..., 3:]], -1)
+    return Image.fromarray(np.clip(np.round(out * 255), 0, 255).astype(np.uint8), 'RGBA')
+
+
 def layer_picture(name, ce, ppl, packs=None):
     """An untinted layer, from the pack the item it belongs to was drawn from, pulled and placed as that item was.
     A grey base comes from Pixel Perfection's own grey file, or Bauniclonia's grey ("_desat") drawing of the piece;
@@ -682,6 +735,10 @@ def main():
         e = dict(e)
         if not is_block(e['n']): e['tab'] = tab_of(e, D['foods'])
         items.append(e)
+        # (26.3's woods that minecraft-data 26.1 does not have: their boats go after the pale oak ones)
+        if e['n'] == 'pale_oak_chest_boat':
+            for x in NEWER_ITEMS:
+                x = dict(x); x['tab'] = tab_of(x, D['foods']); items.append(x)
     tex = [e['n'] for e in items if not is_block(e['n'])]
     # and the experience orb's eleven sizes (Pixel Perfection CE's entity texture, black is clear)
     tex += ['xp_orb_%d' % i for i in range(11)]
@@ -719,7 +776,7 @@ def main():
             if n.startswith('layer_'):
                 strip.paste(layer_picture(n[6:], ce, ppl, packs), (0, i * 16))
                 continue
-            im = picture(n, ce, ppl, packs)
+            im = newer_boat(n, ce, ppl, packs) if n in NEWER_BOATS else picture(n, ce, ppl, packs)
             if im is None:
                 missing.append(n)
                 im = Image.new('RGBA', (16, 16), (0, 0, 0, 0))

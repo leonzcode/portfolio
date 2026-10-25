@@ -36,8 +36,8 @@
    Fire (beds, respawn anchors, fireballs): each destroyed cell that is air
    afterwards, with a solid block under it, catches fire one time in three.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=112';
-import { WORLD_FX } from './world.js?v=112';
+import { B, BLOCKS, FLUID } from './blocks.js?v=113';
+import { WORLD_FX } from './world.js?v=113';
 
 /* Blast resistance from the wiki where it is not the block's hardness. Worked out the first time it
    is wanted, or when the page is next idle: its 34 passes over every block took 11-15 ms here, and
@@ -55,7 +55,7 @@ function makeRes() {
   res(n => /(sandstone)$/.test(n) && !/^smooth/.test(n), 0.8);
   res(n => /_(log|wood|stem|hyphae)$/.test(n) && !/^(melon|pumpkin|attached)/.test(n), 2);
   res(n => /_planks$|_(fence|fence_gate|door|trapdoor)$/.test(n) && !/^iron/.test(n), 3);
-  res(n => /_(slab|stairs)$/.test(n) && /^(oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak|bamboo|crimson|warped)/.test(n), 3);
+  res(n => /_(slab|stairs)$/.test(n) && /^(oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak|poplar|bamboo|crimson|warped)/.test(n), 3);
   res((n, d) => d.leaves, 0.2);
   res(n => /glass/.test(n), 0.3);
   res(n => /^(ice|packed_ice|frosted_ice)$/.test(n), 0.5);

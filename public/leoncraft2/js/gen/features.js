@@ -20,12 +20,12 @@
    checked against chunks the real server made. Feature kinds are
    registered in FEATURES; ones not written yet place nothing.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=112';
-import { BIO, BIOMES } from '../biomes.js?v=112';
-import { Xoroshiro, WorldgenXoroshiro, LegacyRandom, decorationSeed, featureSeed } from './random.js?v=112';
-import { Simplex, normalNoise } from './noise.js?v=112';
-import { msin, mcos } from './carvers.js?v=112';
-import { stateOf } from './states.js?v=112';
+import { B, BLOCKS } from '../blocks.js?v=113';
+import { BIO, BIOMES } from '../biomes.js?v=113';
+import { Xoroshiro, WorldgenXoroshiro, LegacyRandom, decorationSeed, featureSeed } from './random.js?v=113';
+import { Simplex, normalNoise } from './noise.js?v=113';
+import { msin, mcos } from './carvers.js?v=113';
+import { stateOf } from './states.js?v=113';
 
 const MIN_Y = -64, MAX_Y = 319, SEA_LEVEL = 63;
 export const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);
@@ -193,7 +193,7 @@ const GROUND = new Uint8Array(4096);
     'peony', 'open_eyeblossom', 'closed_eyeblossom', 'sweet_berry_bush', 'firefly_bush', 'bush', 'pink_petals', 'wildflowers', 'leaf_litter',
     'dead_bush', 'short_dry_grass', 'tall_dry_grass', 'brown_mushroom', 'red_mushroom', 'cactus', 'cactus_flower', 'sugar_cane', 'lily_pad',
     'snow', 'moss_carpet', 'pale_moss_carpet', 'azalea', 'flowering_azalea', 'bamboo', 'bamboo_sapling', 'oak_sapling', 'spruce_sapling',
-    'birch_sapling', 'jungle_sapling', 'acacia_sapling', 'dark_oak_sapling', 'cherry_sapling', 'pale_oak_sapling'];
+    'birch_sapling', 'jungle_sapling', 'acacia_sapling', 'dark_oak_sapling', 'cherry_sapling', 'pale_oak_sapling', 'poplar_sapling'];
   for (const n of names) {
     if (B[n] === undefined) continue;
     GROUND[B[n]] = 1;
