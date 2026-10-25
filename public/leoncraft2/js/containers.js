@@ -38,12 +38,12 @@
    pair seen from behind it (its partner is clockwise of its facing), 2 the
    right (partner anticlockwise; this one holds the top rows), 3 single.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, OPAQUE } from './blocks.js?v=110';
-import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=110';
-import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=110';
-import { cookingRecipe, remainderOf } from './crafting.js?v=110';
-import { fire } from './dispense.js?v=110';
-import { MAPS, fillPreview } from './maps.js?v=110';
+import { B, BLOCKS, OPAQUE } from './blocks.js?v=111';
+import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=111';
+import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=111';
+import { cookingRecipe, remainderOf } from './crafting.js?v=111';
+import { fire } from './dispense.js?v=111';
+import { MAPS, fillPreview } from './maps.js?v=111';
 
 export const SIZES = { chest: 27, trapped_chest: 27, copper_chest: 27, barrel: 27, shulker_box: 27, furnace: 3, smoker: 3, blast_furnace: 3,
   dispenser: 9, dropper: 9, crafter: 9, hopper: 5, brewing_stand: 5 };
@@ -555,7 +555,7 @@ export class Containers {
       const off = c.off && c.off.some(Boolean);
       if (!c.slots.some(Boolean) && !used && !off && c.kind !== 'hopper') continue;
       const o = { k: c.kind, p: [c.x, c.y, c.z], s: c.slots.map(stackToJSON) };
-      if (COOKER[c.kind]) Object.assign(o, { b: c.burn, bm: c.burnMax, c: c.cook, cm: c.cookMax, u: c.used });
+      if (COOKER[c.kind]) Object.assign(o, { b: c.burn, bm: c.burnMax, c: c.cook, cm: c.cookMax, u: Object.assign({}, c.used) });
       if (c.kind === 'brewing_stand') Object.assign(o, { f: c.fuel, w: c.brew, g: c.ingredient });
       if (off) o.off = c.off.map(v => (v ? 1 : 0));
       if (c.kind === 'hopper') o.cd = c.cool;

@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=110';
-import { idx, H } from '../world-const.js?v=110';
-import { DIMS, DIM_IDS } from '../dims.js?v=110';
-import { Save } from '../save.js?v=110';
-import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=110';
-import { glints } from '../render/armor.js?v=110';
-import { containerKind } from '../containers.js?v=110';
-import { getSkinSettings } from '../render/avatar.js?v=110';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=110';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=110';
-import { Y0 } from '../world-const.js?v=110';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=110';
-import { Projectile } from '../entities/projectiles.js?v=110';
-import { Combat } from '../combat/combat.js?v=110';
-import { Vehicles } from './vehicles.js?v=110';
-import { Mobs, Orbs } from './mobs.js?v=110';
-import { Events } from './events.js?v=110';
-import { EndSync } from './endfight.js?v=110';
-import { Hub } from './hub.js?v=110';
-import { Account, wsBase, httpBase } from './account.js?v=110';
-import { rankTag } from './players.js?v=110';
+import { B, BLOCKS } from '../blocks.js?v=111';
+import { idx, H } from '../world-const.js?v=111';
+import { DIMS, DIM_IDS } from '../dims.js?v=111';
+import { Save } from '../save.js?v=111';
+import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=111';
+import { glints } from '../render/armor.js?v=111';
+import { containerKind } from '../containers.js?v=111';
+import { getSkinSettings } from '../render/avatar.js?v=111';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=111';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=111';
+import { Y0 } from '../world-const.js?v=111';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=111';
+import { Projectile } from '../entities/projectiles.js?v=111';
+import { Combat } from '../combat/combat.js?v=111';
+import { Vehicles } from './vehicles.js?v=111';
+import { Mobs, Orbs } from './mobs.js?v=111';
+import { Events } from './events.js?v=111';
+import { EndSync } from './endfight.js?v=111';
+import { Hub } from './hub.js?v=111';
+import { Account, wsBase, httpBase } from './account.js?v=111';
+import { rankTag } from './players.js?v=111';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -401,7 +401,10 @@ function pendingNames() { const n = activeNet, now = performance.now(); return n
 /* a container's record, as containers.js saves one */
 function packContainer(c) {
   const o = { k: c.kind, p: [c.x, c.y, c.z], s: c.slots.map(stackToJSON) };
-  if ('burn' in c) Object.assign(o, { b: c.burn, bm: c.burnMax, c: c.cook, cm: c.cookMax, u: c.used });
+  // (a copy of the furnace's experience: the same object would go on changing in the record kept as sent, so the
+  // next change's check (b) stopped matching the server's and every take after an item cooked was a clash, the
+  // furnace put back as the server had it to cook the same items again)
+  if ('burn' in c) Object.assign(o, { b: c.burn, bm: c.burnMax, c: c.cook, cm: c.cookMax, u: Object.assign({}, c.used) });
   if (c.kind === 'brewing_stand') Object.assign(o, { f: c.fuel, w: c.brew, g: c.ingredient });
   if (c.off) o.off = c.off.map(v => (v ? 1 : 0));
   if (c.kind === 'hopper') o.cd = c.cool;
@@ -474,6 +477,7 @@ export class Net {
     this.outB = [[], [], []];        // blocks to send, per dimension
     this.outC = new Map();           // "d:x,y,z" -> [d, container or null]
     this.ctMine = new Map();         // "d:x,y,z" -> { hd, s }: what your hands moved in a container, until the server takes it
+    this.xpHeld = new Map();         // "d:x,y,z" -> [{ xp, s }]: a furnace's experience you took, paid once the server keeps the take
     this.handOut = new Map();        // "d:x,y,z" -> Map(item key -> count): what your hands took out (minus what they put in) this frame
     this.handSnap = new Map();       // container record -> its tally at the end of the last tick, for those a screen shows
     this.outT = new Map();           // "d:x,y,z" -> [d, detail entry or null]
@@ -807,6 +811,21 @@ export class Net {
          came out twice. */
       const hopperTick = C.hopperTick;
       C.hopperTick = function (h) { return net.ownsAt(h.x, h.z) ? hopperTick.call(this, h) : false; };
+      /* What a furnace's output brings is paid once the server keeps the take (its ack), not as you take it: a take
+         turned down (someone else took the same output a moment before, net.container's lost) is undone, and so are
+         its points, so two players never both get the same experience. */
+      const takeXp = C.takeXp;
+      C.takeXp = function (c) {
+        const xp = takeXp.call(this, c);
+        if (xp > 0 && c && !net.applying) {
+          const k = dimCode(net.game.dim) + ':' + key3(c.x, c.y, c.z);
+          let l = net.xpHeld.get(k);
+          if (!l) net.xpHeld.set(k, l = []);
+          l.push({ xp, s: net.seq + 1 });
+          return 0;
+        }
+        return xp;
+      };
       // (what each container an open screen shows held once a tick's furnaces and hoppers are done)
       C.tick = function () {
         const r = tick.apply(this, arguments), snap = new Map();
@@ -1361,7 +1380,7 @@ export class Net {
     const g = this.game;
     switch (m.t) {
       case 'b': this.stats.gotB += m.e.length / 5; this.blocks(m.d, m.e); return;
-      case 'ack': for (const [k, p] of this.pending) if (p.s <= m.s) this.pending.delete(k); for (const [k, p] of this.ctMine) if (p.s <= m.s) this.ctMine.delete(k); return;
+      case 'ack': for (const [k, p] of this.pending) if (p.s <= m.s) this.pending.delete(k); for (const [k, p] of this.ctMine) if (p.s <= m.s) this.ctMine.delete(k); if (this.xpHeld.size) this.payXp(m.s); return;
       case 'rej': this.rejected(m.d, m.e); return;
       case 'ct': this.container(m.d, m.p, m.o, m.gone || m.clash); return;
       // a change of yours by hand that was lost: the chest was destroyed from how it was before it (the server's ctGone)
@@ -1660,6 +1679,8 @@ export class Net {
       const mine = this.ctMine.get(d + ':' + k);
       if (mine) { this.ctMine.delete(d + ':' + k); this.undoHand(mine.hd); }
       this.handOut.delete(d + ':' + k);
+      // (and the experience that take would have brought: it stays in the furnace as the server keeps it)
+      this.xpHeld.delete(d + ':' + k);
     }
     if (this.pending.has('c' + d + ':' + k)) return;
     const g = this.game, C = g.containers, here = dimCode(g.dim) === d && C && g.world && !g.world.dead;
@@ -1679,13 +1700,23 @@ export class Net {
         for (let i = 0; i < c.slots.length; i++) c.slots[i] = sl[i] || null;
         if (this.handSnap.has(c)) this.handSnap.set(c, tallyStacks(c.slots));
         C.looted.add(k);
-        if ('burn' in c) { Object.assign(c, { burn: o.b | 0, burnMax: o.bm | 0, cook: o.c | 0, cookMax: o.cm || 200, lastInput: c.slots[0] ? c.slots[0].id : 0 }); c.used = o.u && typeof o.u === 'object' ? o.u : {}; C.lit.add(c); }
+        if ('burn' in c) { Object.assign(c, { burn: o.b | 0, burnMax: o.bm | 0, cook: o.c | 0, cookMax: o.cm || 200, lastInput: c.slots[0] ? c.slots[0].id : 0 }); c.used = o.u && typeof o.u === 'object' ? Object.assign({}, o.u) : {}; C.lit.add(c); }
         if (o.k === 'brewing_stand') { Object.assign(c, { fuel: o.f | 0, brew: o.w | 0, ingredient: o.g | 0 }); C.lit.add(c); }
         if (o.k === 'hopper') c.cool = o.cd | 0;
         if (c.off && Array.isArray(o.off)) for (let i = 0; i < c.off.length; i++) c.off[i] = !!o.off[i];
       }
     } finally { this.applying = false; }
     if (this.ctx.gui.isOpen()) this.ctx.gui.markDirty();
+  }
+  // the furnace experience of takes the server has kept (up to batch s), as orbs at your feet
+  payXp(s) {
+    const g = this.game, P = g.player, D = g.drops;
+    for (const [k, l] of this.xpHeld) {
+      let n = 0;
+      while (l.length && l[0].s <= s) n += l.shift().xp;
+      if (!l.length) this.xpHeld.delete(k);
+      if (n > 0 && D && P) D.xp(P.pos.x, P.pos.y + 0.5, P.pos.z, n);
+    }
   }
   /* A change you made to a container by hand that the server could not keep (someone else changed it, or it was
      destroyed, at the same moment): what you took out goes back out of what you carry, what you put in comes back to

@@ -34,18 +34,18 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=110';
-import { Screen, TextField, WHITE } from './gui.js?v=110';
-import { PAINTING_ART } from '../paintingdata.js?v=110';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=110';
-import { matchGrid, consumeGrid } from '../crafting.js?v=110';
-import { enchName, ENCH } from '../enchanting.js?v=110';
-import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=110';
-import { patternLines, drawBannerIcon } from '../banners.js?v=110';
-import { mapLines } from '../maps.js?v=110';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=110';
-import { dialPicture, usePicture } from '../dials.js?v=110';
-import { RecipeBook } from './recipebook.js?v=110';
+import { BLOCKS, B } from '../blocks.js?v=111';
+import { Screen, TextField, WHITE } from './gui.js?v=111';
+import { PAINTING_ART } from '../paintingdata.js?v=111';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=111';
+import { matchGrid, consumeGrid } from '../crafting.js?v=111';
+import { enchName, ENCH } from '../enchanting.js?v=111';
+import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=111';
+import { patternLines, drawBannerIcon } from '../banners.js?v=111';
+import { mapLines } from '../maps.js?v=111';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=111';
+import { dialPicture, usePicture } from '../dials.js?v=111';
+import { RecipeBook } from './recipebook.js?v=111';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
