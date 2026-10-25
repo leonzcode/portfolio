@@ -12,9 +12,9 @@
 
    Done hands the code and its structures back (onDone(code, structures)).
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, ScrollList, WHITE, GREY } from './gui.js?v=111';
-import { BLOCKS } from '../blocks.js?v=111';
-import { PRESETS, parseFlat, presetOf } from '../gen/flat.js?v=111';
+import { Screen, Button, TextField, ScrollList, WHITE, GREY } from './gui.js?v=112';
+import { BLOCKS } from '../blocks.js?v=112';
+import { PRESETS, parseFlat, presetOf } from '../gen/flat.js?v=112';
 
 const nameOf = id => (id ? (BLOCKS[id].display || BLOCKS[id].name) : 'Air');
 // the code for a list of layers (bottom first) and a biome
