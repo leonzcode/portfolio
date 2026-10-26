@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=113';
-import { idx, H } from '../world-const.js?v=113';
-import { DIMS, DIM_IDS } from '../dims.js?v=113';
-import { Save } from '../save.js?v=113';
-import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=113';
-import { glints } from '../render/armor.js?v=113';
-import { containerKind } from '../containers.js?v=113';
-import { getSkinSettings } from '../render/avatar.js?v=113';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=113';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=113';
-import { Y0 } from '../world-const.js?v=113';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=113';
-import { Projectile } from '../entities/projectiles.js?v=113';
-import { Combat } from '../combat/combat.js?v=113';
-import { Vehicles } from './vehicles.js?v=113';
-import { Mobs, Orbs } from './mobs.js?v=113';
-import { Events } from './events.js?v=113';
-import { EndSync } from './endfight.js?v=113';
-import { Hub } from './hub.js?v=113';
-import { Account, wsBase, httpBase } from './account.js?v=113';
-import { rankTag } from './players.js?v=113';
+import { B, BLOCKS } from '../blocks.js?v=114';
+import { idx, H } from '../world-const.js?v=114';
+import { DIMS, DIM_IDS } from '../dims.js?v=114';
+import { Save } from '../save.js?v=114';
+import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=114';
+import { glints } from '../render/armor.js?v=114';
+import { containerKind } from '../containers.js?v=114';
+import { getSkinSettings } from '../render/avatar.js?v=114';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=114';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=114';
+import { Y0 } from '../world-const.js?v=114';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=114';
+import { Projectile } from '../entities/projectiles.js?v=114';
+import { Combat } from '../combat/combat.js?v=114';
+import { Vehicles } from './vehicles.js?v=114';
+import { Mobs, Orbs } from './mobs.js?v=114';
+import { Events } from './events.js?v=114';
+import { EndSync } from './endfight.js?v=114';
+import { Hub } from './hub.js?v=114';
+import { Account, wsBase, httpBase } from './account.js?v=114';
+import { rankTag } from './players.js?v=114';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -166,9 +166,11 @@ class MpSave {
     const net = this.net, local = this.local.readState();
     if (net.watch) return Object.assign({}, local || {}, { mode: 'spectator' }, net.spawn && !local ? { spawn: { x: net.spawn.x, z: net.spawn.z } } : {});
     // (a server without records has none to give: what this browser kept is all there is; one that has none for you yet takes this browser's, once)
-    const st = net.pdata ? Object.assign({}, local || {}, net.pdata) : local;
+    let st = net.pdata ? Object.assign({}, local || {}, net.pdata) : local;
     // the world spawn is the server's
     if (st && net.spawn) st.spawn = { x: net.spawn.x, z: net.spawn.z };
+    // and so is your game mode (not what a record, this browser's or the server's, last said)
+    if (st && net.gm) st = Object.assign({}, st, { mode: net.gm });
     return st;
   }
   writeState(s) { if (this.net.watch) return; this.local.writeState(s); if (s) this.net.savePlayer(s); }
@@ -518,6 +520,8 @@ export class Net {
     this.watch = !!m.watch; this.guest = !!m.guest;
     // joined hidden (an admin: the server tells nobody else anything of you; a /msg you send is all that reaches anyone)
     this.hidden = !!m.hidden;
+    // the game mode the server gives you (mlhub lc2.js modeFor), not the one your record last said
+    this.gm = typeof m.gm === 'string' ? m.gm : null; this.sentGm = this.gm;
     this.rules = m.rules || null;
     // spawn protection: how far round the world spawn you may not change anything (0: none for you, or none here)
     this.prot = m.prot | 0;
@@ -554,7 +558,7 @@ export class Net {
     const s = this.server, net = this;
     // (cheats is asked each time a command is typed: an /op or /deop counts at once)
     // (lc1: a server brought over from the first Leoncraft, made partly by its generator: lc1/mixed.js)
-    return { id: 'mp-' + s.id, name: s.name, seed: s.seed, generator: s.generator || 'vanilla', mode: s.mode, difficulty: s.difficulty,
+    return { id: 'mp-' + s.id, name: s.name, seed: s.seed, generator: s.generator || 'vanilla', mode: this.gm || s.mode, difficulty: s.difficulty,
       lc1: s.lc1 && typeof s.lc1 === 'object' && s.lc1.key ? s.lc1 : undefined,
       get cheats() { return net.canCheat(); }, set cheats(v) {}, spawn: this.spawn || undefined, mp: this, created: 0, lastPlayed: Date.now() };
   }
@@ -748,6 +752,8 @@ export class Net {
     this.slept = false;
     for (let n = 0; this.inbox.length && n < 2000; n++) this.handle(this.inbox.shift());
     this.timeExpect = g.time + 1;
+    // a change of game mode here (a command, F3 + F4) is told to the server, which keeps it or sends back the mode it gives you
+    if (this.gm && g.mode !== this.sentGm) { this.sentGm = g.mode; this.send({ t: 'gm', m: g.mode }); }
     this.pushTick();
     this.veh.tick(dimCode(g.dim));
     this.mobs.tick(dimCode(g.dim), stamp);
@@ -826,9 +832,21 @@ export class Net {
         }
         return xp;
       };
+      /* What a furnace, smoker, blast furnace or brewing stand does by itself (an item cooked, fuel burnt, a potion
+         brewed) goes to the server from the page that owns its chunk, as a hopper's moves do: it used to be sent by
+         nobody, so the server kept each one as it was at its last click, and whenever it was loaded again (coming
+         back to it, joining, another player arriving) it was back to that: the ore in, the ingots gone, the arrow
+         at the start. Every page near still works it out (the same sums from the same record); the owner's record
+         puts them right. */
+      const slotSig = c => { let s = ''; for (const x of c.slots) s += x ? x.id + ':' + x.count + ',' : ','; return s; };
       // (what each container an open screen shows held once a tick's furnaces and hoppers are done)
       C.tick = function () {
+        const before = net.applying ? null : new Map();
+        if (before) for (const c of this.lit) before.set(c, slotSig(c));
         const r = tick.apply(this, arguments), snap = new Map();
+        if (before) for (const [c, s0] of before) {
+          if (slotSig(c) !== s0 && this.map.get(this.key(c.x, c.y, c.z)) === c && net.ownsAt(c.x, c.z)) net.queueC(c.x, c.y, c.z, c, false);
+        }
         for (const s of net.ctx.gui.stack) for (const c of s.records || []) snap.set(c, tallyStacks(c.slots));
         net.handSnap = snap;
         return r;
@@ -1236,7 +1254,11 @@ export class Net {
   }
   queueC(x, y, z, c, hand) {
     const d = dimCode(this.game.dim), k = d + ':' + key3(x, y, z), was = this.outC.get(k);
-    this.outC.set(k, [d, x, y, z, c, !!hand || !!(was && was[5])]);
+    /* (a container gone and a new one put in its place before the next send: both go, the removal first; folded
+       into one, the new record went with the old one's check, the server had already dropped that one with its
+       block, and it answered gone: the new chest or furnace was dropped too) */
+    const cut = !!c && !!was && (was[4] === null || !!was[6]);
+    this.outC.set(k, [d, x, y, z, c, !!hand || !!(was && was[5]), cut]);
     this.pending.set('c' + k, { s: this.seq + 1 });
   }
   queueT(x, y, z, e) {
@@ -1258,8 +1280,10 @@ export class Net {
       for (let i = 0; i < e.length; i += 5 * 8192) msgs.push({ t: 'b', d, e: e.slice(i, i + 5 * 8192) });
       this.outB[d] = [];
     }
-    for (const [, [d, x, y, z, c, hand]] of this.outC) {
-      const o = c ? packContainer(c) : null, k = key3(x, y, z), prev = this.ct[d].get(k);
+    for (const [, [d, x, y, z, c, hand, cut]] of this.outC) {
+      const k = key3(x, y, z);
+      if (cut && this.ct[d].has(k)) { msgs.push({ t: 'ct', d, p: [x, y, z], o: null, b: recHash(this.ct[d].get(k)) }); this.ct[d].delete(k); }
+      const o = c ? packContainer(c) : null, prev = this.ct[d].get(k);
       if (o) this.ct[d].set(k, o); else this.ct[d].delete(k);
       /* (with the check of what it was made from, the record as this page last had it: the server keeps a change
          only if that is what it keeps now, mlhub lc2.js ctClash; one made by hand is remembered until it is taken,
@@ -1406,6 +1430,14 @@ export class Net {
       case 'hit': this.struck(m); return;
       case 'rules': this.applyRules(m.rules || {}); return;
       case 'diff': this.server.difficulty = m.d; if (this.ctx.setDifficulty) this.ctx.setDifficulty(m.d); return;
+      // the mode the server gives you (a change of yours it did not keep, or the server's default changing)
+      case 'gm': {
+        if (typeof m.m !== 'string' || !this.gm) return;
+        this.gm = this.sentGm = m.m;
+        const c = this.ctx.commandCtx && this.ctx.commandCtx();
+        if (c && c.setMode && g.mode !== m.m) c.setMode(m.m);
+        return;
+      }
       case 'as': this.ranAs(m); return;
       case 'hub': if (this.hub) this.hub.receive(m); return;
       // the server sends you somewhere (/home, an accepted /tpa): a place in a dimension, or the world spawn
@@ -1697,11 +1729,15 @@ export class Net {
         let c = C.map.get(k);
         if (!c || c.kind !== o.k) { if (c) dropContainer(C, x, y, z); c = C.fresh(o.k, x, y, z); C.map.set(k, c); }
         const sl = (o.s || []).map(stackFromJSON);
+        // (a furnace or brewing stand whose record holds what this page's already does: the owner's news of an item it
+        // also cooked here, a moment late; its own progress is kept, or the arrow went back by however late it was)
+        const sameSlots = 'burn' in c && c.slots.every((x, i) => (x ? x.id + ':' + x.count : '') === (sl[i] ? sl[i].id + ':' + sl[i].count : ''));
+        const kept = sameSlots ? { burn: c.burn, burnMax: c.burnMax, cook: c.cook, cookMax: c.cookMax } : null;
         // in place: a chest someone has open shows the change at once
         for (let i = 0; i < c.slots.length; i++) c.slots[i] = sl[i] || null;
         if (this.handSnap.has(c)) this.handSnap.set(c, tallyStacks(c.slots));
         C.looted.add(k);
-        if ('burn' in c) { Object.assign(c, { burn: o.b | 0, burnMax: o.bm | 0, cook: o.c | 0, cookMax: o.cm || 200, lastInput: c.slots[0] ? c.slots[0].id : 0 }); c.used = o.u && typeof o.u === 'object' ? Object.assign({}, o.u) : {}; C.lit.add(c); }
+        if ('burn' in c) { Object.assign(c, kept || { burn: o.b | 0, burnMax: o.bm | 0, cook: o.c | 0, cookMax: o.cm || 200 }, { lastInput: c.slots[0] ? c.slots[0].id : 0 }); c.used = o.u && typeof o.u === 'object' ? Object.assign({}, o.u) : {}; C.lit.add(c); }
         if (o.k === 'brewing_stand') { Object.assign(c, { fuel: o.f | 0, brew: o.w | 0, ingredient: o.g | 0 }); C.lit.add(c); }
         if (o.k === 'hopper') c.cool = o.cd | 0;
         if (c.off && Array.isArray(o.off)) for (let i = 0; i < c.off.length; i++) c.off[i] = !!o.off[i];
