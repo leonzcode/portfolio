@@ -23,11 +23,11 @@
    Made by net/hub.js with its own pieces (makeLobbyCos(K)), as the Profile
    menus are, so this file imports nothing of hub.js.
 --------------------------------------------------------------------------- */
-import { COS, COSMETICS, HATS, AURAS, TRAILS, GADGETS, RARITY, CATS } from './cosdata.js?v=114';
-import { B, BLOCKS, SOLID } from '../blocks.js?v=114';
-import { Sound } from '../sound/sound.js?v=114';
-import { F } from './players.js?v=114';
-import { blockGeometry } from '../render/blockmesh.js?v=114';
+import { COS, COSMETICS, HATS, AURAS, TRAILS, GADGETS, RARITY, CATS } from './cosdata.js?v=115';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=115';
+import { Sound } from '../sound/sound.js?v=115';
+import { F } from './players.js?v=115';
+import { blockGeometry } from '../render/blockmesh.js?v=115';
 
 const THREE = window.THREE;
 const FIXED = ['compass', 'temp', 'profile'];
@@ -177,6 +177,8 @@ export function makeLobbyCos(K) {
     mouseReleased(mx, my, button) { const out = ChestScreen.prototype.mouseReleased.call(this, mx, my, button); this.store(); this.cos.dirty = true; return out; }
     // (cosmetics only, and never the Backpack inside itself)
     mayPlace(s, st) { if (s.kind === 'box') return s.i < PACK_PAGE && !!(st && st.cos) && st.cos !== 'backpack'; return ChestScreen.prototype.mayPlace.call(this, s, st); }
+    // (a real store: its own page's things may be taken, as a chest's are; the menus' rule is only for their items)
+    mayTake(s) { return s.kind === 'box' ? s.i < PACK_PAGE : ChestScreen.prototype.mayTake.call(this, s); }
     quickMove(s) {
       const st = this.getStack(s);
       if (!st) return;

@@ -18,10 +18,10 @@
    Anyone can break one; a chest boat's chest goes to the others whenever it
    changes. Mobs riding in one stay on the machine they are on.
 --------------------------------------------------------------------------- */
-import { Boat } from '../entities/boat.js?v=114';
-import { Minecart } from '../entities/minecart.js?v=114';
-import { wrap } from '../entities/entity.js?v=114';
-import { stackToJSON, stackFromJSON } from '../items.js?v=114';
+import { Boat } from '../entities/boat.js?v=115';
+import { Minecart } from '../entities/minecart.js?v=115';
+import { wrap } from '../entities/entity.js?v=115';
+import { stackToJSON, stackFromJSON } from '../items.js?v=115';
 
 const THREE = window.THREE;
 
@@ -240,14 +240,30 @@ export class Vehicles {
         const s = [r3(e.pos.x), r3(e.pos.y), r3(e.pos.z), r3(e.yaw), w];
         if (s.some((v, i) => v !== rec.s[i])) { rec.s = s; net.send({ t: 'vs', id: rec.id, s }); }
       }
-      // a chest boat's chest, when it changed here
-      if (chest && e.slots && e.chest) {
-        const i = e.slots.map(stackToJSON), sig = JSON.stringify(i);
-        if (rec.slotSig === undefined) rec.slotSig = sig;
-        else if (sig !== rec.slotSig) { rec.slotSig = sig; net.send({ t: 'vj', id: rec.id, i }); }
-      }
+      // a chest boat's chest, when it changed here: at once while a screen here is open on it, else once a second
+      if (e.slots && e.chest && (chest || this.openOn(e))) this.sendChest(rec, e);
     }
   }
+  openOn(e) { for (const s of this.net.ctx.gui.stack) if (s.entity === e) return true; return false; }
+  /* A chest boat's chest as it is now, when it changed: with the check of what the server held as this page last had
+     it, and what changed since (lc2.js vj keeps it only if that is what it holds, as a chest's record is checked;
+     turned down, what this page's hands moved is undone). Your own record goes just before it, so a line lost between
+     the two loses things rather than doubling them. */
+  sendChest(rec, e) {
+    const net = this.net, i = e.slots.map(stackToJSON), sig = JSON.stringify(i);
+    if (rec.slotSig === undefined) { rec.slotSig = sig; return false; }
+    if (sig === rec.slotSig) return false;
+    const was = Array.isArray(rec.j.items) ? rec.j.items : [];
+    const before = net.tallyStacks(was.map(stackFromJSON)), now = net.tallyStacks(e.slots), hd = [];
+    for (const k of new Set([...before.keys(), ...now.keys()])) { const n = (before.get(k) || 0) - (now.get(k) || 0); if (n) hd.push([k, n]); }
+    const msg = { t: 'vj', id: rec.id, i, b: net.recHash(was) };
+    rec.slotSig = sig; rec.j = Object.assign({}, rec.j, { items: i }); rec.hd = hd;
+    net.quickSave(true);
+    net.send(msg);
+    return true;
+  }
+  // every chest boat's chest that changed here, now (leaving, the page going, the server restarting)
+  flushChests() { for (const rec of this.recs.values()) if (rec.e && !rec.e.removed && rec.e.slots && rec.e.chest) this.sendChest(rec, rec.e); }
   make(rec) {
     const E = this.E;
     let e = null;
@@ -315,6 +331,8 @@ export class Vehicles {
         const rec = this.recs.get(m.id);
         if (!rec || !Array.isArray(m.i)) return;
         rec.j = Object.assign({}, rec.j, { items: m.i });
+        // (a change of yours turned down: someone else changed it first, or it was too big to keep; your hands' moves undone)
+        if (m.clash && rec.hd) { net.undoHand(rec.hd); rec.hd = null; }
         const e = rec.e;
         if (e && e.slots) { for (let i = 0; i < e.slots.length; i++) e.slots[i] = stackFromJSON(m.i[i]); rec.slotSig = JSON.stringify(e.slots.map(stackToJSON)); if (net.ctx.gui.isOpen()) net.ctx.gui.markDirty(); }
         return;

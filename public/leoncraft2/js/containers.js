@@ -38,12 +38,12 @@
    pair seen from behind it (its partner is clockwise of its facing), 2 the
    right (partner anticlockwise; this one holds the top rows), 3 single.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, OPAQUE } from './blocks.js?v=114';
-import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=114';
-import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=114';
-import { cookingRecipe, remainderOf } from './crafting.js?v=114';
-import { fire } from './dispense.js?v=114';
-import { MAPS, fillPreview } from './maps.js?v=114';
+import { B, BLOCKS, OPAQUE } from './blocks.js?v=115';
+import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=115';
+import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=115';
+import { cookingRecipe, remainderOf } from './crafting.js?v=115';
+import { fire } from './dispense.js?v=115';
+import { MAPS, fillPreview } from './maps.js?v=115';
 
 export const SIZES = { chest: 27, trapped_chest: 27, copper_chest: 27, barrel: 27, shulker_box: 27, furnace: 3, smoker: 3, blast_furnace: 3,
   dispenser: 9, dropper: 9, crafter: 9, hopper: 5, brewing_stand: 5 };
@@ -398,6 +398,23 @@ export class Containers {
   }
   /* One item of a stack into the container at (x,y,z) from a side; true when it went in. A crafter
      fills its first empty slot that is on, then the smallest stack of the same item. */
+  // how many of a stack would go into these slots (a hopper's or a hopper cart's own), without putting any in
+  roomIn(T, st, side) {
+    let n = 0;
+    const max = maxStack(st.id);
+    for (const [c, i] of T.refs) {
+      const t = c.slots[i];
+      if (!this.canInsert(c, i, st, side)) continue;
+      if (!t) n += max; else if (sameItem(t, st)) n += Math.max(0, max - t.count);
+    }
+    return n;
+  }
+  // as many of a stack as fit, one at a time as a hopper takes them; the stack keeps what is left
+  fillFrom(T, st, side) {
+    let n = 0;
+    while (st.count > 0 && this.insertOne(T, st, side)) { st.count--; n++; }
+    return n;
+  }
   insertOne(target, st, side) {
     const T = target.refs ? target : this.slotRefs(target.x, target.y, target.z);
     if (!T) return false;
@@ -470,6 +487,11 @@ export class Containers {
         // as much of the stack as fits, all at once
         let took = 0;
         const self = { refs: h.slots.map((_, k) => [h, k]), kind: 'hopper', c: h };
+        // (on a server a shared item is asked for first and put in when the server gives it: net.js askFor)
+        if (this.drops.askFor && (e.nid || e.nk)) {
+          if (this.roomIn(self, e.stack, 'up') > 0) { this.drops.askFor(e, st => (this.map.get(this.key(h.x, h.y, h.z)) === h ? this.fillFrom(self, st, 'up') : 0)); break; }
+          continue;
+        }
         while (e.stack.count > 0 && this.insertOne(self, e.stack, 'up')) { e.stack.count--; took++; }
         if (took) { moved = true; if (e.stack.count <= 0) this.drops._remove(e, -1); break; }
       }

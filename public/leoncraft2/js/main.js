@@ -18,48 +18,50 @@
    middle click pick block, F1 hide the HUD, F3 details, [ and ] the clock,
    F7 render scale, F8 quality.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=114';
-import { BIOMES, biomeColours } from './biomes.js?v=114';
-import { searchSpawn } from './spawn.js?v=114';
-import { parseSeed } from './gen/random.js?v=114';
-import { World, startWorkers, practise } from './world.js?v=114';
-import { Fluids } from './fluids.js?v=114';
-import { Player } from './player.js?v=114';
-import { Renderer } from './render/renderer.js?v=114';
-import { Overlay } from './render/overlay.js?v=114';
-import { setSkin, setSkinPart, setCape, useDefaultSkin } from './render/avatar.js?v=114';
-import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps, composedTextures, itemStripFrom } from './ui/pack.js?v=114';
-import { SEA, Y0 } from './world-const.js?v=114';
-import { Gui, Options, lowEndDevice } from './ui/gui.js?v=114';
-import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, ConfirmScreen, Worlds, setLogoArt, seedFrom, UPDATE } from './ui/menus.js?v=114';
-import { Account } from './net/account.js?v=114';
-import { LoginScreen } from './ui/account.js?v=114';
-import { ItemIcons } from './ui/icons.js?v=114';
-import { Inventory, inventoryScreen } from './ui/inventory.js?v=114';
-import { Hud } from './ui/hud.js?v=114';
-import { Interactor } from './interact.js?v=114';
-import { QuickBlocks } from './quickblocks.js?v=114';
-import { MAPS, isFilledMap } from './maps.js?v=114';
-import { Save } from './save.js?v=114';
-import { Chat, ChatScreen } from './ui/chat.js?v=114';
-import { displayName, setItemNames, register, gameRule, execute } from './commands.js?v=114';
-import { applyModeRules, ModeKeys } from './modes.js?v=114';
-import { Particles } from './render/particles.js?v=114';
-import { DRAW, setItemLayers, ITEMS, itemId, displayName as itemDisplay, itemName } from './items.js?v=114';
-import { loadItemStrip, addItemPieces } from './itemtex.js?v=114';
-import { setLayerPixels } from './render/blockmesh.js?v=114';
-import { EntityStore } from './entities/store.js?v=114';
-import { paintSome, primeAtlas } from './entities/mobart.js?v=114';
-import { DIMS } from './dims.js?v=114';
-import { addDimArt, endSkyTexture } from './dim/art.js?v=114';
-import { VideoSettings } from './settings.js?v=114';
-import { pickBiome } from './worldgen.js?v=114';
-import { initSound, soundWorld, soundParts, soundTick, soundFrame, soundLeave } from './sound/game.js?v=114';
-import { loadEntityArt } from './entities/packart.js?v=114';
-import { ITEM_TEX } from './itemdata.js?v=114';
-import { debugLines, F3_HELP } from './ui/debug.js?v=114';
-import { Spin } from './render/screenfx.js?v=114';
-import { Minimap } from './ui/minimap.js?v=114';
+import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=115';
+import { BIOMES, biomeColours } from './biomes.js?v=115';
+import { searchSpawn } from './spawn.js?v=115';
+import { parseSeed } from './gen/random.js?v=115';
+import { World, startWorkers, practise } from './world.js?v=115';
+import { Fluids } from './fluids.js?v=115';
+import { Player } from './player.js?v=115';
+import { Renderer } from './render/renderer.js?v=115';
+import { Overlay } from './render/overlay.js?v=115';
+import { setSkin, setSkinPart, setCape, useDefaultSkin } from './render/avatar.js?v=115';
+import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps, composedTextures, itemStripFrom } from './ui/pack.js?v=115';
+import { SEA, Y0 } from './world-const.js?v=115';
+import { Gui, Options, lowEndDevice } from './ui/gui.js?v=115';
+import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, ConfirmScreen, Worlds, setLogoArt, seedFrom, UPDATE } from './ui/menus.js?v=115';
+import { Account } from './net/account.js?v=115';
+import { LoginScreen } from './ui/account.js?v=115';
+import { ItemIcons } from './ui/icons.js?v=115';
+import { Inventory, inventoryScreen } from './ui/inventory.js?v=115';
+import { Hud } from './ui/hud.js?v=115';
+import { Interactor } from './interact.js?v=115';
+import { QuickBlocks } from './quickblocks.js?v=115';
+import { MAPS, isFilledMap } from './maps.js?v=115';
+import { Save } from './save.js?v=115';
+import { Chat, ChatScreen } from './ui/chat.js?v=115';
+import { displayName, setItemNames, register, gameRule, execute } from './commands.js?v=115';
+import { applyModeRules, ModeKeys } from './modes.js?v=115';
+import { Particles } from './render/particles.js?v=115';
+import { DRAW, setItemLayers, ITEMS, itemId, displayName as itemDisplay, itemName } from './items.js?v=115';
+import { loadItemStrip, addItemPieces } from './itemtex.js?v=115';
+import { setLayerPixels } from './render/blockmesh.js?v=115';
+import { EntityStore } from './entities/store.js?v=115';
+import { paintSome, primeAtlas } from './entities/mobart.js?v=115';
+import { DIMS } from './dims.js?v=115';
+import { addDimArt, endSkyTexture } from './dim/art.js?v=115';
+import { VideoSettings } from './settings.js?v=115';
+import { pickBiome } from './worldgen.js?v=115';
+import { initSound, soundWorld, soundParts, soundTick, soundFrame, soundLeave } from './sound/game.js?v=115';
+import { loadEntityArt } from './entities/packart.js?v=115';
+import { ITEM_TEX } from './itemdata.js?v=115';
+import { debugLines, F3_HELP } from './ui/debug.js?v=115';
+import { Spin } from './render/screenfx.js?v=115';
+import { Minimap } from './ui/minimap.js?v=115';
+// a page served from this computer (tests): the console's cheat switch counts on a server there too, and nowhere else
+const LOCAL_PAGE = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
 const THREE = window.THREE;
 /* The game's own parts (js/parts.js: mobs, the simulation, the dimensions, the hands, advancements,
    statistics, the server code...) are not wanted by the title screen: they are loaded once it is up
@@ -76,10 +78,10 @@ let enchantDebug, Survival, survivalHooks, respawnPlayer, respawnSpot, Drops, dr
    module runs in just the order one import of parts.js would run it. PART_STEPS is parts.js's own
    list; a line added there goes here too, in the same place (one only added there still loads, with
    parts.js at the end). */
-const PART_STEPS = ['./enchanting.js?v=114', './survival.js?v=114', './life.js?v=114', './drops.js?v=114', './containers.js?v=114',
-  './hands.js?v=114', './entities/manager.js?v=114', './sim/sim.js?v=114', './dim/realms.js?v=114', './struct/spawners.js?v=114',
-  './details.js?v=114', './ui/sign.js?v=114', './dials.js?v=114', './ui/multiplayer.js?v=114', './adv/game.js?v=114',
-  './stats.js?v=114', './recipes.js?v=114'];
+const PART_STEPS = ['./enchanting.js?v=115', './survival.js?v=115', './life.js?v=115', './drops.js?v=115', './containers.js?v=115',
+  './hands.js?v=115', './entities/manager.js?v=115', './sim/sim.js?v=115', './dim/realms.js?v=115', './struct/spawners.js?v=115',
+  './details.js?v=115', './ui/sign.js?v=115', './dials.js?v=115', './ui/multiplayer.js?v=115', './adv/game.js?v=115',
+  './stats.js?v=115', './recipes.js?v=115'];
 // the next frame drawn (a page in the background draws none, and waits for nothing)
 const breath = () => document.hidden ? Promise.resolve() : new Promise(res => {
   let done = false;
@@ -89,7 +91,7 @@ const breath = () => document.hidden ? Promise.resolve() : new Promise(res => {
 const FETCHED = 'lc2: fetched, not run';
 const script = src => URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
 async function importParts(tries) {
-  const last = './parts.js?v=114' + (tries ? '&retry=' + tries : '');
+  const last = './parts.js?v=115' + (tries ? '&retry=' + tries : '');
   /* Everything down and linked first, nothing run: a module that imports them all, after one that
      throws. A module graph stops running at its first error, so the rest are left linked and waiting
      for the imports below. (Any other error is a real one: a module that could not be had.) */
@@ -341,7 +343,7 @@ async function boot() {
   status('Loading textures…', 0.05);
   const base = new URL('../textures/', import.meta.url).href;
   // stamped like the code, so a rebuilt texture set always reaches the browser
-  const TEX_V = '?v=114';
+  const TEX_V = '?v=115';
   /* Everything is asked for at once. The title's world needs only the
      texture list and the two colour maps, so it starts being made as soon
      as those are in (makeMenu), while the big textures, the renderer and the
@@ -690,7 +692,8 @@ async function boot() {
     const mkSave = id => (entry.mp ? entry.mp.save(id) : new Save(id));
     const save = mkSave(entry.id);
     await save.init();
-    const st = isNew ? null : save.readState();
+    // (in single player the copy kept with the world's own data, Save.readKept; on a server the server's record)
+    const st = isNew ? null : entry.mp ? save.readState() : await save.readKept();
     // the dimension you were in, and a save of its own for each (js/dims.js)
     const dim = st && st.dimension && DIMS[st.dimension] ? st.dimension : 'overworld';
     const saves = { overworld: save, the_nether: mkSave(entry.id + DIMS.the_nether.suffix), the_end: mkSave(entry.id + DIMS.the_end.suffix) };
@@ -902,7 +905,7 @@ async function boot() {
     inv.drawMob = (g, x, y, w, h, mx, my, mob, size, drop) => renderer.figure.draw(g, x, y, w, h, mx, my, mob, size, drop);
     held();
     // a new world made with Bonus Chest on (bonus.js)
-    if (isNew && entry.bonusChest && dim === 'overworld') import('./bonus.js?v=114').then(m => m.bonusChest(game, Math.floor(spawn.x), Math.floor(spawn.z))).catch(e => console.warn('bonus chest', e));
+    if (isNew && entry.bonusChest && dim === 'overworld') import('./bonus.js?v=115').then(m => m.bonusChest(game, Math.floor(spawn.x), Math.floor(spawn.z))).catch(e => console.warn('bonus chest', e));
     Worlds.update(entry.id, { lastPlayed: Date.now(), spawn });
     // (the loading screen stays up over plain dirt for the first frames: below)
     gui.panorama = false;
@@ -1083,8 +1086,24 @@ async function boot() {
   }
   async function saveGame() {
     if (!game) return;
-    game.save.writeState(stateOf());
+    const g = game, st = stateOf();
+    st.savedAt = Date.now();
     MAPS.save();
+    /* In single player one transaction holds it all (Save.commit): what changed in this dimension, its chests and
+       signs, the mobs and boats, and your own record, which goes into localStorage only after, so a tab closed half
+       way through keeps the last whole save. Written one by one, the inventory could be kept without the chest it
+       came out of: the items twice. */
+    if (!g.entry.mp && g.save instanceof Save && g.saves[g.dim] instanceof Save) {
+      const extras = [], hadC = g.containers.dirty, hadD = !!(g.details && g.details.dirty);
+      if (hadC) { g.containers.dirty = false; extras.push(['containers', g.containers.toJSON()]); }
+      if (hadD) { g.details.dirty = false; extras.push(['details', g.details.toJSON()]); }
+      const ents = g.entities ? [entityKey(g.entry, g.dim), g.entities.toJSON()] : null;
+      const ok = await g.saves[g.dim].commit({ edits: g.world.edits, extras, state: st, stateId: g.save.id, ents });
+      if (ok || !g.saves[g.dim].db) g.save.writeState(st);
+      else { if (hadC) g.containers.dirty = true; if (hadD) g.details.dirty = true; }
+      return;
+    }
+    game.save.writeState(st);
     if (game.containers.dirty) { game.containers.dirty = false; game.saves[game.dim].writeExtra('containers', game.containers.toJSON()); }
     if (game.details && game.details.dirty) { game.details.dirty = false; game.saves[game.dim].writeExtra('details', game.details.toJSON()); }
     // (waited for as well: a page reloaded straight after, as Done on the resource packs does, could cut the write off
@@ -1233,7 +1252,8 @@ async function boot() {
       // on a server what you say goes to everyone (net/net.js)
       sendChat: g.net ? t => g.net.chat(t) : null,
       // Allow Commands: as set when the world was made (creative worlds have it on unless turned off)
-      cheats: !!(window.__lc2.cheats || (g.lan ? g.lan.cheats : g.entry.cheats !== undefined ? g.entry.cheats : g.entry.mode === 'creative')),
+      // (the console's switch counts in a world of your own, or on a page served from this computer: on a server it is the server's say)
+      cheats: !!((window.__lc2.cheats && (!g.net || LOCAL_PAGE)) || (g.lan ? g.lan.cheats : g.entry.cheats !== undefined ? g.entry.cheats : g.entry.mode === 'creative')),
       say: (t, c, extra) => chat.add(t, c, extra),
       setMode,
       /* /home, /tpa and the like: to a place in any dimension; near you in this one, at once, as /tp does;
@@ -1463,7 +1483,7 @@ async function boot() {
     if (k === 'difficulty' && game && v && game.entry.difficulty !== v) { game.entry.difficulty = v; Worlds.update(game.entry.id, { difficulty: v }); }
     if (k === 'clouds') renderer.opts.clouds = v;
     if (k === 'renderScale') { autoScale = v === 'auto'; if (v !== 'auto') { renderer.opts.scale = +v; fit(); } }
-    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=114', import.meta.url).href : v);
+    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=115', import.meta.url).href : v);
     if (k === 'skinParts' && v) for (const p in v) setSkinPart(p, v[p]);
     if (k === 'cape') setCape(v || '');
   });
@@ -1729,7 +1749,7 @@ async function boot() {
     renderer, gui, options, B, BLOCKS, video, minimap,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud, chat, cheats: false,
-    command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=114').then(m => m.execute(line, ctx)); },
+    command: line => { if (!game) return false; const ctx = chatCtx(); if (!game.net || LOCAL_PAGE) ctx.cheats = true; return import('./commands.js?v=115').then(m => m.execute(line, ctx)); },
     get drops() { return game && game.drops; }, get containers() { return game && game.containers; }, get hands() { return game && game.hands; },
     get survival() { return game && game.survival; },
     get enchanting() { return game && enchantDebug(game); },
@@ -1741,6 +1761,8 @@ async function boot() {
       id: 'w' + Date.now().toString(36), name: 'Test World', folder: 'Test World',
       seed: generator === 'vanilla' ? parseSeed(seed == null ? '' : String(seed)) : (seed || MENU_SEED), generator,
       mode: mode || 'creative', created: Date.now(), lastPlayed: Date.now() }), true),
+    // the save Save and Quit and the autosave make (tests)
+    save: () => saveGame(),
     get realms() { return game && game.realms; }, DIMS, travel: (dim, resolve, near) => travel(dim, resolve, near),
     isLeaf: b => !BLOCKS[b] || BLOCKS[b].leaves || BLOCKS[b].log || !BLOCKS[b].solid,
     // for test harnesses: log in without typing (account.login(name, password) -> the server's answer; the login screen closes itself)

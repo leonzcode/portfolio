@@ -61,16 +61,16 @@
    What it remembers (sign text, food on campfires, framed items, discs, vaults, what pots, shelves and lecterns
    hold) is kept per dimension (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=114';
-import { lightNear } from './lightlevel.js?v=114';
-import { glints } from './render/armor.js?v=114';
-import { setGlint } from './render/glint.js?v=114';
-import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=114';
-import { potWobbled } from './sim/lids.js?v=114';
-import { BookScreen } from './ui/book.js?v=114';
-import { wantBook } from './entities/tablebook.js?v=114';
-import { cookingRecipe } from './crafting.js?v=114';
-import { hiveUse } from './entities/hives.js?v=114';
+import { B, BLOCKS } from './blocks.js?v=115';
+import { lightNear } from './lightlevel.js?v=115';
+import { glints } from './render/armor.js?v=115';
+import { setGlint } from './render/glint.js?v=115';
+import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=115';
+import { potWobbled } from './sim/lids.js?v=115';
+import { BookScreen } from './ui/book.js?v=115';
+import { wantBook } from './entities/tablebook.js?v=115';
+import { cookingRecipe } from './crafting.js?v=115';
+import { hiveUse } from './entities/hives.js?v=115';
 
 /* Other modules keep state of their own with a dimension's block entities (struct/trials.js: a trial
    spawner's cooldown): registerExtra(k, { save(details) -> entries with that k, load(details, entry), reset(details) }). */
@@ -187,7 +187,8 @@ export class Details {
       if (st) h.inv.placeBack(st);
       w.set(x, y, z, b, m & ~bit);
       sound(h, st && st.enchants ? 'block.chiseled_bookshelf.pickup.enchanted' : 'block.chiseled_bookshelf.pickup', x, y, z);
-      this.dirty = true;
+      // (changed, not only dirty: on a server its record goes to the others, net.js packDetail)
+      this.changed(e);
       return true;
     }
     if (!s || !SHELF_BOOKS.test(n)) return false;
@@ -195,7 +196,7 @@ export class Details {
     if (!h.creative) h.inv.takeSelected(1);
     w.set(x, y, z, b, m | bit);
     sound(h, n === 'enchanted_book' ? 'block.chiseled_bookshelf.insert.enchanted' : 'block.chiseled_bookshelf.insert', x, y, z);
-    this.dirty = true;
+    this.changed(e);
     return true;
   }
   // what a comparator reads from a chiseled bookshelf: the last slot used, 1 to 6 (0 before any)
@@ -211,20 +212,20 @@ export class Details {
       w.set(x, y, z, b, m | 4);
       wantBook(x, y, z);
       sound(h, 'item.book.put', x, y, z);
-      this.dirty = true;
+      this.changed(e);
       return true;
     }
     const e = this.entry(x, y, z, 'lectern'), bk = e.book || {}, sim = h.inter && h.inter.sim;
     const here = () => w.get(x, y, z) === b && (w.meta(x, y, z) & 4) && this.map.get(key(x, y, z)) === e;
     h.open(new BookScreen({
       pages: bk.pages || [], title: bk.title, author: bk.author, written: true, page: e.page,
-      onPage: p => { if (!here()) return; e.page = p; this.dirty = true; if (sim && sim.lecternPulse) sim.lecternPulse(x, y, z); sound(h, 'item.book.page_turn', x, y, z); },
+      onPage: p => { if (!here()) return; e.page = p; this.changed(e); if (sim && sim.lecternPulse) sim.lecternPulse(x, y, z); sound(h, 'item.book.page_turn', x, y, z); },
       take: () => {
         if (!here()) return;
         if (e.book) h.inv.placeBack(e.book);
         e.book = null; e.page = 0;
         w.set(x, y, z, b, w.meta(x, y, z) & ~4);
-        this.dirty = true;
+        this.changed(e);
       },
     }));
     return true;
@@ -246,7 +247,7 @@ export class Details {
     if (ok) {
       if (e.item) e.item.count++; else e.item = withCount(s, 1);
       if (!h.creative) h.inv.takeSelected(1);
-      this.dirty = true;
+      this.changed(e);
     }
     potWobbled(x, y, z, ok);
     return true;
@@ -258,7 +259,7 @@ export class Details {
     if (e.rewarded || e.queue.length) return false;
     e.rewarded = true; e.at = this.ticks + 14; e.unlockUntil = e.at;
     if (!h.creative) h.inv.takeSelected(1);
-    import('./struct/loot.js?v=114').then(L => import('./containers.js?v=114').then(C => {
+    import('./struct/loot.js?v=115').then(L => import('./containers.js?v=115').then(C => {
       const table = 'trial_chambers/' + (ominous ? 'reward_ominous' : 'reward');
       // (the game's getRandomItems: the stacks as drawn, one thrown out at a time, never shuffled or split as a chest's are)
       for (const r of L.rollItems(table, (Math.random() * 2147483647) | 0)) { const st = C.lootStack(r); if (st) e.queue.push(st); }
