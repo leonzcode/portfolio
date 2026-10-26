@@ -17,12 +17,12 @@
    Layouts and sheets are the game's (176 wide, 18-pixel slots); the art is
    Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { ContainerScreen, SearchField, press, slot, range, TO_PLAYER, TO_PLAYER_REVERSED } from './inventory.js?v=114';
-import { RecipeBook } from './recipebook.js?v=114';
-import { I, ITEMS, fuelTicks } from '../items.js?v=114';
-import { isShulkerBox, smeltResult } from '../containers.js?v=114';
-import { cookingRecipe, matchGrid } from '../crafting.js?v=114';
-import { isPotion, isIngredient } from '../brewing.js?v=114';
+import { ContainerScreen, SearchField, press, slot, range, TO_PLAYER, TO_PLAYER_REVERSED } from './inventory.js?v=115';
+import { RecipeBook } from './recipebook.js?v=115';
+import { I, ITEMS, fuelTicks } from '../items.js?v=115';
+import { isShulkerBox, smeltResult } from '../containers.js?v=115';
+import { cookingRecipe, matchGrid } from '../crafting.js?v=115';
+import { isPotion, isIngredient } from '../brewing.js?v=115';
 
 const LABEL_GREY = 0x404040;
 const MAIN = range(9, 36), HOT = range(0, 9);
@@ -252,6 +252,9 @@ export class CrafterScreen extends ContainerScreen {
     return m ? m.result : null;
   }
   special(s) { return s.kind === 'preview' || super.special(s); }
+  // (the preview only shows what the crafter would make: nothing is ever taken from it, by Q, Ctrl+Q or F either,
+  // which threw or swapped out a fresh copy of the result each time without using the grid up)
+  mayTake(s) { return s.kind !== 'preview' && super.mayTake(s); }
   mayPlace(s, st) {
     if (s.kind === 'preview') return false;
     if (s.kind === 'box' && st && this.c.off[s.i]) return false;

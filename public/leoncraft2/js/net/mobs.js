@@ -30,9 +30,9 @@
    walks out of everyone's reach is put away on the server, as the game
    keeps the mobs of unloaded chunks, and comes back with its ground.
 --------------------------------------------------------------------------- */
-import { Living, wrap } from '../entities/entity.js?v=114';
-import { TYPES } from '../entities/mobs.js?v=114';
-import { F } from './players.js?v=114';
+import { Living, wrap } from '../entities/entity.js?v=115';
+import { TYPES } from '../entities/mobs.js?v=115';
+import { F } from './players.js?v=115';
 
 const THREE = window.THREE;
 // besides the living (animals, monsters, villagers, golems, armour stands): paintings, the knots of leads, sand and gravel falling, fireworks,
@@ -444,12 +444,62 @@ export class Mobs {
         }
       }
     }
+    /* A screen open here on one of these (a donkey's, a llama's or a cart's chest, a horse's armour): its record goes as
+       soon as it changes, your own record just before it (so a line lost between the two loses things rather than
+       doubling them), not once a second or every thirty seconds with nobody near, which let a quit in between keep both
+       what was taken and what the server still held; it stays yours while open, and shuts if the mob went to another
+       page (both pages could take everything out of one chest). */
+    for (const s of net.ctx.gui.stack.slice()) {
+      const e = s.entity, rec = e && e.nm ? this.recs.get(e.nm) : null;
+      if (!rec || rec.d !== dim) continue;
+      if (e.puppet || e.removed) { this.shut(s); continue; }
+      if (now - (rec.claimAt || 0) > 5000) { rec.claimAt = now; net.send({ t: 'mc', id: rec.id }); }
+      if (this.recordNow(rec, recs, true)) net.quickSave(true);
+    }
     if (whole.length) net.send([3, dim, Math.round(stamp), ...whole]);
     if (moves.length) net.send([4, dim, Math.round(stamp), ...moves]);
     if (anims.length) net.send({ t: 'ma', e: anims });
     if (recs.length) net.send({ t: 'mj', e: recs });
     // your sight, for which mobs the server tells you of
     if (this.t % 100 === 1) { const r = Math.round(far); if (r !== this.viewSent) { this.viewSent = r; net.send({ t: 'view', r }); } }
+  }
+  // a mob's record into the list to send, when it changed since the last sent (true if it went in)
+  recordNow(rec, list, byHand) {
+    const e = rec.e;
+    if (!e || e.removed || e.puppet) return false;
+    const j = jsonOf(e);
+    if (e.tamed) j.own = this.net.name;
+    const sig = sigOf(j);
+    if (sig === rec.sig) return false;
+    /* (too big for the server to keep, lc2.js MAX_MOB_JSON: a book of pages put into a donkey's or a cart's chest. Kept
+       here, it went nowhere, and what was taken out after it was had twice. A change made on a screen is put back as it
+       was, and what the hands put in or took out goes back to them.) */
+    if (byHand && rec.j && JSON.stringify(j).length > 32000 && Array.isArray(e.slots)) {
+      const T = this.net.tallyStacks, now = T(e.slots);
+      this.apply(rec);
+      const was = T(e.slots), hd = [];
+      for (const k of new Set([...now.keys(), ...was.keys()])) { const n = (was.get(k) || 0) - (now.get(k) || 0); if (n) hd.push([k, n]); }
+      this.net.undoHand(hd);
+      if (this.net.ctx && this.net.ctx.chat) this.net.ctx.chat.add('That would be too much to keep in there.', 0xFF5555);
+      return false;
+    }
+    rec.sig = sig; rec.j = j; rec.jAt = performance.now();
+    list.push([rec.id, j]);
+    return true;
+  }
+  // every record of yours that changed, now (leaving, the page going, the server restarting)
+  flushAll() {
+    if (!this.on || !this.E) return;
+    const list = [];
+    for (const rec of this.recs.values()) if (rec.sig !== undefined) this.recordNow(rec, list);
+    for (let i = 0; i < list.length; i += 64) this.net.send({ t: 'mj', e: list.slice(i, i + 64) });
+  }
+  // a screen on a mob that is no longer this page's: shut
+  shut(s) {
+    const gui = this.net.ctx.gui;
+    if (gui.screen === s) { gui.back(); return; }
+    const i = gui.stack.indexOf(s);
+    if (i >= 0) { gui.stack.splice(i, 1); try { s.onClose(); } catch (err) {} }
   }
 
   /* ---- what the server says ---- */

@@ -23,9 +23,9 @@
    powers chosen are kept with the dimension's block entities (details.js
    registerExtra), and go when the beacon is broken.
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=114';
-import { H } from '../world-const.js?v=114';
-import { registerExtra } from '../details.js?v=114';
+import { B } from '../blocks.js?v=115';
+import { H } from '../world-const.js?v=115';
+import { registerExtra } from '../details.js?v=115';
 
 // the game's BeaconBlockEntity.BEACON_EFFECTS, a row for each level
 export const POWERS = [['speed', 'haste'], ['resistance', 'jump_boost'], ['strength'], ['regeneration']];

@@ -20,16 +20,16 @@
 
    The player is the only owner there can be, so "tamed" means "yours".
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=114';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=115';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=114';
-import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=114';
-import { model } from './mobs2.js?v=114';
-import { addArt } from './mobart.js?v=114';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=114';
-import { use as useBlock } from '../place.js?v=114';
-import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf, STEW_EFFECTS } from '../items.js?v=114';
-import { MountScreen } from '../ui/containers.js?v=114';
+  MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=115';
+import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=115';
+import { model } from './mobs2.js?v=115';
+import { addArt } from './mobart.js?v=115';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=115';
+import { use as useBlock } from '../place.js?v=115';
+import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf, STEW_EFFECTS } from '../items.js?v=115';
+import { MountScreen } from '../ui/containers.js?v=115';
 
 // the stack in the player's hand (a mob's interact is told only the item's name), and a stack dropped where a mob is
 const heldStack = m => (m.inv && m.inv.slots[m.inv.selected]) || null;
@@ -465,7 +465,8 @@ export class Wolf extends Tamable {
   fromJSON(o) {
     super.fromJSON(o);
     this.variant = o.var || 'pale'; this.collar = o.col || 'red';
-    if (o.body) this.body = stackFromJSON(o.body);
+    // (no armour in the record is none: one taken off on another page is not still worn, and dropped, here)
+    this.body = o.body ? stackFromJSON(o.body) : null;
     if (this.tamed) { this.maxHealth = 40; if (o.h !== undefined) this.health = o.h; }
   }
 }
@@ -1160,7 +1161,8 @@ export class AbstractHorse extends Animal {
     if (o.st) { this.maxHealth = o.st[0]; this.speed = o.st[1]; this.jumpStrength = o.st[2]; }
     super.fromJSON(o);
     this.tamed = !!o.tm; this.temper = o.tp || 0; this.saddled = !!o.sad;
-    if (o.body) this.setBody(stackFromJSON(o.body));
+    // (no armour in the record is none: one taken off on another page is not still worn, and dropped, here)
+    if (o.body || this.body) this.setBody(o.body ? stackFromJSON(o.body) : null);
     if (o.chest || o.ch) { this.setChest(true); if (Array.isArray(o.cs)) o.cs.forEach((a, i) => { if (i < this.chestSlots.length) this.chestSlots[i] = a ? stackFromJSON(a) : null; }); }
   }
 }

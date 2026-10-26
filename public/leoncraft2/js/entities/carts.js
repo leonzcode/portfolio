@@ -29,15 +29,15 @@
                an operator in creative sets the command with a click
                (ui/commandcart.js); it keeps what the command said last
 --------------------------------------------------------------------------- */
-import { Minecart } from './minecart.js?v=114';
-import { register } from './mobs.js?v=114';
-import { MODELS } from './mobmodels.js?v=114';
-import { addArt } from './mobart.js?v=114';
-import { B } from '../blocks.js?v=114';
-import { stackToJSON, stackFromJSON, maxStack } from '../items.js?v=114';
-import { spill, lootStack } from '../containers.js?v=114';
-import { ChestScreen, HopperScreen } from '../ui/containers.js?v=114';
-import { CommandCartScreen } from '../ui/commandcart.js?v=114';
+import { Minecart } from './minecart.js?v=115';
+import { register } from './mobs.js?v=115';
+import { MODELS } from './mobmodels.js?v=115';
+import { addArt } from './mobart.js?v=115';
+import { B } from '../blocks.js?v=115';
+import { stackToJSON, stackFromJSON, maxStack } from '../items.js?v=115';
+import { spill, lootStack } from '../containers.js?v=115';
+import { ChestScreen, HopperScreen } from '../ui/containers.js?v=115';
+import { CommandCartScreen } from '../ui/commandcart.js?v=115';
 
 const R = () => Math.random(), RI = n => Math.floor(Math.random() * n);
 
@@ -148,7 +148,7 @@ class ChestCart extends BlockCart {
     const L = this.loot;
     if (!L) return Promise.resolve();
     this.loot = null;
-    return import('../struct/loot.js?v=114').then(mod => {
+    return import('../struct/loot.js?v=115').then(mod => {
       for (const e of mod.rollLoot(L.table, L.seed, { size: this.slots.length })) {
         const st = lootStack(e);
         if (st && e.slot >= 0 && e.slot < this.slots.length && !this.slots[e.slot]) this.slots[e.slot] = st;
@@ -172,8 +172,11 @@ class ChestCart extends BlockCart {
   }
   fromJSON(o) {
     super.fromJSON(o);
-    if (Array.isArray(o.items)) for (let i = 0; i < this.slots.length; i++) this.slots[i] = o.items[i] ? stackFromJSON(o.items[i]) : null;
-    if (o.loot) this.loot = o.loot;
+    /* (the record is all of it: no items in it is an empty chest, and no loot is a chest whose loot was rolled. A
+       record that left them out used to leave this page's own, so an emptied cart was still full here, to be taken out
+       or broken again, and its loot was rolled twice) */
+    for (let i = 0; i < this.slots.length; i++) this.slots[i] = Array.isArray(o.items) && o.items[i] ? stackFromJSON(o.items[i]) : null;
+    this.loot = o.loot || undefined;
   }
 }
 
@@ -209,6 +212,12 @@ class HopperCart extends ChestCart {
       if (e.gone || e.fly > 0) continue;
       const q = e.pos;
       if (q.x < x0 || q.x > x1 || q.z < z0 || q.z > z1 || q.y < y0 || q.y > y1) continue;
+      // (on a server a shared item is asked for first, as a player asks for one: net.js askFor; taken here only on its
+      // page, part of a stack shrank here alone and the whole stack was still there for anyone walking into it)
+      if (D.askFor && (e.nid || e.nk)) {
+        if (C.roomIn(self, e.stack, 'up') > 0) { D.askFor(e, st => (this.removed ? 0 : C.fillFrom(self, st, 'up'))); return; }
+        continue;
+      }
       let took = 0;
       while (e.stack.count > 0 && C.insertOne(self, e.stack, 'up')) { e.stack.count--; took++; }
       if (took) { if (e.stack.count <= 0) D._remove(e, -1); return; }
@@ -341,7 +350,7 @@ class CommandCart extends BlockCart {
     ctx.cheats = true;
     ctx.say = (t, c) => said.push([String(t), c]);
     ctx.playerName = '@';
-    import('../commands.js?v=114').then(mod => {
+    import('../commands.js?v=115').then(mod => {
       if (this.removed) return;
       // the player stands where the cart is for the command, and back after (unless it moved them)
       const was = P.pos.clone(), at = this.pos.clone();

@@ -19,8 +19,8 @@
                on another player's machine, whose changes and boom come here
                in either order, looks the same)
 --------------------------------------------------------------------------- */
-import { WORLD_FX } from '../world.js?v=114';
-import { FLUID } from '../blocks.js?v=114';
+import { WORLD_FX } from '../world.js?v=115';
+import { FLUID } from '../blocks.js?v=115';
 const THREE = window.THREE;
 
 // everyone walking near this frame: x, y (feet), z, width over a player's, on the ground (1/0)

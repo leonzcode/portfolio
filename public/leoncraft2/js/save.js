@@ -12,6 +12,12 @@
 --------------------------------------------------------------------------- */
 const DB = 'leoncraft2', STORE = 'chunks';
 
+// one connection for the visit, shared with entities/store.js (whose records now live here too: commit())
+let shared = null;
+export function mainDb() {
+  if (!shared) shared = open().catch(() => null);
+  return shared;
+}
 function open() {
   return new Promise((res, rej) => {
     let r;
@@ -29,7 +35,7 @@ export class Save {
     this.dirty = new Set();
   }
   async init() {
-    try { this.db = await open(); } catch (e) { this.db = null; }
+    try { this.db = await mainDb(); } catch (e) { this.db = null; }
   }
   // every changed chunk of this world: "cx,cz" -> Map(cell index -> block * 256 + meta)
   async loadEdits() {
@@ -76,17 +82,58 @@ export class Save {
       } catch (e) { res(); }
     });
   }
+  /* Everything one save writes, in one transaction: this dimension's block changes and records (chests, signs...),
+     your own record (where you are, the inventory, health: the state) and the mobs, boats and carts, all kept or
+     none. Written apart, a tab closed in the middle of a save kept the inventory but not the chest or the block
+     its items came out of, or the other way round: the items twice. The state is put in localStorage only once
+     this is done (main.js saveGame), and readKept prefers this copy. False when nothing could be written. */
+  async commit({ edits, extras = [], state = null, stateId = this.id, ents = null }) {
+    const db = this.db;
+    if (!db) return false;
+    const keys = [...this.dirty];
+    this.dirty.clear();
+    const back = () => { for (const k of keys) this.dirty.add(k); };
+    return new Promise(res => {
+      try {
+        const tx = db.transaction(STORE, 'readwrite'), st = tx.objectStore(STORE);
+        for (const k of keys) {
+          const m = edits && edits.get(k);
+          if (!m || !m.size) { st.delete(this.id + ':' + k); continue; }
+          const a = new Int32Array(m.size * 2);
+          let i = 0;
+          for (const [cell, v] of m) { a[i++] = cell; a[i++] = v; }
+          st.put(a, this.id + ':' + k);
+        }
+        for (const [name, v] of extras) st.put(JSON.stringify(v), '#' + name + ':' + this.id);
+        if (state) st.put(JSON.stringify(state), '#state:' + stateId);
+        if (ents) st.put(JSON.stringify(ents[1]), '#ents:' + ents[0]);
+        tx.oncomplete = () => res(true);
+        tx.onerror = tx.onabort = () => { back(); res(false); };
+      } catch (e) { back(); res(false); }
+    });
+  }
+  /* Your record as last saved: the copy kept with the world's own data (commit) unless the one in localStorage is
+     newer (a save whose world part could not be written, or one made by a page from before commit, which writes
+     no savedAt). */
+  async readKept() {
+    const ls = this.readState(), kept = this.db ? await this.readExtra('state') : null;
+    if (!kept) return ls;
+    if (!ls) return kept;
+    if (ls.savedAt === undefined) return ls;
+    return ls.savedAt > (kept.savedAt || 0) ? ls : kept;
+  }
   // forget a whole world (and its Nether and End, kept as "<id>~the_nether" and "<id>~the_end")
   static async remove(worldId) {
     let db;
-    try { db = await open(); } catch (e) { return; }
+    try { db = await mainDb(); } catch (e) { return; }
+    if (!db) return;
     for (const id of [worldId, worldId + '~the_nether', worldId + '~the_end']) {
       const prefix = id + ':';
       await new Promise(res => {
         try {
           const tx = db.transaction(STORE, 'readwrite');
           tx.objectStore(STORE).delete(IDBKeyRange.bound(prefix, prefix + '￿'));
-          tx.objectStore(STORE).delete('#containers:' + id);
+          for (const name of ['containers', 'details', 'state', 'ents', 'maps']) tx.objectStore(STORE).delete('#' + name + ':' + id);
           tx.oncomplete = () => res(); tx.onerror = () => res();
         } catch (e) { res(); }
       });

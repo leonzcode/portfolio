@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=114';
-import { idx, H } from '../world-const.js?v=114';
-import { DIMS, DIM_IDS } from '../dims.js?v=114';
-import { Save } from '../save.js?v=114';
-import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=114';
-import { glints } from '../render/armor.js?v=114';
-import { containerKind } from '../containers.js?v=114';
-import { getSkinSettings } from '../render/avatar.js?v=114';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=114';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=114';
-import { Y0 } from '../world-const.js?v=114';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=114';
-import { Projectile } from '../entities/projectiles.js?v=114';
-import { Combat } from '../combat/combat.js?v=114';
-import { Vehicles } from './vehicles.js?v=114';
-import { Mobs, Orbs } from './mobs.js?v=114';
-import { Events } from './events.js?v=114';
-import { EndSync } from './endfight.js?v=114';
-import { Hub } from './hub.js?v=114';
-import { Account, wsBase, httpBase } from './account.js?v=114';
-import { rankTag } from './players.js?v=114';
+import { B, BLOCKS } from '../blocks.js?v=115';
+import { idx, H } from '../world-const.js?v=115';
+import { DIMS, DIM_IDS } from '../dims.js?v=115';
+import { Save } from '../save.js?v=115';
+import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=115';
+import { glints } from '../render/armor.js?v=115';
+import { containerKind } from '../containers.js?v=115';
+import { getSkinSettings } from '../render/avatar.js?v=115';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=115';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=115';
+import { Y0 } from '../world-const.js?v=115';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=115';
+import { Projectile } from '../entities/projectiles.js?v=115';
+import { Combat } from '../combat/combat.js?v=115';
+import { Vehicles } from './vehicles.js?v=115';
+import { Mobs, Orbs } from './mobs.js?v=115';
+import { Events } from './events.js?v=115';
+import { EndSync } from './endfight.js?v=115';
+import { Hub } from './hub.js?v=115';
+import { Account, wsBase, httpBase } from './account.js?v=115';
+import { rankTag } from './players.js?v=115';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -141,6 +141,10 @@ export const mapReview = (game, id, ok, why) => post('/lc2/hub/review', { game, 
 
 const dimCode = name => (DIMS[name] || DIMS.overworld).code;
 const key3 = (x, y, z) => x + ',' + y + ',' + z;
+// what a cell holds when nothing solid is there (a break leaves one of these)
+const EMPTY = new Set(['air', 'cave_air', 'void_air', 'water', 'lava', 'fire', 'soul_fire']);
+// the details that hold an item (packDetail's kinds: frame, jukebox, decorated pot, chiseled bookshelf, lectern)
+const HOLDS = new Set(['f', 'j', 'p', 'cb', 'le']);
 const flat = a => a.slice();
 
 /* What a world keeps in place of save.js, per dimension: the edits and the
@@ -421,6 +425,11 @@ function packDetail(e) {
   if (e.k === 'campfire') return { k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), t: e.t, n: e.total };
   // a beacon's powers (sim/beacon.js), so everyone near it gets them
   if (e.k === 'bc') return { k: 'bc', p: [e.x, e.y, e.z], a: e.a || 0, b: e.b || 0 };
+  /* and what a decorated pot, a chiseled bookshelf and a lectern hold (they were kept by nobody: lost at a rejoin, a shelf
+     filled on another page gave a plain book and spilled its own copy when broken) */
+  if (e.k === 'decorated_pot') return { k: 'p', p: [e.x, e.y, e.z], i: e.item ? stackToJSON(e.item) : null };
+  if (e.k === 'shelf') return { k: 'cb', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), l: e.last };
+  if (e.k === 'lectern') return { k: 'le', p: [e.x, e.y, e.z], i: e.book ? stackToJSON(e.book) : null, g: e.page | 0 };
   return undefined;
 }
 
@@ -477,9 +486,13 @@ export class Net {
     this.seq = 0;                    // the last batch of changes sent
     this.pending = new Map();        // "d:x,y,z" (or "c"/"t" + d:x,y,z for chests and signs) -> { s, prev }
     this.outB = [[], [], []];        // blocks to send, per dimension
+    this.outO = [[], [], []];        // with each, the solid block it took away (a break), else '': the server's check
+    this.broke = new Map();          // "d:x,y,z" -> when: blocks this page broke in the last moment, for what falls out of them
+    this.dtMine = new Map();         // "d:x,y,z" -> { prev, sent, s }: a pot's, frame's, shelf's... change, until the server takes it
     this.outC = new Map();           // "d:x,y,z" -> [d, container or null]
     this.ctMine = new Map();         // "d:x,y,z" -> { hd, s }: what your hands moved in a container, until the server takes it
     this.xpHeld = new Map();         // "d:x,y,z" -> [{ xp, s }]: a furnace's experience you took, paid once the server keeps the take
+    this.hopperAsks = new Map();     // item number -> put(stack): shared items a hopper here asked the server for (D.askFor)
     this.handOut = new Map();        // "d:x,y,z" -> Map(item key -> count): what your hands took out (minus what they put in) this frame
     this.handSnap = new Map();       // container record -> its tally at the end of the last tick, for those a screen shows
     this.outT = new Map();           // "d:x,y,z" -> [d, detail entry or null]
@@ -499,6 +512,7 @@ export class Net {
     this.shots = [];                 // what you shot or threw this tick, for the others to see fly
     this.pvpHit = null;              // the last hit another player gave you: { name, k, item, age }
     this.veh = new Vehicles(this);   // the boats and minecarts everyone shares (vehicles.js)
+    this.recHash = recHash; this.tallyStacks = tallyStacks;   // (for vehicles.js: a chest boat's chest is checked as a chest is)
     this.mobs = new Mobs(this); this.orbs = new Orbs(this);   // the mobs and orbs everyone shares (mobs.js)
     this.events = new Events(this);  // the sounds, lids, explosions and cracks seen near the others (events.js)
     this.end = new EndSync(this);    // one fight in the End for everyone (endfight.js)
@@ -632,8 +646,20 @@ export class Net {
   chat(text) { this.send({ t: 'chat', text }); }
   // the clock as the server last said, run on since
   serverTime() { return this.time + Math.round((performance.now() - this.timeAt) / 50); }
+  /* Every record of a mob, cart or chest boat changed here that has not gone yet, now: as you leave, as the page goes,
+     before the server restarts and with every save of your own record. They went every second at most (every thirty
+     seconds with nobody near), so taking a donkey's or a cart's things and quitting at once kept them both in your
+     inventory and in the server's record of it. */
+  flushEntities() {
+    if (this.closed || this.flushing || !this.game || !this.ws || this.ws.readyState !== 1) return;
+    this.flushing = true;
+    try { if (this.mobs && this.mobs.flushAll) this.mobs.flushAll(); if (this.veh && this.veh.flushChests) this.veh.flushChests(); }
+    catch (e) { console.warn('flush', e); }
+    finally { this.flushing = false; }
+  }
   close() {
     if (this.closed) return;
+    this.flushEntities();
     this.closed = true;
     clearInterval(this.pingTimer);
     try { this.ws.close(); } catch (e) {}
@@ -1250,6 +1276,12 @@ export class Net {
     this.pending.set(k, { s: this.seq + 1, prev: p ? p.prev : prev });
     const name = BLOCKS[b] ? BLOCKS[b].name : 'air';
     this.outB[d].push(x, y, z, name, m & 255);
+    /* (a solid block taken away goes with its name: the server keeps the break only if that is still the block it
+       has, so two players breaking one block at the same moment do not both get what it drops, mlhub lc2.js) */
+    const was = BLOCKS[prev >> 8] ? BLOCKS[prev >> 8].name : 'air', broke = EMPTY.has(name) && !EMPTY.has(was);
+    this.outO[d].push(broke ? was : '');
+    // (and remembered a moment: a chest's contents spill from the simulation's own update, a send or two later)
+    if (broke) this.broke.set(k, performance.now());
     if (w.urgent && !this.flushSoon) { this.flushSoon = true; queueMicrotask(() => { this.flushSoon = false; if (this.ws && this.game) this.flush(); }); }
   }
   queueC(x, y, z, c, hand) {
@@ -1268,6 +1300,32 @@ export class Net {
   }
   flush() {
     if (this.outFx.length) { this.send({ t: 'fx', d: dimCode(this.game.dim), k: 'break', e: this.outFx }); this.outFx = []; }
+    /* (your own record first, whenever what goes now is something your hands did to the world: a chest changed by a
+       click, something dropped. It went every two seconds at most, so a second login, a dropped line or a closed
+       browser right after putting things into a chest gave them back to you from the older record.) */
+    if (this.pdata && !this.watch && (this.outIt.length || [...this.outC.values()].some(x => x[5]))) this.quickSave(true);
+    /* What fell out of a block changed in this send (an ore's drop, a chest's spill, a frame's item, a disc) goes after
+       the change, marked with its cell (bk): if the server turns the change down (someone else broke or emptied it a
+       moment before), it turns those items down too and they go (numbered -1). Things thrown and a death's spill
+       are never tied. */
+    const tied = [];
+    if (this.outIt.length) {
+      const cells = new Set([...this.outC.keys(), ...this.outT.keys()]), now = performance.now();
+      for (let d = 0; d < 3; d++) for (let i = 0, e = this.outB[d]; i < e.length; i += 5) cells.add(d + ':' + key3(e[i], e[i + 1], e[i + 2]));
+      for (const [k, t] of this.broke) { if (now - t > 1500) this.broke.delete(k); else cells.add(k); }
+      if (cells.size) {
+        const free = [];
+        for (const o of this.outIt) {
+          const got = this.byKey.get(o.k), it = got && got[0];
+          const fx = Math.floor(o.p[0]), fy = Math.floor(o.p[1]), fz = Math.floor(o.p[2]);
+          const at = cells.has(o.d + ':' + key3(fx, fy, fz)) ? fy : cells.has(o.d + ':' + key3(fx, fy - 1, fz)) ? fy - 1 : null;
+          if (at === null || o.dth || (it && it.thrown)) { free.push(o); continue; }
+          o.bk = [fx, at, fz];
+          tied.push(o);
+        }
+        this.outIt = free;
+      }
+    }
     // (256 a message at most, the server's limit: a bigger one was thrown away whole, and its items were never numbered)
     while (this.outIt.length) this.send({ t: 'it+', e: this.outIt.splice(0, 256) });
     if (!this.outC.size && !this.outT.size && !this.outB[0].length && !this.outB[1].length && !this.outB[2].length) return;
@@ -1277,8 +1335,12 @@ export class Net {
       if (!e.length) continue;
       this.stats.sentB += e.length / 5;
       // a long run goes in parts the server takes in one go
-      for (let i = 0; i < e.length; i += 5 * 8192) msgs.push({ t: 'b', d, e: e.slice(i, i + 5 * 8192) });
-      this.outB[d] = [];
+      for (let i = 0; i < e.length; i += 5 * 8192) {
+        const msg = { t: 'b', d, e: e.slice(i, i + 5 * 8192) }, o = this.outO[d].slice(i / 5, i / 5 + 8192);
+        if (o.some(Boolean)) msg.o = o;
+        msgs.push(msg);
+      }
+      this.outB[d] = []; this.outO[d] = [];
     }
     for (const [, [d, x, y, z, c, hand, cut]] of this.outC) {
       const k = key3(x, y, z);
@@ -1300,13 +1362,19 @@ export class Net {
     for (const [, [d, x, y, z, e]] of this.outT) {
       const o = e ? packDetail(e) : null, k = key3(x, y, z);
       if (o === undefined) continue;
+      const prev = this.dt[d].get(k);
       if (o) this.dt[d].set(k, o); else this.dt[d].delete(k);
-      msgs.push({ t: 'dt', d, p: [x, y, z], o });
+      const msg = { t: 'dt', d, p: [x, y, z], o };
+      /* (what holds an item, with the check of the record it was made from, as a chest's: two players punching
+         one frame or taking one book at once do not both get it; the loser's change is undone, detail()) */
+      if (HOLDS.has((o || prev || {}).k)) { msg.b = prev ? recHash(prev) : ''; this.dtMine.set(d + ':' + k, { prev: prev || null, sent: o, s }); }
+      msgs.push(msg);
     }
     this.outT.clear();
     // the last one carries the number: the server answers it once it has taken them all
     msgs[msgs.length - 1].s = s;
     for (const m of msgs) this.send(m);
+    while (tied.length) this.send({ t: 'it+', e: tied.splice(0, 256) });
   }
 
   /* ---- where you are, on each tick that something changed (and once a second regardless) ---- */
@@ -1378,6 +1446,8 @@ export class Net {
   }
   // your own record to the server (main.js saves every ten seconds, as you leave, and when the page is hidden): only when it changed
   savePlayer(s) {
+    // (the chests of mobs, carts and chest boats changed here go first: your record after them, never the other way)
+    this.flushEntities();
     const o = {};
     for (const k of PLAYER_KEYS) if (s[k] !== undefined) o[k] = s[k];
     const str = JSON.stringify(o);
@@ -1404,12 +1474,12 @@ export class Net {
     const g = this.game;
     switch (m.t) {
       case 'b': this.stats.gotB += m.e.length / 5; this.blocks(m.d, m.e); return;
-      case 'ack': for (const [k, p] of this.pending) if (p.s <= m.s) this.pending.delete(k); for (const [k, p] of this.ctMine) if (p.s <= m.s) this.ctMine.delete(k); if (this.xpHeld.size) this.payXp(m.s); return;
-      case 'rej': this.rejected(m.d, m.e); return;
+      case 'ack': for (const [k, p] of this.pending) if (p.s <= m.s) this.pending.delete(k); for (const [k, p] of this.ctMine) if (p.s <= m.s) this.ctMine.delete(k); for (const [k, p] of this.dtMine) if (p.s <= m.s) this.dtMine.delete(k); if (this.xpHeld.size) this.payXp(m.s); return;
+      case 'rej': this.rejected(m.d, m.e, m.q); return;
       case 'ct': this.container(m.d, m.p, m.o, m.gone || m.clash); return;
       // a change of yours by hand that was lost: the chest was destroyed from how it was before it (the server's ctGone)
       case 'ctundo': this.undoHand(m.hd); return;
-      case 'dt': this.detail(m.d, m.p, m.o); return;
+      case 'dt': this.detail(m.d, m.p, m.o, m.lost); return;
       case 'chat':
         if (m.system) this.ctx.chat.add(m.text, m.colour !== undefined ? m.colour : 0xFFFF55);
         // (a rank tag before the name, as servers show it: [ADMIN] red, [OWNER] gold)
@@ -1450,7 +1520,7 @@ export class Net {
       }
       case 'it+': for (const o of m.e || []) { const rec = this.keepItem(o); if (rec && rec.d === dimCode(g.dim)) this.showItem(rec); } return;
       case 'it=': this.numbered(m.e || []); return;
-      case 'it-': case 'itno': this.itemGone(m.id, m.by); return;
+      case 'it-': case 'itno': this.hopperAsks.delete(m.id); this.itemGone(m.id, m.by); return;
       case 'itok': this.granted(m.id, m.s); return;
       case 'itc': this.itemCount(m.id, m.s, m.ag); return;
       case 'o=': case 'o+': case 'o-': case 'ono': case 'ook': this.orbs.receive(m); return;
@@ -1497,6 +1567,19 @@ export class Net {
       if (e.nid && (e.blown || net.ownsAt(e.pos.x, e.pos.z))) { net.send({ t: 'it-', id: e.nid }); net.items[dimCode(net.game.dim)].delete(e.nid); }
     };
     D._merge = function () {};
+    /* A hopper or a hopper cart on this page wants a shared item: asked for as a player asks (it-, take), and put in
+       when the server gives it, the rest dropped again as an item of its own, so the server's count stays right.
+       (Taken here alone, part of a stack shrank on this page and the server still held the whole stack, given whole
+       to the next player to walk into it.) */
+    D.askFor = function (e, put) {
+      if (!e.nid || net.closed) return false;
+      const now = performance.now();
+      if (e.asked && now - e.asked < 2000) return false;
+      e.asked = now;
+      net.hopperAsks.set(e.nid, put);
+      net.send({ t: 'it-', id: e.nid, take: 1 });
+      return true;
+    };
     D.toJSON = function () { const o = toJSON.call(this); o.items = []; return o; };
     D.tick = function (player, collector) {
       // a shared item is never picked up here directly: its own count-down is kept, and the server asked (pickups)
@@ -1560,6 +1643,8 @@ export class Net {
       this.byKey.delete(a[i]);
       const [e, d] = got, id = a[i + 1] | 0;
       e.nk = 0;
+      // (out of a change the server turned down, flush(): it never was)
+      if (id < 0) { const D = this.game && this.game.drops; if (D && !e.gone) { this.applying = true; try { D._remove(e, -1); } finally { this.applying = false; } } continue; }
       if (!id) { e.delay = e.wait || 0; e.wait = undefined; continue; }
       e.nid = id;
       const rec = { id, d, s: stackToJSON(e.stack), p: [e.pos.x, e.pos.y, e.pos.z], v: [0, 0, 0], dl: 0, ag: e.age, at: performance.now(), e };
@@ -1626,6 +1711,15 @@ export class Net {
     const st = stackFromJSON(s);
     if (!st || !g) return;
     const e = rec && rec.e, D = g.drops, inv = g.collector.inv;
+    // (one a hopper here asked for: into it, the rest dropped again where it lay)
+    const put = this.hopperAsks.get(id);
+    if (put) {
+      this.hopperAsks.delete(id);
+      if (e && !e.gone && D) { this.applying = true; try { D._remove(e, -1); } finally { this.applying = false; } }
+      try { put(st); } catch (err) { console.warn('hopper', err); }
+      if (st.count > 0 && D) { const p = e ? e.pos : g.player.pos; D.spawn(p.x, p.y, p.z, st, { pop: false, delay: 10 }); }
+      return;
+    }
     const count = st.count, left = inv.addStack(st);
     if (left < count && D && D.onPickup) D.onPickup(st);
     if (e && !e.gone) { e.taken = true; e.fly = 3; e.flyFrom = e.pos.clone(); e.delay = 1e9; }
@@ -1692,7 +1786,8 @@ export class Net {
     if (urgent && w.flushUrgent) w.flushUrgent();
   }
   // the server turned changes down (past the border, a full world): back as they were
-  rejected(d, e) {
+  // (q: a break that came second, someone else's or another page's simulation having taken the block first: no warning)
+  rejected(d, e, q) {
     const g = this.game, w = g.world, here = dimCode(g.dim) === d;
     for (let i = 0; i < e.length; i += 3) {
       const x = e[i], y = e[i + 1], z = e[i + 2], k = d + ':' + key3(x, y, z), p = this.pending.get(k);
@@ -1700,7 +1795,7 @@ export class Net {
       this.pending.delete(k);
       if (here && w.loaded(x, z)) { this.put(w, x, y, z, p.prev >> 8, p.prev & 255); if (w.quick) w.quick.put(x, y, z, w.get(x, y, z), w.meta(x, y, z)); }
     }
-    if (!this.warnedRej) { this.warnedRej = true; this.ctx.chat.add('The server could not keep some of your changes.', 0xFF5555); }
+    if (!q && !this.warnedRej) { this.warnedRej = true; this.ctx.chat.add('The server could not keep some of your changes.', 0xFF5555); }
   }
   /* (lost: the server turned a change of yours down, the chest being gone or changed by someone else at the same
      moment; what it keeps comes with it, and beats your own change, which is undone if you made it by hand) */
@@ -1777,6 +1872,19 @@ export class Net {
     }
     if (any) { inv.changed(); if (this.ctx.gui.isOpen()) this.ctx.gui.markDirty(); }
   }
+  undoDetail({ prev, sent }) {
+    const held = r => (!r ? [] : r.k === 'cb' ? r.i || [] : r.i ? [r.i] : []).map(a => (a ? stackFromJSON(a) : null));
+    const was = tallyStacks(held(prev)), now = tallyStacks(held(sent)), kind = (sent || prev || {}).k;
+    const creative = this.game && this.game.mode === 'creative', hd = [];
+    for (const key of new Set([...was.keys(), ...now.keys()])) {
+      const n = (was.get(key) || 0) - (now.get(key) || 0);
+      // (taken out: a book off a shelf or a lectern came to you; a frame's item or a disc dropped, and goes with its tie)
+      if (n > 0 && (kind === 'cb' || kind === 'le')) hd.push([key, n]);
+      // (put in: given back, unless nothing was used up)
+      if (n < 0 && !creative) hd.push([key, n]);
+    }
+    if (hd.length) this.undoHand(hd);
+  }
   // a click's own change to a container: its tally against the one at the end of the last tick (or as last sent)
   handMoved(c) {
     const d = dimCode(this.game.dim), k = d + ':' + key3(c.x, c.y, c.z), now = tallyStacks(c.slots);
@@ -1789,9 +1897,16 @@ export class Net {
     }
     this.handSnap.set(c, now);
   }
-  detail(d, p, o) {
+  /* (lost: a change of yours turned down, the server's record coming back in its place; what your hands moved with
+     it is undone: an item put in comes back to you, a book taken goes back, an item knocked out goes with its tie) */
+  detail(d, p, o, lost) {
     if (!Array.isArray(p)) return;
     const [x, y, z] = p, k = key3(x, y, z);
+    if (lost) {
+      this.pending.delete('t' + d + ':' + k);
+      const mine = this.dtMine.get(d + ':' + k);
+      if (mine) { this.dtMine.delete(d + ':' + k); this.undoDetail(mine); }
+    }
     if (this.pending.has('t' + d + ':' + k)) return;
     if (o) this.dt[d].set(k, o); else this.dt[d].delete(k);
     const g = this.game, D = g.details;
@@ -1801,10 +1916,13 @@ export class Net {
       const old = D.map.get(k);
       if (!o) { if (old) { D.map.delete(k); D._unshow(old); } return; }
       if (D.loadExtra && D.loadExtra(o)) return;
-      if (o.k !== 's' && o.k !== 'f' && o.k !== 'j' && o.k !== 'c') return;
-      const kind = o.k === 's' ? 'sign' : o.k === 'f' ? 'frame' : o.k === 'j' ? 'jukebox' : 'campfire';
+      const kind = { s: 'sign', f: 'frame', j: 'jukebox', c: 'campfire', p: 'decorated_pot', cb: 'shelf', le: 'lectern' }[o.k];
+      if (!kind) return;
       const e = D.entry(x, y, z, kind);
-      if (o.k === 'j') {
+      if (o.k === 'p') e.item = o.i ? stackFromJSON(o.i) : null;
+      else if (o.k === 'cb') { e.items = [0, 1, 2, 3, 4, 5].map(i => (o.i && o.i[i] ? stackFromJSON(o.i[i]) : null)); e.last = o.l === undefined ? -1 : o.l | 0; }
+      else if (o.k === 'le') { e.book = o.i ? stackFromJSON(o.i) : null; e.page = o.g | 0; }
+      else if (o.k === 'j') {
         if (!o.i) { D.map.delete(k); D._unshow(e); return; }
         e.disc = stackFromJSON(o.i); e.t = o.t | 0;
       } else if (o.k === 's') {

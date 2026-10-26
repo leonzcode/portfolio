@@ -11,16 +11,16 @@
    the fish's way (mobs3.js). Numbers from the Minecraft Wiki (Java Edition);
    the shapes are boxes in the game's units, the textures our own.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=114';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=115';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=114';
-import { Animal, Monster, register, TYPES } from './mobs.js?v=114';
-import { model } from './mobs2.js?v=114';
-import { addArt } from './mobart.js?v=114';
-import { MODELS } from './mobmodels.js?v=114';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=114';
-import { activeDrops } from '../drops.js?v=114';
-import { ITEMS, I } from '../items.js?v=114';
+  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=115';
+import { Animal, Monster, register, TYPES } from './mobs.js?v=115';
+import { model } from './mobs2.js?v=115';
+import { addArt } from './mobart.js?v=115';
+import { MODELS } from './mobmodels.js?v=115';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=115';
+import { activeDrops } from '../drops.js?v=115';
+import { ITEMS, I } from '../items.js?v=115';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -963,6 +963,8 @@ export class Nautilus extends Swimmer {
     const H = this.m.hooks && this.m.hooks.hands;
     if (!this.tamed || !H || !H.open || !MountScreenRef) return false;
     H.open(new MountScreenRef(H.inv, H.icons, this));
+    // (kept to the nautilus as a horse's screen is: shut when it dies or is left behind, or its saddle and armour came twice)
+    if (H.keptToEntity && H.gui) H.keptToEntity(H.gui.screen, this);
     return true;
   }
   interact(held, player) {
@@ -1067,7 +1069,7 @@ export class ZombieNautilus extends Nautilus {
 register('zombie_nautilus', ZombieNautilus);
 // the mount screen, fetched once (ui/containers.js leads back to the entities, so not imported at the top)
 let MountScreenRef = null;
-import('../ui/containers.js?v=114').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
+import('../ui/containers.js?v=115').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
 // nautilus armour: bands of the metal round the shell and a plate over its back
 const NAUT_ARMOR_ART = { copper: [0xc8764a, 0x8a4a2a], iron: [0xd8d8d8, 0x9a9a9a], golden: [0xf8d84a, 0xc89a20], diamond: [0x5ae8e0, 0x2aa8a0], netherite: [0x4a4248, 0x2a2428] };
 for (const k in NAUT_ARMOR_ART) addArt('nautilus_armor_' + k, [64, 64], p => {

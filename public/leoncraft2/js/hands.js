@@ -28,28 +28,28 @@
    wear on mobs (wearHeld), worn-out tools break into pieces, and Mending
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=114';
-import { setLodestoneCheck } from './dials.js?v=114';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=114';
-import { breakTicks, wearFor } from './mining.js?v=114';
-import { blockDrops } from './loot.js?v=114';
-import { containerKind, spill } from './containers.js?v=114';
-import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=114';
-import { isPotion, drinkPotion } from './brewing.js?v=114';
-import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=114';
-import { BeaconScreen } from './ui/beacon.js?v=114';
-import { STORE as BEACON_POWERS } from './sim/beacon.js?v=114';
-import { MerchantScreen } from './ui/merchant.js?v=114';
-import { hives } from './entities/hives.js?v=114';
-import { LoomScreen } from './ui/loom.js?v=114';
-import { CartographyScreen } from './ui/cartography.js?v=114';
-import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=114';
-import { countShelves } from './enchanting.js?v=114';
-import { wear } from './ui/inventory.js?v=114';
-import { BookScreen } from './ui/book.js?v=114';
-import { breaksInCreative } from './modes.js?v=114';
-import { boxOpened, bellRang } from './sim/lids.js?v=114';
-import { Account } from './net/account.js?v=114';
+import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=115';
+import { setLodestoneCheck } from './dials.js?v=115';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=115';
+import { breakTicks, wearFor } from './mining.js?v=115';
+import { blockDrops } from './loot.js?v=115';
+import { containerKind, spill } from './containers.js?v=115';
+import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=115';
+import { isPotion, drinkPotion } from './brewing.js?v=115';
+import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=115';
+import { BeaconScreen } from './ui/beacon.js?v=115';
+import { STORE as BEACON_POWERS } from './sim/beacon.js?v=115';
+import { MerchantScreen } from './ui/merchant.js?v=115';
+import { hives } from './entities/hives.js?v=115';
+import { LoomScreen } from './ui/loom.js?v=115';
+import { CartographyScreen } from './ui/cartography.js?v=115';
+import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=115';
+import { countShelves } from './enchanting.js?v=115';
+import { wear } from './ui/inventory.js?v=115';
+import { BookScreen } from './ui/book.js?v=115';
+import { breaksInCreative } from './modes.js?v=115';
+import { boxOpened, bellRang } from './sim/lids.js?v=115';
+import { Account } from './net/account.js?v=115';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // what a full bucket pours out (the fish buckets are water with a fish in it)
@@ -281,6 +281,8 @@ export class Hands {
   // entity is gone or out of reach, as the game's does (its contents spill when it breaks)
   keptToEntity(screen, e) {
     if (!screen) return;
+    // (on a server, a screen on an entity sends its record as it changes, and shuts if the entity goes to another page: net/mobs.js)
+    screen.entity = e;
     screen.stillValid = () => {
       if (!e || e.removed || e.dead) return false;
       const p = e.pos, hw = typeof e.hw === 'number' ? e.hw : 0.5, h = typeof e.h === 'number' ? e.h : 1;
@@ -521,7 +523,8 @@ export class Hands {
      its author); a written book opens to read. The stack is the one in the hand when it opened. */
   openBook(s, written) {
     const inv = this.inv, slot = inv.selected, off = !!this.offTurn;
-    const put = st => { if (off) inv.offhand = st; else if (inv.slots[slot] === s) inv.slots[slot] = st; inv.changed(); };
+    // (only back where the book still is: one that went meanwhile, spilled at a death or moved, is not made again)
+    const put = st => { if (off) { if (inv.offhand === s) inv.offhand = st; } else if (inv.slots[slot] === s) inv.slots[slot] = st; inv.changed(); };
     this.open(new BookScreen({
       pages: s.pages || [], written, player: Account.name || 'Player',
       done: pages => { const st = withCount(s, s.count); st.pages = pages; if (!pages.some(Boolean)) delete st.pages; put(st); },
@@ -838,6 +841,10 @@ export class Hands {
 
   /* ---- dying: everything spills, and some of the experience ---- */
   spillAll() {
+    /* (every screen shut first, as the game's menus close at a death: a crafting table's grid comes back into the
+       inventory and drops with the rest, and no screen stays open on a spilled inventory, whose 2x2 result still
+       showed and gave its craft again with nothing used up) */
+    if (this.gui && this.gui.isOpen && this.gui.isOpen()) this.gui.closeAll();
     const inv = this.inv, p = this.player, all = [];
     for (let i = 0; i < 36; i++) if (inv.slots[i]) { all.push(inv.slots[i]); inv.slots[i] = null; }
     for (let i = 0; i < 4; i++) if (inv.armor[i]) { all.push(inv.armor[i]); inv.armor[i] = null; }
