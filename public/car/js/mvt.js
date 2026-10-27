@@ -2,7 +2,7 @@
 // (OpenMapTiles schema, OpenStreetMap data, no key, served from a CDN). Fewer tags than Overpass (no lanes,
 // hydrants or signals) but it answers in a second. Decodes Mapbox Vector Tiles itself and returns the same store
 // shape as osm.js (roads with made-up node ids shared where lines meet, buildings with heights).
-import { project } from './geo.js?v=32';
+import { project } from './geo.js?v=33';
 
 const TILEJSON = 'https://tiles.openfreemap.org/planet';
 const Z = 14;
@@ -139,12 +139,17 @@ export async function load(lat, lon, radius = 700) {
     return id;
   };
   let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+  const shops = []; // (buildings) shop, cafe, pub and bank points: their building's ground floor is shop fronts
+  // (buildings) the buildings' decoding gives the page its frames back every 8 ms (a dense tile took a few hundred)
+  let tY = performance.now();
+  const breathe = async () => { if (performance.now() - tY > 8) { await new Promise(r => setTimeout(r, 0)); tY = performance.now(); } };
   // street names live in their own layer: named lines, matched to the roads by nearness below
   const named = [], NG = new Map(), NCELL = 20;
   for (const { x, y, L } of tiles) {
     const TN = L.transportation_name; if (!TN) continue;
     const loc = (px, py) => { const [a, b] = tileToLatLon(x, y, px, py, TN.extent); return project(a, b); };
     for (let i = 0; i < TN.feats.length; i++) {
+      if ((i & 31) === 0) await breathe(); // (terrain: the roads' names and lines give the frames back too)
       const F = TN.feature(i);
       if (F.type !== 2 || !F.props.name) continue;
       for (const part of F.parts) {
@@ -178,6 +183,7 @@ export async function load(lat, lon, radius = 700) {
     const c0 = loc(0, 0), c1 = loc(ext, ext);
     x0 = Math.min(x0, c0[0], c1[0]); x1 = Math.max(x1, c0[0], c1[0]); z0 = Math.min(z0, c0[1], c1[1]); z1 = Math.max(z1, c0[1], c1[1]);
     if (T) for (let i = 0; i < T.feats.length; i++) {
+      if ((i & 31) === 0) await breathe();
       const F = T.feature(i);
       if (F.type !== 2) continue;
       const pr = F.props, hw = HW[pr.class];
@@ -206,6 +212,7 @@ export async function load(lat, lon, radius = 700) {
     // water (sea, lakes, rivers): areas the trees and anything else can stay off
     const W = L.water;
     if (W) for (let i = 0; i < W.feats.length; i++) {
+      if ((i & 31) === 0) await breathe();
       const F = W.feature(i);
       if (F.type !== 3) continue;
       let cur = null;
@@ -216,6 +223,7 @@ export async function load(lat, lon, radius = 700) {
       }
     }
     if (B) for (let i = 0; i < B.feats.length; i++) {
+      if ((i & 31) === 0) await breathe();
       const F = B.feature(i);
       if (F.type !== 3 || F.props.hide_3d) continue;
       // centre inside this tile only, so a building on a tile edge is taken once
@@ -229,12 +237,22 @@ export async function load(lat, lon, radius = 700) {
           const outer = rings[k];
           if (shoelace(outer) > 0) outer.reverse();
           const h = num(F.props.render_height), mh = num(F.props.render_min_height) || 0;
-          cur = { id: wid--, outer, holes: [], tags: {}, part: mh > 0, height: h, minHeight: mh, levels: null, minLevel: 0, roofShape: null, roofHeight: null, roofLevels: null, colour: F.props.colour || null, roofColour: null, material: null, roofMaterial: null, type: 'yes' };
+          // (heightReal: the tiles' 5 m is their default for a building with no height; any other is from its tags)
+          cur = { id: wid--, outer, holes: [], tags: {}, part: mh > 0, height: h, heightReal: h != null && Math.abs(h - 5) > 0.01, minHeight: mh, levels: null, minLevel: 0, roofShape: null, roofHeight: null, roofLevels: null, colour: F.props.colour || null, roofColour: null, material: null, roofMaterial: null, type: 'yes' };
           store.buildings.push(cur);
         } else if (cur) { const h = rings[k]; if (shoelace(h) < 0) h.reverse(); cur.holes.push(h); }
       }
     }
+    // (buildings) the points of interest that make a ground floor a shop front
+    const PO = L.poi;
+    if (PO) for (let i = 0; i < PO.feats.length; i++) {
+      if ((i & 63) === 0) await breathe();
+      const F = PO.feature(i);
+      if (F.type !== 1 || !SHOP_CLASS.test(F.props.class || '')) continue;
+      for (const part of F.parts) for (const [px, py] of part) if (px >= 0 && py >= 0 && px < PO.extent && py < PO.extent) { const [a, b] = tileToLatLon(x, y, px, py, PO.extent); shops.push(project(a, b)); }
+    }
   }
+  try { markShops(shops, store.buildings); } catch (e) { /* shops are a nicety */ }
   // A road crossing a tile border comes as two lines, cut at the border in each tile's own coordinates, so their
   // ends miss each other by up to a metre or so: join each such end to the nearest one of the same kind from the
   // other side (else the two are separate dead ends, with a step between them and a gap in the lanes).
@@ -273,6 +291,25 @@ export async function load(lat, lon, radius = 700) {
 }
 
 const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+// (buildings) OpenMapTiles poi classes that are shops, cafes, pubs or banks
+const SHOP_CLASS = /^(shop|grocery|clothing_store|alcohol_shop|bakery|beer|cafe|restaurant|fast_food|bar|bank|pharmacy|ice_cream|hairdresser|jewelry|books|gift|mobile_phone|shoe|florist|furniture|hardware|laundry|music|optician|pet|sports|stationery|toys|car|bicycle|electronics|deli|butcher|chemist|cosmetics|wine|tobacco|newsagent|dry_cleaning)$/;
+function markShops(shops, recs) {
+  if (!shops.length || !recs.length) return;
+  const G = 32, grid = new Map();
+  for (const b of recs) {
+    if (b.part) continue;
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const p of b.outer) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < z0) z0 = p[1]; if (p[1] > z1) z1 = p[1]; }
+    if ((x1 - x0) * (z1 - z0) > 250000) continue;
+    for (let i = Math.floor(x0 / G); i <= Math.floor(x1 / G); i++) for (let j = Math.floor(z0 / G); j <= Math.floor(z1 / G); j++) { const k = i + ',' + j; let l = grid.get(k); if (!l) grid.set(k, l = []); l.push(b); }
+  }
+  const inside = (x, z, r) => { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const a = r[i], q = r[j]; if ((a[1] > z) !== (q[1] > z) && x < (q[0] - a[0]) * (z - a[1]) / (q[1] - a[1]) + a[0]) c = !c; } return c; };
+  for (const [x, z] of shops) {
+    const l = grid.get(Math.floor(x / G) + ',' + Math.floor(z / G)); if (!l) continue;
+    for (const b of l) if (inside(x, z, b.outer)) { b.shop = true; b.shops = (b.shops || 0) + 1; break; }
+  }
+}
 
 // a line cut to the tile square [0, ext], as one or more runs
 function clipLine(pts, ext) {

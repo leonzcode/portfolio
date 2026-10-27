@@ -25,7 +25,7 @@ export function loadPeople(drive) {
   Hp = (async () => {
     if (!/[?&]standin/.test(location.search)) {
       try {
-        const M = await import('./people.js?v=32');
+        const M = await import('./people.js?v=33');
         if (M && M.People && typeof M.People.createPerson === 'function') {
           const P = M.People;
           await P.load(drive && drive.G ? drive.G.renderer : undefined, drive ? drive.camera : undefined);
@@ -36,7 +36,7 @@ export function loadPeople(drive) {
         }
       } catch (e) { console.warn('people module', e && e.message); }
     }
-    const M = await import('./standin.js?v=32');
+    const M = await import('./standin.js?v=33');
     H = wrapStandin(M);
     return H;
   })();
@@ -155,7 +155,7 @@ export function guessSeats(rig) {
 
 // ------------------------------------------------------------------------------------------------------------
 
-const NEAR = 42, BUS_NEAR = 34, PARKED_NEAR = 26, MAX_CARS = 12, MAX_PARKED = 6, MAKE_PER_FRAME = 2;
+const NEAR = 42, BUS_NEAR = 34, PARKED_NEAR = 26, MAX_CARS = 12, MAX_PARKED = 6, MAKE_PER_FRAME = 1;
 const isBus = rig => !!(rig && rig.spec && (rig.spec.bus || rig.spec.kind === 'bus' || /bus/i.test(rig.spec.id || '')));
 
 // a car's seats filled at random, kept on the car so it shows the same people each time it comes near
@@ -470,7 +470,8 @@ export class Occupants {
       const seat = R.seats[i];
       const isKid = !!seat.kid || (kid && i > 0);
       const look = R.looks[i] || (R.looks[i] = h.randomLook({ kid: isKid }));
-      while (this.makeQ >= MAKE_PER_FRAME || performance.now() < (this.calmUntil || 0)) await new Promise(r => requestAnimationFrame(r));
+      // (one person a frame at most, and none in a frame after a slow one: each is a model copied and seated)
+      while (!this.mayMake()) await new Promise(r => requestAnimationFrame(r));
       this.makeQ++;
       let p = null;
       try { p = await h.create(look, { lod: 'low', kid: isKid, seated: true }); } catch (e) { console.warn('person', e); }
@@ -479,6 +480,12 @@ export class Occupants {
       this.seat(R, i, p, { look, kid: isKid });
     }
     R.made = true; R.making = false;
+  }
+
+  mayMake() {
+    if (this.makeQ >= MAKE_PER_FRAME || performance.now() < (this.calmUntil || 0)) return false;
+    // (after a slow frame only every fourth frame, so a slow machine still fills its cars, slowly)
+    return !(this.lastDt > 0.035) || this.frame % 4 === 0;
   }
 
   // a record's people all taken away (the car went out of range or was freed)
@@ -511,9 +518,12 @@ export class Occupants {
     this.recs.delete(fromKey);
     R.key = toKey; R.rig = toRig; R.seats = seatsOf(toRig); R.fakeRig = null;
     if (R.root) { this.scene.remove(R.root); R.root = null; }
-    for (const o of R.people) {
+    for (const o of [...R.people]) {
       if (!R.seats[o.seat]) { if (o.person.dispose) o.person.dispose(); continue; }
-      this.seat(R, o.seat, o.person, { look: o.look, player: o.player, drive: o.seat === 0 });
+      const n = this.seat(R, o.seat, o.person, { look: o.look, player: o.player, drive: o.seat === 0 });
+      // (the player's seat is a new record now: the old one kept in this.player would leave this one behind when the
+      // player got out, and the person was put back in the seat every frame after)
+      if (this.player && this.player.o === o) this.player = { R, o: n };
     }
     this.recs.set(toKey, R);
   }
@@ -528,22 +538,42 @@ export class Occupants {
     this.player = { R, o };
     return o;
   }
-  unseatPlayer() {
+  // (opts.keep: the reaches and the cabin's shade left as they are, for onfoot.js to ease off as the person gets out)
+  unseatPlayer(opts = {}) {
     if (!this.player) return;
     const { R, o } = this.player;
-    R.people = R.people.filter(q => q !== o);
+    R.people = R.people.filter(q => q !== o && !(q.player && q.person === o.person));
     this.player = null;
     const p = o.person;
-    if (p.ik) p.ik.handL = p.ik.handR = p.ik.footL = p.ik.footR = null;
-    if (p.setSeated) try { p.setSeated(false); } catch (e) {}
-    this.shade(p, 1);
+    if (!opts.keep && p.ik) p.ik.handL = p.ik.handR = p.ik.footL = p.ik.footR = null;
+    if (p.setSeated && !opts.keep) try { p.setSeated(false); } catch (e) {}
+    if (!opts.keep) this.shade(p, 1);
     p.shadow = true; if (p.setLod) try { p.setLod('near'); } catch (e) {}
+  }
+
+  // the cabin's shade on a person set gradually (getting in and out): the darker copies made once, their colour
+  // changed each call (k 1 is outdoors: the person's own materials back)
+  shadeTo(p, k) {
+    if (!p || !p.object) return;
+    if (k >= 0.999) { this.shade(p, 1); return; }
+    let made = false;
+    p.object.traverse(m => { if (m.isMesh && m.name !== 'shadow_proxy' && m.userData.shadeOrig) made = true; });
+    if (!made) { this.shade(p, k); return; }
+    p.object.traverse(m => {
+      if (!m.isMesh || m.name === 'shadow_proxy') return;
+      const U = m.userData; if (!U.shadeOrig) return;
+      const src = [].concat(U.shadeOrig), cur = [].concat(m.material);
+      cur.forEach((c, i) => { const o = src[i]; if (!c || !o || !c.userData || !c.userData.shadeClone) return; if (c.color && o.color) c.color.copy(o.color).multiplyScalar(k); if (c.envMapIntensity !== undefined) c.envMapIntensity = (o.envMapIntensity ?? 1) * k; });
+      U.shadeK = k;
+    });
   }
 
   // which cars have people now: the player's, the ones it left, the nearest traffic, the nearest parked
   update(dt) {
     const D = this.drive;
-    this.frame++; this.makeQ = 0;
+    this.frame++; this.makeQ = 0; this.lastDt = dt;
+    // (the people whose pose did not change since the last frame drawn: their bones out of the matrix pass)
+    if (this.H && this.H.P && this.H.P.frameTick) { try { this.H.P.frameTick(); } catch (e) {} }
     if (D.events && this.listened !== D.events) { if (this.listened) this.listened.removeEventListener('impact', this.onImpact); D.events.addEventListener('impact', this.onImpact); this.listened = D.events; }
     if (!this.H) return;
     const cam = D.camera.position;
@@ -619,7 +649,7 @@ export class Occupants {
         // looking about), the rest only until they are placed
         const busy = o.player || o.placed < 3 || o.model !== p.model;
         if (busy || (show && d < 16 && (this.frame + o.seat) % 3 === 0) || (show && (this.frame + o.seat * 7) % 30 === 0)) {
-          if (o.drv && (o.player || d < 20)) this.wheelTargets(R, o);
+          if (o.drv && (o.player || d < 20) && !p.handsBusy) this.wheelTargets(R, o);
           this.footTargets(R, o);
           tick(p, busy ? dt : (d < 16 ? dt * 3 : dt * 30));
           if (o.placed < 3 || o.model !== p.model || (!R.jolt && this.hipsOff(R, o) > 0.05)) this.place(R, o);
@@ -639,10 +669,18 @@ export class Occupants {
   // camera swings). One mesh (or person) a frame, drawn where it is with culling off for one frame, shrunk to a point
   // so nothing shows; pedestrians (peds.js) and the people in and out of cars alike.
   warmStep() {
-    const W = this.warm || (this.warm = { mesh: new WeakSet(), tex: new WeakSet(), cur: [], n: 0, nt: 0 });
+    const W = this.warm || (this.warm = { mesh: new WeakSet(), tex: new WeakSet(), cur: [], n: 0, nt: 0, idle: 0 });
     for (const m of W.cur) { m.visible = m.userData._wv; m.frustumCulled = m.userData._wf; }
     W.cur.length = 0;
     if (performance.now() < (this.calmUntil || 0)) return;
+    // (a scan that found nothing to do is done again only every half second: it looked at every person's materials
+    // every frame; and nothing is uploaded in a frame after a slow one, or more than one thing every other frame)
+    if (W.idle > 0) { W.idle--; return; }
+    if (this.lastDt > 0.035 || (this.frame & 1)) return;
+    const did = this.warmOne(W);
+    if (!did) W.idle = 30;
+  }
+  warmOne(W) {
     const D = this.drive;
     // the people in cars first (nearest cars first, as made), then whoever is out of a car, then the pedestrians
     const shown = o => { for (let a = o, k = 0; a && k < 12; a = a.parent, k++) if (!a.visible) return false; return true; };
@@ -658,20 +696,21 @@ export class Occupants {
       }
       return false;
     };
-    if (D.onfoot && texP(D.onfoot.person)) return;
-    for (const R of this.recs.values()) for (const o of R.people) if (texP(o.person)) return;
-    for (const L of this.loose) if (texP(L.person)) return;
-    if (D.peds && D.peds.list) for (const P of D.peds.list) if (texP(P.p)) return;
+    if (D.onfoot && texP(D.onfoot.person)) return true;
+    for (const R of this.recs.values()) for (const o of R.people) if (texP(o.person)) return true;
+    for (const L of this.loose) if (texP(L.person)) return true;
+    if (D.peds && D.peds.list) for (const P of D.peds.list) if (texP(P.p)) return true;
     const tryP = p => {
       if (!p || !p.model || !p.object || !shown(p.object)) return false;
       for (const m of p.model.lod0 || []) if (!W.mesh.has(m)) return this.warmMesh(W, m);
       for (const m of p.model.lod1 || []) if (!W.mesh.has(m)) return this.warmMesh(W, m);
       return false;
     };
-    if (D.onfoot && tryP(D.onfoot.person)) return;
-    for (const R of this.recs.values()) for (const o of R.people) if (tryP(o.person)) return;
-    for (const L of this.loose) if (tryP(L.person)) return;
-    if (D.peds && D.peds.list) for (const P of D.peds.list) if (tryP(P.p)) return;
+    if (D.onfoot && tryP(D.onfoot.person)) return true;
+    for (const R of this.recs.values()) for (const o of R.people) if (tryP(o.person)) return true;
+    for (const L of this.loose) if (tryP(L.person)) return true;
+    if (D.peds && D.peds.list) for (const P of D.peds.list) if (tryP(P.p)) return true;
+    return false;
   }
   // one mesh drawn this frame whatever the camera sees (its geometry, textures and bones' texture uploaded), then
   // back as it was next frame; it is drawn where the person is, over the model already showing

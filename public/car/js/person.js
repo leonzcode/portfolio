@@ -18,7 +18,17 @@ const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vect
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
 const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
 const _s1 = new THREE.Vector3(), _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3(), _t3 = new THREE.Vector3(), _t4 = new THREE.Vector3(), _t5 = new THREE.Vector3(), _t6 = new THREE.Vector3();
-const _q4 = new THREE.Quaternion();
+const _q4 = new THREE.Quaternion(), _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
+const FROZEN_UPDATE = () => {};
+// a frozen skinned mesh's own matrix pass: its matrixWorld as any object's, its bindMatrixInverse left as the frame it
+// was frozen in (SkinnedMesh.updateMatrixWorld would set it from the new matrixWorld, and warns for any other bindMode)
+const MESH_FROZEN = function (force) { THREE.Object3D.prototype.updateMatrixWorld.call(this, force); };
+// a person's skeleton works out its bone matrices (the renderer asks, once a frame it is drawn) unless frozen, and
+// its meshes go through the matrix pass as any skinned mesh; both are numbered (with each pose), so a freeze can tell
+// whether the renderer's bone matrices came after the last matrix pass and the last pose and can be kept
+let SKSEQ = 0;
+const SKEL_UPDATE = function () { if (this._frozen) return; THREE.Skeleton.prototype.update.call(this); this._seq = ++SKSEQ; };
+const MESH_LIVE = function (force) { THREE.SkinnedMesh.prototype.updateMatrixWorld.call(this, force); this._mseq = ++SKSEQ; };
 const UP = new THREE.Vector3(0, 1, 0);
 
 let PID = 0;
@@ -38,6 +48,9 @@ export class Person {
     this.mixer = null; this.actions = new Map(); this.current = null; this.currentName = null;
     this.isRagdoll = false; this.rag = null; this.blend = null;
     this.ik = { handL: null, handR: null, footL: null, footR: null }; this.ikLocal = false;
+    // how much of each reach shows over the animation (0 none, 1 all): eased in and out by whoever sets them, so a
+    // hand goes to a door handle and back instead of jumping there
+    this.ikW = { handL: 1, handR: 1, footL: 1, footR: 1 };
     this.lookTarget = null; this.lookW = 0; this._lookQ = [new THREE.Quaternion(), new THREE.Quaternion()];
     this.lodLevel = -1; this.lod = opts.lod ?? 'auto'; this.visibleDist = opts.far ?? 140;
     this.skip = 0; this.acc = 0; this.frame = (Math.random() * 8) | 0;
@@ -65,12 +78,14 @@ export class Person {
   }
 
   _attach(base, look, standIn) {
+    this._thaw();
     const wasName = this.currentName, wasOpts = this.currentOpts;
     const keepT = this.current ? this.current.time : 0;
-    if (this.model) { this.inner.remove(this.model.root); if (this.mixer) { this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.model.root); } }
+    if (this.model) { this.inner.remove(this.model.root); if (this.mixer) { this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.model.root); } disposeSkeletons(this.model); }
     const m = this.lib.instance(base, look);
     this.model = m; this.base = base; this.standIn = !!standIn;
     this.inner.add(m.root);
+    for (const o of [...m.lod0, ...m.lod1]) { o.updateMatrixWorld = MESH_LIVE; if (o.skeleton) o.skeleton.update = SKEL_UPDATE; }
     this.bones = m.bones;
     this.boneByName = m.byName;
     // size: the model's own height scaled to the look's
@@ -155,14 +170,60 @@ export class Person {
       }
     }
     if (this.lodLevel === 2 && !this.isRagdoll) return;
-    if (this.isRagdoll) { this.rag.step(dt, this); this.rag.pose(this); return; }
+    if (this.isRagdoll) { this._posed(); this.rag.step(dt, this); this.rag.pose(this); return; }
     // far people are animated less often
     this.acc += dt;
     const every = this.lodLevel === 1 ? (this.camD > 80 ? 5 : this.camD > 45 ? 3 : 2) : 1;
     if ((this.frame % every) !== 0 && !this.blend) return;
     const t = this.acc; this.acc = 0;
+    this._posed();
     this.mixer.update(t);
     this._post(t);
+  }
+
+  // ---- frozen bones ------------------------------------------------------------------------------------------
+  // A person whose pose has not changed since the last frame drawn (a far pedestrian between its animation steps,
+  // anyone sitting in a car further off, a hidden one) is left out of the scene's matrix pass: its bones' world
+  // matrices and its skeleton's bone matrices stay as they were at the freeze, and each mesh keeps the inverse of
+  // where it was then (MESH_FROZEN), so the body still goes wherever the person is moved. 80 bones a person, and 30 to 43
+  // people in the scene in the tests. Posing again (the clip, a reach, the ragdoll) thaws it first.
+  // People.frameTick() (once a frame) freezes whoever was posed in an earlier frame and not since.
+  _posed() {
+    if (this.frozen) this._thaw();
+    const R = this.lib.renderer;
+    this.posedAt = R ? R.info.render.frame : -1; this._poseSeq = ++SKSEQ;
+    if (!this._fq) { this._fq = true; this.lib.toFreeze.push(this); }
+  }
+  _freeze() {
+    if (this.frozen || !this.model || this.isRagdoll || this.disposed) return;
+    // (the bones from the pelvis down: Bip01 above them is the armature, whose children are the meshes too)
+    const m = this.model, root = this.bones.hips;
+    if (!root) return;
+    const meshes = m.all || (m.all = [...m.lod0, ...m.lod1]);
+    // (only while in the scene)
+    let a = this.object; while (a && !a.isScene) a = a.parent;
+    if (!a) return;
+    if (!m.skels) { const l = []; for (const o of meshes) { if (!o.skeleton) return; if (!l.includes(o.skeleton)) l.push(o.skeleton); } m.skels = l; }
+    // the bones and each mesh's bindMatrixInverse must come from the same moment: the renderer's bone matrices are
+    // kept when they were worked out after the last matrix pass and the last pose (anyone drawn in the last frame),
+    // else the person's matrices are worked out again, bones and meshes together, and the bone matrices from them
+    // (between frames other code brings single bones up to date, getWorldPosition on a bone does)
+    let after = this._poseSeq || Infinity, fresh = true;
+    for (const o of meshes) after = Math.max(after, o._mseq ?? Infinity);
+    for (const o of meshes) if (!(o.skeleton._seq > after)) fresh = false;
+    if (!fresh) this.object.updateMatrixWorld(true);
+    for (const sk of m.skels) { if (sk.update !== SKEL_UPDATE) sk.update = SKEL_UPDATE; if (!fresh) { sk._frozen = false; sk.update(); } sk._frozen = true; }
+    for (const o of meshes) o.updateMatrixWorld = MESH_FROZEN;
+    root.updateMatrixWorld = FROZEN_UPDATE;
+    this.frozen = true;
+  }
+  _thaw() {
+    if (!this.frozen) return;
+    this.frozen = false;
+    const m = this.model, root = this.bones && this.bones.hips;
+    if (root && root.updateMatrixWorld === FROZEN_UPDATE) delete root.updateMatrixWorld;
+    if (!m) return;
+    for (const o of m.all || [...m.lod0, ...m.lod1]) { if (o.updateMatrixWorld === MESH_FROZEN) o.updateMatrixWorld = MESH_LIVE; if (o.skeleton) o.skeleton._frozen = false; }
   }
 
   // what follows the clips each frame: the hips' height for the model's size, a blend from a captured pose,
@@ -174,13 +235,71 @@ export class Person {
       const B = this.blend; B.t += dt;
       const w = Math.min(1, B.t / B.dur), k = 1 - (w * w * (3 - 2 * w));
       if (k > 0.001) for (let i = 0; i < B.bones.length; i++) { const b = B.bones[i]; b.quaternion.slerp(B.q[i], k); if (B.p[i]) b.position.lerp(B.p[i], k); }
+      // the root's turn from its captured facing in the world (the object may have turned since)
+      if (k > 0.001 && B.rootW && root && root.parent) {
+        root.parent.updateWorldMatrix(true, false);
+        root.parent.getWorldQuaternion(_q3);
+        root.quaternion.slerp(_q3.invert().multiply(B.rootW), k);
+      }
       if (w >= 1) this.blend = null;
     }
     if (this.ik.handL || this.ik.handR || this.ik.footL || this.ik.footR) this._ik();
     if (this.lookTarget || this.lookW > 0.01) this._look(dt);
     if (this.lodLevel === 0) {
+      // the face bones: no clip moves them, so each is put back to its rest first (they used to add up frame
+      // after frame), then the blink, the talking jaw and the eyes' turn
+      this._faceRest();
       this._blink(dt);
       if (this.talkT > 0) this._talk(dt);
+      this._eyes(dt);
+    }
+  }
+
+  // the lids, the jaw and the eyes back to the model's own rest
+  _faceRest() {
+    const B = this.base, by = this.boneByName;
+    if (!B || !by) return;
+    if (B.blink) for (const e of B.blink) { const b = by[e[0]]; if (b && e[2]) b.position.copy(e[2]); }
+    if (B.faceRest) for (const n in B.faceRest) { const b = by[n]; if (b) b.quaternion.copy(B.faceRest[n]); }
+  }
+
+  // the eyes: toward what the person looks at, else small glances now and then (as people's eyes move), never
+  // further than eyes turn (about 25 degrees across, 15 up and down)
+  _eyes(dt) {
+    const L = this.boneByName.Bip01_LEye, R = this.boneByName.Bip01_REye, head = this.bones.head, A = this.base.headAxes;
+    if (!L || !R || !head || !A) return;
+    let yaw = 0, pitch = 0;
+    head.updateWorldMatrix(true, false);
+    head.getWorldQuaternion(_q2);
+    if (this.lookTarget && this.lookW > 0.05) {
+      const hp = _v1.setFromMatrixPosition(head.matrixWorld);
+      const want = _v2.copy(this.lookTarget).sub(hp);
+      if (want.lengthSq() > 1e-6) {
+        // in the face's own frame (forward, up, left)
+        want.normalize().applyQuaternion(_q1.copy(_q2).invert());
+        yaw = Math.atan2(want.dot(A.left), want.dot(A.fwd)); pitch = Math.asin(Math.max(-1, Math.min(1, want.dot(A.up))));
+      }
+    } else {
+      this.glanceT = (this.glanceT ?? Math.random() * 2) - dt;
+      if (this.glanceT <= 0) {
+        this.glanceT = 0.8 + Math.random() * 2.6;
+        const away = Math.random() < 0.3;
+        this.glance = [(Math.random() - 0.5) * (away ? 0.6 : 0.16), (Math.random() - 0.5) * (away ? 0.25 : 0.08)];
+      }
+      if (this.glance) { yaw = this.glance[0]; pitch = this.glance[1]; }
+    }
+    yaw = Math.max(-0.42, Math.min(0.42, yaw)); pitch = Math.max(-0.26, Math.min(0.26, pitch));
+    // a quick move (a saccade), as eyes jump rather than drift
+    const e = this.eyeAim || (this.eyeAim = [0, 0]), k = Math.min(1, dt * 22);
+    e[0] += (yaw - e[0]) * k; e[1] += (pitch - e[1]) * k;
+    if (Math.abs(e[0]) < 1e-4 && Math.abs(e[1]) < 1e-4) return;
+    // turn each eye about the face's up and left axes, in world space
+    const up = _t1.copy(A.up).applyQuaternion(_q2), side = _t2.copy(A.left).applyQuaternion(_q2);
+    _q3.setFromAxisAngle(up, e[0]).multiply(_q4.setFromAxisAngle(side, -e[1]));
+    for (const b of [L, R]) {
+      b.getWorldQuaternion(_q1); _q1.premultiply(_q3);
+      b.parent.getWorldQuaternion(this._lookQ[1]);
+      b.quaternion.copy(this._lookQ[1].invert().multiply(_q1));
     }
   }
 
@@ -210,6 +329,7 @@ export class Person {
   _setLod(l) {
     this.lodLevel = l;
     const m = this.model; if (!m) return;
+    if (l !== 0) this._faceRest();
     for (const o of m.lod0) { o.visible = l === 0; o.castShadow = l === 0 && this.shadow; }
     for (const o of m.lod1) { o.visible = l === 1 || (l === 0 && m.lod0.length === 0); o.castShadow = false; }
     if (l === 2) for (const o of [...m.lod0, ...m.lod1]) o.visible = false;
@@ -221,9 +341,21 @@ export class Person {
   _ik() {
     this.object.updateMatrixWorld(true);
     for (const side of ['L', 'R']) {
-      const th = this.ik['hand' + side]; if (th) this._twoBone('upperArm' + side, 'forearm' + side, 'hand' + side, th, side === 'L' ? -1 : 1, true);
-      const tf = this.ik['foot' + side]; if (tf) this._twoBone('thigh' + side, 'calf' + side, 'foot' + side, tf, side === 'L' ? -1 : 1, false);
+      const th = this.ik['hand' + side]; if (th) this._reach('hand' + side, 'upperArm' + side, 'forearm' + side, th, side === 'L' ? -1 : 1, true);
+      const tf = this.ik['foot' + side]; if (tf) this._reach('foot' + side, 'thigh' + side, 'calf' + side, tf, side === 'L' ? -1 : 1, false);
     }
+  }
+  // one limb's reach, blended over the animation by its weight
+  _reach(key, an, bn, target, side, arm) {
+    const w = this.ikW[key] ?? 1;
+    if (w <= 0.001) return;
+    const cn = key, A = this.bone(an), B = this.bone(bn);
+    if (!A || !B) return;
+    if (w >= 0.999) { this._twoBone(an, bn, cn, target, side, arm); return; }
+    const qa = _qa.copy(A.quaternion), qb = _qb.copy(B.quaternion);
+    this._twoBone(an, bn, cn, target, side, arm);
+    A.quaternion.copy(qa.slerp(A.quaternion, w)); B.quaternion.copy(qb.slerp(B.quaternion, w));
+    A.updateMatrixWorld(true);
   }
   _twoBone(an, bn, cn, target, side, arm) {
     const A = this.bone(an), B = this.bone(bn), C = this.bone(cn);
@@ -301,6 +433,7 @@ export class Person {
   // velocity: world m/s given to the body (the legs take more of it than the head when hit low); spin: rad/s
   ragdoll(velocity, spin, opts = {}) {
     if (!this.model) return this;
+    this._posed();
     if (!this.rag) this.rag = new Ragdoll();
     this.object.updateMatrixWorld(true);
     this.rag.start(this, velocity || new THREE.Vector3(), spin || null, opts);
@@ -324,19 +457,35 @@ export class Person {
   get restTime() { return this.rag && this.isRagdoll ? this.rag.still : 0; }
 
   // the pose as it is now, blended out over dur seconds into whatever plays next
-  capture(dur = 0.4) {
-    const bones = this.model.blendBones, q = [], p = [];
+  // (noRoot: the root bone left to the new clip, its turn blended from where it faced in the world instead: for when
+  // the object itself turns at the same moment, as at the start of getting into a car, so the body's facing stays
+  // where it was however the two clips' roots differ)
+  capture(dur = 0.4, opts = {}) {
+    if (!this.model) return;
+    let bones = this.model.blendBones;
+    let rootW = null;
+    if (opts.noRoot) { bones = bones.filter(b => b !== this.bones.root); if (this.bones.root) { this.object.updateWorldMatrix(true, true); rootW = this.bones.root.getWorldQuaternion(new THREE.Quaternion()); } }
+    const q = [], p = [];
     for (const b of bones) { q.push(b.quaternion.clone()); p.push(b === this.bones.root || b === this.bones.hips ? b.position.clone() : null); }
-    this.blend = { bones, q, p, t: 0, dur };
+    this.blend = { bones, q, p, t: 0, dur, rootW };
   }
 
   dispose() {
+    if (this.disposed) return;
+    this._thaw();
     this.disposed = true;
     if (this.object.parent) this.object.parent.remove(this.object);
     if (this.mixer && this.model) { this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.model.root); }
+    // (each skeleton has a bone texture on the graphics card: they were never let go, six a person)
+    if (this.model) disposeSkeletons(this.model);
     this.lib.release(this);
     this.model = null; this.mixer = null;
   }
+}
+
+function disposeSkeletons(model) {
+  const seen = new Set();
+  for (const o of [...(model.lod0 || []), ...(model.lod1 || [])]) { const sk = o.skeleton; if (sk && !seen.has(sk)) { seen.add(sk); try { sk.dispose(); } catch (e) {} } }
 }
 
 // ---- the ragdoll ------------------------------------------------------------------------------------------------

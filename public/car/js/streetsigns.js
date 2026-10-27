@@ -8,7 +8,7 @@ const COLS = 4, ROWS = 32, CW = 512, CH = 64;
 export class StreetSigns {
   constructor(scene) {
     this.scene = scene;
-    this.group = new THREE.Group(); this.group.name = 'streetsigns'; scene.add(this.group);
+    this.group = new THREE.Group(); this.group.name = 'streetsigns'; this.group.matrixAutoUpdate = false; scene.add(this.group);
     this.canvas = document.createElement('canvas'); this.canvas.width = COLS * CW; this.canvas.height = ROWS * CH;
     this.tex = new THREE.CanvasTexture(this.canvas);
     this.tex.colorSpace = THREE.SRGBColorSpace; this.tex.anisotropy = 8; this.tex.flipY = false;
@@ -109,6 +109,7 @@ export class StreetSigns {
     pg.setAttribute('position', new THREE.Float32BufferAttribute(ppos, 3)); pg.setIndex(pidx); pg.computeVertexNormals();
     const blades = new THREE.Mesh(bg, this.bladeMat), poles = new THREE.Mesh(pg, this.poleMat);
     blades.castShadow = poles.castShadow = true; blades.receiveShadow = true;
+    blades.matrixAutoUpdate = poles.matrixAutoUpdate = false; // (built in place: nothing to work out each frame; perf)
     this.group.add(blades, poles);
     this.count = made;
   }

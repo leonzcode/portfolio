@@ -3,7 +3,7 @@
 // the Arc de Triomphe (limestone, the great arch through it). The footprints the map draws there are left out, so
 // what stands is the landmark; its legs and piers are solid.
 import * as THREE from 'three';
-import { project } from './geo.js?v=32';
+import { project } from './geo.js?v=33';
 
 const SITES = [
   { id: 'eiffel', lat: 48.85826, lon: 2.29448, clear: 80, heading: 39 },
@@ -120,7 +120,7 @@ function arc() {
 }
 
 export class Landmarks {
-  constructor(scene) { this.scene = scene; this.group = new THREE.Group(); this.group.name = 'landmarks'; scene.add(this.group); this.built = new Map(); this.handles = []; }
+  constructor(scene) { this.scene = scene; this.group = new THREE.Group(); this.group.name = 'landmarks'; this.group.matrixAutoUpdate = false; scene.add(this.group); this.built = new Map(); this.handles = []; }
 
   // put the landmarks within reach of (cx, cz) on the ground; ground(x, z) -> height
   build({ cx = 0, cz = 0, collide, ground }) {
@@ -134,7 +134,10 @@ export class Landmarks {
       let y = Infinity;
       for (const [dx, dz] of [[0, 0], [40, 40], [-40, 40], [40, -40], [-40, -40]]) { const g = ground(x + dx * (s.id === 'arc' ? 0.4 : 1), z + dz * (s.id === 'arc' ? 0.4 : 1)); if (g != null && Number.isFinite(g)) y = Math.min(y, g); }
       if (!Number.isFinite(y)) y = 0;
-      L.position.set(x, y, z); L.rotation.y = -s.heading * Math.PI / 180; L.updateMatrixWorld(true);
+      L.position.set(x, y, z); L.rotation.y = -s.heading * Math.PI / 180;
+      // (it never moves: its matrices are worked out here once, not every frame)
+      L.traverse(o => { o.matrixAutoUpdate = false; o.updateMatrix(); });
+      L.updateMatrixWorld(true);
       if (collide && collide.addPolygon) {
         const c = Math.cos(-s.heading * Math.PI / 180), sn = Math.sin(-s.heading * Math.PI / 180);
         for (const poly of L.userData.solid) {

@@ -4,11 +4,11 @@
 // parts are one InstancedMesh for all its parked copies, near ones with the detailed parts, the rest with the far
 // ones, so a hundred parked cars cost about what one moving car does.
 import * as THREE from 'three';
-import { frame } from './geo.js?v=32';
+import { frame } from './geo.js?v=33';
 
 const MODELS = ['fairheaven', 'milano', 'shvan', 'conquer', 's10', 'fairheaven', 'milano'];
 // outside North America no pickups or boxy American vans: saloons and hatchbacks
-const MODELS_ELSE = ['fairheaven', 'milano', 'volvos90', 'milano', 'fairheaven', 'volvos90', 'milano'];
+const MODELS_ELSE = ['fairheaven', 'milano', 'volvos90', 'golf2', 'fairheaven', 'volvos90', 'milano'];
 const inAmericas = () => frame.lat > 14 && frame.lat < 72 && frame.lon > -170 && frame.lon < -52;
 // the common colours of real cars, white and black and greys most of all
 const PAINTS = [0xf2f2f0, 0xf2f2f0, 0x111214, 0x111214, 0x8c9096, 0xb8bcc2, 0x55595f, 0x1e3a6b, 0x7a1418];
@@ -17,11 +17,22 @@ const NEAR = 30, FAR = 90, SHADOW = 40, SHADOWS = 10, MAX = 160;
 
 const hash = (a, b) => { let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1), _p = new THREE.Vector3(), _c = new THREE.Color();
+// the instanced parts draw with copies of the cars' materials: a material drawn by plain traffic meshes and by these
+// InstancedMeshes is a different program for each, and three.js worked the program out again at every switch (perf)
+const INST = new Map();
+function instMat(m) {
+  if (Array.isArray(m)) return m.map(instMat);
+  let c = INST.get(m);
+  if (!c) { c = m.clone(); c.onBeforeCompile = m.onBeforeCompile; c.customProgramCacheKey = m.customProgramCacheKey; c.name = m.name; c.userData = m.userData; INST.set(m, c); }
+  return c;
+}
+// an InstancedMesh with no copies is still drawn by three.js (its program and uniforms set, an empty draw): hidden
+function setCount(im, n) { im.count = n; im.visible = n > 0; }
 
 export class Parked {
   constructor({ scene, cars }) {
     this.scene = scene; this.C = cars;
-    this.group = new THREE.Group(); this.group.name = 'parked'; scene.add(this.group);
+    this.group = new THREE.Group(); this.group.name = 'parked'; this.group.matrixAutoUpdate = false; scene.add(this.group);
     this.kinds = new Map(); // model -> { near: [{ mesh, local }], far: [...], shadow: [...] }
     this.list = []; this.frame = 0;
   }
@@ -34,8 +45,10 @@ export class Parked {
       rig.object.position.set(0, 0, 0); rig.object.quaternion.identity(); rig.object.updateMatrixWorld(true);
       const K = { model, near: [], far: [], shadow: [], dims: rig.dims, paintParts: [], paints: new Map() };
       const add = (list, o, cast) => {
-        const im = new THREE.InstancedMesh(o.geometry, o.material, MAX);
-        im.count = 0; im.frustumCulled = false; im.castShadow = !!cast; im.receiveShadow = !cast;
+        const im = new THREE.InstancedMesh(o.geometry, instMat(o.material), MAX);
+        setCount(im, 0); im.frustumCulled = false; im.castShadow = !!cast; im.receiveShadow = !cast;
+        if (cast && o.userData.shadowOnly) im.userData.shadowOnly = true; // (the stand-ins: drawn in the shadow pass only, sky.js)
+        im.matrixAutoUpdate = false; // (the group stands at the origin; each copy's place is in its instance matrix)
         im.userData.local = o.matrixWorld.clone();
         this.group.add(im); list.push(im);
       };
@@ -65,8 +78,8 @@ export class Parked {
       const mats = new Map(); rig.object.traverse(o => { if (o.isMesh && /paint/.test(o.name || '')) mats.set(o.name, o.material); });
       for (const part of K.paintParts) {
         const mat = mats.get(part.name); if (!mat) continue;
-        const im = new THREE.InstancedMesh(part.geometry, mat, MAX);
-        im.count = 0; im.frustumCulled = false; im.receiveShadow = true;
+        const im = new THREE.InstancedMesh(part.geometry, instMat(mat), MAX);
+        setCount(im, 0); im.frustumCulled = false; im.receiveShadow = true; im.matrixAutoUpdate = false;
         im.userData.local = part.local;
         this.group.add(im); (part.far ? P.far : P.near).push(im);
       }
@@ -166,8 +179,8 @@ export class Parked {
           _m.multiplyMatrices(cars[i].m, im.userData.local);
           im.setMatrixAt(i, _m);
         }
-        im.count = n;
-        im.instanceMatrix.needsUpdate = true;
+        setCount(im, n);
+        if (n) im.instanceMatrix.needsUpdate = true;
       }
     };
     const seen = new Set();
@@ -176,15 +189,15 @@ export class Parked {
       // paint, one set a colour
       const byCol = new Map();
       for (const [which, cars] of [['near', S.near], ['far', S.far]]) for (const o of cars) { let b = byCol.get(o.paint); if (!b) byCol.set(o.paint, b = { near: [], far: [] }); b[which].push(o); }
-      for (const [col, P] of K.paints) if (!byCol.has(col)) for (const im of [...P.near, ...P.far]) im.count = 0;
+      for (const [col, P] of K.paints) if (!byCol.has(col)) for (const im of [...P.near, ...P.far]) setCount(im, 0);
       for (const [col, b] of byCol) { const P = this.paintSet(K, col); if (P.ready) { fill(P.near, b.near); fill(P.far, b.far); } }
     }
-    for (const o of this.list) if (o.K && !seen.has(o.K)) { for (const im of [...o.K.near, ...o.K.far, ...o.K.shadow]) im.count = 0; for (const P of o.K.paints.values()) for (const im of [...P.near, ...P.far]) im.count = 0; seen.add(o.K); }
+    for (const o of this.list) if (o.K && !seen.has(o.K)) { for (const im of [...o.K.near, ...o.K.far, ...o.K.shadow]) setCount(im, 0); for (const P of o.K.paints.values()) for (const im of [...P.near, ...P.far]) setCount(im, 0); seen.add(o.K); }
   }
 
   clear() {
     this.list = [];
-    for (const p of this.kinds.values()) Promise.resolve(p).then(K => { if (!K) return; for (const im of [...K.near, ...K.far, ...K.shadow]) im.count = 0; for (const P of K.paints.values()) for (const im of [...P.near, ...P.far]) im.count = 0; });
+    for (const p of this.kinds.values()) Promise.resolve(p).then(K => { if (!K) return; for (const im of [...K.near, ...K.far, ...K.shadow]) setCount(im, 0); for (const P of K.paints.values()) for (const im of [...P.near, ...P.far]) setCount(im, 0); });
   }
 
   dispose() {

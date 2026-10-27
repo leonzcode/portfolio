@@ -27,10 +27,12 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { Person, BONES } from './person.js?v=32';
-import { buildPoses } from './poses.js?v=32';
+import { Person, BONES } from './person.js?v=33';
+import { buildPoses } from './poses.js?v=33';
 
-const V = '?v=32';
+const V = '?v=33';
+const NOFREEZE = typeof location !== 'undefined' && /[?&]nofreeze/.test(location.search); // (tests: bones never frozen)
+const FREEZE_AFTER = (typeof location !== 'undefined' && +(/[?&]freezeafter=(\d+)/.exec(location.search) || [])[1]) || 1; // (tests: frames unposed before a freeze)
 const DIR = new URL('../models/people/', import.meta.url).href;
 const DRACO = new URL('../vendor/three/addons/libs/draco/gltf/', import.meta.url).href;
 
@@ -58,9 +60,29 @@ export const People = {
   nearDist: 22,
   DEFAULT_LOOK: { base: 'm_adult_08', sex: 'm', kid: false, height: 1, build: 0, skin: null, hairColour: null, topColour: null, bottomColour: null, shoesColour: null },
   ready: false,
+  renderer: null,
+  toFreeze: [],
+
+  // once a frame (occupants.js calls it): the people not posed since the last frame drawn have their bones frozen
+  // (person.js _freeze; waiting three frames instead, for the people animated every other frame, did no better in
+  // the tests)
+  frameTick() {
+    const R = this.renderer; if (!R || NOFREEZE) return;
+    const f = R.info.render.frame, Q = this.toFreeze;
+    let w = 0;
+    for (let i = 0; i < Q.length; i++) {
+      const p = Q[i];
+      if (p.disposed) { p._fq = false; continue; }
+      if (f - p.posedAt >= FREEZE_AFTER && !p.frozen) { p._freeze(); if (p.frozen || !p.model || f - p.posedAt > 30) { p._fq = false; continue; } }
+      if (p.frozen) { p._fq = false; continue; }
+      Q[w++] = p;
+    }
+    Q.length = w;
+  },
 
   load(renderer, camera) {
     if (camera) this.camera = camera;
+    if (renderer && !this.renderer) this.renderer = renderer;
     if (loadP) return loadP;
     loadP = (async () => {
       const [cat, bin] = await Promise.all([
@@ -74,7 +96,10 @@ export const People = {
       await Promise.all(first.map(id => this.loadBase(id).catch(e => console.warn('people model', id, e))));
       makeClips(this);
       this.ready = true;
-      if (renderer) await this.compile(renderer, null, camera).catch(() => {});
+      // (perf A: against the scene they will be drawn in, its lights, fog and environment; with no scene the programs
+      // came out unlit and were all built again later)
+      const scene = typeof window !== 'undefined' && window.__car && window.__car.scene;
+      if (renderer && scene) await this.compile(renderer, scene, camera).catch(() => {});
       return this;
     })();
     return loadP;
@@ -181,11 +206,15 @@ export const People = {
   instance(base, look) {
     const root = cloneSkinned(base.scene);
     const byName = {}, lod0 = [], lod1 = [];
+    let skel = null;
     root.traverse(o => {
       if (o.isBone || o.name === 'Bip01') byName[o.name] = o;
       if (o.isSkinnedMesh) {
         (o.userData.lod === 1 ? lod1 : lod0).push(o);
         o.castShadow = true; o.receiveShadow = true;
+        // one skeleton for all a person's meshes (the six of them are skinned to the same bones with the same bind
+        // pose): one bone texture to upload and one set of bone matrices to work out a frame, not six
+        if (base.shareSkel) { if (!skel) skel = o.skeleton; else if (o.skeleton !== skel) o.bind(skel, o.bindMatrix); }
       }
     });
     const bones = {};
@@ -249,6 +278,18 @@ function prepBase(meta, g) {
       }
       m.envMapIntensity = kind === 'body' ? 0.5 : 0.35;
       if (m.map) m.map.anisotropy = 4;
+      // the eyes (on the head's material) and the lashes (on the hair cards'): which bones carry them
+      if (kind === 'head' || kind === 'hair') {
+        const names = o.skeleton ? o.skeleton.bones.map(b => b.name) : [];
+        const ix = n => names.indexOf(n);
+        m.userData.eyeU = {
+          uEyeB: { value: new THREE.Vector2(ix('Bip01_LEye'), ix('Bip01_REye')) },
+          uLidB: { value: new THREE.Vector4(ix('Bip01_LEyeBlinkTop'), ix('Bip01_REyeBlinkTop'), ix('Bip01_LEyeBlinkBottom'), ix('Bip01_REyeBlinkBottom')) }
+        };
+        const k = kind;
+        m.onBeforeCompile = sh => eyePatch(sh, k, m.userData.eyeU);
+        m.customProgramCacheKey = () => 'person-eye-' + k;
+      }
     }
   });
   // which way each bone's length runs in its own frame (for the build): the axis to its first bone child
@@ -263,18 +304,44 @@ function prepBase(meta, g) {
   // the hips' height against the animations' (captured on adults: a man's hips 0.895 m up, a woman's 0.923 m)
   const root = byName.Bip01;
   const hipScale = root ? root.position.y / (meta.sex === 'f' ? 0.923 : 0.895) : 1;
-  // the blink: the upper lids down and the lower lids up a little, as offsets of the lid bones' positions
+  // the blink: the upper lids down and the lower lids up a little, as offsets of the lid bones' positions.
+  // No clip moves the face bones, so each frame they are put back to these rest positions first (they used to
+  // take the offset on top of the last frame's, and after a few blinks the lids hung down the cheeks).
   const blink = [];
   for (const s of ['L', 'R']) {
     const t = byName['Bip01_' + s + 'EyeBlinkTop'], b = byName['Bip01_' + s + 'EyeBlinkBottom'];
     if (t && b) {
       const d = new THREE.Vector3().subVectors(b.position, t.position);
-      blink.push(['Bip01_' + s + 'EyeBlinkTop', d.clone().multiplyScalar(0.75)], ['Bip01_' + s + 'EyeBlinkBottom', d.clone().multiplyScalar(-0.1)]);
+      blink.push(['Bip01_' + s + 'EyeBlinkTop', d.clone().multiplyScalar(0.75), t.position.clone()], ['Bip01_' + s + 'EyeBlinkBottom', d.clone().multiplyScalar(-0.1), b.position.clone()]);
     }
+  }
+  // the face bones' rest turns (jaw, eyes): put back each frame before the talk and the eyes' look turn them
+  const faceRest = {};
+  for (const n of ['Bip01_MJaw', 'Bip01_LEye', 'Bip01_REye']) if (byName[n]) faceRest[n] = byName[n].quaternion.clone();
+  // the face's forward, up and left in the head bone's own frame (the model stands facing +z, +x its left)
+  let headAxes = null;
+  const hb = byName.Bip01_Head;
+  if (hb) {
+    scene.updateMatrixWorld(true);
+    const q = hb.getWorldQuaternion(new THREE.Quaternion()).invert();
+    headAxes = { fwd: new THREE.Vector3(0, 0, 1).applyQuaternion(q), up: new THREE.Vector3(0, 1, 0).applyQuaternion(q), left: new THREE.Vector3(1, 0, 0).applyQuaternion(q) };
   }
   const blendNames = [];
   scene.traverse(o => { if ((o.isBone || o.name === 'Bip01') && !/Finger|Eye|Mouth|lip|Lip|Cheek|brow|Caninus|Masseter|Tongue|Nose|Jaw/.test(o.name)) blendNames.push(o.name); });
-  return { id: meta.id, meta, scene, along, hipScale, blink, blendNames, mats: new Map() };
+  // whether every mesh is skinned to the same bones in the same bind pose (then a person's meshes share a skeleton)
+  let shareSkel = true, ref = null;
+  scene.traverse(o => {
+    if (!o.isSkinnedMesh || !shareSkel) return;
+    const sk = o.skeleton;
+    if (!ref) { ref = sk; return; }
+    if (sk.bones.length !== ref.bones.length) { shareSkel = false; return; }
+    for (let i = 0; i < sk.bones.length && shareSkel; i++) {
+      if (sk.bones[i] !== ref.bones[i]) { shareSkel = false; break; }
+      const a = sk.boneInverses[i].elements, b = ref.boneInverses[i].elements;
+      for (let k = 0; k < 16; k++) if (Math.abs(a[k] - b[k]) > 1e-4) { shareSkel = false; break; }
+    }
+  });
+  return { shareSkel, id: meta.id, meta, scene, along, hipScale, blink, faceRest, headAxes, blendNames, mats: new Map() };
 }
 
 // ---- recolouring --------------------------------------------------------------------------------------------------
@@ -290,7 +357,8 @@ function recolour(base, look, lod0, lod1) {
   if (!set) {
     set = new Map();
     base.mats.set(key, set);
-    if (base.mats.size > 24) { const first = base.mats.keys().next().value; if (first !== key) base.mats.delete(first); }
+    // (an old set given up: its materials disposed; one still on a person is set up again when next drawn)
+    if (base.mats.size > 24) { const first = base.mats.keys().next().value; if (first !== key) { for (const m of base.mats.get(first).values()) m.dispose(); base.mats.delete(first); } }
   }
   for (const o of [...lod0, ...lod1]) {
     const src = o.material;
@@ -324,7 +392,9 @@ function makeRecoloured(base, src, look) {
     u.uMask.value = t;
   }
   const hasMask = !!maskFile, whole = kind === 'hair';
+  const eyeU = src.userData.eyeU;
   m.onBeforeCompile = sh => {
+    if (eyeU) eyePatch(sh, kind, eyeU);
     Object.assign(sh.uniforms, u);
     sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
       {
@@ -335,13 +405,67 @@ function makeRecoloured(base, src, look) {
         if (uT0.w > 0.5) o = mix(o, uT0.rgb * clamp(l / max(0.02, dot(uA0, vec3(0.2126, 0.7152, 0.0722))), 0.0, 3.0), rm.r);
         if (uT1.w > 0.5) o = mix(o, uT1.rgb * clamp(l / max(0.02, dot(uA1, vec3(0.2126, 0.7152, 0.0722))), 0.0, 3.0), rm.g);
         if (uT2.w > 0.5) o = mix(o, uT2.rgb * clamp(l / max(0.02, dot(uA2, vec3(0.2126, 0.7152, 0.0722))), 0.0, 3.0), rm.b);
-        if (uT3.w > 0.5) o = mix(o, c * uT3.rgb / uA3, 1.0 - rm.a);
+        if (uT3.w > 0.5) o = mix(o, c * uT3.rgb / uA3, (1.0 - rm.a)${eyeU && kind === 'head' ? ' * (1.0 - smoothstep(0.4, 0.8, vEyeW))' : ''});
         diffuseColor.rgb = o;
       }`).replace('#include <common>', `#include <common>
       uniform sampler2D uMask; uniform vec4 uT0, uT1, uT2, uT3; uniform vec3 uA0, uA1, uA2, uA3;`);
   };
-  m.customProgramCacheKey = () => 'person-recol-' + (hasMask ? 'm' : whole ? 'w' : 'n');
+  m.customProgramCacheKey = () => 'person-recol-' + (hasMask ? 'm' : whole ? 'w' : 'n') + (eyeU ? '-eye' : '');
   return m;
+}
+
+// ---- the eyes -----------------------------------------------------------------------------------------------------
+// The models' eyes are spheres on the eye bones, all mapped onto one disc of the head's picture (the same place on
+// every Rocketbox head), and the lashes are cards on the hair's material that move with the lid bones. Drawn as they
+// came, the whites were lit like the cheeks (no lid over them), as bright at the corners as at the middle, and as dull
+// as skin, and the lashes (thin strips in a half-size picture, alpha tested) broke up into dots. Here: the white a
+// little less than white, shaded under the upper lid and at the corners as lids shade real eyes, the eye glossy (a
+// sharp highlight of the sky and the sun), and the lashes kept whole (a lower cut-off) and dark.
+// Which vertices are the eyes and the lashes: their skin weights on the eye and lid bones (uniforms, per model).
+export const EYE_UV = { c: [0.2635, 0.932], r: 0.0565 };
+function eyePatch(sh, kind, U) {
+  Object.assign(sh.uniforms, U);
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+    uniform vec2 uEyeB; uniform vec4 uLidB; varying float vEyeW; varying float vLidT; varying float vLidB;`)
+    .replace('#include <skinning_vertex>', `#include <skinning_vertex>
+    vEyeW = 0.0; vLidT = 0.0; vLidB = 0.0;
+    #ifdef USE_SKINNING
+    #define EYE_W(bi, bw) if (abs(bi - uEyeB.x) < 0.5 || abs(bi - uEyeB.y) < 0.5) vEyeW += bw; if (abs(bi - uLidB.x) < 0.5 || abs(bi - uLidB.y) < 0.5) vLidT += bw; if (abs(bi - uLidB.z) < 0.5 || abs(bi - uLidB.w) < 0.5) vLidB += bw;
+    EYE_W(skinIndex.x, skinWeight.x) EYE_W(skinIndex.y, skinWeight.y) EYE_W(skinIndex.z, skinWeight.z) EYE_W(skinIndex.w, skinWeight.w)
+    #endif`);
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+    varying float vEyeW; varying float vLidT; varying float vLidB; float eyeK = 0.0; vec3 eyeDbgC = vec3(0.0);`);
+  const DBG = typeof window !== 'undefined' && window.__eyeDbg;
+  // (tests: window.__eyeDbg shows the eye's picture coordinates as colour, unlit)
+  if (DBG) sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance = eyeDbgC * eyeK;');
+  if (kind === 'head') {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      {
+        eyeK = smoothstep(0.55, 0.9, vEyeW);
+        if (eyeK > 0.0) {
+          vec2 e = (vMapUv - vec2(${EYE_UV.c[0]}, ${EYE_UV.c[1]})) / ${EYE_UV.r};
+          float r = length(e);
+          float white = smoothstep(0.3, 0.42, r);
+          // (the picture's top is the eye's top: e.y below zero is up)
+          float lid = smoothstep(0.1, -0.5, e.y);
+          float corner = smoothstep(0.3, 0.8, abs(e.x)) * white;
+          // (the picture's white is nearly white, and lit as the cheeks are it glowed: a real eye's white is
+          // greyer, and in the shade of the lids and brow)
+          float shade = clamp(1.0 - 0.55 * lid - 0.35 * corner, 0.3, 1.0) * mix(0.92, 0.62, white);
+          diffuseColor.rgb *= mix(1.0, shade, eyeK);
+          ${DBG ? 'eyeDbgC = vec3(clamp(e.x * 0.5 + 0.5, 0.0, 1.0), clamp(-e.y * 0.5 + 0.5, 0.0, 1.0), 0.0); diffuseColor.rgb *= 1.0 - eyeK;' : ''}
+        }
+      }`).replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      roughnessFactor = mix(roughnessFactor, 0.12, eyeK);`);
+  } else if (kind === 'hair') {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      {
+        // (the upper lashes kept whole and dark; the lower ones, finer, only a little darker)
+        float upper = smoothstep(0.02, 0.1, vLidT) * step(vLidB, vLidT), lower = smoothstep(0.02, 0.1, vLidB) * (1.0 - upper);
+        diffuseColor.a = mix(diffuseColor.a, min(1.0, diffuseColor.a * 1.6), upper);
+        diffuseColor.rgb *= 1.0 - 0.3 * upper - 0.12 * lower;
+      }`);
+  }
 }
 
 // ---- animations ---------------------------------------------------------------------------------------------------

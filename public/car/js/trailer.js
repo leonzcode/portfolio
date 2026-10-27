@@ -227,6 +227,8 @@ class Trailer {
 export class Trailers {
   constructor(drive) {
     this.drive = drive; this.off = OFF; this.mine = null; this.traffic = new Map(); this.pool = [];
+    // semis the player left standing (onfoot.js parked: got out and took another car): each keeps its trailer
+    this.left = new Map();
     this._K = new THREE.Vector3();
     this.aheadFn = (c, g, l) => this.ahead(c, g, l);
     this.collFn = out => this.colliders(out);
@@ -262,11 +264,27 @@ export class Trailers {
     const D = this.drive, ground = (x, z, y) => D.ground(x, z, y);
     // the player's semi
     const car = D.car, isSemi = car && car.rig && SEMIS.has(car.rig.id);
+    // (a semi left standing keeps its trailer, hitched where it was: the one the player drove, and back again when
+    // the player takes it once more)
+    const leftCars = D.onfoot && Array.isArray(D.onfoot.parked) ? D.onfoot.parked : [];
+    const isLeft = rig => leftCars.some(e => e && e.rig === rig);
+    const letGo = () => { if (isLeft(this.mine.rig) && !this.left.has(this.mine.rig)) this.left.set(this.mine.rig, this.mine.t); else this.mine.t.dispose(); this.mine.rig.camBack = 0; this.mine.rig.camUp = 0; this.mine = null; };
     if (isSemi) {
-      if (!this.mine || this.mine.rig !== car.rig) { if (this.mine) this.mine.t.dispose(); this.mine = { rig: car.rig, t: new Trailer(D.scene) }; car.rig.camBack = 13; car.rig.camUp = 2.2; }
+      if (!this.mine || this.mine.rig !== car.rig) {
+        if (this.mine) letGo();
+        const kept = this.left.get(car.rig); if (kept) this.left.delete(car.rig);
+        this.mine = { rig: car.rig, t: kept || new Trailer(D.scene) }; car.rig.camBack = 13; car.rig.camUp = 2.2;
+      }
       const v = car.vehicle;
       this.mine.t.follow(this.kingpin(car.rig, this._K), this.yaw(car.rig), ground, dt, v && v.brake > 0.05);
-    } else if (this.mine) { this.mine.t.dispose(); this.mine.rig.camBack = 0; this.mine.rig.camUp = 0; this.mine = null; }
+    } else if (this.mine) letGo();
+    if (this.left.size) {
+      for (const [rig, t] of this.left) {
+        const e = leftCars.find(q => q && q.rig === rig);
+        if (!e || !rig.object || !rig.object.parent) { t.dispose(); this.left.delete(rig); continue; }
+        t.follow(this.kingpin(rig, this._K), this.yaw(rig), ground, dt, true);
+      }
+    }
     // the traffic's semis
     const T = D.traffic;
     if (T && T.list) {
@@ -287,6 +305,7 @@ export class Trailers {
   // the player's car hits the traffic semis' trailers (traffic.colliders, through its extraColliders hook)
   colliders(out) {
     for (const [c, t] of this.traffic) for (const k of t.circles) out.push({ x: k.x, z: k.z, r: k.r, vx: t.vx, vz: t.vz, obj: c });
+    for (const t of this.left.values()) for (const k of t.circles) out.push({ x: k.x, z: k.z, r: k.r, vx: 0, vz: 0, obj: null });
   }
 
   // the traffic waits behind any trailer in its way (traffic.ahead, through its trailerAhead hook)
@@ -299,12 +318,15 @@ export class Trailers {
       }
     };
     if (this.mine) test(this.mine.t);
+    for (const t of this.left.values()) test(t);
     for (const [o, t] of this.traffic) if (o !== c) test(t);
     return { gap, lv };
   }
 
   dispose() {
     if (this.mine) { this.mine.t.dispose(); this.mine.rig.camBack = 0; this.mine.rig.camUp = 0; this.mine = null; }
+    for (const t of this.left.values()) t.dispose();
+    this.left.clear();
     for (const t of this.traffic.values()) t.dispose();
     this.traffic.clear(); this.pool.length = 0;
   }

@@ -2,10 +2,23 @@
 // little noise, louder under load; tyres squealing with slip; wind with speed; a thud on a hit; the indicator's
 // tick. Starts on the first key or click (browsers keep audio off until then).
 export class CarSound {
-  constructor() { this.ctx = null; this.on = true; this.ticking = false; try { this.on = localStorage.getItem('car_sound') !== '0'; } catch (e) {} }
+  constructor() {
+    this.ctx = null; this.on = true; this.ticking = false; try { this.on = localStorage.getItem('car_sound') !== '0'; } catch (e) {}
+    // (perf) the audio context and the car's sound graph made in an idle moment while the page loads: made on the
+    // first key, as before, they held that frame for 0.1 to 0.6 s. A context made before a key or click starts
+    // suspended (the browser's rule); start() resumes it.
+    const idle = typeof requestIdleCallback === 'function' ? requestIdleCallback : (f => setTimeout(f, 500));
+    if (this.on) idle(() => { try { if (!this.ctx && this.on) this.build(); } catch (e) {} }, { timeout: 4000 });
+  }
 
   start() {
-    if (this.ctx || !this.on) return;
+    if (!this.on) return;
+    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {}); return; }
+    this.build();
+  }
+
+  build() {
+    if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     const c = this.ctx = new AC();

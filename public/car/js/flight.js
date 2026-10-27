@@ -4,8 +4,13 @@
 // and small side nozzles that turn the car in the air.
 //
 // Space (held) lifts the car through its own up. Let go and it holds for a moment, then sinks slowly and slows again
-// near the ground, so it lands on its wheels. In the air W and S tip the nose (W also fires the main nozzle), A and D
-// turn and bank, Shift is a boost (on the ground, Shift with W fires the main nozzle). An assist keeps the car level.
+// near the ground, so it lands on its wheels. Shift pressed in the air brings it down under control, the mirror of
+// Space's climb, slowing near the ground so it settles on its wheels (Space and Shift together hold the height; let
+// Shift go and it holds a moment, as after Space). In the air W and S tip the nose (W also fires the main nozzle), A
+// and D turn and bank, F is the boost (faster up, down and along). On the ground Shift (or F) with W fires the main
+// nozzle as before; a Shift pressed on the ground stays the boost if the car then takes off, and a Shift held from
+// the air never fires the nozzle on landing until it is let go. Pad: A up, B down, RB boost. An assist keeps the
+// car level.
 // The gas runs down while the thrusters work and the tanks fill again on the ground. Landing and hitting things are
 // the normal wheel and collision physics.
 //
@@ -26,6 +31,8 @@ export function canFly(spec) { return !!(spec && spec.fly) || FLY_ALL; }
 // thrust in weights of the car, speeds in m/s
 const LIFT_MAX = 1.6, LIFT_BOOST = 2.1;     // the lift jets together, at most
 const CLIMB = 5, CLIMB_BOOST = 9;           // climb with Space held
+const DESCEND = 5, DESCEND_BOOST = 8;       // down with Shift held in the air (the mirror of the climb)
+const SETTLE0 = 0.6, SETTLE = 0.6;          // ...at most SETTLE0 + SETTLE x height near the ground (0.6 m/s at touch-down)
 const SINK = 2.4, HOLD = 1.2, SINKA = 0.8;  // once let go: a hover for HOLD s, then down, faster by SINKA a second, to SINK
 const MAIN = 0.5, MAIN_BOOST = 0.85, MAIN_GROUND = 1.1; // the main jet (on the ground: 0 to 97 km/h in about 1.1 s, Tesla's claim)
 const DRAG = 0.0026;                        // in the air, a = DRAG v^2: about 160 km/h flat out, 200 with the boost
@@ -73,7 +80,7 @@ export class Flight {
     this.v = null; this.rig = null; this.on = false;
     this.h = 99; this.gY = 0; this.time = 0; this.warned = 0;
     this.camK = 0; this.ignite = 0; this.sunK = 1; this.lod = 1;
-    this.keyThrust = false; this.keyBoost = false; this.inThr = 0; this.inBrk = 0; this.inSteer = 0;
+    this.keyThrust = false; this.keyBoost = false; this.keyDown = false; this.shiftMode = 0; this.descK = 0; this.inThr = 0; this.inBrk = 0; this.inSteer = 0;
     try { this.makeHud(); } catch (e) { console.warn('flight hud', e); }
   }
 
@@ -124,6 +131,11 @@ export class Flight {
     this.puffs.clear();
     this.group.visible = false;
     if (this.hud) this.hud.classList.remove('on');
+    // (the touch buttons too: they stayed up over a car that does not fly)
+    if (this.flyBtn) this.flyBtn.classList.remove('on');
+    if (this.downBtn) this.downBtn.classList.remove('on', 'down');
+    if (this.hudState) this.hudState.downOn = null;
+    this.shiftMode = 0; this.keyDown = false; this.descK = 0; this.downWas = false;
     this.quiet();
   }
 
@@ -270,8 +282,17 @@ export class Flight {
       if (!this.on) return;
       const k = d.keys, pad = navigator.getGamepads ? [...navigator.getGamepads()].find(p => p && p.connected) : null;
       const pb = i => pad && pad.buttons[i] ? pad.buttons[i].value > 0.5 : false;
-      this.keyThrust = !d.auto && !this.landing && !!((k && k.has('Space')) || pb(0));
-      this.keyBoost = !d.auto && !this.landing && !!((k && (k.has('ShiftLeft') || k.has('ShiftRight'))) || pb(5));
+      const live = !d.auto && !this.landing;
+      this.keyThrust = live && !!((k && k.has('Space')) || pb(0));
+      // Shift: what it means is fixed when it goes down. Pressed while flying it is "down"; pressed on the ground it
+      // is the boost (with W the rear jet, and the climb's boost if the car then takes off), as it always was. So a
+      // Shift held through a landing never fires the rear jet, and one held through a take-off never stops the climb.
+      const shiftK = !!(k && (k.has('ShiftLeft') || k.has('ShiftRight')));
+      if (!shiftK) this.shiftMode = 0;
+      else if (!this.shiftMode) this.shiftMode = this.s.flying ? 1 : 2;
+      this.keyDown = live && ((shiftK && this.shiftMode === 1) || pb(1));
+      // F (pad RB) is the boost everywhere; a ground Shift still is
+      this.keyBoost = live && !!((k && k.has('KeyF')) || pb(5) || (shiftK && this.shiftMode === 2));
       this.inThr = inp.throttle || 0; this.inBrk = inp.brake || 0; this.inSteer = inp.steer || 0;
       if (this.landing) this.inThr = this.inBrk = this.inSteer = 0;
       // Space is the thrusters on this car, never the handbrake
@@ -320,10 +341,13 @@ export class Flight {
       // (flying along with W or S held it sinks more slowly, so a cruise needs only a tap of Space now and then)
       const sink = this.inThr > 0.1 || this.inBrk > 0.1 ? SINK * 0.45 : SINK;
       let vzT = this.keyThrust ? (boost ? CLIMB_BOOST : CLIMB) : -Math.min(sink, Math.max(0, s.sinkT - HOLD) * SINKA);
+      // Shift: down under control (with Space too: hold the height); let go, it holds a moment as after Space
+      const down = this.keyDown && !this.landing;
+      if (down) { vzT = this.keyThrust ? 0 : -(boost ? DESCEND_BOOST : DESCEND); s.sinkT = 0; }
       if (this.landing) vzT = -4; // (the driver getting out: straight down, slowing near the ground)
-      if (this.hold && !this.keyThrust) vzT = 0; // tests: hold the height
-      // slower near the ground, so it lands softly
-      if (vzT < 0) vzT = Math.max(vzT, -(0.45 + Math.max(0, this.h) * 0.35));
+      if (this.hold && !this.keyThrust && !down) vzT = 0; // tests: hold the height
+      // slower near the ground, so it lands softly (a firmer approach when it is asked to come down)
+      if (vzT < 0) vzT = Math.max(vzT, down ? -(SETTLE0 + Math.max(0, this.h) * SETTLE) : -(0.45 + Math.max(0, this.h) * 0.35));
       const a = clamp((vzT - v.v.y) * 2.6, -7, 9);
       L = m * (G + a) / Math.max(0.4, up.y);
       L = clamp(L, 0, W * (boost ? LIFT_BOOST : LIFT_MAX));
@@ -332,7 +356,7 @@ export class Flight {
     }
     s.lift += (L - s.lift) * Math.min(1, dt * (L > s.lift ? 12 : 7));
     if (s.lift > 1) F.addScaledVector(up, s.lift);
-    // the main jet: W in the air, Shift with W on the ground
+    // the main jet: W in the air, Shift (pressed on the ground) or F with W on the ground
     let Mn = 0;
     if (gas) {
       const airborne = s.flying && grounded < 3;
@@ -414,6 +438,13 @@ export class Flight {
     if (s.tank <= 0 && !s.warnedOut) { s.warnedOut = true; d.hud.flash('Out of gas: the tanks refill on the ground'); }
     if (s.tank > 0.3) { s.warnedLow = false; s.warnedOut = false; }
     this.ignite = Math.max(0, this.ignite - dt * 1.6);
+    // coming down with Shift: the lift valves throttled back (shorter, thinner, pulsing plumes and a lower hiss),
+    // until the flare near the ground opens them again; a soft chuff of venting gas as Shift goes down
+    const descW = this.keyDown && s.airborne && v.v.y < -0.8 && s.lift < W * 1.04 ? 1 : 0; // (braking near the ground: the flare)
+    this.descK += (descW - this.descK) * (1 - Math.exp(-dt * (descW > this.descK ? 6 : 3)));
+    const downNow = !!(this.keyDown && s.airborne);
+    if (downNow && !this.downWas) this.vent = 1;
+    this.downWas = downNow;
     // a hard landing (vehicle.js floorGuard records it): the thump, and dust thrown out from under the car
     if (v.groundHit && v.groundHit.t !== this.slamSeen) { this.slamSeen = v.groundHit.t; s.slam = v.groundHit.speed; }
     if (s.slam > 3) {
@@ -437,7 +468,8 @@ export class Flight {
       if (sl.kind < 0) { sl.mesh.visible = false; sl.glow.visible = false; continue; }
       // how hard this nozzle blows
       let want = 0;
-      if (sl.kind === 0) want = liftK * (1 + clamp(0.05 * (sl.front ? s.ax : -s.ax) + 0.05 * sl.side * s.az, -0.35, 0.35));
+      if (sl.kind === 0) want = liftK * (1 + clamp(0.05 * (sl.front ? s.ax : -s.ax) + 0.05 * sl.side * s.az, -0.35, 0.35))
+        * (1 - this.descK * (0.3 - 0.12 * Math.sin(this.time * 29 + sl.side * 1.9 + (sl.front ? 0.8 : 0))));
       else if (sl.kind === 1) want = mainK;
       else { const yaw = s.ay; want = Math.abs(yaw) > 0.25 && ((yaw > 0) === (sl.front === (sl.side > 0))) ? Math.min(1, Math.abs(yaw) * 0.35) : 0; }
       want *= sputter;
@@ -594,9 +626,10 @@ export class Flight {
 .fl-hint { margin-top: 6px; opacity: .85; font-weight: 400; }
 .fl-hint:empty { display: none; }
 .fl-fly { display: none; }
-.hud.touch .fl-hud { bottom: 228px; right: 18px; }
+.hud.touch .fl-hud { bottom: 236px; right: 96px; width: 164px; }
 .hud.touch .fl-fly.on { display: block; position: absolute; right: 18px; bottom: 300px; width: 64px; height: 64px; border-radius: 50%; border: 0; background: rgba(32,33,36,.55); color: #fff; font: 500 14px Roboto, system-ui; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
-.hud.touch .fl-fly.on.down { background: rgba(26,115,232,.85); }`;
+.hud.touch .fl-fly.on.down { background: rgba(26,115,232,.85); }
+.hud.touch .fl-fly.fl-down.on { right: 92px; bottom: 304px; width: 56px; height: 56px; font-size: 13px; }`;
       document.head.appendChild(st);
     }
     const el = this.hud = document.createElement('div');
@@ -612,7 +645,14 @@ export class Flight {
     const off = e => { e.preventDefault(); if (keys) keys.delete('Space'); b.classList.remove('down'); };
     b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('pointerleave', off);
     this.d.hud.el.appendChild(b);
-    this.hudState = { w: -1, alt: '', hint: null, cls: '' };
+    // and one that holds Shift, shown while flying: down
+    const db = this.downBtn = document.createElement('button');
+    db.className = 'fl-fly fl-down'; db.textContent = 'Down'; db.setAttribute('aria-label', 'Fly down');
+    const dOn = e => { e.preventDefault(); if (keys) keys.add('ShiftLeft'); db.classList.add('down'); };
+    const dOff = e => { e.preventDefault(); if (keys) keys.delete('ShiftLeft'); db.classList.remove('down'); };
+    db.addEventListener('pointerdown', dOn); db.addEventListener('pointerup', dOff); db.addEventListener('pointercancel', dOff); db.addEventListener('pointerleave', dOff);
+    this.d.hud.el.appendChild(db);
+    this.hudState = { w: -1, alt: '', hint: null, cls: '', downOn: null };
   }
 
   updateHud(dt) {
@@ -628,8 +668,10 @@ export class Flight {
     const cls = (s.tank < 0.15 ? 'low ' : '') + (s.lift > 1 || s.main > 1 ? 'firing' : '');
     if (cls !== H.cls) { H.cls = cls; this.hud.classList.toggle('low', s.tank < 0.15); this.hud.classList.toggle('firing', s.lift > 1 || s.main > 1); }
     this.hintT = Math.max(0, (this.hintT || 0) - dt); this.airHintT = Math.max(0, (this.airHintT || 0) - dt);
-    const hint = this.airHintT > 0 ? 'W S tip, A D turn, Shift boost' : (!s.flying && this.hintT > 0 && !this.flownOnce ? 'Hold Space to fly' : (s.tank <= 0 ? 'Refills on the ground' : ''));
+    const hint = this.airHintT > 0 ? 'Space\u00a0up, Shift\u00a0down, W\u00a0S\u00a0tip, A\u00a0D\u00a0turn, F\u00a0boost' : (!s.flying && this.hintT > 0 && !this.flownOnce ? 'Hold Space to fly' : (s.tank <= 0 ? 'Refills on the ground' : ''));
     if (hint !== H.hint) { H.hint = hint; this.hudHint.textContent = hint; }
+    // touch screens: the Down button only while flying (on the ground it would be the rear jet's Shift)
+    if (this.downBtn) { const on = !!s.flying; if (on !== H.downOn) { H.downOn = on; this.downBtn.classList.toggle('on', on); if (!on) this.downBtn.classList.remove('down'); } }
   }
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -641,10 +683,13 @@ export class Flight {
     if (!this.snd || this.snd.ctx !== ctx) this.snd = makeSound(ctx, S.master);
     const n = this.snd, t = ctx.currentTime;
     const p = Math.min(1.4, lift + main * 1.1);
-    n.hiss.gain.setTargetAtTime(0.13 * p, t, 0.04);
-    n.hissF.frequency.setTargetAtTime(3200 + 1800 * Math.min(1, p), t, 0.08);
-    n.roar.gain.setTargetAtTime(0.3 * Math.min(1.3, lift * 0.7 + main), t, 0.06);
-    n.roarF.frequency.setTargetAtTime(180 + 320 * Math.min(1.2, p), t, 0.1);
+    // (coming down: the valves throttled back, a lower, softer hiss and less roar)
+    const dk = this.descK || 0;
+    n.hiss.gain.setTargetAtTime(0.13 * p * (1 - 0.3 * dk), t, 0.04);
+    n.hissF.frequency.setTargetAtTime((3200 + 1800 * Math.min(1, p)) * (1 - 0.32 * dk), t, 0.08);
+    n.roar.gain.setTargetAtTime(0.3 * Math.min(1.3, lift * 0.7 + main) * (1 - 0.4 * dk), t, 0.06);
+    n.roarF.frequency.setTargetAtTime((180 + 320 * Math.min(1.2, p)) * (1 - 0.2 * dk), t, 0.1);
+    if (this.vent) { this.vent = 0; try { vent(ctx, S.master, n.noise); } catch (e) {} }
     n.ground.gain.setTargetAtTime(0.28 * ge, t, 0.08);
     if (this.ignite > 0.98 && !this.igniteSounded) { this.igniteSounded = true; bang(ctx, S.master, n.noise); }
     if (this.ignite < 0.5) this.igniteSounded = false;
@@ -659,7 +704,7 @@ export class Flight {
   // for tests: the state in one object
   status() {
     const s = this.s, v = this.v;
-    return { on: this.on, flying: s.flying, airborne: s.airborne, tank: +s.tank.toFixed(3), lift: v ? +(s.lift / (v.p.mass * G)).toFixed(3) : 0, main: v ? +(s.main / (v.p.mass * G)).toFixed(3) : 0, h: +this.h.toFixed(2), vy: v ? +v.v.y.toFixed(2) : 0, puffs: this.puffs.n, stun: +s.stun.toFixed(2), plate: this.rig && this.rig._flight ? +this.rig._flight.open.toFixed(2) : null };
+    return { on: this.on, flying: s.flying, airborne: s.airborne, tank: +s.tank.toFixed(3), lift: v ? +(s.lift / (v.p.mass * G)).toFixed(3) : 0, main: v ? +(s.main / (v.p.mass * G)).toFixed(3) : 0, h: +this.h.toFixed(2), vy: v ? +v.v.y.toFixed(2) : 0, puffs: this.puffs.n, stun: +s.stun.toFixed(2), plate: this.rig && this.rig._flight ? +this.rig._flight.open.toFixed(2) : null, down: !!this.keyDown, boost: !!this.keyBoost, shift: this.shiftMode, desc: +this.descK.toFixed(2) };
   }
 }
 
@@ -1094,4 +1139,14 @@ function bang(ctx, master, buf) {
   const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(95, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.25);
   const og = ctx.createGain(); og.gain.setValueAtTime(0.35, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
   o.connect(og); og.connect(master); o.start(t); o.stop(t + 0.32);
+}
+
+// the lift valves throttling back (Shift in the air): a soft falling chuff of gas, no thump
+function vent(ctx, master, buf) {
+  const t = ctx.currentTime;
+  const s = ctx.createBufferSource(); s.buffer = buf;
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 0.8;
+  f.frequency.setValueAtTime(2400, t); f.frequency.exponentialRampToValueAtTime(700, t + 0.45);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+  s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random()); s.stop(t + 0.55);
 }

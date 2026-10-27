@@ -99,7 +99,9 @@ if ( uCutOn > 0.5 ) {
   if ( cuv.x > 0.0 && cuv.x < 1.0 && cuv.y > 0.0 && cuv.y < 1.0 ) {
     vec4 m = texture2D( uCutMap, cuv );
     float rh = uCutH.x + texture2D( uCutHt, cuv ).r;
-    if ( m.r > 0.5 && vBkWorld.y > rh - uCutBelow && vBkWorld.y < rh + uCutTop ) discard;
+    // (green: a cut that reaches higher there, 25 m for full green: a tunnel's bore, a road cut into a hillside;
+    // cutmask.js and tunnels.js)
+    if ( m.r > 0.5 && vBkWorld.y > rh - uCutBelow && vBkWorld.y < rh + max( uCutTop, m.g * 25.0 ) ) discard;
   }
 }
 `;

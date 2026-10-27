@@ -2,10 +2,16 @@
 // are drawn into a picture of the area (white inside), and the road's height is kept in a small float picture.
 // baked.js throws away mesh fragments over a carriageway between just under the road and uCutTop above it, so
 // our own road surface (and our own traffic) shows instead. Areas are redrawn as the car moves.
+// The picture's red says where to cut; its green, where there is any, how far over the road (TOP_MAX metres for a
+// full green) the cut reaches there instead of uCutTop: a tunnel's bore where its roof is near the surface, a road
+// cut into a hillside out to its retaining wall (tunnels.js puts those shapes in under.mask).
 import * as THREE from 'three';
-import { bakedUniforms } from './baked.js?v=32';
+import { bakedUniforms } from './baked.js?v=33';
+import { under } from './under.js?v=33';
 
 const WIDTH = { motorway: 3.6, trunk: 3.5, primary: 3.4, secondary: 3.3, tertiary: 3.2, unclassified: 3, residential: 3, living_street: 2.8, service: 3, motorway_link: 3.5, trunk_link: 3.4, primary_link: 3.3, secondary_link: 3.2, tertiary_link: 3.1 };
+const TOP_MAX = 25; // (baked.js reads green * 25 m)
+const STOP = { stop: true }; // (a newer build took over)
 const LANES = { motorway: 2, trunk: 2, primary: 2, secondary: 2, tertiary: 2, unclassified: 2, residential: 2, living_street: 2, service: 1 };
 
 export function carriageWidth(tags, parking = true) {
@@ -42,34 +48,58 @@ export class CutMask {
   }
 
   // roads: osm roads [{ pts, tags }]; surface(x, z) -> { h, onRoad } from roads.js (or null)
+  // Worked out in slices of about 6 ms (it took 180 to 770 ms in one go): the last mask stays on until the new one is
+  // done; a newer build stops an older one. Returns a promise (never rejected).
   build(cx, cz, roads, surface, ground, opts = {}) {
+    const token = this.token = (this.token || 0) + 1;
+    return this._build(token, cx, cz, roads, surface, ground, opts).catch(e => { if (e !== STOP) console.warn('cut mask', e); });
+  }
+  async _build(token, cx, cz, roads, surface, ground, opts) {
+    let t0 = performance.now(), busy = 0, most = 0;
+    const Y = async () => { const t = performance.now(); if (t - t0 > 6) { busy += t - t0; most = Math.max(most, t - t0); await new Promise(r => setTimeout(r, 0)); t0 = performance.now(); if (token !== this.token) throw STOP; } };
     const ws = opts.widthScale || 1, parking = opts.parking !== false;
-    bakedUniforms.uCutTop.value = opts.top ?? 4.2;
-    bakedUniforms.uCutBelow.value = opts.below ?? 0.6;
     const S = this.size, M = this.metres, x0 = cx - M / 2, z0 = cz - M / 2, k = S / M;
     const g = this.canvas.getContext('2d');
     g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
-    g.strokeStyle = '#fff'; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.strokeStyle = '#f00'; g.lineCap = 'round'; g.lineJoin = 'round';
     // the roads module's own edges when given (the widths it draws), else widths guessed from the tags
     if (opts.edges && opts.edges.length) {
       // flat ends: a round cap reaches past a junction's corners, where there is no road to show through the cut
       g.lineCap = opts.cap || 'round';
       for (const e of opts.edges) {
+        await Y();
         // (bridges only when asked, in the open map: the terrain is cut under a deck too, so where a deck comes down to
         // meet the ground the coarse terrain does not poke up through it; Google's own deck stays)
-        if (!e.c || (e.c.bridge && !opts.bridges) || !e.pts || e.pts.length < 2) continue;
+        // (a tunnel's bore is not cut through the ground over it: under.mask has the stretches that need it)
+        if (!e.c || (e.c.bridge && !opts.bridges) || e.c.tunnel === 'bore' || !e.pts || e.pts.length < 2) continue;
         g.lineWidth = (e.c.bridge && e.c.deckL ? e.c.deckL + e.c.deckR : 2 * e.c.hw) * ws * k;
         g.beginPath();
         e.pts.forEach(([x, z], i) => { const px = (x - x0) * k, pz = (z - z0) * k; if (i) g.lineTo(px, pz); else g.moveTo(px, pz); });
         g.stroke();
+        // the outer strip each side the narrowed stroke leaves, where a kerb and a pavement go on from the carriageway:
+        // cut as well (to just under the kerb), or the coarse terrain shows through wherever it stands over the road's
+        // edge (Boulevard Haussmann's north side showed the photographed tree crowns there as a green strip)
+        if (ws < 1 && !e.c.bridge && e.c.tunnel !== 'bore' && e.px && e.nx && e.px.length >= 2) for (const sd of [-1, 1]) {
+          if (!(sd < 0 ? e.c.curbL : e.c.curbR)) continue;
+          const off = e.c.hw * (1 + ws) / 2, s0 = e.set0 || 0, s1 = e.len - (e.set1 || 0);
+          g.lineWidth = (e.c.hw * (1 - ws) + 0.3) * k;
+          g.beginPath(); let n = 0;
+          for (let i = 0; i < e.px.length; i++) {
+            if (e.ps[i] < s0 || e.ps[i] > s1) continue;
+            const m = Math.min(1.6, (e.mk && e.mk[i]) || 1), px = (e.px[i] + e.nx[i] * m * sd * off - x0) * k, pz = (e.pz[i] + e.nz[i] * m * sd * off - z0) * k;
+            if (n++) g.lineTo(px, pz); else g.moveTo(px, pz);
+          }
+          if (n >= 2) g.stroke();
+        }
       }
       g.lineCap = 'round';
       roads = [];
     }
     // junctions: their own outlines (the corners between the roads' flat ends), shrunk as the roads are
     if (opts.junctions) {
-      g.fillStyle = '#fff';
+      g.fillStyle = '#f00';
       for (const j of opts.junctions) {
+        await Y();
         const ol = j && j.outline; if (!ol || ol.length < 3) continue;
         let mx = 0, mz = 0; for (const q of ol) { mx += q.x; mz += q.z; } mx /= ol.length; mz /= ol.length;
         g.beginPath();
@@ -78,7 +108,20 @@ export class CutMask {
       }
       g.fillStyle = '#000';
     }
+    // the shapes that reach higher (green), over everything else
+    const shapes = opts.shapes !== undefined ? opts.shapes : under.mask;
+    for (const sh of shapes || []) {
+      await Y();
+      if (!sh || !sh.pts || sh.pts.length < 3) continue;
+      const gv = Math.max(1, Math.min(255, Math.round(sh.top / TOP_MAX * 255)));
+      g.fillStyle = 'rgb(255,' + gv + ',0)';
+      g.beginPath();
+      sh.pts.forEach(([x, z], i) => { const px = (x - x0) * k, pz = (z - z0) * k; if (i) g.lineTo(px, pz); else g.moveTo(px, pz); });
+      g.closePath(); g.fill();
+    }
+    g.fillStyle = '#000';
     for (const r of roads) {
+      await Y();
       const t = r.tags || {};
       if (t.tunnel && t.tunnel !== 'no') continue;
       if (t.bridge && t.bridge !== 'no') continue; // a bridge's deck is its own: leave the mesh under it alone
@@ -89,19 +132,22 @@ export class CutMask {
       r.pts.forEach(([x, z], i) => { const px = (x - x0) * k, pz = (z - z0) * k; if (i) g.lineTo(px, pz); else g.moveTo(px, pz); });
       g.stroke();
     }
-    this.tex.needsUpdate = true;
     // the road's height on a coarse grid (5.5 m): the road surface where there is one, the ground elsewhere
     const N = this.HN, step = M / N;
     const H = this.hraw, ok = new Uint8Array(N * N);
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      if (i === 0) await Y();
       const x = x0 + (i + 0.5) * step, z = z0 + (j + 0.5) * step;
       const s = surface ? surface(x, z) : null;
       let h = s && s.onRoad && Number.isFinite(s.h) ? s.h : null;
       if (h === null && ground) h = ground(x, z);
+      // in and round a tunnel's bore where its roof is near the surface: its floor (the cut there is measured from it)
+      if (under.tubes.length) { const f = under.floorNear(x, z); if (f !== null && !(s && s.onRoad && s.h > f + 4)) h = f; }
       if (h !== null && Number.isFinite(h)) { H[j * N + i] = h; ok[j * N + i] = 1; }
     }
     // cells with no road spread from their neighbours, so filtering at a road's edge reads the road's height
     for (let it = 0; it < 24; it++) {
+      await Y();
       let changed = 0;
       for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
         const o = j * N + i; if (ok[o]) continue;
@@ -117,13 +163,19 @@ export class CutMask {
     }
     // half floats hold heights round a base (the middle's) to a few centimetres
     const base = this.hraw[(N >> 1) * N + (N >> 1)];
+    await Y();
     for (let i = 0; i < N * N; i++) this.hdata[i] = THREE.DataUtils.toHalfFloat(this.hraw[i] - base);
+    if (token !== this.token) throw STOP;
+    this.tex.needsUpdate = true;
+    bakedUniforms.uCutTop.value = opts.top ?? 4.2;
+    bakedUniforms.uCutBelow.value = opts.below ?? 0.6;
     bakedUniforms.uCutH.value.set(base, 1);
     this.htex.needsUpdate = true;
     bakedUniforms.uCutBox.value.set(x0, z0, 1 / M, 1 / M);
     bakedUniforms.uCutOn.value = 1;
     this.center = { x: cx, z: cz };
+    { const t = performance.now(); busy += t - t0; most = Math.max(most, t - t0); this.work = Math.round(busy); this.slice = Math.round(most); }
   }
 
-  off() { bakedUniforms.uCutOn.value = 0; }
+  off() { this.token = (this.token || 0) + 1; bakedUniforms.uCutOn.value = 0; }
 }

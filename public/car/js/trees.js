@@ -8,8 +8,8 @@
 //                         roadsMask, buildings, roads, centre: [x, z], radius, lean: [kx, kz] })
 //   t.group, t.ready (Promise of stats), t.dispose()
 import * as THREE from 'three';
-import { frame } from './geo.js?v=32';
-import { detect } from './treedetect.js?v=32';
+import { frame } from './geo.js?v=33';
+import { detect } from './treedetect.js?v=33';
 
 const D2R = Math.PI / 180;
 function hashf(n, salt = 0) {
@@ -36,7 +36,9 @@ function textures() {
   const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
   // a cluster of leaves, light in the middle, darker leaves behind
   const leaf = (dark) => {
-    const c = mk(256, 256), g = c.getContext('2d'), r = rng(dark ? 7 : 3);
+    // (willReadFrequently: drawn on the CPU, so reading its mean colour back below waits for no graphics card; that
+    // read took up to half a second on a busy GPU; perf)
+    const c = mk(256, 256), g = c.getContext('2d', { willReadFrequently: true }), r = rng(dark ? 7 : 3);
     // clumps of leaves round the middle, so the sprite's edge is ragged rather than a disc
     const clumps = [];
     for (let i = 0; i < 9; i++) { const a = r() * Math.PI * 2, d = i === 0 ? 0 : 30 + r() * 52; clumps.push([128 + Math.cos(a) * d, 128 + Math.sin(a) * d * 0.9, 26 + r() * 22]); }
@@ -211,7 +213,7 @@ function getWorker() {
   if (WORKER === false) return null;
   if (!WORKER) {
     try {
-      WORKER = new Worker(new URL('./treeworker.js?v=32', import.meta.url), { type: 'module' });
+      WORKER = new Worker(new URL('./treeworker.js?v=33', import.meta.url), { type: 'module' });
       WORKER.onmessage = (e) => { const j = jobs.get(e.data.id); if (!j) return; jobs.delete(e.data.id); if (e.data.error) j.reject(new Error(e.data.error)); else j.resolve(e.data.res); };
       WORKER.onerror = () => { WORKER = false; for (const j of jobs.values()) j.reject(new Error('worker failed')); jobs.clear(); };
     } catch (e) { WORKER = false; return null; }
@@ -271,7 +273,7 @@ export function build(src, opts = {}) {
   const { scene, imagery, collide } = opts;
   const groundAt = opts.groundAt || (() => 0);
   const parent = opts.parent || scene;
-  const group = new THREE.Group(); group.name = 'trees';
+  const group = new THREE.Group(); group.name = 'trees'; group.matrixAutoUpdate = false; // (static: perf)
   const stats = { osmTrees: 0, rowTrees: 0, areaTrees: 0, imageTrees: 0, total: 0, blocks: 0, reusedBlocks: 0, ms: 0 };
   const objs = [], handles = [];
   let disposed = false, done = false;
@@ -535,7 +537,7 @@ export function build(src, opts = {}) {
         if ((i & 511) === 0) await slice('L618');
       }
       // crowns cast shadows but do not take them (a shadow lookup on every leaf pixel costs more than it shows)
-      mesh.castShadow = true; mesh.receiveShadow = false; mesh.name = 'crowns ' + kind;
+      mesh.castShadow = true; mesh.receiveShadow = false; mesh.name = 'crowns ' + kind; mesh.matrixAutoUpdate = false;
       mesh.computeBoundingSphere();
       group.add(mesh); objs.push(mesh);
     };
@@ -550,7 +552,7 @@ export function build(src, opts = {}) {
         dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix);
         col.setRGB(0.85 + t.h1 * 0.3, 0.9 + t.h2 * 0.2, 0.8); mesh.setColorAt(i, col);
       });
-      mesh.castShadow = true; mesh.receiveShadow = false; mesh.name = 'palms';
+      mesh.castShadow = true; mesh.receiveShadow = false; mesh.name = 'palms'; mesh.matrixAutoUpdate = false;
       mesh.computeBoundingSphere();
       group.add(mesh); objs.push(mesh);
     }
@@ -573,7 +575,7 @@ export function build(src, opts = {}) {
         if (collide && collide.addCircle && !disposed) { try { const h = collide.addCircle(t.x, t.z, Math.max(0.25, rad), t.g - 0.5, t.g + top, 'tree'); if (h != null) handles.push(h); } catch (e) {} }
         if ((i & 511) === 0) await slice('L657');
       }
-      mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = 'trunks';
+      mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = 'trunks'; mesh.matrixAutoUpdate = false;
       mesh.computeBoundingSphere();
       group.add(mesh); objs.push(mesh);
     }
@@ -606,4 +608,7 @@ export function build(src, opts = {}) {
 }
 
 export const trees = { build };
+// the leaf, frond and bark pictures drawn in an idle moment after the module loads (the drop's network wait), not in
+// the first trees build: drawing them is one block of 60 to 120 ms (perf)
+if (typeof requestIdleCallback === 'function') requestIdleCallback(() => { try { textures(); } catch (e) {} }, { timeout: 5000 });
 export default trees;

@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=32';
+import { FX } from './damagefx.js?v=33';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -575,17 +575,22 @@ function refine(e, want, L, maxPasses = 4) { return runSync(refineGen(SYNC, e, w
 
 // cooperative work: a generator that yields at checkpoints; run with a time budget a frame, or all at once
 const SYNC = { deadline: Infinity };
+// (a job yields WAIT while it waits for another job's result, the model's analysis: its run ends at once, job.waiting
+// is set, and the background list goes on to the next job; perf)
+const WAIT = Symbol('wait');
 function runSync(gen) { let r; do { r = gen.next(); } while (!r.done); return r.value; }
 function makeJob(rd, gen, onDone) {
-  const job = { rd, done: false, deadline: 0 };
+  const job = { rd, done: false, deadline: 0, waiting: false };
   const it = gen(job);
   job.run = budget => {
     if (job.done) return true;
     job.deadline = performance.now() + budget;
+    job.waiting = false;
     try {
       for (;;) {
         const r = it.next();
         if (r.done) { job.done = true; if (onDone) onDone(r.value); break; }
+        if (r.value === WAIT) { job.waiting = true; break; }
         if (performance.now() >= job.deadline) break;
       }
     } catch (err) { job.done = true; console.warn('damage job', err); }
@@ -804,7 +809,7 @@ function* analyseGen(job, rd) {
   for (const e of E) { P.push(e.role === 'proxy' ? null : (e._sp || (e._sp = e.srcPositions()))); if (performance.now() >= job.deadline) yield; }
   // the box and the body's half width (without mirrors: the 97th percentile of |x|)
   const box = new THREE.Box3();
-  for (let k = 0; k < E.length; k++) { if (!P[k] || E[k].role === 'far') continue; for (let i = 0; i < P[k].length; i += 3) box.expandByPoint(_v.set(P[k][i], P[k][i + 1], P[k][i + 2])); }
+  for (let k = 0; k < E.length; k++) { if (performance.now() >= job.deadline) yield; if (!P[k] || E[k].role === 'far') continue; for (let i = 0; i < P[k].length; i += 3) box.expandByPoint(_v.set(P[k][i], P[k][i + 1], P[k][i + 2])); }
   if (box.isEmpty()) box.set(new THREE.Vector3(-d.width / 2, 0, -d.front), new THREE.Vector3(d.width / 2, d.height, d.rear));
   A.box = box;
   const W = rig.wheels || [];
@@ -841,12 +846,14 @@ function* analyseGen(job, rd) {
     const byV = new Map();
     if (performance.now() >= job.deadline) yield;
     for (let t = 0; t < nt; t++) for (let j = 0; j < 3; j++) {
+      if (j === 0 && (t & 4095) === 4095 && performance.now() >= job.deadline) yield;
       const w = weld[idx[t * 3 + j]], key2 = w * 8 + cls[t];
       const o = byV.get(key2); if (o === undefined) byV.set(key2, t); else { const ra = find(o), rb = find(t); if (ra !== rb) par[ra] = rb; }
     }
     const comp = new Map();
     if (performance.now() >= job.deadline) yield;
     for (let t = 0; t < nt; t++) {
+      if ((t & 4095) === 4095 && performance.now() >= job.deadline) yield;
       const r = find(t); let c = comp.get(r);
       if (!c) comp.set(r, c = { tris: [], area: 0, cls: cls[t], box: new THREE.Box3(), cen: new THREE.Vector3() });
       c.tris.push(t); c.area += area[t]; c.cen.x += cen[t * 3] * area[t]; c.cen.y += cen[t * 3 + 1] * area[t]; c.cen.z += cen[t * 3 + 2] * area[t];
@@ -934,16 +941,22 @@ function* analyseGen(job, rd) {
   if (A.zC < A.zA + 0.6) A.zC = A.zA + 0.6;
   // the body's half width at the shoulder, and in general
   const xs = [], xsAll = [];
+  // (the long loops over every point check the clock every 16k points too: a bus's model ran 0.4 to 0.6 s without a
+  // break; perf)
+  let tick = 0;
   for (let k = 0; k < E.length; k++) { if (performance.now() >= job.deadline) yield;
     if (!P[k] || E[k].role === 'glass' || E[k].role === 'far') continue;
     const p = P[k];
     for (let i = 0; i < p.length; i += 9) {
+      if (++tick > 16384) { tick = 0; if (performance.now() >= job.deadline) yield; }
       const x = Math.abs(p[i]), y = p[i + 1], z = p[i + 2];
       xsAll.push(x);
       if (y > A.belt - 0.35 && y < A.belt - 0.04 && z > A.zA && z < A.zC) xs.push(x);
     }
   }
-  const pct = (a, q) => { if (!a.length) return 0; a.sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(a.length * q))]; };
+  // (sorted as a typed array: a numeric sort, several times quicker than the plain array's sort with a comparison)
+  const pct = (a, q) => { if (!a.length) return 0; const s = Float32Array.from(a).sort(); return s[Math.min(s.length - 1, Math.floor(s.length * q))]; };
+  yield;
   A.hw = pct(xsAll, 0.985) || d.width / 2;
   A.hwBelt = pct(xs, 0.97) || A.hw;
   // meshes inside the cabin (seats, dashboard): they move with the crush but get no folds and no subdivision
@@ -960,6 +973,7 @@ function* analyseGen(job, rd) {
     if (!P[k] || E[k].role === 'far' || E[k].role === 'proxy') continue;
     const p = P[k];
     for (let i = 0; i < p.length; i += 3) {
+      if (++tick > 16384) { tick = 0; if (performance.now() >= job.deadline) yield; }
       const gx = clamp(Math.floor((p[i] - box.min.x) / (box.max.x - box.min.x) * GX), 0, GX - 1), gz = clamp(Math.floor((p[i + 2] - box.min.z) / (box.max.z - box.min.z) * GZ), 0, GZ - 1);
       if (p[i + 1] > top[gz * GX + gx]) top[gz * GX + gx] = p[i + 1];
     }
@@ -979,6 +993,7 @@ function* analyseGen(job, rd) {
     if (e.src.attributes._lamp && P[k]) {
       const la = e.src.attributes._lamp, groups = new Map();
       for (let i = 0; i < la.count; i++) {
+        if (++tick > 16384) { tick = 0; if (performance.now() >= job.deadline) yield; }
         const code = Math.round(la.getX(i)); if (code < 1) continue;
         const fr = P[k][i * 3 + 2] < 0 ? 0 : 1, key2 = code * 2 + fr;
         let g = groups.get(key2); if (!g) groups.set(key2, g = { code, fr, b: new THREE.Box3() });
@@ -1007,7 +1022,7 @@ function* analyseGen(job, rd) {
     for (let k = 0; k < E.length; k++) { if (performance.now() >= job.deadline) yield;
       if (!solid(k)) continue;
       const p = P[k];
-      for (let i = 0; i < p.length; i += 3) { const c = cell(p[i + 1], p[i + 2]); if (c >= 0 && p[i] * sg > g[c]) g[c] = p[i] * sg; }
+      for (let i = 0; i < p.length; i += 3) { if (++tick > 16384) { tick = 0; if (performance.now() >= job.deadline) yield; } const c = cell(p[i + 1], p[i + 2]); if (c >= 0 && p[i] * sg > g[c]) g[c] = p[i] * sg; }
     }
     // the door's skin under each column (its neighbours too: a seam leaves a column empty)
     const base = new Float32Array(NZ);
@@ -1035,7 +1050,7 @@ function* analyseGen(job, rd) {
       for (let k = 0; k < E.length; k++) { if (performance.now() >= job.deadline) yield;
         if (!solid(k)) continue;
         const p = P[k];
-        for (let i = 0; i < p.length; i += 3) { const c = cell(p[i + 1], p[i + 2]); if (c < 0 || !keep[c] || p[i] * sg < base[c % NZ] + 0.015) continue; b.expandByPoint(_v.set(p[i], p[i + 1], p[i + 2])); cnt++; inner = Math.min(inner, base[c % NZ]); }
+        for (let i = 0; i < p.length; i += 3) { if (++tick > 16384) { tick = 0; if (performance.now() >= job.deadline) yield; } const c = cell(p[i + 1], p[i + 2]); if (c < 0 || !keep[c] || p[i] * sg < base[c % NZ] + 0.015) continue; b.expandByPoint(_v.set(p[i], p[i + 1], p[i + 2])); cnt++; inner = Math.min(inner, base[c % NZ]); }
       }
       const sz = b.getSize(_a);
       if (cnt < 6 || sz.z > 0.5 || sz.y > 0.4 || sz.x > 0.4) cnt = 0;
@@ -1048,6 +1063,7 @@ function* analyseGen(job, rd) {
         if (!P[k] || E[k].role === 'far' || E[k].role === 'proxy' || E[k].role === 'glass') continue;
         const p = P[k];
         for (let i = 0; i < p.length; i += 3) {
+          if (++tick > 16384) { tick = 0; if (performance.now() >= job.deadline) yield; }
           const x = p[i], y = p[i + 1], z = p[i + 2];
           if (x * sg < A.hwBelt + 0.035 || y < A.belt - 0.15 || y > A.belt + 0.45 || z < A.zA - 0.35 || z > A.zA + 0.6) continue;
           b.expandByPoint(_v.set(x, y, z)); cnt++;
@@ -1064,18 +1080,20 @@ function* analyseGen(job, rd) {
       if (A.mirrors.some(m => (m.side === 'L') === (sg < 0))) continue;
       const xs = [];
       for (let k = 0; k < E.length; k++) {
+        if (performance.now() >= job.deadline) yield;
         if (!P[k] || E[k].role === 'far' || E[k].role === 'proxy') continue;
         const p = P[k];
-        for (let i = 0; i < p.length; i += 3) { const y = p[i + 1], z = p[i + 2]; if (y > 1.0 && y < A.roofY - 0.2 && z > A.zA + 0.3 && z < A.zA + 1.5 && p[i] * sg > 0) xs.push(p[i] * sg); }
+        for (let i = 0; i < p.length; i += 3) { if (++tick > 16384) { tick = 0; if (performance.now() >= job.deadline) yield; } const y = p[i + 1], z = p[i + 2]; if (y > 1.0 && y < A.roofY - 0.2 && z > A.zA + 0.3 && z < A.zA + 1.5 && p[i] * sg > 0) xs.push(p[i] * sg); }
       }
       if (xs.length < 20) continue;
       xs.sort((a, b) => a - b);
       const ref = xs[Math.floor(xs.length * 0.9)];
       const b = new THREE.Box3(); let cnt = 0;
       for (let k = 0; k < E.length; k++) {
+        if (performance.now() >= job.deadline) yield;
         if (!P[k] || E[k].role === 'far' || E[k].role === 'proxy') continue;
         const p = P[k];
-        for (let i = 0; i < p.length; i += 3) { const x = p[i], y = p[i + 1], z = p[i + 2]; if (y > 1.0 && z < A.zA + 0.6 && x * sg > ref + 0.05) { b.expandByPoint(_v.set(x, y, z)); cnt++; } }
+        for (let i = 0; i < p.length; i += 3) { if (++tick > 16384) { tick = 0; if (performance.now() >= job.deadline) yield; } const x = p[i], y = p[i + 1], z = p[i + 2]; if (y > 1.0 && z < A.zA + 0.6 && x * sg > ref + 0.05) { b.expandByPoint(_v.set(x, y, z)); cnt++; } }
       }
       const sz = b.getSize(_a);
       if (cnt < 6 || sz.x > 0.8 || sz.y > 1.5 || sz.z > 2.0) continue;
@@ -1091,6 +1109,7 @@ function* analyseGen(job, rd) {
       if (!P[k] || E[k].role === 'far' || E[k].role === 'proxy' || E[k].role === 'glass' || A.interior[k]) continue;
       const p = P[k];
       for (let i = 0; i < p.length; i += 6) {
+        if (++tick > 16384) { tick = 0; if (performance.now() >= job.deadline) yield; }
         const x = Math.abs(p[i]), y = p[i + 1], z = p[i + 2];
         if (y < 0.1 || y > top || z < box.min.z + 0.25 || z > box.max.z - 0.25) continue;
         if (A.mirrors.some(m => m.box.containsPoint(_v.set(p[i], y, z)))) continue;
@@ -1188,6 +1207,7 @@ const BAY_DARK = new THREE.MeshStandardMaterial({ name: 'damage_bay', color: 0x4
 const BAY_PARTS = new THREE.MeshStandardMaterial({ name: 'damage_bay_parts', vertexColors: true, roughness: 0.6, metalness: 0.1, envMapIntensity: 0.6 });
 // a curtain airbag: pale grey nylon, a little see-through
 const CURTAIN = new THREE.MeshStandardMaterial({ name: 'damage_curtain', color: 0x9ea6a1, roughness: 0.9, metalness: 0, transparent: true, opacity: 0.94, side: THREE.DoubleSide, depthWrite: false });
+CURTAIN.forceSinglePass = true; // (both faces in one draw: three.js otherwise draws it twice and looks its program up before each, every frame, perf)
 const BAG = new THREE.MeshStandardMaterial({ name: 'damage_airbag', color: 0xcfcec8, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
 let _bagGeo = null, _curtainGeo = null;
 function bagGeometry() {
@@ -2220,6 +2240,7 @@ class CarDamage {
         else { keep[nKeep++] = ia; keep[nKeep++] = ib; keep[nKeep++] = ic; }
       }
       if (!nIn) continue;
+      if (performance.now() >= job.deadline) yield; // (a big mesh's part copied out over several frames; perf)
       if (e.role === 'glass' && !e.win) this.ownGlass(e);
       // the part's own compact geometry (from the mesh's current buffers)
       const nV = P.length / 3, used = new Int32Array(nV).fill(-1), order = [];
@@ -2232,6 +2253,7 @@ class CarDamage {
         if (!at.isInterleavedBufferAttribute && !at.normalized && at.array instanceof Float32Array) { const A0 = at.array; for (let i = 0; i < nO; i++) { const o = order[i] * sz; for (let j = 0; j < sz; j++) arr[i * sz + j] = A0[o + j]; } }
         else for (let i = 0; i < nO; i++) for (let j = 0; j < sz; j++) arr[i * sz + j] = at.getComponent(order[i], j);
         g.setAttribute(nm, new THREE.BufferAttribute(arr, sz));
+        if (performance.now() >= job.deadline) yield;
       }
       g.setIndex(new THREE.BufferAttribute(nO > 65535 ? pidx : new Uint16Array(pidx), 1));
       g.computeBoundingSphere(); g.boundingSphere.radius += 0.2;
@@ -2865,10 +2887,13 @@ export class Damage {
     this.lastCrush = null; this.n = { impacts: 0, scrapes: 0 };
     // the extra materials (broken lens, engine bay, airbags) built with the scene: a speck of each, drawn far under
     // the ground (an object that is not visible is not compiled, and its shader was then built in the crash's frame)
+    // (hidden again once they have been drawn for a while, updateBody: drawn every frame they were seven draws and
+    // seven material changes a frame; their programs stay built; perf)
+    this.holders = [];
     for (const m of [BROKEN_LENS, BAY_FINS, BAY_ENGINE, BAY_DARK, BAG, BAY_PARTS, CURTAIN]) {
       const hold = new THREE.Mesh(new THREE.BoxGeometry(0.001, 0.001, 0.001), m); hold.name = 'damage_holder';
       hold.position.set(0, -5000, 0); hold.frustumCulled = false; hold.castShadow = false; hold.receiveShadow = true;
-      this.fx.group.add(hold);
+      this.fx.group.add(hold); this.holders.push(hold);
     }
     this.lastStamp = 0;
     this.scrapeLevel = 0;
@@ -2949,8 +2974,12 @@ export class Damage {
       // frame for up to a fifth of a second each, just after a drop)
       // (the windscreen's crack map is made and sent to the graphics card now: its first upload, 12 to 22 ms, was in
       // the crash's frames)
-      const steps = [() => rd.analysis(), () => this.warmUp(), () => { const C = rd.crackReady(); if (this.drive.G && this.drive.G.renderer && this.drive.G.renderer.initTexture) this.drive.G.renderer.initTexture(C.tex); }, () => this.presplit(rd), () => this.predoor(rd)];
+      // (the model's analysis goes in the background list, a slice a frame; the steps after it wait for it. Done in
+      // one go in an idle callback it was a long task of 0.6 to 1.5 s right after a drop; perf)
+      const steps = [() => this.analyseLater(rd), () => this.warmUp(), () => { const C = rd.crackReady(); if (this.drive.G && this.drive.G.renderer && this.drive.G.renderer.initTexture) this.drive.G.renderer.initTexture(C.tex); }, () => this.presplit(rd), () => this.predoor(rd)];
+      const first = steps[0];
       const next = () => {
+        if (steps[0] !== first && steps.length && !rd.A && this.drive.car && this.drive.car.rig === car.rig) { idle(next, { timeout: 700 }); return; }
         const f = steps.shift(); if (!f) return;
         if (!this.drive.car || this.drive.car.rig !== car.rig) return;
         const t = performance.now();
@@ -2961,19 +2990,67 @@ export class Damage {
       idle(next, { timeout: 1500 });
     }
   }
+  // what the model is, worked out in the background (2 ms a frame, first in the list); a crash before it is done
+  // works it out at once, as before
+  analyseLater(rd) {
+    if (rd.A) return;
+    rd.list();
+    const key = rd.rig.id + (rd.npc ? ':npc' : ':car') + ':' + rd.entries.length;
+    if (ANALYSIS.has(key)) { rd.A = ANALYSIS.get(key); return; }
+    if (this.bg.some(j => j.rd === rd && j.analysis)) return;
+    const job = makeJob(rd, jb => analyseGen(jb, rd), A => { if (!rd.A && A) rd.A = A; });
+    job.analysis = true;
+    this.bg.unshift(job);
+  }
   // the driver's door cut out ahead, a little each frame (the first E froze the game for up to half a second to do it)
   predoor(rd) {
-    if (!rd.doorList || !rd.doorList().length) return;
-    if (rd.doorState(0).pivot) return;
-    const job = makeJob(rd, function* (jb) { job.started = true; yield* rd.doorNodeGen(jb, 0); });
+    // (the model's analysis waited for in the background: doorList() would work it out at once, 0.2 to 0.4 s)
+    if (rd.A && (!rd.A.doors.length || rd.doorState(0).pivot)) return;
+    if (!rd.A) this.analyseLater(rd);
+    const job = makeJob(rd, function* (jb) { while (!rd.A) yield WAIT; if (!rd.A.doors.length || rd.doorState(0).pivot) return; job.started = true; yield* rd.doorNodeGen(jb, 0); });
     job.door = 0; rd.doorJob = job;
     this.bg.push(job);
+  }
+  // A door cut out of the car's body ahead of its being opened (for onfoot.js): in bounded steps in the background
+  // list, after the model's analysis (also in the background), one door of a car at a time, first in the list for
+  // another car, after the car's own preparation for the player's. Resolves true once the door is cut (its pivot is
+  // rig._dmg.doors[i].pivot), false when the car has no such door. The job is the car's door job (rig._dmg.doorJob)
+  // while it runs, so the code that runs a car's queued work while someone waits at it (onfoot pumpDoor) finishes it.
+  prepareDoor(rig, i) {
+    if (!rig || rig.fake || typeof rig.doorNode !== 'function' || !(i >= 0)) return Promise.resolve(false);
+    const rd = this.of(rig), cut = () => { const st = rd.doors && rd.doors[i]; return !!(st && st.pivot); };
+    if (cut()) return Promise.resolve(true);
+    if (rd.A && i >= rd.A.doors.length) return Promise.resolve(false);
+    const P = rd.doorPromises || (rd.doorPromises = {});
+    if (P[i]) return P[i];
+    const mine = this.drive.car && this.drive.car.rig === rig;
+    if (!rd.A) this.analyseLater(rd);
+    P[i] = new Promise(resolve => {
+      const job = makeJob(rd, function* (jb) {
+        while (!rd.A) yield WAIT;
+        if (i >= rd.A.doors.length) return false;
+        // another door of this car being cut: after it
+        while (rd.doorJob && rd.doorJob !== job && !rd.doorJob.done) yield WAIT;
+        if (cut()) return true;
+        rd.doorJob = job; job.started = true;
+        yield* rd.doorNodeGen(jb, i);
+        return true;
+      }, () => { delete P[i]; resolve(cut()); });
+      job.door = i; job.prepare = true;
+      // (another car's: first in the list, but after its model's analysis, which it waits for)
+      if (mine) this.bg.push(job); else { const at = this.bg.findIndex(j => j.rd === rd && j.analysis); this.bg.splice(at >= 0 ? at + 1 : 0, 0, job); }
+    });
+    return P[i];
   }
   // the player's coarse outside meshes subdivided ahead (a little each frame, while nothing else is going on), so a
   // crash only has to move points
   presplit(rd) {
-    const A = rd.analysis(), self = this;
+    // (the model worked out in the background first, not here and now: from a change of car, drive.setCar's reset,
+    // that held the frame for 0.2 to 0.4 s)
+    if (!rd.A) this.analyseLater(rd);
     this.bg.push(makeJob(rd, function* (job) {
+      while (!rd.A) yield WAIT;
+      const A = rd.A;
       for (const e of rd.list()) {
         if (rd.mgr.drive.car && rd.mgr.drive.car.rig !== rd.rig) return;
         // the cabin's trim made the car's own too (no subdividing): owned in a crash, its new buffers were uploaded
@@ -3588,7 +3665,10 @@ export class Damage {
 
   // ---- body corners against the ground: a car on its side or roof slides on its body, grinding
   bodyContacts(v, rd, dt, env, F, Tq, up) {
-    const A = rd.A || rd.analysis();
+    // (only once the model is worked out, a slice a frame in the background after a drop or a new car, ready():
+    // worked out here, on the first physics step, it held the game for 0.6 to 1.5 s; perf)
+    if (!rd.A) return;
+    const A = rd.A;
     if (!rd.bodyPts) {
       const hw = A.hw - 0.06, z0 = A.box.min.z + 0.1, z1 = A.box.max.z - 0.1, yl = Math.max(0.1, A.wheelR * 0.5);
       const rhw = Math.max(0.3, A.hw - 0.24), rf = A.zA + 0.25, rr = A.zC - 0.2, ry = A.roofY - 0.02;
@@ -3683,6 +3763,8 @@ export class Damage {
   updateBody(dt) {
     const drive = this.drive;
     const car = drive.car;
+    // the material holders: drawn for the first 10 s of driving (their programs built and used once), then hidden
+    if (this.holders && drive.active && !drive.holdRender && (this._holdT = (this._holdT || 0) + dt) > 10) { for (const h of this.holders) h.visible = false; this.holders = null; }
     if (car && car.rig && car.vehicle && (!car.vehicle._dmgAttached || !car.rig._dmg || car.rig._dmg.vehicle !== car.vehicle)) this.attachPlayer(car);
     // crushes still being worked through, 4 ms a frame
     if (this.jobs.length) {
@@ -3690,8 +3772,17 @@ export class Damage {
       const tEnd = performance.now() + (performance.now() - (this.lastImpactT || 0) < 500 ? 4 : 3);
       while (this.jobs.length && performance.now() < tEnd) { const j = this.jobs[0]; let done = true; try { done = j.run(tEnd - performance.now()); } catch (e) { console.warn('crush job', e); } if (done) this.jobs.shift(); else break; }
     } else if (this.bg.length) {
-      // background work, 2 ms a frame, only while no crash is being worked through
-      const j = this.bg[0]; let done = true; try { done = j.run(2); } catch (e) { console.warn('damage bg', e); } if (done) this.bg.shift();
+      // background work, 2 ms a frame, only while no crash is being worked through (a job waiting for another's
+      // result, job.waiting, lets the next one run)
+      // (4 ms while the player's car's model is being worked out, so it is ready sooner: a crash before it is done
+      // works it out there and then, half a second or more)
+      const end = performance.now() + (this.bg[0] && this.bg[0].analysis ? 4 : 2);
+      for (let k = 0; k < this.bg.length && performance.now() < end; k++) {
+        const j = this.bg[k]; let done = true;
+        try { done = j.run(Math.max(0.2, end - performance.now())); } catch (e) { console.warn('damage bg', e); }
+        if (done) { const at = this.bg.indexOf(j); if (at >= 0) this.bg.splice(at, 1); k--; continue; }
+        if (!j.waiting) break;
+      }
     } else this.preAnalyse();
     for (const rd of this.rigs) {
       if (!rd.damaged) continue;
@@ -3752,7 +3843,7 @@ export class Damage {
     if (!rig || !rig._dmg) return;
     const rd = rig._dmg;
     if (rd.doorJob && !rd.doorJob.done && rd.doorJob.started) { try { rd.doorJob.run(1e9); } catch (e) {} }
-    this.bg = this.bg.filter(j => j.rd !== rd); rd.doorJob = null;
+    this.bg = this.bg.filter(j => j.rd !== rd || j.analysis); rd.doorJob = null;
     try { rd.reset(); } catch (e) { console.warn('damage reset', e); }
     this.trafficDamaged = this.trafficDamaged.filter(r => r !== rd);
     // the player's outside subdivided again and the driver's door cut out again, ahead (R puts the car back as new)

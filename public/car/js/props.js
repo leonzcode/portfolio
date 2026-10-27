@@ -17,8 +17,8 @@
 // placed with yaw H (heading degrees) its front faces heading H.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { frame, dirHeading } from './geo.js?v=32';
-import * as SIG from './signals.js?v=32';
+import { frame, dirHeading } from './geo.js?v=33';
+import * as SIG from './signals.js?v=33';
 
 const D2R = Math.PI / 180;
 const BIN = 500;
@@ -321,7 +321,9 @@ function materials() {
     hedge: S({ vertexColors: true, map: tex.hedge, roughness: 0.95, metalness: 0 }),
     chain: S({ map: tex.chain, alphaTest: 0.4, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.45, metalness: 0.8, color: 0xc4c8cc }),
     sign: S({ vertexColors: true, map: tex.signs, roughness: 0.55, metalness: 0.05 }),
-    glass: new THREE.MeshPhysicalMaterial({ color: 0xd8e6ea, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }),
+    // (forceSinglePass: both faces in one draw; three.js otherwise draws a see-through two-sided material twice and
+    // works its program out again before each half, every frame)
+    glass: new THREE.MeshPhysicalMaterial({ color: 0xd8e6ea, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true }),
     wire: S({ color: 0x232323, roughness: 0.55, metalness: 0.4 }),
     lens: new THREE.MeshBasicMaterial({ toneMapped: false }),
     halo: new THREE.MeshBasicMaterial({ map: tex.halo, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
@@ -347,8 +349,81 @@ const PARTDEF = {};
 const PARTS = new Map();
 function part(name) {
   let p = PARTS.get(name);
-  if (!p) { const d = PARTDEF[name]; if (!d) throw new Error('no part ' + name); p = d(); p.name = name; PARTS.set(name, p); }
+  if (!p) { const d = PARTDEF[name]; if (!d) throw new Error('no part ' + name); p = d(); p.name = name; if (p.color) p.mat = coloured(p.mat); p.far = FAR_PARTS.has(name); p.mat = fadeMat(p.mat, p.far); PARTS.set(name, p); }
   return p;
+}
+// ---- how far props are drawn (perf). Small things (hydrants, bins, benches, bollards, chains, fence, rail and wall
+// panels, hedges) fade out between 120 and 160 m from the camera, the tall ones (signals, lamps, poles and wires,
+// signs, shelters, kiosks, the props' own trees) between 300 and 380 m: a screen-door fade in the fragment shader by
+// the instance's distance, so nothing pops; past the fade's end the instances are left out of the draw altogether
+// (cullMesh, a few times a second), as their triangles were most of the frame's in a city (1.1 M of 1.7 M in SF).
+const FAR_PARTS = new Set(['pole', 'tube', 'tubeP', 'uPole', 'uPoleC', 'tower', 'insulators', 'transformer', 'wire', 'lampCobra', 'lampCobraLens', 'lampArm',
+  'lampPost', 'lampPostGlass', 'headUS', 'headEU', 'headJP', 'lens', 'halo', 'boardUS', 'boardUK', 'postUS', 'postEU', 'postUK', 'postJP', 'belisha', 'belishaGlobe',
+  'shelter', 'shelterAd', 'shelterGlass', 'kiosk', 'kioskGlass', 'signAllWay', 'signBus', 'signGive', 'signGiveUK', 'signPostSq', 'signStop', 'signStopJP', 'signYield',
+  'crownCone', 'crownOval', 'crownPalm', 'crownRound', 'trunkCone', 'trunkOval', 'trunkPalm', 'trunkRound']);
+const FADE = { near: [120, 160], far: [300, 380] }, CULL_MARGIN = 8, FADE_U = { near: [], far: [] };
+let REACH = 1;
+// (tests: setReach(1e6) draws every prop at any distance, as before; setReach(1) as now)
+export function setReach(k) { REACH = k; for (const key of ['near', 'far']) for (const U of FADE_U[key]) U.value.set(FADE[key][0] * k, FADE[key][1] * k); const st = LIVE; if (st) for (const b of st.bins.values()) for (const m of b.meshes.values()) cullMesh(m, true); }
+const FADE_VS = `
+#ifdef USE_INSTANCING
+  vPFade = distance((modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz, cameraPosition);
+#else
+  vPFade = 0.0;
+#endif`;
+const FADE_FS = `
+  { float k = smoothstep(uPFade.x, uPFade.y, vPFade);
+    if (k > 0.0 && fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) < k) discard; }`;
+const FADED = new Map();
+function fadeMat(m, far) {
+  const key = far ? 'far' : 'near';
+  let byM = FADED.get(m); if (!byM) FADED.set(m, byM = {});
+  if (byM[key]) return byM[key];
+  const c = m.clone(), prev = m.onBeforeCompile, pkey = m.customProgramCacheKey && m.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey ? m.customProgramCacheKey() : '';
+  const U = { value: new THREE.Vector2(FADE[key][0] * REACH, FADE[key][1] * REACH) }; FADE_U[key].push(U);
+  c.onBeforeCompile = (sh, r) => {
+    if (prev) prev.call(c, sh, r);
+    sh.uniforms.uPFade = U;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vPFade;').replace('#include <project_vertex>', '#include <project_vertex>' + FADE_VS);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vPFade;\nuniform vec2 uPFade;').replace('#include <clipping_planes_fragment>', FADE_FS + '\n#include <clipping_planes_fragment>');
+  };
+  c.customProgramCacheKey = () => pkey + '|pfade';
+  c.userData.fadeEnd = FADE[key][1];
+  byM[key] = c;
+  return c;
+}
+// the instances within the part's reach (its fade's end and a margin), packed at the front of the buffers
+let CAM_X = 0, CAM_Y = 0, CAM_Z = 0, CAM_SET = false;
+function cullMesh(mesh, force) {
+  const A = mesh.userData.all; if (!A) return;
+  const R = (mesh.material.userData.fadeEnd || 1e9) * REACH + CULL_MARGIN, R2 = R * R, m = A.m, n = A.n, kept = A.kept;
+  let k = 0, same = !force && A.k >= 0;
+  for (let i = 0; i < n; i++) {
+    const o = i * 16, dx = m[o + 12] - CAM_X, dy = m[o + 13] - CAM_Y, dz = m[o + 14] - CAM_Z;
+    if (!CAM_SET || dx * dx + dy * dy + dz * dz < R2) { if (same && (k >= A.k || kept[k] !== i)) same = false; kept[k++] = i; }
+  }
+  if (same && k === A.k) return;
+  A.k = k;
+  const im = mesh.instanceMatrix.array;
+  for (let j = 0; j < k; j++) { const s = kept[j] * 16, d = j * 16; for (let q = 0; q < 16; q++) im[d + q] = m[s + q]; }
+  mesh.instanceMatrix.clearUpdateRanges(); mesh.instanceMatrix.addUpdateRange(0, Math.max(16, k * 16)); mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) copyColours(mesh);
+  mesh.count = k; mesh.boundingSphere = null; mesh.boundingBox = null;
+  mesh.visible = k > 0 && mesh.userData.binVis !== false;
+}
+function copyColours(mesh) {
+  const A = mesh.userData.all, c = A.c, ic = mesh.instanceColor.array, kept = A.kept, k = Math.max(0, A.k);
+  for (let j = 0; j < k; j++) { const s = kept[j] * 3, d = j * 3; ic[d] = c[s]; ic[d + 1] = c[s + 1]; ic[d + 2] = c[s + 2]; }
+  mesh.instanceColor.clearUpdateRanges(); mesh.instanceColor.addUpdateRange(0, Math.max(3, k * 3)); mesh.instanceColor.needsUpdate = true;
+}
+// the parts drawn with instance colours get their own copy of a material: one material drawn by meshes with and
+// without colours is a different program for each, and three.js worked it out again at every switch (8 to 12 times a
+// frame in a city; perf)
+const COLOURED = new Map();
+function coloured(m) {
+  let c = COLOURED.get(m);
+  if (!c) { c = m.clone(); c.onBeforeCompile = m.onBeforeCompile; c.customProgramCacheKey = m.customProgramCacheKey; COLOURED.set(m, c); }
+  return c;
 }
 const M = () => materials();
 
@@ -1002,9 +1077,10 @@ function rebuildBin(b) {
       if (p.lens) mesh.renderOrder = 2;
       S.group.add(mesh); b.meshes.set(name, mesh);
     }
-    mesh.instanceMatrix.array.set(o.m); mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) { mesh.instanceColor.array.set(o.c); mesh.instanceColor.needsUpdate = true; }
-    mesh.count = n; mesh.boundingSphere = null; mesh.boundingBox = null;
+    // (all of them kept on the side; the buffers hold those within the part's reach, cullMesh)
+    mesh.userData.all = { n, m: Float32Array.from(o.m), c: Float32Array.from(o.c), kept: new Int32Array(n), k: -1 };
+    mesh.userData.binVis = b.vis;
+    cullMesh(mesh, true);
     if (p.lens) { mesh.userData.meta = o.meta; S.lensBins.add(b); }
     keep.add(name);
   }
@@ -1119,7 +1195,7 @@ const isLit = (st, role) => role === 'r' ? (st === 2 || st === 3) : role === 'a'
 function recolourLenses(st, force) {
   for (const b of st.lensBins) for (const name of ['lens', 'halo']) {
     const mesh = b.meshes.get(name); if (!mesh || !mesh.userData.meta) continue;
-    const meta = mesh.userData.meta, arr = mesh.instanceColor.array;
+    const meta = mesh.userData.meta, arr = mesh.userData.all ? mesh.userData.all.c : mesh.instanceColor.array;
     let touched = false;
     for (let i = 0; i < meta.length; i++) {
       const m = meta[i], G = st.groups.get(m.g); if (!G || (!G.changed && !force)) continue;
@@ -1129,7 +1205,7 @@ function recolourLenses(st, force) {
       else { const k = lit ? 0.55 : 0; arr[i * 3] = LIT[m.r].r * k; arr[i * 3 + 1] = LIT[m.r].g * k; arr[i * 3 + 2] = LIT[m.r].b * k; }
       touched = true;
     }
-    if (touched) mesh.instanceColor.needsUpdate = true;
+    if (touched) { if (mesh.userData.all) copyColours(mesh); else mesh.instanceColor.needsUpdate = true; }
   }
   for (const G of st.groups.values()) G.changed = false;
 }
@@ -1851,11 +1927,21 @@ export function update(dt, camera) {
   if (camera && camera.isObject3D) {
     camera.getWorldPosition(_cam);
     for (const b of st.bins.values()) {
-      const [i, j] = b.key.split(',').map(Number), cx = (i + 0.5) * BIN, cz = (j + 0.5) * BIN;
-      const vis = Math.hypot(_cam.x - cx, _cam.z - cz) < 1400;
-      if (b.vis !== vis) { b.vis = vis; for (const m of b.meshes.values()) m.visible = vis; }
+      if (b.cx === undefined) { const [i, j] = b.key.split(',').map(Number); b.cx = (i + 0.5) * BIN; b.cz = (j + 0.5) * BIN; }
+      const vis = Math.hypot(_cam.x - b.cx, _cam.z - b.cz) < 1400;
+      if (b.vis !== vis) { b.vis = vis; for (const m of b.meshes.values()) { m.userData.binVis = vis; m.visible = vis && m.count > 0; } }
+    }
+    // the instances within reach, every 10 frames or once the camera has moved 6 m
+    const f = st.cullFrame = (st.cullFrame || 0) + 1;
+    if (!CAM_SET || f - (st.cullAt || 0) >= 10 || (_cam.x - CAM_X) ** 2 + (_cam.y - CAM_Y) ** 2 + (_cam.z - CAM_Z) ** 2 > 36) {
+      const first = !CAM_SET;
+      CAM_X = _cam.x; CAM_Y = _cam.y; CAM_Z = _cam.z; CAM_SET = true; st.cullAt = f;
+      for (const b of st.bins.values()) if (b.vis !== false) for (const m of b.meshes.values()) cullMesh(m, first);
     }
   }
+  // the lenses follow the signals every fourth frame (a light changes 70 ms late at most; every group's timing was
+  // worked out every frame; perf)
+  if ((st.lensFrame = (st.lensFrame || 0) + 1) & 3) return;
   const keep = S; S = st;
   let any = false;
   for (const G of st.groups.values()) { stepGroup(G); if (G.changed) any = true; }
@@ -1905,9 +1991,10 @@ export function reset() {
 export function stats() {
   const st = LIVE || S;
   let meshes = 0, inst = 0; const byPart = {};
-  for (const b of st.bins.values()) for (const [n, m] of b.meshes) { meshes++; inst += m.count; byPart[n] = (byPart[n] || 0) + m.count; }
-  return { bins: st.bins.size, meshes, instances: inst, records: st.recs.length, dropped: st.dropped || null, groups: st.groups.size, wires: st.wires.length, region: st.region, leftHand: st.left, byPart };
+  let drawn = 0;
+  for (const b of st.bins.values()) for (const [n, m] of b.meshes) { const all = m.userData.all ? m.userData.all.n : m.count; meshes++; inst += all; drawn += m.count; byPart[n] = (byPart[n] || 0) + all; }
+  return { bins: st.bins.size, meshes, instances: inst, drawn, records: st.recs.length, dropped: st.dropped || null, groups: st.groups.size, wires: st.wires.length, region: st.region, leftHand: st.left, byPart };
 }
 
-export const props = { preload, build, update, signalAt, reheight, reset, dispose: reset, pending, stats, get groups() { return (LIVE || S).groups; }, get group() { return LIVE ? LIVE.group : null; } };
+export const props = { preload, build, update, signalAt, reheight, reset, dispose: reset, pending, stats, setReach, get groups() { return (LIVE || S).groups; }, get group() { return LIVE ? LIVE.group : null; } };
 export default props;

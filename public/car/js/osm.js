@@ -22,7 +22,7 @@
 //              power_pole, power_tower, utility_pole, bench, waste_basket, bus_stop, tree, post_box, telephone,
 //              bollard, gate, barrier (other barrier nodes), recycling, bicycle_parking, vending, mini_roundabout,
 //              turning_circle, motorway_junction
-import { project, unproject, frame } from './geo.js?v=32';
+import { project, unproject, frame } from './geo.js?v=33';
 
 export const CELL = 500;
 const ENDPOINTS = [
@@ -41,6 +41,8 @@ way["building"]${b};
 way["building:part"]${b};
 relation["type"="multipolygon"]["building"]${b};
 relation["type"="building"]${b};
+node["shop"]${b};
+node["amenity"~"^(restaurant|cafe|fast_food|bar|pub|bank|pharmacy|ice_cream)$"]${b};
 way["barrier"]${b};
 way["power"~"^(line|minor_line)$"]${b};
 way["natural"~"^(tree_row|water|wood|scrub|grassland)$"]${b};
@@ -154,16 +156,42 @@ function areaKind(t) {
   return null;
 }
 
+// roof:direction: degrees, or a compass point (the way the roof's main face looks, downhill)
+const COMPASS = { N: 0, NNE: 22.5, NE: 45, ENE: 67.5, E: 90, ESE: 112.5, SE: 135, SSE: 157.5, S: 180, SSW: 202.5, SW: 225, WSW: 247.5, W: 270, WNW: 292.5, NW: 315, NNW: 337.5 };
+const dirOf = (v) => { if (v == null) return null; const s = String(v).trim().toUpperCase(); if (COMPASS[s] !== undefined) return COMPASS[s]; const x = parseFloat(s); return isFinite(x) ? ((x % 360) + 360) % 360 : null; };
+const yearOf = (v) => { const m = /(1[0-9]{3}|20[0-9]{2})/.exec(String(v || '')); return m ? +m[1] : null; };
 function buildingInfo(t) {
   const height = num(t.height), minHeight = num(t.min_height) || 0;
   const levels = num(t['building:levels']), minLevel = num(t['building:min_level']) || 0;
   return {
     height, minHeight, levels, minLevel,
     roofShape: t['roof:shape'] || null, roofHeight: num(t['roof:height']), roofLevels: num(t['roof:levels']),
+    roofDirection: dirOf(t['roof:direction']), roofOrientation: t['roof:orientation'] || null, roofAngle: num(t['roof:angle']),
     colour: t['building:colour'] || t.colour || null, roofColour: t['roof:colour'] || null,
-    material: t['building:material'] || null, roofMaterial: t['roof:material'] || null,
+    material: t['building:material'] || t['building:facade:material'] || null, roofMaterial: t['roof:material'] || null,
     type: t.building || t['building:part'] || 'yes',
+    // what the ground floor is (a shop, a pub...), when the outline itself says; shop nodes inside are added below
+    shop: !!(t.shop || t.amenity && SHOP_AM.test(t.amenity) || t.office), year: yearOf(t.start_date || t['building:start_date'] || t.construction_date),
+    style: t['building:architecture'] || null, name: t.name || null,
   };
+}
+const SHOP_AM = /^(restaurant|cafe|fast_food|bar|pub|bank|pharmacy|ice_cream|post_office|cinema|theatre)$/;
+// Shop, cafe, pub and bank nodes inside a building mark its ground floor as shop fronts (b.shop, b.shops = count).
+// The building may have come with an earlier cell (and so be missing from this one's list), hence the index.
+const recByKey = new Map(); // 'w123' / 'r45' -> building record
+function markShops(shops, recs) {
+  if (!shops.length || !recs.length) return;
+  const G = 32, grid = new Map();
+  for (const b of recs) {
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const p of b.outer) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < z0) z0 = p[1]; if (p[1] > z1) z1 = p[1]; }
+    if ((x1 - x0) * (z1 - z0) > 250000) continue;
+    for (let i = Math.floor(x0 / G); i <= Math.floor(x1 / G); i++) for (let j = Math.floor(z0 / G); j <= Math.floor(z1 / G); j++) { const k = i + ',' + j; let l = grid.get(k); if (!l) grid.set(k, l = []); l.push(b); }
+  }
+  for (const [x, z] of shops) {
+    const l = grid.get(Math.floor(x / G) + ',' + Math.floor(z / G)); if (!l) continue;
+    for (const b of l) if (inRing(x, z, b.outer)) { b.shop = true; b.shops = (b.shops || 0) + 1; break; }
+  }
 }
 
 // Rings: open (last point not repeated); outer counter-clockwise seen from above, holes clockwise. In (x, z) with
@@ -244,9 +272,11 @@ function parse(json, seen) {
   }
   const ptsOf = (ids) => { const a = []; for (const id of ids) { const p = P.get(id); if (p) a.push([p.x, p.z]); } return a; };
   const fresh = (key) => { if (seen.has(key)) return false; seen.add(key); return true; };
+  const shops = [], bRecs = [];
 
   for (const n of nodes.values()) {
     if (!n.tags) continue;
+    if (n.tags.shop || (n.tags.amenity && SHOP_AM.test(n.tags.amenity))) { const p = P.get(n.id); shops.push([p.x, p.z]); }
     const kind = POINT_KIND(n.tags);
     if (!kind || !fresh('n' + n.id)) continue;
     const p = P.get(n.id);
@@ -260,7 +290,8 @@ function parse(json, seen) {
       continue;
     }
     if ((t.building || t['building:part']) && closed) {
-      if (fresh('w' + w.id)) out.buildings.push({ id: w.id, outer: ring(ptsOf(w.nodes), true), holes: [], tags: t, part: !t.building && !!t['building:part'], ...buildingInfo(t) });
+      if (fresh('w' + w.id)) { const rec = { id: w.id, outer: ring(ptsOf(w.nodes), true), holes: [], tags: t, part: !t.building && !!t['building:part'], ...buildingInfo(t) }; out.buildings.push(rec); recByKey.set('w' + w.id, rec); bRecs.push(rec); }
+      else { const rec = recByKey.get('w' + w.id); if (rec) bRecs.push(rec); }
       continue;
     }
     if (t.barrier) {
@@ -291,10 +322,12 @@ function parse(json, seen) {
     }
     const oRings = joinRings(outer), iRings = joinRings(inner);
     oRings.forEach((rg, i) => {
-      out.buildings.push({ id: r.id * 10 + i, rel: r.id, outer: ring(ptsOf(rg), true), holes: i === 0 ? iRings.map(h => ring(ptsOf(h), false)) : [], tags: t, part: false, ...buildingInfo(t) });
+      const rec = { id: r.id * 10 + i, rel: r.id, outer: ring(ptsOf(rg), true), holes: i === 0 ? iRings.map(h => ring(ptsOf(h), false)) : [], tags: t, part: false, ...buildingInfo(t) };
+      out.buildings.push(rec); bRecs.push(rec);
     });
   }
   out.buildings = dropCoveredOutlines(out.buildings.filter(b => b.outer.length >= 3));
+  try { markShops(shops, bRecs.filter(b => b.outer.length >= 3 && !b.part)); } catch (e) { /* shops are a nicety */ }
   return out;
 }
 
@@ -348,7 +381,7 @@ export async function load(lat, lon, radius = 400) {
 export function reset() {
   const e = emptyStore();
   for (const k of Object.keys(e)) data[k] = e[k];
-  seen.clear(); cells.clear();
+  seen.clear(); cells.clear(); recByKey.clear();
 }
 
 export const osm = { CELL, data, load, loadCell, cellOf, reset, setFetcher };

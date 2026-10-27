@@ -10,7 +10,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { fixWheels, addExtraWheels, updateExtraWheels } from './wheels.js?v=32';
+import { fixWheels, addExtraWheels, updateExtraWheels } from './wheels.js?v=33';
 
 const MODELS = new URL('../models/', import.meta.url).href;
 const DRACO = new URL('../vendor/three/addons/libs/draco/gltf/', import.meta.url).href;
@@ -125,6 +125,23 @@ export const CARS = [
     credit: '"Tesla Semi" by Oleksii Rozumnyi (Sketchfab), CC BY 4.0; rear lamp lenses added',
   },
   {
+    // the eleventh drivable car: key - (drive.js)
+    id: 'golf2', name: 'Volkswagen Golf GTI (Mk2)', kind: 'hatchback', file: 'golf2.glb', npcFile: 'golf2_npc.glb', mass: 960, cabinDark: 0.45,
+    // the model has no cabin: the seats, dashboard, console, door cards, parcel shelf and headliner are our own boxes
+    // (process.py 'cabin', scratchpad car3/vehicles), the steering wheel is built here
+    cabin: 'ours', eye: [-0.37, 1.16, 0.2], wheel: { pos: [-0.37, 0.87, -0.32], tilt: 24, r: 0.19 },
+    // the Mk2 GTI's colours: Tornado Red, Alpine White, black, Diamond Silver, Helios Blue, Oak Green
+    paint: 0xb5121b, paints: [0xb5121b, 0xeeede6, 0x0d0d0f, 0xa6a9ac, 0x24406e, 0x22382c],
+    // GTI 16V (1986-1991): 1.8 l sixteen-valve, 102 kW (139 PS) at 6100 rpm, 168 Nm at 4600 rpm, five-speed manual,
+    // front-wheel drive, 960 kg (DIN; ADAC lists 1035 kg EU with a 75 kg driver), 208 km/h, 0-100 km/h 8.5 s (ADAC,
+    // VW); ratios 3.46 2.12 1.44 1.13 0.91, final drive 3.67 (auto motor und sport)
+    physics: { power: 102e3, torque: 168, drive: 'fwd', comHeight: 0.5, maxSteer: 36, steerRatio: 17, gears: [3.46, 2.12, 1.44, 1.13, 0.91], final: 3.67, redline: 7200, idle: 900, mu: 1.0, brake: 11000, cd: 0.34, area: 1.9, topSpeed: 208 },
+    // hip points over our own seats; the rear bench is reached through the front doors (three doors)
+    seats: [{x: -0.37, y: 0.52, z: 0.13, side: 'L', door: 0}, {x: 0.37, y: 0.52, z: 0.13, side: 'R', door: 1}, {x: -0.36, y: 0.5, z: 0.82, side: 'L', door: 0}, {x: 0, y: 0.5, z: 0.84, side: 'C', door: -1}, {x: 0.36, y: 0.5, z: 0.82, side: 'R', door: 1}],
+    doors: [{hinge: [-0.8, 0.74, -0.77], axis: [0, -1, 0], open: 68, side: 'L', box: [[-0.88, 0.305, -0.8], [-0.6, 1.2, 0.4]]}, {hinge: [0.8, 0.74, -0.77], axis: [0, 1, 0], open: 68, side: 'R', box: [[0.6, 0.305, -0.8], [0.88, 1.2, 0.4]]}],
+    credit: '"VW Golf 2" by Teofels (Sketchfab), CC BY 4.0; cabin, steering wheel and lamp roles ours',
+  },
+  {
     id: 'shvan', name: "Shvan '92 van", kind: 'van', file: 'shvan_npc.glb', npcFile: 'shvan_npc.glb', mass: 2100, npcOnly: true,
     paint: 0xe6e6e2, paints: [0xe6e6e2, 0x1b1d22, 0x6b7378, 0x2b3f63, 0x7d2a22, 0xb9ad8f],
     seats: [{x: -0.4, y: 0.968, z: -0.853, side: 'L', door: 0}, {x: 0.4, y: 0.973, z: -0.853, side: 'R', door: 1}],
@@ -142,7 +159,7 @@ export const CARS = [
 
 // traffic: the cheap versions of every car, weighted towards ordinary ones (each name is one ticket; the supercars,
 // the bus and the truck have one ticket in about twenty-five)
-const ORDINARY = ['fairheaven', 'milano', 'shvan', 'conquer', 'volvos90', 's10', 'fairheaven', 'milano', 'volvos90', 'porsche930'];
+const ORDINARY = ['fairheaven', 'milano', 'shvan', 'conquer', 'volvos90', 's10', 'fairheaven', 'milano', 'volvos90', 'porsche930', 'golf2'];
 export const TRAFFIC = [...ORDINARY, ...ORDINARY, 'ferrari458', 'roadster', 'gallardo', 'schoolbus', 'semi'];
 
 const byId = id => CARS.find(c => c.id === id);
@@ -163,7 +180,7 @@ function loader() {
 const templates = new Map(); // file -> Promise<{ scene, info }>
 function loadTemplate(file) {
   if (!templates.has(file)) {
-    templates.set(file, loader().loadAsync(MODELS + file + '?v=32').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
+    templates.set(file, loader().loadAsync(MODELS + file + '?v=33').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
   }
   return templates.get(file);
 }
@@ -207,6 +224,9 @@ function tuneMaterial(m) {
       name: 'glass', color: 0x0e1418, metalness: 0, roughness: 0.02, transparent: true, opacity: 0.5,
       envMapIntensity: 1.6, depthWrite: false, side: THREE.DoubleSide, specularIntensity: 1, ior: 1.5,
     });
+    // both faces in one draw: three.js draws a see-through two-sided material twice (back, then front) and works its
+    // program out again before each half, about two look-ups a pane a frame (perf, PERF_PLAN item 16)
+    g.forceSinglePass = true;
     g.userData.outsideOpacity = 0.5; g.userData.insideOpacity = 0.08;
     return g;
   }
@@ -228,6 +248,8 @@ function tuneMaterial(m) {
   // transmission makes three.js draw the whole opaque scene a second time: use plain transparency instead
   if (m.transmission > 0) { m.transmission = 0; m.transparent = true; m.opacity = Math.min(m.opacity, 0.3); m.depthWrite = false; if (!m.map) m.color.multiplyScalar(0.55); }
   if (m.transparent && m.opacity < 0.98 && !m.map) { m.depthWrite = false; }
+  // (the model's own lenses and tinted glass: one pass for both faces, as the glass above)
+  if (m.transparent && m.side === THREE.DoubleSide) m.forceSinglePass = true;
   if (m.isMeshStandardMaterial && !m.metalnessMap && m.metalness > 0.95 && m.roughness < 0.05 && !m.map) m.roughness = 0.08;
   return m;
 }
@@ -301,6 +323,7 @@ function lampMaterial(src, role, level) {
     const m = src.clone();
     const L = LAMP[role] || LAMP.tail;
     m.name = 'lamp_' + role + '_' + level;
+    if (m.transparent && m.side === THREE.DoubleSide) m.forceSinglePass = true; // (one draw, see tuneMaterial)
     if (level > 0) {
       m.emissive = new THREE.Color(L.color);
       m.emissiveIntensity = level;
@@ -330,7 +353,7 @@ function lampMaterial(src, role, level) {
 export async function makeEnvironment(renderer, { file = 'env/wide_street_01_1k.hdr' } = {}) {
   const pm = new THREE.PMREMGenerator(renderer);
   try {
-    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=32');
+    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=33');
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     const env = pm.fromEquirectangular(hdr).texture;
     env.userData.source = hdr; // the garage shows it as a backdrop
@@ -500,6 +523,7 @@ function proxyMeshes(node, d) {
 }
 // the stand-in is skipped by the main pass (an empty draw range) and drawn in full by the shadow pass
 function shadowOnly(m) {
+  m.userData.shadowOnly = true; // (main.js and sky.js keep it out of the main pass altogether: perf)
   m.onBeforeRender = () => { m.geometry.drawRange.count = -1; }; // negative: the renderer returns before binding anything
   m.onBeforeShadow = () => { m.geometry.drawRange.count = Infinity; };
   return m;
@@ -567,6 +591,10 @@ export async function loadCar(id, opts = {}) {
   return rig;
 }
 export const rigHooks = [];
+// every rig's headlight spot lights: sky.js steadySpots (called by main.js before each frame) keeps exactly two spot
+// lights in the drawing, the player's car's, so the light count never changes (a left car's beams plus a new car's
+// would make four, and every lit shader in the scene would be built again in the next draw)
+export const BEAMS = new Set();
 
 // A soft dark patch on the road under every car, where the sky's light does not reach under the body: what makes a
 // car sit on the road rather than hover over it (the sun's shadow alone leaves the ground under it lit from the side).
@@ -805,7 +833,7 @@ class CarRig {
         sl.target.position.set(p.x * 1.4, p.y - 1.2, p.z - 25);
         sl.castShadow = false;
         model.add(sl); model.add(sl.target);
-        this._beams.push(sl);
+        this._beams.push(sl); BEAMS.add(sl);
       }
     }
 
@@ -1008,14 +1036,17 @@ class CarRig {
   setEnvMap(tex) {
     this.object.traverse(o => {
       if (!o.isMesh || o.name === 'contact_shadow') return;
-      (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if ('envMap' in m) { m.envMap = tex; m.needsUpdate = true; } });
+      // (only when it changes: a traffic car's materials are its model's, shared, and each new car set them again,
+      // which had three.js work out their programs again; perf)
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if ('envMap' in m && m.envMap !== tex) { m.envMap = tex; m.needsUpdate = true; } });
     });
   }
 
   dispose() {
     if (this.object.parent) this.object.parent.remove(this.object);
     for (const m of this._owned) m.dispose();
-    for (const b of this._beams) b.dispose();
+    for (const b of this._beams) { b.dispose(); BEAMS.delete(b); }
+    for (const b of this._beamsAll || []) BEAMS.delete(b);
     this._owned.length = 0;
   }
 }

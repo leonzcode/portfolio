@@ -5,6 +5,7 @@
 // is not stopped by it; `roofAt(x, z, yHint)` is the roof such a car stands on (shape.roof: { eave, top, at(x, z) },
 // set by buildings.js). A shape with `lazy` (Google's mesh: its top found by a ray when first needed) has y1 = 1e4
 // until a car comes near it.
+import { under } from './under.js?v=33';
 const CELL = 16;
 
 export class Collide {
@@ -52,11 +53,19 @@ export class Collide {
     let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
     for (const c of circles) { x0 = Math.min(x0, c.x - c.r); x1 = Math.max(x1, c.x + c.r); z0 = Math.min(z0, c.z - c.r); z1 = Math.max(z1, c.z + c.r); }
     const out = [];
+    // inside a tunnel's bore (under.js) the buildings over it are not in the way (a building's walls block from
+    // -1e4 up: from under the ground, so a car on a hillside below its base still meets them)
+    let tunnel = false;
+    if (under.tubes.length && circles.length) { const c = circles[0]; tunnel = under.floorAt((x0 + x1) / 2, (z0 + z1) / 2, c.y0 + 0.3) !== null; }
     for (const s of this.near(x0, z0, x1, z1)) {
+      if (tunnel && s.tag === 'building') continue;
       if (s.lazy) { const f = s.lazy; s.lazy = null; try { const t = f(); if (Number.isFinite(t)) s.y1 = t; } catch (e) {} }
+      // (a building with a known base, buildings.js's roof info: a car more than 2.5 m under its base is in a cutting
+      // or a tunnel passing beside or under it, not at its walls)
+      const y0 = s.y0 < -9e3 && s.tag === 'building' && s.roof && Number.isFinite(s.roof.base) ? s.roof.base - 2.5 : s.y0;
       for (let i = 0; i < circles.length; i++) {
         const c = circles[i];
-        if (c.y1 < s.y0 || c.y0 > s.y1) continue;
+        if (c.y1 < y0 || c.y0 > s.y1) continue;
         const h = hit(s, c);
         if (h) { h.i = i; h.shape = s; out.push(h); }
       }

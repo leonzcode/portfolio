@@ -1,20 +1,22 @@
 // A drive: the world at a place, OSM roads, props and buildings round it (streamed as the car moves), the
 // player's car with its physics, the cameras, the traffic and the HUD.
 import * as THREE from 'three';
-import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=32';
-import { Collide } from './collide.js?v=32';
-import { Vehicle } from './vehicle.js?v=32';
-import { CarCamera } from './camera.js?v=32';
-import { Hud } from './hud.js?v=32';
-import { CarSound } from './sound.js?v=32';
-import { CutMask } from './cutmask.js?v=32';
-import * as SIG from './signals.js?v=32';
-import { Parked } from './parked.js?v=32';
-import { Skids } from './skids.js?v=32';
-import { StreetSigns } from './streetsigns.js?v=32';
-import { Landmarks, filterBuildings } from './landmarks.js?v=32';
+import { setOrigin, frame, toLatLon, project, unproject, dirHeading } from './geo.js?v=33';
+import { Collide } from './collide.js?v=33';
+import { Vehicle } from './vehicle.js?v=33';
+import { CarCamera } from './camera.js?v=33';
+import { Hud } from './hud.js?v=33';
+import { CarSound } from './sound.js?v=33';
+import { CutMask } from './cutmask.js?v=33';
+import * as SIG from './signals.js?v=33';
+import { Parked } from './parked.js?v=33';
+import { Skids } from './skids.js?v=33';
+import { StreetSigns } from './streetsigns.js?v=33';
+import { Landmarks, filterBuildings } from './landmarks.js?v=33';
 
 const STEP = 1 / 120;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let ENV_KEEP = null; // (perf B) the PMREM generator whose programs the environment shares (envPrograms)
 const GLIFT = 0.15; // how far under Google's road ours is drawn
 const tryImport = async p => { try { return await import(p); } catch (e) { console.warn('module missing or broken', p, e.message); return null; } };
 
@@ -58,26 +60,29 @@ export class Drive {
 
   async loadMods() {
     if (/[?&]nomods/.test(location.search)) return;
-    const [cars, osm, roads, props, buildings, trees, traffic, imagery] = await Promise.all([
-      tryImport('./cars.js?v=32'), tryImport('./osm.js?v=32'), tryImport('./roads.js?v=32'), tryImport('./props.js?v=32'),
-      tryImport('./buildings.js?v=32'), tryImport('./trees.js?v=32'), tryImport('./traffic.js?v=32'), tryImport('./imagery.js?v=32')]);
-    const dmgMod = this.damage ? null : await tryImport('./damage.js?v=32');
+    // (perf B) every module fetched at once (the last five came one after another), made in the same order as before
+    const [cars, osm, roads, props, buildings, trees, traffic, imagery, dmgMod, FL, TL, OF, LU] = await Promise.all([
+      tryImport('./cars.js?v=33'), tryImport('./osm.js?v=33'), tryImport('./roads.js?v=33'), tryImport('./props.js?v=33'),
+      tryImport('./buildings.js?v=33'), tryImport('./trees.js?v=33'), tryImport('./traffic.js?v=33'), tryImport('./imagery.js?v=33'),
+      this.damage ? null : tryImport('./damage.js?v=33'), this.flight ? null : tryImport('./flight.js?v=33'), this.trailers ? null : tryImport('./trailer.js?v=33'),
+      this.onfoot ? null : tryImport('./onfoot.js?v=33'), this.lookui ? null : tryImport('./lookui.js?v=33')]);
     Object.assign(this.mods, { cars, osm, roads, props, buildings, trees, traffic, imagery });
     // crash damage (damage.js), set up before any car is made: every car's paint and glass get ready for it
     if (dmgMod && dmgMod.Damage && !this.damage) { try { this.damage = new dmgMod.Damage(this); } catch (e) { console.warn('damage', e); } }
     // the cars reflect a real street (an HDR photo) rather than the plain sky: their paint reads as paint
-    if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = cars.makeEnvironment(this.G.renderer).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); const M = this.bldgObj && this.bldgObj.material; if (M) { M.envMap = t; M.needsUpdate = true; } return t; }).catch(() => null);
+    // (perf B: its two PMREM programs are built in the background first and the HDR is fetched meanwhile, envPrograms)
+    if (cars && cars.makeEnvironment && !this.carEnvP) this.carEnvP = this.envPrograms().then(() => cars.makeEnvironment(this.G.renderer)).then(t => { this.carEnv = t; if (this.car && this.car.rig.setEnvMap) this.car.rig.setEnvMap(t); const M = this.bldgObj && this.bldgObj.material; if (M) { M.envMap = t; M.needsUpdate = true; } return t; }).catch(() => null);
     // a test page can send OSM queries through a local caching proxy
     const ov = new URLSearchParams(location.search).get('overpass');
     if (ov && osm && osm.setFetcher) osm.setFetcher(q => fetch(ov + '?data=' + encodeURIComponent(q)).then(r => { if (!r.ok) throw new Error('overpass ' + r.status); return r.json(); }));
     // the Roadster's thrusters (flight.js): Space flies a car whose catalogue entry has fly: true
-    if (!this.flight) { const FL = await tryImport('./flight.js?v=32'); try { if (FL && FL.Flight && !this.flight) this.flight = new FL.Flight(this); } catch (e) { console.warn('flight', e); } }
+    if (!this.flight) { try { if (FL && FL.Flight && !this.flight) this.flight = new FL.Flight(this); } catch (e) { console.warn('flight', e); } }
     // the semi's trailer (trailer.js; ?notrailer turns it off)
-    if (!this.trailers) { const TL = await tryImport('./trailer.js?v=32'); try { if (TL && TL.Trailers && !this.trailers) this.trailers = new TL.Trailers(this); } catch (e) { console.warn('trailer', e); } }
+    if (!this.trailers) { try { if (TL && TL.Trailers && !this.trailers) this.trailers = new TL.Trailers(this); } catch (e) { console.warn('trailer', e); } }
     // the player on foot (E gets out and in) and the people in every car (onfoot.js, occupants.js)
-    if (!this.onfoot) { const OF = await tryImport('./onfoot.js?v=32'); try { if (OF && OF.OnFoot && !this.onfoot) this.onfoot = new OF.OnFoot(this); } catch (e) { console.warn('onfoot', e); } }
+    if (!this.onfoot) { try { if (OF && OF.OnFoot && !this.onfoot) this.onfoot = new OF.OnFoot(this); } catch (e) { console.warn('onfoot', e); } }
     // "Your look" (lookui.js): P or the car chooser opens it
-    if (!this.lookui) { const LU = await tryImport('./lookui.js?v=32'); try { if (LU && LU.LookUI && !this.lookui) this.lookui = new LU.LookUI(this); } catch (e) { console.warn('lookui', e); } }
+    if (!this.lookui) { try { if (LU && LU.LookUI && !this.lookui) this.lookui = new LU.LookUI(this); } catch (e) { console.warn('lookui', e); } }
     this.G.mods = this.mods;
   }
 
@@ -99,6 +104,13 @@ export class Drive {
       case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': case 'Digit5': case 'Digit6': case 'Digit7': case 'Digit8': case 'Digit9': case 'Digit0': {
         const list = this.mods.cars ? this.mods.cars.CARS.filter(c => !c.npcOnly) : [];
         const c = list[(+e.code.slice(5) || 10) - 1]; // 0 is the tenth car
+        if (c) this.setCar(c.id);
+        break;
+      }
+      // (vehicles hook) - and = after 0: the eleventh and twelfth cars (the Golf is the eleventh)
+      case 'Minus': case 'Equal': {
+        const list = this.mods.cars ? this.mods.cars.CARS.filter(c => !c.npcOnly) : [];
+        const c = list[e.code === 'Minus' ? 10 : 11];
         if (c) this.setCar(c.id);
         break;
       }
@@ -190,6 +202,7 @@ export class Drive {
   async start(lat, lon, heading = 0, opts = {}) {
     this.active = false;
     this.holdRender = true; this.holdSince = performance.now();
+    if (this.G.gate) this.G.gate.fast = true; // (perf B: behind the card the gate builds in big batches)
     const T0 = performance.now(), tm = this.G.startTimes = {};
     const mark = k => { tm[k] = Math.round(performance.now() - T0); };
     this.hud.loading('Loading the world', 0.05);
@@ -201,19 +214,32 @@ export class Drive {
     setOrigin(lat, lon, 0);
     const C = this.mods.cars;
     const carP = this.setCar(this.carId || (C ? C.CARS.find(c => !c.npcOnly).id : null), true);
-    const warm = C && C.TRAFFIC ? Promise.all([...new Set(C.TRAFFIC)].map(id => C.loadCar(id, { npc: true }).catch(() => null))) : null;
+    // (perf B: only the region's traffic models, traffic.js regionModels; the others were downloaded for nothing)
+    const TM = this.mods.traffic, tIds = TM && TM.regionModels ? TM.regionModels(C) : (C && C.TRAFFIC ? [...new Set(C.TRAFFIC)] : []);
+    const warm = C && tIds.length ? Promise.all(tIds.map(id => C.loadCar(id, { npc: true }).catch(() => null))) : null;
+    // (perf B) the traffic's cars made and their shaders built beside the streets' build, once this car is in the scene
+    // (its headlights are part of every lit shader) and the street photo is there (traffic.js preloadRigs)
+    const trafPre = TM && TM.preloadRigs ? Promise.all([carP, warm, this.carEnvP]).then(() => TM.preloadRigs({ cars: C, renderer: this.G.renderer, camera: this.camera, scene: this.scene, carEnv: this.carEnv })).catch(e => console.warn('traffic preload', e)) : null;
+    // (perf B) textures sent to the graphics card a few a frame while the drop loads (sendTextures)
+    this.texStop = false;
+    const texLoop = this.sendTextures(() => this.loadRoots(), { capMs: 120000, budget: 8, until: () => this.texStop });
     if (this.mods.props && this.mods.props.preload && !this.propsReady) { this.propsReady = true; this.mods.props.preload().catch(e => console.warn('props preload', e)); }
     const dataP = this.fetchArea(0, 0, true);
     // the pedestrians' models and clips come in while the world loads (peds.js; started below)
-    if (!/[?&]nopeds/.test(location.search)) tryImport('./peds.js?v=32').then(PD => { try { if (PD && PD.Peds && !this.peds) this.peds = new PD.Peds(this); if (this.peds) this.peds.prepare().catch(e => console.warn('peds prepare', e)); } catch (e) { console.warn('peds', e); } });
+    if (!/[?&]nopeds/.test(location.search)) tryImport('./peds.js?v=33').then(PD => { try { if (PD && PD.Peds && !this.peds) this.peds = new PD.Peds(this); if (this.peds) this.peds.prepare().catch(e => console.warn('peds prepare', e)); } catch (e) { console.warn('peds', e); } });
     this.mode = await this.G.startWorld(lat, lon);
     mark('world');
+    // (perf B) the camera where the fly-down will start while the streets load and build, so the coarse tiles of that
+    // wide view come in meanwhile (waitGround did this for at least 0.7 s after the build)
+    try { const g = this.world.groundAt(0, 0) || 0, h = heading * Math.PI / 180; this.camera.position.set(-Math.sin(h) * 180, g + 260, Math.cos(h) * 180); this.camera.lookAt(0, g, 0); this.preHigh = true; } catch (e) {}
     this.hud.loading('Loading streets', 0.35);
     const data = await dataP;
     mark('data');
     this.hud.loading('Building the streets', 0.6);
     if (data) await this.buildArea(data, 0, 0); else this.hud.flash('Could not load the streets here');
     mark('build');
+    // (perf B) when the buildings' own cells are all built (they go on after buildArea; startTimes bldg)
+    try { const B = this.bldgObj; if (B && B.ready && B.ready.then) B.ready.then(() => { if (this.bldgObj === B) mark('bldg'); }, () => {}); } catch (e) {}
     this.hud.loading('Getting the car ready', 0.8);
     await carP;
     mark('car');
@@ -226,25 +252,47 @@ export class Drive {
     this.spawn(x, z, hd, y0);
     if (warm) await warm;
     if (this.carEnvP) await this.carEnvP;
+    if (trafPre) await trafPre;
     this.makeTraffic();
     mark('warm');
     if (this.traffic && this.traffic.preload) { this.hud.loading('Getting the traffic ready', 0.9); await this.traffic.preload(this.G.renderer, this.camera); }
     mark('traffic');
     // pedestrians on the pavements (peds.js), made before the shaders are built so theirs are built too
-    if (!/[?&]nopeds/.test(location.search)) { try { if (!this.peds) { const PD = await tryImport('./peds.js?v=32'); if (PD && PD.Peds && !this.peds) this.peds = new PD.Peds(this); } if (this.peds) { this.hud.loading('Getting the people ready', 0.93); await this.peds.start(); } } catch (e) { console.warn('peds', e); } }
+    if (!/[?&]nopeds/.test(location.search)) { try { if (!this.peds) { const PD = await tryImport('./peds.js?v=33'); if (PD && PD.Peds && !this.peds) this.peds = new PD.Peds(this); } if (this.peds) { this.hud.loading('Getting the people ready', 0.93); await this.peds.start(); } } catch (e) { console.warn('peds', e); } }
     mark('peds');
     // every shader the scene needs, built in the background (in parallel where the browser can) before the first
     // frame is drawn; 15 s at most
     if (this.trailers && this.trailers.warmup) { try { this.trailers.warmup(); } catch (e) { console.warn('trailer warm-up', e); } } // (its shaders built now too)
-    await this.compileScene(this.scene, null, 15000);
+    // (perf B: 25 s at most, was 15; it resolves as soon as they are built, and a frame drawn before then waits for them)
+    await this.compileScene(this.scene, null, 25000);
     // one frame drawn behind the loading card: the shadow pass's shaders (which the background build cannot make)
     // are built here rather than in the first seconds of driving
     try { if (this.traffic && this.traffic.warmAt && this.car) { const o = this.car.vehicle.origin(); this.traffic.warmAt(o.x, o.y, o.z); } } catch (e) { console.warn('traffic warm', e); }
+    // (perf B) and nothing left for that frame to build or send: what the gate holds is built (gate.js), every
+    // texture is on the card (it was 4 to 10 s of uploads inside that one frame)
+    this.texStop = true; await texLoop;
+    this.hud.loading('Getting the pictures ready', 0.96);
+    await this.settle(20000);
+    mark('settled');
+    // (perf B) drawn twice: from where the fly-down starts and from behind the car, so its first frames find every
+    // vertex buffer on the card too (the first frame after the card sent 1.1 s of them: the near view drawn here
+    // before did not see what the wide view does)
+    try {
+      const R3 = this.G.renderer, g = this.ground(x, z) ?? 0, h = hd * Math.PI / 180, fx = Math.sin(h), fz = -Math.cos(h);
+      this.camera.position.set(x - fx * 180, g + 260, z - fz * 180); this.camera.lookAt(x, g, z); this.camera.updateMatrixWorld();
+      R3.render(this.scene, this.camera);
+      await new Promise(r => requestAnimationFrame(r));
+      this.camera.position.set(x - fx * 7, g + 2.6, z - fz * 7); this.camera.lookAt(x + fx * 10, g + 1, z + fz * 10); this.camera.updateMatrixWorld();
+    } catch (e) { console.warn('warm-up view', e); }
     try { this.G.renderer.render(this.scene, this.camera); } catch (e) {}
     try { if (this.traffic && this.traffic.endWarm) this.traffic.endWarm(); } catch (e) { console.warn('traffic warm', e); }
+    // (perf B) and the card stays up until the graphics card has done all of it (gpuIdle)
+    tm.gpuWait = Math.round(await this.gpuIdle(8000));
     this.holdRender = false;
+    if (this.G.gate) this.G.gate.fast = false;
     mark('shaders');
-    this.active = true;
+    this.active = true; this.activeAt = performance.now(); // (perf B: idleSlot leaves the first 8 s after the card alone)
+    // (perf B) the other cars only after the fly-down, one at a time when the frames have room (warmCars)
     this.warmCars();
     this.cam.ready = false;
     if (!/[?&]noswoop/.test(location.search)) this.cam.swoop();
@@ -262,7 +310,10 @@ export class Drive {
     const near = () => { this.camera.position.set(x, (this.world.groundAt(x, z) || 0) + 3, z + 8); this.camera.lookAt(x, 0, z); };
     near();
     const t0 = performance.now(), cap = this.mode === 'google' ? 6000 : 3000;
-    let high = 0;
+    // (perf B) the wide view already had its tiles while the streets were built (start): only the near ones
+    const pre = !!this.preHigh && Math.hypot(x, z) < 150; this.preHigh = false;
+    let high = pre ? -1 : 0;
+    const minMs = pre ? 150 : 400;
     for (let i = 0; i < 400; i++) {
       const g = this.world.groundAt(x, z);
       const st = T && T.stats, busy = st ? st.downloading + st.parsing : 0, ms = performance.now() - t0;
@@ -275,9 +326,9 @@ export class Drive {
       }
       if (high > 0 && performance.now() - high > 1200 || (high > 0 && performance.now() - high > 300 && busy === 0)) { near(); high = -1; }
       // the ground's shape is known at once; its picture keeps sharpening for a while, so wait for it a little only
-      if (g !== null && high === -1 && ms > 400 && (busy === 0 || ms > cap)) return g;
+      if (g !== null && high === -1 && ms > minMs && (busy === 0 || ms > cap)) return g;
       if (ms > 15000) break;
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, pre ? 50 : 100));
     }
     near();
     return this.world.groundAt(x, z) || 0;
@@ -458,23 +509,149 @@ export class Drive {
     finally { for (const l of hidden) l.visible = true; }
   }
 
+  // (perf B) the two programs the environment's PMREM needs (equirectangular to cube UV, and the blur) asked for in the
+  // background, the HDR file fetched meanwhile, before cars.makeEnvironment draws it: made inside its draw, they and
+  // the HDR's 8 MB float upload waited behind every other shader the GPU was building (a 6.5 s task on a cold load).
+  // The generator is kept, so they stay built (the sky's PMREM and this one share the blur).
+  async envPrograms() {
+    const R = this.G.renderer;
+    const hdr = fetch(new URL('../models/env/wide_street_01_1k.hdr?v=33', import.meta.url).href).then(r => r.arrayBuffer()).catch(() => null);
+    try {
+      if (!ENV_KEEP && R.compile && THREE.PMREMGenerator) {
+        const pm = ENV_KEEP = new THREE.PMREMGenerator(R), prev = R.getRenderTarget(), rt = new THREE.WebGLRenderTarget(4, 4);
+        try {
+          // (drawn into a target as the PMREM is: no tone mapping, linear output, both part of a program's key)
+          R.setRenderTarget(rt);
+          if (pm._setSize && pm._allocateTargets) { pm._setSize(256); pm._allocateTargets().dispose(); }
+          pm.compileEquirectangularShader();
+          if (pm._blurMaterial && pm._lodPlanes && pm._lodPlanes[0]) R.compile(new THREE.Mesh(pm._lodPlanes[0], pm._blurMaterial), this.camera);
+        } finally { R.setRenderTarget(prev); rt.dispose(); }
+        const mats = [pm._equirectMaterial, pm._blurMaterial].filter(Boolean), t0 = performance.now();
+        while (performance.now() - t0 < 15000 && !mats.every(m => { const p = R.properties.get(m).currentProgram; return !p || p.isReady(); })) await sleep(50);
+      }
+    } catch (e) { console.warn('env programs', e); }
+    await hdr;
+  }
+
+  // (perf B) the textures in these objects' materials not yet on the graphics card (whose picture is there to send)
+  texturesToSend(roots) {
+    const P = this.G.renderer.properties, out = new Set(), seen = new Set();
+    if (!this.texTried) this.texTried = new WeakSet();
+    const look = t => {
+      if (!t || !t.isTexture || out.has(t) || t.isRenderTargetTexture || t.isVideoTexture || !(t.version > 0) || this.texTried.has(t)) return;
+      if (P.get(t).__version === t.version) return;
+      const im = t.image; if (!im) return;
+      if (t.isCubeTexture ? (!im.length || Array.from(im).some(i => !i)) : (im.complete === false || !(im.width > 0))) return;
+      out.add(t);
+    };
+    // (only objects are looked through: anything else handed in is skipped)
+    for (const root of Array.isArray(roots) ? roots : [roots]) if (root && root.isObject3D && typeof root.traverse === 'function') root.traverse(o => {
+      const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
+      if (ms) for (const m of ms) {
+        if (!m || seen.has(m)) continue; seen.add(m);
+        for (const k in m) { const v = m[k]; if (v && v.isTexture) look(v); }
+        if (m.uniforms) for (const k in m.uniforms) { const u = m.uniforms[k]; if (u && u.value && u.value.isTexture) look(u.value); }
+      }
+    });
+    return [...out];
+  }
+  // what a drop's textures are looked for in: the scene, the traffic's models kept for the frame behind the card, the
+  // spare cars
+  loadRoots() { const W = this.traffic && this.traffic.warm; return [this.scene, W && W.tmp, ...Object.values(this.spare || {}).map(r => r && r.object)].filter(o => o && o.isObject3D); }
+  // send them with renderer.initTexture, budget ms of it a frame (always at least one), until none are left (or
+  // until() says stop, rescanning meanwhile), capMs at most; idle: one at a time in idle moments instead
+  async sendTextures(roots, { capMs = 20000, budget = 12, until = null, idle = false } = {}) {
+    const R = this.G.renderer; if (!R || !R.initTexture || /[?&]notexwarm/.test(location.search)) return 0;
+    if (!this.texTried) this.texTried = new WeakSet();
+    const t0 = performance.now(); let n = 0, list = [], scanned = -1e9;
+    while (performance.now() - t0 < capMs) {
+      if (until && until()) break;
+      if (!list.length) {
+        if (performance.now() - scanned > 500) { list = this.texturesToSend(typeof roots === 'function' ? roots() : roots); scanned = performance.now(); }
+        if (!list.length) { if (!until) break; await sleep(100); continue; }
+      }
+      if (idle && !(await this.idleSlot(120, 4000, true))) continue;
+      const f0 = performance.now();
+      // (one that is still not sent after a try is not tried again)
+      do { const t = list.shift(); if (!t || R.properties.get(t).__version === t.version) continue; try { R.initTexture(t); n++; } catch (e) {} if (R.properties.get(t).__version !== t.version) this.texTried.add(t); } while (list.length && performance.now() - f0 < budget);
+      await new Promise(r => requestAnimationFrame(r));
+    }
+    this.texSent = (this.texSent || 0) + n;
+    return n;
+  }
+
+  // (perf B) before the frame behind the card: until the gate holds nothing (its shaders built) and every texture is
+  // sent (capMs at most)
+  async settle(capMs = 20000) {
+    const t0 = performance.now(), G = this.G.gate;
+    if (/[?&]notexwarm/.test(location.search)) return;
+    while (performance.now() - t0 < capMs) {
+      const left = this.texturesToSend(this.loadRoots());
+      if (!left.length && !(G && G.busy)) break;
+      if (left.length) await this.sendTextures(() => this.loadRoots(), { capMs: Math.max(0, capMs - (performance.now() - t0)), budget: 30 });
+      else await new Promise(r => requestAnimationFrame(r));
+    }
+  }
+
+  // (perf B) until the graphics card has done everything asked of it so far (a fence, polled; capMs at most). What was
+  // sent behind the card kept it busy for seconds after the calls had returned, and the fly-down stood still meanwhile
+  // (no frame for 5 s, with the page itself idle).
+  async gpuIdle(capMs = 15000) {
+    const gl = this.G.renderer.getContext(), t0 = performance.now();
+    if (!gl || !gl.fenceSync) return 0;
+    const s = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush();
+    try { while (performance.now() - t0 < capMs && gl.getSyncParameter(s, gl.SYNC_STATUS) !== gl.SIGNALED) await sleep(25); }
+    finally { gl.deleteSync(s); }
+    return performance.now() - t0;
+  }
+
+  // (perf B) a quiet moment for background work while driving: the fly-down over, no area being built, nothing held by
+  // the compile gate, no crash being worked out, then an idle callback. false if none came within capMs.
+  // still: also only once the car (or the person on foot) has stood still for 2 s (stillFor)
+  async idleSlot(minMs = 1000, capMs = 60000, still = false) {
+    await sleep(minMs);
+    const t0 = performance.now();
+    while (performance.now() - t0 < capMs) {
+      const D = this.damage, G = this.G.gate;
+      const busy = !this.active || (this.cam && this.cam.introT > 0) || performance.now() - (this.activeAt || 0) < 8000 || this.loadingArea || (G && G.queue.size > 0) || (D && ((D.jobs && D.jobs.length) || performance.now() - (D.lastImpactT || -1e9) < 2500)) || (still && !this.stillFor(2000));
+      if (!busy) { await new Promise(r => window.requestIdleCallback ? requestIdleCallback(r, { timeout: 2000 }) : setTimeout(r, 50)); return true; }
+      await sleep(250);
+    }
+    return false;
+  }
+
+  /* (lead) true once the car, or the person on foot, has stood still for ms. The spare cars are made ready only then:
+     their shaders being built and their pictures sent held the graphics process up, and while driving frames stood
+     90 to 160 ms apart with the page's own work at 10 to 25 ms (Times Square, 30 s at 50 km/h a minute after the drop:
+     23 frames over 50 ms with them, 5 without; v32 had 8). A car asked for before it is ready takes the "Getting the ...
+     ready" moment instead. */
+  stillFor(ms) {
+    const v = this.car && this.car.vehicle, F = this.onfoot, now = performance.now();
+    const moving = (v && Math.abs(v.fwdSpeed || 0) > 1.5) || (F && F.active && F.vel && Math.hypot(F.vel.x, F.vel.z) > 0.3);
+    if (moving || this._stillAt === undefined) this._stillAt = now;
+    return now - this._stillAt >= ms;
+  }
+
   // the other drivable cars loaded and their shaders built in the background, a second apart, after a drop, so
   // pressing 1 to 5 swaps at once (the first swap to a car took up to 3 s)
   async warmCars() {
-    const C = this.mods.cars; if (!C || this.warming) return;
+    const C = this.mods.cars; if (!C || this.warming || /[?&]nowarmcars/.test(location.search)) return;
     this.warming = true; this.spare = this.spare || {};
     try {
       for (const c of C.CARS.filter(c => !c.npcOnly)) {
-        await new Promise(r => setTimeout(r, 1000));
-        // never while a crash is being worked out: a model parsed in the same frames as the crush was the hitch
-        // of a crash in the first seconds after a drop
-        for (let k = 0; k < 40 && this.damage && ((this.damage.jobs && this.damage.jobs.length) || performance.now() - (this.damage.lastImpactT || -1e9) < 2500); k++) await new Promise(r => setTimeout(r, 250));
+        // (perf B) a quiet moment: after the fly-down, no area being built, nothing held by the gate, no crash being
+        // worked out (a model parsed in the same frames as the crush was the hitch of a crash after a drop); 4 s at
+        // least between cars: making one is still a 0.5 to 1 s task (cars.js), so they are spread out
+        // (and with the car standing still: a slot that does not come in a minute is waited for again, never skipped)
+        while (this.active && !(await this.idleSlot(4000, 60000, true))) { /* waiting */ }
         if (!this.active) break;
         if (this.spare[c.id] || (this.car && this.car.id === c.id)) continue;
         const rig = await C.loadCar(c.id).catch(() => null);
         if (!rig) continue;
         if (this.carEnv && rig.setEnvMap) rig.setEnvMap(this.carEnv);
         await this.compileScene(rig.object, this.scene);
+        // (perf B) its pictures sent to the graphics card one in each idle moment, so a change of car sends none
+        await this.sendTextures([rig.object], { capMs: 20000, budget: 1, idle: true });
         if (this.spare[c.id] || (this.car && this.car.id === c.id)) { if (rig.dispose) rig.dispose(); } else this.spare[c.id] = rig;
       }
     } finally { this.warming = false; }
@@ -497,6 +674,9 @@ export class Drive {
     if (!rig) rig = boxRig();
     // its shaders first (a car's twenty or so took seconds when built in a draw), lit as the scene is
     if (!ready) {
+      // (perf B) with the street photo first, if it is still coming (6 s at most): built without it, every program
+      // was built a second time once it came
+      if (!this.carEnv && this.carEnvP) await Promise.race([this.carEnvP, sleep(6000)]);
       if (this.carEnv && rig.setEnvMap) rig.setEnvMap(this.carEnv);
       await this.compileScene(rig.object, this.scene);
       if (ticket !== this.carTicket) { if (id && !this.spare[id]) this.spare[id] = rig; else if (rig.dispose) rig.dispose(); return; }
@@ -537,12 +717,16 @@ export class Drive {
     if (this.world.heights && !first) { try { await this.world.heights.want(g.lat, g.lon, 1300); } catch (e) {} }
     const ovp = O.load(g.lat, g.lon, radius).then(d => d, e => { console.warn('osm', e); return null; });
     // the tiles are fetched at once too, so they are there if Overpass is slow
-    const mvtP = import('./mvt.js?v=32').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    const mvtP = import('./mvt.js?v=33').then(M => M.load(g.lat, g.lon, radius)).catch(e => { console.warn('mvt', e); return null; });
+    // (buildings hook) Overture's buildings for the same circle, fetched in a worker meanwhile (overture.js; buildings.js merges them)
+    if (this.mode !== 'google') import('./overture.js?v=33').then(M => M.prefetch(g.lat, g.lon, radius + 100)).catch(() => {});
     let data = await Promise.race([ovp, new Promise(r => setTimeout(() => r('slow'), first ? 4000 : 6000))]);
     if (data === 'slow' || data === null || !data.roads || !data.roads.length) {
       const tiles = await mvtP;
       if (tiles && tiles.roads.length) {
-        if (data === 'slow') ovp.then(d => { if (d && d.roads && d.roads.length && this.active && this.areaAt && this.areaAt.x === x && this.areaAt.z === z) this.buildArea(d, x, z); });
+        // (perf B) only for the first area, and never on top of another build: on the way, a second build of the same
+        // area for its richer tags was a second round of rebuild hitches every 400 m
+        if (data === 'slow' && first) ovp.then(d => { if (d && d.roads && d.roads.length && this.active && !this.loadingArea && this.areaAt && this.areaAt.x === x && this.areaAt.z === z) { this.loadingArea = true; this.buildArea(d, x, z).catch(e => console.warn('build', e)).finally(() => { this.loadingArea = false; }); } });
         data = tiles;
       } else if (data === 'slow') {
         // the tiles have no roads here (sea, desert, ice): give Overpass a little longer, then go on without roads
@@ -572,6 +756,9 @@ export class Drive {
     try {
       if (this.mods.imagery && !this.imageryObj && this.mode === 'open') { this.imageryObj = this.mods.imagery.createImagery ? this.mods.imagery.createImagery() : this.mods.imagery; ctx.imagery = this.imageryObj; }
     } catch (e) { console.warn('imagery', e); }
+    // (perf B) while driving, a frame between the steps below: each step's own work (open buildings, the cut mask,
+    // the street signs, the landmarks) used to run on into the next step's in one long task
+    const tick = () => this.active ? new Promise(r => requestAnimationFrame(r)) : null;
     const swap = async (key, make) => {
       const old = this[key];
       try { const nu = await make(); this[key] = nu; if (old && old !== nu && old.dispose) old.dispose(); } catch (e) { console.warn(key, e); }
@@ -590,8 +777,11 @@ export class Drive {
       }
     } catch (e) { console.warn('carry car', e); }
     // bridges: decks, parapets and piers under the roads the map marks as bridges (bridges.js; collision in both worlds)
-    try { if (!this.mods.bridges) this.mods.bridges = await tryImport('./bridges.js?v=32'); if (this.mods.bridges && this.roadsObj) await swap('bridgesObj', () => this.mods.bridges.build(this.roadsObj, { scene: this.scene, collide, groundAt: (a, b) => this.world.groundAt(a, b), mode: this.mode, buildings: data.buildings })); } catch (e) { console.warn('bridges', e); }
-    try { times.openN = openBuildings(data.buildings, this.roadsObj); } catch (e) { console.warn('open buildings', e); }
+    try { if (!this.mods.bridges) this.mods.bridges = await tryImport('./bridges.js?v=33'); if (this.mods.bridges && this.roadsObj) await swap('bridgesObj', () => this.mods.bridges.build(this.roadsObj, { scene: this.scene, collide, groundAt: (a, b) => this.world.groundAt(a, b), mode: this.mode, buildings: data.buildings })); } catch (e) { console.warn('bridges', e); }
+    await tick();
+    // (perf B: a frame between slices of it while driving; it was 73 to 344 ms in one task)
+    try { times.openN = await openBuildings(data.buildings, this.roadsObj, this.active ? 6 : 40); } catch (e) { console.warn('open buildings', e); }
+    await tick();
     this.lastData = data;
     // Google's mesh has cars baked into the streets: cut the carriageways out of it so our road shows
     // (in the open world the same mask, a little narrower than the carriageway, keeps the coarse terrain from
@@ -604,10 +794,12 @@ export class Drive {
       const surf = R && R.surfaceAt ? (a, b) => { let r = R.surfaceAt(a, b, undefined, 1); if (!r.onRoad) r = R.surfaceAt(a, b); return open || !r.onRoad ? r : { onRoad: true, h: r.h + GLIFT }; } : null;
       this.cut.build(x, z, data.roads || [], surf, open ? ground : null, open ? { edges, junctions: R && R._debug ? R._debug().junctions : null, widthScale: 0.86, cap: 'butt', parking: false, top: 3.5, below: 0.6, bridges: true } : { edges, widthScale: 1.0, top: 4.2, below: -0.2 });
     } catch (e) { console.warn('cut mask', e); }
+    await tick();
     if (this.mods.props) await swap('propsObj', () => this.mods.props.build(data, ctx));
     mark('props');
     // street name signs at the corners where named streets meet
     try { if (this.roadsObj) this.signs.build(this.roadsObj, { collide, us: !!(this.roadsObj.style && this.roadsObj.style.region === 'us'), cx: x, cz: z, buildings: data.buildings }); } catch (e) { console.warn('street signs', e); }
+    await tick();
     // cars parked along the kerbs where the road has room for them
     try {
       if (this.mods.cars && this.roadsObj) {
@@ -623,7 +815,9 @@ export class Drive {
       // the facades' glass reflects a real street (the cars' HDR photo) rather than the plain sky
       try { const M = this.bldgObj && this.bldgObj.material; if (M && this.carEnv && M.envMap !== this.carEnv) { M.envMap = this.carEnv; M.needsUpdate = true; } } catch (e) {}
       ctx.buildings = data.buildings || [];
+      await tick();
       try { if (!this.landmarks) this.landmarks = new Landmarks(this.scene); this.landmarks.build({ cx: x, cz: z, collide, ground: (a, b) => this.ground(a, b) }); } catch (e) { console.warn('landmarks', e); }
+      await tick();
       if (this.mods.trees) await swap('treesObj', () => this.mods.trees.build(data, ctx));
     } else {
       // building footprints still stop the car where Google's mesh has them, up to their roofs (found by a ray down
@@ -752,9 +946,12 @@ export class Drive {
       }).catch(e => console.warn('reheight', e));
     }
     // streaming: load the streets ahead once the car is 300 m from where they were loaded
-    if (this.areaAt && !this.loadingArea && Math.hypot(o.x - this.areaAt.x, o.z - this.areaAt.z) > 400) {
+    // (perf B) from 250 m, round a point 150 m ahead of a moving car: the map data's wait (Overpass gets a few
+    // seconds' start) and the build then happen while the car is still well inside the old area
+    if (this.areaAt && !this.loadingArea && Math.hypot(o.x - this.areaAt.x, o.z - this.areaAt.z) > 250) {
       this.loadingArea = true;
-      this.loadArea(o.x, o.z).finally(() => { this.loadingArea = false; });
+      const h = v.heading * Math.PI / 180, ahead = !foot && Math.abs(v.fwdSpeed) > 3 ? 150 * Math.sign(v.fwdSpeed) : 0;
+      this.loadArea(o.x + Math.sin(h) * ahead, o.z - Math.cos(h) * ahead).finally(() => { this.loadingArea = false; });
     }
     this.hud.update(dt, v, this);
     const sg = this.signal;
@@ -768,7 +965,9 @@ export class Drive {
 // line that disagree, as the vector tiles' simplified lines often do): a car keeping its lane should never meet a wall.
 // Marks b.open (no collision) and b.roofOnly.
 const ROOFS = new Set(['roof', 'canopy', 'carport']);
-function openBuildings(list, R) {
+async function openBuildings(list, R, sliceMs = Infinity) {
+  let t0 = performance.now();
+  const pause = async () => { if (performance.now() - t0 > sliceMs) { await new Promise(r => requestAnimationFrame(r)); t0 = performance.now(); } };
   if (!list || !list.length) return 0;
   let n = 0;
   for (const b of list) if (ROOFS.has(b.type) && !(b.minHeight > 0.5)) { b.open = b.roofOnly = true; n++; }
@@ -802,10 +1001,13 @@ function openBuildings(list, R) {
   const through = L => {
     const e = edges && edges[L.edge]; if (!e) return L.kind === 'junction';
     const t = (e.way && e.way.tags) || {};
+    // (a tunnel's bore passes under the buildings over it, which keep their walls: roads.js keeps tunnels now)
+    if (e.c.tunnel === 'bore') return false;
     if (t.tunnel === 'building_passage' || t.covered === 'yes' || t.tunnel === 'yes') return true;
     return !/^(service|track|footway|path|cycleway|steps|bridleway)$/.test(e.c.cls);
   };
   for (const L of lanes) {
+    await pause();
     const P = L.pts; if (!P || P.length < 2) continue;
     if (L.kind === 'junction' || !through(L)) continue; // turns at junctions: a driver steers round a corner building
     // (a building a bridge's lane passes through, a bridge tower across the deck: buildings.js starts it over the deck)

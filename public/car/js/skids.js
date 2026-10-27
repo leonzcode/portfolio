@@ -16,6 +16,8 @@ export class Skids {
     this.mesh = new THREE.InstancedMesh(g, m, MAX);
     this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 3), 3);
     this.mesh.count = 0; this.mesh.frustumCulled = false; this.mesh.renderOrder = 2;
+    // (hidden while there are no marks: three.js drew an empty instanced mesh every frame; perf)
+    this.mesh.visible = false; this.mesh.matrixAutoUpdate = false;
     this.mesh.name = 'skids';
     scene.add(this.mesh);
     this.born = new Float32Array(MAX); this.next = 0; this.t = 0;
@@ -47,14 +49,17 @@ export class Skids {
       this._m.compose(this._p, this._q, this._s);
       this.mesh.setMatrixAt(k, this._m);
       this.born[k] = this.t;
-      this.mesh.count = Math.max(this.mesh.count, k + 1);
+      this.mesh.count = Math.max(this.mesh.count, k + 1); this.mesh.visible = true;
       this.mesh.instanceMatrix.needsUpdate = true;
     });
-    // fade by age (cheap: a few hundred values)
+    // fade by age (cheap: a few hundred values; only the marks there are are sent to the graphics card)
+    const n = this.mesh.count;
+    if (!n) return;
     const c = this.mesh.instanceColor.array;
-    for (let k = 0; k < this.mesh.count; k++) { const a = Math.max(0, 1 - (this.t - this.born[k]) / LIFE); c[k * 3] = c[k * 3 + 1] = c[k * 3 + 2] = a; }
+    for (let k = 0; k < n; k++) { const a = Math.max(0, 1 - (this.t - this.born[k]) / LIFE); c[k * 3] = c[k * 3 + 1] = c[k * 3 + 2] = a; }
+    this.mesh.instanceColor.clearUpdateRanges(); this.mesh.instanceColor.addUpdateRange(0, n * 3);
     this.mesh.instanceColor.needsUpdate = true;
   }
 
-  clear() { this.mesh.count = 0; this.next = 0; this.last = [null, null, null, null]; }
+  clear() { this.mesh.count = 0; this.mesh.visible = false; this.next = 0; this.last = [null, null, null, null]; }
 }

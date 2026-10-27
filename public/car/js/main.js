@@ -2,11 +2,12 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=32';
-import { World } from './world.js?v=32';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=32';
-import { Sky } from './sky.js?v=32';
-import { Drive } from './drive.js?v=32';
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=33';
+import { World } from './world.js?v=33';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=33';
+import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=33'; // (perf A: the shadow pass's casters, steady lights)
+import { Drive } from './drive.js?v=33';
+import { CompileGate } from './gate.js?v=33'; // (perf B) nothing drawn with a program still being built
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -19,6 +20,9 @@ catch (e) {
   document.getElementById('ui').innerHTML = '<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#202124;color:#e8eaed;font:15px Roboto,system-ui,sans-serif;text-align:center;padding:24px">This game needs WebGL 2, which this browser or computer could not start.<br>Try a recent Chrome, Edge, Firefox or Safari, with hardware acceleration on.</div>';
   throw e;
 }
+// (perf A) with the reversed depth buffer a polygon offset has to go the other way to pull a decal towards the eye
+// (three.js hands the material's numbers to WebGL as they are; with the log depth buffer they do nothing at all)
+if (RZ && renderer.capabilities.reversedDepthBuffer) { const gl = renderer.getContext(), po = gl.polygonOffset.bind(gl); gl.polygonOffset = (f, u) => po(-f, -u); }
 renderer.setPixelRatio(Math.min(devicePixelRatio, Q.has('pr') ? +Q.get('pr') : 1.5));
 renderer.setSize(innerWidth, innerHeight, false);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -29,18 +33,25 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 // reading every shader's log back from the driver stalls the page for seconds as the world loads; ?debug turns it on
 renderer.debug.checkShaderErrors = Q.has('debug');
+// (perf B) asked now, while the graphics process is idle: three asks it at the first texture sent, and then it waited
+// 0.6 s behind the shaders being built
+try { renderer.capabilities.getMaxAnisotropy(); } catch (e) {}
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200000);
 camera.position.set(0, 2, 8);
 scene.add(camera);
+// (perf B) from here on every mesh put into the scene is held out of the drawing until its shaders are built (gate.js)
+const gate = new CompileGate(renderer, scene, camera);
 
 const sky = new Sky(renderer, scene);
+wrapShadowPass(renderer); // (perf A) shadow-only stand-ins drawn in the shadow pass alone (sky.js)
 bakedUniforms.uDetail.value = makeDetail();
 bakedUniforms.uDetailOn.value = 1;
 const world = new World(renderer, scene, camera);
 
 const G = window.__car = { THREE, renderer, scene, camera, world, sky, frame, toLocal, toLatLon, setOrigin, state: 'boot', mods: {} };
+G.gate = gate; // (perf B)
 
 addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight, false);
@@ -110,21 +121,31 @@ G.startWorld = startWorld;
 // resolution follows the frame rate: a step down under 40 fps, back up over 57, between 0.6 and the screen's own
 const PR_MAX = Math.min(devicePixelRatio, Q.has('pr') ? +Q.get('pr') : 1.5);
 let prNow = PR_MAX, scaleT = 0, scaleN = 0, scaleSum = 0;
+// (perf A) a change of resolution makes the browser build the drawing buffer again, 0.2 to 2 s on a busy graphics
+// card, so it happens seldom: not in the first 10 s of a drive, three 2.5 s windows in a row agreeing, 12 s at least
+// between changes, a bigger step when far too slow (so fewer steps), never back up within a minute to a level that
+// was too slow, and one resize a step (setPixelRatio resizes the canvas itself; a setSize after it did it twice)
+let scaleLast = -1e9, activeSince = null, minAvg = [], tooSlow = Infinity, tooSlowT = -1e9;
 function autoScale(now) {
-  if (!G.drive || !G.drive.active || Q.has('pr')) { scaleT = now; scaleN = scaleSum = 0; return; }
+  if (!G.drive || !G.drive.active || Q.has('pr')) { scaleT = now; scaleN = scaleSum = 0; activeSince = null; return; }
+  if (activeSince === null) activeSince = now;
   scaleN++;
   if (now - scaleT < 2500) return;
   const fps = scaleN / ((now - scaleT) / 1000);
   scaleT = now; scaleN = 0;
-  // (a resize is costly, so only after two windows in a row agree, and never while an area is being built)
   const want = fps < 40 ? -1 : fps > 57 ? 1 : 0;
   scaleSum = want !== 0 && want === Math.sign(scaleSum) ? scaleSum + want : want;
-  if (G.drive.loadingArea || Math.abs(scaleSum) < 2) return;
+  minAvg.push(fps); if (minAvg.length > 3) minAvg.shift();
+  if (G.drive.loadingArea || now - activeSince < 10000 || now - scaleLast < 12000 || Math.abs(scaleSum) < 3) return;
+  const avg = minAvg.reduce((a, b) => a + b, 0) / minAvg.length;
   let next = prNow;
-  if (scaleSum < 0 && prNow > 0.6) next = Math.max(0.6, prNow - 0.15);
-  else if (scaleSum > 0 && prNow < PR_MAX) next = Math.min(PR_MAX, prNow + 0.1);
+  if (scaleSum < 0 && prNow > 0.6) next = Math.max(0.6, prNow - (avg < 25 ? 0.3 : 0.15));
+  else if (scaleSum > 0 && prNow < PR_MAX) { next = Math.min(PR_MAX, prNow + 0.1); if (next >= tooSlow - 1e-6 && now - tooSlowT < 60000) next = prNow; }
   scaleSum = 0;
-  if (next !== prNow) { prNow = next; renderer.setPixelRatio(prNow); renderer.setSize(innerWidth, innerHeight, false); }
+  if (next !== prNow) {
+    if (next < prNow) { tooSlow = prNow; tooSlowT = now; }
+    prNow = next; scaleLast = now; renderer.setPixelRatio(prNow);
+  }
 }
 G.pixelRatio = () => prNow;
 
@@ -156,7 +177,18 @@ function loop(now) {
     // while a drop loads, nothing is drawn: a shader first met in a draw is built there and then, and that held
     // the page still for seconds (the drive builds them all in the background before the car is shown)
     // (never for more than 40 s, whatever happened to the drop)
-    if (!(G.drive && G.drive.holdRender && now - G.drive.holdSince < 40000)) renderer.render(scene, camera);
+    // (perf B) what was put into the scene since the last frame: built in the background, shown once ready (gate.js)
+    gate.flush();
+    if (!(G.drive && G.drive.holdRender && now - G.drive.holdSince < 40000)) {
+      // (perf A) every 30 frames the shadow casters get a depth material of their kind, and the shadow-only stand-ins
+      // are kept out of the main pass (sky.js)
+      if (G.frames % 30 === 0) tidyCasters(scene);
+      // (perf A) exactly two spot lights drawn, the player's car's headlights, so no lit shader is ever built again
+      // for a new light count (sky.js)
+      { const D = G.drive; steadySpots(scene, D && D.mods && D.mods.cars && D.mods.cars.BEAMS, D && D.car && D.car.rig && D.car.rig._beams); }
+      hideShadowOnly(true);
+      try { renderer.render(scene, camera); } finally { hideShadowOnly(false); }
+    }
   }
   G.frames++;
   G.fps = G.fps ? G.fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05 : 60;
@@ -169,9 +201,10 @@ const drive = G.drive = new Drive(G);
 function validPlace(lat, lon) { return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 85 && Math.abs(lon) <= 180 && (lat !== 0 || lon !== 0 || Q.get('lat') === '0'); }
 // the sources of what is on screen, as their terms ask
 const attrib = document.createElement('div'); attrib.className = 'attrib'; document.getElementById('ui').appendChild(attrib);
-const OPEN_CREDIT = 'Imagery: Esri, Maxar, Earthstar Geographics | Elevation: Mapzen, AWS Open Data | Map data © OpenStreetMap contributors';
+// (buildings agent: the buildings also come from Overture Maps, ODbL, which asks for its name beside OpenStreetMap's)
+const OPEN_CREDIT = 'Imagery: Esri, Maxar, Earthstar Geographics | Elevation: Mapzen, AWS Open Data | Map data © OpenStreetMap contributors, Overture Maps Foundation';
 world.addEventListener('attributions', e => { attrib.textContent = 'Google' + (e.text ? ' | ' + e.text : '') + ' | Map data © OpenStreetMap contributors'; });
-const OPEN_CREDIT_SHORT = 'Esri, Maxar | Mapzen, AWS | © OpenStreetMap';
+const OPEN_CREDIT_SHORT = 'Esri, Maxar | Mapzen, AWS | © OpenStreetMap, Overture';
 G.setCredit = () => { if (world.mode === 'open') attrib.textContent = innerWidth < 600 ? OPEN_CREDIT_SHORT : OPEN_CREDIT; };
 // a Google Map Tiles API key turns on Google's photorealistic 3D city: ?key=... once, or from the console
 G.setKey = k => { try { if (k) localStorage.setItem('car_gkey', k); else localStorage.removeItem('car_gkey'); } catch (e) {} };
@@ -179,7 +212,7 @@ if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
 async function openMap() {
   try {
-    const M = await import('./mapui.js?v=32');
+    const M = await import('./mapui.js?v=33');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();
@@ -209,7 +242,9 @@ async function openMap() {
         if (C) {
           const first = C.CARS.find(c => !c.npcOnly);
           await C.loadCar(first.id).catch(() => null);
-          for (const id of new Set(C.TRAFFIC || [])) await C.loadCar(id, { npc: true }).catch(() => null);
+          // (perf B) the traffic models every region uses (no place chosen yet: traffic.js regionModels gives those)
+          const TM = drive.mods.traffic, ids = TM && TM.regionModels ? TM.regionModels(C) : [...new Set(C.TRAFFIC || [])];
+          for (const id of ids) await C.loadCar(id, { npc: true }).catch(() => null);
         }
         const P = drive.mods.props;
         if (P && P.preload && !drive.propsReady) { drive.propsReady = true; await P.preload(); }
