@@ -2,18 +2,23 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=36';
-import { World } from './world.js?v=36';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=36';
-import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=36'; // (perf A: the shadow pass's casters, steady lights)
-import { Drive } from './drive.js?v=36';
-import { CompileGate } from './gate.js?v=36'; // (perf B) nothing drawn with a program still being built
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=37';
+import { World } from './world.js?v=37';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=37';
+import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=37'; // (perf A: the shadow pass's casters, steady lights)
+import { Drive } from './drive.js?v=37';
+import { CompileGate } from './gate.js?v=37'; // (perf B) nothing drawn with a program still being built
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
-// depth: a reversed depth buffer where the browser has EXT_clip_control (?rz=1 to try), else logarithmic (which turns
-// off the early depth test, so walls behind walls are shaded too)
-const RZ = Q.get('rz') === '1';
+// depth: a reversed depth buffer where the browser has EXT_clip_control, else logarithmic (which turns off the early
+// depth test, so walls behind walls are shaded too). (lead, v37) reversed is the default where it can be had: Times
+// Square, 40 s from the drop on a GTX 745, 1,950 and 2,109 frames at resolution 1.0 with it against 1,421 and 1,447 at
+// 0.6 with the log buffer, frames over 100 ms 3 and 0 against 8 and 7, and the same pictures; ?rz=0 for the log buffer.
+// Asked of a throwaway context first: three asked for a reversed buffer it cannot have gives a plain one, worse than
+// the log buffer far away.
+const clipControl = (() => { try { const c = document.createElement('canvas'), gl = c.getContext('webgl2'); const ok = !!(gl && gl.getExtension('EXT_clip_control')); const lose = gl && gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); return ok; } catch (e) { return false; } })();
+const RZ = Q.get('rz') === '1' || (Q.get('rz') !== '0' && clipControl);
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: !RZ, reversedDepthBuffer: RZ, powerPreference: 'high-performance' }); }
 catch (e) {
@@ -218,7 +223,7 @@ if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
 async function openMap() {
   try {
-    const M = await import('./mapui.js?v=36');
+    const M = await import('./mapui.js?v=37');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();

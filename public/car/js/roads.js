@@ -24,7 +24,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=36';
+import { unproject } from './geo.js?v=37';
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -137,7 +137,7 @@ export let style = { region: 'other', yellowCentre: false };
 // ---------------------------------------------------------------- materials
 let MATS = null;
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=36');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=37');
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
