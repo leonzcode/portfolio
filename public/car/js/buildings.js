@@ -19,10 +19,10 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=34';
-import { patchBaked } from './baked.js?v=34';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=34';
-import overture from './overture.js?v=34';
+import { frame, project } from './geo.js?v=35';
+import { patchBaked } from './baked.js?v=35';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=35';
+import overture from './overture.js?v=35';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -2023,10 +2023,14 @@ function stripStep(U) {
 // process a frame over 100 ms now and then, 11 in 75 s of driving in Times Square with 39 pictures sent freely)
 function stillNow() { try { const D = window.__car && window.__car.drive; if (!D || D.holdRender) return true; return D.stillFor ? D.stillFor(1200) : true; } catch (e) { return true; } }
 let upAt = 0;
+/* (lead, v35) no roof picture goes up while the car moves, only standing still (stillNow) or behind the card: one every
+   1.5 s while driving still stalled the graphics process. First 25 s after a drop, frames over 100 ms with them / without:
+   SF 11 / 1 and 8 / 4, Paris 8 / 0 and 9 / 0. ?moveup brings them back for tests. */
+const NO_MOVE_UP = (() => { try { return !/[?&]moveup/.test(location.search); } catch (e) { return true; } })();
 function upStep(t) {
   const dt = upLast ? t - upLast : 16; upLast = t;
   if (!UPJ && !UPQ.length) { upOn = false; upLast = 0; return; }
-  const go = UPJ || stillNow() || (t - upAt >= 1500 && dt < 25);
+  const go = UPJ || stillNow() || (!NO_MOVE_UP && t - upAt >= 1500 && dt < 25);
   if (go && !flying() && (dt < 80 || ++upSkip > 3)) {
     upSkip = 0;
     const tu = performance.now();

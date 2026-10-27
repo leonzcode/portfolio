@@ -27,10 +27,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { Person, BONES } from './person.js?v=34';
-import { buildPoses } from './poses.js?v=34';
+import { Person, BONES } from './person.js?v=35';
+import { buildPoses } from './poses.js?v=35';
 
-const V = '?v=34';
+const V = '?v=35';
 const NOFREEZE = typeof location !== 'undefined' && /[?&]nofreeze/.test(location.search); // (tests: bones never frozen)
 const FREEZE_AFTER = (typeof location !== 'undefined' && +(/[?&]freezeafter=(\d+)/.exec(location.search) || [])[1]) || 1; // (tests: frames unposed before a freeze)
 const DIR = new URL('../models/people/', import.meta.url).href;
