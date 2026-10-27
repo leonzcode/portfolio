@@ -7,8 +7,9 @@ import { GLTFExtensionsPlugin, TileCompressionPlugin, TilesFadePlugin, Terrarium
 import { GoogleCloudAuthPlugin } from '3d-tiles-renderer/core/plugins';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=32';
-import { patchBaked } from './baked.js?v=32';
+import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=33';
+import { patchBaked } from './baked.js?v=33';
+import { under } from './under.js?v=33';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -54,6 +55,17 @@ class Heights {
     const [fx, fy] = lonLatToTile(lon, lat, this.z);
     const px = fx * 256 - 0.5, py = fy * 256 - 0.5;
     const x0 = Math.floor(px), y0 = Math.floor(py), tx = px - x0, ty = py - y0;
+    // (the roads, the cut mask and the walls ask for hundreds of thousands of points in a build: four points inside
+    // one tile, the last tile used kept, are read straight from its pixels, with no tile key made)
+    const ix = x0 & 255, iy = y0 & 255;
+    if (ix !== 255 && iy !== 255) {
+      const kx = x0 >> 8, ky = y0 >> 8;
+      let d = (kx === this._kx && ky === this._ky) ? this._kd : null;
+      if (!d) { const t = this.tiles.get(kx + ',' + ky); d = t && t.data; if (d) { this._kx = kx; this._ky = ky; this._kd = d; } }
+      if (!d) return null;
+      const i = iy * 256 + ix;
+      return (d[i] * (1 - tx) + d[i + 1] * tx) * (1 - ty) + (d[i + 256] * (1 - tx) + d[i + 257] * tx) * ty;
+    }
     const v = (X, Y) => {
       const t = this.tiles.get(this.key(Math.floor(X / 256), Math.floor(Y / 256)));
       if (!t || !t.data) return NaN;
@@ -118,6 +130,8 @@ export class World extends THREE.EventDispatcher {
       const TZ = +(new URLSearchParams(location.search).get('tz') || 14);
       this.heights = new Heights(2 * Math.floor(TZ / 2));
       this.heights.onTile = (x, y, z) => this.dispatchEvent({ type: 'ground-changed', bbox: this.tileBox(x, y, z) });
+      // (the tunnels' bores, under.js: something over the terrain's surface is not inside one)
+      under.setGround((x, z) => this.groundAt(x, z));
       const overlay = new XYZTilesOverlay({ url: ESRI, levels: +(new URLSearchParams(location.search).get('lv') || 19), tileDimension: 256 });
       tiles.registerPlugin(new TerrariumMeshPlugin({ url: TERRARIUM, maxZoom: TZ, overlay, applyOverlayTexture: true, unlit: true }));
       tiles.errorTarget = 2;
@@ -180,8 +194,10 @@ export class World extends THREE.EventDispatcher {
 
   // Height of the ground at (x, z). With the tiles and a hint (a wheel's height) it is the first surface under
   // yHint + 0.6; without one, the lowest surface in the whole column, so tree crowns and awnings over a road are
-  // passed through. null when nothing is loaded there.
+  // passed through. null when nothing is loaded there. Inside a tunnel (under.js) with a hint at the tunnel's level,
+  // the tunnel's floor.
   groundAt(x, z, yHint) {
+    if (yHint !== undefined && under.tubes.length) { const f = under.floorAt(x, z, yHint); if (f !== null) return f; }
     if (this.mode === 'open') {
       const g = unproject(x, z), e = this.heights.at(g.lat, g.lon);
       if (e === null) return null;
@@ -210,7 +226,8 @@ export class World extends THREE.EventDispatcher {
   // First hit along a ray against the world's own surfaces (tiles, terrain is skipped in the open world, buildings).
   raycast(origin, dir, far = 100) {
     _ray.set(origin, dir); _ray.far = far; _ray.firstHitOnly = true;
-    const list = this.mode === 'google' && this.tiles ? [this.tiles.group, ...this.extra] : this.extra;
+    let list = this.mode === 'google' && this.tiles ? [this.tiles.group, ...this.extra] : this.extra;
+    if (under.meshes.length) list = list.concat(under.meshes); // (a tunnel's walls and roof)
     const hits = _ray.intersectObjects(list, true);
     _ray.firstHitOnly = false;
     if (!hits.length) return null;
@@ -222,6 +239,13 @@ export class World extends THREE.EventDispatcher {
     if (!this.tiles) return;
     if (this.tiles.stats && this.tiles.stats.failed > 0 && performance.now() - (this.retryAt || 0) > 8000) { this.retryAt = performance.now(); try { this.tiles.resetFailedTiles(); } catch (e) {} }
     this.camera.updateMatrixWorld();
+    // the tiles' traversal (2.5 to 5 ms a frame while the camera moves): every second frame, and at once after a
+    // jump of the camera (a tile that has come in shows a frame later at most)
+    const f = this._uf = (this._uf || 0) + 1, cp = this.camera.position;
+    const lp = this._up || (this._up = new THREE.Vector3(Infinity, 0, 0)), jump = cp.distanceToSquared(lp) > 400;
+    if (this._ef === undefined) this._ef = /[?&]tileseveryframe/.test(location.search); // (test flag: the old way)
+    if (!jump && f - (this._ul || 0) < 2 && !this._ef) return;
+    this._ul = f; lp.copy(cp);
     this.tiles.setResolutionFromRenderer(this.camera, this.renderer);
     this.tiles.update();
     if (this.mode === 'google') {
@@ -233,6 +257,7 @@ export class World extends THREE.EventDispatcher {
 
   dispose() {
     this.gRef = undefined;
+    under.setGround(null);
     if (this.tiles) { this.root.remove(this.tiles.group); this.tiles.dispose(); this.tiles = null; }
     this.heights = null;
   }

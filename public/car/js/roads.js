@@ -24,7 +24,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=32';
+import { unproject } from './geo.js?v=33';
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -99,6 +99,7 @@ function parseSpeed(v, region) {
 // ---------------------------------------------------------------- state
 const GROUP = new THREE.Group();
 GROUP.name = 'roads';
+GROUP.matrixAutoUpdate = false; // (it and its meshes never move: their matrices are made once, not every frame)
 // The working state (S) is built while the published one (LIVE) keeps answering surfaceAt, nearestLane... and its
 // meshes stay drawn; publish() swaps them in one step.
 function newState(prev) {
@@ -136,7 +137,7 @@ export let style = { region: 'other', yellowCentre: false };
 // ---------------------------------------------------------------- materials
 let MATS = null;
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=32');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=33');
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -225,7 +226,11 @@ function makeMaterials() {
       diffuseColor.rgb *= mix(0.55, 1.0, smoothstep(0.006, 0.018, jl));`);
   };
   pave.customProgramCacheKey = () => 'roads-pave-' + S.region;
-  MATS = { asphalt, paint, curb, pave };
+  // inside a tunnel: the same pictures lit by its lamps alone (unlit: the sun beyond the shadow map's reach would
+  // light a long tunnel's far end as if it were outdoors)
+  const tasphalt = new THREE.MeshBasicMaterial({ map: asphalt.map, color: new THREE.Color(2.1, 2.05, 1.95), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const tpaint = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(0.62, 0.6, 0.55), polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -6 });
+  MATS = { asphalt, paint, curb, pave, tasphalt, tpaint };
 }
 
 // ---------------------------------------------------------------- geometry helpers
@@ -343,7 +348,7 @@ function tileB(kind, x, z) {
   if (DIRTY && !DIRTY.has(ij)) return NULLB;
   const key = kind + ':' + ij;
   let b = TILES.get(key);
-  if (!b) { b = new Builder(kind === 'road', true); b.kind = kind; TILES.set(key, b); }
+  if (!b) { b = new Builder(kind === 'road' || kind === 'troad', true); b.kind = kind; TILES.set(key, b); }
   return b;
 }
 const UVS = 1 / 2.1; // asphalt texture tile is 2.1 m
@@ -353,7 +358,14 @@ function classify(w, region, dense = 0, twin = null, room = null) {
   const t = w.tags, hw = w.highway;
   const C = CLASSES[hw]; if (!C) return null;
   if (t.area === 'yes') return null;
-  if (t.tunnel && t.tunnel !== 'no' && t.tunnel !== 'building_passage') return null;
+  // tunnels are kept (they were left out, so a road stopped dead at every portal): 'bore' is a tunnel through a
+  // hill or under the ground, its floor running from portal to portal whatever the ground over it does; 'passage'
+  // (a building passage) stays on the ground under its building
+  const tunnel = t.tunnel && t.tunnel !== 'no' ? (t.tunnel === 'building_passage' ? 'passage' : 'bore') : null;
+  if (t.tunnel === 'culvert' || t.tunnel === 'flooded') return null;
+  // a road in a cutting or on an embankment: built, not following the ground (its height runs between the roads at
+  // its ends, the ground cut away or the slope built up beside it)
+  const eng = t.cutting && t.cutting !== 'no' ? 'cut' : t.embankment && t.embankment !== 'no' ? 'fill' : null;
   if (t.surface && UNPAVED.has(t.surface)) return null;
   if (hw === 'service' && (t.service === 'driveway' || t.access === 'private') && !t.lanes) { /* keep, narrow */ }
   if (t.highway === 'construction' || t.construction) return null;
@@ -411,12 +423,14 @@ function classify(w, region, dense = 0, twin = null, room = null) {
   let travel = Math.min(nLanes * lw, width - 0.3);
   if (travel / nLanes < 2.5) travel = width; // narrow road: lanes fill it
   lw = travel / nLanes;
+  // a tunnel's carriageway is its lanes and a narrow shoulder (no parking strip; a ledge and the wall beyond it)
+  if (tunnel === 'bore' && width > travel + 1.2 && !num(t.width)) width = travel + 1.2;
   const speed = parseSpeed(t.maxspeed, region) || (region === 'us' ? C.mph * 1.609 : (region === 'uk' ? (C.rank >= 9 ? C.mph * 1.609 : (C.rank <= 4 ? 32 : 48)) : C.speed));
   const bridge = yes(t.bridge) && t.bridge !== 'no';
   const layer = num(t.layer) || 0;
   return {
     cls: hw, rank: C.rank + (bridge ? 0 : 0), oneway, reverse, lanesF: lf, lanesB: oneway ? 0 : lb, nLanes, lw, width, hw: width / 2, travel,
-    speed: speed / 3.6, bridge, layer, sidewalk: t.sidewalk || t['sidewalk:both'] || null,
+    speed: speed / 3.6, bridge, layer, tunnel: bridge ? null : tunnel, gallery: t.tunnel === 'avalanche_protector', eng: bridge || tunnel === 'bore' ? null : eng, sidewalk: t.sidewalk || t['sidewalk:both'] || null,
     sidewalkL: t['sidewalk:left'] || null, sidewalkR: t['sidewalk:right'] || null,
     swW: num(t['sidewalk:both:width']) || num(t['sidewalk:width']) || null, swWL: num(t['sidewalk:left:width']) || null, swWR: num(t['sidewalk:right:width']) || null,
     turnF: t['turn:lanes'] || t['turn:lanes:forward'] || null, turnB: t['turn:lanes:backward'] || null,
@@ -426,7 +440,7 @@ function classify(w, region, dense = 0, twin = null, room = null) {
 
 function compatible(a, b) {
   return a.cls === b.cls && a.oneway === b.oneway && Math.abs(a.width - b.width) < 0.3 && a.lanesF === b.lanesF && a.lanesB === b.lanesB &&
-    a.bridge === b.bridge && a.layer === b.layer && a.curbKey === b.curbKey && a.urban === b.urban;
+    a.bridge === b.bridge && a.layer === b.layer && a.curbKey === b.curbKey && a.urban === b.urban && a.tunnel === b.tunnel && a.eng === b.eng;
 }
 
 async function buildTopology(data) {
@@ -446,7 +460,9 @@ async function buildTopology(data) {
   const urbanAt = (x, z) => countAt(x, z) >= 10;
   // building walls on a 20 m grid, for how much room a street has between its buildings
   const WG = 20, walls = new Map();
+  let nb0 = 0;
   for (const b of data.buildings || []) {
+    if ((++nb0 & 127) === 0) await Y();
     if (!b.outer || b.outer.length < 3 || b.part || (b.minHeight || 0) > 2.5 || /roof|canopy|carport/.test(b.type || '')) continue;
     const P = b.outer;
     for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
@@ -493,7 +509,9 @@ async function buildTopology(data) {
     return { room: got[Math.floor(got.length * 0.3)], left, right };
   };
   const nodePos = data.nodes || new Map();
+  await Y();
   const twins = findTwins(data.roads || []);
+  await Y();
   const ways = [];
   for (const w of data.roads || []) {
     await Y();
@@ -501,6 +519,17 @@ async function buildTopology(data) {
     let nb = 0; if (w.pts && w.pts.length) for (let k = 0; k <= 8; k++) { const q = w.pts[Math.round(k / 8 * (w.pts.length - 1))]; nb = Math.max(nb, countAt(q[0], q[1])); }
     const rm = nb >= 10 ? roomOf(w.pts) : null;
     const c = classify(w, region, nb >= 40 ? 2 : nb >= 10 ? 1 : 0, twins.get(w.id) ?? null, rm ? rm.room : null); if (!c || w.nodes.length < 2) continue;
+    // a short "tunnel" mostly inside buildings is a way through or into one (a passage, a car park's ground floor,
+    // often mapped tunnel=yes; the vector tiles do not tell them apart): it stays on the ground, no bore
+    if (c.tunnel === 'bore' && w.pts && w.pts.length >= 2) {
+      let L = 0, inB = 0, n = 0;
+      for (let i = 1; i < w.pts.length; i++) {
+        const a = w.pts[i - 1], q = w.pts[i], d = Math.hypot(q[0] - a[0], q[1] - a[1]); L += d;
+        const k = Math.max(1, Math.round(d / 5));
+        for (let j = 0; j < k; j++) { const t = (j + 0.5) / k; n++; if (inBuilding(a[0] + (q[0] - a[0]) * t, a[1] + (q[1] - a[1]) * t)) inB++; }
+      }
+      if (L < 250 && n && inB / n >= 0.6) { c.tunnel = 'passage'; c.passage = true; }
+    }
     let nodes = w.nodes.slice();
     if (c.reverse) nodes.reverse();
     const pts = []; const ids = [];
@@ -519,6 +548,7 @@ async function buildTopology(data) {
     }
     if (c.reverse) { const x = curbL; curbL = curbR; curbR = x; }
     if (c.roundabout) { curbL = curbR && c.urban; }
+    if (c.tunnel === 'bore') curbL = curbR = false; // (a ledge along each wall instead, as a bridge without pavement)
     c.curbL = curbL; c.curbR = curbR; c.curbKey = (curbL ? 1 : 0) + (curbR ? 2 : 0);
     const defW = c.rank >= 8 && c.urban ? 4.2 : c.rank >= 7 && c.urban ? 3.6 : region === 'jp' ? 2.0 : 2.4;
     const tagL = c.swWL || c.swW, tagR = c.swWR || c.swW;
@@ -533,7 +563,9 @@ async function buildTopology(data) {
   }
   // roads that cross on the same level without sharing a node (vector tiles lose some, OSM has errors) get a
   // junction where they cross, so the two surfaces meet at one height instead of overlapping
+  await Y();
   const extra = joinCrossings(ways);
+  await Y();
   // node occurrences
   const occ = new Map();
   for (const w of ways) w.ids.forEach((id, i) => {
@@ -554,6 +586,7 @@ async function buildTopology(data) {
       }
     }
   }
+  await Y();
   // merge chains through degree-2 nodes with compatible attributes
   const ends = new Map(); // node -> [{e, atStart}]
   const addEnd = (e) => {
@@ -588,6 +621,20 @@ async function buildTopology(data) {
     if (aa.ids[0] === aa.ids[aa.ids.length - 1]) { /* closed loop (roundabout) stays one edge */ }
   }
   edges = edges.filter(e => !dead.has(e));
+  // a short piece at layer 1 or more between two bridges, not itself tagged one (an abutment, or a joint where the map
+  // split the structure: the vector tiles have one on the Lincoln Tunnel's helix) is part of the bridge, not a road on
+  // the ground under it (that 10 m piece pulled the helix's deck 9 m down to the plaza)
+  {
+    const at = new Map();
+    for (const e of edges) for (const id of [e.ids[0], e.ids[e.ids.length - 1]]) { let l = at.get(id); if (!l) at.set(id, l = []); l.push(e); }
+    const onBridge = (e, id) => (at.get(id) || []).some(f => f !== e && f.c.bridge);
+    for (const e of edges) {
+      if (e.c.bridge || e.c.tunnel || !(e.c.layer >= 1)) continue;
+      let L = 0; for (let i = 1; i < e.pts.length; i++) L += Math.hypot(e.pts[i][0] - e.pts[i - 1][0], e.pts[i][1] - e.pts[i - 1][1]);
+      if (L > 60 || !onBridge(e, e.ids[0]) || !onBridge(e, e.ids[e.ids.length - 1])) continue;
+      e.c.bridge = true; e.c.eng = null; e.c.bridgeFill = true;
+    }
+  }
   // a closed loop edge with no other connections: split in half so it has two junction-free ends that meet
   for (let i = 0; i < edges.length; i++) { edges[i].id = i; sampleEdge(edges[i]); await Y(); }
   // node table
@@ -632,7 +679,8 @@ function findTwins(list) {
 let joinId = -9e12;
 function joinCrossings(ways) {
   const extra = new Map(), grid = new Map(), C = 24;
-  const level = (w) => w.c.bridge ? 'b' + w.c.layer : 'g';
+  // (a tunnel, or a road mapped under the ground, crossing a street over it is not a junction with it)
+  const level = (w) => w.c.bridge ? 'b' + w.c.layer : w.c.tunnel === 'bore' ? 't' + w.c.layer : w.c.layer < 0 ? 'u' + w.c.layer : 'g';
   ways.forEach((w, wi) => {
     for (let i = 1; i < w.pts.length; i++) {
       const a = w.pts[i - 1], b = w.pts[i];
@@ -855,6 +903,8 @@ function profileHeights(e) {
 }
 // Overlapping ribbons of unconnected roads would fight in depth: lift each class a few millimetres apart.
 const rankBias = (e) => e.c.rank * 0.004 + (e.c.bridge ? 0.02 : 0);
+// roads whose height is built rather than read off the ground: bridges, tunnels, cuttings and embankments
+const free = (e) => e.c.bridge || e.c.tunnel === 'bore' || !!e.c.eng;
 // Ground samples kept between builds (a rebuild as the car drives on mostly sees the same roads): road profiles
 // by the edge's node list. A reheight re-samples its box and overwrites them.
 const PCACHE = new Map();
@@ -871,7 +921,7 @@ const planeAt = (n, x, z) => n.plane ? n.plane[0] + n.plane[1] * (x - n.x) + n.p
 function fitPlane(n) {
   let sw = 0, sx = 0, sz = 0, sh = 0, sxx = 0, szz = 0, sxz = 0, sxh = 0, szh = 0;
   for (const x of n.ends) {
-    const e = x.e; if (e.c.bridge || !e.prof) continue;
+    const e = x.e; if (free(e) || !e.prof) continue;
     const wt = e.c.rank * e.c.rank;
     const sb = x.atStart ? e.set0 : e.set1;
     for (const d of [0, 3, 6, 9]) {
@@ -902,9 +952,9 @@ async function computeHeights(bbox) {
     const n0 = nodes.get(e.ids[0]), n1 = nodes.get(e.ids[e.ids.length - 1]);
     return inBox(n0.x, n0.z) || inBox(n1.x, n1.z);
   };
-  // 1. each road's own profile from the ground
+  // 1. each road's own profile from the ground (not a bridge's, a tunnel's or a cutting's: theirs is built)
   for (const e of S.edges) {
-    if (e.c.bridge || !edgeIn(e)) continue;
+    if (free(e) || !edgeIn(e)) continue;
     await Y();
     const key = e.ids.join(',') + ':' + e.px.length + ':' + e.c.width + (S.smooth ? 'o' : 'p');
     let prof = !bbox ? PCACHE.get(key) : undefined;
@@ -913,19 +963,25 @@ async function computeHeights(bbox) {
     if (prof) e.prof = prof;
     else if (!e.prof) e.prof = null;
   }
+  // 1b. a road into a tunnel's portal, or under a bridge, whose ground rises in a hump over the line between its
+  // ends: it lies in a cutting the elevation model is too coarse to hold (the map does not always say so; the
+  // vector tiles never do), so it is built as one (Broadway's approach under the Hyde Street bridge humped 2.5 m)
+  ST('h-cuts'); cutsByShape(edgeIn);
+  ST('h-nodes');
   // 2. junction planes and node heights
   for (const n of nodes.values()) {
     if (!inBox(n.x, n.z, 60)) continue;
     await Y();
-    // a bridge's own dead end (where the loaded data stops, often over a hill or water) does not anchor it
-    n.anchor = n.ends.some(x => !x.e.c.bridge);
+    // a bridge's own dead end (where the loaded data stops, often over a hill or water) does not anchor it, nor
+    // does a tunnel's (or a cutting's): their heights come from the roads on the ground they join
+    n.anchor = n.ends.some(x => !free(x.e));
     if (!n.anchor) continue;
     n.plane = null;
     if (n.ends.length >= 2) {
       const pl = fitPlane(n);
       if (pl) { n.plane = pl; n.h = pl[0]; n.known = true; continue; }
     }
-    const x = n.ends.find(x => !x.e.c.bridge && x.e.prof);
+    const x = n.ends.find(x => !free(x.e) && x.e.prof);
     if (x) { n.h = x.atStart ? x.e.prof[0] : x.e.prof[x.e.prof.length - 1]; n.known = true; }
     else { const g = sampleGround(n.x, n.z); if (g != null) { n.h = g; n.known = true; } else n.h = n.h || 0; }
   }
@@ -935,10 +991,10 @@ async function computeHeights(bbox) {
   for (let it = 0; it < 24; it++) {
     let moved = 0;
     for (const e of S.edges) {
-      if (e.c.bridge) continue;
+      if (free(e)) continue;
       const n0 = nodes.get(e.ids[0]), n1 = nodes.get(e.ids[e.ids.length - 1]);
       if (n0 === n1 || !n0.anchor || !n1.anchor) continue;
-      const allowed = NET_GRADE * Math.max(1, e.len), d = n1.h - n0.h;
+      const allowed = (S.bare ? NET_GRADE_BARE : NET_GRADE) * Math.max(1, e.len), d = n1.h - n0.h;
       if (Math.abs(d) <= allowed) continue;
       const ex = (Math.abs(d) - allowed) / 2 * Math.sign(d);
       const f0 = n0.ends.length === 1 ? 2 : 1, f1 = n1.ends.length === 1 ? 2 : 1; // a dead end gives way more
@@ -975,12 +1031,16 @@ async function computeHeights(bbox) {
       for (const n of l) { n.plane = [a + b * (n.x - cx) + c * (n.z - cz), b, c]; n.h = n.plane[0]; }
     }
   }
-  // 3. bridge-only nodes: inverse distance over anchors through the bridge network (linear along a chain)
+  ST('h-free');
+  // 3. bridge-only (and tunnel-only, cutting-only) nodes: inverse distance over anchors through the network of such
+  // roads (linear along a chain)
   for (const n of nodes.values()) {
     if (n.anchor || !inBox(n.x, n.z, 60)) continue;
+    await Y();
     n.plane = null;
     const dist = new Map([[n.id, 0]]), queue = [n.id], found = [], soft = [];
-    const bb = S.data && S.data.bbox, inData = (m) => !bb || (m.x >= bb.x0 && m.x <= bb.x1 && m.z >= bb.z0 && m.z <= bb.z1);
+    const bb = S.data && S.data.bbox, inData = (m, k = 0) => !bb || (m.x >= bb.x0 + k && m.x <= bb.x1 - k && m.z >= bb.z0 + k && m.z <= bb.z1 - k);
+    let bore = false, layer = 0;
     while (queue.length) {
       queue.sort((a, b) => dist.get(b) - dist.get(a));
       const id = queue.pop(), d = dist.get(id), m = nodes.get(id);
@@ -988,19 +1048,26 @@ async function computeHeights(bbox) {
       // a bridge's dead end inside the loaded area: its ground, used only if no road on the ground joins the bridge
       if (m.ends.length === 1) { const g = sampleGround(m.x, m.z); if (g != null) soft.push([g, d, inData(m)]); }
       for (const x of m.ends) {
-        if (!x.e.c.bridge) continue;
+        if (!free(x.e)) continue;
+        if (x.e.c.tunnel === 'bore') { bore = true; layer = Math.min(layer, x.e.c.layer || 0); }
         const o = x.atStart ? x.e.ids[x.e.ids.length - 1] : x.e.ids[0], nd = d + x.e.len;
         if (!dist.has(o) || dist.get(o) > nd) { dist.set(o, nd); queue.push(o); }
       }
     }
-    if (found.length) { let a = 0, b = 0; for (const [h, d] of found) { a += h / Math.max(d, 1); b += 1 / Math.max(d, 1); } n.h = a / b; }
-    else if (soft.length) {
+    if (found.length) {
+      let a = 0, b = 0; for (const [h, d] of found) { a += h / Math.max(d, 1); b += 1 / Math.max(d, 1); } n.h = a / b;
+      // a tunnel that only one road leads into and that ends under the ground (a ramp down into a car park): it goes
+      // down a storey for each layer under the street (at most 14% down the ramp)
+      if (bore && found.length === 1 && n.ends.length === 1 && inData(n, 25)) n.h = found[0][0] - Math.min(0.14 * found[0][1], 3.4 * Math.max(1, -layer));
+    } else if (soft.length) {
       // a bridge no ground road joins (a long crossing cut off by the loaded area): one level deck at the
       // height of its end inside the loaded area (the highest such end if several: the other ends are where the
-      // data was cut, over water or a valley, and their ground is far under the deck)
+      // data was cut, over water or a valley, and their ground is far under the deck); a tunnel cut off so: at its
+      // lowest end (its other ends are cut off over the hill it goes through)
       const softIn = soft.filter(q => q[2]), pool = softIn.length ? softIn : soft;
-      n.h = Math.max(...pool.map(q => q[0]));
+      n.h = bore ? Math.min(...pool.map(q => q[0])) : Math.max(...pool.map(q => q[0]));
     } else { const g = sampleGround(n.x, n.z); if (g != null) n.h = g; }
+    n.anchored = found.length > 0; // (a tunnel's node worked out from the roads it joins: remembered, below)
     // the height this node had when its bridge was first built in this drive, if it was: kept (deckMem)
     n.frozen = false;
     if (S.smooth) { const m = deckMem().get(deckKey(n)); if (m != null) { n.h = m; n.frozen = true; } }
@@ -1012,14 +1079,43 @@ async function computeHeights(bbox) {
     if (n._r == null) { let r = 0; for (const x of n.ends) r = Math.max(r, (x.atStart ? x.e.set0 : x.e.set1) + x.e.c.hw); n._r = r; }
     const k = Math.floor(n.x / JC) + ',' + Math.floor(n.z / JC); let l = jg.get(k); if (!l) jg.set(k, l = []); l.push(n);
   }
+  ST('h-final');
   // 4. final heights: from the junction plane at each cut to the road's own profile
   for (const e of S.edges) {
     if (!edgeIn(e)) continue;
     await Y();
     const n0 = nodes.get(e.ids[0]), n1 = nodes.get(e.ids[e.ids.length - 1]);
     const N = e.px.length, bias = rankBias(e);
-    if (e.c.bridge) {
-      // straight between the planes of the junctions at its ends
+    if (free(e) && !e.c.bridge && N > 2 && e.len > 8) {
+      // a tunnel or a cutting: on the junction's own plane inside a junction at either end (its height and its
+      // cross slope: a straight line from the node met the junction's surface 0.4 to 0.8 m off at the junction's
+      // edge), straight from one junction's edge to the other's, taking the grade of each plane there and easing
+      // into its own over the first metres (a straight line from portal to portal met the approach at a kink)
+      const L = e.len, lim = e.c.tunnel === 'bore' ? 0.12 : 0.2;
+      const j0 = n0.anchor && n0.plane && n0.ends.length >= 2, j1 = n1.anchor && n1.plane && n1.ends.length >= 2;
+      const s0 = j0 ? Math.min(e.set0 || 0, L * 0.3) : 0, s1 = j1 ? L - Math.min(e.set1 || 0, L * 0.3) : L, room = Math.max(1e-3, s1 - s0);
+      const pt = (s) => { let i = 1; while (i < N - 1 && e.ps[i] < s) i++; const t = Math.max(0, Math.min(1, (s - e.ps[i - 1]) / Math.max(1e-6, e.ps[i] - e.ps[i - 1]))); return [e.px[i - 1] + (e.px[i] - e.px[i - 1]) * t, e.pz[i - 1] + (e.pz[i] - e.pz[i - 1]) * t]; };
+      const q0 = pt(s0), q1 = pt(s1), h0 = planeAt(n0, q0[0], q0[1]), h1 = planeAt(n1, q1[0], q1[1]), G = (h1 - h0) / room, T = Math.min(45, room / 2.5);
+      const along = (n, i0, i1) => {
+        if (!n.anchor || !n.plane) return null;
+        const dx = e.px[i1] - e.px[i0], dz = e.pz[i1] - e.pz[i0], l = Math.hypot(dx, dz) || 1;
+        return Math.max(-lim, Math.min(lim, (n.plane[1] * dx + n.plane[2] * dz) / l));
+      };
+      const g0 = along(n0, 0, 1), g1 = along(n1, N - 2, N - 1);
+      for (let i = 0; i < N; i++) {
+        const s = e.ps[i];
+        if (j0 && s <= s0) { e.ph[i] = planeAt(n0, e.px[i], e.pz[i]) + bias; e.pc[i] = n0.plane[1] * e.nx[i] + n0.plane[2] * e.nz[i]; continue; }
+        if (j1 && s >= s1) { e.ph[i] = planeAt(n1, e.px[i], e.pz[i]) + bias; e.pc[i] = n1.plane[1] * e.nx[i] + n1.plane[2] * e.nz[i]; continue; }
+        const u0 = Math.max(0, s - s0), u1 = Math.max(0, s1 - s);
+        let h = lerp(h0, h1, Math.min(1, u0 / room));
+        if (g0 != null && u0 < T) h += (g0 - G) * u0 * (1 - u0 / T) ** 2;
+        if (g1 != null && u1 < T) h -= (g1 - G) * u1 * (1 - u1 / T) ** 2;
+        e.ph[i] = h + bias; e.pc[i] = 0;
+      }
+      continue;
+    }
+    if (free(e)) {
+      // straight between the planes of the junctions at its ends (a bridge: bridgeDecks raises it after)
       const h0 = planeAt(n0, e.px[0], e.pz[0]), h1 = planeAt(n1, e.px[N - 1], e.pz[N - 1]);
       for (let i = 0; i < N; i++) { e.ph[i] = lerp(h0, h1, e.len > 0 ? e.ps[i] / e.len : 0) + bias; e.pc[i] = 0; }
       continue;
@@ -1053,7 +1149,7 @@ async function computeHeights(bbox) {
     const fixed = (i) => (p0 && e.ps[i] <= s0) || (p1 && e.ps[i] >= s1);
     // when the two junctions are further apart in height than MAX_GRADE allows (a bad patch of terrain model, a
     // cliff), the road takes the grade it needs, evenly, rather than a step at one end
-    let G = MAX_GRADE;
+    let G = gradeFor(e.c);
     let ia = -1, ib = N; for (let i = 0; i < N; i++) { if (fixed(i) && (!p1 || e.ps[i] <= s0)) ia = i; }
     for (let i = N - 1; i >= 0; i--) { if (fixed(i) && (!p0 || e.ps[i] >= s1)) ib = i; }
     if (ia >= 0 && ib < N && ib > ia) { const need = Math.abs(e.ph[ib] - e.ph[ia]) / Math.max(0.5, e.ps[ib] - e.ps[ia]); if (need * 1.15 > G) G = need * 1.15; }
@@ -1065,28 +1161,236 @@ async function computeHeights(bbox) {
     // coarse terrain model has its own): a triangular average over 8 m each way, twice, as a road's vertical curves
     // (in a built-up area outside the US the elevation model carries the buildings' tops, which make bumps in the
     // streets: a longer window there)
+    // (the window narrows towards a junction's edge, where the road is held on the plane: a full window there pulled
+    // the samples next to it towards the road further on, a kink of 0.85 m in 3 m beside a Paris tunnel's portal)
     const lumpy = e.c.urban && S.region !== 'us';
     if (N > 3) for (let pass = 0; pass < (lumpy ? 3 : 2); pass++) {
       const W = lumpy ? 18 : 8, q = e.ph.slice();
-      let lo = 0, hi = 0;
       for (let i = 0; i < N; i++) {
         if (fixed(i)) continue;
-        // (bounded by i itself: an unbounded walk hung the page on some Overpass data)
-        while (lo < i && e.ps[lo] < e.ps[i] - W) lo++;
-        if (hi < lo) hi = lo;
-        while (hi + 1 < N && e.ps[hi + 1] <= e.ps[i] + W) hi++;
+        const Wi = Math.min(W, p0 ? e.ps[i] - s0 : Infinity, p1 ? s1 - e.ps[i] : Infinity);
+        if (!(Wi > 0.5)) continue;
         let sw = 0, sh = 0;
-        for (let j = lo; j <= hi; j++) { const w = 1 - Math.abs(e.ps[j] - e.ps[i]) / W; if (w > 0) { sw += w; sh += w * e.ph[j]; } }
+        for (let j = i; j >= 0 && e.ps[j] > e.ps[i] - Wi; j--) { const w = 1 - (e.ps[i] - e.ps[j]) / Wi; sw += w; sh += w * e.ph[j]; }
+        for (let j = i + 1; j < N && e.ps[j] < e.ps[i] + Wi; j++) { const w = 1 - (e.ps[j] - e.ps[i]) / Wi; sw += w; sh += w * e.ph[j]; }
         if (sw > 0) q[i] = sh / sw;
       }
       for (let i = 0; i < N; i++) e.ph[i] = q[i];
     }
     for (let i = 0; i < N; i++) e.ph[i] += bias;
   }
+  ST('h-ramps');
+  // 4b. a portal in flat ground (a river tunnel, an underpass, a city's road tunnel): the road ramps down to it in a
+  // trench, so the bore starts under the ground rather than standing on it as a tube
+  try { await portalRamps(edgeIn); } catch (err) { console.warn('portal ramps', err); }
+  ST('h-decks');
   // 5. bridge decks: raised over what they cross, the roads at their ends ramped up to meet them
   try { await bridgeDecks(edgeIn); } catch (err) { console.warn('bridge decks', err); }
+  ST('h-clear');
+  // 6. a tunnel passes under the streets over it with room for its roof: lowered under them where its straight line
+  // from portal to portal came up through one (a street just inside a portal over a shallow tunnel)
+  try { await tunnelClearance(edgeIn); } catch (err) { console.warn('tunnel clearance', err); }
+}
+// Portals whose ground does not rise over the bore within its first 60 m: the portal goes down to where the roof
+// has a metre of ground over it there (at most 9 m), the one road into it ramping down to it at RAMP_GRADE, as far as
+// that road reaches (the junction at its far end stays). The bore's line from portal to portal moves with it.
+const RAMP_GRADE = 0.065;
+async function portalRamps(edgeIn) {
+  let n = 0;
+  for (const e of S.edges) {
+    if (e.c.tunnel !== 'bore' || e.c.gallery || !e.px || e.px.length < 2 || !edgeIn(e) || e.len < 30) continue;
+    await Y();
+    const crown = boreCrown(e.c), N = e.px.length;
+    for (const end of [0, 1]) {
+      const node = S.nodes.get(end ? e.ids[e.ids.length - 1] : e.ids[0]);
+      if (!node || !node.anchor) continue;
+      const appr = node.ends.filter(x => x.e.c.tunnel !== 'bore');
+      if (appr.length !== 1 || free(appr[0].e)) continue;
+      // the road into it, on through the nodes where it only continues (a tile's edge, a change of lanes), to its
+      // first junction (which stays)
+      const chain = []; let cx = appr[0], d0 = 0, far = null;
+      for (let k = 0; k < 8 && cx; k++) {
+        const f = cx.e; chain.push({ f, atStart: cx.atStart, d0 });
+        d0 += f.len;
+        const fn = S.nodes.get(cx.atStart ? f.ids[f.ids.length - 1] : f.ids[0]);
+        far = fn; cx = null;
+        if (d0 > 160 || !fn || fn.ends.length !== 2) break;
+        const nx = fn.ends.find(x => x.e !== f);
+        if (!nx || free(nx.e) || nx.e.c.tunnel === 'bore') break;
+        cx = nx;
+      }
+      const lastF = chain[chain.length - 1];
+      const reach = Math.max(0, d0 - (far && far.ends.length > 2 ? (lastF.atStart ? lastF.f.set1 : lastF.f.set0) : 0) - 2);
+      const hp = end ? e.ph[N - 1] : e.ph[0];
+      // the ground over the bore 10 to 60 m in, and either side of it (a portal into a hillside or a cliff, where
+      // the coarse elevation model has the hill beside the bore rather than over it, stays where it is)
+      let gIn = -Infinity, gSide = -Infinity;
+      for (let i = 0; i < N; i++) {
+        const d = end ? e.len - e.ps[i] : e.ps[i]; if (d < 10 || d > 60) continue;
+        const g = sampleGround(e.px[i], e.pz[i]); if (g != null && g > gIn) gIn = g;
+        for (const o of [-30, -15, 15, 30]) { const h = sampleGround(e.px[i] + e.nx[i] * o, e.pz[i] + e.nz[i] * o); if (h != null && h > gSide) gSide = h; }
+      }
+      if (!(gIn > -Infinity) || gSide - hp > crown + 1.5) continue;
+      const want = gIn - (crown + 0.45 + 1.0);
+      if (want > hp - 0.5) continue;
+      let drop = Math.min(hp - want, 9, RAMP_GRADE * reach);
+      // the ramp meets the road's own line before the junction (or the next portal) at the far end, which stays
+      { const lf = lastF.f, hf = (lastF.atStart ? lf.ph[lf.ph.length - 1] : lf.ph[0]) - rankBias(lf); drop = Math.min(drop, hp + RAMP_GRADE * d0 - hf - 0.05); }
+      if (drop < 0.5) continue;
+      const ph = hp - drop;
+      for (const { f, atStart, d0: dd } of chain) {
+        const M = f.px.length, bias = rankBias(f);
+        for (let i = 0; i < M; i++) {
+          const d = dd + (atStart ? f.ps[i] : f.len - f.ps[i]);
+          const t = ph + RAMP_GRADE * d + bias;
+          if (t < f.ph[i]) f.ph[i] = t;
+        }
+        // a vertical curve at the ramp's top
+        const P = f.ph.slice();
+        smoothProfile(f, P, 12, 2, (i) => f.ps[i] < 0.5 || f.len - f.ps[i] < 0.5);
+        for (let i = 0; i < M; i++) f.ph[i] = Math.min(f.ph[i], P[i]);
+        f.portalRamp = (f.portalRamp || 0) | (atStart ? 1 : 2);
+        // the node where it carries on
+        const fn = S.nodes.get(atStart ? f.ids[f.ids.length - 1] : f.ids[0]);
+        if (fn && fn !== far) { const h = f.ph[atStart ? M - 1 : 0] - bias; if (h < fn.h) { if (fn.plane) fn.plane[0] -= fn.h - h; fn.h = h; } }
+      }
+      // the node and the bore with it
+      node.h -= drop; if (node.plane) node.plane[0] -= drop;
+      for (const x of node.ends) {
+        const g = x.e; if (g.c.tunnel !== 'bore') continue;
+        for (let i = 0; i < g.ph.length; i++) { const t = g.len > 0 ? g.ps[i] / g.len : 0; g.ph[i] -= drop * (x.atStart ? 1 - t : t); }
+      }
+      n++;
+    }
+  }
+  S.portalRamps = n;
+}
+// a bore's roof over its road (as tunnels.js builds it) and the room over that a street above needs
+const boreCrown = (c) => { const W = 2 * c.hw + 2 * (c.rank >= 6 ? 0.9 : 0.6); return W > 13.5 ? 5.52 : 3.6 + Math.min(0.45 * W, 2.4); };
+const TUN_COVER = 1.1, TUN_GRADE = 0.06;
+async function tunnelClearance(edgeIn) {
+  const T = S.edges.filter(e => e.c.tunnel === 'bore' && e.px && e.px.length >= 2 && edgeIn(e));
+  if (!T.length) return;
+  const C = 24, grid = new Map();
+  for (const f of S.edges) {
+    if (f.c.tunnel === 'bore' || !f.px || f.px.length < 2) continue;
+    for (let j = 1; j < f.px.length; j++) gridAdd(grid, Math.min(f.px[j - 1], f.px[j]) - f.c.hw, Math.min(f.pz[j - 1], f.pz[j]) - f.c.hw, Math.max(f.px[j - 1], f.px[j]) + f.c.hw, Math.max(f.pz[j - 1], f.pz[j]) + f.c.hw, [f, j], C);
+  }
+  let lowered = 0;
+  for (const e of T) {
+    await Y();
+    const N = e.px.length, crown = boreCrown(e.c), need = crown + TUN_COVER, wide = e.c.hw + (e.c.rank >= 6 ? 0.9 : 0.6) + 0.45;
+    const R = new Float64Array(N).fill(Infinity);
+    const n0 = S.nodes.get(e.ids[0]), n1 = S.nodes.get(e.ids[e.ids.length - 1]);
+    const fix0 = n0 && n0.ends.some(x => x.e.c.tunnel !== 'bore'), fix1 = n1 && n1.ends.some(x => x.e.c.tunnel !== 'bore');
+    let any = false;
+    for (let i = 0; i < N; i++) {
+      // the ground itself, away from the portals (where a tunnel runs out under a thin cover, rightly): a bore whose
+      // roof stood out of the ground (under a river whose far side is not loaded, under a valley) goes under it
+      if (!e.c.gallery && (!fix0 || e.ps[i] > 40) && (!fix1 || e.len - e.ps[i] > 40)) {
+        const g = sampleGround(e.px[i], e.pz[i]);
+        // (2 m over its shell: the terrain's mesh further off is coarser and sags under the ground's true line)
+        const needG = crown + 0.45 + 2.0;
+        if (g != null && g < e.ph[i] + needG && g - needG < R[i]) {
+          // (not in a hillside: the hill beside the bore is the coarse model's, the tunnel is in it)
+          let side = -Infinity;
+          for (const o of [-30, -15, 15, 30]) { const h = sampleGround(e.px[i] + e.nx[i] * o, e.pz[i] + e.nz[i] * o); if (h != null && h > side) side = h; }
+          if (!(side > e.ph[i] + crown + 1.5)) { R[i] = g - needG; any = true; }
+        }
+      }
+      const l = grid.get(gkey(e.px[i], e.pz[i], C)); if (!l) continue;
+      for (const [f, j] of l) {
+        const ax = f.px[j - 1], az = f.pz[j - 1], dx = f.px[j] - ax, dz = f.pz[j] - az, L2 = dx * dx + dz * dz;
+        const t = L2 > 0 ? Math.max(0, Math.min(1, ((e.px[i] - ax) * dx + (e.pz[i] - az) * dz) / L2)) : 0;
+        const d = Math.hypot(e.px[i] - ax - dx * t, e.pz[i] - az - dz * t);
+        if (d > wide + f.c.hw) continue;
+        const h = f.ph[j - 1] + (f.ph[j] - f.ph[j - 1]) * t;
+        // (only what lies over the tunnel: a road it runs into at a portal is beside it, not over it)
+        if (h < e.ph[i] + 2.5) continue;
+        if (h - need < R[i]) { R[i] = h - need; any = true; }
+      }
+    }
+    if (!any) continue;
+    const P = e.ph.slice();
+    let moved = false;
+    for (let i = 0; i < N; i++) {
+      if ((fix0 && e.ps[i] < 1) || (fix1 && e.len - e.ps[i] < 1)) continue;
+      let r = Infinity;
+      for (let j = 0; j < N; j++) if (R[j] < Infinity) r = Math.min(r, R[j] + TUN_GRADE * Math.abs(e.ps[i] - e.ps[j]));
+      // (from the portal it may go down no steeper than the ramp either)
+      if (fix0) r = Math.max(r, e.ph[0] - TUN_GRADE * e.ps[i]);
+      if (fix1) r = Math.max(r, e.ph[N - 1] - TUN_GRADE * (e.len - e.ps[i]));
+      if (r < P[i]) { P[i] = r; moved = true; }
+    }
+    if (!moved) continue;
+    smoothProfile(e, P, 14, 2, (i) => (fix0 && e.ps[i] < 1) || (fix1 && e.len - e.ps[i] < 1), true);
+    for (let i = 0; i < N; i++) e.ph[i] = Math.min(e.ph[i], P[i]);
+    lowered++;
+  }
+  S.tunnelLowered = lowered;
 }
 const MAX_GRADE = 0.33, NET_GRADE = 0.25;
+function cutsByShape(edgeIn) {
+  const nodes = S.nodes, portal = (n) => n && n.ends.some(x => x.e.c.tunnel === 'bore');
+  // bridge pieces by place
+  const C = 24, grid = new Map();
+  for (const f of S.edges) {
+    if (!f.c.bridge || !f.px || f.px.length < 2) continue;
+    for (let j = 1; j < f.px.length; j++) gridAdd(grid, Math.min(f.px[j - 1], f.px[j]), Math.min(f.pz[j - 1], f.pz[j]), Math.max(f.px[j - 1], f.px[j]), Math.max(f.pz[j - 1], f.pz[j]), [f, j], C);
+  }
+  let n = 0;
+  for (const e of S.edges) {
+    if (free(e) || !e.prof || !edgeIn(e) || e.len > 320 || e.len < 20 || e.c.rank < 3) continue;
+    const N = e.px.length, P = e.prof;
+    const atPortal = portal(nodes.get(e.ids[0])) || portal(nodes.get(e.ids[e.ids.length - 1]));
+    // where a bridge passes over it
+    let under = null;
+    if (!atPortal && grid.size) for (let i = 1; i < N && under == null; i++) {
+      const ax = e.px[i - 1], az = e.pz[i - 1], rx = e.px[i] - ax, rz = e.pz[i] - az;
+      const l = grid.get(gkey((ax + e.px[i]) / 2, (az + e.pz[i]) / 2, C)); if (!l) continue;
+      for (const [f, j] of l) {
+        if (f.c.layer < e.c.layer) continue;
+        const sx = f.px[j] - f.px[j - 1], sz = f.pz[j] - f.pz[j - 1], den = rx * sz - rz * sx;
+        if (Math.abs(den) < 1e-9) continue;
+        const qx = f.px[j - 1] - ax, qz = f.pz[j - 1] - az, t = (qx * sz - qz * sx) / den, u = (qx * rz - qz * rx) / den;
+        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) { under = e.ps[i - 1] + (e.ps[i] - e.ps[i - 1]) * t; break; }
+      }
+    }
+    if (!atPortal && under == null) continue;
+    // the hump: the ground over the straight line between the ends (near the bridge, for a road under one)
+    let hump = 0;
+    for (let i = 0; i < N; i++) {
+      if (under != null && Math.abs(e.ps[i] - under) > 45) continue;
+      const d = P[i] - lerp(P[0], P[N - 1], e.ps[i] / e.len);
+      if (d > hump) hump = d;
+    }
+    // or, into a portal at the foot of a cliff or a steep hillside (the Lincoln Tunnel's in Weehawken), ground that
+    // climbs over the last metres to the portal 1.5 m over where the rest of the road was heading: the model's ground
+    // there is the hill over the bore's mouth (the approach rose 5.4 m in its last 33 m)
+    let why = 'hump';
+    if (hump < 1.5 && atPortal) {
+      const at = (s) => { let i = 1; while (i < N - 1 && e.ps[i] < s) i++; const t = (s - e.ps[i - 1]) / Math.max(1e-6, e.ps[i] - e.ps[i - 1]); return P[i - 1] + (P[i] - P[i - 1]) * Math.max(0, Math.min(1, t)); };
+      for (const k of [0, N - 1]) {
+        if (!portal(nodes.get(k ? e.ids[e.ids.length - 1] : e.ids[0]))) continue;
+        const far = k ? 0 : N - 1, sP = e.ps[k], sF = e.ps[far], back = Math.min(40, e.len * 0.6), sB = k ? sP - back : sP + back;
+        const PB = at(sB), ext = PB + (PB - P[far]) / (sB - sF) * (sP - sB);
+        if (P[k] - ext > hump) { hump = P[k] - ext; why = 'rise'; }
+      }
+    }
+    if (hump < 1.5) continue;
+    e.c.eng = 'cut'; e.autoCut = why; e.prof = null; n++;
+  }
+  S.autoCuts = n;
+}
+// where the elevation model is bare earth from lidar or survey (the US and Canada, Britain, Australia and New Zealand)
+// a steep street is real: San Francisco's Filbert and 22nd Streets are 31.5%, Dunedin's Baldwin Street 35%. Elsewhere
+// a grade past NET_GRADE between two junctions is more often a building in the model than a hill.
+const MAX_GRADE_BARE = 0.42, NET_GRADE_BARE = 0.40;
+// The steepest a road of a class is built (where the model is coarse, a main road climbing a cliff it does not
+// climb in the world is spread evenly rather than following the model's steps): motorways 8%, main roads 14 to 22%
+const CLASS_GRADE = { motorway: 0.08, motorway_link: 0.1, trunk: 0.1, trunk_link: 0.12, primary: 0.14, primary_link: 0.16, secondary: 0.18, secondary_link: 0.2, tertiary: 0.22, tertiary_link: 0.24 };
+const gradeFor = (c) => { const k = CLASS_GRADE[c.cls]; if (S.bare) return c.rank >= 9 && k ? Math.max(k, 0.1) : MAX_GRADE_BARE; return k ? Math.min(k, MAX_GRADE) : MAX_GRADE; };
+const BARE = [[24, -170, 72, -52], [49.85, -8.2, 60.9, 1.8], [-44, 112, -10, 154], [-47.5, 166, -34, 179]];
 
 // ---------------------------------------------------------------- bridge decks
 // A deck starts from the roads it joins at its ends and is raised over whatever it crosses: a road under it gets
@@ -1171,6 +1475,7 @@ async function bridgeDecks(edgeIn) {
     }
     // the ends: a node only bridges meet at rises as needed; a bridge's end on the ground rises (with a ramp on
     // the road before it) when that road is the only one there
+    const lifted = new Map();
     for (const e of group) for (const end of [0, 1]) {
       const n = nodeOf(e, end), R = req.get(e), other = nodeOf(e, 1 - end), mem = deckMem().get(deckKey(n));
       let need = R[end ? R.length - 1 : 0];
@@ -1179,12 +1484,34 @@ async function bridgeDecks(edgeIn) {
       // a height this node had in an earlier build of this drive is kept, whatever this build would make of it
       if (mem != null) { if (!anchored(n)) continue; need = mem; }
       if (!(need > -Infinity) || need <= n.h + 0.25) continue;
-      if (!anchored(n)) { n.h = need; continue; }
+      if (!anchored(n)) { n.h = need; lifted.set(n, need); continue; }
       const a = approach(n); if (!a) continue;
       const f = a.e, far = a.atStart ? f.ph[f.ph.length - 1] : f.ph[0], want = Math.min(need, far + BR_RAMP_MAX * f.len);
       if (want <= n.h + 0.25) continue;
       n.h = want; if (n.plane) n.plane[0] = want;
       n.ramp = a; if (!raised.includes(n)) raised.push(n);
+    }
+    // the nodes only bridges meet, after some were raised above: a raised one and those next to it go between their
+    // neighbours along the decks (by distance), never under what they were raised to, so a deck rises evenly past a
+    // raised node instead of in a step (a 10 m piece next to one climbed 3 m on the Lincoln Tunnel's helix)
+    if (lifted.size) {
+      // (the raised nodes and the loose ones next to them: the rest keep their heights from the network)
+      const loose = new Set();
+      for (const n of lifted.keys()) {
+        if (!n.frozen) loose.add(n);
+        for (const x of n.ends) { if (!x.e.c.bridge) continue; const o = nodeOf(x.e, x.atStart ? 1 : 0); if (!anchored(o) && !o.frozen) loose.add(o); }
+      }
+      for (let it = 0; it < 40; it++) {
+        let moved = 0;
+        for (const n of loose) {
+          let a = 0, b = 0;
+          for (const x of n.ends) { if (!x.e.c.bridge) continue; const o = nodeOf(x.e, x.atStart ? 1 : 0); if (o === n) continue; const d = Math.max(1, x.e.len); a += o.h / d; b += 1 / d; }
+          if (!b) continue;
+          const h = Math.max(lifted.get(n) ?? -Infinity, a / b);
+          if (Math.abs(h - n.h) > 0.02) { n.h = h; moved++; }
+        }
+        if (!moved) break;
+      }
     }
     // the decks: straight between their ends, raised to what they must clear (never steeper than an end can
     // climb), then rounded
@@ -1233,9 +1560,28 @@ async function bridgeDecks(edgeIn) {
   for (const e of B) for (const end of [0, 1]) { const n = nodeOf(e, end), k = deckKey(n); if (!mem.has(k) && Number.isFinite(n.h)) mem.set(k, n.h); }
   S.bridgeStats = { decks: B.length, crossings: crossN, ramps: raisedN, mended, remembered: mem.size };
 }
-// a triangular average over W metres each way, passes times, leaving the samples fixed(i) says
-function smoothProfile(e, P, W, passes, fixed) {
+// a triangular average over W metres each way, passes times, leaving the samples fixed(i) says; taper: the window
+// narrows to the distance to the nearest fixed sample (a full window next to a fixed end pulled the samples beside it
+// towards the profile further on, a kink at a tunnel's portal)
+function smoothProfile(e, P, W, passes, fixed, taper = false) {
   const N = P.length; if (N < 3) return;
+  if (taper) {
+    const fs = []; for (let i = 0; i < N; i++) if (fixed(i)) fs.push(e.ps[i]);
+    for (let pass = 0; pass < passes; pass++) {
+      const q = P.slice();
+      for (let i = 0; i < N; i++) {
+        if (fixed(i)) continue;
+        let Wi = W; for (const f of fs) Wi = Math.min(Wi, Math.abs(e.ps[i] - f));
+        if (!(Wi > 0.5)) continue;
+        let sw = 0, sh = 0;
+        for (let j = i; j >= 0 && e.ps[j] > e.ps[i] - Wi; j--) { const w = 1 - (e.ps[i] - e.ps[j]) / Wi; sw += w; sh += w * P[j]; }
+        for (let j = i + 1; j < N && e.ps[j] < e.ps[i] + Wi; j++) { const w = 1 - (e.ps[j] - e.ps[i]) / Wi; sw += w; sh += w * P[j]; }
+        if (sw > 0) q[i] = sh / sw;
+      }
+      for (let i = 0; i < N; i++) P[i] = q[i];
+    }
+    return;
+  }
   for (let pass = 0; pass < passes; pass++) {
     const q = P.slice();
     let lo = 0, hi = 0;
@@ -1528,7 +1874,7 @@ const WHITE = [0.93, 0.93, 0.9], YELLOW = [0.95, 0.72, 0.12];
 
 function emitRibbon(e, sa, sb) {
   if (sb - sa < 0.02) return;
-  const pts = sliceLite(e, sa, sb), c = e.c, hw = c.hw;
+  const pts = sliceLite(e, sa, sb), c = e.c, hw = c.hw, kind = c.tunnel === 'bore' ? 'troad' : 'road';
   const road = (u) => [u, c.nLanes >= 1 && c.travel > 4 ? c.lw : 0, c.travel / 2];
   let prevL = -1, prevR = -1;
   const nrm = (i) => {
@@ -1539,7 +1885,7 @@ function emitRibbon(e, sa, sb) {
   };
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i], o = hw * p.mk, y = p.h + LIFT;
-    const B = tileB('road', p.x, p.z);
+    const B = tileB(kind, p.x, p.z);
     if (i > 0 && B !== pts[i - 1].B) { // tile change: restart in this tile with the previous pair copied
       const q = pts[i - 1], oq = hw * q.mk, yq = q.h + LIFT, nq = nrm(i - 1), cq = (q.c || 0) * oq;
       prevL = B.v(q.x - q.nx * oq, yq - cq, q.z - q.nz * oq, (q.x - q.nx * oq) * UVS, (q.z - q.nz * oq) * UVS, road(-hw), null, nq);
@@ -1560,12 +1906,13 @@ function emitJunction(j) {
   const ol = junctionOutline(j);
   if (ol.length < 3) return;
   j.outline = ol;
-  const B = tileB('road', j.n.x, j.n.z);
+  const B = tileB(j.E.every(x => x.e.c.tunnel === 'bore') ? 'troad' : 'road', j.n.x, j.n.z);
   const v2 = ol.map(p => new THREE.Vector2(p.x, p.z));
   let tris;
   try { tris = THREE.ShapeUtils.triangulateShape(v2, []); } catch (err) { return; }
   const base = ol.map(p => B.v(p.x, p.h + LIFT, p.z, p.x * UVS, p.z * UVS, [0, 0, 0]));
-  const onBridge = j.E.every(x => x.e.c.bridge) ? 1 : 0; // a junction up on a bridge (surfaceAt can leave decks out)
+  // a junction up on a bridge (surfaceAt can leave decks out): 1; in a tunnel (left out when no height is given): 2
+  const onBridge = j.E.every(x => x.e.c.bridge) ? 1 : j.E.every(x => x.e.c.tunnel === 'bore') ? 2 : 0;
   for (const t of tris) {
     const a = ol[t[0]], b = ol[t[1]], c = ol[t[2]];
     const cross = (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
@@ -1588,7 +1935,7 @@ function emitLine(e, o, sa, sb, width, col, dash) {
     let ra = null;
     for (let k = 0; k < n; k++) {
       const u0 = a + (b - a) * k / n, u1 = a + (b - a) * (k + 1) / n, p = at(e, (u0 + u1) / 2);
-      const off = onCarriageway(p.x + p.nx * o * p.mk, p.z + p.nz * o * p.mk, e.id);
+      const off = onCarriageway(p.x + p.nx * o * p.mk, p.z + p.nz * o * p.mk, e.id, p.h);
       if (!off && ra == null) ra = u0;
       if (off && ra != null) { pieces.push([ra, u0]); ra = null; }
     }
@@ -1600,7 +1947,7 @@ function emitLine(e, o, sa, sb, width, col, dash) {
     let pl = -1, pr = -1, PB = null;
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i], k = p.mk, y = p.h + (p.c || 0) * o * k + LIFT + 0.004;
-      const B = tileB('paint', p.x, p.z);
+      const B = tileB(e.c.tunnel === 'bore' ? 'tpaint' : 'paint', p.x, p.z);
       const vx = (q) => { const yq = q.h + (q.c || 0) * o * q.mk + LIFT + 0.004, cx = q.x + q.nx * o * q.mk, cz = q.z + q.nz * o * q.mk; const lx = cx - q.nx * width / 2, lz = cz - q.nz * width / 2, rx = cx + q.nx * width / 2, rz = cz + q.nz * width / 2; return [B.v(lx, yq, lz, lx * UVS, lz * UVS, null, col), B.v(rx, yq, rz, rx * UVS, rz * UVS, null, col)]; };
       if (PB && B !== PB) { const q = vx(pts[i - 1]); pl = q[0]; pr = q[1]; } // tile seam: restart in this tile
       const cx = p.x + p.nx * o * k, cz = p.z + p.nz * o * k;
@@ -1744,7 +2091,8 @@ function emitStopLines() {
 }
 function emitCurbs(e) {
   const c = e.c;
-  if (!c.curbL && !c.curbR && !c.bridge) return;
+  const deck = c.bridge || c.tunnel === 'bore';
+  if (!c.curbL && !c.curbR && !deck) return;
   const sa = e.set0, sb = e.len - e.set1;
   if (sb - sa < 0.3) return;
   const pts = sliceLite(e, sa, sb);
@@ -1755,18 +2103,26 @@ function emitCurbs(e) {
     if (c.bridge) emitCurbLine(line, Math.min(3.5, side < 0 ? c.swWL : c.swWR), e.id, true);
     else emitCurbLine(line, side < 0 ? c.swWL : c.swWR, e.id);
   }
-  // a bridge side with no pavement: a ledge from the carriageway to the parapet (drawn, and driven on)
-  if (c.bridge) for (const side of [-1, 1]) {
+  // a bridge side with no pavement: a ledge from the carriageway to the parapet (drawn, and driven on); a tunnel's
+  // walkway along its wall the same
+  if (deck) for (const side of [-1, 1]) {
     if (side < 0 ? c.curbL : c.curbR) continue;
     const o0 = c.hw, o1 = side < 0 ? c.deckL : c.deckR, LH = 0.12;
-    let prev = null;
-    for (const p of pts) {
+    let prev = null, prevP = null;
+    // (a tunnel's walkway is drawn by tunnels.js with its lining; here only its surface, for surfaceAt)
+    const make = (B, p) => {
       const k = p.mk || 1, y = p.h + LIFT + (p.c || 0) * side * o0 * k;
-      const ax = p.x + p.nx * side * o0 * k, az = p.z + p.nz * side * o0 * k, bx = p.x + p.nx * side * o1 * k, bz = p.z + p.nz * side * o1 * k;
-      const B = tileB('curb', p.x, p.z), nf = [-p.nx * side, 0, -p.nz * side];
-      const v = { B, a0: B.v(ax, y - 0.05, az, p.s * 0.5, 0, null, null, nf), a1: B.v(ax, y + LH, az, p.s * 0.5, 0.06, null, null, nf), t0: B.v(ax, y + LH, az, p.s * 0.5, 0.06), t1: B.v(bx, y + LH, bz, p.s * 0.5, 0.06 + (o1 - o0) * 0.5), x: ax, z: az, X: bx, Z: bz, y: y + LH };
+      const ax = p.x + p.nx * side * o0 * k, az = p.z + p.nz * side * o0 * k, bx = p.x + p.nx * side * o1 * k, bz = p.z + p.nz * side * o1 * k, nf = [-p.nx * side, 0, -p.nz * side];
+      return { B, a0: B.v(ax, y - 0.05, az, p.s * 0.5, 0, null, null, nf), a1: B.v(ax, y + LH, az, p.s * 0.5, 0.06, null, null, nf), t0: B.v(ax, y + LH, az, p.s * 0.5, 0.06), t1: B.v(bx, y + LH, bz, p.s * 0.5, 0.06 + (o1 - o0) * 0.5), x: ax, z: az, X: bx, Z: bz, y: y + LH };
+    };
+    for (const p of pts) {
+      const B = c.tunnel === 'bore' ? NULLB : tileB('curb', p.x, p.z);
+      const v = make(B, p);
+      // (across a tile seam the last piece starts again in this tile: it was left out, a gap in the ledge)
+      if (prev && prev.B !== B && prevP) prev = make(B, prevP);
       if (prev && prev.B === B) { B.quad(prev.a0, v.a0, v.a1, prev.a1); B.quad(prev.t0, v.t0, v.t1, prev.t1); }
-      if (prev && S.sidewalks) S.pav.push(prev.x, prev.z, prev.y, v.x, v.z, v.y, v.X, v.Z, v.y, prev.x, prev.z, prev.y, v.X, v.Z, v.y, prev.X, prev.Z, prev.y);
+      prevP = p;
+      if (prev && S.sidewalks) { if (c.tunnel === 'bore') S.pavTun.add(S.pav.length).add(S.pav.length + 9); S.pav.push(prev.x, prev.z, prev.y, v.x, v.z, v.y, v.X, v.Z, v.y, prev.x, prev.z, prev.y, v.X, v.Z, v.y, prev.X, prev.Z, prev.y); }
       prev = v;
     }
   }
@@ -1784,7 +2140,8 @@ function emitCurbLine(line0, paveW, edgeId = -1, flat = false) {
   const out = [];
   for (let i = 1; i < fine.length; i++) {
     const a = fine[i - 1], b = fine[i], mx = (a.x + b.x) / 2 + (a.nx + b.nx) * 0.075, mz = (a.z + b.z) / 2 + (a.nz + b.nz) * 0.075;
-    if (onCarriageway(mx, mz, edgeId) || (edgeId >= 0 && onCarriageway(mx - (a.nx + b.nx) * 0.2, mz - (a.nz + b.nz) * 0.2, edgeId))) { if (run.length > 1) out.push(run); run = [b]; }
+    const hm = (a.h + b.h) / 2;
+    if (onCarriageway(mx, mz, edgeId, hm) || (edgeId >= 0 && onCarriageway(mx - (a.nx + b.nx) * 0.2, mz - (a.nz + b.nz) * 0.2, edgeId, hm))) { if (run.length > 1) out.push(run); run = [b]; }
     else run.push(b);
   }
   if (run.length > 1) out.push(run);
@@ -1821,9 +2178,11 @@ function emitCurbRun(line, paveW, flat = false) {
 }
 
 // ---------------------------------------------------------------- pavements (open world only)
-function buildingIndex(list) {
+async function buildingIndex(list) {
   const g = new Map(), polys = [];
+  let n = 0;
   for (const b of list || []) {
+    if ((++n & 255) === 0) await Y(); // (a dense city's 40 000 footprints took 200 ms in one go)
     const r = b.outer; if (!r || r.length < 3) continue;
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (const p of r) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); }
@@ -1846,22 +2205,30 @@ function inBuilding(x, z) {
   }
   return false;
 }
-function onCarriageway(x, z, except = -1) {
+// h (optional): only carriageways within 2 m of that height count (a deck overhead, a road under a bridge, a tunnel
+// under a street are not on this one); with no h a tunnel's are left out
+function onCarriageway(x, z, except = -1, h) {
   const l = S.grid.get(gkey(x, z, CELL)); if (!l) return false;
-  const segs = S.segs, tris = S.trisA;
+  const segs = S.segs, tris = S.trisA, tb = S.triB;
   for (const id of l) {
     if (id >= 1e9) continue;
     if (id >= 0) {
       if (segs[id + 8] === except) continue;
+      if (h === undefined && (segs[id + 7] & 8)) continue;
       const ax = segs[id], az = segs[id + 1], dx = segs[id + 2] - ax, dz = segs[id + 3] - az, L2 = dx * dx + dz * dz;
       const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2)) : 0;
+      if (h !== undefined && Math.abs(segs[id + 4] + (segs[id + 5] - segs[id + 4]) * t - h) > 2) continue;
       if (Math.hypot(x - ax - dx * t, z - az - dz * t) < segs[id + 6] - 0.05) return true;
     } else {
       const i = -1 - id;
+      if (h === undefined && tb && tb[i / 9] === 2) continue;
       const x0 = tris[i], z0 = tris[i + 1], x1 = tris[i + 3], z1 = tris[i + 4], x2 = tris[i + 6], z2 = tris[i + 7];
       const det = (z1 - z2) * (x0 - x2) + (x2 - x1) * (z0 - z2); if (Math.abs(det) < 1e-9) continue;
       const w0 = ((z1 - z2) * (x - x2) + (x2 - x1) * (z - z2)) / det, w1 = ((z2 - z0) * (x - x2) + (x0 - x2) * (z - z2)) / det;
-      if (w0 > 0.01 && w1 > 0.01 && 1 - w0 - w1 > 0.01) return true;
+      if (w0 > 0.01 && w1 > 0.01 && 1 - w0 - w1 > 0.01) {
+        if (h !== undefined && Math.abs(w0 * tris[i + 2] + w1 * tris[i + 5] + (1 - w0 - w1) * tris[i + 8] - h) > 2) continue;
+        return true;
+      }
     }
   }
   return false;
@@ -1885,7 +2252,7 @@ function emitPavement(line0, W, flat = false) {
     cum[i] = cum[i - 1] + ds;
     if (ds < 0.01) { W2[i - 1] = -1; continue; }
     const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2, nx = (a.nx + b.nx) / 2, nz = (a.nz + b.nz) / 2;
-    const test = (o) => onCarriageway(mx + nx * o, mz + nz * o) || inBuilding(mx + nx * o, mz + nz * o);
+    const hm = (a.h + b.h) / 2, test = (o) => onCarriageway(mx + nx * o, mz + nz * o, -1, hm) || inBuilding(mx + nx * o, mz + nz * o);
     let w = W;
     if (test(CURB_W + 0.3)) w = 0;
     else if (test(w - 0.2)) { w = Math.max(CURB_W + 0.5, Math.round(w * 0.55 * 10) / 10); if (test(w - 0.2)) w = 0; }
@@ -1896,7 +2263,10 @@ function emitPavement(line0, W, flat = false) {
     const w = W2[i];
     if (w <= 0) { i++; continue; }
     let j = i + 1;
-    while (j < N && W2[j] === w && Math.abs(line[j].nx * line[i].nx + line[j].nz * line[i].nz) > 0.9999) j++;
+    // (a run is one quad, so it also has to stay straight in height: merged along 100 m of Boulevard Haussmann, whose
+    // road sags between its ends, the pavement stood 0.9 m over the kerb half way and the ground showed under its edge)
+    const straight = (jj) => { const L = cum[jj] - cum[i]; if (!(L > 0)) return true; for (let k = i + 1; k < jj; k++) if (Math.abs(line[k].h - (line[i].h + (line[jj].h - line[i].h) * (cum[k] - cum[i]) / L)) > 0.03) return false; return true; };
+    while (j < N && W2[j] === w && Math.abs(line[j].nx * line[i].nx + line[j].nz * line[i].nz) > 0.9999 && straight(j + 1)) j++;
     const a = line[i], b = line[j], ka = a.mk || 1, kb = b.mk || 1, sa = cum[i], sb = cum[j];
     const B = tileB('pave', (a.x + b.x) / 2, (a.z + b.z) / 2);
     const ya = a.h + LIFT + CURB_H, yb = b.h + LIFT + CURB_H;
@@ -2010,9 +2380,11 @@ async function buildMeshes(bbox) {
     if (dirty && !dirty.has(key.split(':')[1])) S.meshes.set(key, m); else S.toRemove.push(m);
   }
   TILES.clear();
-  S.tris = []; S.triB = []; S.outl = []; S.paveLines = []; S.pav = [];
+  S.tris = []; S.triB = []; S.outl = []; S.paveLines = []; S.pav = []; S.pavTun = new Set();
   // a bridge's deck reaches past its carriageway: to the pavement's outer edge, or a ledge where it has none
   for (const e of S.edges) if (e.c.bridge) { const c = e.c; c.deckL = c.hw + (c.curbL ? Math.min(3.5, c.swWL) : 0.6); c.deckR = c.hw + (c.curbR ? Math.min(3.5, c.swWR) : 0.6); }
+  // (a tunnel: a walkway along each wall, the bore's floor as wide as the carriageway and both)
+  for (const e of S.edges) if (e.c.tunnel === 'bore') { const c = e.c; c.deckL = c.deckR = c.hw + (c.rank >= 6 ? 0.9 : 0.6); }
   for (const e of S.edges) { DIRTY = dirty; emitRibbon(e, e.set0, e.len - e.set1); await Y(); }
   DIRTY = dirty;
   ST('m-junctions');
@@ -2059,7 +2431,8 @@ async function buildMeshes(bbox) {
       if ((i % 9000) === 0) await Y();
     }
     S.pavA = pav;
-  } else S.pavA = new Float64Array(0);
+    S.pavTA = new Uint8Array(pav.length / 9); for (const i of S.pavTun) S.pavTA[i / 9] = 1;
+  } else { S.pavA = new Float64Array(0); S.pavTA = new Uint8Array(0); }
   ST('m-geom');
   const oldByKey = new Map();
   for (const m of S.toRemove) oldByKey.set(m.name.slice(6), m);
@@ -2079,10 +2452,10 @@ async function buildMeshes(bbox) {
     // fix winding per triangle so every face points up (roads, paint); curbs and pavements are double sided
     const g = b.geometry(); if (!g) continue;
     fixUp(g);
-    const mat = b.kind === 'road' ? MATS.asphalt : b.kind === 'paint' ? MATS.paint : b.kind === 'pave' ? MATS.pave : MATS.curb;
+    const mat = b.kind === 'road' ? MATS.asphalt : b.kind === 'paint' ? MATS.paint : b.kind === 'pave' ? MATS.pave : b.kind === 'troad' ? MATS.tasphalt : b.kind === 'tpaint' ? MATS.tpaint : MATS.curb;
     const m = new THREE.Mesh(g, mat);
     m.receiveShadow = true; m.castShadow = false;
-    m.renderOrder = b.kind === 'paint' ? 2 : 1;
+    m.renderOrder = b.kind === 'paint' || b.kind === 'tpaint' ? 2 : 1;
     m.name = 'roads-' + key; m.userData.hash = hash;
     S.meshes.set(key, m); S.toAdd.push(m);
   }
@@ -2117,7 +2490,7 @@ async function buildSurfaceIndex() {
     const sa = e.set0, sb = e.len - e.set1;
     if (sb - sa < 0.02) continue;
     const pts = sliceLite(e, sa, sb, 24);
-    const fl = (e.c.curbL ? 1 : 0) | (e.c.curbR ? 2 : 0) | (e.c.bridge ? 4 : 0);
+    const fl = (e.c.curbL ? 1 : 0) | (e.c.curbR ? 2 : 0) | (e.c.bridge ? 4 : 0) | (e.c.tunnel === 'bore' ? 8 : 0);
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1], b = pts[i];
       seg.push(a.x, a.z, b.x, b.z, a.h + LIFT, b.h + LIFT, e.c.hw, fl, e.id, a.c || 0, b.c || 0);
@@ -2168,7 +2541,7 @@ export function surfaceAt(x, z, yHint, skip = 0) {
   const Lv = LIVE;
   const l = Lv.grid.get(gkey(x, z, CELL));
   if (!l) return r;
-  const segs = Lv.segs, tris = Lv.trisA, outl = Lv.outlA, pav = Lv.pavA, triB = Lv.triBA;
+  const segs = Lv.segs, tris = Lv.trisA, outl = Lv.outlA, pav = Lv.pavA, triB = Lv.triBA, pavT = Lv.pavTA;
   let bestH = null, bestInside = Infinity, nearH = null, nearEdge = Infinity, nearCurb = false, bestB = false;
   const level = (h) => yHint == null || Math.abs(h - yHint) < LEVEL;
   // where pieces overlap (bridges, forks on a hill) the one nearest the hint wins; with no hint the highest
@@ -2188,6 +2561,7 @@ export function surfaceAt(x, z, yHint, skip = 0) {
     const id = l[k];
     if (id >= 2e9) {
       const i = id - 2e9;
+      if (yHint == null && pavT && pavT[i / 9]) continue; // (a tunnel's walkway)
       const x0 = pav[i], z0 = pav[i + 1], x1 = pav[i + 3], z1 = pav[i + 4], x2 = pav[i + 6], z2 = pav[i + 7];
       const det = (z1 - z2) * (x0 - x2) + (x2 - x1) * (z0 - z2);
       if (Math.abs(det) < 1e-9) continue;
@@ -2203,6 +2577,8 @@ export function surfaceAt(x, z, yHint, skip = 0) {
     if (id >= 1e9) continue;
     if (id >= 0) {
       if ((skip & 1) && (segs[id + 7] & 4)) continue;
+      // (with no height given, what lies on the ground: a tunnel under it is not)
+      if (yHint == null && (segs[id + 7] & 8)) continue;
       const ax = segs[id], az = segs[id + 1], bx = segs[id + 2], bz = segs[id + 3];
       const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz;
       let t = L2 > 0 ? ((x - ax) * dx + (z - az) * dz) / L2 : 0;
@@ -2241,16 +2617,17 @@ export function surfaceAt(x, z, yHint, skip = 0) {
       }
     } else {
       const i = -1 - id;
-      if ((skip & 1) && triB && triB[i / 9]) continue;
+      if ((skip & 1) && triB && triB[i / 9] === 1) continue;
+      if (yHint == null && triB && triB[i / 9] === 2) continue;
       const x0 = tris[i], z0 = tris[i + 1], x1 = tris[i + 3], z1 = tris[i + 4], x2 = tris[i + 6], z2 = tris[i + 7];
       const det = (z1 - z2) * (x0 - x2) + (x2 - x1) * (z0 - z2);
       if (Math.abs(det) < 1e-9) continue;
       const w0 = ((z1 - z2) * (x - x2) + (x2 - x1) * (z - z2)) / det, w1 = ((z2 - z0) * (x - x2) + (x0 - x2) * (z - z2)) / det, w2 = 1 - w0 - w1;
       if (w0 >= -1e-4 && w1 >= -1e-4 && w2 >= -1e-4) {
         const h = w0 * tris[i + 2] + w1 * tris[i + 5] + w2 * tris[i + 8];
-        if (pick(h)) { bestH = h; bestB = !!(triB && triB[i / 9]); }
+        if (pick(h)) { bestH = h; bestB = !!(triB && triB[i / 9] === 1); }
         inJunction = true;
-        cand.push(h, -1, triB && triB[i / 9] ? 1 : 0); // a junction's depth comes from its outline, below
+        cand.push(h, -1, triB && triB[i / 9] === 1 ? 1 : 0); // a junction's depth comes from its outline, below
       } else if (w0 > -0.6 && w1 > -0.6 && w2 > -0.6) {
         // just outside a junction's piece: how far, and its plane's height there (r.nearH, for drive.ground)
         const A2 = Math.abs(det);
@@ -2319,20 +2696,22 @@ export function surfaceAt(x, z, yHint, skip = 0) {
 }
 
 export function nearestEdge(x, z, maxDist = 40) {
-  let best = null, bd = maxDist;
-  const cell = 32, ci = Math.floor(x / cell), cj = Math.floor(z / cell), R = Math.ceil(maxDist / cell);
+  // (squared distances, and the answer made once at the end: the buildings ask this for every footprint)
+  let bd2 = maxDist * maxDist, be = null, bk = 0, bt = 0;
+  const cell = 32, ci = Math.floor(x / cell), cj = Math.floor(z / cell), R = Math.ceil(maxDist / cell), edges = LIVE.edges, grid = LIVE.edgeGrid;
   for (let i = ci - R; i <= ci + R; i++) for (let j = cj - R; j <= cj + R; j++) {
-    const l = LIVE.edgeGrid.get(i * 73856093 ^ j * 19349663); if (!l) continue;
-    for (const id of l) {
-      const e = LIVE.edges[Math.floor(id / 100000)], k = id % 100000; if (!e) continue;
-      const ax = e.px[k - 1], az = e.pz[k - 1], bx = e.px[k], bz = e.pz[k];
-      const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz;
+    const l = grid.get(i * 73856093 ^ j * 19349663); if (!l) continue;
+    for (let q = 0; q < l.length; q++) {
+      const id = l[q], e = edges[Math.floor(id / 100000)]; if (!e) continue;
+      const k = id % 100000, ax = e.px[k - 1], az = e.pz[k - 1], dx = e.px[k] - ax, dz = e.pz[k] - az, L2 = dx * dx + dz * dz;
       const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2)) : 0;
-      const cx = ax + dx * t, cz = az + dz * t, d = Math.hypot(x - cx, z - cz);
-      if (d < bd) { bd = d; best = { x: cx, z: cz, h: lerp(e.ph[k - 1], e.ph[k], t) + LIFT, heading: (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360, dist: d, halfWidth: e.c.hw, edge: e }; }
+      const ox = x - ax - dx * t, oz = z - az - dz * t, d2 = ox * ox + oz * oz;
+      if (d2 < bd2) { bd2 = d2; be = e; bk = k; bt = t; }
     }
   }
-  return best;
+  if (!be) return null;
+  const ax = be.px[bk - 1], az = be.pz[bk - 1], dx = be.px[bk] - ax, dz = be.pz[bk] - az, cx = ax + dx * bt, cz = az + dz * bt;
+  return { x: cx, z: cz, h: lerp(be.ph[bk - 1], be.ph[bk], bt) + LIFT, heading: (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360, dist: Math.hypot(x - cx, z - cz), halfWidth: be.c.hw, edge: be };
 }
 
 // ---------------------------------------------------------------- lane graph
@@ -2554,11 +2933,12 @@ async function doBuild(data, opts) {
   S.data = data;
   // photogrammetry has parked cars and bumps baked in: a low percentile; smooth terrain (the open world): the median
   S.pct = opts.groundPercentile != null ? opts.groundPercentile : (opts.world && opts.world.mode === 'open') ? 0.5 : 0.25;
-  buildingIndex(data.buildings);
+  await buildingIndex(data.buildings);
   let lat = opts.lat, lon = opts.lon;
   if (lat == null) { const ll = unproject(0, 0); lat = ll.lat; lon = ll.lon; }
   const reg = regionOf(lat, lon);
   S.leftHand = reg.leftHand; S.region = reg.region; S.style = Object.assign({ region: reg.region }, STYLES[reg.region] || STYLES.other);
+  S.bare = BARE.some(b => lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]);
   if (!MATS) makeMaterials();
   slices = {}; busy = {};
   ST('topology'); await buildTopology(data);
@@ -2579,7 +2959,7 @@ async function doBuild(data, opts) {
 }
 function publish() {
   for (const m of S.toRemove) { GROUP.remove(m); m.geometry.dispose(); }
-  for (const m of S.toAdd) GROUP.add(m);
+  for (const m of S.toAdd) { m.matrixAutoUpdate = false; m.updateMatrix(); GROUP.add(m); }
   S.toAdd = []; S.toRemove = [];
   LIVE = S;
   graph = S.graph; signals = S.signals; signalGroups = S.signalGroups; signs = S.signs; leftHand = S.leftHand; style = S.style;
@@ -2616,7 +2996,7 @@ async function doReheight(b) {
   S = Object.assign(newState(L), {
     edges: L.edges, nodes: L.nodes, junctions: L.junctions, crossings: L.crossings, approaches: L.approaches, graph: L.graph,
     signals: L.signals, signalGroups: L.signalGroups, signs: L.signs, data: L.data, sidewalks: L.sidewalks, pct: L.pct, smooth: L.smooth,
-    bgrid: L.bgrid, bpolys: L.bpolys, laneGrid: L.laneGrid, lift: L.lift,
+    bgrid: L.bgrid, bpolys: L.bpolys, laneGrid: L.laneGrid, lift: L.lift, bare: L.bare,
   });
   await computeHeights(b);
   await buildMeshes(b);
@@ -2655,6 +3035,9 @@ function syncObject() {
 }
 // debug: edges and junction internals
 export function _debug() { return LIVE; }
+// the materials a tunnel's road is drawn with (tunnels.js keeps a speck of each under the ground so their shaders are
+// built with the scene's even where the first area has no tunnel)
+export function tunnelMaterials() { if (!MATS) makeMaterials(); return [MATS.tasphalt, MATS.tpaint]; }
 
-export const roads = { build, reheight, surfaceAt, nearestLane, nearestRoadPoint, nearestEdge, dispose, group: GROUP, graph, signals, signalGroups, signs, leftHand, style, stats: null, _debug };
+export const roads = { build, reheight, surfaceAt, nearestLane, nearestRoadPoint, nearestEdge, dispose, tunnelMaterials, group: GROUP, graph, signals, signalGroups, signs, leftHand, style, stats: null, _debug };
 export default roads;

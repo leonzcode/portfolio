@@ -6,7 +6,7 @@
 //   const peds = new Peds(drive); await peds.start(); peds.update(dt) each frame; peds.rebuild() after a new area
 //   (new roads); peds.clear(); peds.list (each { p: Person, state, ... }); peds.max (cap, default 34)
 import * as THREE from 'three';
-import { People } from './people.js?v=32';
+import { People } from './people.js?v=33';
 
 const LINES = {
   hit: ['Hey!', 'Watch it!', 'Are you crazy?', 'Slow down!', 'You hit me!', 'Ow!', 'What are you doing?!', 'Look where you are going!', 'Learn to drive!', 'Unbelievable!'],
@@ -54,7 +54,7 @@ export class Peds {
       cars: () => this.cars()
     };
     this.ready = true;
-    this.rebuild();
+    this.rebuildNow();
     // a first crowd round the start, so the street is not empty on arrival
     const want = this.target();
     for (let i = 0; i < want * 3 && this.list.length < want; i++) this.spawn(true);
@@ -66,7 +66,16 @@ export class Peds {
 
   // ---- pavements ---------------------------------------------------------------------------------------------------
   // a walking line a little in from each kerb of every road that has a pavement, cut short of the junctions
-  rebuild() {
+  // after a new area: the walking lines worked out a few milliseconds a frame (the old ones kept meanwhile); it held
+  // one frame for a fifth to half a second. start() runs it all at once (behind the loading card).
+  rebuild() { this.rjob = this.rebuildGen(); this.rdeadline = 0; }
+  rebuildNow() { const it = this.rebuildGen(); this.rdeadline = Infinity; while (!it.next().done); this.rjob = null; }
+  rebuildStep(ms = 3) {
+    if (!this.rjob) return;
+    this.rdeadline = performance.now() + ms;
+    try { if (this.rjob.next().done) this.rjob = null; } catch (e) { console.warn('peds rebuild', e); this.rjob = null; }
+  }
+  *rebuildGen() {
     const R = this.drive.roadsObj, L = R && R._debug ? R._debug() : null;
     const paths = [];
     let total = 0;
@@ -77,6 +86,7 @@ export class Peds {
       if (!c.curbL && !c.curbR) continue;
       const s0 = (e.set0 || 0) + 1.5, s1 = e.len - (e.set1 || 0) - 1.5;
       if (s1 - s0 < 6) continue;
+      if (performance.now() > this.rdeadline) { yield; if (R !== this.drive.roadsObj) return; }
       for (const side of [-1, 1]) {
         if (side < 0 ? !c.curbL : !c.curbR) continue;
         const sw = side < 0 ? (c.swWL || 2.4) : (c.swWR || 2.4);
@@ -100,7 +110,6 @@ export class Peds {
         flush();
       }
     }
-    this.paths = paths;
     // bus stops: a few people waiting at each
     this.stops = ((this.drive.osmData && this.drive.osmData.points) || []).filter(q => q.kind === 'bus_stop').map(q => ({ x: q.x, z: q.z, n: 0 }));
     // ends near each other (round a corner) can be walked between when the way across is not the road
@@ -108,16 +117,33 @@ export class Peds {
     for (const p of paths) { ends.push([p, 0]); ends.push([p, 1]); }
     for (const p of paths) p.links = [[], []];
     this.buildMs = Math.round(performance.now() - T0);
-    for (let i = 0; i < ends.length; i++) for (let j = i + 1; j < ends.length; j++) {
-      const [a, ea] = ends[i], [b, eb] = ends[j];
-      if (a === b) continue;
-      const ax = ea ? a.px[a.px.length - 1] : a.px[0], az = ea ? a.pz[a.pz.length - 1] : a.pz[0];
-      const bx = eb ? b.px[b.px.length - 1] : b.px[0], bz = eb ? b.pz[b.pz.length - 1] : b.pz[0];
-      const d = Math.hypot(ax - bx, az - bz);
-      if (d > 14) continue;
-      if (surf) { const r = surf((ax + bx) / 2, (az + bz) / 2); if (r && r.onRoad && d > 3) continue; }
-      a.links[ea].push([b, eb, d]); b.links[eb].push([a, ea, d]);
+    // (the ends in a 14 m grid: every end against every other was a fifth to half a second at each rebuild)
+    const G = 14, grid = new Map(), key = (i, j) => i * 73856093 ^ j * 19349663;
+    for (let i = 0; i < ends.length; i++) {
+      const [a, ea] = ends[i];
+      const x = ea ? a.px[a.px.length - 1] : a.px[0], z = ea ? a.pz[a.pz.length - 1] : a.pz[0];
+      ends[i].push(x, z);
+      const k = key(Math.floor(x / G), Math.floor(z / G));
+      let l = grid.get(k); if (!l) grid.set(k, l = []); l.push(i);
     }
+    for (let i = 0; i < ends.length; i++) {
+      if ((i & 31) === 31 && performance.now() > this.rdeadline) { yield; if (R !== this.drive.roadsObj) return; }
+      const [a, ea, ax, az] = ends[i], gi = Math.floor(ax / G), gj = Math.floor(az / G);
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+        const l = grid.get(key(gi + di, gj + dj)); if (!l) continue;
+        for (const j of l) {
+          if (j <= i) continue;
+          const [b, eb, bx, bz] = ends[j];
+          if (a === b) continue;
+          const d = Math.hypot(ax - bx, az - bz);
+          if (d > 14) continue;
+          if (surf) { const r = surf((ax + bx) / 2, (az + bz) / 2); if (r && r.onRoad && d > 3) continue; }
+          a.links[ea].push([b, eb, d]); b.links[eb].push([a, ea, d]);
+        }
+      }
+    }
+    this.linkMs = Math.round(performance.now() - T0) - this.buildMs;
+    this.paths = paths;
     // how busy: buildings round the player
     const bl = (this.drive.osmData && this.drive.osmData.buildings) || [], o = this.anchor();
     let near = 0; for (const b of bl) { const p = b.outer && b.outer[0]; if (p && (p[0] - o.x) ** 2 + (p[1] - o.z) ** 2 < 300 * 300) near++; }
@@ -326,6 +352,7 @@ export class Peds {
 
   _update(dt) {
     this.frame++;
+    if (this.rjob) this.rebuildStep(3);
     if (this.warm && --this.warmFrames <= 0) { this.warm.dispose(); this.warm = null; }
     const o = this.anchor();
     // more variety as the drive goes on
@@ -343,6 +370,8 @@ export class Peds {
       const want = this.target();
       if (this.list.length < want) this.spawn(false);
     }
+    // (every person against every car: with a grid of the cars round each person instead it took longer, 0.03 ms a
+    // frame against 0.01 for 34 people and 25 cars, t_grid.cjs)
     const cars = this.cars();
     for (let i = 0; i < this.list.length; i++) {
       const P = this.list[i];

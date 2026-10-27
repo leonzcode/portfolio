@@ -8,11 +8,12 @@
 // The parapets are collision segments in both worlds; in the photographed (Google) world the photographs have the
 // structure, so only the collision is added there.
 //
-//   const b = bridges.build(roads, { scene, collide, groundAt(x, z), mode: 'open'|'google', buildings })
+//   const b = await bridges.build(roads, { scene, collide, groundAt(x, z), mode: 'open'|'google', buildings })
 //   b.group, b.stats, b.dispose()
 //
 // Frame: geo.js local metres, +x east, +y up, +z south.
 import * as THREE from 'three';
+import { buildTunnels } from './tunnels.js?v=33';
 
 const BASE = new URL('../', import.meta.url).href;
 const PW = 0.32;                // parapet thickness
@@ -24,7 +25,7 @@ const RAIL_TOP = 1.15;          // the parapet's collision reaches this far over
 
 let MATS = null;
 function tex(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=32');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=33');
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -41,7 +42,11 @@ function materials() {
   concrete.customProgramCacheKey = () => 'bridge-concrete-1';
   const steel = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.55 });
   const rail = new THREE.MeshStandardMaterial({ color: 0x8c9399, roughness: 0.45, metalness: 0.6 });
-  MATS = { concrete, steel, rail };
+  // the instanced meshes get their own copies: one material drawn both instanced and not makes three.js look its
+  // program up again at every switch between the two, each frame (same shader code, so no extra compile)
+  const concreteI = concrete.clone(); concreteI.onBeforeCompile = concrete.onBeforeCompile; concreteI.customProgramCacheKey = concrete.customProgramCacheKey;
+  const railI = rail.clone();
+  MATS = { concrete, steel, rail, concreteI, railI };
   return MATS;
 }
 
@@ -145,16 +150,26 @@ function chainsOf(L) {
   return out;
 }
 
-export function build(R, opts = {}) {
+// (async: the tunnels and walls are built in slices, tunnels.js; drive.js awaits it)
+let sliceT = 0, busyT = 0, sliceMax = 0;
+const Y = async () => { const t = performance.now(); if (t - sliceT > 6) { busyT += t - sliceT; sliceMax = Math.max(sliceMax, t - sliceT); await new Promise(r => setTimeout(r, 0)); sliceT = performance.now(); } };
+export async function build(R, opts = {}) {
+  sliceT = performance.now(); busyT = 0; sliceMax = 0;
   const L = R && R._debug ? R._debug() : null;
   const group = new THREE.Group(); group.name = 'bridges';
   const stats = { decks: 0, chains: 0, rails: 0, piers: 0, walls: 0, towers: 0, cables: 0 };
-  const handle = { group, stats, dispose() { if (group.parent) group.parent.remove(group); group.traverse(o => { if (o.isInstancedMesh) o.dispose(); else if (o.geometry && o.geometry !== BOXG && o.geometry !== CYLG && o.geometry !== CABG) o.geometry.dispose(); }); } };
+  let tun = null;
+  const handle = { group, stats, dispose() { if (tun) tun.dispose(); if (group.parent) group.parent.remove(group); group.traverse(o => { if (o.isInstancedMesh) { o.dispose(); if (o.userData.ownGeo) o.geometry.dispose(); } else if (o.geometry && o.geometry !== BOXG && o.geometry !== CYLG && o.geometry !== CABG && !o.userData.shared) o.geometry.dispose(); }); } };
   if (opts.scene) opts.scene.add(group);
   const M = materials(); unitGeos();
   // one tiny copy of each material far under the ground, so the first build's shader compile (drive.compileScene)
   // covers them even where the first area has no bridge
-  for (const m of [M.concrete, M.steel, M.rail]) { const w = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01), m); w.position.y = -5000; w.frustumCulled = false; group.add(w); }
+  for (const m of [M.concrete, M.rail]) { const w = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01), m); w.position.y = -5000; w.frustumCulled = false; group.add(w); }
+  for (const m of [M.concreteI, M.steel, M.railI]) {
+    const w = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.01, 0.01), m, 1); w.setMatrixAt(0, new THREE.Matrix4());
+    if (m === M.steel) w.setColorAt(0, new THREE.Color(0x888888)); // (the cables carry a colour each)
+    w.position.y = -5000; w.frustumCulled = false; w.userData.ownGeo = true; group.add(w);
+  }
   if (!L || !L.edges) return handle;
   const open = opts.mode !== 'google';
   const lift = L.lift ?? 0.03;
@@ -172,6 +187,7 @@ export function build(R, opts = {}) {
 
   for (const e of L.edges) {
     if (!e.c.bridge || !e.px || e.px.length < 2) continue;
+    await Y();
     stats.decks++;
     const c = e.c, N = e.px.length, T = depthOf(e), dL = c.deckL ?? c.hw + 0.6, dR = c.deckR ?? c.hw + 0.6;
     const ch = e._chain, railing = !(c.rank >= 9 && ch && ch.len < 250);
@@ -275,8 +291,9 @@ export function build(R, opts = {}) {
           let clear = true;
           for (let ci = 0; ci < cols && clear; ci++) {
             const o = cols === 1 ? mid : -dL + 1.6 + (W - 3.2) * ci / (cols - 1);
-            const rr = surf(p.x + p.nx * o, p.z + p.nz * o, g + 0.4, 1);
-            if (rr && (rr.onRoad || rr.edge < 1.5)) clear = false;
+            // (any road under it whatever its height: a road in a cutting lies well under the ground's model)
+            const rr = surf(p.x + p.nx * o, p.z + p.nz * o, g + 0.4, 1), r2 = surf(p.x + p.nx * o, p.z + p.nz * o, undefined, 1);
+            if ((rr && (rr.onRoad || rr.edge < 1.5)) || (r2 && (r2.onRoad || r2.edge < 1.5) && (r2.h == null || r2.h < p.b))) clear = false;
           }
           if (clear) { q = { ...p, g }; break; }
         }
@@ -345,13 +362,20 @@ export function build(R, opts = {}) {
 
   // main cables and hangers
   if (open) { try { cables(chains, L, lift, I, stats); } catch (e) { console.warn('bridge cables', e); } }
+  // tunnels (their linings, lamps, portals and walls) and the walls of roads cut into the ground (tunnels.js)
+  { const t = performance.now(); busyT += t - sliceT; sliceMax = Math.max(sliceMax, t - sliceT); }
+  try { tun = await buildTunnels(R, L, opts, group, M.concrete, stats); } catch (e) { console.warn('tunnels', e); }
+  sliceT = performance.now();
 
   const g = soup.geometry();
   if (g) { const m = new THREE.Mesh(g, M.concrete); m.castShadow = true; m.receiveShadow = true; m.name = 'bridge-decks'; group.add(m); }
   const sg = steel.geometry();
   if (sg) { const m = new THREE.Mesh(sg, M.rail); m.castShadow = false; m.receiveShadow = true; m.name = 'bridge-rails'; group.add(m); }
-  for (const m of [instMesh(BOXG, M.concrete, I.box), instMesh(CYLG, M.concrete, I.cyl), instMesh(CABG, M.steel, I.cab, true), instMesh(BOXG, M.rail, I.post)]) if (m) group.add(m);
-  const post = group.children[group.children.length - 1]; if (post && post.isInstancedMesh && post.material === M.rail) post.castShadow = false;
+  for (const m of [instMesh(BOXG, M.concreteI, I.box), instMesh(CYLG, M.concreteI, I.cyl), instMesh(CABG, M.steel, I.cab, true), instMesh(BOXG, M.railI, I.post)]) if (m) group.add(m);
+  const post = group.children[group.children.length - 1]; if (post && post.isInstancedMesh && post.material === M.railI) post.castShadow = false;
+  // nothing here moves: each matrix is made once, not every frame
+  group.traverse(o => { o.updateMatrix(); o.matrixAutoUpdate = false; });
+  { const t = performance.now(); busyT += t - sliceT; sliceMax = Math.max(sliceMax, t - sliceT); stats.work = Math.round(busyT); stats.slice = Math.round(sliceMax); }
   return handle;
 }
 
@@ -372,7 +396,11 @@ function towers(chains, buildings, lift, ground, stats) {
   for (const ch of chains) {
     if (ch.len < 60) continue;
     const found = [];
+    // (only the tall buildings near the chain: a city centre has hundreds)
+    let bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
+    for (const { e } of ch.parts) for (let i = 0; i < e.px.length; i++) { bx0 = Math.min(bx0, e.px[i]); bx1 = Math.max(bx1, e.px[i]); bz0 = Math.min(bz0, e.pz[i]); bz1 = Math.max(bz1, e.pz[i]); }
     for (const t of tall) {
+      if (t.x < bx0 - t.r - 40 || t.x > bx1 + t.r + 40 || t.z < bz0 - t.r - 40 || t.z > bz1 + t.r + 40) continue;
       let best = Infinity, bs = 0;
       for (const { e, rev, s0 } of ch.parts) {
         for (let i = 1; i < e.px.length; i++) {

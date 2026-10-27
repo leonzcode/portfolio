@@ -19,6 +19,7 @@ class Bits {
     this.max = max;
     const im = this.mesh = new THREE.InstancedMesh(geometry, material, max);
     im.count = 0; im.frustumCulled = false; im.castShadow = false; im.receiveShadow = false;
+    im.visible = false; // (shown once it holds a piece: an empty one was still drawn every frame; perf)
     im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     if (colors) { for (let i = 0; i < max; i++) im.setColorAt(i, _col.setRGB(1, 1, 1)); im.instanceColor.setUsage(THREE.DynamicDrawUsage); }
     parent.add(im);
@@ -42,7 +43,7 @@ class Bits {
     this.gy[i] = gy;
     if (color !== undefined && this.mesh.instanceColor) { this.mesh.setColorAt(i, _col.setHex(color)); this.mesh.instanceColor.needsUpdate = true; }
     this.used = Math.max(this.used, i + 1);
-    this.mesh.count = this.used;
+    this.mesh.count = this.used; this.mesh.visible = true;
     this._write(i);
     return i;
   }
@@ -91,7 +92,7 @@ class Bits {
     }
     if (moved) this.mesh.instanceMatrix.needsUpdate = true;
   }
-  clear() { this.live.fill(0); this.active = 0; this.used = 0; this.next = 0; this.mesh.count = 0; }
+  clear() { this.live.fill(0); this.active = 0; this.used = 0; this.next = 0; this.mesh.count = 0; this.mesh.visible = false; }
   // drop pieces lying far from (x, z), so the pool's ring keeps the ones near the player
   forgetFar(x, z, r) {
     let any = false;
@@ -117,7 +118,7 @@ class Sparks {
     g.setDrawRange(0, 0);
     const m = new THREE.LineBasicMaterial({ vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false });
     m.name = 'damage_sparks';
-    this.mesh = new THREE.LineSegments(g, m); this.mesh.frustumCulled = false; this.mesh.name = 'sparks';
+    this.mesh = new THREE.LineSegments(g, m); this.mesh.frustumCulled = false; this.mesh.name = 'sparks'; this.mesh.visible = false;
     parent.add(this.mesh);
     this.p = new Float32Array(max * 3); this.v = new Float32Array(max * 3); this.life = new Float32Array(max); this.life0 = new Float32Array(max); this.gy = new Float32Array(max);
     this.n = 0; this.next = 0;
@@ -127,7 +128,7 @@ class Sparks {
     const k = i * 3;
     this.p[k] = px; this.p[k + 1] = py; this.p[k + 2] = pz; this.v[k] = vx; this.v[k + 1] = vy; this.v[k + 2] = vz;
     this.life[i] = this.life0[i] = life; this.gy[i] = gy;
-    this.n = Math.max(this.n, i + 1);
+    this.n = Math.max(this.n, i + 1); this.mesh.visible = true;
   }
   update(dt) {
     if (!this.n) return;
@@ -154,9 +155,9 @@ class Sparks {
     const g = this.mesh.geometry;
     g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true;
     g.setDrawRange(0, this.n * 2);
-    if (!live) { this.n = 0; g.setDrawRange(0, 0); }
+    if (!live) { this.n = 0; g.setDrawRange(0, 0); this.mesh.visible = false; }
   }
-  clear() { this.life.fill(0); this.n = 0; this.mesh.geometry.setDrawRange(0, 0); }
+  clear() { this.life.fill(0); this.n = 0; this.mesh.geometry.setDrawRange(0, 0); this.mesh.visible = false; }
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -229,7 +230,7 @@ class Puffs {
       transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
     m.name = additive ? 'damage_fire' : 'damage_smoke';
-    this.mesh = new THREE.Mesh(g, m); this.mesh.frustumCulled = false; this.mesh.renderOrder = 5;
+    this.mesh = new THREE.Mesh(g, m); this.mesh.frustumCulled = false; this.mesh.renderOrder = 5; this.mesh.visible = false;
     this.mesh.name = additive ? 'fire' : 'smoke';
     parent.add(this.mesh);
     this.list = [];
@@ -266,9 +267,9 @@ class Puffs {
       S[i * 2] = k.size0 + (k.size1 - k.size0) * Math.sqrt(f); S[i * 2 + 1] = p.rot;
     }
     this.iPos.needsUpdate = this.iCol.needsUpdate = this.iSR.needsUpdate = true;
-    this.mesh.geometry.instanceCount = j;
+    this.mesh.geometry.instanceCount = j; this.mesh.visible = j > 0;
   }
-  clear() { this.list.length = 0; this.mesh.geometry.instanceCount = 0; }
+  clear() { this.list.length = 0; this.mesh.geometry.instanceCount = 0; this.mesh.visible = false; }
 }
 
 export const PUFF = {

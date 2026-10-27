@@ -3,8 +3,8 @@
 // and signals for it, stops at red lights (signals.js, the same timing the lights show), waits at stop signs, gives
 // way at junctions without lights, slows for the player's car in its path, and stops with its hazards on when hit.
 import * as THREE from 'three';
-import * as SIG from './signals.js?v=32';
-import { frame } from './geo.js?v=32';
+import * as SIG from './signals.js?v=33';
+import { frame } from './geo.js?v=33';
 
 const AMERICAN = new Set(['s10', 'conquer', 'shvan', 'schoolbus', 'semi']);
 const inAmericas = () => frame.lat > 14 && frame.lat < 72 && frame.lon > -170 && frame.lon < -52;
@@ -23,6 +23,31 @@ function laneAt(L, s, out) {
   const t = (s - c[lo]) / Math.max(1e-6, c[hi] - c[lo]);
   out.x = p[lo].x + (p[hi].x - p[lo].x) * t; out.y = p[lo].y + (p[hi].y - p[lo].y) * t; out.z = p[lo].z + (p[hi].z - p[lo].z) * t;
   return out;
+}
+
+// (perf B) one of each of the region's traffic models loaded, lit by the street's photo and its shaders built in the
+// background before the streets are built (drive.start calls this once its own car is in the scene, so the scene's
+// lights are the ones they will be drawn with); Traffic.preload then takes them instead of making its own
+let PRE = null;
+export function regionModels(cars) { return cars && cars.TRAFFIC ? [...new Set(cars.TRAFFIC.filter(m => inAmericas() || !AMERICAN.has(m)))] : []; }
+export function preloadRigs({ cars, renderer, camera, scene, carEnv }) {
+  const ids = regionModels(cars);
+  PRE = (async () => {
+    const rigs = [];
+    await Promise.all(ids.map(async id => {
+      try {
+        let color = PAINTS[(Math.random() * PAINTS.length) | 0];
+        if ((id === 'volvos90' || id === 'fairheaven') && nearNYC() && Math.random() < 0.35) color = 0xf2b705;
+        const rig = await cars.loadCar(id, { npc: true, color });
+        if (carEnv && rig.setEnvMap) rig.setEnvMap(carEnv);
+        rig.modelId = id; rigs.push(rig);
+      } catch (e) { console.warn('traffic preload', id, e); }
+    }));
+    const tmp = new THREE.Group(); for (const r of rigs) tmp.add(r.object);
+    try { if (renderer.compileAsync) await Promise.race([renderer.compileAsync(tmp, camera, scene), new Promise(r => setTimeout(r, 10000))]); } catch (e) {}
+    return { ids, tmp, rigs };
+  })();
+  return PRE;
 }
 
 export class Traffic {
@@ -67,6 +92,12 @@ export class Traffic {
 
   // one of each model loaded (and its shaders built) before the drive starts, so nothing stalls once moving
   async preload(renderer, camera) {
+    // (perf B) drive.start had them made beside the streets' build (preloadRigs below): only take them
+    if (PRE) {
+      const pre = PRE; PRE = null;
+      const r = await pre.catch(() => null);
+      if (r && r.rigs.length) { const ok = new Set(r.rigs.map(g => g.modelId)); this.models = this.models.filter(m => ok.has(m) || !r.ids.includes(m)); this.warm = { tmp: r.tmp, rigs: r.rigs }; return; }
+    }
     const ids = [...new Set(this.models)];
     const rigs = [];
     await Promise.all(ids.map(async id => { try { const r = await this.getRig(id); rigs.push(r); } catch (e) { this.models = this.models.filter(m => m !== id); } }));

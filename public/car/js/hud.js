@@ -15,11 +15,11 @@ export class Hud {
         <div class="hud-keys-h">Controls <button class="hud-x" aria-label="Close">&times;</button></div>
         <dl>
           <dt>W / &uarr;</dt><dd>Accelerate</dd><dt>S / &darr;</dt><dd>Brake, hold to reverse</dd>
-          <dt>A D / &larr; &rarr;</dt><dd>Steer</dd><dt>Space</dt><dd>Handbrake; in the Roadster, hold to fly</dd><dt>Shift</dt><dd>Thruster boost (Roadster)</dd>
+          <dt>A D / &larr; &rarr;</dt><dd>Steer</dd><dt>Space</dt><dd>Handbrake; in the Roadster, hold to fly up</dd><dt>Shift</dt><dd>Roadster: fly down; on the ground with W, the rear jet</dd><dt>F</dt><dd>Thruster boost (Roadster)</dd>
           <dt>C</dt><dd>Change view</dd><dt>B</dt><dd>Look back</dd><dt>Drag</dt><dd>Look around</dd>
           <dt>E</dt><dd>Get out, or get in a car</dd><dt>P</dt><dd>Your look</dd>
           <dt>, / .</dt><dd>Left / right signal</dd><dt>X</dt><dd>Hazard lights</dd><dt>L</dt><dd>Headlights</dd>
-          <dt>1 to 0</dt><dd>Change car</dd><dt>R</dt><dd>Back on the road</dd><dt>M</dt><dd>Sound on or off</dd><dt>H</dt><dd>Show or hide this</dd>
+          <dt>1 to 0, -</dt><dd>Change car</dd><dt>R</dt><dd>Back on the road</dd><dt>M</dt><dd>Sound on or off</dd><dt>H</dt><dd>Show or hide this</dd>
         </dl>
       </div>
       <div class="hud-load"><div class="hud-load-card"><div class="hud-spin"></div><div class="hud-load-t">Loading</div><div class="hud-bar"><i></i></div></div></div>
@@ -70,7 +70,7 @@ export class Hud {
     if (!C) return;
     const list = C.CARS.filter(c => !c.npcOnly), cur = this.drive.carId;
     const KIND = { sedan: 'Sedan', sports: 'Sports car', pickup: 'Pickup', hatchback: 'Hatchback', van: 'Van', suv: 'SUV', supercar: 'Supercar', electric: 'Electric sports car', bus: 'School bus', truck: 'Semi truck' };
-    this.$('.hud-cars-l').innerHTML = list.map((c, i) => `<button data-id="${c.id}" class="${c.id === cur ? 'on' : ''}"><b>${c.name}</b><small>${KIND[c.kind] || c.kind || ''}${i < 10 ? ` &middot; key ${(i + 1) % 10}` : ''}</small></button>`).join('');
+    this.$('.hud-cars-l').innerHTML = list.map((c, i) => `<button data-id="${c.id}" class="${c.id === cur ? 'on' : ''}"><b>${c.name}</b><small>${KIND[c.kind] || c.kind || ''}${i < 12 ? ` &middot; key ${'1234567890-='[i]}` : ''}</small></button>`).join('');
     const spec = list.find(c => c.id === cur);
     const paints = spec && spec.paints ? spec.paints : [];
     this.$('.hud-cars-p').innerHTML = paints.map(p => `<button data-paint="${p}" style="background:#${p.toString(16).padStart(6, '0')}" aria-label="Paint"></button>`).join('');
@@ -101,11 +101,15 @@ export class Hud {
   update(dt, v, drive) {
     this.t += dt;
     const mph = drive.mph, s = Math.abs(v.fwdSpeed) * (mph ? 2.23694 : 3.6);
-    this.$('.hud-v').textContent = Math.round(s);
-    this.$('.hud-u').textContent = mph ? 'mph' : 'km/h';
-    this.$('.hud-g').textContent = v.reverse ? 'R' : (Math.abs(v.fwdSpeed) < 0.3 && v.throttle < 0.05 ? 'N' : 'D' + v.gear);
+    // (written only when it changes: every write made the page work its style out again, each frame; perf)
+    const E = this._els || (this._els = { v: this.$('.hud-v'), u: this.$('.hud-u'), g: this.$('.hud-g'), l: this.$('.hud-l'), r: this.$('.hud-r'), last: {} }), was = E.last;
+    const set = (k, val) => { if (was[k] !== val) { was[k] = val; E[k].textContent = val; } };
+    set('v', String(Math.round(s)));
+    set('u', mph ? 'mph' : 'km/h');
+    set('g', v.reverse ? 'R' : (Math.abs(v.fwdSpeed) < 0.3 && v.throttle < 0.05 ? 'N' : 'D' + v.gear));
     const on = Math.floor(this.t * 3) % 2 === 0, sg = drive.signal;
-    this.$('.hud-l').classList.toggle('on', on && (sg === -1 || sg === 2));
-    this.$('.hud-r').classList.toggle('on', on && (sg === 1 || sg === 2));
+    const l = on && (sg === -1 || sg === 2), r = on && (sg === 1 || sg === 2);
+    if (was.l !== l) { was.l = l; E.l.classList.toggle('on', l); }
+    if (was.r !== r) { was.r = r; E.r.classList.toggle('on', r); }
   }
 }

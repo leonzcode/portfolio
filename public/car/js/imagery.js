@@ -9,7 +9,7 @@
 // longitude and nearly linear in latitude over a few hundred metres, so a box is one scaled drawImage of the
 // stitched tiles (the error over 300 m is a few millimetres). A tile that fails falls back to its parent tile.
 import * as THREE from 'three';
-import { unproject, lonLatToTile } from './geo.js?v=32';
+import { unproject, lonLatToTile } from './geo.js?v=33';
 
 export const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 export const ATTRIBUTION = 'Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community';
@@ -179,6 +179,27 @@ export async function rect(x0, z0, x1, z1, opts = {}) {
   return out;
 }
 
+// The same as rect, in two parts that come as they are ready: the pixels on the CPU first (z18 tiles, for reading
+// the roofs), the picture for the GPU when its tiles are in (buildings.js draws plain roofs meanwhile and swaps the
+// picture in later, uploaded a frame at a time).
+//   rectParts(x0, z0, x1, z1, opts) -> { x0, z0, x1, z1, sample: Promise<fn|null>, picture: Promise<{ texture, w, h, zoom }|null> }
+export function rectParts(x0, z0, x1, z1, opts = {}) {
+  if (x1 < x0) [x0, x1] = [x1, x0];
+  if (z1 < z0) [z0, z1] = [z1, z0];
+  const sample = opts.read === false ? Promise.resolve(null) : sampler(x0, z0, x1, z1, Math.min(opts.zoom ?? 19, 18)).catch(() => null);
+  const picture = draw(x0, z0, x1, z1, opts.zoom ?? 19, opts.maxSize ?? 2048, false).then(r => {
+    const texture = new THREE.CanvasTexture(r.canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.flipY = false;
+    texture.anisotropy = opts.anisotropy ?? 8;
+    texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.generateMipmaps = true;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    return { texture, w: r.w, h: r.h, zoom: r.zoom };
+  }).catch(() => null);
+  return { x0, z0, x1, z1, sample, picture };
+}
+
 // RGBA bytes over a box at the zoom's own resolution (or opts.mpp metres a pixel), made from the tiles' pixels
 // without a canvas; opts.slice (an async function) is awaited every few rows so a caller can keep frames going.
 export async function pixels(x0, z0, x1, z1, opts = {}) {
@@ -215,5 +236,5 @@ export function tileMap(x0, z0, x1, z1, zoom = 18) {
 
 export function clear() { tiles.clear(); tileRGBA.clear(); }
 
-export const imagery = { rect, pixels, sampler, tileMap, clear, ESRI, ATTRIBUTION };
+export const imagery = { rect, rectParts, pixels, sampler, tileMap, clear, ESRI, ATTRIBUTION };
 export default imagery;

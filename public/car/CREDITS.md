@@ -29,6 +29,7 @@ partly replaced at run time (car paint, glass, chrome, lamp glow) by `js/cars.js
 | `models/gallardo.glb`, `models/gallardo_npc.glb` | Lamborghini Gallardo 2010 | Artem P (temp0.crazy) | https://sketchfab.com/3d-models/ff0eb2242d0e42eb8b7034b4db639e56 | CC BY 4.0 |
 | `models/schoolbus.glb`, `models/schoolbus_npc.glb` | School Bus Conversion (an International IC CE) | steun | https://sketchfab.com/3d-models/21b7e85f54024a6888bb168f21bbb2e1 | CC BY 4.0 |
 | `models/semi.glb`, `models/semi_npc.glb` | Tesla Semi | Oleksii Rozumnyi (Oleksii.Rozumnyi) | https://sketchfab.com/3d-models/39ffc7c746184e0c9ebd5bbcd0b405dd | CC BY 4.0 |
+| `models/golf2.glb`, `models/golf2_npc.glb` | VW Golf 2 | Teofels (teofels) | https://sketchfab.com/3d-models/c9f47e2e291241d2a490adab1d1ca921 | CC BY 4.0 |
 
 The cars added on 2026-10-22 were checked the same way (Sketchfab's model API on 2026-10-21/22), with these notes and
 changes beyond the list above:
@@ -46,10 +47,18 @@ changes beyond the list above:
 - Tesla Roadster: the brake calipers stay with the body (they do not turn with the wheels).
 - Milano '95, Porsche 911 and Conquer '89: the front wheels, which their authors posed turned 18 to 30 degrees, were
   turned straight again so they spin true (2026-10-21).
+- VW Golf 2 (added 2026-10-26; licence read on its Sketchfab page and in the model API that day, CC Attribution 4.0):
+  the file had every face's corners apart, so its vertices were welded (0.5 mm) and shaded by angle; the wheels,
+  which the author gave 2.8 degrees (front) and 1.6 degrees (rear) of camber, were straightened. The model has no
+  cabin, so one was added from simple boxes of our own (seats, dashboard, instrument hood, console, gear lever,
+  steering column, door cards, parcel shelf, headliner, floor), with a copy of the body shell a few millimetres in as
+  its inner lining and the shell's inward-facing faces in the same dark trim; the steering wheel is drawn at run
+  time by `js/cars.js`. (A request for a different 1992 Golf GTI Mk2 model was not followed: that one is CC
+  BY-NC-SA and its page says it is based on a Need for Speed model.)
 
 The licences cover the 3D models only. Car makers' names, badges and designs may be trademarks of their owners;
-the models are fan-made and not endorsed by Volvo, Porsche, General Motors, Ferrari, Lamborghini, Tesla or
-Navistar (International).
+the models are fan-made and not endorsed by Volvo, Porsche, General Motors, Ferrari, Lamborghini, Tesla,
+Navistar (International), or Volkswagen.
 
 ## Environment map
 
@@ -88,6 +97,8 @@ driving.
 | Ground picture without a key | Esri World Imagery | Esri attribution: "Esri, Maxar, Earthstar Geographics" |
 | Roads, buildings, street furniture | OpenStreetMap through the Overpass API (overpass-api.de and mirrors) | ODbL, "© OpenStreetMap contributors" |
 | Roads and buildings when Overpass is slow | OpenFreeMap vector tiles (OpenMapTiles schema) | OpenStreetMap data, ODbL; free with no key |
+| Buildings: heights, floors, roof shapes, colours and footprints OSM lacks (`js/overture.js`, `js/overworker.js`) | Overture Maps Foundation, buildings theme, read from the release's own PMTiles archive (overturemaps-extras-us-west-2 on S3, the latest release from stac.overturemaps.org) | Theme licence ODbL (checked on docs.overturemaps.org/attribution on 2026-10-26); it merges OpenStreetMap (ODbL), Microsoft Global ML Building Footprints (ODbL), Google Open Buildings (CC BY 4.0) and Shi et al.'s East Asia buildings (CC BY 4.0). Credited as "Overture Maps Foundation, © OpenStreetMap contributors, Microsoft, Google" |
+| Shop fronts (which ground floors are shops) | OpenStreetMap shop, cafe, pub and bank points (Overpass), or OpenFreeMap's poi layer | ODbL, "© OpenStreetMap contributors" |
 
 ## Code
 

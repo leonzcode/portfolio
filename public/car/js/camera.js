@@ -64,8 +64,13 @@ export class CarCamera {
       // keep it out of walls and buildings
       if (world) {
         const from = base.clone().add(new THREE.Vector3(0, 1.4, 0)), to = want.clone().sub(from), len = to.length();
-        const h = world.raycast(from, to.normalize(), len);
-        if (h && h.distance < len) want.copy(from).addScaledVector(to, Math.max(1.5, h.distance - 0.4));
+        // (the ray through the map's mesh every second frame, the frame between keeping the last answer: the camera
+        // eases towards where it should be anyway; perf)
+        this._rayN = (this._rayN || 0) + 1;
+        let hd = null;
+        if ((this._rayN & 1) === 0 || this._rayHd === undefined) { const h = world.raycast(from, to.normalize(), len); hd = h ? h.distance : null; this._rayHd = hd; }
+        else { to.normalize(); hd = this._rayHd; }
+        if (hd !== null && hd < len) want.copy(from).addScaledVector(to, Math.max(1.5, hd - 0.4));
         // a traffic car between: move in to just in front of it
         if (input.others) for (const c of input.others) {
           const ax = from.x, az = from.z, bx = want.x, bz = want.z, dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz;
