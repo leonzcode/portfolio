@@ -19,10 +19,10 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=33';
-import { patchBaked } from './baked.js?v=33';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=33';
-import overture from './overture.js?v=33';
+import { frame, project } from './geo.js?v=34';
+import { patchBaked } from './baked.js?v=34';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=34';
+import overture from './overture.js?v=34';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -1618,6 +1618,9 @@ function extras(P, ctx, W, R, terms, base, yEave, uvOf, rc, ground0) {
         const C = (sa, sb, y) => [e[0] + A[0] * h2 * sa + Q[0] * h2 * sb, y, e[1] + A[1] * h2 * sa + Q[1] * h2 * sb];
         const faces = [[[1, 1], [1, -1], [A[0], 0, A[1]]], [[-1, 1], [1, 1], [Q[0], 0, Q[1]]], [[-1, -1], [-1, 1], [-A[0], 0, -A[1]]], [[1, -1], [-1, -1], [-Q[0], 0, -Q[1]]]];
         for (const [s0, s1, n] of faces) W.quad(C(s0[0], s0[1], base), C(s1[0], s1[1], base), C(s1[0], s1[1], top), C(s0[0], s0[1], top), n, col, P.style, base, top, Ft);
+        // (a door in the tower's face towards the street, under its first window)
+        { const sg = e === ends[0] ? 1 : -1, n = [A[0] * sg, A[1] * sg], d = [n[1], -n[0]], c = [e[0] + n[0] * (h2 + 0.03), e[1] + n[1] * (h2 + 0.03)], dc = new THREE.Color(0.16, 0.09, 0.05).multiplyScalar(1 / 0.55);
+          W.quad([c[0] - d[0] * 0.8, base, c[1] - d[1] * 0.8], [c[0] + d[0] * 0.8, base, c[1] + d[1] * 0.8], [c[0] + d[0] * 0.8, base + 2.9, c[1] + d[1] * 0.8], [c[0] - d[0] * 0.8, base + 2.9, c[1] - d[1] * 0.8], [n[0], 0, n[1]], dc, STYLE.SOFFIT, base, base + 2.9); }
         const apex = [e[0], top + sz * (1.4 + P.r2), e[1]], sp = P.r3 < 0.3 ? new THREE.Color(0.2, 0.36, 0.3) : new THREE.Color(0.1, 0.1, 0.11);
         for (const [s0, s1, n] of faces) W.tri(C(s0[0], s0[1], top), C(s1[0], s1[1], top), apex, [n[0] * 0.8, 0.6, n[2] * 0.8], sp, STYLE.ROOFING, top, apex[1]);
       }
@@ -1927,9 +1930,6 @@ function nextFrame() {
 // the camera flying down after the loading card (camera.js swoop): nothing is shown, built or uploaded then
 function flying() { try { const D = window.__car && window.__car.drive; return !!(D && !D.holdRender && D.cam && D.cam.introT > 0); } catch (e) { return false; } }
 function behindCard() { try { const D = window.__car && window.__car.drive; return !!(D && D.holdRender); } catch (e) { return false; } }
-// (lead) behind the card, or with the car (or the person) standing still a moment (drive.js stillFor): the roof
-// pictures go up only then, the roofs drawn in their plain colour meanwhile
-function stillNow() { try { const D = window.__car && window.__car.drive; if (!D || D.holdRender) return true; return D.stillFor ? D.stillFor(1200) : true; } catch (e) { return true; } }
 // One material for every plain roof (its colours in the vertices), and a keeper of the pictured roofs' program
 // (each cell's own material, with its picture, shares that program): never disposed, so never built again.
 let ROOF_PLAIN = null, ROOF_KEEP = null, ROOF_KEEP_MESH = null;
@@ -1957,27 +1957,97 @@ export const UPLOADS = []; // (tests: [when, ms, width] of the last uploads)
 if (typeof window !== 'undefined') window.__bldUploads = UPLOADS;
 let upOn = false, upLast = 0, upSkip = 0;
 const NO_ROOFPIC = (() => { try { return /[?&]noroofpic/.test(location.search); } catch (e) { return false; } })();
-function queueUpload(renderer, rec, roof, tex) { if (NO_ROOFPIC) { tex.dispose(); return; } UPQ.push({ renderer, rec, roof, tex }); if (!upOn) { upOn = true; requestAnimationFrame(upStep); } }
-/* (lead) and only while standing still (stillNow), at least UP_GAP ms apart, after a quick frame (or after 3 s of slow
-   ones): one a frame, each picture a 1024 to 1536 px upload, held the graphics process up after every rebuild, and
-   frames stood 125 to 160 ms apart for seconds while the roofs were already drawn in their plain colour (Times Square,
-   75 s at 50 km/h: 43 frames over 50 ms and 24 over 100 with them, 18 and 4 without; v32 had 46 and 9, worst 588 ms) */
-const UP_GAP = 700;
+function queueUpload(renderer, rec, roof, tex) {
+  if (NO_ROOFPIC) { tex.dispose(); return; }
+  const j = { renderer, rec, roof, tex, bitmap: undefined };
+  // (the picture as an ImageBitmap, made off the frame: its strips are copied from it on the graphics card)
+  if (!STRIP_CPU && typeof createImageBitmap === 'function' && tex.image) createImageBitmap(tex.image).then(b => { j.bitmap = b; }, () => { j.bitmap = null; });
+  else j.bitmap = null;
+  UPQ.push(j); if (!upOn) { upOn = true; requestAnimationFrame(upStep); }
+}
+// The pictures go up in strips (buildings agent, round 4): the texture's storage is made once (immutable, sRGB,
+// every mip level), then about 512 KB of the picture's own pixels a frame (128 rows of a 1024 px picture) with
+// texSubImage2D, the mip levels made after the last; the roof keeps its plain colour until then and gets the
+// texture as a THREE.ExternalTexture. A whole picture in one upload (initTexture) held the graphics process up 100 to
+// 180 ms, so the lead had held them back until the car stood still. A frame over 80 ms is let by, three in a row.
+let UPJ = null, ANISO = undefined;
+// (tests: ?striprows=N rows a strip, 0 the whole picture at once; ?stripcpu reads the pixels on the CPU instead of a bitmap)
+const STRIP_ROWS = (() => { try { const m = /[?&]striprows=(\d+)/.exec(location.search); return m ? +m[1] : -1; } catch (e) { return -1; } })();
+const STRIP_CPU = (() => { try { return /[?&]stripcpu/.test(location.search); } catch (e) { return false; } })();
+function stripStart(j) {
+  const R = j.renderer, gl = R && R.getContext ? R.getContext() : null, img = j.tex.image;
+  if (!gl || typeof gl.texStorage2D !== 'function' || !R.state || !img || !img.getContext || !THREE.ExternalTexture) return null;
+  const w = img.width, h = img.height;
+  if (!(w > 1 && h > 1)) return null;
+  const data = j.bitmap ? null : img.getContext('2d').getImageData(0, 0, w, h).data;
+  const glTex = gl.createTexture();
+  R.state.bindTexture(gl.TEXTURE_2D, glTex);
+  gl.texStorage2D(gl.TEXTURE_2D, Math.floor(Math.log2(Math.max(w, h))) + 1, gl.SRGB8_ALPHA8, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  if (ANISO === undefined) ANISO = gl.getExtension('EXT_texture_filter_anisotropic') || null;
+  if (ANISO) gl.texParameterf(gl.TEXTURE_2D, ANISO.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, R.capabilities.getMaxAnisotropy ? R.capabilities.getMaxAnisotropy() : 8));
+  // (from a bitmap the whole picture in one copy on the graphics card: 0 to 1 ms here, where a sub-rectangle of one
+  // took about 30 ms a strip and reading a canvas back for strips 120 to 170 ms; from CPU pixels 128 rows a frame)
+  const strip = Math.max(16, Math.floor(131072 / w));
+  return { j, gl, glTex, data, bitmap: j.bitmap || null, w, h, y: 0, rows: STRIP_ROWS > 0 ? STRIP_ROWS : STRIP_ROWS === 0 || j.bitmap ? h : strip };
+}
+// one strip; true when the picture is done (or its cell is gone)
+function stripStep(U) {
+  const { gl, j } = U, R = j.renderer;
+  if (j.rec.dead) { gl.deleteTexture(U.glTex); j.tex.dispose(); if (U.bitmap) U.bitmap.close(); return true; }
+  R.state.bindTexture(gl.TEXTURE_2D, U.glTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4); gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+  const n = Math.min(U.rows, U.h - U.y);
+  if (U.bitmap) {
+    // (rows y to y + n of the bitmap: WebGL 2 takes a source's sub-rectangle from the unpack skip settings)
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, U.y);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, U.y, U.w, n, gl.RGBA, gl.UNSIGNED_BYTE, U.bitmap);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+  } else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, U.y, U.w, n, gl.RGBA, gl.UNSIGNED_BYTE, U.data, U.y * U.w * 4);
+  U.y += n;
+  if (U.y < U.h) return false;
+  gl.generateMipmap(gl.TEXTURE_2D);
+  if (U.bitmap) U.bitmap.close();
+  const ext = new THREE.ExternalTexture(U.glTex);
+  ext.colorSpace = THREE.SRGBColorSpace; ext.flipY = false; ext.userData.gl = gl; ext.userData.glTex = U.glTex;
+  j.tex.dispose();
+  const m = roofPictured(ext);
+  j.roof.material = m; j.rec.mats.push(m); j.rec.textures.push(ext);
+  return true;
+}
+// (while the car moves, a picture at most every 1.5 s and only after a quick frame: each still cost the graphics
+// process a frame over 100 ms now and then, 11 in 75 s of driving in Times Square with 39 pictures sent freely)
+function stillNow() { try { const D = window.__car && window.__car.drive; if (!D || D.holdRender) return true; return D.stillFor ? D.stillFor(1200) : true; } catch (e) { return true; } }
 let upAt = 0;
 function upStep(t) {
   const dt = upLast ? t - upLast : 16; upLast = t;
-  if (!UPQ.length) { upOn = false; upLast = 0; return; }
-  if (!flying() && stillNow() && t - upAt >= UP_GAP && (dt < 25 || t - upAt > 3000)) {
-    upSkip = 0; upAt = t;
-    const j = UPQ.shift();
-    if (j.rec.dead) j.tex.dispose();
-    else {
-      const tu = performance.now();
-      try { if (j.renderer && j.renderer.initTexture) j.renderer.initTexture(j.tex); } catch (e) {}
-      UPLOADS.push([Math.round(t), Math.round(performance.now() - tu), j.tex.image ? j.tex.image.width : 0]); if (UPLOADS.length > 64) UPLOADS.shift();
-      const m = roofPictured(j.tex);
-      j.roof.material = m; j.rec.mats.push(m); j.rec.textures.push(j.tex);
-    }
+  if (!UPJ && !UPQ.length) { upOn = false; upLast = 0; return; }
+  const go = UPJ || stillNow() || (t - upAt >= 1500 && dt < 25);
+  if (go && !flying() && (dt < 80 || ++upSkip > 3)) {
+    upSkip = 0;
+    const tu = performance.now();
+    try {
+      // (the next picture waits for its bitmap)
+      if (!UPJ && UPQ[0].bitmap !== undefined) {
+        const j = UPQ.shift();
+        if (j.rec.dead) j.tex.dispose();
+        else {
+          UPJ = stripStart(j);
+          if (!UPJ) {
+            // (no WebGL 2: the whole picture at once, as before)
+            try { if (j.renderer && j.renderer.initTexture) j.renderer.initTexture(j.tex); } catch (e) {}
+            const m = roofPictured(j.tex); j.roof.material = m; j.rec.mats.push(m); j.rec.textures.push(j.tex);
+          }
+        }
+      }
+      if (UPJ && stripStep(UPJ)) { UPLOADS.push([Math.round(t), Math.round(performance.now() - tu), UPJ.w, 'done']); UPJ = null; upAt = t; }
+      else if (UPJ) UPLOADS.push([Math.round(t), Math.round(performance.now() - tu), UPJ.w]);
+    } catch (e) { console.warn('roof picture', e); if (UPJ) { try { UPJ.gl.deleteTexture(UPJ.glTex); } catch (e2) {} UPJ = null; } }
+    if (UPLOADS.length > 64) UPLOADS.shift();
   }
   requestAnimationFrame(upStep);
 }
@@ -1998,7 +2068,7 @@ function freeRec(rec, world) {
     if (world && world.extra) { const i = world.extra.indexOf(m); if (i >= 0) world.extra.splice(i, 1); }
   }
   for (const m of rec.mats) m.dispose();
-  for (const t of rec.textures) t.dispose();
+  for (const t of rec.textures) { t.dispose(); if (t.userData && t.userData.glTex) { try { t.userData.gl.deleteTexture(t.userData.glTex); } catch (e) {} } }
   built.delete(rec.sig);
 }
 

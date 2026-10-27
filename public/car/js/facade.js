@@ -236,9 +236,9 @@ void facade() {
     }
     if ( L < 2.2 || v > eave - 0.25 ) return;
     if ( glass ) {
-      vec3 tint = mix( mix( vec3( 0.20, 0.27, 0.31 ), vec3( 0.27, 0.29, 0.30 ), sv ), wall * 1.1, 0.55 ) * ( 0.8 + 0.3 * sv2 );
-      float slabF = step( 0.3, sv2 ) * fBand( fract( ( v - gh ) / fh ) * fh, fh - 0.95, fh, pxv );
-      fcCol = mix( tint, tint * 0.5, slabF ); fcRough = 0.18; fcMetal = 0.42; return;
+      vec3 tint = mix( mix( vec3( 0.20, 0.27, 0.31 ), vec3( 0.27, 0.29, 0.30 ), sv ), wall * 1.1, 0.55 ) * ( 0.95 + 0.3 * sv2 );
+      float slabF = step( 0.18, sv2 ) * fBand( fract( ( v - gh ) / fh ) * fh, fh - 0.95, fh, pxv );
+      fcCol = mix( tint, tint * 0.6, slabF ); fcRough = 0.18; fcMetal = 0.36; return;
     }
     float wwF = vF.y > 0.0 ? vF.y : ( style == 1.0 ? ( sv > 0.55 ? 0.94 : 0.62 ) : style == 5.0 ? 0.5 : look == 3.0 ? 0.58 : 0.44 );
     float whF = vF.z > 0.0 ? min( vF.z, 0.92 ) : 0.55;
@@ -416,13 +416,15 @@ void facade() {
 
   if ( glass ) {
     // curtain wall: panes between mullions, a spandrel at each slab; the building's own colour in the glass
-    vec3 tint = mix( mix( vec3( 0.20, 0.27, 0.31 ), vec3( 0.27, 0.29, 0.30 ), sv ), wall * 1.1, 0.55 ) * ( 0.8 + 0.3 * sv2 );
+    vec3 tint = mix( mix( vec3( 0.20, 0.27, 0.31 ), vec3( 0.27, 0.29, 0.30 ), sv ), wall * 1.1, 0.55 ) * ( 0.95 + 0.3 * sv2 );
     if ( v < gh ) ly = v;
     float id = bi * 31.0 + fi * 7.0 + seed * 11.0;
     float hp = fH( vec2( id, 0.5 ) ), hf = fH( vec2( fi + seed * 17.0, 3.5 ) );
-    float mullV = ( 1.0 - smoothstep( 0.035, 0.035 + pxu, abs( wx ) - bw * 0.5 + 0.035 ) ) * ( 1.0 - lodU );
-    float slab = 1.0 - smoothstep( 0.04, 0.04 + pxv, min( ly, fh - ly ) );
-    float spand = v < gh ? 0.0 : fBand( ly, fh - 0.95, fh, pxv ) * step( 0.3, sv2 );
+    // (a mullion 10 cm wide at each bay's edge: it was measured from the wrong side, so every pane was drawn as
+    // mullion and the towers read as flat slabs)
+    float mullV = ( 1.0 - smoothstep( 0.05, 0.05 + pxu, bw * 0.5 - abs( wx ) ) ) * ( 1.0 - lodU );
+    float slab = 1.0 - smoothstep( 0.07, 0.07 + pxv, min( ly, fh - ly ) );
+    float spand = v < gh ? 0.0 : fBand( ly, fh - 0.95, fh, pxv ) * step( 0.18, sv2 );
     slab = mix( slab, 0.16 / fh, lodV );
     spand = mix( spand, 0.95 / fh * step( 0.3, sv2 ), lodV );
     // the rooms behind: blinds down in some panes, a darker ceiling band at the top of each floor
@@ -430,13 +432,13 @@ void facade() {
     float blinds = step( hb, 0.18 ) * step( fh * ( 0.2 + 0.5 * hb / 0.18 ), ly ) * ( 1.0 - lodU ) * ( 1.0 - spand );
     float ceil = fBand( ly, fh - 1.35, fh - 0.95, pxv ) * ( 1.0 - step( 0.3, sv2 ) ) * ( 1.0 - lodV );
     vec3 gc = tint * ( 0.72 + 0.56 * mix( hp, hf, lodU ) );
-    vec3 mc = mix( vec3( 0.55, 0.58, 0.6 ), vec3( 0.12, 0.13, 0.14 ), step( 0.5, sv ) );
+    vec3 mc = mix( vec3( 0.6, 0.62, 0.64 ), vec3( 0.14, 0.15, 0.16 ), step( 0.72, sv ) );
     float mull = max( mullV, slab );
     float lit2 = step( hp, 0.05 ) * ( 1.0 - spand ) * ( 1.0 - lodU );
     vec3 gl = mix( gc * mix( 1.0, 0.6, ceil ), vec3( 0.52, 0.5, 0.46 ), blinds );
     fcCol = mix( mix( gl, tint * 0.5, spand ), mc, mull );
     fcRough = mix( mix( mix( 0.1 + 0.14 * hp, 0.7, blinds ), 0.5, mull ), 0.2, lodU * 0.5 );
-    fcMetal = mix( 0.42 * ( 1.0 - blinds ), 0.2, mull );
+    fcMetal = mix( 0.36 * ( 1.0 - blinds ), 0.2, mull );
     fcEmit = vec3( 1.0, 0.92, 0.8 ) * 0.12 * lit2 * ( 1.0 - mull );
     fcJit = ( vec2( mix( hp, hf, lodU ), fH( vec2( id, 2.5 ) ) ) - 0.5 ) * 0.03 * ( 1.0 - mull );
     return;
@@ -620,6 +622,6 @@ reflectedLight.indirectSpecular *= mix( 1.0, fcAO, 0.6 );
 reflectedLight.directDiffuse *= mix( 1.0, fcAO, 0.45 );
 reflectedLight.directSpecular = min( reflectedLight.directSpecular, vec3( 1.5 ) );`);
   };
-  m.customProgramCacheKey = () => 'facade19' + (m.userData.dbg || '');
+  m.customProgramCacheKey = () => 'facade21' + (m.userData.dbg || '');
   return m;
 }
