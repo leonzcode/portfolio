@@ -2,12 +2,12 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=35';
-import { World } from './world.js?v=35';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=35';
-import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=35'; // (perf A: the shadow pass's casters, steady lights)
-import { Drive } from './drive.js?v=35';
-import { CompileGate } from './gate.js?v=35'; // (perf B) nothing drawn with a program still being built
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=36';
+import { World } from './world.js?v=36';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=36';
+import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=36'; // (perf A: the shadow pass's casters, steady lights)
+import { Drive } from './drive.js?v=36';
+import { CompileGate } from './gate.js?v=36'; // (perf B) nothing drawn with a program still being built
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -136,10 +136,16 @@ function autoScale(now) {
   const want = fps < 40 ? -1 : fps > 57 ? 1 : 0;
   scaleSum = want !== 0 && want === Math.sign(scaleSum) ? scaleSum + want : want;
   minAvg.push(fps); if (minAvg.length > 3) minAvg.shift();
-  if (G.drive.loadingArea || now - activeSince < 10000 || now - scaleLast < 12000 || Math.abs(scaleSum) < 3) return;
   const avg = minAvg.reduce((a, b) => a + b, 0) / minAvg.length;
+  // (lead) far too slow (under 30 fps): down again after 4 s and two windows agreeing, not 12 s and three, so a heavy
+  // place (Times Square) does not spend its first half minute at 28 fps on the way down; ?slowscale keeps the old pace
+  const quick = scaleSum < 0 && avg < 30 && !Q.has('slowscale');
+  if (G.drive.loadingArea || now - activeSince < 10000 || now - scaleLast < (quick ? 4000 : 12000) || Math.abs(scaleSum) < (quick ? 2 : 3)) return;
   let next = prNow;
-  if (scaleSum < 0 && prNow > 0.6) next = Math.max(0.6, prNow - (avg < 25 ? 0.3 : 0.15));
+  // (lead) down to 0.5 only when still under 30 fps at 0.6 (Times Square on a GTX 745 class card sat at about 28 fps
+  // at the old floor; its GPU time is mostly fill); ?prfloor=0.6 keeps the old floor
+  const floor = (avg < 30 && prNow <= 0.6 + 1e-6 && !Q.has('prfloor')) ? 0.5 : 0.6;
+  if (scaleSum < 0 && prNow > floor + 1e-6) next = Math.max(floor, prNow - (avg < 25 ? 0.3 : 0.15));
   else if (scaleSum > 0 && prNow < PR_MAX) { next = Math.min(PR_MAX, prNow + 0.1); if (next >= tooSlow - 1e-6 && now - tooSlowT < 60000) next = prNow; }
   scaleSum = 0;
   if (next !== prNow) {
@@ -212,7 +218,7 @@ if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
 async function openMap() {
   try {
-    const M = await import('./mapui.js?v=35');
+    const M = await import('./mapui.js?v=36');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();
