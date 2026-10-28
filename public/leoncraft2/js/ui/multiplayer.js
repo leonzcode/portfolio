@@ -26,17 +26,18 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=115';
-import { ConfirmScreen } from './menus.js?v=115';
-import { Net, listServers, createServer, editServer, deleteServer, srvRequests, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=115';
-import { Account } from '../net/account.js?v=115';
-import { LoginScreen, AccountScreen } from './account.js?v=115';
-import { parseSeed } from '../gen/random.js?v=115';
-import { MapRequestsScreen } from './maprequests.js?v=115';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=116';
+import { ConfirmScreen } from './menus.js?v=116';
+import { Net, listServers, createServer, editServer, deleteServer, srvRequests, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=116';
+import { Account } from '../net/account.js?v=116';
+import { LoginScreen, AccountScreen } from './account.js?v=116';
+import { parseSeed } from '../gen/random.js?v=116';
+import { MapRequestsScreen } from './maprequests.js?v=116';
 
 const PW_KEY = 'lc2_pw_';
-/* Server requests, as the first Leoncraft has them: anyone but an admin or a mod asks for a server
-   (Request Server), and it is made when one of them approves it (ui/maprequests.js, the Servers tab).
+/* Server requests, as the first Leoncraft has them: anyone but the owner (Leon) asks for a server
+   (Request Server), admins and mods too, and it is made when an admin or a mod approves it
+   (ui/maprequests.js, the Servers tab; never their own).
    Your own show at the end of the list: waiting, and an answer for ten minutes from when your list
    first has it (the server keeps that time, so it is not shown again on another browser). The password
    you gave is kept by the request's number and carried to the server it became (lc2_reqpw). */
@@ -44,6 +45,8 @@ const REQ_PW = 'lc2_reqpw';
 const readMap = k => { try { return JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (e) { return {}; } };
 const writeMap = (k, m) => { try { localStorage.setItem(k, JSON.stringify(m)); } catch (e) { /* this visit only */ } };
 const staffHere = () => Account.admin || Account.mod;
+// (only the owner makes a server at once)
+const makesAtOnce = () => Account.admin;
 const reqAgo = t => { const s = Math.max(0, (Date.now() - (t || 0)) / 1000); return s < 90 ? 'just now' : s < 5400 ? Math.round(s / 60) + ' min ago' : s < 129600 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' days ago'; };
 const savedPassword = id => { try { return localStorage.getItem(PW_KEY + id) || ''; } catch (e) { return ''; } };
 const keepPassword = (id, pw) => { try { if (pw) localStorage.setItem(PW_KEY + id, pw); else localStorage.removeItem(PW_KEY + id); } catch (e) {} };
@@ -244,9 +247,9 @@ export class MultiplayerScreen extends Screen {
     this.joinB = this.add(new Button(W / 2 - 154, H - 52, 100, 20, 'Join Server', () => { const s = this.sel(); if (s) this.join(s); }));
     if (Account.guest) this.add(new Button(W / 2 - 50, H - 52, 100, 20, 'Log In', () => g.open(new LoginScreen(null)), 'You are playing as ' + Account.name + '. Log in or make an account.'));
     else this.add(new Button(W / 2 - 50, H - 52, 100, 20, Account.name || 'Account', () => g.open(new AccountScreen()), 'Your account: change your password, or log out'));
-    // (anyone but an admin or a mod asks for a server: it is made once one of them approves it)
-    this.add(new Button(W / 2 + 54, H - 52, 100, 20, staffHere() ? 'Create Server' : 'Request Server', () => g.open(new CreateServerScreen()),
-      staffHere() ? null : 'Ask for a server of your own: an admin or a mod reads every request before the server is made'));
+    // (anyone but the owner asks for a server: it is made once an admin or a mod approves it)
+    this.add(new Button(W / 2 + 54, H - 52, 100, 20, makesAtOnce() ? 'Create Server' : 'Request Server', () => g.open(new CreateServerScreen()),
+      makesAtOnce() ? null : 'Ask for a server of your own: an admin or a mod reads every request before the server is made'));
     this.editB = this.add(new Button(W / 2 - 154, H - 28, 70, 20, 'Settings', () => { const s = this.sel(); if (s && s.canEdit) g.open(new ServerSettingsScreen(s)); }));
     this.delB = this.add(new Button(W / 2 - 74, H - 28, 70, 20, 'Delete', () => this.remove()));
     this.add(new Button(W / 2 + 4, H - 28, 70, 20, 'Refresh', () => this.refresh()));
@@ -439,8 +442,8 @@ export class MultiplayerScreen extends Screen {
 /* ---- Create Server, and Edit Server for the one who made it ---- */
 export class CreateServerScreen extends Screen {
   constructor(editing) {
-    // (anyone but an admin or a mod asks: the first Leoncraft's Request a Server, with a reason)
-    const asks = !editing && !staffHere();
+    // (anyone but the owner asks: the first Leoncraft's Request a Server, with a reason)
+    const asks = !editing && !makesAtOnce();
     super(editing ? 'Edit Server Info' : asks ? 'Request a Server' : 'Create Server');
     this.asks = asks;
     const e = this.editing = editing || null;

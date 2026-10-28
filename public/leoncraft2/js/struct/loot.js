@@ -49,10 +49,10 @@
    rollItems(table, seed, { biome }): the stacks alone, in the order drawn, as
    the game's getRandomItems gives them (a vault's reward, a brushed block's find).
 --------------------------------------------------------------------------- */
-import { JRand, toLong } from './rand.js?v=115';
-import { LOOT } from './lootdata.js?v=115';
-import { I, maxStack } from '../items.js?v=115';
-import { ENCH, ORDER, canApply, isPrimary, selectEnchants } from '../enchanting.js?v=115';
+import { JRand, toLong } from './rand.js?v=116';
+import { LOOT } from './lootdata.js?v=116';
+import { I, maxStack } from '../items.js?v=116';
+import { ENCH, ORDER, canApply, isPrimary, selectEnchants } from '../enchanting.js?v=116';
 
 /* The game's enchantment tags (data/minecraft/tags/enchantment), in their own
    order: a draw walks them in it. A name that is no tag is one enchantment. */
