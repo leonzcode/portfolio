@@ -15,10 +15,13 @@
    The first tab, Servers, is the servers players asked for (Request Server
    on the server list, as the first Leoncraft has it), oldest first, with the
    reason given: Approve makes it, theirs; Deny asks for a note to send back
-   (mlhub lc2.js /mc/lc2/srvrequests and /srvreview).
+   (mlhub lc2.js /mc/lc2/srvrequests and /srvreview). Admins and mods ask
+   too, and another of them approves it: your own request's Approve is
+   greyed (but for the owner's, who never needs to ask).
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, WHITE, GREY } from './gui.js?v=115';
-import { mapRequests, mapReview, srvRequests, srvReview } from '../net/net.js?v=115';
+import { Screen, Button, TextField, WHITE, GREY } from './gui.js?v=116';
+import { mapRequests, mapReview, srvRequests, srvReview } from '../net/net.js?v=116';
+import { Account } from '../net/account.js?v=116';
 
 const PER_PAGE = 6;
 const STATUS = { draft: '§7Draft', pending: '§eWaiting', approved: '§aApproved', denied: '§cDenied' };
@@ -61,21 +64,40 @@ export class MapRequestsScreen extends Screen {
     if (!this.loaded) { this.loaded = true; this.load(); }
   }
   async load() {
-    this.status = 'Loading...'; this.gui.markDirty();
-    const [r, q] = await Promise.all([mapRequests(), srvRequests()]);
-    const servers = q && q.ok ? q.pending || [] : [];
-    if (r && r.ok) { this.lists = { servers, wait: r.requests || [], build: r.building || [] }; this.status = this.emptyLine(); }
-    else { this.lists = { servers, wait: [], build: [] }; this.status = this.tab === 'servers' && q && q.ok ? this.emptyLine() : (r && r.error) || 'Could not load the requests.'; }
-    this.page = Math.min(this.page, Math.max(0, Math.ceil(this.list.length / PER_PAGE) - 1));
-    this.update();
+    const n = this.loads = (this.loads || 0) + 1;
+    this.waiting = { servers: true, maps: true }; this.errors = {};
+    this.status = this.statusLine(); this.gui.markDirty();
+    // (each list shown as its answer comes: a slow answer for the maps never holds up the servers, or the other way round)
+    const land = (part, fill) => a => {
+      if (n !== this.loads) return;
+      this.waiting[part] = false;
+      if (!(a && a.ok)) this.errors[part] = (a && a.error) || 'Could not load the requests.';
+      fill(a && a.ok ? a : {});
+      this.status = this.statusLine();
+      this.page = Math.min(this.page, Math.max(0, Math.ceil(this.list.length / PER_PAGE) - 1));
+      this.update();
+    };
+    await Promise.all([
+      srvRequests().then(land('servers', q => { this.lists.servers = q.pending || []; })),
+      mapRequests().then(land('maps', r => { this.lists.wait = r.requests || []; this.lists.build = r.building || []; })),
+    ]);
   }
+  statusLine() { const part = this.tab === 'servers' ? 'servers' : 'maps'; return this.waiting && this.waiting[part] ? 'Loading...' : (this.errors && this.errors[part]) || this.emptyLine(); }
   emptyLine() { return this.list.length ? '' : this.tab === 'servers' ? 'No servers are waiting for approval.' : this.tab === 'build' ? "No players' maps are being built." : 'No maps are waiting for approval.'; }
-  show(tab) { if (this.tab === tab) return; this.tab = tab; this.page = 0; this.status = this.emptyLine(); this.update(); }
+  show(tab) { if (this.tab === tab) return; this.tab = tab; this.page = 0; this.status = this.statusLine(); this.update(); }
   at(i) { return this.list[this.page * PER_PAGE + i] || null; }
   update() {
     const pages = Math.max(1, Math.ceil(this.list.length / PER_PAGE)), tab = this.tab, wait = tab === 'wait', srv = tab === 'servers';
     if (this.page >= pages) this.page = pages - 1;
-    for (let i = 0; i < PER_PAGE; i++) { const on = !!this.at(i), r = this.rows[i]; r.ok.visible = r.no.visible = on && (wait || srv); r.spec.visible = on && wait; r.look.visible = on && tab === 'build'; }
+    for (let i = 0; i < PER_PAGE; i++) {
+      const m = this.at(i), on = !!m, r = this.rows[i];
+      r.ok.visible = r.no.visible = on && (wait || srv); r.spec.visible = on && wait; r.look.visible = on && tab === 'build';
+      // (your own server request is approved by another admin or mod; Deny takes it back)
+      const own = srv && on && m.own && !Account.admin;
+      r.ok.active = !own; r.ok.message = own ? 'Approve' : '§aApprove';
+      r.ok.tooltip = own ? 'Another admin or mod approves your own request' : srv ? 'Make the server, theirs' : 'Put it in the vote';
+      r.no.tooltip = own ? 'Take your request back' : 'Send it back to its maker';
+    }
     if (this.waitB) {
       this.srvB.message = 'Servers (' + this.lists.servers.length + ')'; this.waitB.message = 'Maps (' + this.lists.wait.length + ')'; this.buildB.message = 'Being Built (' + this.lists.build.length + ')';
       this.srvB.active = !srv; this.waitB.active = !wait; this.buildB.active = tab !== 'build';

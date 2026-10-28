@@ -19,9 +19,9 @@
    before its dungeons, so a lake never opens a room's floor there, and the
    few features made before the structures here keep off it the same way.
 --------------------------------------------------------------------------- */
-import { JRand, hash32 } from './rand.js?v=115';
-import { B, BLOCKS } from '../blocks.js?v=115';
-import { Y0, H, idx } from '../world-const.js?v=115';
+import { JRand, hash32 } from './rand.js?v=116';
+import { B, BLOCKS } from '../blocks.js?v=116';
+import { Y0, H, idx } from '../world-const.js?v=116';
 
 const MOBS = ['skeleton', 'zombie', 'zombie', 'spider'];
 const DX = [0, 1, 0, -1], DZ = [-1, 0, 1, 0];

@@ -19,9 +19,9 @@
    game, only plain stacks are used (nothing worn, enchanted or renamed).
    The drawing is our own; the book button is the one on our own sheet.
 --------------------------------------------------------------------------- */
-import { allRecipes } from '../crafting.js?v=115';
-import { I, maxStack, withCount, displayName } from '../items.js?v=115';
-import { known } from '../recipes.js?v=115';
+import { allRecipes } from '../crafting.js?v=116';
+import { I, maxStack, withCount, displayName } from '../items.js?v=116';
+import { known } from '../recipes.js?v=116';
 
 const PW = 147, PH = 166;
 const TABS = [
