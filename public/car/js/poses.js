@@ -173,6 +173,8 @@ export function buildPoses(People, bases, clips) {
         R.rot('head', 'y', look);
         R.reach('armL', V(ch.x + 0.2, ch.y - 0.12, ch.z + 0.44), V(0.6, -1, 0)).reach('armR', V(ch.x - 0.2, ch.y - 0.12, ch.z + 0.44), V(-0.6, -1, 0));
         R.reach('legL', V(hp.x + 0.15, hp.y - 0.36, hp.z + 0.66), V(0.2, 0.6, 1)).reach('legR', V(hp.x - 0.13, hp.y - 0.36, hp.z + 0.68), V(-0.2, 0.6, 1));
+        // the fingers round the wheel's rim (they were held out flat, as if pushing on a window)
+        R.curl('L', 0.7).curl('R', 0.7);
         return [t, R.snap()];
       };
       add('drive', [drive(0), drive(1.5, 6), drive(3, 0), drive(4.2, -8), drive(6, 0)]);
