@@ -2,12 +2,12 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=40';
-import { World } from './world.js?v=40';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=40';
-import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=40'; // (perf A: the shadow pass's casters, steady lights)
-import { Drive } from './drive.js?v=40';
-import { CompileGate } from './gate.js?v=40'; // (perf B) nothing drawn with a program still being built
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=41';
+import { World } from './world.js?v=41';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=41';
+import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=41'; // (perf A: the shadow pass's casters, steady lights)
+import { Drive } from './drive.js?v=41';
+import { CompileGate } from './gate.js?v=41'; // (perf B) nothing drawn with a program still being built
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -223,7 +223,7 @@ if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
 async function openMap() {
   try {
-    const M = await import('./mapui.js?v=40');
+    const M = await import('./mapui.js?v=41');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: async ({ lat, lon, heading }) => {
         mapui.hidePicker();
