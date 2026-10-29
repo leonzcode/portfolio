@@ -7,8 +7,8 @@
 // (its cheap model swapped for the detailed one once that is ready); the car the player left stays where it was,
 // solid, with its own physics, until it is far behind.
 import * as THREE from 'three';
-import { Vehicle } from './vehicle.js?v=43';
-import { Occupants, seatsOf, seatOffset, play, tick, YAW0, settled, isRagdoll, getUp, RECLINE } from './occupants.js?v=43';
+import { Vehicle } from './vehicle.js?v=44';
+import { Occupants, seatsOf, seatOffset, play, tick, YAW0, settled, isRagdoll, getUp, RECLINE } from './occupants.js?v=44';
 
 const STEP = 1 / 120;
 // on foot (m/s): a brisk walk, a jog once the person has kept going a second and a half, a run with Shift
@@ -150,6 +150,8 @@ export class OnFoot {
     if (this.mode === 'car') {
       // (just sat down, the door still shutting: out again from here)
       if (this.seq && this.seq.kind === 'enter' && this.seq.phase === 'shut') { this.person.handsBusy = false; this.seq = null; }
+      // (an aircraft in the air: the plane must land first; the helicopter comes down by itself, aircraft.js)
+      if (!this.seq && D.air && D.air.mayLeave && !D.air.mayLeave()) { D.hud.flash('Land first to get out'); return; }
       if (!this.seq) this.startExit();
       return;
     }
@@ -995,9 +997,11 @@ export class OnFoot {
       if (speed > 2.5 ? d < 2.6 : (d < 6 || dm < rig.dims.length / 2 + 2.5)) list.push({ kind, rig, ref, d: Math.min(d, dm), speed, upY });
     };
     const up = v => _a.set(0, 1, 0).applyQuaternion(v.q).y;
-    if (D.car) consider('mine', D.car.rig, D.car, D.car.vehicle.speed, up(D.car.vehicle));
+    if (D.car && !D.car.ghost) consider('mine', D.car.rig, D.car, D.car.vehicle.speed, up(D.car.vehicle)); // (round 5: not the stand-in, mp.js)
     for (const e of this.parked) consider('left', e.rig, e, e.vehicle.speed, up(e.vehicle));
     if (D.traffic) for (const c of D.traffic.list) if (Math.abs(c.x - P.x) < 14 && Math.abs(c.z - P.z) < 14) consider('traffic', c.rig, c, c.v);
+    // (round 5) other players' cars in a multiplayer room (mp.js): taking one asks their page first
+    if (D.net && D.net.carTargets) { try { D.net.carTargets(consider); } catch (e) { console.warn('mp targets', e); } }
     // parked (instanced) cars
     if (D.parked && D.parked.list) for (const o of D.parked.list) {
       if (!o.K || o.skip || o.taken) continue;
@@ -1020,6 +1024,8 @@ export class OnFoot {
 
   startEnter(t) {
     const D = this.drive;
+    // (round 5) another player's car: their page is asked, and gives it (mp.js onGiven brings us back here)
+    if (t.kind === 'remote') { if (D.net && D.net.steal) D.net.steal(t); return; }
     // a car on its side or roof (the player's, or one left about): pushed back onto its wheels first
     if (t.upY !== undefined && t.upY < 0.5) {
       const v = t.kind === 'mine' ? D.car.vehicle : t.ref && t.ref.vehicle;
@@ -1518,7 +1524,7 @@ export class OnFoot {
       const k = this.parked.indexOf(e);
       if (k >= 0) this.parked.splice(k, 1);
       const old = D.car;
-      if (old) this.addLeft({ rig: old.rig, vehicle: old.vehicle, id: old.id, npc: !!old.npc, kind: 'left' });
+      if (old && !old.ghost) this.addLeft({ rig: old.rig, vehicle: old.vehicle, id: old.id, npc: !!old.npc, kind: 'left' }); // (round 5: not mp.js's stand-in)
       D.car = { rig, vehicle: e.vehicle, id: e.id, npc: !!e.npc };
       D.carId = e.id;
       D.prevPos = e.vehicle.pos.clone(); D.prevQ = e.vehicle.q.clone(); D.acc = 0;
@@ -1779,6 +1785,8 @@ export class OnFoot {
     if (D.car && D.car.rig !== ignore) carBox(D.car.rig, D.car.vehicle);
     for (const e of this.parked) if (e.rig !== ignore) carBox(e.rig, e.vehicle);
     if (D.traffic) for (const c of D.traffic.list) { if (Math.abs(c.x - x) < 6 && Math.abs(c.z - z) < 6) box(c.rig, c.x, c.z, c.yaw + (c.offYaw || 0), c.y); }
+    // (round 5) other players' cars in a multiplayer room, and the ones they left standing (mp.js)
+    if (D.net && D.net.carBoxes) { try { D.net.carBoxes(box, x, z); } catch (e) {} }
     // the semis' trailers (trailer.js): their circles
     const T = D.trailers;
     if (T) {

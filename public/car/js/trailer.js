@@ -300,6 +300,21 @@ export class Trailers {
       }
       for (const [c, t] of this.traffic) if (!seen.has(c)) { t.dispose(); this.pool.push(t); this.traffic.delete(c); }
     }
+    // (round 5) other players' semis in a multiplayer room (mp.js semis: { rig, brake } each)
+    const N = D.net;
+    if ((N && N.semis) || (this.remote && this.remote.size)) {
+      const R = this.remote || (this.remote = new Map()), seen = this._rseen || (this._rseen = new Set());
+      seen.clear();
+      if (N && N.semis) for (const s of N.semis()) {
+        if (!s.rig || !s.rig.object || !SEMIS.has(s.rig.id)) continue;
+        seen.add(s.rig);
+        let t = R.get(s.rig);
+        if (!t) { t = this.pool.pop() || new Trailer(D.scene); if (!t.object.parent) D.scene.add(t.object); t.A = null; R.set(s.rig, t); }
+        t.object.visible = s.rig.object.visible;
+        t.follow(this.kingpin(s.rig, this._K), this.yaw(s.rig), ground, dt, !!s.brake);
+      }
+      for (const [k, t] of R) if (!seen.has(k)) { t.dispose(); this.pool.push(t); R.delete(k); }
+    }
   }
 
   // the player's car hits the traffic semis' trailers (traffic.colliders, through its extraColliders hook)
@@ -329,6 +344,7 @@ export class Trailers {
     this.left.clear();
     for (const t of this.traffic.values()) t.dispose();
     this.traffic.clear(); this.pool.length = 0;
+    if (this.remote) { for (const t of this.remote.values()) t.dispose(); this.remote.clear(); }
   }
 }
 

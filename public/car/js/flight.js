@@ -26,7 +26,7 @@ import * as THREE from 'three';
 const G = 9.81;
 const SEARCH = typeof location !== 'undefined' ? location.search : '';
 const FLY_ALL = /[?&]fly(?=[=&]|$)/.test(SEARCH);
-export function canFly(spec) { return !!(spec && spec.fly) || FLY_ALL; }
+export function canFly(spec) { return !!(spec && spec.fly) || (FLY_ALL && !(spec && spec.air)); } // (aircraft fly by aircraft.js)
 
 // thrust in weights of the car, speeds in m/s
 const LIFT_MAX = 1.6, LIFT_BOOST = 2.1;     // the lift jets together, at most

@@ -19,6 +19,10 @@ export const DEFAULTS = {
   cd: 0.31, area: 2.2, topSpeed: 250,
 };
 
+// set-up run at the end of every Vehicle's constructor (aircraft.js gives an aircraft its mass, inertia and wing and
+// rotor circles)
+export const VEHICLE_HOOKS = [];
+
 export class Vehicle {
   constructor(rig, spec = {}) {
     const p = this.p = { ...DEFAULTS, ...spec };
@@ -44,6 +48,7 @@ export class Vehicle {
     const n = Math.max(3, Math.ceil(L / (L > 6.5 ? W * 0.6 : W)) + 1), r = W / 2 * 0.96;
     const oc = Number.isFinite(d.front) && Number.isFinite(d.rear) ? (d.front - d.rear) / 2 : 0;
     for (let i = 0; i < n; i++) this.circles.push({ o: oc - (L / 2 - r) + (L - 2 * r) * i / (n - 1), r, x: 0, z: 0, y0: 0, y1: 0 });
+    for (const f of VEHICLE_HOOKS) { try { f(this); } catch (e) { console.warn('vehicle hook', e); } }
   }
 
   // put the body at a point on the ground facing a heading (degrees clockwise from north)
@@ -267,12 +272,18 @@ export class Vehicle {
     const p = this.p, m = p.mass;
     const base = this.origin(_b);
     for (const c of this.circles) {
+      // (a circle with its own point in the body, an aircraft's wing or rotor: placed with the body's attitude, its
+      // own height range; aircraft.js)
+      if (c.local) { _c.copy(c.local).applyQuaternion(this.q).add(base); c.x = _c.x; c.z = _c.z; c.y0 = _c.y - c.hh; c.y1 = _c.y + c.hh; continue; }
       c.x = base.x + fwd.x * c.o; c.z = base.z + fwd.z * c.o;
       c.y0 = base.y + 0.15; c.y1 = base.y + this.hgt;
     }
     const list = env.collide ? env.collide.contacts(this.circles) : [];
     if (env.others) for (const o of env.others) {
+      // (an aircraft's circles over a car's roof or under its floor miss it)
+      const top = this.air && o.obj && Number.isFinite(o.obj.y) ? o.obj.y + ((o.obj.rig && o.obj.rig.dims && o.obj.rig.dims.height) || 1.6) : null;
       for (let i = 0; i < this.circles.length; i++) {
+        if (top !== null && this.circles[i].local && (this.circles[i].y0 > top || this.circles[i].y1 < o.obj.y)) continue;
         const c = this.circles[i], dx = c.x - o.x, dz = c.z - o.z, d = Math.hypot(dx, dz), mm = c.r + o.r;
         if (d < mm && d > 1e-6) list.push({ i, nx: dx / d, nz: dz / d, depth: mm - d, px: o.x + dx / d * o.r, pz: o.z + dz / d * o.r, other: o });
       }
@@ -310,7 +321,7 @@ export class Vehicle {
       this.v.addScaledVector(J, 1 / m);
       const rj = rel.clone().cross(J);
       this.w.add(this.invI(_a, rj.x, rj.y, rj.z).multiplyScalar(0.6));
-      this.hits.push({ j, nx: n.x, nz: n.z, px: h.px, pz: h.pz, other: h.other, shape: h.shape, speed: -vn });
+      this.hits.push({ j, nx: n.x, nz: n.z, px: h.px, pz: h.pz, other: h.other, shape: h.shape, speed: -vn, i: h.i }); // (i: which circle, for aircraft.js)
     }
   }
 

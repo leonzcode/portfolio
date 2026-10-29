@@ -19,7 +19,7 @@ export class Hud {
           <dt>C</dt><dd>Change view</dd><dt>B</dt><dd>Look back</dd><dt>Drag</dt><dd>Look around</dd>
           <dt>E</dt><dd>Get out, or get in a car</dd><dt>P</dt><dd>Your look</dd>
           <dt>, / .</dt><dd>Left / right signal</dd><dt>X</dt><dd>Hazard lights</dd><dt>L</dt><dd>Headlights</dd>
-          <dt>1 to 0, -</dt><dd>Change car</dd><dt>R</dt><dd>Back on the road</dd><dt>M</dt><dd>Sound on or off</dd><dt>H</dt><dd>Show or hide this</dd>
+          <dt>1 to 0, -</dt><dd>Change car</dd><dt>[ and ]</dt><dd>The plane and the helicopter</dd><dt>R</dt><dd>Back on the road</dd><dt>M</dt><dd>Sound on or off</dd><dt>H</dt><dd>Show or hide this</dd>
         </dl>
       </div>
       <div class="hud-load"><div class="hud-load-card"><div class="hud-spin"></div><div class="hud-load-t">Loading</div><div class="hud-bar"><i></i></div></div></div>
@@ -69,8 +69,10 @@ export class Hud {
     const C = this.drive.mods.cars, box = this.$('.hud-cars');
     if (!C) return;
     const list = C.CARS.filter(c => !c.npcOnly), cur = this.drive.carId;
-    const KIND = { sedan: 'Sedan', sports: 'Sports car', pickup: 'Pickup', hatchback: 'Hatchback', van: 'Van', suv: 'SUV', supercar: 'Supercar', electric: 'Electric sports car', bus: 'School bus', truck: 'Semi truck' };
-    this.$('.hud-cars-l').innerHTML = list.map((c, i) => `<button data-id="${c.id}" class="${c.id === cur ? 'on' : ''}"><b>${c.name}</b><small>${KIND[c.kind] || c.kind || ''}${i < 12 ? ` &middot; key ${'1234567890-='[i]}` : ''}</small></button>`).join('');
+    const KIND = { sedan: 'Sedan', sports: 'Sports car', pickup: 'Pickup', hatchback: 'Hatchback', van: 'Van', suv: 'SUV', supercar: 'Supercar', electric: 'Electric sports car', bus: 'School bus', truck: 'Semi truck', plane: 'Light plane', heli: 'Helicopter' };
+    // (the cars take 1 to 0, - and = in order; an aircraft its own key, aircraft.js)
+    const cars = list.filter(c => !c.air), keyOf = c => c.air ? c.key : (cars.indexOf(c) < 12 ? '1234567890-='[cars.indexOf(c)] : '');
+    this.$('.hud-cars-l').innerHTML = list.map(c => `<button data-id="${c.id}" class="${c.id === cur ? 'on' : ''}"><b>${c.name}</b><small>${KIND[c.kind] || c.kind || ''}${keyOf(c) ? ` &middot; key ${keyOf(c)}` : ''}</small></button>`).join('');
     const spec = list.find(c => c.id === cur);
     const paints = spec && spec.paints ? spec.paints : [];
     this.$('.hud-cars-p').innerHTML = paints.map(p => `<button data-paint="${p}" style="background:#${p.toString(16).padStart(6, '0')}" aria-label="Paint"></button>`).join('');
@@ -106,7 +108,8 @@ export class Hud {
     const set = (k, val) => { if (was[k] !== val) { was[k] = val; E[k].textContent = val; } };
     set('v', String(Math.round(s)));
     set('u', mph ? 'mph' : 'km/h');
-    set('g', v.reverse ? 'R' : (Math.abs(v.fwdSpeed) < 0.3 && v.throttle < 0.05 ? 'N' : 'D' + v.gear));
+    // (an aircraft has no gearbox: aircraft.js shows its own gauges)
+    set('g', v.air ? (v.airS && v.airS.airborne ? 'AIR' : 'GND') : v.reverse ? 'R' : (Math.abs(v.fwdSpeed) < 0.3 && v.throttle < 0.05 ? 'N' : 'D' + v.gear));
     const on = Math.floor(this.t * 3) % 2 === 0, sg = drive.signal;
     const l = on && (sg === -1 || sg === 2), r = on && (sg === 1 || sg === 2);
     if (was.l !== l) { was.l = l; E.l.classList.toggle('on', l); }

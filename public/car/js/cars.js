@@ -10,7 +10,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { fixWheels, addExtraWheels, updateExtraWheels } from './wheels.js?v=43';
+import { fixWheels, addExtraWheels, updateExtraWheels } from './wheels.js?v=44';
 
 const MODELS = new URL('../models/', import.meta.url).href;
 const DRACO = new URL('../vendor/three/addons/libs/draco/gltf/', import.meta.url).href;
@@ -142,6 +142,29 @@ export const CARS = [
     credit: '"VW Golf 2" by Teofels (Sketchfab), CC BY 4.0; cabin, steering wheel and lamp roles ours',
   },
   {
+    // (aircraft.js) a light plane: key [ (drive.js). Never in the traffic or parked about. The propeller, ailerons,
+    // elevator and rudder are their own nodes; the nose wheel is wheel_FL (wheel_FR an empty beside it), the main
+    // wheels wheel_RL/RR. The engine drives no wheel: aircraft.js pulls it along with the propeller.
+    id: 'c172', name: 'Cessna 172 Skyhawk', kind: 'plane', air: 'plane', key: '[', file: 'c172.glb', npcFile: 'c172_npc.glb', mass: 1000, cabinDark: 0.4,
+    eye: [-0.27, 1.9, 0.75],
+    physics: { power: 1, torque: 1, drive: 'rwd', comHeight: 1.15, maxSteer: 28, steerRatio: 10, gears: [1], final: 1, redline: 2700, idle: 700, mu: 0.9, brake: 9000, cd: 0, area: 0, topSpeed: 500, springHz: 2.2, damping: 0.5, travelUp: 0.1, travelDown: 0.12, arb: 8000 },
+    // two seats in front and a bench behind, all through the two doors under the wing
+    seats: [{x: -0.27, y: 1.15, z: 0.55, side: 'L', door: 0}, {x: 0.27, y: 1.15, z: 0.55, side: 'R', door: 1}, {x: -0.27, y: 1.15, z: 1.4, side: 'L', door: 0}, {x: 0.27, y: 1.15, z: 1.4, side: 'R', door: 1}],
+    doors: [{hinge: [-0.62, 1.45, 0.02], axis: [0, -1, 0], open: 60, side: 'L', box: [[-0.7, 0.95, 0.0], [-0.48, 1.98, 1.05]]}, {hinge: [0.62, 1.45, 0.02], axis: [0, 1, 0], open: 60, side: 'R', box: [[0.48, 0.95, 0.0], [0.7, 1.98, 1.05]]}],
+    credit: '"Cessna-172" by Sousinho (Sketchfab), CC BY 4.0; split into its moving parts and the windscreen made glass for this game',
+  },
+  {
+    // (aircraft.js) a helicopter: key ]. The main rotor and the Fenestron's fan are their own nodes; the skids stand on
+    // four empty wheel nodes (stiff, braked: they do not roll)
+    id: 'ec135', name: 'Airbus Helicopters EC135', kind: 'heli', air: 'heli', key: ']', file: 'ec135.glb', npcFile: 'ec135_npc.glb', mass: 2400, cabinDark: 0.35,
+    eye: [0.36, 1.93, -1.6],
+    physics: { power: 1, torque: 1, drive: 'rwd', comHeight: 1.35, maxSteer: 1, steerRatio: 1, gears: [1], final: 1, redline: 2000, idle: 500, mu: 0.6, brake: 30000, cd: 0, area: 0, topSpeed: 500, springHz: 2.6, damping: 0.6, travelUp: 0.06, travelDown: 0.06, arb: 20000 },
+    // the pilot on the right, as in the EC135; a seat beside, and one behind on each side
+    seats: [{x: 0.36, y: 1.15, z: -1.45, side: 'R', door: 0}, {x: -0.36, y: 1.15, z: -1.45, side: 'L', door: 1}, {x: 0.36, y: 1.15, z: -0.15, side: 'R', door: 0}, {x: -0.36, y: 1.15, z: -0.15, side: 'L', door: 1}],
+    doors: [{hinge: [0.82, 1.5, -2.0], axis: [0, 1, 0], open: 70, side: 'R', box: [[0.6, 0.7, -2.0], [0.92, 2.25, -0.9]]}, {hinge: [-0.82, 1.5, -2.0], axis: [0, -1, 0], open: 70, side: 'L', box: [[-0.92, 0.7, -2.0], [-0.6, 2.25, -0.9]]}],
+    credit: '"EC 135" by GRIP420 (Sketchfab), CC BY 4.0; the two pilots taken out and the rotors made their own parts for this game',
+  },
+  {
     id: 'shvan', name: "Shvan '92 van", kind: 'van', file: 'shvan_npc.glb', npcFile: 'shvan_npc.glb', mass: 2100, npcOnly: true,
     paint: 0xe6e6e2, paints: [0xe6e6e2, 0x1b1d22, 0x6b7378, 0x2b3f63, 0x7d2a22, 0xb9ad8f],
     seats: [{x: -0.4, y: 0.968, z: -0.853, side: 'L', door: 0}, {x: 0.4, y: 0.973, z: -0.853, side: 'R', door: 1}],
@@ -180,7 +203,7 @@ function loader() {
 const templates = new Map(); // file -> Promise<{ scene, info }>
 function loadTemplate(file) {
   if (!templates.has(file)) {
-    templates.set(file, loader().loadAsync(MODELS + file + '?v=43').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
+    templates.set(file, loader().loadAsync(MODELS + file + '?v=44').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
   }
   return templates.get(file);
 }
@@ -353,7 +376,7 @@ function lampMaterial(src, role, level) {
 export async function makeEnvironment(renderer, { file = 'env/wide_street_01_1k.hdr' } = {}) {
   const pm = new THREE.PMREMGenerator(renderer);
   try {
-    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=43');
+    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=44');
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     const env = pm.fromEquirectangular(hdr).texture;
     env.userData.source = hdr; // the garage shows it as a backdrop
@@ -586,6 +609,9 @@ export async function loadCar(id, opts = {}) {
   let proxyTpl = null;
   if (!npc && spec.npcFile && spec.npcFile !== file && opts.shadowProxy !== false) proxyTpl = await loadTemplate(spec.npcFile).catch(() => null);
   const rig = new CarRig(spec, tpl, { ...opts, npc, proxyTpl });
+  // an aircraft's moving parts (aircraft.js): the propeller or the rotors and the control surfaces, before the hooks
+  // below see the rig
+  if (spec.air) { try { const A = await import('./aircraft.js?v=44'); A.setupRig(rig); } catch (e) { console.warn('aircraft rig', e); } }
   // modules that set up every new car before its shaders are built (damage.js: paint and glass, door pivots)
   for (const f of rigHooks) { try { f(rig); } catch (e) { console.warn('rig hook', e); } }
   return rig;

@@ -26,7 +26,7 @@ export function loadPeople(drive) {
   Hp = (async () => {
     if (!/[?&]standin/.test(location.search)) {
       try {
-        const M = await import('./people.js?v=43');
+        const M = await import('./people.js?v=44');
         if (M && M.People && typeof M.People.createPerson === 'function') {
           const P = M.People;
           await P.load(drive && drive.G ? drive.G.renderer : undefined, drive ? drive.camera : undefined);
@@ -37,7 +37,7 @@ export function loadPeople(drive) {
         }
       } catch (e) { console.warn('people module', e && e.message); }
     }
-    const M = await import('./standin.js?v=43');
+    const M = await import('./standin.js?v=44');
     H = wrapStandin(M);
     return H;
   })();
@@ -589,6 +589,8 @@ export class Occupants {
     if (D.car && D.car.rig) { const R = this.ensure(D.car.rig, D.car.rig, 'player'); want.add(R); }
     const left = D.onfoot && D.onfoot.parked ? D.onfoot.parked : [];
     for (const e of left) { const R = this.ensure(e.rig, e.rig, e.kind || 'parked'); want.add(R); }
+    // (round 5) other players at the wheel of their cars in a multiplayer room (mp.js occupy)
+    if (D.net && D.net.occupy) { try { D.net.occupy(this, want); } catch (e) { console.warn('mp occupy', e); } }
     // traffic, nearest first
     const T = D.traffic;
     if (T && T.list) {
@@ -755,7 +757,8 @@ export class Occupants {
     const roll = !!e.rollover;
     const D = this.drive;
     // the player thrown from their own car only in an extreme crash
-    if (D.car && rig === D.car.rig && D.onfoot && D.onfoot.mode === 'car' && !this.noPlayerEject && (speed > 36 || (roll && speed > 24)) && Math.random() < 0.6) {
+    // (never from an aircraft: the pilot sits in a harness, aircraft.js)
+    if (D.car && rig === D.car.rig && D.onfoot && D.onfoot.mode === 'car' && !this.noPlayerEject && !(rig.spec && rig.spec.air) && (speed > 36 || (roll && speed > 24)) && Math.random() < 0.6) {
       D.onfoot.ejectPlayer(e, this.velOf(R || { rig }));
     }
     if (!R) return;
