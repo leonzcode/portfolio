@@ -10,8 +10,8 @@
 // Everyone in a room drops at the room's place, so every page's frame (geo.js) has the same origin and positions go
 // as local metres.
 import * as THREE from 'three';
-import { Vehicle } from './vehicle.js?v=47';
-import { seatsOf } from './occupants.js?v=47';
+import { Vehicle } from './vehicle.js?v=48';
+import { seatsOf } from './occupants.js?v=48';
 
 const Q = new URLSearchParams(location.search);
 const LOCAL_PAGE = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/.test(location.hostname);
@@ -115,7 +115,7 @@ class Remote {
       // (their old car, kept when they changed: the same rig, dents and all, if it is the one standing there)
       const T = this.retired;
       if (w && !have[i] && T && T.id === w[0] && Math.hypot(T.rig.object.position.x - w[2], T.rig.object.position.z - w[4]) < 4) {
-        have[i] = { key, rig: T.rig, w, log: T.log }; this.retired = null;
+        have[i] = { key, rig: T.rig, w, log: T.log, kept: true }; this.retired = null;
       }
       if (w && !have[i] && C && C.CARS.find(c => c.id === w[0])) {
         const L = have[i] = { key, rig: null, w };
@@ -123,6 +123,7 @@ class Remote {
           if (L.dead || this.dead) { rig.dispose(); return; }
           if (D.carEnv && rig.setEnvMap) rig.setEnvMap(D.carEnv);
           L.rig = rig; D.scene.add(rig.object);
+          this.leftDents(L);
         }).catch(() => {});
       }
       if (have[i]) have[i].w = w;
@@ -133,6 +134,19 @@ class Remote {
       o.visible = Math.hypot(w[2] - this.S.camera.position.x, w[4] - this.S.camera.position.z) < 400;
       if (!L.posed) { L.posed = true; try { L.rig.update(0, { speed: 0, wheelSpin: [0, 0, 0, 0], steer: 0, steeringWheel: 0, susp: [0, 0, 0, 0], brake: 0, reverse: false, signal: 0, headlights: false }); } catch (e) {} }
     }
+  }
+
+  // a car of theirs left standing: the crash log their page sent for it (sendLeftLogs), put on our copy once loaded
+  leftDents(L) {
+    if (!L || L.kept || !L.w) return;
+    const S = this.leftLogs; if (!S || !S.length) return;
+    const w = L.w, k = S.findIndex(x => x.car === w[0] && Math.hypot(x.x - w[2], x.z - w[4]) < 4);
+    if (k < 0) return;
+    L.log = S[k].log;
+    if (!L.rig) return;
+    let n = L.applied || 0;
+    while (n < L.log.length) { const d = L.log[n++]; if (d) this.S.applyImpact(L.rig, d); }
+    L.applied = n;
   }
 
   // the pose at the drawing time, between two snapshots (or a little past the newest along its velocity)
@@ -426,7 +440,7 @@ export class Session {
     for (const p of joined.players) this.addRemote(p);
     const on = (t, f) => this.offs.push(net.on(t, f));
     on('p', m => { const now = performance.now(); for (const s of m.l) { const R = this.remotes.get(s.id); if (!R) continue; if (s.gone) { R.buf.length = 0; R.st = null; R.has = false; continue; } R.push(s, now); } });
-    on('pj', m => { this.addRemote(m.player); });
+    on('pj', m => { this.addRemote(m.player); setTimeout(() => { try { this.sendLeftLogs(); } catch (e) {} }, 2500); });
     on('pl', m => { const R = this.remotes.get(m.id); if (R) { R.dispose(); this.remotes.delete(m.id); } this.hostId = m.host; this.renderList(); });
     on('look', m => { const R = this.remotes.get(m.id); if (R) R.relook(m.look); });
     on('chat', m => this.line(m.name, m.text, ''));
@@ -578,7 +592,7 @@ export class Session {
     })();
     const sl = setInterval(() => this.sendLook(), 4000); this.undo.push(() => clearInterval(sl));
     // the traffic and the pedestrians shared (npcnet.js)
-    import('./npcnet.js?v=47').then(M => { if (this.dead) return; this.npc = new M.NpcNet(this); if (this.role !== undefined) this.npc.setRole(this.role); }).catch(e => console.warn('npcnet', e));
+    import('./npcnet.js?v=48').then(M => { if (this.dead) return; this.npc = new M.NpcNet(this); if (this.role !== undefined) this.npc.setRole(this.role); }).catch(e => console.warn('npcnet', e));
   }
 
   // where this player starts in the room: the room's place, a few car lengths along the road per player before
@@ -613,6 +627,8 @@ export class Session {
     // a new car of ours (or the old one handed on): the others start from new
     if (D.car.rig !== this.myRig) {
       const was = this.myRig; this.myRig = D.car.rig;
+      // (the car we had keeps its crash log, for a player who joins later and sees it standing: sendLeftLogs)
+      if (was && this.myDmg.length) was._netLog = this.myDmg.slice(-25);
       if (!this.adopting || this.adopting.rig !== D.car.rig) { this.myDmg = []; this.net.send({ t: 'ev', k: 'rst' }); }
       else {
         this.adopting = null;
@@ -875,6 +891,15 @@ export class Session {
     if (m.k === 'rst' && R) { if (!R.rstAt) { R.rstLog = R.dmg; R.rstCar = R.carId; } R.rstAt = performance.now(); R.dmg = []; if (R.rig) R.rig._netApplied = 0; return; }
     if (m.k === 'nimp') { if (this.npc) this.npc.impact(m.id, m.d); return; }
     // one of our cars left standing was taken (takeLeft on their page): ours goes, their snapshots bring it back as theirs
+    if (m.k === 'door' && m.d && typeof m.d.lc === 'string' && R && Array.isArray(m.d.dmg)) {
+      const S = R.leftLogs || (R.leftLogs = []);
+      let e = S.find(x => x.car === m.d.lc && Math.hypot(x.x - m.d.x, x.z - m.d.z) < 4);
+      if (!e) { e = { car: m.d.lc, x: +m.d.x || 0, z: +m.d.z || 0, log: [] }; S.push(e); if (S.length > 6) S.shift(); }
+      const i0 = Math.max(0, Math.min(60, m.d.i | 0));
+      m.d.dmg.slice(0, 12).forEach((d, j) => { if (d && typeof d === 'object') e.log[i0 + j] = d; });
+      for (const L of R.left || []) if (L && L.w && L.w[0] === e.car && Math.hypot(L.w[2] - e.x, L.w[4] - e.z) < 4) R.leftDents(L);
+      return;
+    }
     if (m.k === 'door' && m.d && m.d.take !== undefined) {
       if (m.d.take === this.me.id) {
         const F = this.drive.onfoot;
@@ -916,6 +941,17 @@ export class Session {
       consider('remoteLeft', L.rig, { R, L }, 0);
     }
   }
+  // the crash logs of our cars left standing, for a player who has just joined (the server keeps only where they
+  // stand): ten impacts a message
+  sendLeftLogs() {
+    const F = this.drive.onfoot; if (!F || !F.parked || this.dead) return;
+    const cur = this.drive.car && this.drive.car.rig;
+    for (const e of F.parked) {
+      const log = e.rig && e.rig !== cur && e.rig._netLog; if (!log || !log.length) continue;
+      const p = e.rig.object.position;
+      for (let i = 0; i < log.length; i += 10) this.net.send({ t: 'ev', k: 'door', d: { lc: e.rig.id, x: r2(p.x), z: r2(p.z), i, dmg: log.slice(i, i + 10) } });
+    }
+  }
   // one of another player's cars left standing, reached on foot: it becomes one of ours standing there (the rig with
   // its dents), we get in, the owner's page lets its own go, and the room gets its crash log as ours
   takeLeft(t) {
@@ -930,7 +966,7 @@ export class Session {
     veh.place(o.position.x, g ?? o.position.y, o.position.z, hd);
     const e = F.addLeft({ rig, vehicle: veh, id: rig.id, npc: !!rig.npc, kind: 'left' });
     // (its crash log goes with it once we drive it: frame's new car check takes adopting as a car already dented)
-    this.adopting = { rig }; this.leftLog = (L.log || []).slice();
+    this.adopting = { rig }; this.leftLog = (L.log || []).filter(Boolean);
     this.net.send({ t: 'ev', k: 'door', d: { take: R.id, car: rig.id, x: r2(w[2] ?? o.position.x), z: r2(w[4] ?? o.position.z) } });
     try { F.startEnter({ kind: 'left', rig, ref: e, d: 0, speed: 0, upY: 1 }); } catch (er) { console.warn('take left', er); }
     this.stolen = { e, rig, at: performance.now() };
@@ -1066,7 +1102,7 @@ export class Session {
         D.loadingArea = true;
         D.hud.loading('Going to ' + m.name, 0.4);
         try { await D.loadArea(tx, tz); } finally { D.loadingArea = false; }
-        try { if (D.world.heights && D.world.heights.want) { const { toLatLon } = await import('./geo.js?v=47'); const g = toLatLon(new THREE.Vector3(tx, 0, tz)); await D.world.heights.want(g.lat, g.lon, 600); } } catch (e) {}
+        try { if (D.world.heights && D.world.heights.want) { const { toLatLon } = await import('./geo.js?v=48'); const g = toLatLon(new THREE.Vector3(tx, 0, tz)); await D.world.heights.want(g.lat, g.lon, 600); } } catch (e) {}
         D.hud.loading(null);
       }
       // (in the air only if they are flying and what we drive flies too: a car comes down on the road under them)
