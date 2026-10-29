@@ -90,3 +90,17 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d10; fon
 .hud.touch .hud-carbtn { bottom: 240px; }
 .hud.touch .hud-cars { top: auto; bottom: 8px; right: 8px; max-height: calc(100vh - 16px); overflow-y: auto; }
 .hud.touch ~ .hud-note { top: 96px; }
+
+/* the time, weather and fog panel (atmos.js): its button under the car button */
+.hud-skybtn { position: fixed; right: 16px; top: 62px; z-index: 6; display: flex; align-items: center; gap: 6px; background: #fff; color: #3c4043; border: 0; border-radius: 20px; padding: 8px 14px 8px 10px; font: 500 14px Roboto, system-ui; box-shadow: 0 1px 3px rgba(60,64,67,.3), 0 4px 8px 3px rgba(60,64,67,.15); cursor: pointer; }
+.hud-skybtn:hover { background: #f1f3f4; }
+.hud-sky { position: fixed; right: 16px; top: 108px; z-index: 6; width: 280px; max-width: calc(100vw - 32px); background: #fff; color: #3c4043; border-radius: 12px; padding: 12px 14px; font: 14px Roboto, system-ui; box-shadow: 0 1px 3px rgba(60,64,67,.3), 0 4px 8px 3px rgba(60,64,67,.15); display: none; }
+.hud-sky.on { display: block; }
+.hud-sky .sky-row + .sky-row { margin-top: 12px; }
+.hud-sky .sky-t { font-weight: 500; margin-bottom: 6px; }
+.hud-sky .sky-t b { font-weight: 400; color: #5f6368; margin-left: 6px; }
+.hud-sky input[type=range] { width: 100%; }
+.hud-sky .sky-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.hud-sky .sky-opts button { border: 1px solid #dadce0; background: #fff; color: #3c4043; border-radius: 16px; padding: 5px 12px; font: 13px Roboto, system-ui; cursor: pointer; }
+.hud-sky .sky-opts button.on { background: #e8f0fe; border-color: #1a73e8; color: #1967d2; }
+@media (max-width: 600px) { .hud-skybtn { top: auto; bottom: 290px; right: 12px; } .hud-sky { top: auto; bottom: 336px; right: 12px; } }
