@@ -2,12 +2,12 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=44';
-import { World } from './world.js?v=44';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=44';
-import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=44'; // (perf A: the shadow pass's casters, steady lights)
-import { Drive } from './drive.js?v=44';
-import { CompileGate } from './gate.js?v=44'; // (perf B) nothing drawn with a program still being built
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=45';
+import { World } from './world.js?v=45';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=45';
+import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=45'; // (perf A: the shadow pass's casters, steady lights)
+import { Drive } from './drive.js?v=45';
+import { CompileGate } from './gate.js?v=45'; // (perf B) nothing drawn with a program still being built
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -56,6 +56,13 @@ bakedUniforms.uDetailOn.value = 1;
 const world = new World(renderer, scene, camera);
 
 const G = window.__car = { THREE, renderer, scene, camera, world, sky, frame, toLocal, toLatLon, setOrigin, state: 'boot', mods: {} };
+// (round 5) the two spot lights a draw has, kept so from the start and before every compile: they were only made at
+// the first draw and only set right before a draw, so a drop from the map (a frame drawn before the drop held the
+// drawing) built the cars, the parked cars, the props and the buildings for four spot lights (the two fills and the
+// car's own two beams), and each was built again inside a draw after the first rebuild (0.2 to 0.6 s each, 2.6 s for
+// the walls)
+G.steadySpots = () => { const D = G.drive; steadySpots(scene, D && D.mods && D.mods.cars && D.mods.cars.BEAMS, D && D.car && D.car.rig && D.car.rig._beams); };
+steadySpots(scene, null, null);
 G.gate = gate; // (perf B)
 
 addEventListener('resize', () => {
@@ -189,6 +196,7 @@ function loop(now) {
     // the page still for seconds (the drive builds them all in the background before the car is shown)
     // (never for more than 40 s, whatever happened to the drop)
     // (perf B) what was put into the scene since the last frame: built in the background, shown once ready (gate.js)
+    G.steadySpots();
     gate.flush();
     if (!(G.drive && G.drive.holdRender && now - G.drive.holdSince < 40000)) {
       // (perf A) every 30 frames the shadow casters get a depth material of their kind, and the shadow-only stand-ins
@@ -196,7 +204,7 @@ function loop(now) {
       if (G.frames % 30 === 0) tidyCasters(scene);
       // (perf A) exactly two spot lights drawn, the player's car's headlights, so no lit shader is ever built again
       // for a new light count (sky.js)
-      { const D = G.drive; steadySpots(scene, D && D.mods && D.mods.cars && D.mods.cars.BEAMS, D && D.car && D.car.rig && D.car.rig._beams); }
+      G.steadySpots();
       hideShadowOnly(true);
       try { renderer.render(scene, camera); } finally { hideShadowOnly(false); }
     }
@@ -241,7 +249,7 @@ async function dropAt({ lat, lon, heading }) {
 }
 async function openMap(quiet) {
   try {
-    const M = await import('./mapui.js?v=44');
+    const M = await import('./mapui.js?v=45');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: o => dropAt(o),
       // (round 5) leaving a drive in a multiplayer room goes back to the rooms (home.js), not the map
@@ -278,7 +286,7 @@ G.dropTo = async (lat, lon, heading) => { await openMap(true); if (mapui) await 
 // to the map
 async function openHome() {
   if (Q.has('nohome')) return openMap();
-  try { const H = await import('./home.js?v=44'); new H.Home(G).show('start'); }
+  try { const H = await import('./home.js?v=45'); new H.Home(G).show('start'); }
   catch (e) { console.warn('home screen', e); openMap(); }
 }
 G.onFrame = () => {

@@ -8,8 +8,8 @@
 // traffic cars go to the whole room as damage.js impacts by the car's shared number (mp.js). When the owner leaves
 // or drives away, the next page runs them, starting from the cars and people it was drawing.
 import * as THREE from 'three';
-import { People } from './people.js?v=44';
-import { Person } from './person.js?v=44';
+import { People } from './people.js?v=45';
+import { Person } from './person.js?v=45';
 
 const SEND_MS = 125, FULL_MS = 2000, PED_EVERY = 2; // cars 8 a second, people 4 a second, everything every 2 s
 const SEND_R = 360;                                  // what is sent: within this many metres of the owner
@@ -250,6 +250,9 @@ export class NpcNet {
   ownerFrame(now) {
     const D = this.D, T = D.traffic, P = D.peds;
     if (now - this.sendT < SEND_MS) return;
+    // every car its number from the start, so its people (occupants.js, picked from the number) are the ones the other
+    // pages will pick for it when they come near
+    if (T && T.list && !T.puppet) for (const c of T.list) if (!c.nid) c.nid = this.nid++;
     // (nobody near enough to draw them: nothing sent)
     const me = D.onfoot && D.onfoot.active ? D.onfoot.focus() : D.car.vehicle.pos;
     let any = false; for (const R of this.S.remotes.values()) if (R.has && Math.hypot(R.pos.x - me.x, R.pos.z - me.z) < 450) { any = true; break; }

@@ -2,7 +2,7 @@
 // public ones with their place and how many are in, a room of your own (public, or private with a code) on a place
 // chosen on the map, or a room joined by its code). Everyone in a room drops at the room's place (mp.js runs the
 // room). In the page's own Google Maps look; a link with ?lat= drops straight in and never shows this.
-import { Net, Session } from './mp.js?v=44';
+import { Net, Session } from './mp.js?v=45';
 
 const CSS = `
 .mph { position: fixed; inset: 0; z-index: 40; overflow: hidden; background: #1b1d1f; font-family: Roboto, 'Segoe UI', Arial, sans-serif; color: #1f1f1f; -webkit-font-smoothing: antialiased; }
