@@ -10,8 +10,8 @@
 // Everyone in a room drops at the room's place, so every page's frame (geo.js) has the same origin and positions go
 // as local metres.
 import * as THREE from 'three';
-import { Vehicle } from './vehicle.js?v=44';
-import { seatsOf } from './occupants.js?v=44';
+import { Vehicle } from './vehicle.js?v=45';
+import { seatsOf } from './occupants.js?v=45';
 
 const Q = new URLSearchParams(location.search);
 const LOCAL_PAGE = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/.test(location.hostname);
@@ -265,6 +265,7 @@ class Remote {
     if (rig) {
       const show = this.drawRank < MAX_DRAWN && this.d < 900;
       rig.object.visible = show;
+      if (!show && this.jetsOn) this.jetsOff();
       if (show) {
         rig.object.position.copy(this.pos); rig.object.quaternion.copy(this.q);
         const L = s.lk || {};
@@ -280,6 +281,9 @@ class Remote {
         look.flying = !!L.fl;
         if (L.x) Object.assign(look, L.x);
         try { rig.update(dt, look); } catch (e) {}
+        // a flying Roadster's jets as they blow on its page (flight.js remoteJets)
+        const jets = !!look.flying && ((look.jl || 0) > 0.02 || (look.jm || 0) > 0.02);
+        if (D.flight && D.flight.remoteJets && (jets || this.jetsOn)) { this.jetsOn = jets; D.flight.remoteJets(this.id, rig, jets ? look.jl || 0 : 0, jets ? look.jm || 0 : 0, dt); }
         // doors as they are on the other page (open while getting in or out); a door is cut out of the body in the
         // background first (damage.js prepareDoor: cut at once it held the frame a few tenths of a second)
         if (L.dr && rig.setDoor && D.damage && D.damage.prepareDoor) for (let i = 0; i < L.dr.length; i++) {
@@ -312,10 +316,13 @@ class Remote {
     const head = out ? _w.copy(this.fpos).setY(this.fpos.y + 2.05) : _w.copy(this.pos).setY(this.pos.y + ((rig && rig.dims && rig.dims.height) || 1.5) + 0.7);
     this.S.placeTag(this.tag, head, this.d);
   }
-  hideAll() { if (this.rig) this.rig.object.visible = false; if (this.person && !this.seated) this.person.object.visible = false; this.tag.style.display = 'none'; }
+  hideAll() { this.jetsOff(); if (this.rig) this.rig.object.visible = false; if (this.person && !this.seated) this.person.object.visible = false; this.tag.style.display = 'none'; }
 
+  // (its jets put away: hidden, or gone with the rig)
+  jetsOff(gone) { const F = this.S.drive.flight; if (F && F.remoteJets && (this.jetsOn || gone)) { this.jetsOn = false; F.remoteJets(this.id, gone ? null : this.rig, 0, 0, 0); } }
   dispose() {
     this.dead = true;
+    try { this.jetsOff(true); } catch (e) {}
     this.dropRig();
     if (this.pending) { try { this.pending.rig.dispose(); } catch (e) {} this.pending = null; }
     for (const L of this.left || []) if (L) { L.dead = true; if (L.rig) L.rig.dispose(); }
@@ -509,7 +516,7 @@ export class Session {
     })();
     const sl = setInterval(() => this.sendLook(), 4000); this.undo.push(() => clearInterval(sl));
     // the traffic and the pedestrians shared (npcnet.js)
-    import('./npcnet.js?v=44').then(M => { if (this.dead) return; this.npc = new M.NpcNet(this); if (this.role !== undefined) this.npc.setRole(this.role); }).catch(e => console.warn('npcnet', e));
+    import('./npcnet.js?v=45').then(M => { if (this.dead) return; this.npc = new M.NpcNet(this); if (this.role !== undefined) this.npc.setRole(this.role); }).catch(e => console.warn('npcnet', e));
   }
 
   // where this player starts in the room: the room's place, a few car lengths along the road per player before
@@ -557,6 +564,21 @@ export class Session {
     this.camera.updateMatrixWorld();
     this.vp = (this.vp || new THREE.Matrix4()).multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     for (const R of list) { try { R.frame(dt, now); } catch (e) { if (!R.err) { R.err = true; console.warn('remote', e); } } }
+    // the others' engines, rotors and propellers (sound.js others): the nearest two within 60 m, a few times a second
+    if (this.fn % 4 === 0 && D.sound && D.sound.others) {
+      try {
+        const near = this.heard || (this.heard = []); near.length = 0;
+        const cr = _v.setFromMatrixColumn(this.camera.matrixWorld, 0);
+        for (const R of list) {
+          if (near.length >= 2) break;
+          if (R.d > 60 || !R.rig || !R.rig.object.visible || R.mode !== 'car' || !R.st) continue;
+          const L = R.st.lk || {}, dx = R.pos.x - cam.x, dz = R.pos.z - cam.z, n = Math.hypot(dx, dz) || 1;
+          const spec = R.rig.spec || {};
+          near.push({ d: R.d, sp: L.sp || 0, pan: (dx * cr.x + dz * cr.z) / n, kind: spec.air || 'car', rotor: L.ro || 0 });
+        }
+        D.sound.others(near);
+      } catch (e) { if (!this.sndErr) { this.sndErr = true; console.warn('remote sound', e); } }
+    }
     this.footHits(now);
     if (this.npc) { try { this.npc.frame(dt, now); } catch (e) { if (!this.npcErr) { this.npcErr = true; console.warn('npc net', e); } } }
     this.chatStep(now);
@@ -582,8 +604,9 @@ export class Session {
       const lk = { sp: r2(L.speed || 0), st: Math.round((L.steer || 0) * 1000) / 1000, su: L.susp ? L.susp.map(x => Math.round(x * 1000) / 1000) : undefined, sg: D.signal || 0 };
       if (L.brake) lk.br = 1; if (L.reverse) lk.rv = 1; if (D.headlights) lk.hl = 1;
       // aircraft (agent A): whatever the vehicle says its moving parts are
-      if (v.netLook) { try { const n = v.netLook(); if (n) { if (n.rotor !== undefined) lk.ro = n.rotor; if (n.gear !== undefined) lk.ge = n.gear; if (n.throttle !== undefined) lk.th = n.throttle; const x = {}; let k = 0; for (const key in n) if (!['rotor', 'gear', 'throttle'].includes(key) && typeof n[key] === 'number' && k++ < 10) x[key] = n[key]; if (k) lk.x = x; } } catch (e) {} }
-      if (D.flight && D.flight.flying) lk.fl = 1;
+      if (v.netLook) { try { const n = v.netLook(); if (n) { if (n.rotor !== undefined) lk.ro = n.rotor; if (n.gear !== undefined) lk.ge = n.gear; if (n.throttle !== undefined) lk.th = n.throttle; const x = {}; let k = 0; for (const key in n) if (!['rotor', 'gear', 'throttle'].includes(key) && typeof n[key] === 'number' && k++ < 11) x[key] = n[key]; if (k) lk.x = x; } } catch (e) {} }
+      // (the Roadster: flying, and how hard its lift and main jets blow, so the other pages draw them too)
+      if (D.flight && D.flight.flying) { lk.fl = 1; const J = D.flight.jets; if (J && !v.netLook) lk.x = { jl: Math.round(J.lift * 100) / 100, jm: Math.round(J.main * 100) / 100 }; }
       // the doors while getting in or out
       if (mode !== 'car' && F && F.doorOpen) { try { const n = (rig.spec && rig.spec.doors ? rig.spec.doors.length : 0); if (n) { lk.dr = []; for (let i = 0; i < Math.min(4, n); i++) lk.dr.push(Math.round((F.doorOpen(rig, i) || 0) * 100) / 100); } } catch (e) {} }
       s.lk = lk;
@@ -929,7 +952,7 @@ export class Session {
         D.loadingArea = true;
         D.hud.loading('Going to ' + m.name, 0.4);
         try { await D.loadArea(tx, tz); } finally { D.loadingArea = false; }
-        try { if (D.world.heights && D.world.heights.want) { const { toLatLon } = await import('./geo.js?v=44'); const g = toLatLon(new THREE.Vector3(tx, 0, tz)); await D.world.heights.want(g.lat, g.lon, 600); } } catch (e) {}
+        try { if (D.world.heights && D.world.heights.want) { const { toLatLon } = await import('./geo.js?v=45'); const g = toLatLon(new THREE.Vector3(tx, 0, tz)); await D.world.heights.want(g.lat, g.lon, 600); } } catch (e) {}
         D.hud.loading(null);
       }
       // (in the air only if they are flying and what we drive flies too: a car comes down on the road under them)

@@ -78,6 +78,10 @@ export class Flight {
     drive.scene.add(this.group);
     this.s = freshState();
     this.v = null; this.rig = null; this.on = false;
+    this.jets = { lift: 0, main: 0 };
+    // other players' flying cars' jets (mp.js, remoteJets): a group of their own, always shown
+    this.rgroup = new THREE.Group(); this.rgroup.name = 'flight_remote'; drive.scene.add(this.rgroup);
+    this.remote = new Map();
     this.h = 99; this.gY = 0; this.time = 0; this.warned = 0;
     this.camK = 0; this.ignite = 0; this.sunK = 1; this.lod = 1;
     this.keyThrust = false; this.keyBoost = false; this.keyDown = false; this.shiftMode = 0; this.descK = 0; this.inThr = 0; this.inBrk = 0; this.inSteer = 0;
@@ -85,6 +89,66 @@ export class Flight {
   }
 
   warn(e) { if (this.warned++ < 3) console.warn('flight', e); }
+
+  // the player's car flying (mp.js sends it)
+  get flying() { return !!(this.on && this.v && this.s && this.s.flying && this.driving()); }
+
+  // another player's flying car (mp.js): its four lift jets and the main one drawn from how hard they blow on that
+  // page (the cones and their glow; no puffs or sound); called each frame it is shown, rig null once it is gone
+  remoteJets(id, rig, lift, main, dt) {
+    try {
+      let J = this.remote.get(id);
+      if (!rig || !(lift > 0.02 || main > 0.02)) {
+        if (J) {
+          for (const sl of J.slots) { sl.thr = 0; sl.mesh.visible = false; sl.glow.visible = false; }
+          if (!rig) { for (const sl of J.slots) { this.rgroup.remove(sl.mesh, sl.glow); sl.mat.dispose(); } this.remote.delete(id); }
+        }
+        return;
+      }
+      if (!J || J.rig !== rig) {
+        if (J) for (const sl of J.slots) { this.rgroup.remove(sl.mesh, sl.glow); sl.mat.dispose(); }
+        J = { rig, slots: [], gY: -1e4, n: 0 };
+        const dm = rig.dims || {}, L = dm.length || 4.5, W = dm.width || 1.9;
+        const front = dm.front ?? L / 2, rear = dm.rear ?? L / 2;
+        const wf = rig.wheels && rig.wheels[0], wr = rig.wheels && rig.wheels[2];
+        let fz = -front + 0.4, rz = rear - 0.4;
+        if (wf) fz = Math.min(fz, wf.pos.z - wf.radius - 0.14);
+        if (wr) rz = Math.max(rz, wr.pos.z + wr.radius + 0.14);
+        fz = Math.max(fz, -front + 0.22); rz = Math.min(rz, rear - 0.22);
+        const add = (kind, pos, dir, r0, len, spread) => {
+          const mat = coneMaterial(), mesh = new THREE.Mesh(this.coneGeo, mat), glow = new THREE.Sprite(this.glowMat);
+          mesh.frustumCulled = false; mesh.renderOrder = 11; mesh.visible = false; mesh.name = 'jet';
+          glow.visible = false; glow.renderOrder = 13;
+          this.rgroup.add(mesh, glow);
+          J.slots.push({ kind, pos, dir: dir.normalize(), r0, len, spread, thr: 0, wp: new THREE.Vector3(), wd: new THREE.Vector3(), mesh, glow, mat });
+        };
+        for (const [sx, sz] of [[-1, fz], [1, fz], [-1, rz], [1, rz]]) add(0, new THREE.Vector3(sx * (W / 2 - 0.3), 0.21, sz), new THREE.Vector3(sx * 0.1, -1, sz < 0 ? -0.06 : 0.06), 0.045, 1.7, 0.3);
+        const pl = rig.spec && rig.spec.plate && Array.isArray(rig.spec.plate.pos) ? new THREE.Vector3().fromArray(rig.spec.plate.pos) : new THREE.Vector3(0, 0.44, rear);
+        add(1, pl.add(new THREE.Vector3(0, 0, 0.025)), new THREE.Vector3(0, 0, 1), 0.05, 2.8, 0.2);
+        this.remote.set(id, J);
+      }
+      const o = rig.object, P = o.position, Q = o.quaternion;
+      // the ground under it now and then (the jets stop where they meet it)
+      if ((J.n++ % 10) === 0) { let g = null; try { g = this.d.ground ? this.d.ground(P.x, P.z, P.y + 0.5) : null; } catch (e) {} J.gY = Number.isFinite(g) ? g : P.y - 50; }
+      const t = (performance.now() / 1000) % 400;
+      for (const sl of J.slots) {
+        const want = sl.kind === 0 ? Math.min(1.5, lift) : Math.min(1.4, main);
+        sl.thr += (want - sl.thr) * (1 - Math.exp(-dt * (want > sl.thr ? 22 : 9)));
+        const thr = sl.thr;
+        if (thr < 0.02) { sl.mesh.visible = false; sl.glow.visible = false; continue; }
+        sl.wp.copy(sl.pos).applyQuaternion(Q).add(P); sl.wd.copy(sl.dir).applyQuaternion(Q);
+        const down = -sl.wd.y, toGround = down > 0.15 ? (sl.wp.y - J.gY) / down : 1e3;
+        const full = sl.len * (0.45 + 0.55 * Math.min(1.2, thr));
+        const len = Math.max(0.05, Math.min(full, toGround + 0.05));
+        const r1 = sl.r0 + full * sl.spread * (0.7 + 0.3 * thr);
+        const u = sl.mat.uniforms;
+        u.uThr.value = Math.min(1.2, thr); u.uLen.value = len; u.uFull.value = full; u.uR0.value = sl.r0; u.uR1.value = sl.r0 + (r1 - sl.r0) * len / full;
+        u.uTime.value = t; u.uGround.value = J.gY; u.uDiamond.value = sl.kind === 1 ? 1 : 0;
+        sl.mesh.position.copy(sl.wp); sl.mesh.quaternion.setFromUnitVectors(_Y, sl.wd); sl.mesh.visible = true;
+        sl.glow.position.copy(sl.wp).addScaledVector(sl.wd, 0.04); sl.glow.scale.setScalar(0.22 + 0.18 * Math.min(1, thr)); sl.glow.visible = true;
+      }
+    } catch (e) { this.warn(e); }
+  }
 
   // ---------------------------------------------------------------------------------------------------------------
   // the car being driven
@@ -418,6 +482,8 @@ export class Flight {
     const M = rig.object.matrixWorld;
     const liftK = Math.min(1.5, s.lift / (W * 1.05));
     const mainK = Math.min(1.4, s.main / (W * 0.55));
+    // (for mp.js: the other pages draw this car's jets from these)
+    this.jets.lift = liftK; this.jets.main = mainK;
     const sputter = s.tank < 0.04 && (liftK > 0.05 || mainK > 0.05) ? 0.55 + 0.45 * Math.sin(this.time * 47) * Math.sin(this.time * 23) : 1;
     // messages
     if (s.started) {

@@ -19,7 +19,7 @@
 // way, A/D turn on the spot (the pedals) and bank into the turn once moving. Let go of Space and Shift in the air and
 // it holds its height; let go of W/S and A/D and it levels itself.
 import * as THREE from 'three';
-import { VEHICLE_HOOKS } from './vehicle.js?v=44';
+import { VEHICLE_HOOKS } from './vehicle.js?v=45';
 
 const G = 9.81, RHO = 1.225;
 const clamp = THREE.MathUtils.clamp;
@@ -304,7 +304,9 @@ export function setupRig(rig) {
 function animate(rig, dt, s) {
   const P = rig._air, A = P.A;
   const L = P.look;
-  for (const k of ['rotor', 'tail', 'elev', 'ail', 'rud', 'flap', 'tiltX', 'tiltZ', 'broke', 'gear', 'bent', 'air']) if (s[k] !== undefined) L[k] = s[k];
+  for (const k of ['rotor', 'tail', 'elev', 'ail', 'rud', 'flap', 'tiltX', 'tiltZ', 'broke', 'gear', 'bent', 'air', 'fx']) if (s[k] !== undefined) L[k] = s[k];
+  // a copy driven from the network (mp.js): what the crash on the other page did is done here too
+  if (!P.local) { try { copyFx(rig, P, L, dt); } catch (e) { if (!P.fxErr) { P.fxErr = true; console.warn('aircraft copy fx', e); } } }
   // the dark patch under a car is no use under a plane's wings or a flying machine: only under the fuselage, on the ground
   if (P.shadow) P.shadow.visible = !L.air;
   for (const sp of P.spinners) {
@@ -390,7 +392,9 @@ function airLook(v, l) {
   l.rotor = rotorTps(A, s);
   l.tail = A.kind === 'heli' ? A.tailRpm / 60 * s.rpmK * ((s.broke >> 8) & 1 ? 0 : 1) : 0;
   l.elev = s.elev || 0; l.ail = s.ail || 0; l.rud = s.rud || 0; l.flap = s.flap || 0;
-  l.tiltX = s.tiltX || 0; l.tiltZ = s.tiltZ || 0; l.broke = s.broke || 0; l.bent = s.bent || 0; l.gear = 1;
+  l.tiltX = s.tiltX || 0; l.tiltZ = s.tiltZ || 0; l.broke = s.broke || 0; l.bent = s.bent || 0; l.gear = s.gearOff ? 0 : 1;
+  // (smoke 1 or fire 2 after a heavy crash: a copy on another page makes its own)
+  l.fx = s.fire ? 2 : s.smoke ? 1 : 0;
   l.air = s.airborne && s.h > 0.4 ? 1 : 0;
   return l;
 }
@@ -409,12 +413,77 @@ function netLook(v) {
   return l;
 }
 
+// blades off a rotor, thrown from where they were on their way round (the player's crash, and a copy's when the other
+// page says blades broke: mp.js)
+function throwBlades(d, rig, sp, newly, vel, omega) {
+  const fx = d.damage && d.damage.fx;
+  if (!fx || !rig || !sp) return;
+  rig.object.updateMatrixWorld(true);
+  for (let i = 0; i < sp.blades.length; i++) {
+    if (!((newly >> i) & 1)) continue;
+    for (const m of sp.blades[i]) {
+      m.updateWorldMatrix(true, false);
+      const piece = new THREE.Mesh(m.geometry, sp.solid || m.material);
+      piece.userData.dmgPart = true; piece.castShadow = true;
+      m.matrixWorld.decompose(piece.position, piece.quaternion, piece.scale);
+      const grp = new THREE.Group(); grp.name = 'blade_debris';
+      // the piece's box in its own frame
+      m.geometry.computeBoundingBox();
+      const box = m.geometry.boundingBox.clone();
+      const c = box.getCenter(new THREE.Vector3());
+      // its centre in the world, its speed round the hub plus the machine's own
+      const cw = c.clone().applyMatrix4(m.matrixWorld), hub = new THREE.Vector3().setFromMatrixPosition(sp.spin.matrixWorld);
+      const axisW = new THREE.Vector3(0, 1, 0).applyQuaternion(_q.setFromRotationMatrix(sp.spin.matrixWorld));
+      const tan = axisW.clone().cross(cw.clone().sub(hub)).multiplyScalar(omega * 0.8);
+      grp.position.copy(cw);
+      piece.position.sub(cw);
+      grp.add(piece);
+      d.scene.add(grp);
+      // (debris turns about its own middle: recentre)
+      try {
+        fx.addDebris(grp, { mass: 30, v: tan.add(vel).add(new THREE.Vector3(0, rnd(1, 4), 0)), w: new THREE.Vector3(rnd(-3, 3), omega * 0.9, rnd(-3, 3)), box: new THREE.Box3().setFromObject(grp).translate(cw.clone().negate()), ground: d.damage.groundFn, life: 240, kind: 'blade', bounce: 0.2, mu: 0.6, max: 60 });
+      } catch (e) { console.warn('blade debris', e); }
+    }
+  }
+  if (fx.sparkBurst) { const hub = new THREE.Vector3().setFromMatrixPosition(sp.spin.matrixWorld); fx.sparkBurst(hub, vel.clone(), 40, 0); }
+}
+
+// a copy's crash (mp.js drives it from the other page's look): new broken blades thrown off, smoke and fire started
+// or stopped, the gear torn off; what it was when first seen is taken as it is (no show for an old crash)
+let AIRD = null;
+const _cv = new THREE.Vector3();
+function copyFx(rig, P, L, dt) {
+  const o = rig.object;
+  if (!P.lastPos) { P.lastPos = o.position.clone(); P.vel = new THREE.Vector3(); }
+  else if (dt > 0) { _cv.subVectors(o.position, P.lastPos).divideScalar(dt); if (_cv.lengthSq() < 1e4) P.vel.lerp(_cv, 0.5); P.lastPos.copy(o.position); }
+  const broke = L.broke | 0, fk = L.fx | 0, gear = L.gear === undefined ? 1 : L.gear;
+  if (P.seen === undefined) { P.seen = { broke, fx: fk, gear }; return; }
+  const S = P.seen, d = AIRD, fx = d && d.damage && d.damage.fx;
+  if (!d || !fx) { S.broke = broke; S.fx = fk; S.gear = gear; return; }
+  const A = P.A;
+  const newMain = broke & 255 & ~(S.broke & 255), newTail = (broke >> 8) & 255 & ~((S.broke >> 8) & 255);
+  if (newMain && P.main) throwBlades(d, rig, P.main, newMain, P.vel, (A.rotorRpm || 380) / 60 * Math.PI * 2 * 0.8);
+  if (newTail && P.tail) throwBlades(d, rig, P.tail, newTail, P.vel, (A.tailRpm || 3500) / 60 * Math.PI * 2 * 0.5);
+  if (fk !== S.fx) {
+    const E = new THREE.Vector3().fromArray(A.engine || [0, 1, 0]);
+    if (fk === 0) fx.stopEmitters(o);
+    else {
+      if (S.fx < 1) fx.emit(o, E, 'smoke', fk > 1 ? 26 : 14, fk > 1 ? 90 : 40);
+      if (fk > 1 && S.fx < 2) fx.emit(o, E, 'fire', 30, 60);
+    }
+  }
+  if (!gear && S.gear) {
+    try { const D = d.damage, rd = D && D.of ? D.of(rig) : null; if (rd && rd.wheelOff) for (let i = 0; i < 4; i++) rd.wheelOff(i, null); } catch (e) {}
+  }
+  S.broke = broke; S.fx = fk; S.gear = gear;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // flying (drive.js: before() ahead of the physics steps, frame() after the camera; vehicle.js calls ext() per step)
 
 export class Air {
   constructor(drive) {
-    this.d = drive;
+    this.d = drive; AIRD = drive;
     this.v = null; this.rig = null; this.A = null;
     this.keys = { up: false, down: false };
     this.snd = null; this.hudEl = null;
@@ -454,6 +523,9 @@ export class Air {
   attach(car) {
     this.detach();
     this.v = car.vehicle; this.rig = car.rig; this.A = car.vehicle.air;
+    // (flown here: its crashes are this module's own, never a copy's, from now on)
+    if (this.rig._air) this.rig._air.local = true;
+    AIRD = this.d;
     const v = this.v;
     v.ext = (...a) => this.ext(...a);
     const s = v.airS;
@@ -913,7 +985,7 @@ export class Air {
     if (hard > 9 && fx && now - s.lastHitT > 400) {
       s.lastHitT = now;
       const E = _d.fromArray(A.engine);
-      fx.emit(rig.object, E, 'smoke', hard > 16 ? 26 : 14, hard > 16 ? 90 : 40);
+      fx.emit(rig.object, E, 'smoke', hard > 16 ? 26 : 14, hard > 16 ? 90 : 40); s.smoke = 1;
       if (hard > 16 || (A.kind === 'heli' && fall > 12)) { fx.emit(rig.object, E, 'fire', 30, 60); s.fire = 1; }
       if (!s.wrecked && hard > 14) { this.crumple(hard); s.engine = false; if (A.kind === 'heli' && s.rpmK > 0.2) this.breakRotor(1, fx); }
       s.wrecked = s.wrecked || hard > 14;
@@ -971,35 +1043,7 @@ export class Air {
     this.d.hud.flash('Rotor strike');
     try { this.d.sound.hit && this.d.sound.hit(20); } catch (e) {}
     if (!fx) return;
-    const omega = A.rotorRpm / 60 * Math.PI * 2 * s.rpmK;
-    this.rig.object.updateMatrixWorld(true);
-    for (let i = 0; i < n; i++) {
-      if (!((newly >> i) & 1)) continue;
-      for (const m of sp.blades[i]) {
-        m.updateWorldMatrix(true, false);
-        const piece = new THREE.Mesh(m.geometry, sp.solid || m.material);
-        piece.userData.dmgPart = true; piece.castShadow = true;
-        m.matrixWorld.decompose(piece.position, piece.quaternion, piece.scale);
-        const grp = new THREE.Group(); grp.name = 'blade_debris';
-        // the piece's box in its own frame
-        m.geometry.computeBoundingBox();
-        const box = m.geometry.boundingBox.clone();
-        const c = box.getCenter(new THREE.Vector3());
-        // its centre in the world, its speed round the hub plus the machine's own
-        const cw = c.clone().applyMatrix4(m.matrixWorld), hub = new THREE.Vector3().setFromMatrixPosition(sp.spin.matrixWorld);
-        const axisW = new THREE.Vector3(0, 1, 0).applyQuaternion(_q.setFromRotationMatrix(sp.spin.matrixWorld));
-        const tan = axisW.clone().cross(cw.clone().sub(hub)).multiplyScalar(omega * 0.8);
-        grp.position.copy(cw);
-        piece.position.sub(cw);
-        grp.add(piece);
-        this.d.scene.add(grp);
-        // (debris turns about its own middle: recentre)
-        try {
-          fx.addDebris(grp, { mass: 30, v: tan.add(v.v).add(new THREE.Vector3(0, rnd(1, 4), 0)), w: new THREE.Vector3(rnd(-3, 3), omega * 0.9, rnd(-3, 3)), box: new THREE.Box3().setFromObject(grp).translate(cw.clone().negate()), ground: this.d.damage.groundFn, life: 240, kind: 'blade', bounce: 0.2, mu: 0.6, max: 60 });
-        } catch (e) { console.warn('blade debris', e); }
-      }
-    }
-    if (fx.sparkBurst) { const hub = new THREE.Vector3().setFromMatrixPosition(sp.spin.matrixWorld); fx.sparkBurst(hub, v.v.clone(), 40, 0); }
+    throwBlades(this.d, this.rig, sp, newly, v.v, A.rotorRpm / 60 * Math.PI * 2 * s.rpmK);
   }
 
   bendProp(fx) {

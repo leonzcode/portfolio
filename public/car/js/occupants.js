@@ -26,7 +26,7 @@ export function loadPeople(drive) {
   Hp = (async () => {
     if (!/[?&]standin/.test(location.search)) {
       try {
-        const M = await import('./people.js?v=44');
+        const M = await import('./people.js?v=45');
         if (M && M.People && typeof M.People.createPerson === 'function') {
           const P = M.People;
           await P.load(drive && drive.G ? drive.G.renderer : undefined, drive ? drive.camera : undefined);
@@ -37,7 +37,7 @@ export function loadPeople(drive) {
         }
       } catch (e) { console.warn('people module', e && e.message); }
     }
-    const M = await import('./standin.js?v=44');
+    const M = await import('./standin.js?v=45');
     H = wrapStandin(M);
     return H;
   })();
@@ -70,7 +70,7 @@ function wrapPeople(P) {
       const p = P.createPerson(look, { kid: !!look.kid, lod: opts.lod === 'high' ? 'near' : 'auto', shadow: opts.shadow !== false && !opts.seated });
       return Promise.resolve(p);
     },
-    randomLook(o = {}) { return P.randomLook(Math.random, o); },
+    randomLook(o = {}, rand) { return P.randomLook(rand || Math.random, o); },
     playerLook() {
       try { const s = JSON.parse(localStorage.getItem('car_look') || 'null'); if (s && typeof s === 'object') return s; } catch (e) {}
       return { ...P.DEFAULT_LOOK };
@@ -159,6 +159,9 @@ export function guessSeats(rig) {
 const NEAR = 42, BUS_NEAR = 34, PARKED_NEAR = 26, MAX_CARS = 12, MAX_PARKED = 6, MAKE_PER_FRAME = 1;
 const isBus = rig => !!(rig && rig.spec && (rig.spec.bus || rig.spec.kind === 'bus' || /bus/i.test(rig.spec.id || '')));
 
+// a random number stream from a seed (mulberry32): the same people for the same car number on every page
+function seeded(n) { let a = n >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
 // a car's seats filled at random, kept on the car so it shows the same people each time it comes near
 function plan(rig, kind, rand = Math.random) {
   const seats = seatsOf(rig), n = seats.length;
@@ -204,11 +207,13 @@ export class Occupants {
     // a pooled traffic model now carries another car: its people go and the new car's come
     if (R && kind === 'traffic' && carRec && R.car && R.car !== carRec) { this.release(R); R = null; }
     if (R) { R.kind = kind; if (carRec) R.car = carRec; return R; }
-    // the plan is kept on the car, so it shows the same people each time it comes near
-    const store = (carRec && carRec.occ) || { fill: plan(rig, kind), looks: [] };
+    // the plan is kept on the car, so it shows the same people each time it comes near; a traffic car with a number
+    // shared by the pages of a room (npcnet.js) picks them from the number, so every page shows the same people in it
+    const rand = kind === 'traffic' && carRec && carRec.nid ? seeded(carRec.nid * 2654435761) : null;
+    const store = (carRec && carRec.occ) || { fill: plan(rig, kind, rand || Math.random), looks: [], rand };
     if (carRec) carRec.occ = store;
     if (this.fillAll || /[?&]fullcars/.test(location.search)) store.fill.fill(true); // (tests: every seat taken)
-    R = { key, rig, kind, car: carRec || null, seats: seatsOf(rig), fill: store.fill, looks: store.looks, people: [], made: false, root: null, near: false, jolt: null };
+    R = { key, rig, kind, car: carRec || null, seats: seatsOf(rig), fill: store.fill, looks: store.looks, rand: store.rand || null, people: [], made: false, root: null, near: false, jolt: null };
     this.recs.set(key, R);
     return R;
   }
@@ -476,7 +481,7 @@ export class Occupants {
       if (i === 0 && R.kind === 'player') continue;
       const seat = R.seats[i];
       const isKid = !!seat.kid || (kid && i > 0);
-      const look = R.looks[i] || (R.looks[i] = h.randomLook({ kid: isKid }));
+      const look = R.looks[i] || (R.looks[i] = h.randomLook({ kid: isKid }, R.rand));
       // (one person a frame at most, and none in a frame after a slow one: each is a model copied and seated)
       while (!this.mayMake()) await new Promise(r => requestAnimationFrame(r));
       this.makeQ++;

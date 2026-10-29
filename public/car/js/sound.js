@@ -44,7 +44,42 @@ export class CarSound {
     this.road = src(0, 90, 0.7);
   }
 
-  stop() { if (this.ctx) { this.ctx.close(); this.ctx = null; } }
+  stop() { if (this.ctx) { this.ctx.close(); this.ctx = null; } this.voices = null; }
+
+  // other players' cars and aircraft near (mp.js, a few times a second): the nearest two, each an engine voice of its
+  // own, panned to where it is and quieter with distance; list items { d, sp, pan, kind: 'car'|'heli'|'plane', rotor }
+  others(list) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime;
+    if (!this.voices) this.voices = [0, 1].map(() => {
+      const g = c.createGain(); g.gain.value = 0;
+      const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700; lp.Q.value = 1;
+      const pan = c.createStereoPanner ? c.createStereoPanner() : null;
+      const oscs = [['sawtooth', 1, 0.5], ['square', 0.5, 0.35]].map(([type, mult, gv]) => {
+        const o = c.createOscillator(); o.type = type; o.frequency.value = 40; const gg = c.createGain(); gg.gain.value = gv; o.connect(gg); gg.connect(g); o.start(); return { o, mult };
+      });
+      g.connect(lp); if (pan) { lp.connect(pan); pan.connect(this.master); } else lp.connect(this.master);
+      return { g, lp, pan, oscs };
+    });
+    for (let i = 0; i < 2; i++) {
+      const V = this.voices[i], e = list[i];
+      if (!e) { V.g.gain.setTargetAtTime(0, t, 0.15); continue; }
+      const near = Math.max(0, 1 - e.d / 60);
+      let f, cut, k;
+      if (e.kind === 'heli' || e.kind === 'plane') {
+        // the blades passing: a helicopter's slow beat, a propeller's buzz
+        f = Math.max(8, (e.rotor || 0) * (e.kind === 'heli' ? 4 : 2)); cut = e.kind === 'heli' ? 520 : 1500; k = (e.rotor || 0) > 0.5 ? 1.2 : 0;
+      } else {
+        // (an engine's turns from the speed, as if it changed gear every 11 m/s)
+        const sp = Math.abs(e.sp || 0), rpm = 850 + 3200 * ((sp / 11) % 1) * Math.min(1, sp / 4);
+        f = rpm / 60 * 3; cut = 500 + rpm / 6500 * 2000; k = 0.6 + 0.4 * Math.min(1, sp / 20);
+      }
+      for (const o of V.oscs) o.o.frequency.setTargetAtTime(f * o.mult, t, 0.08);
+      V.lp.frequency.setTargetAtTime(cut, t, 0.1);
+      V.g.gain.setTargetAtTime(0.16 * near * near * k, t, 0.1);
+      if (V.pan) V.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, e.pan)), t, 0.1);
+    }
+  }
   toggle() { this.on = !this.on; try { localStorage.setItem('car_sound', this.on ? '1' : '0'); } catch (e) {} if (!this.on) this.stop(); else this.start(); return this.on; }
 
   update(dt, v, signalOn) {
