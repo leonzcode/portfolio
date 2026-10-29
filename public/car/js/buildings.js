@@ -19,10 +19,10 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=38';
-import { patchBaked } from './baked.js?v=38';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=38';
-import overture from './overture.js?v=38';
+import { frame, project } from './geo.js?v=39';
+import { patchBaked } from './baked.js?v=39';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=39';
+import overture from './overture.js?v=39';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -2153,7 +2153,8 @@ export function build(list, opts = {}) {
 
   // collision now (cheap, no heights needed): every footprint the car can reach
   const addCollision = (b) => {
-    if (!collide || !collide.addPolygon || b.open || !b.outer || b.outer.length < 3) return;
+    // (a roof on posts never blocks: a canopy over a petrol station's pumps, a carport, whatever cell build it comes from)
+    if (!collide || !collide.addPolygon || b.open || b.roofOnly || b.type === 'roof' || b.type === 'canopy' || b.type === 'carport' || !b.outer || b.outer.length < 3) return;
     // (until its heights are known (the cell's plan, below) a building blocks at any height; one that starts up in
     // the air (an overhang, a part on another) blocks nothing until then)
     const high = (b.minHeight || 0) > 3 || (b.minLevel || 0) > 1;
