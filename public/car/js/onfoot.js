@@ -7,8 +7,8 @@
 // (its cheap model swapped for the detailed one once that is ready); the car the player left stays where it was,
 // solid, with its own physics, until it is far behind.
 import * as THREE from 'three';
-import { Vehicle } from './vehicle.js?v=41';
-import { Occupants, seatsOf, seatOffset, play, tick, YAW0, settled, isRagdoll, getUp, RECLINE } from './occupants.js?v=41';
+import { Vehicle } from './vehicle.js?v=42';
+import { Occupants, seatsOf, seatOffset, play, tick, YAW0, settled, isRagdoll, getUp, RECLINE } from './occupants.js?v=42';
 
 const STEP = 1 / 120;
 // on foot (m/s): a brisk walk, a jog once the person has kept going a second and a half, a run with Shift

@@ -255,7 +255,8 @@ void facade() {
     float hwF = fH( vec2( bi * 31.0 + flF * 7.0 + seed * 11.0, 4.1 ) );
     vec3 gcol = mix( vec3( 0.12, 0.14, 0.16 ) * ( 0.8 + 0.4 * hwF ), vec3( 0.5, 0.48, 0.44 ), 0.4 * step( 0.06, hwF ) * step( hwF, 0.28 ) );
     fcCol = mix( fcCol, gcol, win ); fcRough = mix( 0.88, 0.12, win ); fcMetal = 0.55 * win;
-    fcEmit = vec3( 1.0, 0.86, 0.66 ) * 0.15 * step( hwF, 0.06 ) * win;
+    // (lit rooms: a few by day, about a quarter at night, uNight from atmos.js)
+    fcEmit = vec3( 1.0, 0.86, 0.66 ) * mix( 0.15, 0.6, uNight ) * step( hwF, mix( 0.06, 0.28, uNight ) ) * win;
     // a shop's sign band over its window, in the near path's colours
     if ( v < gh && gk == 1.0 ) {
       float sgn = fBand( v, gh - 0.95, gh - 0.3, pxv ) * fBand( wxF, -bw * 0.5 + 0.22, bw * 0.5 - 0.22, pxu ) * inB;
@@ -434,12 +435,12 @@ void facade() {
     vec3 gc = tint * ( 0.72 + 0.56 * mix( hp, hf, lodU ) );
     vec3 mc = mix( vec3( 0.6, 0.62, 0.64 ), vec3( 0.14, 0.15, 0.16 ), step( 0.72, sv ) );
     float mull = max( mullV, slab );
-    float lit2 = step( hp, 0.05 ) * ( 1.0 - spand ) * ( 1.0 - lodU );
+    float lit2 = step( hp, mix( 0.05, 0.2, uNight ) ) * ( 1.0 - spand ) * ( 1.0 - lodU );
     vec3 gl = mix( gc * mix( 1.0, 0.6, ceil ), vec3( 0.52, 0.5, 0.46 ), blinds );
     fcCol = mix( mix( gl, tint * 0.5, spand ), mc, mull );
     fcRough = mix( mix( mix( 0.1 + 0.14 * hp, 0.7, blinds ), 0.5, mull ), 0.2, lodU * 0.5 );
     fcMetal = mix( 0.36 * ( 1.0 - blinds ), 0.2, mull );
-    fcEmit = vec3( 1.0, 0.92, 0.8 ) * 0.12 * lit2 * ( 1.0 - mull );
+    fcEmit = vec3( 1.0, 0.92, 0.8 ) * mix( 0.12, 0.45, uNight ) * lit2 * ( 1.0 - mull );
     fcJit = ( vec2( mix( hp, hf, lodU ), fH( vec2( id, 2.5 ) ) ) - 0.5 ) * 0.03 * ( 1.0 - mull );
     return;
   }
@@ -592,17 +593,19 @@ void facade() {
 
 // seconds, for the screens; buildings.js sets it before the walls are drawn
 export const FACADE_TIME = { value: 0 };
+// how dark it is (0 day, 1 night: atmos.js), for the lit windows and the light bounced off the street
+export const FACADE_NIGHT = { value: 0 };
 
 export function makeFacadeMaterial(opts = {}) {
   // the sky's hemisphere light already lights the walls from above; the environment adds reflections more than fill
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.0, envMapIntensity: opts.envMapIntensity ?? 0.8 });
   m.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = FACADE_TIME;
+    shader.uniforms.uTime = FACADE_TIME; shader.uniforms.uNight = FACADE_NIGHT;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\n' + VERT_PARS)
       .replace('#include <project_vertex>', '#include <project_vertex>\n' + VERT);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\n' + FRAG_PARS)
+      .replace('#include <common>', '#include <common>\nuniform float uNight;\n' + FRAG_PARS)
       .replace('#include <color_fragment>', '#include <color_fragment>\nfacade();\ndiffuseColor.rgb = fcCol;' + (m.userData.dbg ? '\n' + m.userData.dbg : ''))
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = fcRough;')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = fcMetal;')
@@ -616,12 +619,12 @@ export function makeFacadeMaterial(opts = {}) {
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
 // light bounced up from the street and the facing buildings: a wall in shade is lit by more than the sky alone
 // (without it shaded faces came out near black)
-reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3( 0.19, 0.18, 0.16 );
+reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3( 0.19, 0.18, 0.16 ) * ( 1.0 - 0.88 * uNight );
 reflectedLight.indirectDiffuse *= fcAO;
 reflectedLight.indirectSpecular *= mix( 1.0, fcAO, 0.6 );
 reflectedLight.directDiffuse *= mix( 1.0, fcAO, 0.45 );
 reflectedLight.directSpecular = min( reflectedLight.directSpecular, vec3( 1.5 ) );`);
   };
-  m.customProgramCacheKey = () => 'facade21' + (m.userData.dbg || '');
+  m.customProgramCacheKey = () => 'facade22' + (m.userData.dbg || '');
   return m;
 }
