@@ -20,7 +20,7 @@
    Yaw here is the player's: 0 faces -z, and the way ahead is
    (-sin yaw, -cos yaw).
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, B } from '../blocks.js?v=116';
+import { BLOCKS, FLUID, B } from '../blocks.js?v=117';
 const THREE = window.THREE;
 
 export const DEG = Math.PI / 180;
@@ -41,6 +41,11 @@ export const yawTo = (dx, dz) => Math.atan2(-dx, -dz);
    A base count below one (spider eyes and wither skeleton coal uniform(-1, 1), magma cream uniform(-2, 1)) counts
    as 0 before Looting: 26.1.2's ItemStack.grow adds to getCount(), which is 0 for an empty stack, so the loot
    functions' (RI(3) === 0 ? 1 : 0) + looted(L) is the game's own odds. */
+/* Whether a tamed mob is this page's player's pet. On a server the page that runs a pet may be another player's (the
+   server gives a mob to the nearest machine), so a pet keeps its owner's name (ownerName, lowercased, saved as the record's
+   own: net/mobs.js) and only its owner's page treats it as theirs (follows them, sits for them, fights for them); the
+   manager's ownName is this page's player (set on a server, none in single player, where every pet is yours). */
+export const ownedHere = e => !e.ownerName || !e.m || !e.m.ownName || e.ownerName === e.m.ownName;
 export const looted = (level, k = 1) => (level > 0 ? Math.round(level * k * Math.random()) : 0);
 
 let NEXT_ID = 1;

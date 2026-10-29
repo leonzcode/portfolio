@@ -14,10 +14,10 @@
    it is there: names are looked up through window.__lc2.itemName / itemId if
    they exist, else as block names, so this works on its own too.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=116';
-import { isDirt } from './plants.js?v=116';
-import { boneMeal as bambooBoneMeal, placed as bambooPlaced, bambooMeta, SMALL as BAMBOO_SMALL } from './bamboo.js?v=116';
-import { I, itemName as itemNameOf } from '../items.js?v=116';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=117';
+import { isDirt } from './plants.js?v=117';
+import { boneMeal as bambooBoneMeal, placed as bambooPlaced, bambooMeta, bambooHolds, SMALL as BAMBOO_SMALL } from './bamboo.js?v=117';
+import { I, itemName as itemNameOf } from '../items.js?v=117';
 
 const RI = (sim, n) => Math.floor(sim.rng() * n);
 const binom = (sim, n, p) => { let k = 0; for (let i = 0; i < n; i++) if (sim.rng() < p) k++; return k; };
@@ -98,7 +98,7 @@ export function installFarming(sim) {
       const below = sim.get(x, y - 1, z);
       if (FARMLAND_ONLY.has(d.name) && below !== B.farmland) return [];
       if (d.name === 'nether_wart' && below !== B.soul_sand) return [];
-      if (SAPLINGS.test(d.name) && !(isDirt(below) || below === B.farmland || (d.name === 'bamboo' && (below === B.bamboo || below === B.sand || below === B.gravel || below === B.red_sand)))) return [];
+      if (d.name === 'bamboo' ? !bambooHolds(below) : SAPLINGS.test(d.name) && !(isDirt(below) || below === B.farmland)) return [];
       if (d.name === 'cactus' && !(below === B.sand || below === B.red_sand || below === B.cactus)) return [];
       // (the game's canSurvive) what hangs needs something above it: weeping vines, spore blossoms, hanging roots,
       // pale hanging moss (also under leaves); twisting vines something below; sea grass and kelp water to stand in;

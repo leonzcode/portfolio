@@ -47,12 +47,12 @@
 
    Meta layouts are listed in sim/states.js.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=116';
-import { F6, HFACE, FACE6, FACE_H, FACE_F6, WEAK, STRONG, COND, SOURCE } from './redstone.js?v=116';
-import { lookFacing } from '../place.js?v=116';
-import { Living } from '../entities/entity.js?v=116';
-import { maxStack } from '../items.js?v=116';
-import { selectionBoxes } from '../models.js?v=116';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=117';
+import { F6, HFACE, FACE6, FACE_H, FACE_F6, WEAK, STRONG, COND, SOURCE } from './redstone.js?v=117';
+import { lookFacing } from '../place.js?v=117';
+import { Living } from '../entities/entity.js?v=117';
+import { maxStack } from '../items.js?v=117';
+import { selectionBoxes } from '../models.js?v=117';
 
 const SIN = new Float32Array(65536);
 for (let i = 0; i < 65536; i++) SIN[i] = Math.sin(i * Math.PI * 2 / 65536);

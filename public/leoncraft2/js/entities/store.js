@@ -6,7 +6,7 @@
    arrows that were loaded, those kept from chunks that had unloaded, and
    which chunks have had their animals. Fails quietly, like save.js.
 --------------------------------------------------------------------------- */
-import { mainDb } from '../save.js?v=116';
+import { mainDb } from '../save.js?v=117';
 /* (since v115 they are written with the world's own data, in save.js's store under '#ents:<id>', in the same
    transaction as the inventory and the chests (Save.commit); this database is only read for a world saved before) */
 const DB = 'leoncraft2_entities', STORE = 'worlds', MAIN = 'chunks';

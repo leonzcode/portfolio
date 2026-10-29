@@ -13,11 +13,22 @@
    at least two tall, and done (stage 1) at 16 tall, or with a 1 in 4 chance
    from 11.
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=116';
+import { B } from '../blocks.js?v=117';
 
 export const AGE = 1, STAGE = 8, LEAVES_SHIFT = 4;
 export const NONE = 0, SMALL = 1, LARGE = 2;
 export const leavesOf = m => (m >> LEAVES_SHIFT) & 3;
+
+/* What bamboo and its sapling stand on: the game's supports_bamboo tag (26.3: #sand, #substrate_overworld, bamboo,
+   bamboo_sapling, gravel, suspicious_gravel). Without it a stalk breaks a tick after (BambooStalkBlock updateShape and
+   tick), so a stalk whose foot goes comes down a block a tick from the bottom up; a sapling goes at once. */
+const HOLDS = ['sand', 'red_sand', 'suspicious_sand', 'dirt', 'coarse_dirt', 'rooted_dirt', 'mud', 'muddy_mangrove_roots', 'moss_block',
+  'pale_moss_block', 'grass_block', 'podzol', 'mycelium', 'bamboo', 'bamboo_sapling', 'gravel', 'suspicious_gravel'];
+let holdIds = null;
+export function bambooHolds(b) {
+  if (!holdIds) { holdIds = new Set(); for (const n of HOLDS) if (B[n] !== undefined) holdIds.add(B[n]); }
+  return holdIds.has(b);
+}
 export const bambooMeta = (age, leaves, stage) => (age ? AGE : 0) | (stage ? STAGE : 0) | (leaves << LEAVES_SHIFT);
 const withLeaves = (m, l) => (m & ~(3 << LEAVES_SHIFT) & ~4) | (l << LEAVES_SHIFT);
 
