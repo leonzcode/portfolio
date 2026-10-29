@@ -36,12 +36,12 @@
                     copper that is younger)
    mushrooms        1 in 25, spread if fewer than five round them, in the dark
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=116';
-import { Gen } from '../worldgen.js?v=116';
-import { randomTick as bambooTick, bambooMeta, SMALL as BAMBOO_SMALL } from './bamboo.js?v=116';
-import { rng } from '../noise.js?v=116';
-import { LEVEL, FALLING } from '../world-const.js?v=116';
-import { vineFaces, vineHolds, VINE_SIDES, VINE_UP, multiFaces, MULTI_DIRS } from '../models.js?v=116';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=117';
+import { Gen } from '../worldgen.js?v=117';
+import { randomTick as bambooTick, bambooMeta, bambooHolds, SMALL as BAMBOO_SMALL } from './bamboo.js?v=117';
+import { rng } from '../noise.js?v=117';
+import { LEVEL, FALLING } from '../world-const.js?v=117';
+import { vineFaces, vineHolds, VINE_SIDES, VINE_UP, multiFaces, MULTI_DIRS } from '../models.js?v=117';
 
 const HORIZ = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const R = sim => sim.rng();
@@ -310,9 +310,13 @@ export function installPlants(sim) {
       if (m & 8) return;
       bambooTick(s, x, y, z, m, () => R(s), isAir(s, x, y + 1, z), s.brightness(x, y + 1, z, 0));
     },
+    // (its ground gone, or the stalk under it: it breaks the tick after, and so on up the stalk)
+    neighbor(s, x, y, z) { if (!bambooHolds(s.get(x, y - 1, z))) s.schedule(x, y, z, 1); },
+    tick(s, x, y, z) { if (!bambooHolds(s.get(x, y - 1, z))) s.destroy(x, y, z); },
   });
   // a sapling puts a thin stalk with small leaves on itself and turns into bamboo under it
   if (B.bamboo_sapling !== undefined) sim.on('bamboo_sapling', {
+    neighbor(s, x, y, z) { if (!bambooHolds(s.get(x, y - 1, z))) s.destroy(x, y, z); },
     random(s, x, y, z) {
       if (RI(s, 3) !== 0 || !isAir(s, x, y + 1, z) || s.brightness(x, y + 1, z, 0) < 9) return;
       s.set(x, y, z, B.bamboo, 0);

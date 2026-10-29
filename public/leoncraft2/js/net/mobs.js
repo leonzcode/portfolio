@@ -30,9 +30,9 @@
    walks out of everyone's reach is put away on the server, as the game
    keeps the mobs of unloaded chunks, and comes back with its ground.
 --------------------------------------------------------------------------- */
-import { Living, wrap } from '../entities/entity.js?v=116';
-import { TYPES } from '../entities/mobs.js?v=116';
-import { F } from './players.js?v=116';
+import { Living, wrap } from '../entities/entity.js?v=117';
+import { TYPES } from '../entities/mobs.js?v=117';
+import { F } from './players.js?v=117';
 
 const THREE = window.THREE;
 // besides the living (animals, monsters, villagers, golems, armour stands): paintings, the knots of leads, sand and gravel falling, fireworks,
@@ -42,8 +42,17 @@ const EXTRA = new Set(['painting', 'leash_knot', 'falling_block', 'firework_rock
 const NOT = new Set(['ender_dragon']);
 export const shareable = e => !!e && !e.isPlayer && !NOT.has(e.type) && (e instanceof Living || EXTRA.has(e.type));
 const shareableType = t => { const C = TYPES[t]; return !!C && !NOT.has(t) && (C.prototype instanceof Living || EXTRA.has(t)); };
-// its record as a save keeps it (its own toJSON is taken away while it is shared: the server keeps it, not this browser)
-const jsonOf = e => Object.getPrototypeOf(e).toJSON.call(e);
+// its record as a save keeps it (its own toJSON is taken away while it is shared: the server keeps it, not this browser),
+// with a pet's owner (own, lowercased: entity.js ownedHere). A pet tamed or bred here is this player's; one run here for
+// someone else keeps their name (it used to be given the name of whichever page sent it, and none at all when its ground
+// unloaded, so a pet changed hands to anyone near it)
+const jsonOf = e => {
+  const j = Object.getPrototypeOf(e).toJSON.call(e);
+  if (e.tamed) { if (!e.ownerName && e.m && e.m.ownName) e.ownerName = e.m.ownName; if (e.ownerName) j.own = e.ownerName; }
+  return j;
+};
+// whose pet a record says it is
+const ownerIn = j => (j && typeof j.own === 'string' ? j.own.toLowerCase().slice(0, 16) : '');
 // what changes every tick and would send the record over and over: left out of the comparison
 const VOLATILE = new Set(['p', 'v', 'y', 'f', 'age', 'l', 'air', 'by', 'hy']);  // (by, hy: the body's and head's turns, which the positions carry)
 const sigOf = j => { let s = ''; for (const k in j) if (!VOLATILE.has(k)) s += k + ':' + JSON.stringify(j[k]) + ';'; return s; };
@@ -96,6 +105,7 @@ export class Mobs {
   hook(E) {
     const M = this, net = this.net;
     this.E = E;
+    E.ownName = String(net.name || '').toLowerCase().slice(0, 16);
     for (const rec of this.recs.values()) rec.e = null;
     // what this browser kept from before (its own animals, in its entity store) is not the server's: gone
     this.applying = true;
@@ -195,7 +205,7 @@ export class Mobs {
       // someone else's, gone from here only (out of reach, or Peaceful): made again later if it is still about
       if (this.puppet || rec.o !== net.id) { rec.hold = performance.now() + 4000; return; }
       // left behind as its ground unloads: the server keeps it till someone is near (a monster that would despawn anyway just goes, as the game has it)
-      if (M.unloading && !(this.constructor.HOSTILE && !this.persistent)) { rec.j = jsonOf(this); rec.o = 0; M.kept.push(rec.id, rec.j); return; }
+      if (M.unloading && !this.dead && !(this.constructor.HOSTILE && !this.persistent)) { rec.j = jsonOf(this); rec.o = 0; M.kept.push(rec.id, rec.j); return; }
       // gone for good: killed, despawned, turned into another kind, scooped into a bucket
       M.recs.delete(rec.id);
       M.gone.push(rec.id);
@@ -217,6 +227,7 @@ export class Mobs {
     this.applying = true;
     try { e = E.spawn(j.t, rec.x, rec.y, rec.z, { json: j, natural: false }); } catch (err) { e = null; } finally { this.applying = false; }
     if (!e) return;
+    e.ownerName = ownerIn(j);
     e.setPos(rec.x, rec.y, rec.z);
     e.vel.set(0, 0, 0);
     rec.buf.length = 0;
@@ -436,7 +447,6 @@ export class Mobs {
       // its record, when it changed (a hit's health at once; the rest at most once a second)
       if (jsonTick && (seen || this.t % 600 === 0)) {
         const j = jsonOf(e);
-        if (e.tamed) j.own = net.name;
         const sig = sigOf(j);
         if (sig !== rec.sig && (j.h !== rec.j.h || now - (rec.jAt || 0) > 1000 || rec.sig === undefined)) {
           if (rec.sig !== undefined) recs.push([rec.id, j]);
@@ -468,7 +478,6 @@ export class Mobs {
     const e = rec.e;
     if (!e || e.removed || e.puppet) return false;
     const j = jsonOf(e);
-    if (e.tamed) j.own = this.net.name;
     const sig = sigOf(j);
     if (sig === rec.sig) return false;
     /* (too big for the server to keep, lc2.js MAX_MOB_JSON: a book of pages put into a donkey's or a cart's chest. Kept
@@ -609,6 +618,7 @@ export class Mobs {
     const p = e.pos.clone(), pv = e.prev.clone(), y = e.yaw, py = e.prevYaw, b = e.bodyYaw, hy = e.headYaw, pb = e.prevBodyYaw, ph = e.prevHeadYaw, pt = e.pitch;
     this.applying = true;
     try { e.fromJSON(rec.j); } catch (err) { console.warn(err); } finally { this.applying = false; }
+    e.ownerName = ownerIn(rec.j);
     e.pos.copy(p); e.prev.copy(pv); e.yaw = y; e.prevYaw = py; e.pitch = pt;
     if (b !== undefined) { e.bodyYaw = b; e.headYaw = hy; e.prevBodyYaw = pb; e.prevHeadYaw = ph; }
     if (e.puppet) e.leash = null;

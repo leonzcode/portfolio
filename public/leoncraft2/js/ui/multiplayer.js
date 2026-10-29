@@ -26,13 +26,13 @@
    (and an admin) has Settings (ServerSettingsScreen) and Delete for it; a
    session the server no longer takes asks you to log in again.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=116';
-import { ConfirmScreen } from './menus.js?v=116';
-import { Net, listServers, createServer, editServer, deleteServer, srvRequests, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=116';
-import { Account } from '../net/account.js?v=116';
-import { LoginScreen, AccountScreen } from './account.js?v=116';
-import { parseSeed } from '../gen/random.js?v=116';
-import { MapRequestsScreen } from './maprequests.js?v=116';
+import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=117';
+import { ConfirmScreen } from './menus.js?v=117';
+import { Net, listServers, createServer, editServer, deleteServer, srvRequests, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=117';
+import { Account } from '../net/account.js?v=117';
+import { LoginScreen, AccountScreen } from './account.js?v=117';
+import { parseSeed } from '../gen/random.js?v=117';
+import { MapRequestsScreen } from './maprequests.js?v=117';
 
 const PW_KEY = 'lc2_pw_';
 /* Server requests, as the first Leoncraft has them: anyone but the owner (Leon) asks for a server

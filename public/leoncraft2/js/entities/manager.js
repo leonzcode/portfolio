@@ -19,50 +19,50 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=116';
-import { PathFinder, Navigation } from './path.js?v=116';
-import { Particles } from './particles.js?v=116';
-import { Ambient } from './ambient.js?v=116';
-import { Living, Mob, wrap, DEG } from './entity.js?v=116';
-import { TYPES } from './mobs.js?v=116';
-import './projectiles.js?v=116';
-import { placeBoat } from './boat.js?v=116';
-import './mobs2.js?v=116';
-import './mobs3.js?v=116';
-import './mobs4.js?v=116';
-import { wandererTick } from './merchant.js?v=116';
-import { tableBooks } from './tablebook.js?v=116';
-import { explode } from './explosion.js?v=116';
-import { splitXp } from './xporb.js?v=116';
-import { placeMinecart, isRail, Minecart } from './minecart.js?v=116';
-import { CART_ITEMS } from './carts.js?v=116';
-import { fallFrom, FALLS, free } from './fallingblock.js?v=116';
-import { Spawner, DESPAWN } from './spawner.js?v=116';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=116';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=116';
-import { EntityMeshes } from '../render/entitymesh.js?v=116';
-import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=116';
-import { lightNear } from '../lightlevel.js?v=116';
-import { activeDrops } from '../drops.js?v=116';
-import { breakAt } from '../place.js?v=116';
-import { dropOf } from '../survival.js?v=116';
-import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=116';
-import { Combat } from '../combat/combat.js?v=116';
-import { walkers } from '../render/realism.js?v=116';
+import { Terrain } from './terrain.js?v=117';
+import { PathFinder, Navigation } from './path.js?v=117';
+import { Particles } from './particles.js?v=117';
+import { Ambient } from './ambient.js?v=117';
+import { Living, Mob, wrap, DEG } from './entity.js?v=117';
+import { TYPES } from './mobs.js?v=117';
+import './projectiles.js?v=117';
+import { placeBoat } from './boat.js?v=117';
+import './mobs2.js?v=117';
+import './mobs3.js?v=117';
+import './mobs4.js?v=117';
+import { wandererTick } from './merchant.js?v=117';
+import { tableBooks } from './tablebook.js?v=117';
+import { explode } from './explosion.js?v=117';
+import { splitXp } from './xporb.js?v=117';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=117';
+import { CART_ITEMS } from './carts.js?v=117';
+import { fallFrom, FALLS, free } from './fallingblock.js?v=117';
+import { Spawner, DESPAWN } from './spawner.js?v=117';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=117';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=117';
+import { EntityMeshes } from '../render/entitymesh.js?v=117';
+import { B, BLOCKS, FLUID, OPACITY, OPAQUE } from '../blocks.js?v=117';
+import { lightNear } from '../lightlevel.js?v=117';
+import { activeDrops } from '../drops.js?v=117';
+import { breakAt } from '../place.js?v=117';
+import { dropOf } from '../survival.js?v=117';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=117';
+import { Combat } from '../combat/combat.js?v=117';
+import { walkers } from '../render/realism.js?v=117';
 // RIP Computer: how long the dead lie (ticks, then a second and a half sinking), how many at once, and what never
 // lies (slimes and magma cubes split into smaller ones, the bosses have deaths of their own)
 const CORPSE_TICKS = 300, MAX_CORPSES = 40;
 const NO_CORPSE = new Set(['slime', 'magma_cube', 'ender_dragon', 'wither', 'armor_stand', 'vex', 'allay']);
-import './nether.js?v=116';
+import './nether.js?v=117';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
-import './mobs5.js?v=116';
-import './mobs6.js?v=116';
-import './mobs7.js?v=116';
-import { DIMS } from '../dims.js?v=116';
-import { armorLayers } from './armorlayer.js?v=116';
-import { MobHeld } from '../render/mobheld.js?v=116';
-import { setSpawnerMob } from '../struct/spawners.js?v=116';
-import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=116';
+import './mobs5.js?v=117';
+import './mobs6.js?v=117';
+import './mobs7.js?v=117';
+import { DIMS } from '../dims.js?v=117';
+import { armorLayers } from './armorlayer.js?v=117';
+import { MobHeld } from '../render/mobheld.js?v=117';
+import { setSpawnerMob } from '../struct/spawners.js?v=117';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=117';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -92,6 +92,7 @@ export class Entities {
     this.ambient = new Ambient(this);      // torches smoking, campfires, lava sparks (ambient.js)
     this.age = 0;
     this.stored = new Map();        // "cx,cz" -> saved entities of chunks not loaded
+    this.awake = new Map(); this.awakeGen = -1;   // chunk number -> whether it and the eight round it are loaded (awakeAt)
     this.populated = new Set();     // chunks that have had their animals
     this.riding = null;
     this.xpEarned = 0;
@@ -352,11 +353,16 @@ export class Entities {
     wandererTick(this);
     tableBooks(this);
     const n = this.list.length, voidY = this.D.minY;
+    if (this.awakeGen !== this.world.cgen) { this.awakeGen = this.world.cgen; this.awake.clear(); }
     for (let i = 0; i < n; i++) {
       const e = this.list[i];
       if (e.removed) continue;
       // a rider has its turn right after what it rides (below), as in the game, so it moves with it smoothly
       if (e.vehicle && !e.vehicle.removed && e.vehicle.passengers.indexOf(e) >= 0) continue;
+      /* only where its chunk and the eight round it are here, as the game ticks entities: a chunk gone a moment before
+         chunks() puts its mobs away had no blocks, so they fell (a cow on the grass sank into the stone where the ground
+         had been, was kept there and suffocated when you came back), and one at the edge walked off into nothing */
+      if (e !== this.riding && e.vehicle !== this.player && !this.awakeAt(e.pos.x, e.pos.z)) continue;
       if (e.vehicle) { this.ridingTick(e); continue; }
       e.tick();
       // fallen out of the world (64 below its floor; heights here are y + 64): a mob takes the void's damage, anything else is gone
@@ -376,6 +382,19 @@ export class Entities {
     this.particlesP.tick();
     this.corpseTick();
     this.combat.lateTick();
+  }
+  // whether the chunk at x, z and the eight round it are loaded (kept by chunk until the world's chunks change)
+  awakeAt(x, z) {
+    const cx = Math.floor(x / 16), cz = Math.floor(z / 16), k = cx * 4194304 + cz;
+    let a = this.awake.get(k);
+    if (a === undefined) {
+      const W = this.world;
+      a = true;
+      if (!W.chunkXZ) return true;
+      for (let dz = -1; dz <= 1 && a; dz++) for (let dx = -1; dx <= 1; dx++) if (!W.chunkXZ(cx + dx, cz + dz)) { a = false; break; }
+      this.awake.set(k, a);
+    }
+    return a;
   }
   forget(e) {
     if (e.vehicle) { const v = e.vehicle; v.passengers.splice(v.passengers.indexOf(e), 1); e.vehicle = null; }
@@ -420,7 +439,7 @@ export class Entities {
       if (W.chunks.has(k)) continue;
       // monsters that would despawn anyway are just gone (and a boat keeps its riders with it)
       const kept = e.vehicle && e.vehicle.constructor.KEEPS_RIDERS;
-      if (!(e.constructor.HOSTILE && !e.persistent) && e.toJSON && !kept) {
+      if (!(e.constructor.HOSTILE && !e.persistent) && !e.dead && e.toJSON && !kept) {
         let a = this.stored.get(k);
         if (!a) this.stored.set(k, a = []);
         a.push(e.toJSON());
@@ -1232,4 +1251,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=116';
+import { rayBox } from './terrain.js?v=117';

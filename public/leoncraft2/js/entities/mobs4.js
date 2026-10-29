@@ -20,16 +20,16 @@
 
    The player is the only owner there can be, so "tamed" means "yours".
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=116';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted, ownedHere } from './entity.js?v=117';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=116';
-import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=116';
-import { model } from './mobs2.js?v=116';
-import { addArt } from './mobart.js?v=116';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=116';
-import { use as useBlock } from '../place.js?v=116';
-import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf, STEW_EFFECTS } from '../items.js?v=116';
-import { MountScreen } from '../ui/containers.js?v=116';
+  MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=117';
+import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=117';
+import { model } from './mobs2.js?v=117';
+import { addArt } from './mobart.js?v=117';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=117';
+import { use as useBlock } from '../place.js?v=117';
+import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf, STEW_EFFECTS } from '../items.js?v=117';
+import { MountScreen } from '../ui/containers.js?v=117';
 
 // the stack in the player's hand (a mob's interact is told only the item's name), and a stack dropped where a mob is
 const heldStack = m => (m.inv && m.inv.slots[m.inv.selected]) || null;
@@ -91,7 +91,7 @@ class SitGoal extends Goal {
     const m = this.mob;
     if (!m.tamed || m.inWater || !m.onGround) return false;
     const M = m.m, p = M.player;
-    if (m.dist2(p.pos.x, p.pos.y, p.pos.z) < 144 && M.playerHurtAt !== undefined && M.age - M.playerHurtAt < 100) return false;
+    if (ownedHere(m) && m.dist2(p.pos.x, p.pos.y, p.pos.z) < 144 && M.playerHurtAt !== undefined && M.age - M.playerHurtAt < 100) return false;
     return m.ordered;
   }
   canContinue() { return this.canUse(); }
@@ -103,7 +103,7 @@ class SitGoal extends Goal {
    in a jump to a spot 2-3 blocks from you (ten tries). */
 class FollowOwnerGoal extends Goal {
   constructor(mob, speed, start, stop) { super(mob, MOVE | LOOK); this.speed = speed; this.start2 = start * start; this.stop2 = stop * stop; }
-  owner() { const p = this.mob.m.player; return p && p.alive() ? p : null; }
+  owner() { const p = this.mob.m.player; return p && p.alive() && ownedHere(this.mob) ? p : null; }
   canUse() {
     const m = this.mob, o = this.owner();
     if (!m.tamed || m.ordered || !o || m.vehicle || m.passengers.length || m.lying) return false;
@@ -158,7 +158,7 @@ class PetTargetGoal extends Goal {
 class OwnerHurtByTargetGoal extends PetTargetGoal {
   canUse() {
     const m = this.mob, M = m.m;
-    if (!m.tamed || m.ordered || M.playerHurtAt === undefined || M.playerHurtAt === this.seen) return false;
+    if (!m.tamed || m.ordered || !ownedHere(m) || M.playerHurtAt === undefined || M.playerHurtAt === this.seen) return false;
     const a = M.playerHurtBy;
     if (!a || !a.alive || !a.alive() || !m.wantsToAttack(a)) return false;
     this.seen = M.playerHurtAt; this.t = a;
@@ -169,7 +169,7 @@ class OwnerHurtByTargetGoal extends PetTargetGoal {
 class OwnerHurtTargetGoal extends PetTargetGoal {
   canUse() {
     const m = this.mob, M = m.m;
-    if (!m.tamed || m.ordered || M.playerHitAt === undefined || M.playerHitAt === this.seen) return false;
+    if (!m.tamed || m.ordered || !ownedHere(m) || M.playerHitAt === undefined || M.playerHitAt === this.seen) return false;
     const a = M.playerHit;
     if (!a || a === m || !a.alive || !a.alive() || !m.wantsToAttack(a)) return false;
     this.seen = M.playerHitAt; this.t = a;
@@ -375,8 +375,10 @@ export class Wolf extends Tamable {
   wantsToAttack(t) { return super.wantsToAttack(t) && !(t.type === 'wolf' && t.tamed); }
   interact(held, player) {
     const food = WOLF_FOOD[held];
-    // wolf armour (the owner's: here every tamed wolf is yours): on a tamed adult, off with shears, mended with a scute
-    if (this.tamed && this.ageT >= 0) {
+    // wolf armour, the collar's colour and sitting are the owner's (on a server, another player's wolf is only fed and bred);
+    // the armour on a tamed adult, off with shears, mended with a scute
+    const own = ownedHere(this);
+    if (this.tamed && this.ageT >= 0 && own) {
       if (held === 'wolf_armor' && !this.body) { this.body = withCountOf(heldStack(this.m), 1); return 'consume'; }
       if (held === 'shears' && this.body) { dropStack(this, this.body); this.body = null; return 'damage'; }
       if (held === 'armadillo_scute' && this.body && (this.body.dmg | 0) > 0) { this.body.dmg = Math.max(0, (this.body.dmg | 0) - 8); return 'consume'; }
@@ -387,12 +389,13 @@ export class Wolf extends Tamable {
         this.m.particles('heart', this.pos.x, this.pos.y + this.h, this.pos.z, 2, 0.3);
         return 'consume';
       }
-      if (held && held.endsWith('_dye')) {
+      if (own && held && held.endsWith('_dye')) {
         const c = held.slice(0, -4);
         if (DYES.indexOf(c) >= 0 && c !== this.collar) { this.collar = c; return 'consume'; }
       }
       if (food !== undefined && this.health >= this.maxHealth && this.feed()) return 'consume';
       if (food !== undefined && this.ageT < 0 && this.feed()) return 'consume';
+      if (!own) return false;
       this.toggleSit();
       return 'swing';
     }
@@ -1429,12 +1432,14 @@ export class Cat extends Tamable {
   interact(held) {
     const food = CAT_FOOD[held];
     if (this.tamed) {
+      const own = ownedHere(this);
       if (food !== undefined && this.health < this.maxHealth) { this.heal(food); return 'consume'; }
-      if (held && held.endsWith('_dye')) {
+      if (own && held && held.endsWith('_dye')) {
         const c = held.slice(0, -4);
         if (DYES.indexOf(c) >= 0 && c !== this.collar) { this.collar = c; return 'consume'; }
       }
       if (food !== undefined && this.feed()) return 'consume';
+      if (!own) return false;
       this.toggleSit();
       return 'swing';
     }

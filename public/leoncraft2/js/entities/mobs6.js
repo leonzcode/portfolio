@@ -11,16 +11,16 @@
    the fish's way (mobs3.js). Numbers from the Minecraft Wiki (Java Edition);
    the shapes are boxes in the game's units, the textures our own.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted } from './entity.js?v=116';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET, looted, ownedHere } from './entity.js?v=117';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=116';
-import { Animal, Monster, register, TYPES } from './mobs.js?v=116';
-import { model } from './mobs2.js?v=116';
-import { addArt } from './mobart.js?v=116';
-import { MODELS } from './mobmodels.js?v=116';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=116';
-import { activeDrops } from '../drops.js?v=116';
-import { ITEMS, I } from '../items.js?v=116';
+  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=117';
+import { Animal, Monster, register, TYPES } from './mobs.js?v=117';
+import { model } from './mobs2.js?v=117';
+import { addArt } from './mobart.js?v=117';
+import { MODELS } from './mobmodels.js?v=117';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=117';
+import { activeDrops } from '../drops.js?v=117';
+import { ITEMS, I } from '../items.js?v=117';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -127,7 +127,7 @@ export class Parrot extends Flyer {
   get eyeH() { return 0.54; }
   registerGoals() {
     this.goals.add(0, new PanicGoal(this, 1.25));
-    this.goals.add(2, new FlyFollowGoal(this, m => (m.tamed ? m.m.player : null), 1, 5, 1));
+    this.goals.add(2, new FlyFollowGoal(this, m => (m.tamed && ownedHere(m) ? m.m.player : null), 1, 5, 1));
     this.goals.add(3, new FlyWanderGoal(this, 1, 40, 4));
     this.goals.add(4, new LookAtPlayerGoal(this, 8));
   }
@@ -140,7 +140,7 @@ export class Parrot extends Flyer {
       else this.m.particles('smoke', this.pos.x, this.pos.y + 0.6, this.pos.z, 7, 0.3);
       return 'consume';
     }
-    if (this.tamed && !held) { this.sitting = !this.sitting; this.dest = null; return 'swing'; }
+    if (this.tamed && !held && ownedHere(this)) { this.sitting = !this.sitting; this.dest = null; return 'swing'; }
     return false;
   }
   aiStep() {
@@ -1069,7 +1069,7 @@ export class ZombieNautilus extends Nautilus {
 register('zombie_nautilus', ZombieNautilus);
 // the mount screen, fetched once (ui/containers.js leads back to the entities, so not imported at the top)
 let MountScreenRef = null;
-import('../ui/containers.js?v=116').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
+import('../ui/containers.js?v=117').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
 // nautilus armour: bands of the metal round the shell and a plate over its back
 const NAUT_ARMOR_ART = { copper: [0xc8764a, 0x8a4a2a], iron: [0xd8d8d8, 0x9a9a9a], golden: [0xf8d84a, 0xc89a20], diamond: [0x5ae8e0, 0x2aa8a0], netherite: [0x4a4248, 0x2a2428] };
 for (const k in NAUT_ARMOR_ART) addArt('nautilus_armor_' + k, [64, 64], p => {
