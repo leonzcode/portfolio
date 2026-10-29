@@ -60,6 +60,27 @@ The licences cover the 3D models only. Car makers' names, badges and designs may
 the models are fan-made and not endorsed by Volvo, Porsche, General Motors, Ferrari, Lamborghini, Tesla,
 Navistar (International), or Volkswagen.
 
+## Aircraft models (`js/aircraft.js`)
+
+Both are licensed under Creative Commons Attribution 4.0 (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/),
+read on each model's Sketchfab page through Sketchfab's public model API on 2026-10-28, and downloaded from the same
+Objaverse mirror as the cars.
+
+| File | Model | Author | Source | Licence |
+|---|---|---|---|---|
+| `models/c172.glb`, `models/c172_npc.glb` | Cessna-172 | Sousinho (sousinho) | https://sketchfab.com/3d-models/cessna-172-8e8d0a8eefe544eea7c5169c1de2d7c9 | CC BY 4.0 |
+| `models/ec135.glb`, `models/ec135_npc.glb` | EC 135 | GRIP420 | https://sketchfab.com/3d-models/ec-135-ec30f802c6ac43a8843948fbadb674d2 | CC BY 4.0 |
+
+What was changed (by us, in Blender 4.1): turned and scaled to real size (the Cessna to its 11.0 m span, the EC135
+to its 12.16 m length with the rotors turning), origin on the ground between the gear; the Cessna, which came as one
+mesh, split into its loose parts so the propeller, the ailerons (cut from the trailing edge strip), the elevator,
+the rudder and the three wheels are their own nodes, and its windscreen and rear window given a glass material; the
+EC135's two seated pilots taken out, its skinned rotors made plain meshes with their hubs as pivots; both decimated to
+the game's budget and their textures re-encoded as WebP (1024 px). The `_npc` files are low-detail copies used only
+for the shadows. The blurred discs a fast rotor or propeller shows, and the way blades break off, are drawn at run
+time by `js/aircraft.js`. The EC135 carries the ADAC air rescue livery its author modelled; the model is fan-made
+and not endorsed by ADAC, Airbus Helicopters or Textron Aviation (Cessna).
+
 ## Environment map
 
 | File | Asset | Author | Source | Licence |

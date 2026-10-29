@@ -2,12 +2,12 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=43';
-import { World } from './world.js?v=43';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=43';
-import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=43'; // (perf A: the shadow pass's casters, steady lights)
-import { Drive } from './drive.js?v=43';
-import { CompileGate } from './gate.js?v=43'; // (perf B) nothing drawn with a program still being built
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=44';
+import { World } from './world.js?v=44';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=44';
+import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=44'; // (perf A: the shadow pass's casters, steady lights)
+import { Drive } from './drive.js?v=44';
+import { CompileGate } from './gate.js?v=44'; // (perf B) nothing drawn with a program still being built
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -221,28 +221,36 @@ G.setCredit = () => { if (world.mode === 'open') attrib.textContent = innerWidth
 G.setKey = k => { try { if (k) localStorage.setItem('car_gkey', k); else localStorage.removeItem('car_gkey'); } catch (e) {} };
 if (Q.get('key')) G.setKey(Q.get('key'));
 let mapui = null;
-async function openMap() {
+// (round 5, multiplayer) a drop at a place, from the map's Drive here or from a room (home.js): G.beforeDrop may make
+// the room first (false: it has put its own screen back), G.afterDrop starts the room's session once the drive is up
+async function dropAt({ lat, lon, heading }) {
+  mapui.hidePicker();
+  if (G.beforeDrop) { let ok = true; try { ok = await G.beforeDrop({ lat, lon, heading }); } catch (e) { console.warn('before drop', e); ok = false; } if (ok === false) return; }
+  G.paused = false;
   try {
-    const M = await import('./mapui.js?v=43');
+    const r = await drive.start(lat, lon, heading || 0);
+    const g = toLatLon(drive.car.vehicle.origin());
+    mapui.startDrive({ lat: g.lat, lon: g.lon, heading: r.heading });
+    if (G.afterDrop) { try { G.afterDrop(r); } catch (e) { console.warn('after drop', e); } }
+  } catch (e) {
+    console.error('drop failed', e);
+    drive.active = false; drive.hud.loading(null); drive.hud.show(false);
+    mapui.showPicker(); G.paused = true;
+    drive.hud.note('Something went wrong loading that place. Please try again or pick another spot.');
+  }
+}
+async function openMap(quiet) {
+  try {
+    const M = await import('./mapui.js?v=44');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
-      onDrop: async ({ lat, lon, heading }) => {
-        mapui.hidePicker();
-        G.paused = false;
-        try {
-          const r = await drive.start(lat, lon, heading || 0);
-          const g = toLatLon(drive.car.vehicle.origin());
-          mapui.startDrive({ lat: g.lat, lon: g.lon, heading: r.heading });
-        } catch (e) {
-          console.error('drop failed', e);
-          drive.active = false; drive.hud.loading(null); drive.hud.show(false);
-          mapui.showPicker(); G.paused = true;
-          drive.hud.note('Something went wrong loading that place. Please try again or pick another spot.');
-        }
-      },
-      onBack: () => { drive.active = false; drive.hud.show(false); drive.sound.stop(); mapui.endDrive(); mapui.showPicker(); G.paused = true; },
+      onDrop: o => dropAt(o),
+      // (round 5) leaving a drive in a multiplayer room goes back to the rooms (home.js), not the map
+      onBack: () => { drive.active = false; drive.hud.show(false); drive.sound.stop(); mapui.endDrive(); G.paused = true; if (G.onLeaveDrive && G.onLeaveDrive()) return; mapui.showPicker(); },
+      // (round 5) the map's menu has the home screen (home.js), for multiplayer without a reload
+      onHome: () => { mapui.hidePicker(); if (G.home) G.home.show('start'); else openHome(); },
     });
     G.mapui = mapui;
-    mapui.showPicker();
+    if (!quiet) mapui.showPicker();
     G.paused = true;
     // while the map is up, get the game ready: its modules, the first car, the traffic's cars, the props' models
     const idle = window.requestIdleCallback || (f => setTimeout(f, 300));
@@ -264,6 +272,15 @@ async function openMap() {
   } catch (e) { console.warn('map ui', e); drive.start(37.7946, -122.3999, 0); }
 }
 G.openMap = openMap;
+// (round 5) a drop without the picker first: joining a multiplayer room drops at the room's place
+G.dropTo = async (lat, lon, heading) => { await openMap(true); if (mapui) await dropAt({ lat, lon, heading }); };
+// (round 5) the home screen first: Singleplayer (the map, as before) or Multiplayer (home.js); ?nohome goes straight
+// to the map
+async function openHome() {
+  if (Q.has('nohome')) return openMap();
+  try { const H = await import('./home.js?v=44'); new H.Home(G).show('start'); }
+  catch (e) { console.warn('home screen', e); openMap(); }
+}
 G.onFrame = () => {
   if (mapui && drive.active && drive.car && (G.frames % 15 === 0)) {
     // (on foot, onfoot.js: where the person is and which way it faces)
@@ -276,4 +293,4 @@ G.onFrame = () => {
 };
 if (Q.has('free') && Q.has('lat')) startWorld(+Q.get('lat'), +Q.get('lon')).then(m => { G.mode = m; });
 else if (Q.has('lat') && validPlace(+Q.get('lat'), +Q.get('lon'))) drive.start(+Q.get('lat'), +Q.get('lon'), +(Q.get('h') || 0) || 0).then(r => { G.mode = drive.mode; G.spawned = r; });
-else openMap();
+else openHome();

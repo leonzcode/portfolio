@@ -17,7 +17,7 @@
 // while typing), Nominatim (Enter and reverse lookups, at most one request a second, as its policy asks; its
 // policy forbids type-ahead, which is why suggestions come from Photon), Overpass (roads you can drive).
 
-const CSS_HREF = new URL('../css/mapui.css?v=43', import.meta.url).href;
+const CSS_HREF = new URL('../css/mapui.css?v=44', import.meta.url).href;
 
 const TILES = {
   // CARTO's keyless raster basemaps now answer every request with an "API key required" picture (checked
@@ -74,6 +74,7 @@ const PLACES = [
 // Icons (all drawn here, nothing taken from Google)
 
 const ICON = {
+  home: '<svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>',
   menu: '<svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>',
   search: '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>',
@@ -283,7 +284,7 @@ async function reverse(lat, lon, signal) {
 
 // ---------------------------------------------------------------------------------------------------------------
 
-export function createMapUI(root, { onDrop = () => {}, onBack = () => {} } = {}) {
+export function createMapUI(root, { onDrop = () => {}, onBack = () => {}, onHome = null } = {}) {
   const L = window.L;
   if (!L) throw new Error('mapui: Leaflet (global L) is not loaded');
   if (![...document.querySelectorAll('link[rel="stylesheet"]')].some((l) => /css\/mapui\.css/.test(l.href))) {
@@ -339,6 +340,7 @@ export function createMapUI(root, { onDrop = () => {}, onBack = () => {} } = {})
       <div class="mu-dr-sep"></div>
       <button class="mu-dr-item" type="button" data-k="locate">${ICON.locate}<span>Your location</span></button>
       <button class="mu-dr-item" type="button" data-k="last" hidden>${ICON.history}<span>Back to your last drive</span></button>
+      ${onHome ? `<button class="mu-dr-item" type="button" data-k="home">${ICON.home}<span>Home screen and multiplayer</span></button>` : ''}
       <div class="mu-dr-sep"></div>
       <button class="mu-dr-item" type="button" data-k="gkey" aria-expanded="false">${ICON.gear}<span>Google 3D city (API key)</span><i class="mu-dr-state"></i></button>
       <form class="mu-gkey" hidden autocomplete="off">
@@ -1196,6 +1198,7 @@ export function createMapUI(root, { onDrop = () => {}, onBack = () => {} } = {})
     else if (k === 'labels') setLabels(!labels);
     else if (k === 'roads') { roadsOn = !roadsOn; roads.show(roadsOn); syncDrawer(); if (roadsOn && map.getZoom() < ROAD_MIN_ZOOM) toast('Zoom in to see the roads you can drive'); }
     else if (k === 'locate') { closeDrawer(); locate(); }
+    else if (k === 'home') { closeDrawer(); if (onHome) onHome(); } // (round 5: home.js)
     else if (k === 'last') { closeDrawer(); const p = lastCar || lastDrop; map.flyTo([p.lat, p.lon], 17, { duration: 1.2 }); }
     else if (k === 'gkey') {
       const open = gkeyForm.hidden;

@@ -6,8 +6,8 @@
 // full green) the cut reaches there instead of uCutTop: a tunnel's bore where its roof is near the surface, a road
 // cut into a hillside out to its retaining wall (tunnels.js puts those shapes in under.mask).
 import * as THREE from 'three';
-import { bakedUniforms } from './baked.js?v=43';
-import { under } from './under.js?v=43';
+import { bakedUniforms } from './baked.js?v=44';
+import { under } from './under.js?v=44';
 
 const WIDTH = { motorway: 3.6, trunk: 3.5, primary: 3.4, secondary: 3.3, tertiary: 3.2, unclassified: 3, residential: 3, living_street: 2.8, service: 3, motorway_link: 3.5, trunk_link: 3.4, primary_link: 3.3, secondary_link: 3.2, tertiary_link: 3.1 };
 const TOP_MAX = 25; // (baked.js reads green * 25 m)
