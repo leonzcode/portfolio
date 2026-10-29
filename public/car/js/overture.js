@@ -10,7 +10,7 @@
 //   enrich(list, ov)                  fills what OSM's records leave empty from Overture's (never overrides a
 //                                     tag OSM gives) and returns the footprints OSM does not have (other sources)
 // Data: Overture Maps Foundation, ODbL (OSM-derived) and CDLA Permissive 2.0 / ODbL for the other sources.
-import { frame, project, unproject } from './geo.js?v=46';
+import { frame, project, unproject } from './geo.js?v=47';
 
 let W = null, seq = 0;
 const pending = new Map();
@@ -20,7 +20,7 @@ const RKEY = 'car_ov_rel';
 function worker() {
   if (W) return W;
   try {
-    W = new Worker(new URL('./overworker.js?v=46', import.meta.url), { type: 'module' });
+    W = new Worker(new URL('./overworker.js?v=47', import.meta.url), { type: 'module' });
     W.onmessage = (e) => { const p = pending.get(e.data.id); if (!p) return; pending.delete(e.data.id); if (e.data.error) p.rej(new Error(e.data.error)); else p.res(e.data.res); };
     W.onerror = (e) => { for (const p of pending.values()) p.rej(new Error('overture worker')); pending.clear(); W = null; };
   } catch (e) { W = null; }

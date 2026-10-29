@@ -8,8 +8,8 @@
 // traffic cars go to the whole room as damage.js impacts by the car's shared number (mp.js). When the owner leaves
 // or drives away, the next page runs them, starting from the cars and people it was drawing.
 import * as THREE from 'three';
-import { People } from './people.js?v=46';
-import { Person } from './person.js?v=46';
+import { People } from './people.js?v=47';
+import { Person } from './person.js?v=47';
 
 const SEND_MS = 125, FULL_MS = 2000, PED_EVERY = 2; // cars 8 a second, people 4 a second, everything every 2 s
 const SEND_R = 360;                                  // what is sent: within this many metres of the owner
