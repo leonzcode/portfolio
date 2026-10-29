@@ -2,7 +2,7 @@
 // public ones with their place and how many are in, a room of your own (public, or private with a code) on a place
 // chosen on the map, or a room joined by its code). Everyone in a room drops at the room's place (mp.js runs the
 // room). In the page's own Google Maps look; a link with ?lat= drops straight in and never shows this.
-import { Net, Session } from './mp.js?v=45';
+import { Net, Session } from './mp.js?v=46';
 
 const CSS = `
 .mph { position: fixed; inset: 0; z-index: 40; overflow: hidden; background: #1b1d1f; font-family: Roboto, 'Segoe UI', Arial, sans-serif; color: #1f1f1f; -webkit-font-smoothing: antialiased; }
@@ -107,7 +107,7 @@ export class Home {
       + '<p class="mph-lede">Drive anywhere on the real map, from satellite photos and OpenStreetMap.</p>'
       + '<button class="mph-opt" data-go="one"><div class="mph-ico">' + ICON.one + '</div><div><b>Singleplayer</b><span>Pick any place on the map and drive</span></div></button>'
       + '<button class="mph-opt" data-go="many"><div class="mph-ico">' + ICON.many + '</div><div><b>Multiplayer</b><span>Drive with other people in a room, with chat</span></div></button>'
-      + '<div class="mph-foot">W A S D to drive, E to get out, H for all the keys.</div>';
+      + '<div class="mph-foot">' + (matchMedia('(pointer: coarse)').matches ? 'Drive with the buttons on the screen. E gets you out of the car.' : 'W A S D to drive, E to get out, H for all the keys.') + '</div>';
     this.card.querySelector('[data-go="one"]').onclick = () => { this.hide(); this.G.openMap(); };
     this.card.querySelector('[data-go="many"]').onclick = () => this.show(store.get('car_mpname') ? 'rooms' : 'name');
     setTimeout(() => { const b = this.card.querySelector('button'); if (b) b.focus(); }, 0);
