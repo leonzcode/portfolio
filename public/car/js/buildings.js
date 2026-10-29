@@ -19,10 +19,10 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=45';
-import { patchBaked } from './baked.js?v=45';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=45';
-import overture from './overture.js?v=45';
+import { frame, project } from './geo.js?v=46';
+import { patchBaked } from './baked.js?v=46';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=46';
+import overture from './overture.js?v=46';
 
 export const CELL = 400;
 const LV = 3.2;

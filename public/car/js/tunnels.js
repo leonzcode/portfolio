@@ -16,7 +16,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south.
 import * as THREE from 'three';
-import { under, indexTube } from './under.js?v=45';
+import { under, indexTube } from './under.js?v=46';
 
 const T = 0.45;            // lining thickness
 const WALK = 0.12;         // the walkway along each wall over the road (roads.js draws it)

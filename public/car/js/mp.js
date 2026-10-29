@@ -10,8 +10,8 @@
 // Everyone in a room drops at the room's place, so every page's frame (geo.js) has the same origin and positions go
 // as local metres.
 import * as THREE from 'three';
-import { Vehicle } from './vehicle.js?v=45';
-import { seatsOf } from './occupants.js?v=45';
+import { Vehicle } from './vehicle.js?v=46';
+import { seatsOf } from './occupants.js?v=46';
 
 const Q = new URLSearchParams(location.search);
 const LOCAL_PAGE = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/.test(location.hostname);
@@ -498,6 +498,38 @@ export class Session {
       };
       this.undo.push(() => { Dm.impact = orig; });
     }
+    // a window broken by someone thrown through it (onfoot.js, through damage.js breakGlass): sent in the car's crash
+    // log as an impact with a point and no push, so every page, and a late joiner, breaks the same window
+    if (Dm && Dm.breakGlass) {
+      const orig = Dm.breakGlass;
+      Dm.breakGlass = (rig, lp, o = {}) => {
+        const res = orig.call(Dm, rig, lp, o);
+        try { if (res && !o._net && lp && rig) this.sentImpact(Dm.of(rig), { glass: lp, glassKind: o.kind || null }, {}); } catch (e) { console.warn('mp glass', e); }
+        return res;
+      };
+      this.undo.push(() => { Dm.breakGlass = orig; });
+    }
+    // paint scraped along a wall or another car (damage.js scrapeMarks, in the car's own frame): sent about ten times a
+    // second while it lasts, as a relay only (not kept in the crash log, so a late joiner sees the dents, not every
+    // scratch)
+    if (Dm && Dm.scrapeMarks) {
+      const orig = Dm.scrapeMarks;
+      Dm.scrapeMarks = (rd, P, N, Tv, vt, dt, press, yLo, yHi, metal, net) => {
+        const r = orig.call(Dm, rd, P, N, Tv, vt, dt, press, yLo, yHi, metal);
+        try {
+          if (!net && rd && D.car && rd.rig === D.car.rig && !D.car.ghost) {
+            const q = this.scr || (this.scr = { t: 0, dt: 0 }), now = performance.now(); q.dt += dt;
+            if (now - q.t > 100) {
+              q.t = now;
+              this.net.send({ t: 'ev', k: 'hit', d: { sc: [r4(P.x), r4(P.y), r4(P.z), r4(N.x), r4(N.y), r4(N.z), r4(Tv.x), r4(Tv.y), r4(Tv.z), r4(vt), r4(q.dt), r4(press), r4(yLo), r4(yHi), metal ? 1 : 0] } });
+              q.dt = 0;
+            }
+          }
+        } catch (e) {}
+        return r;
+      };
+      this.undo.push(() => { Dm.scrapeMarks = orig; });
+    }
     // a new car of our own (1 to 0, or a respawn with R): the others start it new
     const kd = e => { if (e.code === 'KeyR' && !e.repeat && D.active && !(e.target && e.target.tagName === 'INPUT') && D.onfoot && D.onfoot.mode === 'car') { this.myDmg = []; this.net.send({ t: 'ev', k: 'rst' }); } };
     addEventListener('keydown', kd); this.undo.push(() => removeEventListener('keydown', kd));
@@ -516,7 +548,7 @@ export class Session {
     })();
     const sl = setInterval(() => this.sendLook(), 4000); this.undo.push(() => clearInterval(sl));
     // the traffic and the pedestrians shared (npcnet.js)
-    import('./npcnet.js?v=45').then(M => { if (this.dead) return; this.npc = new M.NpcNet(this); if (this.role !== undefined) this.npc.setRole(this.role); }).catch(e => console.warn('npcnet', e));
+    import('./npcnet.js?v=46').then(M => { if (this.dead) return; this.npc = new M.NpcNet(this); if (this.role !== undefined) this.npc.setRole(this.role); }).catch(e => console.warn('npcnet', e));
   }
 
   // where this player starts in the room: the room's place, a few car lengths along the road per player before
@@ -777,15 +809,18 @@ export class Session {
   sentImpact(rd, imp, o) {
     const D = this.drive, rig = rd.rig;
     const pack = v3 => v3 ? [r4(v3.x), r4(v3.y), r4(v3.z)] : null, fin = x => Number.isFinite(x) ? Math.round(x * 1000) / 1000 : null;
-    const d = { P: pack(imp.P), N: pack(imp.N), sp: fin(imp.speed), k: imp.kind || 'flat', r: fin(imp.r), t0: fin(imp.t0), t1: fin(imp.t1), b0: fin(imp.b0), b1: fin(imp.b1), e: fin(imp.edge), y: fin(imp.yMid), ro: imp.rollover ? 1 : 0, Dm: fin(imp.Dmul), ms: fin(o.mSelf), mo: fin(o.mOther), mu: fin(o.mul) };
-    if (!d.P || !d.N) return;
+    const d = imp.glass ? { g: pack(imp.glass), gk: imp.glassKind || null } : { P: pack(imp.P), N: pack(imp.N), sp: fin(imp.speed), k: imp.kind || 'flat', r: fin(imp.r), t0: fin(imp.t0), t1: fin(imp.t1), b0: fin(imp.b0), b1: fin(imp.b1), e: fin(imp.edge), y: fin(imp.yMid), ro: imp.rollover ? 1 : 0, Dm: fin(imp.Dmul), ms: fin(o.mSelf), mo: fin(o.mOther), mu: fin(o.mul) };
+    if (!d.g && (!d.P || !d.N)) return;
     if (D.car && rig === D.car.rig && !D.car.ghost) { this.myDmg.push(d); if (this.myDmg.length > 60) this.myDmg.shift(); this.net.send({ t: 'ev', k: 'imp', d }); return; }
     // a traffic car (ours if we run them, or one we draw for another page): by its shared number
     const c = rd.trafficCar, nid = c && c.nid;
     if (nid && this.npc) this.net.send({ t: 'ev', k: 'nimp', id: nid, d });
   }
   applyImpact(rig, d) {
-    const Dm = this.drive.damage; if (!Dm || !rig || !d || !d.P || !d.N) return;
+    const Dm = this.drive.damage; if (!Dm || !rig || !d) return;
+    // (a window someone was thrown through)
+    if (Array.isArray(d.g)) { try { if (Dm.breakGlass) Dm.breakGlass(rig, new THREE.Vector3().fromArray(d.g), { kind: d.gk || undefined, _net: true }); } catch (e) { console.warn('remote glass', e); } return; }
+    if (!d.P || !d.N) return;
     const rd = Dm.of(rig);
     rig.object.updateWorldMatrix(true, false);
     const M = rig.object.matrixWorld, q = rig.object.getWorldQuaternion(new THREE.Quaternion());
@@ -803,6 +838,12 @@ export class Session {
     if (m.k === 'imp' && R) { R.dmg.push(m.d); if (R.dmg.length > 60) { R.dmg.shift(); if (R.rig) R.rig._netApplied = Math.max(0, (R.rig._netApplied || 0) - 1); } R.applyDamage(); return; }
     if (m.k === 'rst' && R) { R.dmg = []; if (R.rig) { R.rig._netApplied = 0; if (this.drive.damage) { try { this.drive.damage.reset(R.rig); } catch (e) {} } } return; }
     if (m.k === 'nimp') { if (this.npc) this.npc.impact(m.id, m.d); return; }
+    // their paint scraped (drawn on our copy once its model is worked out)
+    if (m.k === 'hit' && R && R.rig && m.d && Array.isArray(m.d.sc) && m.d.sc.length === 15) {
+      const Dm = this.drive.damage, a = m.d.sc; if (!Dm || !Dm.scrapeMarks) return;
+      try { const rd = Dm.of(R.rig); if (rd.A) { const V = THREE.Vector3; Dm.scrapeMarks(rd, new V(a[0], a[1], a[2]), new V(a[3], a[4], a[5]), new V(a[6], a[7], a[8]), a[9], a[10], a[11], a[12], a[13], !!a[14], true); } } catch (e) {}
+      return;
+    }
     if (m.k === 'adopt' && R) {
       // they took another player's car: its dents (and on our screen the very same model) go with them
       const O = this.remotes.get(m.of);
@@ -952,7 +993,7 @@ export class Session {
         D.loadingArea = true;
         D.hud.loading('Going to ' + m.name, 0.4);
         try { await D.loadArea(tx, tz); } finally { D.loadingArea = false; }
-        try { if (D.world.heights && D.world.heights.want) { const { toLatLon } = await import('./geo.js?v=45'); const g = toLatLon(new THREE.Vector3(tx, 0, tz)); await D.world.heights.want(g.lat, g.lon, 600); } } catch (e) {}
+        try { if (D.world.heights && D.world.heights.want) { const { toLatLon } = await import('./geo.js?v=46'); const g = toLatLon(new THREE.Vector3(tx, 0, tz)); await D.world.heights.want(g.lat, g.lon, 600); } } catch (e) {}
         D.hud.loading(null);
       }
       // (in the air only if they are flying and what we drive flies too: a car comes down on the road under them)
@@ -1083,7 +1124,7 @@ export class Session {
       const what = R.mode && R.mode !== 'car' ? 'On foot' : (carName(R.carId || (w && w[3])) || 'Driving');
       h += row(R.id, R.name, what + (w || R.has ? ' · ' + dist(x, z) : ''), '<button data-tp="' + R.id + '" aria-label="Ask to go to ' + esc(R.name) + '">Ask to go there</button>');
     }
-    h += '<div class="mp-row" style="justify-content:flex-end"><span style="flex:1;color:#70757a;font-size:13px">Tab closes this list</span><button data-close="1">Close</button></div>';
+    h += '<div class="mp-row" style="justify-content:flex-end"><span style="flex:1;color:#70757a;font-size:13px">' + (this.tb ? '' : 'Tab closes this list') + '</span><button data-close="1">Close</button></div>';
     this.listEl.innerHTML = h;
   }
 
