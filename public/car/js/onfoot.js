@@ -7,8 +7,8 @@
 // (its cheap model swapped for the detailed one once that is ready); the car the player left stays where it was,
 // solid, with its own physics, until it is far behind.
 import * as THREE from 'three';
-import { Vehicle } from './vehicle.js?v=46';
-import { Occupants, seatsOf, seatOffset, play, tick, YAW0, settled, isRagdoll, getUp, RECLINE } from './occupants.js?v=46';
+import { Vehicle } from './vehicle.js?v=47';
+import { Occupants, seatsOf, seatOffset, play, tick, YAW0, settled, isRagdoll, getUp, RECLINE } from './occupants.js?v=47';
 
 const STEP = 1 / 120;
 // on foot (m/s): a brisk walk, a jog once the person has kept going a second and a half, a run with Shift
@@ -1027,10 +1027,11 @@ export class OnFoot {
     // (round 5) another player's car: their page is asked, and gives it (mp.js onGiven brings us back here)
     // (walked to its driver's door first, as a traffic car is, and only then asked for: their person is pulled out as we
     // get there, not from across the street)
-    if (t.kind === 'remote') {
-      if (!D.net || !D.net.steal) return;
+    if (t.kind === 'remote' || t.kind === 'remoteLeft') {
+      const go = t.kind === 'remote' ? D.net && D.net.steal && (x => D.net.steal(x)) : D.net && D.net.takeLeft && (x => D.net.takeLeft(x));
+      if (!go) return;
       const I = t.rig && t.rig.dims ? this.doorOf(t.rig, 0) : null;
-      if (!I || !I.handle) { D.net.steal(t); return; }
+      if (!I || !I.handle) { go(t); return; }
       this.seq = { kind: 'enter', phase: 'approach', t: 0, target: { ...t }, seat: 0, I };
       this.mode = 'enter';
       return;
@@ -1164,7 +1165,11 @@ export class OnFoot {
       // a traffic car reached: out of the traffic now
       if (t.kind === 'traffic' && d < 1.6) { this.grabTraffic(S); return; }
       // (round 5) another player's car reached: their page is asked now (mp.js steal; its answer brings us back in)
-      if (t.kind === 'remote' && d < 1.3) { this.seq = null; this.mode = 'foot'; this.seqHoldsWalk = false; if (D.net && D.net.steal) D.net.steal(t); return; }
+      if ((t.kind === 'remote' || t.kind === 'remoteLeft') && d < 1.3) {
+        this.seq = null; this.mode = 'foot'; this.seqHoldsWalk = false;
+        if (t.kind === 'remote') { if (D.net && D.net.steal) D.net.steal(t); } else if (D.net && D.net.takeLeft) D.net.takeLeft(t);
+        return;
+      }
       // a parked car reached: its own model in now (or wait a moment for it)
       if (t.kind === 'parked' && d < 1.2) {
         if (!S.parkedRig) { if (S.t > 8) this.cancelEnter('Could not open that car'); else { this.walk(dt, { x: 0, z: 0, speed: 0 }); } return; }

@@ -10,8 +10,8 @@
 // Everyone in a room drops at the room's place, so every page's frame (geo.js) has the same origin and positions go
 // as local metres.
 import * as THREE from 'three';
-import { Vehicle } from './vehicle.js?v=46';
-import { seatsOf } from './occupants.js?v=46';
+import { Vehicle } from './vehicle.js?v=47';
+import { seatsOf } from './occupants.js?v=47';
 
 const Q = new URLSearchParams(location.search);
 const LOCAL_PAGE = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/.test(location.hostname);
@@ -112,6 +112,11 @@ class Remote {
     for (let i = 0; i < Math.max(want.length, have.length); i++) {
       const w = want[i], h = have[i], key = w ? w[0] + ':' + w[1] : null;
       if (h && h.key !== key) { if (h.rig) { try { if (D.damage) D.damage.reset(h.rig); } catch (e) {} h.rig.dispose(); } h.dead = true; have[i] = null; }
+      // (their old car, kept when they changed: the same rig, dents and all, if it is the one standing there)
+      const T = this.retired;
+      if (w && !have[i] && T && T.id === w[0] && Math.hypot(T.rig.object.position.x - w[2], T.rig.object.position.z - w[4]) < 4) {
+        have[i] = { key, rig: T.rig, w, log: T.log }; this.retired = null;
+      }
       if (w && !have[i] && C && C.CARS.find(c => c.id === w[0])) {
         const L = have[i] = { key, rig: null, w };
         C.loadCar(w[0], { npc: true, color: w[1] }).then(rig => {
@@ -159,9 +164,12 @@ class Remote {
 
   async wantCar(id, col) {
     if (id === this.carId && (col == null || col === this.col)) return;
+    // (another car of theirs: the one they had, dents and all, kept a moment in case it is the car they now leave
+    // standing, syncLeft)
+    const keep = !!(this.rig && this.carId && id !== this.carId);
     this.carId = id; this.col = col;
     const t = ++this.loadTicket;
-    this.dropRig();
+    this.dropRig(keep);
     if (!id) return;
     const D = this.S.drive, C = D.mods.cars;
     if (!C || !C.CARS.find(c => c.id === id)) return;
@@ -176,7 +184,7 @@ class Remote {
   }
   // a rig to draw this player's car with (loaded, or handed over: a car that was taken)
   setRig(rig, id) {
-    this.dropRig();
+    this.dropRig(!!(this.rig && this.rig !== rig));
     const D = this.S.drive;
     this.rig = rig; this.carId = id; this.proxy.rig = rig; this.proxy.len = rig.dims ? rig.dims.length : 4.6;
     this.doorOk = {}; this.doorAsk = {}; this.doors = [];
@@ -193,7 +201,7 @@ class Remote {
     if (!rig.object.parent) this.S.drive.scene.add(rig.object);
     rig.object.visible = true;
   }
-  dropRig() {
+  dropRig(keep) {
     const rig = this.rig;
     if (!rig) return;
     this.rig = null; this.proxy.rig = null;
@@ -201,8 +209,22 @@ class Remote {
     const D = this.S.drive;
     try { const R = D.occupants && D.occupants.rec(rig); if (R) D.occupants.release(R, this.person); } catch (e) {}
     if (rig.netRemote === this) rig.netRemote = null;
+    // kept (their old car, perhaps left standing): its crash log with it; let go after a few seconds if not adopted
+    if (keep) {
+      this.dropRetired();
+      this.retired = { rig, id: rig.id, log: this.rstAt ? (this.rstLog || []) : this.dmg.slice(), at: performance.now() };
+      this.rstAt = 0; this.rstLog = null;
+      return;
+    }
     try { if (D.damage) D.damage.reset(rig); } catch (e) {}
     if (rig.dispose) rig.dispose(); else if (rig.object.parent) rig.object.parent.remove(rig.object);
+  }
+  dropRetired() {
+    const T = this.retired; if (!T) return;
+    this.retired = null;
+    const D = this.S.drive;
+    try { if (D.damage) D.damage.reset(T.rig); } catch (e) {}
+    if (T.rig.dispose) T.rig.dispose(); else if (T.rig.object.parent) T.rig.object.parent.remove(T.rig.object);
   }
   // the crashes so far on this car, then each as it comes
   applyDamage() {
@@ -250,6 +272,13 @@ class Remote {
   }
 
   frame(dt, now) {
+    // a crash log reset that was a repair after all (still the same car 1.5 s on): the dents mended, any since put back
+    if (this.rstAt && now - this.rstAt > 1500) {
+      this.rstAt = 0; this.rstLog = null;
+      if (this.rig && this.carId === this.rstCar) { try { const Dm = this.S.drive.damage; if (Dm) Dm.reset(this.rig); } catch (e) {} this.rig._netApplied = 0; this.applyDamage(); }
+    }
+    // their old car, kept when they changed, and not the one they left standing: let go
+    if (this.retired && now - this.retired.at > 6000) this.dropRetired();
     if (!this.sample(now)) { this.hideAll(); return; }
     const s = this.st, D = this.S.drive;
     this.mode = s.m || 'car';
@@ -323,6 +352,7 @@ class Remote {
   dispose() {
     this.dead = true;
     try { this.jetsOff(true); } catch (e) {}
+    try { this.dropRetired(); } catch (e) {}
     this.dropRig();
     if (this.pending) { try { this.pending.rig.dispose(); } catch (e) {} this.pending = null; }
     for (const L of this.left || []) if (L) { L.dead = true; if (L.rig) L.rig.dispose(); }
@@ -548,7 +578,7 @@ export class Session {
     })();
     const sl = setInterval(() => this.sendLook(), 4000); this.undo.push(() => clearInterval(sl));
     // the traffic and the pedestrians shared (npcnet.js)
-    import('./npcnet.js?v=46').then(M => { if (this.dead) return; this.npc = new M.NpcNet(this); if (this.role !== undefined) this.npc.setRole(this.role); }).catch(e => console.warn('npcnet', e));
+    import('./npcnet.js?v=47').then(M => { if (this.dead) return; this.npc = new M.NpcNet(this); if (this.role !== undefined) this.npc.setRole(this.role); }).catch(e => console.warn('npcnet', e));
   }
 
   // where this player starts in the room: the room's place, a few car lengths along the road per player before
@@ -584,7 +614,11 @@ export class Session {
     if (D.car.rig !== this.myRig) {
       const was = this.myRig; this.myRig = D.car.rig;
       if (!this.adopting || this.adopting.rig !== D.car.rig) { this.myDmg = []; this.net.send({ t: 'ev', k: 'rst' }); }
-      else this.adopting = null;
+      else {
+        this.adopting = null;
+        // (a car taken from where another player left it: its dents as they were on our screen become our crash log)
+        if (this.leftLog) { this.myDmg = this.leftLog.slice(-25); this.leftLog = null; this.net.send({ t: 'ev', k: 'rst' }); for (const d of this.myDmg) this.net.send({ t: 'ev', k: 'imp', d }); }
+      }
       void was;
     }
     this.fn = (this.fn || 0) + 1;
@@ -836,8 +870,22 @@ export class Session {
   onEvent(m) {
     const R = this.remotes.get(m.from);
     if (m.k === 'imp' && R) { R.dmg.push(m.d); if (R.dmg.length > 60) { R.dmg.shift(); if (R.rig) R.rig._netApplied = Math.max(0, (R.rig._netApplied || 0) - 1); } R.applyDamage(); return; }
-    if (m.k === 'rst' && R) { R.dmg = []; if (R.rig) { R.rig._netApplied = 0; if (this.drive.damage) { try { this.drive.damage.reset(R.rig); } catch (e) {} } } return; }
+    // (a repair, or a new car: which, the next states say; the reset comes ahead of a new car, so the old one's dents are
+    // kept a moment in case it is the car they leave standing; Remote.frame mends it after 1.5 s if it is still theirs)
+    if (m.k === 'rst' && R) { if (!R.rstAt) { R.rstLog = R.dmg; R.rstCar = R.carId; } R.rstAt = performance.now(); R.dmg = []; if (R.rig) R.rig._netApplied = 0; return; }
     if (m.k === 'nimp') { if (this.npc) this.npc.impact(m.id, m.d); return; }
+    // one of our cars left standing was taken (takeLeft on their page): ours goes, their snapshots bring it back as theirs
+    if (m.k === 'door' && m.d && m.d.take !== undefined) {
+      if (m.d.take === this.me.id) {
+        const F = this.drive.onfoot;
+        if (F && F.parked) {
+          let best = -1, bd = 16;
+          F.parked.forEach((e, i) => { if (e.rig && e.rig.id === m.d.car) { const p = e.rig.object.position, d = (p.x - m.d.x) ** 2 + (p.z - m.d.z) ** 2; if (d < bd) { bd = d; best = i; } } });
+          if (best >= 0) { const e = F.parked.splice(best, 1)[0]; try { F.disposeLeft(e); } catch (er) {} this.lcKey = null; this.drive.hud.flash((R ? R.name : 'Someone') + ' took one of your cars'); }
+        }
+      } else { const O = this.remotes.get(m.d.take); if (O && O.left) for (const L of O.left) if (L && L.w && L.w[0] === m.d.car && Math.hypot(L.w[2] - m.d.x, L.w[4] - m.d.z) < 4) L.taken = true; }
+      return;
+    }
     // their paint scraped (drawn on our copy once its model is worked out)
     if (m.k === 'hit' && R && R.rig && m.d && Array.isArray(m.d.sc) && m.d.sc.length === 15) {
       const Dm = this.drive.damage, a = m.d.sc; if (!Dm || !Dm.scrapeMarks) return;
@@ -862,6 +910,31 @@ export class Session {
       const rig = R.rig; if (!rig || !rig.object.visible || !R.has || R.d > 30) continue;
       consider('remote', rig, R, Math.abs((R.st && R.st.lk && R.st.lk.sp) || 0));
     }
+    // the cars they left standing: nobody in them, so ours to take (their page lets it go: takeLeft)
+    for (const R of this.remotes.values()) for (const L of R.left || []) {
+      if (!L || !L.rig || L.taken || !L.rig.object.visible) continue;
+      consider('remoteLeft', L.rig, { R, L }, 0);
+    }
+  }
+  // one of another player's cars left standing, reached on foot: it becomes one of ours standing there (the rig with
+  // its dents), we get in, the owner's page lets its own go, and the room gets its crash log as ours
+  takeLeft(t) {
+    const D = this.drive, F = D.onfoot, R = t.ref && t.ref.R, L = t.ref && t.ref.L;
+    if (!R || !L || !L.rig || L.taken || !F) return;
+    L.taken = true;
+    const rig = L.rig, o = rig.object, w = L.w || [];
+    L.rig = null;
+    const fw = _v.copy(F_).applyQuaternion(o.quaternion), hd = (Math.atan2(fw.x, -fw.z) * 180 / Math.PI + 360) % 360;
+    const veh = new Vehicle(rig, F.physOf(rig.id));
+    const g = D.ground(o.position.x, o.position.z, o.position.y + 0.5);
+    veh.place(o.position.x, g ?? o.position.y, o.position.z, hd);
+    const e = F.addLeft({ rig, vehicle: veh, id: rig.id, npc: !!rig.npc, kind: 'left' });
+    // (its crash log goes with it once we drive it: frame's new car check takes adopting as a car already dented)
+    this.adopting = { rig }; this.leftLog = (L.log || []).slice();
+    this.net.send({ t: 'ev', k: 'door', d: { take: R.id, car: rig.id, x: r2(w[2] ?? o.position.x), z: r2(w[4] ?? o.position.z) } });
+    try { F.startEnter({ kind: 'left', rig, ref: e, d: 0, speed: 0, upY: 1 }); } catch (er) { console.warn('take left', er); }
+    this.stolen = { e, rig, at: performance.now() };
+    D.hud.flash('You took ' + R.name + "'s car");
   }
   steal(t) {
     const R = t.ref, D = this.drive, F = D.onfoot;
@@ -993,7 +1066,7 @@ export class Session {
         D.loadingArea = true;
         D.hud.loading('Going to ' + m.name, 0.4);
         try { await D.loadArea(tx, tz); } finally { D.loadingArea = false; }
-        try { if (D.world.heights && D.world.heights.want) { const { toLatLon } = await import('./geo.js?v=46'); const g = toLatLon(new THREE.Vector3(tx, 0, tz)); await D.world.heights.want(g.lat, g.lon, 600); } } catch (e) {}
+        try { if (D.world.heights && D.world.heights.want) { const { toLatLon } = await import('./geo.js?v=47'); const g = toLatLon(new THREE.Vector3(tx, 0, tz)); await D.world.heights.want(g.lat, g.lon, 600); } } catch (e) {}
         D.hud.loading(null);
       }
       // (in the air only if they are flying and what we drive flies too: a car comes down on the road under them)
