@@ -17,11 +17,25 @@ function inRing(x, z, r) {
 }
 
 let MAT = null;
+const DROPS = Array.from({ length: 16 }, () => new THREE.Vector4(0, 0, -100, 0));
+let dropI = 0;
+// the page's underwater veil, made once
+let VEIL = null;
+function veil() {
+  if (VEIL) return VEIL;
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:5;opacity:0;transition:opacity .15s;' +
+    'background:radial-gradient(ellipse at 50% 20%, rgba(70,140,150,.45), rgba(10,45,55,.82));backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)';
+  document.body.appendChild(d);
+  return (VEIL = d);
+}
 function material() {
   if (MAT) return MAT;
-  const m = new THREE.MeshStandardMaterial({ color: 0x1d3a44, roughness: 0.08, metalness: 0.0, envMapIntensity: 1.0 });
+  // (both sides: from under the water its surface shows too)
+  const m = new THREE.MeshStandardMaterial({ color: 0x1d3a44, roughness: 0.08, metalness: 0.0, envMapIntensity: 1.0, side: THREE.DoubleSide });
   m.onBeforeCompile = sh => {
     sh.uniforms.uTime = { value: 0 };
+    sh.uniforms.uDrops = { value: DROPS };
     m.userData.shader = sh;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
@@ -30,6 +44,7 @@ function material() {
       .replace('#include <common>', `#include <common>
 varying vec3 vWPos;
 uniform float uTime;
+uniform vec4 uDrops[16];   // where something in the water stirred it: x, z, the time it did, how hard
 // the slope of a few waves from different directions (a, k: height and wave number; w: speed)
 vec2 waveSlope(vec2 p, float t) {
   vec2 g = vec2(0.0);
@@ -48,6 +63,17 @@ vec2 waveSlope(vec2 p, float t) {
     // small waves, calmer far away (where the pixels would only shimmer)
     float far = clamp(length(vWPos - cameraPosition) / 180.0, 0.0, 1.0);
     vec2 sl = waveSlope(vWPos.xz, uTime) * mix(1.0, 0.25, far);
+    // rings going out from where a car or a person stirs the water (2.2 m/s, gone in about 4 s)
+    for (int i = 0; i < 16; i++) {
+      vec4 d = uDrops[i];
+      if (d.w <= 0.0) continue;
+      float age = uTime - d.z;
+      if (age < 0.0 || age > 4.5) continue;
+      vec2 dv = vWPos.xz - d.xy; float r = length(dv) + 1e-3;
+      float front = 2.2 * age, x = r - front;
+      float env = exp(-x * x / 1.6) * exp(-age * 0.9) * d.w / (1.0 + r * 0.35);
+      sl += (dv / r) * cos(x * 3.2) * env * 0.55;
+    }
     vec3 nW = normalize(vec3(-sl.x, 1.0, -sl.y));
     normal = normalize(mat3(viewMatrix) * nW);
   }`);
@@ -76,7 +102,11 @@ function levelOf(a, groundAt, focus) {
   }
   if (!hs.length) return null;
   hs.sort((p, q) => p - q);
-  return hs[Math.floor(hs.length * 0.3)] + 0.18;
+  // (a pond smaller than the elevation data's cells has its banks in it: taken higher, so the whole of it shows)
+  let A = 0; for (let i = 0, j = o.length - 1; i < o.length; j = i++) A += (o[j][0] + o[i][0]) * (o[j][1] - o[i][1]);
+  const small = Math.abs(A) / 2 < 60000;
+  const lo = hs[Math.floor(hs.length * 0.3)] + 0.18;
+  return small ? Math.max(lo, hs[Math.floor(hs.length * 0.85)] + 0.06) : lo;
 }
 
 export function build(data, ctx) {
@@ -84,12 +114,17 @@ export function build(data, ctx) {
   group.name = 'water';
   group.matrixAutoUpdate = false;
   const groundAt = ctx.groundAt, focus = ctx.focus || [0, 0];
-  const pos = [], idx = [];
+  const pos = [], idx = [], kept = [];
   let n = 0;
+  // sea level here (the elevation data's 0: the sea, a bay, a harbour; its depths are the sea floor, not the water)
+  const sea = ctx.seaY ? ctx.seaY(focus[0], focus[1]) : null;
   for (const a of (data && data.areas) || []) {
     if (a.kind !== 'water' || !a.outer || a.outer.length < 3) continue;
-    const y = levelOf(a, groundAt, focus);
+    const ocean = a.tags && a.tags.water === 'ocean';
+    let y = ocean && sea != null ? sea + 0.12 : levelOf(a, groundAt, focus);
     if (y == null) continue;
+    // (water lower than the sea is the sea floor of a bay or a harbour mapped as water: the water is at sea level)
+    if (sea != null && y < sea + 0.12) y = sea + 0.12;
     try {
       const outer = a.outer.map(p => new THREE.Vector2(p[0], p[1]));
       const holes = (a.holes || []).filter(h => h && h.length >= 3).map(h => h.map(p => new THREE.Vector2(p[0], p[1])));
@@ -97,6 +132,9 @@ export function build(data, ctx) {
       const pts = outer.concat(...holes), base = pos.length / 3;
       for (const p of pts) pos.push(p.x, y, p.y);
       for (const t of tris) idx.push(base + t[0], base + t[2], base + t[1]);
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (const p of a.outer) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < z0) z0 = p[1]; if (p[1] > z1) z1 = p[1]; }
+      kept.push({ y, outer: a.outer, holes: a.holes || [], bb: [x0, z0, x1, z1] });
       n++;
     } catch (e) { /* a ring that cannot be cut into triangles */ }
   }
@@ -112,12 +150,43 @@ export function build(data, ctx) {
   mesh.name = 'water';
   mesh.receiveShadow = false; mesh.castShadow = false;
   mesh.matrixAutoUpdate = false;
-  mesh.onBeforeRender = () => { const sh = MAT && MAT.userData.shader; if (sh) sh.uniforms.uTime.value = performance.now() / 1000; };
+  // the water's level at x, z, or null where there is none
+  const levelAt = (x, z) => {
+    for (const k of kept) { const b = k.bb; if (x < b[0] || x > b[2] || z < b[1] || z > b[3]) continue; if (inRing(x, z, k.outer) && !k.holes.some(h => inRing(x, z, h))) return k.y; }
+    return null;
+  };
+  const last = new Map();
+  let wasUnder = false;
+  mesh.onBeforeRender = (renderer, scene, camera) => {
+    const now = performance.now() / 1000;
+    const sh = MAT && MAT.userData.shadow, s2 = MAT && MAT.userData.shader;
+    void sh;
+    if (s2) s2.uniforms.uTime.value = now;
+    // whatever is in the water and moving stirs it: a ring every fifth of a second, harder the faster it goes
+    const list = ctx.bodies ? ctx.bodies() : [];
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i]; if (!b) continue;
+      const y = levelAt(b.x, b.z);
+      if (y == null || b.y > y + 0.6 || b.y < y - 3) { last.delete(i); continue; }
+      const L = last.get(i);
+      if (L && now - L.t < 0.2) continue;
+      const moved = L ? Math.hypot(b.x - L.x, b.z - L.z) / Math.max(0.05, now - L.t) : 3;
+      last.set(i, { x: b.x, z: b.z, t: now });
+      if (moved < 0.3 && L) continue;
+      DROPS[dropI].set(b.x, b.z, now, Math.min(1.6, 0.35 + moved * 0.12)); dropI = (dropI + 1) % DROPS.length;
+    }
+    // under the water: everything seen through blue-green water, a little blurred (an overlay on the page)
+    const cy = levelAt(camera.position.x, camera.position.z), under = cy != null && camera.position.y < cy - 0.05;
+    if (under !== wasUnder) { wasUnder = under; veil().style.opacity = under ? '1' : '0'; }
+  };
+  // (always drawn: the fog's change under water and the rings happen here)
+  mesh.frustumCulled = false;
   group.add(mesh);
   if (ctx.scene) ctx.scene.add(group);
   return {
     group, stats: { areas: n, tris: idx.length / 3 },
-    dispose() { if (group.parent) group.parent.remove(group); g.dispose(); },
+    levelAt,
+    dispose() { if (group.parent) group.parent.remove(group); g.dispose(); if (wasUnder) veil().style.opacity = '0'; },
   };
 }
 export default { build };
