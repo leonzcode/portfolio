@@ -13,7 +13,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south.
 import * as THREE from 'three';
-import { buildTunnels } from './tunnels.js?v=37';
+import { buildTunnels } from './tunnels.js?v=38';
 
 const BASE = new URL('../', import.meta.url).href;
 const PW = 0.32;                // parapet thickness
@@ -25,7 +25,7 @@ const RAIL_TOP = 1.15;          // the parapet's collision reaches this far over
 
 let MATS = null;
 function tex(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=37');
+  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=38');
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
   return t;

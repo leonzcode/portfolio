@@ -17,7 +17,7 @@
 // while typing), Nominatim (Enter and reverse lookups, at most one request a second, as its policy asks; its
 // policy forbids type-ahead, which is why suggestions come from Photon), Overpass (roads you can drive).
 
-const CSS_HREF = new URL('../css/mapui.css?v=37', import.meta.url).href;
+const CSS_HREF = new URL('../css/mapui.css?v=38', import.meta.url).href;
 
 const TILES = {
   // CARTO's keyless raster basemaps now answer every request with an "API key required" picture (checked

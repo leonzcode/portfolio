@@ -8,6 +8,7 @@
 // Seats come from the catalogue (spec.seats, hip points in the car's frame: forward -z, right +x, up +y), else are
 // guessed from the car's size and its driver's eye point.
 import * as THREE from 'three';
+const _hq = new THREE.Quaternion(), _hm = new THREE.Matrix4();
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4(), _c = new THREE.Vector3(), _e = new THREE.Euler();
 const UP = new THREE.Vector3(0, 1, 0), X_AXIS = new THREE.Vector3(1, 0, 0);
@@ -25,7 +26,7 @@ export function loadPeople(drive) {
   Hp = (async () => {
     if (!/[?&]standin/.test(location.search)) {
       try {
-        const M = await import('./people.js?v=37');
+        const M = await import('./people.js?v=38');
         if (M && M.People && typeof M.People.createPerson === 'function') {
           const P = M.People;
           await P.load(drive && drive.G ? drive.G.renderer : undefined, drive ? drive.camera : undefined);
@@ -36,7 +37,7 @@ export function loadPeople(drive) {
         }
       } catch (e) { console.warn('people module', e && e.message); }
     }
-    const M = await import('./standin.js?v=37');
+    const M = await import('./standin.js?v=38');
     H = wrapStandin(M);
     return H;
   })();
@@ -441,11 +442,17 @@ export class Occupants {
     const p = o.person; if (!p.ik) return;
     const rig = R.rig;
     if (!o.ikL) { o.ikL = new THREE.Vector3(); o.ikR = new THREE.Vector3(); }
-    const st = rig && rig._steer && rig._steer.node;
-    if (st) {
+    const S = rig && rig._steer, st = S && S.node;
+    if (st && st.parent) {
       st.updateWorldMatrix(true, false);
       const d = st.userData.diameter || 0.38;
-      o.ikL.set(-d * 0.46, d * 0.1, 0.02).applyMatrix4(st.matrixWorld); o.ikR.set(d * 0.46, d * 0.1, 0.02).applyMatrix4(st.matrixWorld);
+      /* the hands go round with the wheel only so far, as a driver's stay near a quarter to three and let the wheel
+         slide through them: the wheel turns more than once each way at full lock, and hands held to the rim the whole
+         way wound the arms round each other */
+      const a = Math.max(-0.9, Math.min(0.9, S.angle || 0));
+      _hq.setFromAxisAngle(S.axis, a).multiply(S.q0);
+      _hm.compose(st.position, _hq, st.scale).premultiply(st.parent.matrixWorld);
+      o.ikL.set(-d * 0.46, d * 0.1, 0.02).applyMatrix4(_hm); o.ikR.set(d * 0.46, d * 0.1, 0.02).applyMatrix4(_hm);
     } else {
       const s = R.seats[o.seat], root = this.rootOf(R);
       root.updateWorldMatrix(true, false);

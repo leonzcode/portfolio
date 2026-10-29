@@ -8,8 +8,8 @@
 //                         roadsMask, buildings, roads, centre: [x, z], radius, lean: [kx, kz] })
 //   t.group, t.ready (Promise of stats), t.dispose()
 import * as THREE from 'three';
-import { frame } from './geo.js?v=37';
-import { detect } from './treedetect.js?v=37';
+import { frame } from './geo.js?v=38';
+import { detect } from './treedetect.js?v=38';
 
 const D2R = Math.PI / 180;
 function hashf(n, salt = 0) {
@@ -213,7 +213,7 @@ function getWorker() {
   if (WORKER === false) return null;
   if (!WORKER) {
     try {
-      WORKER = new Worker(new URL('./treeworker.js?v=37', import.meta.url), { type: 'module' });
+      WORKER = new Worker(new URL('./treeworker.js?v=38', import.meta.url), { type: 'module' });
       WORKER.onmessage = (e) => { const j = jobs.get(e.data.id); if (!j) return; jobs.delete(e.data.id); if (e.data.error) j.reject(new Error(e.data.error)); else j.resolve(e.data.res); };
       WORKER.onerror = () => { WORKER = false; for (const j of jobs.values()) j.reject(new Error('worker failed')); jobs.clear(); };
     } catch (e) { WORKER = false; return null; }
@@ -494,6 +494,9 @@ export function build(src, opts = {}) {
       else if (kind === 'conifer') { r = r || 2.2 + h1 * 1.8; H = H || Math.max(8, r * 3.2 + h2 * 4); }
       else { r = r || 2.6 + h1 * 2.2; H = H || r * 2.0 + 2.0 + h2 * 2; }
       r = Math.min(r, 9); H = Math.min(Math.max(H, r * 1.4), 45);
+      // a broadleaf tree's crown starts at least about 2.5 m up its trunk, as street and park trees do (the leaf cards reach past the crown's radius; a height from the
+      // picture's guess could be as little as 1.4 crowns across, which put the crown's foot under the ground: a bush)
+      if (kind === 'broad') H = Math.min(Math.max(H, r * 2.3 + 2.6), 45);
       const g = groundAt(t.x, t.z);
       if (g == null) continue;
       groups[kind].push({ x: t.x, z: t.z, g, r, H, h1, h2, rot: h0 * Math.PI * 2, col: t.col || null });
@@ -516,10 +519,11 @@ export function build(src, opts = {}) {
       mesh.customDepthMaterial = depthMat(tex, kind);
       for (let i = 0; i < arr.length; i++) {
         const t = arr[i], rc = t.r;
-        const cy = kind === 'conifer' ? t.g + t.H * 0.5 + 0.8 : t.g + t.H - t.r * 0.92;
+        // (a conifer's crown from about 2 m up its trunk: from 1.3 m, with the cards' overreach, it sat on the grass)
+        const cy = kind === 'conifer' ? t.g + t.H * 0.5 + 1.4 : t.g + t.H - t.r * 0.92;
         dummy.position.set(t.x, cy, t.z);
         dummy.rotation.set(0, t.rot, 0);
-        if (kind === 'conifer') dummy.scale.set(rc, (t.H * 0.92 - 1) / 2, rc);
+        if (kind === 'conifer') dummy.scale.set(rc, (t.H * 0.86 - 1.6) / 2, rc);
         else dummy.scale.set(rc * (1.05 + t.h2 * 0.2), rc * (0.8 + t.h1 * 0.2), rc * (1.05 + t.h1 * 0.2));
         dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix);
         if (t.col) {
@@ -569,8 +573,9 @@ export function build(src, opts = {}) {
         else { rad = 0.1 + t.r * 0.045; top = t.H - t.r * 0.9; }
         dummy.position.set(t.x, t.g - 0.3, t.z); dummy.rotation.set(0, t.rot, 0); dummy.scale.set(rad, top + 0.3, rad);
         dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix);
-        const v = 0.85 + t.h1 * 0.25;
-        if (k === 'p') col.setRGB(1.0, 0.95, 0.85); else col.setRGB(v, v * 0.97, v * 0.95);
+        // (bark lighter than the picture alone: in shade it read near black)
+        const v = 1.45 + t.h1 * 0.4;
+        if (k === 'p') col.setRGB(1.0, 0.95, 0.85); else col.setRGB(v, v * 0.94, v * 0.88);
         mesh.setColorAt(i, col);
         if (collide && collide.addCircle && !disposed) { try { const h = collide.addCircle(t.x, t.z, Math.max(0.25, rad), t.g - 0.5, t.g + top, 'tree'); if (h != null) handles.push(h); } catch (e) {} }
         if ((i & 511) === 0) await slice('L657');

@@ -10,7 +10,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { fixWheels, addExtraWheels, updateExtraWheels } from './wheels.js?v=37';
+import { fixWheels, addExtraWheels, updateExtraWheels } from './wheels.js?v=38';
 
 const MODELS = new URL('../models/', import.meta.url).href;
 const DRACO = new URL('../vendor/three/addons/libs/draco/gltf/', import.meta.url).href;
@@ -180,7 +180,7 @@ function loader() {
 const templates = new Map(); // file -> Promise<{ scene, info }>
 function loadTemplate(file) {
   if (!templates.has(file)) {
-    templates.set(file, loader().loadAsync(MODELS + file + '?v=37').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
+    templates.set(file, loader().loadAsync(MODELS + file + '?v=38').then(g => prepareTemplate(g.scene)).catch(e => { templates.delete(file); throw e; }));
   }
   return templates.get(file);
 }
@@ -353,7 +353,7 @@ function lampMaterial(src, role, level) {
 export async function makeEnvironment(renderer, { file = 'env/wide_street_01_1k.hdr' } = {}) {
   const pm = new THREE.PMREMGenerator(renderer);
   try {
-    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=37');
+    const hdr = await new HDRLoader().loadAsync(MODELS + file + '?v=38');
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     const env = pm.fromEquirectangular(hdr).texture;
     env.userData.source = hdr; // the garage shows it as a backdrop
@@ -996,6 +996,7 @@ class CarRig {
     if (this._xw.length) updateExtraWheels(this._xw, s, aL, aR);
     // steering wheel about its column
     if (this._steer) {
+      this._steer.angle = s.steeringWheel || 0;
       _q.setFromAxisAngle(this._steer.axis, s.steeringWheel || 0);
       this._steer.node.quaternion.copy(_q).multiply(this._steer.q0);
     }
