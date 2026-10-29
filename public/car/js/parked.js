@@ -4,7 +4,7 @@
 // parts are one InstancedMesh for all its parked copies, near ones with the detailed parts, the rest with the far
 // ones, so a hundred parked cars cost about what one moving car does.
 import * as THREE from 'three';
-import { frame } from './geo.js?v=38';
+import { frame } from './geo.js?v=39';
 
 const MODELS = ['fairheaven', 'milano', 'shvan', 'conquer', 's10', 'fairheaven', 'milano'];
 // outside North America no pickups or boxy American vans: saloons and hatchbacks
