@@ -23,9 +23,9 @@
    lid is shut again the block takes it back, and the moving one is kept a
    few frames more, so there is never a moment with no lid.
 --------------------------------------------------------------------------- */
-import { BLOCKS } from '../blocks.js?v=117';
-import { SHAPES, chestParts, fixUV, turn, rotate } from '../models.js?v=117';
-import { intAttribute } from '../render/blockmesh.js?v=117';
+import { BLOCKS } from '../blocks.js?v=118';
+import { SHAPES, chestParts, fixUV, turn, rotate } from '../models.js?v=118';
+import { intAttribute } from '../render/blockmesh.js?v=118';
 const THREE = window.THREE;
 
 let ACTIVE = null;                 // the dimension being played (each has its own simulation)
@@ -42,6 +42,8 @@ export function boxOpened(x, y, z, screen, partner) {
   const prev = screen.onClosed;
   screen.onClosed = () => { if (prev) prev(); for (const [a, b, c] of spots) L.close(a, b, c); };
 }
+// a chest someone has open here, or whose lid is still moving (copper chests do not age then, as the game's)
+export function boxBusy(x, y, z) { const e = ACTIVE && ACTIVE.list.get(key(x, y, z)); return !!e && (e.viewers > 0 || e.open > 0); }
 // a bell rang, struck by the player from the side whose face (0-5, as models.js numbers them) was hit; the
 // simulation hears it as it hears a powered one (sim.onBell: its sound), then it swings
 export function bellRang(x, y, z, face) {

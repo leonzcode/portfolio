@@ -61,16 +61,17 @@
    What it remembers (sign text, food on campfires, framed items, discs, vaults, what pots, shelves and lecterns
    hold) is kept per dimension (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=117';
-import { lightNear } from './lightlevel.js?v=117';
-import { glints } from './render/armor.js?v=117';
-import { setGlint } from './render/glint.js?v=117';
-import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=117';
-import { potWobbled } from './sim/lids.js?v=117';
-import { BookScreen } from './ui/book.js?v=117';
-import { wantBook } from './entities/tablebook.js?v=117';
-import { cookingRecipe } from './crafting.js?v=117';
-import { hiveUse } from './entities/hives.js?v=117';
+import { B, BLOCKS } from './blocks.js?v=118';
+import { lightNear } from './lightlevel.js?v=118';
+import { glints } from './render/armor.js?v=118';
+import { setGlint } from './render/glint.js?v=118';
+import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=118';
+import { potWobbled } from './sim/lids.js?v=118';
+import { BookScreen } from './ui/book.js?v=118';
+import { wantBook } from './entities/tablebook.js?v=118';
+import { cookingRecipe } from './crafting.js?v=118';
+import { hiveUse } from './entities/hives.js?v=118';
+import { MAPS, isFilledMap, framePicture } from './maps.js?v=118';
 
 /* Other modules keep state of their own with a dimension's block entities (struct/trials.js: a trial
    spawner's cooldown): registerExtra(k, { save(details) -> entries with that k, load(details, entry), reset(details) }). */
@@ -259,7 +260,7 @@ export class Details {
     if (e.rewarded || e.queue.length) return false;
     e.rewarded = true; e.at = this.ticks + 14; e.unlockUntil = e.at;
     if (!h.creative) h.inv.takeSelected(1);
-    import('./struct/loot.js?v=117').then(L => import('./containers.js?v=117').then(C => {
+    import('./struct/loot.js?v=118').then(L => import('./containers.js?v=118').then(C => {
       const table = 'trial_chambers/' + (ominous ? 'reward_ominous' : 'reward');
       // (the game's getRandomItems: the stacks as drawn, one thrown out at a time, never shuffled or split as a chest's are)
       for (const r of L.rollItems(table, (Math.random() * 2147483647) | 0)) { const st = C.lootStack(r); if (st) e.queue.push(st); }
@@ -660,12 +661,14 @@ export class Details {
     for (const e of this.map.values()) {
       if (!e.meshes) continue;
       // a frame's item takes the light again when it changes (a torch put down or broken nearby)
+      if (e.k === 'frame' && e.glow && e.mapMesh) { this._mapLight(e, day); continue; }
       if (e.k === 'frame' && !e.glow) {
         const lv = this._lightPacked(e);
         if (lv !== e.lv) {
           e.lv = lv;
-          for (const mesh of e.meshes) { const L = mesh.geometry.attributes.aL; for (let k = 0; k < L.count; k++) { L.array[k * 4] = lv >> 8; L.array[k * 4 + 1] = lv & 255; } L.needsUpdate = true; }
+          for (const mesh of e.meshes) { const L = mesh.geometry.attributes.aL; if (!L) continue; for (let k = 0; k < L.count; k++) { L.array[k * 4] = lv >> 8; L.array[k * 4 + 1] = lv & 255; } L.needsUpdate = true; }
         }
+        if (e.mapMesh) this._mapLight(e, day);
         continue;
       }
       for (const mesh of e.meshes) {
@@ -674,6 +677,14 @@ export class Details {
         mesh.material.color.setRGB(v, v, v);
       }
     }
+  }
+  /* A framed map: its picture drawn again when the map changed (filled in by whoever holds a copy here), and lit
+     as sign text is (a glow frame's at full light) */
+  _mapLight(e, day) {
+    const mesh = e.mapMesh, m = mesh.userData.map;
+    if (m.ver !== mesh.userData.ver) { mesh.userData.ver = m.ver; framePicture(m, mesh.material.map.image); mesh.material.map.needsUpdate = true; }
+    const v = e.glow ? 1 : this._bright(e, day);
+    mesh.material.color.setRGB(v, v, v);
   }
   _bright(e, day) {
     // the sign's own light (js/lightlevel.js: sky light by the time of day, or the block light there), as the game lights
@@ -690,7 +701,7 @@ export class Details {
       if (m.userData.text) { this.group.remove(m); m.geometry.dispose(); m.material.map.dispose(); m.material.dispose(); }
       else if (this.drops) { this.drops.group.remove(m); m.geometry.dispose(); }
     }
-    e.meshes = null;
+    e.meshes = null; e.mapMesh = null;
   }
   _show(e) {
     this._unshow(e);
@@ -759,6 +770,27 @@ export class Details {
     };
     const fid = I[e.glow ? 'glow_item_frame' : 'item_frame'];
     if (fid !== undefined) put(fid, -0.5 + 0.5 / 16, 12 / 14, 0);
+    /* A filled map is its picture over the whole face, a sixteenth out from the wall, turned a quarter for every
+       two turns of the frame, as the game's ItemFrameRenderer draws it (the X and the other marks on it, nobody's
+       pointer). A map this page never had is made from what the stack carries (maps.js forStack). */
+    const map = e.item && isFilledMap(e.item) ? MAPS.forStack(e.item, w) : null;
+    if (map) {
+      const cv = framePicture(map, Object.assign(document.createElement('canvas'), { width: 256, height: 256 }));
+      const tex = new THREE.CanvasTexture(cv);
+      tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+      if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.1, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, fog: false });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+      const M = new THREE.Matrix4().makeTranslation(c.x + n.x * (-0.5 + 1 / 16), c.y + n.y * (-0.5 + 1 / 16), c.z + n.z * (-0.5 + 1 / 16));
+      M.multiply(basis).multiply(new THREE.Matrix4().makeRotationZ(-((e.rot | 0) % 4) * Math.PI / 2));
+      mesh.matrixAutoUpdate = false; mesh.matrix.copy(M); mesh.matrixWorld.copy(M);
+      mesh.userData.text = true; mesh.userData.map = map; mesh.userData.ver = map.ver;
+      mesh.renderOrder = 2;
+      this.group.add(mesh);
+      e.meshes.push(mesh); e.mapMesh = mesh;
+      this._mapLight(e, this.daylight ? this.daylight() : 1);
+      return;
+    }
     if (e.item) {
       const g = D._base(e.item.id);
       if (g) put(e.item.id, g.flat ? -0.5 + 1.5 / 16 : -0.5 + 1 / 16 + 0.125, g.flat ? 0.5 : 0.25, e.rot);

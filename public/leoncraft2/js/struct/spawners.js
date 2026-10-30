@@ -21,14 +21,14 @@
    each spawner near the player turns slowly inside its cage, small (drawn
    by the mobs' renderer from its displays list, never ticked or hit).
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=117';
-import { BIOMES } from '../biomes.js?v=117';
-import { Y0, CH } from '../world-const.js?v=117';
-import { trialSpawners } from './trials.js?v=117';
-import { Hearts } from '../entities/hearts.js?v=117';
-import { Raids } from '../entities/raids.js?v=117';
-import { hives } from '../entities/hives.js?v=117';
-import { Catalysts } from '../entities/catalyst.js?v=117';
+import { B } from '../blocks.js?v=118';
+import { BIOMES } from '../biomes.js?v=118';
+import { Y0, CH } from '../world-const.js?v=118';
+import { trialSpawners } from './trials.js?v=118';
+import { Hearts } from '../entities/hearts.js?v=118';
+import { Raids } from '../entities/raids.js?v=118';
+import { hives } from '../entities/hives.js?v=118';
+import { Catalysts } from '../entities/catalyst.js?v=118';
 
 // what a spawner can hold, by its meta (1 up): append only, saves keep the numbers
 export const SPAWNABLE = ['zombie', 'skeleton', 'spider', 'cave_spider', 'blaze', 'creeper', 'husk', 'stray', 'drowned', 'magma_cube', 'silverfish', 'endermite',
@@ -159,7 +159,7 @@ function nearby(E, s) {
 /* window.__lc2.structures: ask the workers (they hold the generator). */
 let roll = null, LOOT = null;
 // the loot rolling (struct/loot.js), fetched once; after that a chest is filled the moment it opens
-const loadLoot = () => roll || (roll = import('./loot.js?v=117').then(m => { LOOT = m; return m.rollLoot; }).catch(() => { roll = null; return null; }));
+const loadLoot = () => roll || (roll = import('./loot.js?v=118').then(m => { LOOT = m; return m.rollLoot; }).catch(() => { roll = null; return null; }));
 export function structuresApi(getWorld, getPlayer) {
   // fetched while the game starts, so the first chest opened is not left empty for a moment
   setTimeout(loadLoot, 4000);

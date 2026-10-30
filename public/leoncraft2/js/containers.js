@@ -38,12 +38,12 @@
    pair seen from behind it (its partner is clockwise of its facing), 2 the
    right (partner anticlockwise; this one holds the top rows), 3 single.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, OPAQUE } from './blocks.js?v=117';
-import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=117';
-import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=117';
-import { cookingRecipe, remainderOf } from './crafting.js?v=117';
-import { fire } from './dispense.js?v=117';
-import { MAPS, fillPreview } from './maps.js?v=117';
+import { B, BLOCKS, OPAQUE } from './blocks.js?v=118';
+import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=118';
+import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=118';
+import { cookingRecipe, remainderOf } from './crafting.js?v=118';
+import { fire } from './dispense.js?v=118';
+import { MAPS, fillPreview } from './maps.js?v=118';
 
 export const SIZES = { chest: 27, trapped_chest: 27, copper_chest: 27, barrel: 27, shulker_box: 27, furnace: 3, smoker: 3, blast_furnace: 3,
   dispenser: 9, dropper: 9, crafter: 9, hopper: 5, brewing_stand: 5 };
@@ -634,8 +634,9 @@ export function explorerMap(e, x, z) {
     if (!f || f.x === undefined) return null;
     const w = L.world, m = MAPS.create(f.x, f.z, e.zoom !== undefined ? e.zoom : 2, (w && w.dim) || 'overworld');
     m.marks = [{ x: f.x, z: f.z, type: e.deco || 'red_x' }];
+    m.unlimited = true;
     fillPreview(m, w);
-    const st = { id: I.filled_map, count: 1, map: m.id };
+    const st = MAPS.tag({ id: I.filled_map, count: 1 }, m);
     if (MAP_TITLE[kind]) st.title = MAP_TITLE[kind];
     return st;
   }, () => null);

@@ -28,28 +28,28 @@
    wear on mobs (wearHeld), worn-out tools break into pieces, and Mending
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=117';
-import { setLodestoneCheck } from './dials.js?v=117';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=117';
-import { breakTicks, wearFor } from './mining.js?v=117';
-import { blockDrops } from './loot.js?v=117';
-import { containerKind, spill } from './containers.js?v=117';
-import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=117';
-import { isPotion, drinkPotion } from './brewing.js?v=117';
-import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=117';
-import { BeaconScreen } from './ui/beacon.js?v=117';
-import { STORE as BEACON_POWERS } from './sim/beacon.js?v=117';
-import { MerchantScreen } from './ui/merchant.js?v=117';
-import { hives } from './entities/hives.js?v=117';
-import { LoomScreen } from './ui/loom.js?v=117';
-import { CartographyScreen } from './ui/cartography.js?v=117';
-import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=117';
-import { countShelves } from './enchanting.js?v=117';
-import { wear } from './ui/inventory.js?v=117';
-import { BookScreen } from './ui/book.js?v=117';
-import { breaksInCreative } from './modes.js?v=117';
-import { boxOpened, bellRang } from './sim/lids.js?v=117';
-import { Account } from './net/account.js?v=117';
+import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=118';
+import { setLodestoneCheck } from './dials.js?v=118';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=118';
+import { breakTicks, wearFor } from './mining.js?v=118';
+import { blockDrops } from './loot.js?v=118';
+import { containerKind, spill } from './containers.js?v=118';
+import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=118';
+import { isPotion, drinkPotion } from './brewing.js?v=118';
+import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=118';
+import { BeaconScreen } from './ui/beacon.js?v=118';
+import { STORE as BEACON_POWERS } from './sim/beacon.js?v=118';
+import { MerchantScreen } from './ui/merchant.js?v=118';
+import { hives } from './entities/hives.js?v=118';
+import { LoomScreen } from './ui/loom.js?v=118';
+import { CartographyScreen } from './ui/cartography.js?v=118';
+import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=118';
+import { countShelves } from './enchanting.js?v=118';
+import { wear } from './ui/inventory.js?v=118';
+import { BookScreen } from './ui/book.js?v=118';
+import { breaksInCreative } from './modes.js?v=118';
+import { boxOpened, bellRang } from './sim/lids.js?v=118';
+import { Account } from './net/account.js?v=118';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // what a full bucket pours out (the fish buckets are water with a fish in it)
@@ -365,6 +365,9 @@ export class Hands {
       const m = w.meta(hit.x, hit.y, hit.z);
       w.set(hit.x, hit.y, hit.z, B[to], m);
       if (d.shape === 'door') { const oy = m & 8 ? -1 : 1; if (w.get(hit.x, hit.y + oy, hit.z) === d.id) w.set(hit.x, hit.y + oy, hit.z, B[to], w.meta(hit.x, hit.y + oy, hit.z)); }
+      // (a large copper chest's other half takes the same block, as the game's CopperChestBlock.updateShape has it)
+      const p = d.shape === 'chest' && this.containers ? this.containers.partner(hit.x, hit.y, hit.z) : null;
+      if (p && w.get(p[0], p[1], p[2]) === d.id) w.set(p[0], p[1], p[2], B[to], w.meta(p[0], p[1], p[2]));
     };
     /* a compass on a lodestone points at it from now on: the compass itself if it is alone
        (in survival), else a new one, the old stack one fewer */
@@ -624,7 +627,7 @@ export class Hands {
   // an empty map used: a map of the square you stand in, in its place
   newMap() {
     const p = this.player, m = MAPS.create(Math.floor(p.pos.x), Math.floor(p.pos.z), 0, this.world.dim || 'overworld');
-    const st = { id: I.filled_map, count: 1, map: m.id };
+    const st = MAPS.tag({ id: I.filled_map, count: 1 }, m);
     if (this.creative) this.inv.placeBack(st);
     else { const s = this.held; if (s.count <= 1) this.inv.slots[this.inv.selected] = st; else { s.count--; this.inv.placeBack(st); } }
     this.inv.changed();
@@ -634,9 +637,17 @@ export class Hands {
   }
   // maps held in either hand fill in as you go, and the HUD shows them held up
   mapsTick() {
-    for (const st of [this.held, this.inv.offhand]) if (isFilledMap(st)) MAPS.update(st.map, this.world, this.player);
+    for (const st of [this.held, this.inv.offhand]) {
+      if (!isFilledMap(st)) continue;
+      const m = MAPS.forStack(st, this.world);
+      // (a map made before stacks carried its head gets it, so it can be handed on)
+      if (m && !st.mapd && m.id === st.map) { st.mapd = m.head(); this.inv.changed(); }
+      MAPS.update(m, this.world, this.player);
+    }
+    // (made first: compared while both were still undefined, the HUD was never given it and no map was ever drawn held)
+    if (!this.underHud) this.underHud = (g, now) => drawHeldMaps(g, now, this.inv, this.player, this.world);
     const hud = this.gui && this.gui.hud;
-    if (hud && hud.under !== this.underHud) { hud.under = this.underHud || (this.underHud = (g, now) => drawHeldMaps(g, now, this.inv, this.player, this.world)); hud.markDirty(); }
+    if (hud && hud.under !== this.underHud) { hud.under = this.underHud; hud.markDirty(); }
   }
 
   /* ---- once a tick ---- */

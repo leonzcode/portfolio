@@ -11,9 +11,9 @@
    The middle shows the map as it will be. The sheet is ours
    (tools/leoncraft2/build_stations.py), the maps js/maps.js.
 --------------------------------------------------------------------------- */
-import { ContainerScreen, slot, range, TO_PLAYER } from './inventory.js?v=117';
-import { ITEMS, withCount } from '../items.js?v=117';
-import { MAPS, isFilledMap, drawMap } from '../maps.js?v=117';
+import { ContainerScreen, slot, range, TO_PLAYER } from './inventory.js?v=118';
+import { ITEMS, withCount } from '../items.js?v=118';
+import { MAPS, isFilledMap, drawMap } from '../maps.js?v=118';
 
 const LABEL_GREY = 0x404040, SHEET = 'container/cartography_table';
 const MAIN = range(9, 36), HOT = range(0, 9);
@@ -41,7 +41,7 @@ export class CartographyScreen extends ContainerScreen {
     const m = this.grid[0], a = this.grid[1];
     this.op = null; this.result = null;
     if (!m || !a) return;
-    const d = MAPS.get(m.map), n = nameOf(a);
+    const d = MAPS.forStack(m), n = nameOf(a);
     if (n === 'paper') this.op = 'zoom';
     else if (n === 'map') this.op = 'copy';
     else if (n === 'glass_pane') this.op = 'lock';
@@ -55,8 +55,8 @@ export class CartographyScreen extends ContainerScreen {
     if (!this.result) return null;
     const out = withCount(this.result.stack, this.result.stack.count);
     // a zoomed or locked map is a new map; a copy is the same one twice
-    if (this.op === 'zoom') { const z = MAPS.zoomed(out.map); if (!z) return null; out.map = z.id; }
-    else if (this.op === 'lock') { const c = MAPS.lockedCopy(out.map); if (!c) return null; out.map = c.id; }
+    if (this.op === 'zoom') { const z = MAPS.zoomed(MAPS.forStack(out)); if (!z) return null; MAPS.tag(out, z); }
+    else if (this.op === 'lock') { const c = MAPS.lockedCopy(MAPS.forStack(out)); if (!c) return null; MAPS.tag(out, c); }
     for (const k of [0, 1]) { this.grid[k].count--; if (this.grid[k].count <= 0) this.grid[k] = null; }
     this.updateResult();
     return out;
@@ -82,7 +82,7 @@ export class CartographyScreen extends ContainerScreen {
     g.blit(SHEET, 0, 0, 176, 166, L, T);
     g.text(this.title, L + 8, T + 4, LABEL_GREY, false);
     g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
-    const m = this.grid[0], d = m ? MAPS.get(m.map) : null;
+    const m = this.grid[0], d = m ? MAPS.forStack(m) : null;
     const ctx = g.ctx;
     if (d) {
       const paper = (x, y, s) => { g.fill(x - 1, y - 1, x + s + 1, y + s + 1, 0xFF5B4A33); g.fill(x, y, x + s, y + s, 0xFFE3D6B0); };
