@@ -36,12 +36,13 @@
                     copper that is younger)
    mushrooms        1 in 25, spread if fewer than five round them, in the dark
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=117';
-import { Gen } from '../worldgen.js?v=117';
-import { randomTick as bambooTick, bambooMeta, bambooHolds, SMALL as BAMBOO_SMALL } from './bamboo.js?v=117';
-import { rng } from '../noise.js?v=117';
-import { LEVEL, FALLING } from '../world-const.js?v=117';
-import { vineFaces, vineHolds, VINE_SIDES, VINE_UP, multiFaces, MULTI_DIRS } from '../models.js?v=117';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=118';
+import { Gen } from '../worldgen.js?v=118';
+import { randomTick as bambooTick, bambooMeta, bambooHolds, SMALL as BAMBOO_SMALL } from './bamboo.js?v=118';
+import { rng } from '../noise.js?v=118';
+import { LEVEL, FALLING } from '../world-const.js?v=118';
+import { vineFaces, vineHolds, VINE_SIDES, VINE_UP, multiFaces, MULTI_DIRS } from '../models.js?v=118';
+import { boxBusy } from './lids.js?v=118';
 
 const HORIZ = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const R = sim => sim.rng();
@@ -547,11 +548,39 @@ export function installPlants(sim) {
     copperStage.set(d.id, [st, fam]);
   }
   const copperName = (st, fam) => (st === 0 && fam === 'copper' ? 'copper_block' : AGES[st] + fam);
+  /* A copper door and a large copper chest age as one block, as the game has them: only a door's lower half and a
+     chest's left half (or a single chest) age, and the other half takes its block (WeatheringCopperDoorBlock and
+     WeatheringCopperChestBlock's randomTick, DoorBlock's and CopperChestBlock's updateShape). Each half aged on its
+     own before 2026-10-29, which split doors into two (opened, broken and drawn apart). */
+  const isDoor = id => BLOCKS[id].shape === 'door';
+  const isChest = id => BLOCKS[id].shape === 'chest';
+  // the cell of the other half of the door or large chest at x, y, z (or null)
+  const otherHalf = (s, x, y, z, id, m) => {
+    if (isDoor(id)) return m & 8 ? null : [x, y + 1, z];
+    const C = s.game && s.game.containers;
+    return isChest(id) && C ? C.partner(x, y, z) : null;
+  };
+  const follow = (s, at, id) => { if (at) s.set(at[0], at[1], at[2], id, s.meta(at[0], at[1], at[2])); };
   for (const [id, [st, fam]] of copperStage) {
-    if (st >= 3 || B[copperName(st + 1, fam)] === undefined) continue;
+    const next = st < 3 ? B[copperName(st + 1, fam)] : undefined, door = isDoor(id), chest = isChest(id);
+    if (next === undefined && !door && !chest) continue;
     sim.on(id, {
       random(s, x, y, z, m) {
-        if (R(s) >= 0.05688889) return;
+        // (the upper half of a door and the right half of a large chest never age by themselves)
+        if (door && (m & 8)) return;
+        if (chest && ((m >> 2) & 3) === 2) return;
+        const half = otherHalf(s, x, y, z, id, m);
+        let other = half ? s.get(half[0], half[1], half[2]) : 0;
+        if (half && door && !(other && isDoor(other) && (s.meta(half[0], half[1], half[2]) & 8))) other = 0;
+        // (halves split by the old ageing: both take the block of the further aged one)
+        const oe = other ? copperStage.get(other) : null;
+        if (oe && oe[1] === fam && other !== id) {
+          if (oe[0] > st) { s.set(x, y, z, other, m); return; }
+          follow(s, half, id);
+        }
+        if (next === undefined || R(s) >= 0.05688889) return;
+        // (nor a chest someone has open, or whose lid is still moving)
+        if (chest && boxBusy(x, y, z)) return;
         let lower = 0, same = 0, higher = 0;
         for (let dx = -4; dx <= 4; dx++) for (let dy = -4; dy <= 4; dy++) for (let dz = -4; dz <= 4; dz++) {
           const dist = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
@@ -564,7 +593,10 @@ export function installPlants(sim) {
         if (lower) return;
         const c = (higher + 1) / (higher + same + 1);
         const chance = c * c * (st === 0 ? 0.75 : 1);
-        if (R(s) < chance) s.set(x, y, z, B[copperName(st + 1, fam)], m);
+        if (R(s) >= chance) return;
+        // (the other half first, so a door's halves are never two blocks between the two changes)
+        if (oe && oe[1] === fam) follow(s, half, next);
+        s.set(x, y, z, next, m);
       },
     });
   }

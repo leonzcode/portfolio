@@ -13,7 +13,7 @@
    that was another account's is not handed on: the default instead. Guests
    keep theirs in the browser, as before.
 --------------------------------------------------------------------------- */
-import { Account } from './account.js?v=117';
+import { Account } from './account.js?v=118';
 
 const KEYS = ['skin', 'skinModel', 'skinName', 'cape', 'capeName', 'skinParts'];
 const OWNER = 'lc2_look_owner';

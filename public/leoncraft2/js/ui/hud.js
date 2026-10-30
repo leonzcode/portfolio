@@ -19,11 +19,11 @@
      hud.setDebug(leftLines, rightLines); // or hud.setDebug(null) to hide F3
      hud.crosshair = false;               // third person
 --------------------------------------------------------------------------- */
-import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=117';
-import { drawBossBar } from '../dim/bossbar.js?v=117';
-import { BLOCKS, B } from '../blocks.js?v=117';
-import { I } from '../items.js?v=117';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET } from '../effects.js?v=117';
+import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=118';
+import { drawBossBar } from '../dim/bossbar.js?v=118';
+import { BLOCKS, B } from '../blocks.js?v=118';
+import { I } from '../items.js?v=118';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET } from '../effects.js?v=118';
 
 const TICK = 50;
 
@@ -49,7 +49,9 @@ export class Hud {
   // a different block in the hand shows its name again; the same one does not (an item given its own name, as Leon
   // Network's Tagger or Paint Brush, shows that name, as the game shows a renamed item's)
   _checkHeld(quiet) {
-    const id = this.inv.heldId(), s = this.inv.slots[this.inv.selected], nm = s && typeof s.name === 'string' && s.name ? s.name : '';
+    // (an explorer map shows its own name, "Buried Treasure Map", as the game's item_name)
+    const id = this.inv.heldId(), s = this.inv.slots[this.inv.selected];
+    const nm = s && typeof s.name === 'string' && s.name ? s.name : s && s.map !== undefined && typeof s.title === 'string' && s.title ? s.title : '';
     if (id === this._hlId && nm === this._hlName) return;
     this._hlId = id; this._hlName = nm;
     this._hlUntil = id && !quiet ? performance.now() + 2000 : 0;

@@ -17,8 +17,8 @@
    Tool, armour, food and fuel numbers are the Minecraft Wiki's (Java Edition,
    October 2026); the list itself is minecraft-data's (js/itemdata.js).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from './blocks.js?v=117';
-import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=117';
+import { B, BLOCKS, MAX_ID } from './blocks.js?v=118';
+import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=118';
 
 export const ITEM_BASE = MAX_ID;          // 4096: the first id that is not a block
 export const ITEMS = [];
@@ -231,12 +231,13 @@ export function fuelTicks(id) { const it = ITEMS[id]; return it && it.fuel ? it.
    firework, a firework star; sherds, a decorated pot's four sides; pages, title
    and author, a book and quill's or a written book's words; stew, a suspicious
    stew's [effect, ticks]; patterns, a banner's (or shield's) [[pattern, colour]...];
-   map, a filled map's number (js/maps.js); amp, an ominous bottle's Bad Omen
+   map, a filled map's number (js/maps.js), and mapd, where it is (its head:
+   MapData.head, so a page that never had it can make it); amp, an ominous bottle's Bad Omen
    level (0 for I); instrument, a goat horn's ('ponder_goat_horn'...);
    variant, a painting's (PAINTING_VARIANTS); lodestone, where a compass
    was linked ({ x, y, z, dim }); bees and honey, a nest or hive moved with
    Silk Touch (the bees in it, [{ j, t, n }], and its honey level) */
-const EXTRA = ['items', 'color', 'flight', 'explosions', 'firework', 'sherds', 'charged', 'pages', 'title', 'author', 'stew', 'patterns', 'map', 'amp', 'instrument', 'variant', 'lodestone', 'bees', 'honey'];
+const EXTRA = ['items', 'color', 'flight', 'explosions', 'firework', 'sherds', 'charged', 'pages', 'title', 'author', 'stew', 'patterns', 'map', 'mapd', 'amp', 'instrument', 'variant', 'lodestone', 'bees', 'honey'];
 /* What a server's own items carry, kept by every copy but never saved: cos, a
    Leonpixel lobby cosmetic's id (net/lobbycos.js); lore, the grey lines under
    the name; plain, a name drawn without italics; face, a head's skin (the

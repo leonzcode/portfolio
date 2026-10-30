@@ -36,14 +36,14 @@
    Features are kept inside their own chunk (fungi and blobs start far
    enough from its edge), so a chunk never needs its neighbours.
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=117';
-import { CH, H, Y0, VOL, idx } from '../world-const.js?v=117';
-import { BIO } from '../biomes.js?v=117';
-import { NormalNoise, rng, mix32, hash3 } from '../noise.js?v=117';
-import { yGradient, BlendedNoise, squeeze } from './blended.js?v=117';
-import { Perlin, Blended } from './noise.js?v=117';
-import { LegacyRandom, seedLong, posSeed, R as PR } from './random.js?v=117';
-import { NetherCarvers } from './carvers.js?v=117';
+import { B } from '../blocks.js?v=118';
+import { CH, H, Y0, VOL, idx } from '../world-const.js?v=118';
+import { BIO } from '../biomes.js?v=118';
+import { NormalNoise, rng, mix32, hash3 } from '../noise.js?v=118';
+import { yGradient, BlendedNoise, squeeze } from './blended.js?v=118';
+import { Perlin, Blended } from './noise.js?v=118';
+import { LegacyRandom, seedLong, posSeed, R as PR } from './random.js?v=118';
+import { NetherCarvers } from './carvers.js?v=118';
 
 const I = y => y - Y0;                 // world y -> index
 const lerp = (a, b, t) => a + (b - a) * t;

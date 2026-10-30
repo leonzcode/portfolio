@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=117';
-import { idx, H } from '../world-const.js?v=117';
-import { DIMS, DIM_IDS } from '../dims.js?v=117';
-import { Save } from '../save.js?v=117';
-import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=117';
-import { glints } from '../render/armor.js?v=117';
-import { containerKind } from '../containers.js?v=117';
-import { getSkinSettings } from '../render/avatar.js?v=117';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=117';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=117';
-import { Y0 } from '../world-const.js?v=117';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=117';
-import { Projectile } from '../entities/projectiles.js?v=117';
-import { Combat } from '../combat/combat.js?v=117';
-import { Vehicles } from './vehicles.js?v=117';
-import { Mobs, Orbs } from './mobs.js?v=117';
-import { Events } from './events.js?v=117';
-import { EndSync } from './endfight.js?v=117';
-import { Hub } from './hub.js?v=117';
-import { Account, wsBase, httpBase } from './account.js?v=117';
-import { rankTag } from './players.js?v=117';
+import { B, BLOCKS } from '../blocks.js?v=118';
+import { idx, H } from '../world-const.js?v=118';
+import { DIMS, DIM_IDS } from '../dims.js?v=118';
+import { Save } from '../save.js?v=118';
+import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=118';
+import { glints } from '../render/armor.js?v=118';
+import { containerKind } from '../containers.js?v=118';
+import { getSkinSettings } from '../render/avatar.js?v=118';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=118';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=118';
+import { Y0 } from '../world-const.js?v=118';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=118';
+import { Projectile } from '../entities/projectiles.js?v=118';
+import { Combat } from '../combat/combat.js?v=118';
+import { Vehicles } from './vehicles.js?v=118';
+import { Mobs, Orbs } from './mobs.js?v=118';
+import { Events } from './events.js?v=118';
+import { EndSync } from './endfight.js?v=118';
+import { Hub } from './hub.js?v=118';
+import { Account, wsBase, httpBase } from './account.js?v=118';
+import { rankTag } from './players.js?v=118';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -460,9 +460,11 @@ export class Net {
          world waiting in its queue behind this timer: a moment more for it
          before giving up) */
       const timer = setTimeout(() => setTimeout(() => { if (done) return; try { ws.close(); } catch (e) {} end(false, { reason: 'Timed out' }); }, 1500), 30000);
-      ws.onopen = () => { opened = true; try { ws.send(JSON.stringify({ t: 'hello', tok: Account.token, pw: password || '', guest: Account.guest ? Account.name : '', watch: !!watch, hidden: !!hidden })); } catch (e) {} };
-      ws.onmessage = ev => {
-        let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      // (z: a big world's init may come gzipped, as one binary message)
+      const unzips = typeof DecompressionStream === 'function';
+      ws.binaryType = 'arraybuffer';
+      ws.onopen = () => { opened = true; try { ws.send(JSON.stringify({ t: 'hello', tok: Account.token, pw: password || '', guest: Account.guest ? Account.name : '', watch: !!watch, hidden: !!hidden, z: unzips })); } catch (e) {} };
+      const handle = m => {
         if (!done) {
           if (m.t === 'init') { net.onInit(m); end(true, net); }
           else if (m.t === 'refused') { if (m.session) Account.expired(); end(false, { reason: m.reason, password: !!m.password, session: !!m.session }); }
@@ -471,6 +473,23 @@ export class Net {
           return;
         }
         net.receive(m);
+      };
+      // (what comes while a gzipped message is unpacked waits behind it, so everything is taken in the order sent)
+      const queue = []; let unpacking = false;
+      const drain = async () => {
+        if (unpacking) return;
+        unpacking = true;
+        while (queue.length) {
+          let d = queue.shift();
+          if (typeof d !== 'string') { try { d = await new Response(new Blob([d]).stream().pipeThrough(new DecompressionStream('gzip'))).text(); } catch (e) { continue; } }
+          let m; try { m = JSON.parse(d); } catch (e) { continue; }
+          handle(m);
+        }
+        unpacking = false;
+      };
+      ws.onmessage = ev => {
+        if (!unpacking && typeof ev.data === 'string') { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } handle(m); return; }
+        queue.push(ev.data); drain();
       };
       ws.onclose = () => {
         if (!done) end(false, opened ? { reason: 'Connection refused' } : { reason: FAIL_TEXT.down[0] + '. ' + FAIL_TEXT.down[1], kind: SERVER_DOWN });
@@ -1475,8 +1494,8 @@ export class Net {
     switch (m.t) {
       case 'b': this.stats.gotB += m.e.length / 5; this.blocks(m.d, m.e); return;
       case 'ack': for (const [k, p] of this.pending) if (p.s <= m.s) this.pending.delete(k); for (const [k, p] of this.ctMine) if (p.s <= m.s) this.ctMine.delete(k); for (const [k, p] of this.dtMine) if (p.s <= m.s) this.dtMine.delete(k); if (this.xpHeld.size) this.payXp(m.s); return;
-      case 'rej': this.rejected(m.d, m.e, m.q); return;
-      case 'ct': this.container(m.d, m.p, m.o, m.gone || m.clash); return;
+      case 'rej': this.rejected(m.d, m.e, m.q, m.r); return;
+      case 'ct': this.container(m.d, m.p, m.o, m.gone || m.clash, !!m.clash && !m.o); return;
       // a change of yours by hand that was lost: the chest was destroyed from how it was before it (the server's ctGone)
       case 'ctundo': this.undoHand(m.hd); return;
       case 'dt': this.detail(m.d, m.p, m.o, m.lost); return;
@@ -1787,7 +1806,8 @@ export class Net {
   }
   // the server turned changes down (past the border, a full world): back as they were
   // (q: a break that came second, someone else's or another page's simulation having taken the block first: no warning)
-  rejected(d, e, q) {
+  // (r 'full': the world holds as many changed blocks as the server keeps for one world, so only blocks already changed can change)
+  rejected(d, e, q, r) {
     const g = this.game, w = g.world, here = dimCode(g.dim) === d;
     for (let i = 0; i < e.length; i += 3) {
       const x = e[i], y = e[i + 1], z = e[i + 2], k = d + ':' + key3(x, y, z), p = this.pending.get(k);
@@ -1795,11 +1815,13 @@ export class Net {
       this.pending.delete(k);
       if (here && w.loaded(x, z)) { this.put(w, x, y, z, p.prev >> 8, p.prev & 255); if (w.quick) w.quick.put(x, y, z, w.get(x, y, z), w.meta(x, y, z)); }
     }
-    if (!q && !this.warnedRej) { this.warnedRej = true; this.ctx.chat.add('The server could not keep some of your changes.', 0xFF5555); }
+    if (r === 'full' && !this.warnedFull) { this.warnedFull = true; this.ctx.chat.add('This world is full: the server keeps at most 4,000,000 changed blocks a world, so new blocks here cannot be kept. Blocks already changed can still change.', 0xFF5555); }
+    else if (!q && r !== 'full' && !this.warnedRej) { this.warnedRej = true; this.ctx.chat.add('The server could not keep some of your changes.', 0xFF5555); }
   }
   /* (lost: the server turned a change of yours down, the chest being gone or changed by someone else at the same
-     moment; what it keeps comes with it, and beats your own change, which is undone if you made it by hand) */
-  container(d, p, o, lost) {
+     moment; what it keeps comes with it, and beats your own change, which is undone if you made it by hand)
+     (keptNone: the server keeps no record here and turned down your removal of one: your break of it was refused) */
+  container(d, p, o, lost, keptNone) {
     if (!Array.isArray(p)) return;
     const [x, y, z] = p, k = key3(x, y, z);
     if (lost) {
@@ -1819,8 +1841,14 @@ export class Net {
     if (!here) return;
     this.applying = true;
     try {
-      if (!o) dropContainer(C, x, y, z);
-      else {
+      if (!o) {
+        dropContainer(C, x, y, z);
+        /* (a chest nobody had opened, its break refused (the world full: every new cell is turned down): it is back
+           (rejected), with nothing kept, so a structure's loot in it is still to come here, as on every other page.
+           The break had rolled the loot and spilled it, the spill was taken back, and the chest stayed marked as
+           rolled: opened or broken again from this page it held nothing, and its loot was gone for everyone.) */
+        if (keptNone && containerKind(g.world.get(x, y, z))) C.looted.delete(k);
+      } else {
         let c = C.map.get(k);
         if (!c || c.kind !== o.k) { if (c) dropContainer(C, x, y, z); c = C.fresh(o.k, x, y, z); C.map.set(k, c); }
         const sl = (o.s || []).map(stackFromJSON);

@@ -9,10 +9,10 @@
    pixels go in once the arrays are on the GPU (upload), and the icon strip
    gets the same layers (extendStrip).
 --------------------------------------------------------------------------- */
-import { litFronts } from '../render/litfront.js?v=117';
-import { litBerries } from '../render/litberries.js?v=117';
-import { bambooLayers } from '../render/bamboo.js?v=117';
-import { shelfLayers } from '../render/shelfmushroom.js?v=117';
+import { litFronts } from '../render/litfront.js?v=118';
+import { litBerries } from '../render/litberries.js?v=118';
+import { bambooLayers } from '../render/bamboo.js?v=118';
+import { shelfLayers } from '../render/shelfmushroom.js?v=118';
 const THREE = window.THREE;
 
 // a small seeded hash for the art (the same picture every time)
