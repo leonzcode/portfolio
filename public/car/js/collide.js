@@ -5,7 +5,7 @@
 // is not stopped by it; `roofAt(x, z, yHint)` is the roof such a car stands on (shape.roof: { eave, top, at(x, z) },
 // set by buildings.js). A shape with `lazy` (Google's mesh: its top found by a ray when first needed) has y1 = 1e4
 // until a car comes near it.
-import { under } from './under.js?v=49';
+import { under } from './under.js?v=50';
 const CELL = 16;
 
 export class Collide {

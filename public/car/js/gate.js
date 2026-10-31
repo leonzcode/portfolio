@@ -12,6 +12,15 @@
 // window.__car.gate.log lists what it held back.
 import * as THREE from 'three';
 
+// (round 6b, perf P) the vertex data a mesh sends to the card at its first draw, roughly (attributes and index)
+const GEO_BYTES = new WeakMap();
+function geoBytes(g) {
+  if (!g || !g.attributes) return 0;
+  let n = GEO_BYTES.get(g); if (n !== undefined) return n;
+  n = 0; for (const k in g.attributes) { const a = g.attributes[k], arr = a && (a.array || (a.data && a.data.array)); if (arr) n += arr.byteLength; }
+  if (g.index && g.index.array) n += g.index.array.byteLength;
+  GEO_BYTES.set(g, n); return n;
+}
 const HIDE = 1 << 30; // the layer a held mesh is moved to (no camera has it)
 const MAX_WAIT = 20000; // a program that never says it is ready is shown anyway after this
 const BUDGET = 4; // ms of building a frame (at least one mesh a frame)
@@ -160,15 +169,19 @@ export class CompileGate {
       const notReady = new Set();
       const progsReady = mp => { if (!mp.programs || !mp.currentProgram) return false; for (const p of mp.programs.values()) { if (notReady.has(p)) return false; if (!p.isReady()) { notReady.add(p); return false; } } return true; };
       // (while driving at most 48 shown a frame: each one's vertex buffers go to the card in its first draw)
-      let shown = 0;
+      let shown = 0, bytes = 0;
+      const LOWQ = !!(globalThis.__carQuality && globalThis.__carQuality.low);
       for (const [o, h] of this.held) {
-        if (!this.fast && shown >= 48) break;
+        // (round 6b, perf P: 12 a frame on the low tier, where a first draw's uploads cost a weak device more, and no
+        // more than about 3 MB of vertex data a frame there: a cell of walls or a tile is several MB on its own)
+        if (!this.fast && shown >= (LOWQ ? 12 : 48)) break;
+        if (!this.fast && LOWQ && shown > 0 && bytes > 3e6) break;
         if (this.queue.has(o)) continue;
         let ok = true;
         if (h.layer) { const mats = Array.isArray(o.material) ? o.material : [o.material]; for (const m of mats) if (m && !progsReady(this.P.get(m))) { ok = false; break; } }
         if (ok && h.depth) for (const v of h.depth) if (!progsReady(this.P.get(v.d))) { ok = false; break; }
         if (!ok && now - h.t > MAX_WAIT) { ok = true; this.stats.timeouts++; }
-        if (ok) { this.release(o); shown++; }
+        if (ok) { this.release(o); shown++; if (LOWQ) bytes += geoBytes(o.geometry); }
       }
     }
     const ms = performance.now() - t0; if (ms > this.stats.maxFlushMs) this.stats.maxFlushMs = Math.round(ms);

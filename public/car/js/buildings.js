@@ -19,10 +19,10 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=49';
-import { patchBaked } from './baked.js?v=49';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=49';
-import overture from './overture.js?v=49';
+import { frame, project } from './geo.js?v=50';
+import { patchBaked } from './baked.js?v=50';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=50';
+import overture from './overture.js?v=50';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -1917,7 +1917,8 @@ const SCHED = { spent: 0, waiting: [], on: false, last: 0, dt: 16.7 };
 // about 45% of it, from 7 to 25 ms)
 // (tests: ?bcap=N sets the cap, for A/B runs of the build's speed against its frames)
 const BCAP = (() => { try { const m = /[?&]bcap=(\d+)/.exec(location.search); return m ? +m[1] : 25; } catch (e) { return 25; } })();
-const budget = () => behindCard() ? Math.max(30, BCAP) : Math.max(FRAME_BUDGET, Math.min(BCAP, SCHED.dt * (BCAP > 25 ? 0.6 : 0.45)));
+// (round 6b, perf P: at most 5 ms a frame on the low tier, so a rebuild takes longer but the frames stay even)
+const budget = () => behindCard() ? Math.max(30, BCAP) : (globalThis.__carQuality && globalThis.__carQuality.low) ? 5 : Math.max(FRAME_BUDGET, Math.min(BCAP, SCHED.dt * (BCAP > 25 ? 0.6 : 0.45)));
 function nextFrame() {
   return new Promise(res => {
     SCHED.waiting.push(res);
@@ -2325,7 +2326,9 @@ export function build(list, opts = {}) {
       const tmp = [0, 0, 0];
       at = (x, z) => img.sample(x, z, tmp);
       const lumAt = (x, z) => { const c = img.sample(x, z, tmp); return c ? 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2] : NaN; };
-      const L = await estimateLean(plans, lumAt, k.slice);
+      // (round 6b, perf P: not on the low tier, which draws no roof pictures: a hundred or more scoring passes over the
+      // picture for each cell of tall buildings, the longest task of a rebuild in Times Square)
+      const L = (globalThis.__carQuality && globalThis.__carQuality.low) ? null : await estimateLean(plans, lumAt, k.slice);
       if (L) { img.lean = L.k; stats.lean.push({ cell: [c.cx, c.cz], k: L.k, gain: +L.gain.toFixed(2) }); }
       await k.slice('lean');
       // roofs nobody tagged: pitched or flat, and which way, from the picture over them

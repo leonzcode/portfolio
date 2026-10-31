@@ -14,9 +14,9 @@
 // server works out who is near across the ground). Teleport requests go by buttons (Go to in the player list, Accept
 // and Deny in a box) and work across the world: a drop at their place first, then the lane behind them.
 import * as THREE from 'three';
-import { Vehicle } from './vehicle.js?v=49';
-import { seatsOf } from './occupants.js?v=49';
-import { frame as GF, toECEF, toLatLon } from './geo.js?v=49';
+import { Vehicle } from './vehicle.js?v=50';
+import { seatsOf } from './occupants.js?v=50';
+import { frame as GF, toECEF, toLatLon } from './geo.js?v=50';
 
 // (round 6) a frame's local-to-ECEF matrix, as geo.js setOrigin makes it (east, up, south at lat, lon, h)
 function localToEcefOf(lat, lon, h, out) {
@@ -854,7 +854,7 @@ export class Session {
     })();
     const sl = setInterval(() => this.sendLook(), 4000); this.undo.push(() => clearInterval(sl));
     // the traffic and the pedestrians shared (npcnet.js)
-    import('./npcnet.js?v=49').then(M => { if (this.dead) return; this.npc = new M.NpcNet(this); if (this.role !== undefined) this.npc.setRole(this.role); }).catch(e => console.warn('npcnet', e));
+    import('./npcnet.js?v=50').then(M => { if (this.dead) return; this.npc = new M.NpcNet(this); if (this.role !== undefined) this.npc.setRole(this.role); }).catch(e => console.warn('npcnet', e));
   }
 
   // where this player starts in the room: the room's place, a few car lengths along the road per player before
@@ -1455,7 +1455,7 @@ export class Session {
         D.loadingArea = true;
         D.hud.loading('Going to ' + m.name, 0.4);
         try { await D.loadArea(tx, tz); } finally { D.loadingArea = false; }
-        try { if (D.world.heights && D.world.heights.want) { const { toLatLon } = await import('./geo.js?v=49'); const g = toLatLon(new THREE.Vector3(tx, 0, tz)); await D.world.heights.want(g.lat, g.lon, 600); } } catch (e) {}
+        try { if (D.world.heights && D.world.heights.want) { const { toLatLon } = await import('./geo.js?v=50'); const g = toLatLon(new THREE.Vector3(tx, 0, tz)); await D.world.heights.want(g.lat, g.lon, 600); } } catch (e) {}
         D.hud.loading(null);
       }
       // (in the air only if they are flying and what we drive flies too: a car comes down on the road under them)

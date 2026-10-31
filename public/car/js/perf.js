@@ -5,9 +5,9 @@
 // section of the settings panel, an optional frame-rate counter, and keeps the page alive when the graphics card
 // drops the drawing context (a Chromebook short of memory does that rather than slowing down).
 import * as THREE from 'three';
-import { quality } from './quality.js?v=49';
-import { settings } from './settings.js?v=49';
-import { bakedUniforms } from './baked.js?v=49';
+import { quality } from './quality.js?v=50';
+import { settings } from './settings.js?v=50';
+import { bakedUniforms } from './baked.js?v=50';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 const NAMES = { auto: 'Auto', low: 'Low', medium: 'Medium', high: 'High' };
@@ -158,6 +158,8 @@ export function setupPerf(G) {
       line.innerHTML = quality.forced ? 'Set to <b>' + NAMES[quality.tier] + '</b> for this visit by the address.'
         : auto ? 'Auto picked <b>' + NAMES[quality.tier] + '</b>' + (why ? why.replace(/^: /, ' for this device (') + ')' : ' for this device') + '.'
         : 'Low is for Chromebooks, phones and older computers. High looks best on a fast computer.';
+      // (round 6b) graphics drawn by the processor: say why the picture is so small
+      if (quality.software && quality.low) line.innerHTML += ' This browser is drawing the graphics without the graphics chip, so Low draws a much smaller picture. Turning on hardware acceleration in the browser makes it look and run far better.';
       const notes = [];
       if (quality.p.shadows !== perf.shadowsOn) notes.push('shadows change at your next drop');
       if (!!quality.p.antialias !== !!quality.bootP().antialias) notes.push('smoother edges change when the page is next loaded');
@@ -306,7 +308,8 @@ function capTextures(R, P) {
   L.load = function (url, onLoad, onProgress, onError) {
     // (the game's own models load through three's default manager; a tileset's tiles through the tiles' own, which
     // keeps their pictures sharper on the medium tier: tileTexMax)
-    const c = this.manager === THREE.DefaultLoadingManager ? capNow : capTiles;
+    // (round 6b: people's pictures at 256 on the low tier, through their own manager, people.js)
+    const c = this.manager && this.manager.texCapKind === 'people' ? (quality.low ? 256 : capNow) : this.manager === THREE.DefaultLoadingManager ? capNow : capTiles;
     if (!c || !onLoad) return load.call(this, url, onLoad, onProgress, onError);
     return load.call(this, url, bmp => {
       const w = bmp && bmp.width, h = bmp && bmp.height;

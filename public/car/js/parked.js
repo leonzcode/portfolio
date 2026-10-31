@@ -4,7 +4,7 @@
 // parts are one InstancedMesh for all its parked copies, near ones with the detailed parts, the rest with the far
 // ones, so a hundred parked cars cost about what one moving car does.
 import * as THREE from 'three';
-import { frame } from './geo.js?v=49';
+import { frame } from './geo.js?v=50';
 
 const MODELS = ['fairheaven', 'milano', 'shvan', 'conquer', 's10', 'fairheaven', 'milano'];
 // outside North America no pickups or boxy American vans: saloons and hatchbacks
@@ -136,7 +136,9 @@ export class Parked {
           let ML = inAmericas() ? MODELS : MODELS_ELSE;
           if (QP && QP.trafficModels) { const few = ML.slice(0, 0).concat([...new Set(ML)].slice(0, QP.trafficModels)); ML = ML.filter(m => few.includes(m)); }
           const model = ML[(hash(e.id, k * 7 + 3) * ML.length) | 0];
-          out.push({ x, y: sf.h + lift, z, heading, model, paint: PAINTS[(hash(k, e.id * 3 + 1) * PAINTS.length) | 0] });
+          // (round 6b, perf P: the four commonest colours on the low tier: each colour is a draw of its own per model)
+          const PN = globalThis.__carQuality && globalThis.__carQuality.low ? 4 : PAINTS.length;
+          out.push({ x, y: sf.h + lift, z, heading, model, paint: PAINTS[(hash(k, e.id * 3 + 1) * PN) | 0] });
           if (out.length >= 420) break;
         }
       }
@@ -169,9 +171,11 @@ export class Parked {
     for (const o of this.list) {
       if (!o.K || o.skip) continue;
       const d2 = (o.x - cx) ** 2 + (o.z - cz) ** 2;
-      if (d2 > FAR * FAR) continue;
+      // (round 6b, perf P: on the low tier detailed within 14 m and drawn to 60 m; 8 and 40 drawn by the processor)
+      const QL = globalThis.__carQuality, LN = QL && QL.low ? (QL.software ? 8 : 14) : NEAR, LF = QL && QL.low ? (QL.software ? 40 : 60) : FAR;
+      if (d2 > LF * LF) continue;
       let S = sets.get(o.K); if (!S) sets.set(o.K, S = { near: [], far: [], shadow: [] });
-      (d2 < NEAR * NEAR ? S.near : S.far).push(o);
+      (d2 < LN * LN ? S.near : S.far).push(o);
       if (d2 < SHADOW * SHADOW) { o.d2 = d2; shadowed.push(o); }
     }
     // shadows for the nearest few only

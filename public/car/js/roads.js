@@ -24,8 +24,8 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=49';
-import { sharedTexture } from './texcache.js?v=49'; // (round 6, perf P)
+import { unproject } from './geo.js?v=50';
+import { sharedTexture } from './texcache.js?v=50'; // (round 6, perf P)
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -140,7 +140,7 @@ let MATS = null;
 // (round 6, perf P) one copy of each picture on the graphics card, shared with the bridges (texcache.js); on the
 // low tier no normal or roughness picture
 function texture(file, srgb) {
-  return sharedTexture(BASE + 'textures/roads/' + file + '?v=49', { srgb, anisotropy: 8, optional: /_(nor_gl|rough)_/.test(file) });
+  return sharedTexture(BASE + 'textures/roads/' + file + '?v=50', { srgb, anisotropy: 8, optional: /_(nor_gl|rough)_/.test(file) });
 }
 const NOISE_GLSL = `
 float rdHash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
