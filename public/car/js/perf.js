@@ -5,9 +5,9 @@
 // section of the settings panel, an optional frame-rate counter, and keeps the page alive when the graphics card
 // drops the drawing context (a Chromebook short of memory does that rather than slowing down).
 import * as THREE from 'three';
-import { quality } from './quality.js?v=51';
-import { settings } from './settings.js?v=51';
-import { bakedUniforms } from './baked.js?v=51';
+import { quality } from './quality.js?v=52';
+import { settings } from './settings.js?v=52';
+import { bakedUniforms } from './baked.js?v=52';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 const NAMES = { auto: 'Auto', low: 'Low', medium: 'Medium', high: 'High' };
@@ -138,7 +138,6 @@ export function setupPerf(G) {
   showFps(fpsOn);
 
   // ---- the Graphics section of the settings panel ----
-  const wantReal3d = () => { let v = null; try { v = localStorage.getItem('car_real3d'); } catch (e) {} return v === '1' || (v !== '0' && !quality.low); };
   settings.addSection('Graphics', (el, S) => {
     const seg = S.segmented(el, [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], quality.setting, v => {
       quality.set(v); refresh();
@@ -146,13 +145,8 @@ export function setupPerf(G) {
     const line = S.text(el, '');
     const later = S.text(el, '');
     S.toggleRow(el, 'Show frame rate', fpsOn, showFps);
-    // (round 6) the real buildings from open city data (opentiles.js, world.js wantOpenTiles): on by default except on
-    // Low, where streaming them while driving gave more long frames (Ginza on low, 40 s from the drop: 48 frames over
-    // 50 ms with them against 11 without); kept in localStorage car_real3d, used from the next drop
-    const real3d = S.toggleRow(el, 'Real 3D buildings where open city data has them (from your next drop)', wantReal3d(), on => { try { localStorage.setItem('car_real3d', on ? '1' : '0'); } catch (e) {} });
     function refresh() {
       seg.set(quality.forced ? quality.forced : quality.setting);
-      if (real3d && real3d.set) real3d.set(wantReal3d());
       const auto = quality.setting === 'auto' && !quality.forced;
       const why = quality.why.length ? ': ' + quality.why.join(', ') : '';
       line.innerHTML = quality.forced ? 'Set to <b>' + NAMES[quality.tier] + '</b> for this visit by the address.'

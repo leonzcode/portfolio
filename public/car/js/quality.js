@@ -1,6 +1,6 @@
 // The graphics tier: 'low' for Chromebooks, phones and other weak devices, 'medium' between, 'high' as the game was
 // built (round 6, perf agent P). Every module that costs frames or memory reads it: `import { quality } from
-// './quality.js?v=51'` (or window.__car.quality), then quality.low / quality.tier / quality.p (the numbers for the
+// './quality.js?v=52'` (or window.__car.quality), then quality.low / quality.tier / quality.p (the numbers for the
 // tier), and quality.on(fn) to hear a change (fn(quality, before)). The choice is Auto / Low / Medium / High, kept
 // in localStorage car_gfx; ?gfx=low|medium|high picks one for a visit without keeping it.
 //
