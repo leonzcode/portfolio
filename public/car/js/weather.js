@@ -10,9 +10,9 @@
 // built once at the start (or by the compile gate as meshes join the scene).
 import * as THREE from 'three';
 import { Sky as SkyMesh } from 'three/addons/objects/Sky.js';
-import { bakedUniforms, LAMP_GLSL } from './baked.js?v=50';
-import { FACADE_NIGHT } from './facade.js?v=50';
-import { frame } from './geo.js?v=50';
+import { bakedUniforms, LAMP_GLSL } from './baked.js?v=51';
+import { FACADE_NIGHT } from './facade.js?v=51';
+import { frame } from './geo.js?v=51';
 
 const KEY = 'car_weather';
 const D2R = Math.PI / 180;
@@ -944,7 +944,7 @@ export class Weather {
       S.addSection('Time and weather', (el, st) => this.build(el, st), { order: 20, id: 'weather' });
       return true;
     };
-    if (!tryAdd()) import('./settings.js?v=50').then(() => tryAdd()).catch(() => {});
+    if (!tryAdd()) import('./settings.js?v=51').then(() => tryAdd()).catch(() => {});
   }
   build(el, st) {
     const row = document.createElement('div');

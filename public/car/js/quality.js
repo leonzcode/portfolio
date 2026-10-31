@@ -1,6 +1,6 @@
 // The graphics tier: 'low' for Chromebooks, phones and other weak devices, 'medium' between, 'high' as the game was
 // built (round 6, perf agent P). Every module that costs frames or memory reads it: `import { quality } from
-// './quality.js?v=50'` (or window.__car.quality), then quality.low / quality.tier / quality.p (the numbers for the
+// './quality.js?v=51'` (or window.__car.quality), then quality.low / quality.tier / quality.p (the numbers for the
 // tier), and quality.on(fn) to hear a change (fn(quality, before)). The choice is Auto / Low / Medium / High, kept
 // in localStorage car_gfx; ?gfx=low|medium|high picks one for a visit without keeping it.
 //
@@ -34,10 +34,10 @@ export const PARAMS = {
     shadowSize: 1024,      // the sun's shadow map when there is one
     clouds: false,         // the cloud deck (a full screen of noise)
     envSize: 64,           // the sky picture the paint reflects (weather.js reads it once)
-    traffic: 6,            // most traffic cars (round 6b: 6, was 8)
+    traffic: 4,            // most traffic cars (round 6b: 6, round 6c: 4; each is about eight draws)
     trafficSpacing: 2.2,   // times the normal gap between traffic cars
     trafficModels: 3,      // kinds of traffic and parked car loaded (each is its own pictures and buffers)
-    peds: 4,               // most pedestrians (round 6b: 4, was 6)
+    peds: 3,               // most pedestrians (round 6b: 4, round 6c: 3)
     occupants: 1,          // people in a traffic car at most (the driver)
     occupantReach: 18,     // metres from the camera that cars get people at all
     parkedShare: 0.35,     // share of the parked cars kept
@@ -49,7 +49,7 @@ export const PARAMS = {
     roofPics: false,       // reload: no satellite pictures on the roofs (their plain colour)
     spareCars: 0,          // cars made ready ahead of a change (and the car left is not kept)
     firstCar: 'fairheaven', // the car a drive starts in (null: the first in cars.js, the Volvo)
-    tilesError: 6,         // the terrain tiles' error target (higher is coarser; 2 on high; round 6b: 6, was 4)
+    tilesError: 8,         // the terrain tiles' error target (higher is coarser; 2 on high; round 6b: 6, round 6c: 8)
     tilesBytes: 0.09,      // GB the tiles' cache may hold
     overlayLevels: 18,     // reload: finest satellite picture level on the ground
     texMax: 512,           // largest picture side in the game's own models (cars, people, props)

@@ -11,8 +11,8 @@
 // frame (m.o, its origin's epoch) and put into ours on arrival through mp.js's converters; what a puppet page sends
 // back to the owner carries its own (d.o). The server groups players by real distance.
 import * as THREE from 'three';
-import { People } from './people.js?v=50';
-import { Person } from './person.js?v=50';
+import { People } from './people.js?v=51';
+import { Person } from './person.js?v=51';
 
 const SEND_MS = 125, FULL_MS = 2000, PED_EVERY = 2; // cars 8 a second, people 4 a second, everything every 2 s
 const SEND_R = 360;                                  // what is sent: within this many metres of the owner
