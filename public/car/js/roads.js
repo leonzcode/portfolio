@@ -24,7 +24,8 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=48';
+import { unproject } from './geo.js?v=49';
+import { sharedTexture } from './texcache.js?v=49'; // (round 6, perf P)
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -136,12 +137,10 @@ export let style = { region: 'other', yellowCentre: false };
 
 // ---------------------------------------------------------------- materials
 let MATS = null;
+// (round 6, perf P) one copy of each picture on the graphics card, shared with the bridges (texcache.js); on the
+// low tier no normal or roughness picture
 function texture(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=48');
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 8;
-  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+  return sharedTexture(BASE + 'textures/roads/' + file + '?v=49', { srgb, anisotropy: 8, optional: /_(nor_gl|rough)_/.test(file) });
 }
 const NOISE_GLSL = `
 float rdHash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -211,7 +210,7 @@ function makeMaterials() {
   curb.customProgramCacheKey = () => 'roads-curb-1';
   curb.side = THREE.DoubleSide;
   const cmap = texture('concrete_floor_02_diff_1k.jpg', true), cnor = texture('concrete_floor_02_nor_gl_1k.jpg'), crough = texture('concrete_floor_02_rough_1k.jpg');
-  for (const t of [cmap, cnor, crough]) t.repeat.set(0.5, 0.5);
+  for (const t of [cmap, cnor, crough]) if (t) t.repeat.set(0.5, 0.5); // (null on the low tier: texcache.js)
   const pave = new THREE.MeshStandardMaterial({ map: cmap, normalMap: cnor, roughnessMap: crough, roughness: 1, color: new THREE.Color(1, 1, 1), normalScale: new THREE.Vector2(0.6, 0.6),
     polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, side: THREE.DoubleSide });
   pave.onBeforeCompile = (sh) => {
@@ -3038,6 +3037,8 @@ export function _debug() { return LIVE; }
 // the materials a tunnel's road is drawn with (tunnels.js keeps a speck of each under the ground so their shaders are
 // built with the scene's even where the first area has no tunnel)
 export function tunnelMaterials() { if (!MATS) makeMaterials(); return [MATS.tasphalt, MATS.tpaint]; }
+// (round 6, weather.js) the shared materials, so the weather can teach them the wet and the lamps before they are built
+export function materials() { if (!MATS) makeMaterials(); return MATS; }
 
 export const roads = { build, reheight, surfaceAt, nearestLane, nearestRoadPoint, nearestEdge, dispose, tunnelMaterials, group: GROUP, graph, signals, signalGroups, signs, leftHand, style, stats: null, _debug };
 export default roads;

@@ -9,7 +9,7 @@
 // longitude and nearly linear in latitude over a few hundred metres, so a box is one scaled drawImage of the
 // stitched tiles (the error over 300 m is a few millimetres). A tile that fails falls back to its parent tile.
 import * as THREE from 'three';
-import { unproject, lonLatToTile } from './geo.js?v=48';
+import { unproject, lonLatToTile } from './geo.js?v=49';
 
 export const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 export const ATTRIBUTION = 'Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community';
@@ -187,7 +187,8 @@ export function rectParts(x0, z0, x1, z1, opts = {}) {
   if (x1 < x0) [x0, x1] = [x1, x0];
   if (z1 < z0) [z0, z1] = [z1, z0];
   const sample = opts.read === false ? Promise.resolve(null) : sampler(x0, z0, x1, z1, Math.min(opts.zoom ?? 19, 18)).catch(() => null);
-  const picture = draw(x0, z0, x1, z1, opts.zoom ?? 19, opts.maxSize ?? 2048, false).then(r => {
+  // (round 6, perf P: picture false, no picture at all: the low tier draws plain roofs and never uses it)
+  const picture = opts.picture === false ? Promise.resolve(null) : draw(x0, z0, x1, z1, opts.zoom ?? 19, opts.maxSize ?? 2048, false).then(r => {
     const texture = new THREE.CanvasTexture(r.canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.flipY = false;

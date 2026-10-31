@@ -19,7 +19,7 @@ export class Hud {
           <dt>C</dt><dd>Change view</dd><dt>B</dt><dd>Look back</dd><dt>Drag</dt><dd>Look around</dd>
           <dt>E</dt><dd>Get out, or get in a car</dd><dt>P</dt><dd>Your look</dd>
           <dt>, / .</dt><dd>Left / right signal</dd><dt>X</dt><dd>Hazard lights</dd><dt>L</dt><dd>Headlights</dd>
-          <dt>1 to 0, -</dt><dd>Change car</dd><dt>[ and ]</dt><dd>The plane and the helicopter</dd><dt>R</dt><dd>Back on the road</dd><dt>M</dt><dd>Sound on or off</dd><dt>H</dt><dd>Show or hide this</dd>
+          <dt>1 to 0, -</dt><dd>Change car</dd><dt>[ and ]</dt><dd>The plane and the helicopter</dd><dt>R</dt><dd>Back on the road; on foot, hold to sprint</dd><dt>Backspace</dt><dd>On foot, back on the road</dd><dt>M</dt><dd>Sound on or off</dd><dt>H</dt><dd>Show or hide this</dd>
         </dl>
       </div>
       <div class="hud-load"><div class="hud-load-card"><div class="hud-spin"></div><div class="hud-load-t">Loading</div><div class="hud-bar"><i></i></div></div></div>

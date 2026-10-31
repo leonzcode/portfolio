@@ -17,7 +17,7 @@
 // while typing), Nominatim (Enter and reverse lookups, at most one request a second, as its policy asks; its
 // policy forbids type-ahead, which is why suggestions come from Photon), Overpass (roads you can drive).
 
-const CSS_HREF = new URL('../css/mapui.css?v=48', import.meta.url).href;
+const CSS_HREF = new URL('../css/mapui.css?v=49', import.meta.url).href;
 
 const TILES = {
   // CARTO's keyless raster basemaps now answer every request with an "API key required" picture (checked
@@ -1092,7 +1092,36 @@ export function createMapUI(root, { onDrop = () => {}, onBack = () => {}, onHome
     else if (a === 'what') showCard(ll.lat, ll.lng, null);
     else if (a === 'center') map.panTo(ll);
     else if (a === 'zoom') map.flyTo(ll, Math.min(map.getZoom() + 2, 21), { duration: 0.8 });
+    else if (a === 'ask' && ctxAsk) ctxAsk(); // (round 6: a teleport request to a player, people() below)
   });
+  // (round 6, multiplayer: mp.js) the other players in a room as name pins on the map; a click on one offers Drive here
+  // (the road nearest them) and, given onAsk, a teleport request. list: [{ id, name, lat, lon, color }]; empty clears
+  let peopleLayer = null, ctxAsk = null;
+  function people(list, onAsk) {
+    try {
+      if (!map) return;
+      if (peopleLayer) { map.removeLayer(peopleLayer); peopleLayer = null; }
+      if (!list || !list.length) return;
+      peopleLayer = L.layerGroup().addTo(map);
+      for (const p of list) {
+        if (!isFinite(p.lat) || !isFinite(p.lon)) continue;
+        const nm = String(p.name || '');
+        const mk = L.marker([p.lat, p.lon], { icon: L.divIcon({ className: 'mu-person', html: `<span class="mu-person-dot" style="background:${esc(p.color || '#1a73e8')}">${esc(nm.slice(0, 1).toUpperCase())}</span><span class="mu-person-name">${esc(nm)}</span>`, iconSize: [28, 28], iconAnchor: [14, 14] }), keyboard: false, zIndexOffset: 500 }).addTo(peopleLayer);
+        mk.on('click', (e) => {
+          ctxAt = L.latLng(p.lat, p.lon); ctxAsk = onAsk ? () => onAsk(p.id) : null;
+          ctxEl.innerHTML = `<div class="mu-ctx-i mu-ctx-coord">${esc(nm)}</div><button class="mu-ctx-i mu-ctx-strong" type="button" role="menuitem" data-a="drive">Drive here, near ${esc(nm)}</button>`
+            + (onAsk ? `<button class="mu-ctx-i" type="button" role="menuitem" data-a="ask">Ask to go to ${esc(nm)}</button>` : '')
+            + `<button class="mu-ctx-i" type="button" role="menuitem" data-a="zoom">Zoom in here</button>`;
+          ctxEl.hidden = false;
+          const pr = pickerEl.getBoundingClientRect(), w = ctxEl.offsetWidth, h = ctxEl.offsetHeight, cp = e.containerPoint || map.latLngToContainerPoint(ctxAt);
+          let x = cp.x + 2, y = cp.y + 2;
+          if (x + w > pr.width - 8) x = Math.max(8, x - w - 4);
+          if (y + h > pr.height - 8) y = Math.max(8, y - h - 4);
+          ctxEl.style.left = x + 'px'; ctxEl.style.top = y + 'px';
+        });
+      }
+    } catch (e) { console.warn('map people', e); }
+  }
 
   // ------------------------------------------------------------------ click on a road: the small card
   let cardCtrl = null, cardSpot = null;
@@ -1435,7 +1464,7 @@ export function createMapUI(root, { onDrop = () => {}, onBack = () => {}, onHome
     mode = 'dead';
   }
 
-  const api = { showPicker, hidePicker, startDrive, updateCar, endDrive, destroy };
+  const api = { showPicker, hidePicker, startDrive, updateCar, endDrive, destroy, people }; // (round 6: people, mp.js)
   // For tests: not part of the interface.
   Object.defineProperty(api, '_debug', { value: { get map() { return map; }, get mini() { return mini; }, roads, snapTo, get mode() { return mode; } } });
   return api;

@@ -4,7 +4,7 @@
 // ({ type: 'look', look } on drive.events).
 //   const ui = new LookUI(drive); ui.open(); ui.close(); ui.toggle()
 import * as THREE from 'three';
-import { People } from './people.js?v=48';
+import { People } from './people.js?v=49';
 
 const KEY = 'car_look';
 const SKIN = ['#f6d7c3', '#eac0a0', '#d4a07a', '#b07a52', '#8a5636', '#5e3a24', '#3f271a'];

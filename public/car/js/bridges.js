@@ -13,7 +13,8 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south.
 import * as THREE from 'three';
-import { buildTunnels } from './tunnels.js?v=48';
+import { buildTunnels } from './tunnels.js?v=49';
+import { sharedTexture } from './texcache.js?v=49'; // (round 6, perf P)
 
 const BASE = new URL('../', import.meta.url).href;
 const PW = 0.32;                // parapet thickness
@@ -24,11 +25,9 @@ const WALK = 0.15;              // walkway (pavement or ledge) over the road sur
 const RAIL_TOP = 1.15;          // the parapet's collision reaches this far over the walkway
 
 let MATS = null;
+// (round 6, perf P) the roads' own pictures, one copy each on the graphics card (texcache.js)
 function tex(file, srgb) {
-  const t = new THREE.TextureLoader().load(BASE + 'textures/roads/' + file + '?v=48');
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
-  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+  return sharedTexture(BASE + 'textures/roads/' + file + '?v=49', { srgb, anisotropy: 4, optional: /_(nor_gl|rough)_/.test(file) });
 }
 function materials() {
   if (MATS) return MATS;

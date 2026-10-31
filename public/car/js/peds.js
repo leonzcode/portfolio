@@ -6,7 +6,7 @@
 //   const peds = new Peds(drive); await peds.start(); peds.update(dt) each frame; peds.rebuild() after a new area
 //   (new roads); peds.clear(); peds.list (each { p: Person, state, ... }); peds.max (cap, default 34)
 import * as THREE from 'three';
-import { People } from './people.js?v=48';
+import { People } from './people.js?v=49';
 
 const LINES = {
   hit: ['Hey!', 'Watch it!', 'Are you crazy?', 'Slow down!', 'You hit me!', 'Ow!', 'What are you doing?!', 'Look where you are going!', 'Learn to drive!', 'Unbelievable!'],
@@ -22,6 +22,7 @@ export class Peds {
   constructor(drive) {
     this.drive = drive; this.scene = drive.scene;
     this.list = []; this.paths = []; this.max = 34; this.ready = false;
+    { const q = globalThis.__carQuality; if (q && q.p && q.p.peds !== undefined) this.max = Math.min(this.max, q.p.peds); } // (round 6, perf P: fewer people on the low tier; skinning them is costly)
     const qm = /[?&]peds=(\d+)/.exec(location.search); if (qm) this.max = +qm[1]; // (tests: how many at most)
     this.group = new THREE.Group(); this.group.name = 'pedestrians'; this.scene.add(this.group);
     this.spawnT = 0; this.frame = 0; this.carsCache = []; this.carsFrame = -1; this.busy = 0.5;

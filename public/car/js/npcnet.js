@@ -7,9 +7,12 @@
 // bumped, a person hit (thrown on this screen at once, and on the owner's, which tells everyone else). Crashes into
 // traffic cars go to the whole room as damage.js impacts by the car's shared number (mp.js). When the owner leaves
 // or drives away, the next page runs them, starting from the cars and people it was drawing.
+// (round 6) Pages in a room may have different frames (each drops where it likes): what the owner sends is in its own
+// frame (m.o, its origin's epoch) and put into ours on arrival through mp.js's converters; what a puppet page sends
+// back to the owner carries its own (d.o). The server groups players by real distance.
 import * as THREE from 'three';
-import { People } from './people.js?v=48';
-import { Person } from './person.js?v=48';
+import { People } from './people.js?v=49';
+import { Person } from './person.js?v=49';
 
 const SEND_MS = 125, FULL_MS = 2000, PED_EVERY = 2; // cars 8 a second, people 4 a second, everything every 2 s
 const SEND_R = 360;                                  // what is sent: within this many metres of the owner
@@ -118,7 +121,7 @@ class PuppetTraffic {
       _e.set(c.pitch, -c.yaw, 0, 'YXZ'); o.quaternion.setFromEuler(_e);
       c.spin = (c.spin + c.v * dt / ((c.rig.wheels && c.rig.wheels[2] && c.rig.wheels[2].radius) || 0.33)) % (Math.PI * 2);
       const st = b ? Math.max(-0.6, Math.min(0.6, -Math.atan2(Math.sin(b.yaw - a.yaw), Math.cos(b.yaw - a.yaw)) / Math.max(0.05, (b.ts - a.ts) / 1000) / Math.max(1, c.v) * 2.7)) : 0;
-      c.rig.update(dt, { speed: c.v, wheelSpin: [c.spin, c.spin, c.spin, c.spin], steer: st, steeringWheel: st * 14, susp: [0, 0, 0, 0], brake: c.brake, reverse: false, signal: c.signal, headlights: false });
+      c.rig.update(dt, { speed: c.v, wheelSpin: [c.spin, c.spin, c.spin, c.spin], steer: st, steeringWheel: st * 14, susp: [0, 0, 0, 0], brake: c.brake, reverse: false, signal: c.signal, headlights: !!(window.__car && window.__car.carLamps) }); // (round 6: weather.js sets carLamps after dark)
     }
   }
   // two circles a car for the player's collisions (as traffic.js)
@@ -167,7 +170,42 @@ export class NpcNet {
     this.stats = { sent: 0, bytes: 0, got: 0 };
     window.__mpnpc = this;
   }
-  send(k, d) { this.S.net.send({ t: 'npcdo', k, d }); }
+  send(k, d) { if (d && typeof d === 'object') d.o = this.S.orgN; this.S.net.send({ t: 'npcdo', k, d }); }
+
+  // (round 6) off to another place in the room: what we drew of another page's goes (the drop builds our own traffic
+  // and people again), and the server tells us whose to draw once we are there
+  reset() {
+    const P = this.D.peds;
+    if (P && P.netPuppet) {
+      P.netPuppet = false;
+      if (this.pedOrig) P._update = this.pedOrig;
+      for (let i = P.list.length - 1; i >= 0; i--) { try { P.remove(i); } catch (e) {} }
+    }
+    this.pedBuf.clear(); this.looks.clear(); this.last.clear(); this.off = undefined;
+    this.role = undefined; this.owner = undefined; this.anchor = null;
+  }
+  // (round 6) our frame changed: anything kept in the old one goes
+  newFrame() {
+    this.last.clear(); this.off = undefined;
+    for (const id of [...this.pedBuf.keys()]) this.dropPed(id);
+    const T = this.D.traffic;
+    if (T && T.puppet) for (const c of [...T.byNid.values()]) T.drop(c);
+  }
+  // (round 6) the owner's numbers into our frame (in place): cars [nid, model, colour, x, y, z, yaw, ...], people
+  // [nid, x, y, z, yaw, ...], throws (a velocity and a shift)
+  fromOwner(m) {
+    const S = this.S, R = S.remotes.get(m.from);
+    const c = R ? S.conv(R, m.o) : null;
+    if (!c) return false;
+    if (c.ident) return true;
+    for (const a of m.c || []) { const p = S.cvPoint(c, a[3], a[4], a[5]); a[3] = p.x; a[4] = p.y; a[5] = p.z; a[6] += c.dyaw; }
+    for (const a of m.h || []) { const p = S.cvPoint(c, a[1], a[2], a[3]); a[1] = p.x; a[2] = p.y; a[3] = p.z; a[4] += c.dyaw; }
+    for (const e of m.e || []) {
+      if (e.k !== 'rag') continue;
+      for (const k of ['v', 'sh']) if (Array.isArray(e[k])) { _v.fromArray(e[k]).applyQuaternion(c.q); e[k] = [_v.x, _v.y, _v.z]; }
+    }
+    return true;
+  }
 
   setRole(of) {
     if (of === this.role) return;
@@ -259,7 +297,7 @@ export class NpcNet {
     if (!any) return;
     this.sendT = now; this.sendN++;
     const full = now - this.fullT > FULL_MS; if (full) this.fullT = now;
-    const m = { t: 'npc', ts: Math.round(now), c: [], h: [] };
+    const m = { t: 'npc', ts: Math.round(now), c: [], h: [], o: this.S.orgN };
     if (full) m.full = 1;
     const seen = new Set();
     if (T && T.list && !T.puppet) for (const c of T.list) {
@@ -303,6 +341,7 @@ export class NpcNet {
   // ---- on a puppet page: the owner's message -----------------------------------------------------------------
   onNpc(m) {
     if (this.role === null || this.role === undefined || m.from !== this.owner) return;
+    if (!this.fromOwner(m)) return; // (round 6: the owner's frame not known yet)
     const now = performance.now();
     this.stats.got++;
     const T = this.D.traffic;
@@ -387,6 +426,15 @@ export class NpcNet {
   onDo(m) {
     if (this.role !== null) return;
     const D = this.D, d = m.d || {};
+    // (round 6) from the puppet page's frame into ours
+    const S = this.S, R = S.remotes.get(m.from), c = R ? S.conv(R, d.o) : null;
+    if (R && !c) return;
+    if (c && !c.ident) {
+      if (Number.isFinite(d.nx) && Number.isFinite(d.nz)) { _v.set(d.nx, 0, d.nz).applyQuaternion(c.q); d.nx = _v.x; d.nz = _v.z; }
+      if (Number.isFinite(d.vx) && Number.isFinite(d.vz)) { _v.set(d.vx, 0, d.vz).applyQuaternion(c.q); d.vx = _v.x; d.vz = _v.z; }
+      if (Number.isFinite(d.x) && Number.isFinite(d.z)) { const p = S.cvPoint(c, d.x, d.y || 0, d.z); d.x = p.x; d.y = p.y; d.z = p.z; }
+      if (Number.isFinite(d.yaw)) d.yaw += c.dyaw;
+    }
     if (m.k === 'take' || m.k === 'bump') {
       const T = D.traffic; if (!T || T.puppet) return;
       const c = T.list.find(c => c.nid === d.id); if (!c) return;

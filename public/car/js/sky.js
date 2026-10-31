@@ -161,7 +161,9 @@ export function steadySpots(scene, beams, mine) {
 function makeClouds() {
   const m = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, forceSinglePass: true, // (one draw, not two)
-    uniforms: { uSun: { value: new THREE.Vector3(0, 1, 0) }, uTime: { value: 0 }, uCover: { value: 0.47 } },
+    uniforms: { uSun: { value: new THREE.Vector3(0, 1, 0) }, uTime: { value: 0 }, uCover: { value: 0.47 },
+      // (round 6, weather.js) the lit side's and the shade's colours, how solid the deck is, lightning inside it
+      uLitCol: { value: new THREE.Vector3(1.0, 0.99, 0.97) }, uShadeCol: { value: new THREE.Vector3(0.62, 0.66, 0.72) }, uOpacity: { value: 0.92 }, uFlash: { value: 0 } },
     vertexShader: /* glsl */`
       varying vec3 vW;
       #include <common>
@@ -173,7 +175,7 @@ function makeClouds() {
         #include <logdepthbuf_vertex>
       }`,
     fragmentShader: /* glsl */`
-      uniform vec3 uSun; uniform float uTime, uCover;
+      uniform vec3 uSun, uLitCol, uShadeCol; uniform float uTime, uCover, uOpacity, uFlash;
       varying vec3 vW;
       #include <common>
       #include <logdepthbuf_pars_fragment>
@@ -190,11 +192,11 @@ function makeClouds() {
         // light: brighter where the cloud's sunward side is (the density falls towards the sun)
         float ds = fbm(p + uSun.xz * 0.06) * 0.75 + fbm((p + uSun.xz * 0.06) * 3.1 + 5.0) * 0.25;
         float lit = clamp(0.62 + (d - ds) * 3.0, 0.35, 1.0);
-        vec3 col = mix(vec3(0.62, 0.66, 0.72), vec3(1.0, 0.99, 0.97), lit);
+        vec3 col = mix(uShadeCol, uLitCol, lit) + vec3(0.7, 0.75, 0.9) * uFlash * (0.5 + 0.5 * d);
         // thin out towards the horizon (distance across the deck from under the camera)
         float far = length(vW.xz - cameraPosition.xz);
         float fade = 1.0 - smoothstep(9000.0, 22000.0, far);
-        gl_FragColor = vec4(col, c * 0.92 * fade);
+        gl_FragColor = vec4(col, c * uOpacity * fade);
       }`,
   });
   const g = new THREE.PlaneGeometry(50000, 50000, 1, 1);

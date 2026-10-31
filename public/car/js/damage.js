@@ -23,7 +23,7 @@
 //
 // Events on drive.events: impact, glass, door (see the shared spec).
 import * as THREE from 'three';
-import { FX } from './damagefx.js?v=48';
+import { FX } from './damagefx.js?v=49';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3(), _p = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _n3 = new THREE.Matrix3(), _box = new THREE.Box3();
@@ -2977,6 +2977,9 @@ export class Damage {
       // (the model's analysis goes in the background list, a slice a frame; the steps after it wait for it. Done in
       // one go in an idle callback it was a long task of 0.6 to 1.5 s right after a drop; perf)
       const steps = [() => this.analyseLater(rd), () => this.warmUp(), () => { const C = rd.crackReady(); if (this.drive.G && this.drive.G.renderer && this.drive.G.renderer.initTexture) this.drive.G.renderer.initTexture(C.tex); }, () => this.presplit(rd), () => this.predoor(rd)];
+      // (round 6, perf P) the low tier does not subdivide the car ahead (a copy of every outside mesh, several times
+      // the points: memory and drawing a Chromebook does not have); a crash there bends the coarse meshes
+      if (globalThis.__carQuality && globalThis.__carQuality.low) steps.splice(3, 1);
       const first = steps[0];
       const next = () => {
         if (steps[0] !== first && steps.length && !rd.A && this.drive.car && this.drive.car.rig === car.rig) { idle(next, { timeout: 700 }); return; }
@@ -3783,7 +3786,7 @@ export class Damage {
         if (done) { const at = this.bg.indexOf(j); if (at >= 0) this.bg.splice(at, 1); k--; continue; }
         if (!j.waiting) break;
       }
-    } else this.preAnalyse();
+    } else if (!(globalThis.__carQuality && globalThis.__carQuality.low)) this.preAnalyse(); // (round 6, perf P: not on the low tier, where a traffic car is worked out when first hit)
     for (const rd of this.rigs) {
       if (!rd.damaged) continue;
       rd.animate(dt);

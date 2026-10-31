@@ -2,7 +2,7 @@
 // direction, night with the headlights on), clear, cloudy, overcast or rain (the cloud deck's cover, the sun's
 // strength, the sky's haze, rain falling round you), and fog from none to thick. Kept in localStorage car_atmos.
 import * as THREE from 'three';
-import { FACADE_NIGHT } from './facade.js?v=48';
+import { FACADE_NIGHT } from './facade.js?v=49';
 
 const KEY = 'car_atmos';
 const WEATHER = {

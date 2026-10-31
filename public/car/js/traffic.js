@@ -3,8 +3,8 @@
 // and signals for it, stops at red lights (signals.js, the same timing the lights show), waits at stop signs, gives
 // way at junctions without lights, slows for the player's car in its path, and stops with its hazards on when hit.
 import * as THREE from 'three';
-import * as SIG from './signals.js?v=48';
-import { frame } from './geo.js?v=48';
+import * as SIG from './signals.js?v=49';
+import { frame } from './geo.js?v=49';
 
 const AMERICAN = new Set(['s10', 'conquer', 'shvan', 'schoolbus', 'semi']);
 const inAmericas = () => frame.lat > 14 && frame.lat < 72 && frame.lon > -170 && frame.lon < -52;
@@ -29,7 +29,10 @@ function laneAt(L, s, out) {
 // background before the streets are built (drive.start calls this once its own car is in the scene, so the scene's
 // lights are the ones they will be drawn with); Traffic.preload then takes them instead of making its own
 let PRE = null;
-export function regionModels(cars) { return cars && cars.TRAFFIC ? [...new Set(cars.TRAFFIC.filter(m => inAmericas() || !AMERICAN.has(m)))] : []; }
+// (round 6, perf P) the graphics tier (quality.js): the low tier loads only the first few kinds of car (each is its own
+// pictures and buffers on the graphics card) and keeps fewer cars on the road
+const QP = () => { const q = globalThis.__carQuality; return q ? q.p : null; };
+export function regionModels(cars) { const ids = cars && cars.TRAFFIC ? [...new Set(cars.TRAFFIC.filter(m => inAmericas() || !AMERICAN.has(m)))] : []; const p = QP(); return p && p.trafficModels ? ids.slice(0, p.trafficModels) : ids; }
 export function preloadRigs({ cars, renderer, camera, scene, carEnv }) {
   const ids = regionModels(cars);
   PRE = (async () => {
@@ -61,6 +64,7 @@ export class Traffic {
     this.loading = 0; this.dead = false;
     // pickups and the boxy van are an American sight: elsewhere the saloons, the hatchback and the old 911
     this.models = cars && cars.TRAFFIC ? cars.TRAFFIC.filter(m => inAmericas() || !AMERICAN.has(m)) : [];
+    { const p = QP(); if (p && p.trafficModels) { const ok = new Set(regionModels(cars)); this.models = this.models.filter(m => ok.has(m)); } } // (round 6, perf P)
     this.first = true;
   }
 
@@ -176,7 +180,7 @@ export class Traffic {
     }
     this.near = near;
     // about a car per 55 m of lane, at most 30
-    this.want = Math.min(24, Math.round(len / this.per));
+    { const p = QP(); this.want = Math.min(p && p.traffic ? p.traffic : 24, Math.round(len / (this.per * (p && p.trafficSpacing ? p.trafficSpacing : 1)))); } // (round 6, perf P: fewer on the low tier)
   }
 
   async spawn(px, pz, pfx, pfz, initial) {
@@ -374,7 +378,7 @@ export class Traffic {
     o.quaternion.setFromEuler(_e);
     c.spin = (c.spin + c.v * dt / ((c.rig.wheels && c.rig.wheels[2] && c.rig.wheels[2].radius) || 0.33)) % (Math.PI * 2); // each model's own wheel size
     const steer = THREE.MathUtils.clamp(-(this.curv(c)) * 2.7, -0.6, 0.6);
-    c.rig.update(dt, { speed: c.v, wheelSpin: [c.spin, c.spin, c.spin, c.spin], steer, steeringWheel: steer * 14, susp: [0, 0, 0, 0], brake: c.brake, reverse: false, signal: c.signal, headlights: false });
+    c.rig.update(dt, { speed: c.v, wheelSpin: [c.spin, c.spin, c.spin, c.spin], steer, steeringWheel: steer * 14, susp: [0, 0, 0, 0], brake: c.brake, reverse: false, signal: c.signal, headlights: !!(window.__car && window.__car.carLamps) }); // (round 6: weather.js sets carLamps after dark)
   }
 
   // a point some metres along the car's way (negative: behind on its lane)

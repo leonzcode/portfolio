@@ -1,14 +1,14 @@
 // The player on foot. E in a car stops it (brakes, then the handbrake; the engine idles), the driver's door opens,
 // the player's person climbs out and the door shuts; then a third-person camera follows the person (drag or the
-// arrow keys to look, the wheel to come closer), W A S D walk, Shift runs, Space jumps, and the person is stopped
+// arrow keys to look, the wheel to come closer), W A S D walk, R or Shift runs, Space jumps, and the person is stopped
 // by buildings, props and cars and stands on whatever drive.ground gives (roads, pavements, roofs). E near a car
 // walks to its driver's door, opens it, pulls out whoever is driving and throws them on the road (they get up
 // angry), gets in and drives off. A traffic car taken this way leaves the traffic and becomes the player's car
 // (its cheap model swapped for the detailed one once that is ready); the car the player left stays where it was,
 // solid, with its own physics, until it is far behind.
 import * as THREE from 'three';
-import { Vehicle } from './vehicle.js?v=48';
-import { Occupants, seatsOf, seatOffset, play, tick, YAW0, settled, isRagdoll, getUp, RECLINE } from './occupants.js?v=48';
+import { Vehicle } from './vehicle.js?v=49';
+import { Occupants, seatsOf, seatOffset, play, tick, YAW0, settled, isRagdoll, getUp, RECLINE } from './occupants.js?v=49';
 
 const STEP = 1 / 120;
 // on foot (m/s): a brisk walk, a jog once the person has kept going a second and a half, a run with Shift
@@ -134,7 +134,9 @@ export class OnFoot {
     const c = e.code;
     if (c === 'KeyE') { this.pressE(); return true; }
     if (this.mode === 'car') return false;
-    if (c === 'KeyR') { if (this.mode === 'foot') this.respawnPerson(); return true; }
+    // (round 6) R is a sprint on foot, held as Shift is (walk() reads it); back on the road on foot is Backspace
+    if (c === 'KeyR') return true;
+    if (c === 'Backspace') { if (this.mode === 'foot') this.respawnPerson(); return true; }
     if (c === 'KeyC' || c === 'KeyV') { this.camDist = this.camDist > 4.5 ? 3.4 : 6.5; return true; }
     if (c === 'KeyB' || c === 'KeyX' || c === 'KeyQ' || c === 'Comma' || c === 'Period') return true;
     return false;
@@ -1694,7 +1696,7 @@ export class OnFoot {
       const y = this.camYaw;
       mx = Math.sin(y) * f - Math.cos(y) * s; mz = Math.cos(y) * f + Math.sin(y) * s;
       const l = Math.hypot(mx, mz); if (l > 1) { mx /= l; mz /= l; }
-      run = k.has('ShiftLeft') || k.has('ShiftRight');
+      run = k.has('ShiftLeft') || k.has('ShiftRight') || k.has('KeyR');
       jump = k.has('Space');
       // the camera comes round behind a person walking forward, unless the mouse moved it lately
       if (f > 0 && l > 0.1 && performance.now() - (this.lookAt || 0) > 1800) {
@@ -2104,7 +2106,7 @@ export class OnFoot {
       if (t) {
         const occupied = t.kind === 'traffic' || t.kind === 'parked' ? this.occ.occupied(t.kind === 'parked' ? t.ref : t.rig, 0) || t.kind === 'traffic' : this.occ.occupied(t.rig, 0);
         text = occupied ? 'Press <b>E</b> to take this car' : 'Press <b>E</b> to get in';
-      } else if (!this.toldWalk) text = '<b>W A S D</b> walk (keep going to jog), <b>Shift</b> run, <b>Space</b> jump, drag to look';
+      } else if (!this.toldWalk) text = '<b>W A S D</b> walk (keep going to jog), <b>R</b> or <b>Shift</b> sprint, <b>Space</b> jump, drag to look';
     } else if (this.mode === 'enter' && this.seq && this.seq.phase === 'approach') text = 'Press <b>E</b> again to stop';
     else if (this.mode === 'car' && !this.toldOut) {
       this.toldOutT = (this.toldOutT || 0) + 0.25;

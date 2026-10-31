@@ -2,12 +2,15 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=48';
-import { World } from './world.js?v=48';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=48';
-import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=48'; // (perf A: the shadow pass's casters, steady lights)
-import { Drive } from './drive.js?v=48';
-import { CompileGate } from './gate.js?v=48'; // (perf B) nothing drawn with a program still being built
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=49';
+import { World } from './world.js?v=49';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=49';
+import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=49'; // (perf A: the shadow pass's casters, steady lights)
+import { Drive } from './drive.js?v=49';
+import { CompileGate } from './gate.js?v=49'; // (perf B) nothing drawn with a program still being built
+import { Weather } from './weather.js?v=49'; // (round 6, W) the time of day and the weather
+import { quality } from './quality.js?v=49'; // (round 6, perf P) the graphics tier: low, medium or high
+import { setupPerf } from './perf.js?v=49'; // (round 6, perf P) the tier applied, the settings panel's Graphics, a lost context
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -17,10 +20,12 @@ const canvas = document.getElementById('view');
 // 0.6 with the log buffer, frames over 100 ms 3 and 0 against 8 and 7, and the same pictures; ?rz=0 for the log buffer.
 // Asked of a throwaway context first: three asked for a reversed buffer it cannot have gives a plain one, worse than
 // the log buffer far away.
-const clipControl = (() => { try { const c = document.createElement('canvas'), gl = c.getContext('webgl2'); const ok = !!(gl && gl.getExtension('EXT_clip_control')); const lose = gl && gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); return ok; } catch (e) { return false; } })();
+const clipControl = (() => { try { const c = document.createElement('canvas'), gl = c.getContext('webgl2'); try { quality.probe(gl); } catch (e) {} const ok = !!(gl && gl.getExtension('EXT_clip_control')); const lose = gl && gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); return ok; } catch (e) { return false; } })();
 const RZ = Q.get('rz') === '1' || (Q.get('rz') !== '0' && clipControl);
 let renderer;
-try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: !RZ, reversedDepthBuffer: RZ, powerPreference: 'high-performance' }); }
+// (round 6, perf P) no antialiasing on the low and medium tiers (quality.js): on a Chromebook's graphics it is a large
+// share of the frame and of the graphics memory
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: quality.p.antialias !== false, logarithmicDepthBuffer: !RZ, reversedDepthBuffer: RZ, powerPreference: 'high-performance' }); }
 catch (e) {
   document.getElementById('ui').innerHTML = '<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#202124;color:#e8eaed;font:15px Roboto,system-ui,sans-serif;text-align:center;padding:24px">This game needs WebGL 2, which this browser or computer could not start.<br>Try a recent Chrome, Edge, Firefox or Safari, with hardware acceleration on.</div>';
   throw e;
@@ -28,7 +33,8 @@ catch (e) {
 // (perf A) with the reversed depth buffer a polygon offset has to go the other way to pull a decal towards the eye
 // (three.js hands the material's numbers to WebGL as they are; with the log depth buffer they do nothing at all)
 if (RZ && renderer.capabilities.reversedDepthBuffer) { const gl = renderer.getContext(), po = gl.polygonOffset.bind(gl); gl.polygonOffset = (f, u) => po(-f, -u); }
-renderer.setPixelRatio(Math.min(devicePixelRatio, Q.has('pr') ? +Q.get('pr') : 1.5));
+quality.lock();
+renderer.setPixelRatio(Math.min(devicePixelRatio, Q.has('pr') ? +Q.get('pr') : quality.p.prStart || 1.5));
 renderer.setSize(innerWidth, innerHeight, false);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const TM = { agx: THREE.AgXToneMapping, neutral: THREE.NeutralToneMapping, aces: THREE.ACESFilmicToneMapping };
@@ -55,7 +61,7 @@ bakedUniforms.uDetail.value = makeDetail();
 bakedUniforms.uDetailOn.value = 1;
 const world = new World(renderer, scene, camera);
 
-const G = window.__car = { THREE, renderer, scene, camera, world, sky, frame, toLocal, toLatLon, setOrigin, state: 'boot', mods: {} };
+const G = window.__car = { THREE, renderer, scene, camera, world, sky, frame, toLocal, toLatLon, setOrigin, state: 'boot', mods: {}, quality };
 // (round 5) the two spot lights a draw has, kept so from the start and before every compile: they were only made at
 // the first draw and only set right before a draw, so a drop from the map (a frame drawn before the drop held the
 // drawing) built the cars, the parked cars, the props and the buildings for four spot lights (the two fills and the
@@ -64,6 +70,8 @@ const G = window.__car = { THREE, renderer, scene, camera, world, sky, frame, to
 G.steadySpots = () => { const D = G.drive; steadySpots(scene, D && D.mods && D.mods.cars && D.mods.cars.BEAMS, D && D.car && D.car.rig && D.car.rig._beams); };
 steadySpots(scene, null, null);
 G.gate = gate; // (perf B)
+// (round 6, W) the time of day and the weather: the sun, the sky, the light on everything, rain, lamps (weather.js)
+if (!Q.has('noweather')) { try { G.weather = new Weather(G); } catch (e) { console.warn('weather', e); } }
 
 addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight, false);
@@ -131,8 +139,10 @@ export async function startWorld(lat, lon, opts = {}) {
 G.startWorld = startWorld;
 
 // resolution follows the frame rate: a step down under 40 fps, back up over 57, between 0.6 and the screen's own
-const PR_MAX = Math.min(devicePixelRatio, Q.has('pr') ? +Q.get('pr') : 1.5);
-let prNow = PR_MAX, scaleT = 0, scaleN = 0, scaleSum = 0;
+// (round 6, perf P) the range follows the graphics tier (quality.js prMax, prStart, prFloor)
+const prMaxNow = () => Math.min(devicePixelRatio, Q.has('pr') ? +Q.get('pr') : (quality.p.prMax || 1.5));
+let PR_MAX = prMaxNow();
+let prNow = Math.min(PR_MAX, Q.has('pr') ? +Q.get('pr') : (quality.p.prStart || PR_MAX)), scaleT = 0, scaleN = 0, scaleSum = 0;
 // (perf A) a change of resolution makes the browser build the drawing buffer again, 0.2 to 2 s on a busy graphics
 // card, so it happens seldom: not in the first 10 s of a drive, three 2.5 s windows in a row agreeing, 12 s at least
 // between changes, a bigger step when far too slow (so fewer steps), never back up within a minute to a level that
@@ -156,7 +166,10 @@ function autoScale(now) {
   let next = prNow;
   // (lead) down to 0.5 only when still under 30 fps at 0.6 (Times Square on a GTX 745 class card sat at about 28 fps
   // at the old floor; its GPU time is mostly fill); ?prfloor=0.6 keeps the old floor
-  const floor = (avg < 30 && prNow <= 0.6 + 1e-6 && !Q.has('prfloor')) ? 0.5 : 0.6;
+  const floor = Math.min(quality.p.prFloor ?? 0.6, (avg < 30 && prNow <= 0.6 + 1e-6 && !Q.has('prfloor')) ? 0.5 : 0.6);
+  // (round 6, perf P) still under 24 fps at the lowest resolution, 30 s or more into the drive: a graphics tier down
+  // (on Auto; perf.js)
+  if (scaleSum < 0 && avg < 24 && prNow <= floor + 1e-6 && now - activeSince > 30000 && G.perf && G.perf.tooSlow && G.perf.tooSlow(avg)) { scaleSum = 0; scaleLast = now; minAvg = []; return; }
   if (scaleSum < 0 && prNow > floor + 1e-6) next = Math.max(floor, prNow - (avg < 25 ? 0.3 : 0.15));
   else if (scaleSum > 0 && prNow < PR_MAX) { next = Math.min(PR_MAX, prNow + 0.1); if (next >= tooSlow - 1e-6 && now - tooSlowT < 60000) next = prNow; }
   scaleSum = 0;
@@ -166,6 +179,8 @@ function autoScale(now) {
   }
 }
 G.pixelRatio = () => prNow;
+// (round 6, perf P) a change of graphics tier: the resolution kept inside its new range
+quality.on(() => { PR_MAX = prMaxNow(); const n = Math.min(PR_MAX, Math.max(prNow, quality.p.prFloor ?? 0.6)); if (Math.abs(n - prNow) > 1e-6 && !Q.has('pr')) { prNow = n; scaleLast = performance.now(); renderer.setPixelRatio(prNow); } });
 
 let last = performance.now();
 G.frames = 0;
@@ -212,10 +227,12 @@ function loop(now) {
   G.frames++;
   G.fps = G.fps ? G.fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05 : 60;
   autoScale(now);
+  if (G.perf) { try { G.perf.frame(); G.perf.tick(now); } catch (e) {} } // (round 6, perf P: fog floor, frame-rate counter)
 }
 requestAnimationFrame(loop);
 
 const drive = G.drive = new Drive(G);
+try { setupPerf(G); } catch (e) { console.warn('perf setup', e); } // (round 6, perf P)
 // a place in the address bar is used only if it is a real one
 function validPlace(lat, lon) { return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 85 && Math.abs(lon) <= 180 && (lat !== 0 || lon !== 0 || Q.get('lat') === '0'); }
 // the sources of what is on screen, as their terms ask
@@ -224,7 +241,12 @@ const attrib = document.createElement('div'); attrib.className = 'attrib'; docum
 const OPEN_CREDIT = 'Imagery: Esri, Maxar, Earthstar Geographics | Elevation: Mapzen, AWS Open Data | Map data © OpenStreetMap contributors, Overture Maps Foundation';
 world.addEventListener('attributions', e => { attrib.textContent = 'Google' + (e.text ? ' | ' + e.text : '') + ' | Map data © OpenStreetMap contributors'; });
 const OPEN_CREDIT_SHORT = 'Esri, Maxar | Mapzen, AWS | © OpenStreetMap, Overture';
-G.setCredit = () => { if (world.mode === 'open') attrib.textContent = innerWidth < 600 ? OPEN_CREDIT_SHORT : OPEN_CREDIT; };
+G.setCredit = () => {
+  if (world.mode !== 'open') return;
+  // (round 6, agent T) the real buildings' own source where an open 3D tileset is drawn (opentiles.js)
+  const ot = world.open && world.open.credit ? world.open.credit : '';
+  attrib.textContent = (innerWidth < 600 ? OPEN_CREDIT_SHORT : OPEN_CREDIT) + (ot ? ' | 3D buildings: ' + ot : '');
+};
 // a Google Map Tiles API key turns on Google's photorealistic 3D city: ?key=... once, or from the console
 G.setKey = k => { try { if (k) localStorage.setItem('car_gkey', k); else localStorage.removeItem('car_gkey'); } catch (e) {} };
 if (Q.get('key')) G.setKey(Q.get('key'));
@@ -249,7 +271,7 @@ async function dropAt({ lat, lon, heading }) {
 }
 async function openMap(quiet) {
   try {
-    const M = await import('./mapui.js?v=48');
+    const M = await import('./mapui.js?v=49');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: o => dropAt(o),
       // (round 5) leaving a drive in a multiplayer room goes back to the rooms (home.js), not the map
@@ -258,6 +280,7 @@ async function openMap(quiet) {
       onHome: () => { mapui.hidePicker(); if (G.home) G.home.show('start'); else openHome(); },
     });
     G.mapui = mapui;
+    try { if (G.settings) G.settings.attachMapMenu(document.querySelector('.mu-drawer')); } catch (e) {} // (round 6: Settings in the map's menu)
     if (!quiet) mapui.showPicker();
     G.paused = true;
     // while the map is up, get the game ready: its modules, the first car, the traffic's cars, the props' models
@@ -267,7 +290,7 @@ async function openMap(quiet) {
         await drive.loadMods();
         const C = drive.mods.cars;
         if (C) {
-          const first = C.CARS.find(c => !c.npcOnly);
+          const first = (quality.p.firstCar && C.CARS.find(c => c.id === quality.p.firstCar && !c.npcOnly)) || C.CARS.find(c => !c.npcOnly); // (round 6, perf P: the low tier's lighter first car)
           await C.loadCar(first.id).catch(() => null);
           // (perf B) the traffic models every region uses (no place chosen yet: traffic.js regionModels gives those)
           const TM = drive.mods.traffic, ids = TM && TM.regionModels ? TM.regionModels(C) : [...new Set(C.TRAFFIC || [])];
@@ -286,7 +309,7 @@ G.dropTo = async (lat, lon, heading) => { await openMap(true); if (mapui) await 
 // to the map
 async function openHome() {
   if (Q.has('nohome')) return openMap();
-  try { const H = await import('./home.js?v=48'); new H.Home(G).show('start'); }
+  try { const H = await import('./home.js?v=49'); new H.Home(G).show('start'); }
   catch (e) { console.warn('home screen', e); openMap(); }
 }
 G.onFrame = () => {
