@@ -125,7 +125,37 @@ float bkShadow() {
   return mix( 1.0, s, e.x * e.y );
 }
 `;
+const PUSH_FN = /* glsl */`
+#ifdef BK_PUSH
+uniform mat4 projectionMatrix;
+// (v52, the open world's terrain) a cut fragment is not thrown away but given the depth of the point where its own
+// view ray reaches height yt, under the road: the road, the kerbs and anything on them are nearer and win, and where
+// nothing of ours is there (a cut wider than what is drawn, or the ground standing over a road's edge, which left a
+// see-through strip along it) the ground still shows. Seen from below (a bank over the road higher than the eye),
+// the ray never comes down to yt: then just short of the far plane, so it only fills what would show the sky.
+float bkPushDepth( float yt ) {
+  float dy = cameraPosition.y - vBkWorld.y, up = cameraPosition.y - yt;
+  if ( dy < 0.05 || up <= dy ) {
+#if defined( USE_REVERSED_DEPTH_BUFFER ) && ! defined( USE_LOGARITHMIC_DEPTH_BUFFER )
+    return 1e-5;
+#else
+    return 1.0 - 1e-5;
+#endif
+  }
+  vec3 p = cameraPosition + ( vBkWorld - cameraPosition ) * ( up / dy );
+  vec4 c = projectionMatrix * viewMatrix * vec4( p, 1.0 );
+#if defined( USE_LOGARITHMIC_DEPTH_BUFFER )
+  return log2( 1.0 + max( c.w, 1e-6 ) ) * logDepthBufFC * 0.5;
+#elif defined( USE_REVERSED_DEPTH_BUFFER )
+  return clamp( c.z / c.w, 0.0, 1.0 );
+#else
+  return clamp( 0.5 * c.z / c.w + 0.5, 0.0, 1.0 );
+#endif
+}
+#endif
+`;
 const FRAG_CUT = /* glsl */`
+float bkPushZ = -1.0;
 if ( uCutOn > 0.5 ) {
   vec2 cuv = ( vBkWorld.xz - uCutBox.xy ) * uCutBox.zw;
   if ( cuv.x > 0.0 && cuv.x < 1.0 && cuv.y > 0.0 && cuv.y < 1.0 ) {
@@ -133,7 +163,13 @@ if ( uCutOn > 0.5 ) {
     float rh = uCutH.x + texture2D( uCutHt, cuv ).r;
     // (green: a cut that reaches higher there, 25 m for full green: a tunnel's bore, a road cut into a hillside;
     // cutmask.js and tunnels.js)
-    if ( m.r > 0.5 && vBkWorld.y > rh - uCutBelow && vBkWorld.y < rh + max( uCutTop, m.g * 25.0 ) ) discard;
+    if ( m.r > 0.5 && vBkWorld.y > rh - uCutBelow && vBkWorld.y < rh + max( uCutTop, m.g * 25.0 ) ) {
+#ifdef BK_PUSH
+      bkPushZ = bkPushDepth( rh - uCutBelow - 0.25 );
+#else
+      discard;
+#endif
+    }
   }
 }
 `;
@@ -172,10 +208,19 @@ if ( uDetailOn > 0.5 ) {
   }
   gl_FragColor.rgb = bkC * uSkyLight + bkC * lampLight( vBkWorld ) * 0.3;
 }
+#ifdef BK_PUSH
+#if defined( USE_LOGARITHMIC_DEPTH_BUFFER )
+if ( bkPushZ >= 0.0 ) gl_FragDepth = bkPushZ;
+#else
+gl_FragDepth = bkPushZ >= 0.0 ? bkPushZ : gl_FragCoord.z;
+#endif
+#endif
 `;
 
-export function patchBaked(material) {
+// opts.push (the open world's terrain): cut fragments are pushed under the road instead of thrown away (bkPushDepth)
+export function patchBaked(material, opts = {}) {
   if (!material || material.userData.baked) return material;
+  const push = !!opts.push;
   const mats = Array.isArray(material) ? material : [material];
   for (const m of mats) {
     if (m.userData.baked) continue;
@@ -190,12 +235,13 @@ export function patchBaked(material) {
         .replace('#include <common>', '#include <common>\n' + VERT_PARS)
         .replace('#include <project_vertex>', '#include <project_vertex>\n' + VERT);
       const pk = shader.fragmentShader.includes('#include <packing>') ? '' : '#include <packing>\n';
-      shader.fragmentShader = shader.fragmentShader
+      shader.fragmentShader = (push ? '#define BK_PUSH\n' : '') + shader.fragmentShader
         .replace('#include <common>', '#include <common>\n' + pk + FRAG_PARS)
+        .replace('#include <clipping_planes_pars_fragment>', '#include <clipping_planes_pars_fragment>\n' + PUSH_FN)
         .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + FRAG_CUT)
         .replace('#include <opaque_fragment>', '#include <opaque_fragment>\n' + FRAG);
     };
-    m.customProgramCacheKey = () => 'baked3|' + prevKey;
+    m.customProgramCacheKey = () => 'baked3|' + (push ? 'push|' : '') + prevKey;
     m.needsUpdate = true;
   }
   return material;

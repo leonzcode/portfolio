@@ -7,9 +7,9 @@ import { GLTFExtensionsPlugin, TileCompressionPlugin, TilesFadePlugin, Terrarium
 import { GoogleCloudAuthPlugin } from '3d-tiles-renderer/core/plugins';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=51';
-import { patchBaked } from './baked.js?v=51';
-import { under } from './under.js?v=51';
+import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=52';
+import { patchBaked } from './baked.js?v=52';
+import { under } from './under.js?v=52';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -150,9 +150,9 @@ export class World extends THREE.EventDispatcher {
     // while the elevation comes in; its coverage is known before the streets are built, so our own buildings there are
     // left out (buildings.js, ctx.realAt)
     if (this.open) { try { this.open.dispose(); } catch (e) {} this.open = null; }
-    // (round 6) not on Low unless the player turned them on (perf.js, localStorage car_real3d); ?opentiles= always
-    const wantOpen = (() => { if (/[?&]opentiles=/.test(location.search)) return true; let v = null; try { v = localStorage.getItem('car_real3d'); } catch (e) {} const q = window.__car && window.__car.quality; return v === '1' || (v !== '0' && !(q && q.low)); })();
-    const openP = mode === 'open' && wantOpen ? import('./opentiles.js?v=51').then(OT => OT.startOpenTiles(this, lat, lon)).catch(e => { console.warn('open tiles', e); return null; }) : null;
+    // (v52) off: Leon asked for our generated buildings everywhere again; only a test's ?opentiles=<id> loads them
+    const wantOpen = /[?&]opentiles=/.test(location.search);
+    const openP = mode === 'open' && wantOpen ? import('./opentiles.js?v=52').then(OT => OT.startOpenTiles(this, lat, lon)).catch(e => { console.warn('open tiles', e); return null; }) : null;
     if (this.heights) await this.heights.want(lat, lon, 1500);
     if (openP) this.open = await openP;
     if (mode === 'google') {
@@ -176,7 +176,9 @@ export class World extends THREE.EventDispatcher {
         o.material = new THREE.MeshBasicMaterial({ map: m.map, color: 0xffffff, side: m.side, transparent: m.transparent, opacity: m.opacity, alphaTest: m.alphaTest, vertexColors: m.vertexColors });
         m.dispose();
       }
-      patchBaked(o.material);
+      // (v52: in the open world the ground under a road is pushed down behind it rather than cut away, so it never
+      // leaves a see-through hole: baked.js bkPushDepth)
+      patchBaked(o.material, { push: !google && !/[?&]nopush/.test(location.search) }); // (?nopush: the old cut, for tests)
       if (!o.material.isMeshBasicMaterial) o.material.toneMapped = true;
       if (o.material.map) o.material.map.anisotropy = 8;
       if (google) {

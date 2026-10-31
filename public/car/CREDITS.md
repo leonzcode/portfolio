@@ -171,8 +171,9 @@ MIT licence text for the Rocketbox files:
 
 ## Real buildings from open 3D tilesets (round 6)
 
-Where a city or country publishes its own 3D buildings openly (no key, no login, an open licence, reachable from a
-web page), `js/opentiles.js` streams them in place of our generated buildings. Nothing is copied into this site: each
+Off for players since v52 (Leon asked for our generated buildings everywhere); a test can still turn one on with
+`?opentiles=<id>`. Where a city or country publishes its own 3D buildings openly (no key, no login, an open licence,
+reachable from a web page), `js/opentiles.js` streams them in place of our generated buildings. Nothing is copied into this site: each
 tile is fetched from its publisher's own server while you drive. Each licence was checked on 2026-10-31 (notes in the
 round 6 scratchpad, `car6/T/SOURCES.md`). What we change: the pictures are made smaller, untextured buildings are
 coloured by us, a b3dm's attribute table is dropped before it is read, and the height is shifted to meet our ground.
