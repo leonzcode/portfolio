@@ -130,8 +130,10 @@ float fWindow( vec2 p, float hwid, float sill, float head, float depth, vec3 Vw,
   vec3 emit = vec3( 0.0 );
   vec2 jit = ( vec2( h, h2 ) - 0.5 ) * 0.035;
   // a lit room
-  float isLit = step( h, lit );
-  emit = vec3( 1.0, 0.86, 0.66 ) * ( 0.10 + 0.12 * h2 ) * ( 0.6 + 0.4 * ly ) * isLit;
+  // (round 6, weather.js: after dark more rooms are lit, some warm, some a cooler white, each its own brightness)
+  float isLit = step( h, mix( lit, max( lit, 0.17 ), uNight ) );
+  vec3 litC = mix( vec3( 1.0, 0.52, 0.18 ), vec3( 0.7, 0.82, 1.0 ), step( 0.78, fract( h2 * 7.31 ) ) );
+  emit = litC * ( 0.06 + 0.2 * fract( h2 * 3.7 ) ) * ( 0.55 + 0.45 * ly ) * isLit * ( 1.0 + 1.6 * uNight );
   metal = mix( metal, 0.45, isLit ); col *= mix( 1.0, 0.7, isLit );
   // blinds down to some height, or curtains drawn to the sides
   float isBl = ( 1.0 - isLit ) * step( h, lit + 0.22 ) * step( 0.75 - 0.75 * h2, ly );
@@ -221,7 +223,8 @@ void facade() {
   // the panels, no recess, no glazing bars, no reflections of their own. Most of a dense core's walls are this far,
   // and every fragment of them is shaded whether it is seen or not (the log depth buffer has no early depth test).
   float camD = length( cameraPosition - vWPos );
-  if ( camD > ( flag == 1.0 || flag == 2.0 ? 320.0 : 100.0 ) ) {
+  // (round 6, perf P: uFNear, the near path's reach, is 0 on the low tier, so every wall takes this cheaper path)
+  if ( camD > ( flag == 1.0 || flag == 2.0 ? 320.0 : 100.0 ) * uFNear ) {
     float grimeF = fNoise( vec2( u * 0.35, v * 0.9 ) + seed * 0.731 );
     vec3 surfF = wall * ( 0.94 + 0.16 * grimeF );
     surfF *= mix( 1.0, 0.82, fBand( eave - v, 0.0, 0.35, pxv ) );
@@ -256,7 +259,11 @@ void facade() {
     vec3 gcol = mix( vec3( 0.12, 0.14, 0.16 ) * ( 0.8 + 0.4 * hwF ), vec3( 0.5, 0.48, 0.44 ), 0.4 * step( 0.06, hwF ) * step( hwF, 0.28 ) );
     fcCol = mix( fcCol, gcol, win ); fcRough = mix( 0.88, 0.12, win ); fcMetal = 0.55 * win;
     // (lit rooms: a few by day, about a quarter at night, uNight from atmos.js)
-    fcEmit = vec3( 1.0, 0.86, 0.66 ) * mix( 0.15, 0.6, uNight ) * step( hwF, mix( 0.06, 0.28, uNight ) ) * win;
+    // (round 6, weather.js: warm or cool, each room its own brightness)
+    vec3 litF = mix( vec3( 1.0, 0.52, 0.18 ), vec3( 0.7, 0.82, 1.0 ), step( 0.78, fract( hwF * 13.7 ) ) );
+    // (brighter towards the ceiling, where the room's lights are)
+    float ceilF = 0.5 + 0.5 * smoothstep( sillF, sillF + whF * fh, lyF );
+    fcEmit = litF * mix( 0.12, 0.42, uNight ) * ( 0.25 + 0.75 * fract( hwF * 7.13 ) ) * ceilF * step( hwF, mix( 0.06, 0.15, uNight ) ) * win;
     // a shop's sign band over its window, in the near path's colours
     if ( v < gh && gk == 1.0 ) {
       float sgn = fBand( v, gh - 0.95, gh - 0.3, pxv ) * fBand( wxF, -bw * 0.5 + 0.22, bw * 0.5 - 0.22, pxu ) * inB;
@@ -435,12 +442,12 @@ void facade() {
     vec3 gc = tint * ( 0.72 + 0.56 * mix( hp, hf, lodU ) );
     vec3 mc = mix( vec3( 0.6, 0.62, 0.64 ), vec3( 0.14, 0.15, 0.16 ), step( 0.72, sv ) );
     float mull = max( mullV, slab );
-    float lit2 = step( hp, mix( 0.05, 0.2, uNight ) ) * ( 1.0 - spand ) * ( 1.0 - lodU );
+    float lit2 = step( hp, mix( 0.05, 0.15, uNight ) ) * ( 1.0 - spand ) * ( 1.0 - lodU );
     vec3 gl = mix( gc * mix( 1.0, 0.6, ceil ), vec3( 0.52, 0.5, 0.46 ), blinds );
     fcCol = mix( mix( gl, tint * 0.5, spand ), mc, mull );
     fcRough = mix( mix( mix( 0.1 + 0.14 * hp, 0.7, blinds ), 0.5, mull ), 0.2, lodU * 0.5 );
     fcMetal = mix( 0.36 * ( 1.0 - blinds ), 0.2, mull );
-    fcEmit = vec3( 1.0, 0.92, 0.8 ) * mix( 0.12, 0.45, uNight ) * lit2 * ( 1.0 - mull );
+    fcEmit = mix( vec3( 1.0, 0.86, 0.68 ), vec3( 0.9, 0.94, 1.0 ), step( 0.6, fract( hp * 11.3 ) ) ) * mix( 0.12, 0.32, uNight ) * ( 0.3 + 0.7 * fract( hp * 5.7 ) ) * lit2 * ( 1.0 - mull );
     fcJit = ( vec2( mix( hp, hf, lodU ), fH( vec2( id, 2.5 ) ) ) - 0.5 ) * 0.03 * ( 1.0 - mull );
     return;
   }
@@ -448,6 +455,8 @@ void facade() {
     // far: the grid's average, without working out a single window
     float cov = ww * ( head - sill ) / fh * step( gh, v ) * inBays;
     fcCol = mix( surf, vec3( 0.16, 0.18, 0.2 ), cov ); fcRough = mix( 0.88, 0.15, cov ); fcMetal = 0.6 * cov;
+    // (round 6, weather.js) the lit windows' average glow after dark, so far buildings are not black boxes
+    fcEmit = vec3( 1.0, 0.8, 0.56 ) * cov * 0.045 * uNight;
     return;
   }
 
@@ -595,17 +604,21 @@ void facade() {
 export const FACADE_TIME = { value: 0 };
 // how dark it is (0 day, 1 night: atmos.js), for the lit windows and the light bounced off the street
 export const FACADE_NIGHT = { value: 0 };
+// (round 6, perf P) times the near path's reach (100 m, a screen's 320 m): 1, or 0 on the low tier (quality.js
+// facadeCheap) so every wall is drawn the far way, without the near path's recesses, glazing bars and grain
+export const FACADE_NEAR = { value: (globalThis.__carQuality && globalThis.__carQuality.p && globalThis.__carQuality.p.facadeCheap) ? 0 : 1 };
+try { if (globalThis.__carQuality) globalThis.__carQuality.on(q => { FACADE_NEAR.value = q.p.facadeCheap ? 0 : 1; }); } catch (e) {}
 
 export function makeFacadeMaterial(opts = {}) {
   // the sky's hemisphere light already lights the walls from above; the environment adds reflections more than fill
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.0, envMapIntensity: opts.envMapIntensity ?? 0.8 });
   m.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = FACADE_TIME; shader.uniforms.uNight = FACADE_NIGHT;
+    shader.uniforms.uTime = FACADE_TIME; shader.uniforms.uNight = FACADE_NIGHT; shader.uniforms.uFNear = FACADE_NEAR; // (uFNear: round 6, perf P)
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\n' + VERT_PARS)
       .replace('#include <project_vertex>', '#include <project_vertex>\n' + VERT);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uNight;\n' + FRAG_PARS)
+      .replace('#include <common>', '#include <common>\nuniform float uNight;\nuniform float uFNear;\n' + FRAG_PARS)
       .replace('#include <color_fragment>', '#include <color_fragment>\nfacade();\ndiffuseColor.rgb = fcCol;' + (m.userData.dbg ? '\n' + m.userData.dbg : ''))
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = fcRough;')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = fcMetal;')

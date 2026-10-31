@@ -168,3 +168,21 @@ MIT licence text for the Rocketbox files:
 > NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 > LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 > SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## Real buildings from open 3D tilesets (round 6)
+
+Where a city or country publishes its own 3D buildings openly (no key, no login, an open licence, reachable from a
+web page), `js/opentiles.js` streams them in place of our generated buildings. Nothing is copied into this site: each
+tile is fetched from its publisher's own server while you drive. Each licence was checked on 2026-10-31 (notes in the
+round 6 scratchpad, `car6/T/SOURCES.md`). What we change: the pictures are made smaller, untextured buildings are
+coloured by us, a b3dm's attribute table is dropped before it is read, and the height is shifted to meet our ground.
+
+| Where | Data | Publisher | Address used | Licence |
+|---|---|---|---|---|
+| Japan (about 290 cities and wards) | PLATEAU 3D city models, textured LoD2 buildings (LoD1 where there is no LoD2) | Ministry of Land, Infrastructure, Transport and Tourism (MLIT), Project PLATEAU, and the local governments | `api.plateauview.mlit.go.jp/datacatalog/3dtiles/all-bldg-lod2-texture-latest` (and `all-bldg-lod1-latest`), tiles on `assets.cms.plateau.reearth.io` | PLATEAU site policy / Public Data License 1.0, compatible with CC BY 4.0; credited as "MLIT Project PLATEAU (processed)" |
+| Helsinki | 3D reality mesh 2017 (photographed mesh of the city) | City of Helsinki, Urban Environment Division | `kartta.hel.fi/3d/mesh/Helsinki_2017/tileset.json` | CC BY 4.0 |
+| The Netherlands | 3DBAG v2025.09.03, LoD2.2 buildings | 3D geoinformation research group, TU Delft, and 3DGI | `data.3dbag.nl/v20250903/cesium3dtiles/lod22/tileset.json` | CC BY 4.0 |
+| Switzerland | swissBUILDINGS3D | Federal Office of Topography swisstopo | `3d.geo.admin.ch/ch.swisstopo.swissbuildings3d.3d/v1/tileset.json` | swisstopo free geodata terms (free use, source to be named: "©swisstopo") |
+| North Rhine-Westphalia | 3D-Gebäudemodell NRW, LoD2 | Bezirksregierung Köln, Geobasis NRW | `ogc-api.nrw.de/3dg/v1/collections/building/3dtiles` | Datenlizenz Deutschland Zero 2.0 (dl-de/zero-2-0) |
+
+The on-screen line names the source in use after "3D buildings:".

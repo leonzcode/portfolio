@@ -23,7 +23,36 @@ export const bakedUniforms = {
   uDetail: { value: null },
   uDetailOn: { value: 0 },
   uCamPos: { value: new THREE.Vector3() },
+  // (round 6, weather.js) the light of the moment against a clear noon: the photographs carry noon's light, so at
+  // dusk, under cloud and at night they are darkened (and tinted) by it, the hills and roofs with the rest
+  uSkyLight: { value: new THREE.Vector3(1, 1, 1) },
+  uWet: { value: 0 },                                  // 0..1: rain on the ground (darker)
+  uSnow: { value: 0 },                                 // 0..1: snow lying on flat ground and roofs
+  // the street lamps' light map (weather.js lamps): R the light, B where the lamps' heads are (for wet reflections),
+  // G the ground's height there ((G*255 - 128) * 2 m
+  // over uLampBox.w); box: x0, z0, 1/span, base height
+  uLampTex: { value: null },
+  uLampBox: { value: new THREE.Vector4(0, 0, 1, 0) },
+  uLampK: { value: 0 },
+  uLampCol: { value: new THREE.Vector3(1.3, 0.95, 0.6) },
 };
+
+// (round 6, weather.js) the street lamps' light at a world position, for any shader that declares these uniforms
+export const LAMP_GLSL = /* glsl */`
+uniform sampler2D uLampTex;
+uniform vec4 uLampBox;
+uniform float uLampK;
+uniform vec3 uLampCol;
+vec3 lampLight( vec3 w ) {
+  if ( uLampK < 0.003 ) return vec3( 0.0 );
+  vec2 luv = ( w.xz - uLampBox.xy ) * uLampBox.z;
+  if ( luv.x <= 0.0 || luv.y <= 0.0 || luv.x >= 1.0 || luv.y >= 1.0 ) return vec3( 0.0 );
+  vec4 lt = texture2D( uLampTex, luv );
+  float gy = uLampBox.w + ( lt.g * 255.0 - 128.0 ) * 2.0;
+  float hk = 1.0 - smoothstep( 3.0, 7.0, abs( w.y - gy ) );
+  return uLampCol * ( lt.r * 1.4 ) * uLampK * hk;
+}
+`;
 
 // A tiling grain (two octaves of value noise) laid over photographs close to the camera, so a satellite picture
 // seen from a car's height reads as gravel, grass and asphalt instead of a smear. Luminance only, mean 1.
@@ -73,8 +102,11 @@ uniform sampler2D uCutHt;
 uniform sampler2D uDetail;
 uniform float uDetailOn;
 uniform vec3 uCamPos;
+uniform vec3 uSkyLight;
+uniform float uWet, uSnow;
 varying vec4 vBkShadow;
 varying vec3 vBkWorld;
+${LAMP_GLSL}
 // three r180's unpackRGBAToDepth, written out so it does not matter where <packing> sits in the shader
 float bkDepth( vec2 uv ) {
   vec4 v = texture2D( uShadowMap, uv );
@@ -124,6 +156,22 @@ if ( uDetailOn > 0.5 ) {
     gl_FragColor.rgb = mix( gl_FragColor.rgb, gl_FragColor.rgb * vec3( 0.92, 1.06, 0.9 ), green * ( dn - 0.4 ) * fade );
   }
 }
+// (round 6, weather.js) the light of the moment, wet ground darker, and the street lamps' pools at night
+{
+  vec3 bkC = gl_FragColor.rgb;
+  if ( uWet > 0.001 || uSnow > 0.001 ) {
+    vec3 wn = normalize( cross( dFdx( vBkWorld ), dFdy( vBkWorld ) ) );
+    float flatK = smoothstep( 0.5, 0.9, abs( wn.y ) );
+    bkC *= 1.0 - 0.32 * uWet * flatK;
+    // snow: on what is flat enough to hold it, thinner in patches (the grain's broad noise)
+    if ( uSnow > 0.001 ) {
+      float sn = texture2D( uDetail, vBkWorld.xz * 0.021 ).r * 0.65 + texture2D( uDetail, vBkWorld.xz * 0.11 ).r * 0.35;
+      float cov = uSnow * smoothstep( 0.6, 0.88, abs( wn.y ) ) * smoothstep( 0.3, 0.55, sn + 0.18 * uSnow );
+      bkC = mix( bkC, vec3( 0.8, 0.82, 0.86 ) * ( 0.92 + 0.16 * sn ), cov );
+    }
+  }
+  gl_FragColor.rgb = bkC * uSkyLight + bkC * lampLight( vBkWorld ) * 0.3;
+}
 `;
 
 export function patchBaked(material) {
@@ -147,7 +195,7 @@ export function patchBaked(material) {
         .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + FRAG_CUT)
         .replace('#include <opaque_fragment>', '#include <opaque_fragment>\n' + FRAG);
     };
-    m.customProgramCacheKey = () => 'baked2|' + prevKey;
+    m.customProgramCacheKey = () => 'baked3|' + prevKey;
     m.needsUpdate = true;
   }
   return material;

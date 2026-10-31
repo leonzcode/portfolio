@@ -7,9 +7,9 @@ import { GLTFExtensionsPlugin, TileCompressionPlugin, TilesFadePlugin, Terrarium
 import { GoogleCloudAuthPlugin } from '3d-tiles-renderer/core/plugins';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=48';
-import { patchBaked } from './baked.js?v=48';
-import { under } from './under.js?v=48';
+import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=49';
+import { patchBaked } from './baked.js?v=49';
+import { under } from './under.js?v=49';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -132,7 +132,7 @@ export class World extends THREE.EventDispatcher {
       this.heights.onTile = (x, y, z) => this.dispatchEvent({ type: 'ground-changed', bbox: this.tileBox(x, y, z) });
       // (the tunnels' bores, under.js: something over the terrain's surface is not inside one)
       under.setGround((x, z) => this.groundAt(x, z));
-      const overlay = new XYZTilesOverlay({ url: ESRI, levels: +(new URLSearchParams(location.search).get('lv') || 19), tileDimension: 256 });
+      const overlay = new XYZTilesOverlay({ url: ESRI, levels: +(new URLSearchParams(location.search).get('lv') || ((globalThis.__carQuality && globalThis.__carQuality.p.overlayLevels) || 19)) /* (round 6, perf P: 18 on the low tier) */, tileDimension: 256 });
       tiles.registerPlugin(new TerrariumMeshPlugin({ url: TERRARIUM, maxZoom: TZ, overlay, applyOverlayTexture: true, unlit: true }));
       tiles.errorTarget = 2;
     }
@@ -146,7 +146,15 @@ export class World extends THREE.EventDispatcher {
     tiles.addEventListener('dispose-model', e => e.scene.traverse(o => { if (o.isMesh && o.geometry.boundsTree) o.geometry.disposeBoundsTree(); }));
     tiles.addEventListener('tiles-load-start', () => { this.loading++; });
     tiles.addEventListener('tiles-load-end', () => { this.loading = 0; });
+    // (round 6, agent T) real buildings from an open 3D tileset where one covers the drop (opentiles.js), looked for
+    // while the elevation comes in; its coverage is known before the streets are built, so our own buildings there are
+    // left out (buildings.js, ctx.realAt)
+    if (this.open) { try { this.open.dispose(); } catch (e) {} this.open = null; }
+    // (round 6) not on Low unless the player turned them on (perf.js, localStorage car_real3d); ?opentiles= always
+    const wantOpen = (() => { if (/[?&]opentiles=/.test(location.search)) return true; let v = null; try { v = localStorage.getItem('car_real3d'); } catch (e) {} const q = window.__car && window.__car.quality; return v === '1' || (v !== '0' && !(q && q.low)); })();
+    const openP = mode === 'open' && wantOpen ? import('./opentiles.js?v=49').then(OT => OT.startOpenTiles(this, lat, lon)).catch(e => { console.warn('open tiles', e); return null; }) : null;
     if (this.heights) await this.heights.want(lat, lon, 1500);
+    if (openP) this.open = await openP;
     if (mode === 'google') {
       // the key works once the root tileset arrives; a refusal (bad key, API off, quota) comes as a load error
       const ok = await new Promise(res => {
@@ -228,6 +236,7 @@ export class World extends THREE.EventDispatcher {
     _ray.set(origin, dir); _ray.far = far; _ray.firstHitOnly = true;
     let list = this.mode === 'google' && this.tiles ? [this.tiles.group, ...this.extra] : this.extra;
     if (under.meshes.length) list = list.concat(under.meshes); // (a tunnel's walls and roof)
+    if (this.open && this.open.hit.length) list = list.concat(this.open.hit); // (round 6, agent T: the real buildings)
     const hits = _ray.intersectObjects(list, true);
     _ray.firstHitOnly = false;
     if (!hits.length) return null;
@@ -244,10 +253,12 @@ export class World extends THREE.EventDispatcher {
     const f = this._uf = (this._uf || 0) + 1, cp = this.camera.position;
     const lp = this._up || (this._up = new THREE.Vector3(Infinity, 0, 0)), jump = cp.distanceToSquared(lp) > 400;
     if (this._ef === undefined) this._ef = /[?&]tileseveryframe/.test(location.search); // (test flag: the old way)
-    if (!jump && f - (this._ul || 0) < 2 && !this._ef) return;
+    // (round 6, perf P: every third frame on the low tier)
+    if (!jump && f - (this._ul || 0) < ((globalThis.__carQuality && globalThis.__carQuality.low) ? 3 : 2) && !this._ef) return;
     this._ul = f; lp.copy(cp);
     this.tiles.setResolutionFromRenderer(this.camera, this.renderer);
     this.tiles.update();
+    if (this.open) { try { this.open.update(); } catch (e) { console.warn('open tiles', e); } } // (round 6, agent T)
     if (this.mode === 'google') {
       const a = this.tiles.getAttributions ? this.tiles.getAttributions() : [];
       const s = a.map(x => x.value).filter(v => typeof v === 'string').join('; ');
@@ -260,5 +271,6 @@ export class World extends THREE.EventDispatcher {
     under.setGround(null);
     if (this.tiles) { this.root.remove(this.tiles.group); this.tiles.dispose(); this.tiles = null; }
     this.heights = null;
+    if (this.open) { try { this.open.dispose(); } catch (e) {} this.open = null; } // (round 6, agent T)
   }
 }

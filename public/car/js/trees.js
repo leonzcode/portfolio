@@ -8,8 +8,9 @@
 //                         roadsMask, buildings, roads, centre: [x, z], radius, lean: [kx, kz] })
 //   t.group, t.ready (Promise of stats), t.dispose()
 import * as THREE from 'three';
-import { frame } from './geo.js?v=48';
-import { detect } from './treedetect.js?v=48';
+import { frame } from './geo.js?v=49';
+import { detect } from './treedetect.js?v=49';
+import { bakedUniforms } from './baked.js?v=49'; // (round 6, weather.js: the light of the moment, uSkyLight)
 
 const D2R = Math.PI / 180;
 function hashf(n, salt = 0) {
@@ -161,8 +162,11 @@ function spritePatch(m, key, lod = true) {
       .replace('#include <common>', '#include <common>\nattribute vec2 aCorner;\nattribute float aSid;' + (lod ? '\n#define SPRITE_LOD' : ''))
       .replace('#include <project_vertex>', SPRITE_VERT);
     if (sh.fragmentShader.includes('#include <lights_fragment_end>')) {
-      // light through the leaves: never quite black on the shaded side
-      sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectDiffuse += diffuseColor.rgb * 0.06;');
+      // light through the leaves: never quite black on the shaded side (round 6: as bright as the light of the moment,
+      // weather.js's uSkyLight, 1 at noon; a fixed amount made the trees glow green at night)
+      sh.uniforms.uSkyLight = bakedUniforms.uSkyLight;
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uSkyLight;')
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectDiffuse += diffuseColor.rgb * 0.06 * uSkyLight;');
     }
   };
   m.customProgramCacheKey = () => 'sprite-' + key;
@@ -213,7 +217,7 @@ function getWorker() {
   if (WORKER === false) return null;
   if (!WORKER) {
     try {
-      WORKER = new Worker(new URL('./treeworker.js?v=48', import.meta.url), { type: 'module' });
+      WORKER = new Worker(new URL('./treeworker.js?v=49', import.meta.url), { type: 'module' });
       WORKER.onmessage = (e) => { const j = jobs.get(e.data.id); if (!j) return; jobs.delete(e.data.id); if (e.data.error) j.reject(new Error(e.data.error)); else j.resolve(e.data.res); };
       WORKER.onerror = () => { WORKER = false; for (const j of jobs.values()) j.reject(new Error('worker failed')); jobs.clear(); };
     } catch (e) { WORKER = false; return null; }
@@ -466,6 +470,17 @@ export function build(src, opts = {}) {
     stats.dropDense = dropSet.size;
     list.length = 0;
     for (const t of kept) if (!dropSet.has(t)) list.push(t);
+    // (round 6) the graphics tier's share: on Low the 3500 trees nearest the car, on Medium 9000 (central Paris on Low
+    // drew about 25,000 trees, 770k triangles, more than its roads and buildings together); far ones go first
+    const Qt = (typeof window !== 'undefined' && window.__car && window.__car.quality) || null;
+    const capN = Qt ? (Qt.tier === 'low' ? 3500 : Qt.tier === 'medium' ? 9000 : Infinity) : Infinity;
+    if (list.length > capN) {
+      const cam = opts.world && opts.world.camera;
+      const fx = opts.focus ? opts.focus[0] : opts.centre ? opts.centre[0] : cam ? cam.position.x : 0;
+      const fz = opts.focus ? opts.focus[1] : opts.centre ? opts.centre[1] : cam ? cam.position.z : 0;
+      list.sort((u, v) => ((u.x - fx) ** 2 + (u.z - fz) ** 2) - ((v.x - fx) ** 2 + (v.z - fz) ** 2));
+      stats.dropTier = list.length - capN; list.length = capN;
+    }
     if (disposed) return stats;
     await makeMeshes(list);
     if (disposed) return stats;

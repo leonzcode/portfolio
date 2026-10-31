@@ -3,7 +3,9 @@
 // white plates with dark letters elsewhere. All names are drawn into one picture, so all signs are two draw calls.
 import * as THREE from 'three';
 
-const COLS = 4, ROWS = 32, CW = 512, CH = 64;
+// (round 6, perf P: half the picture's size on the low tier, quality.js; 1024 square instead of 2048)
+const SQ = (globalThis.__carQuality && globalThis.__carQuality.low) ? 0.5 : 1;
+const COLS = 4, ROWS = 32, CW = 512 * SQ, CH = 64 * SQ;
 
 export class StreetSigns {
   constructor(scene) {
@@ -29,12 +31,12 @@ export class StreetSigns {
       const i = slots.size; if (i >= COLS * ROWS) return null;
       const x = (i % COLS) * CW, y = Math.floor(i / COLS) * CH;
       g.fillStyle = us ? '#0b6b3a' : '#f4f4f0'; g.fillRect(x, y, CW, CH);
-      g.strokeStyle = us ? '#f2f2ee' : '#1e2a44'; g.lineWidth = 4; g.strokeRect(x + 4, y + 4, CW - 8, CH - 8);
+      g.strokeStyle = us ? '#f2f2ee' : '#1e2a44'; g.lineWidth = 4 * SQ; g.strokeRect(x + 4 * SQ, y + 4 * SQ, CW - 8 * SQ, CH - 8 * SQ);
       g.fillStyle = us ? '#ffffff' : '#18223a';
-      let size = 40; g.font = `600 ${size}px "Roboto Condensed", "Arial Narrow", Arial, sans-serif`;
-      while (g.measureText(name).width > CW - 36 && size > 18) { size -= 2; g.font = `600 ${size}px "Roboto Condensed", "Arial Narrow", Arial, sans-serif`; }
+      let size = 40 * SQ; g.font = `600 ${size}px "Roboto Condensed", "Arial Narrow", Arial, sans-serif`;
+      while (g.measureText(name).width > CW - 36 * SQ && size > 18 * SQ) { size -= 2 * SQ; g.font = `600 ${size}px "Roboto Condensed", "Arial Narrow", Arial, sans-serif`; }
       g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(name, x + CW / 2, y + CH / 2 + 2);
+      g.fillText(name, x + CW / 2, y + CH / 2 + 2 * SQ);
       const s = { u0: x / this.canvas.width, v0: y / this.canvas.height, u1: (x + CW) / this.canvas.width, v1: (y + CH) / this.canvas.height, w: Math.min(1.9, Math.max(0.9, 0.11 * name.length + 0.45)) };
       slots.set(name, s);
       return s;

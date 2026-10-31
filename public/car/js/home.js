@@ -2,7 +2,9 @@
 // public ones with their place and how many are in, a room of your own (public, or private with a code) on a place
 // chosen on the map, or a room joined by its code). Everyone in a room drops at the room's place (mp.js runs the
 // room). In the page's own Google Maps look; a link with ?lat= drops straight in and never shows this.
-import { Net, Session } from './mp.js?v=48';
+// (round 6) Once in a room, a player may go anywhere and stay in it (mp.js openTravel); the room list says where the
+// players of each room are.
+import { Net, Session } from './mp.js?v=49';
 
 const CSS = `
 .mph { position: fixed; inset: 0; z-index: 40; overflow: hidden; background: #1b1d1f; font-family: Roboto, 'Segoe UI', Arial, sans-serif; color: #1f1f1f; -webkit-font-smoothing: antialiased; }
@@ -89,10 +91,13 @@ export class Home {
     el.addEventListener('keydown', e => e.stopPropagation());
     G.home = this;
     // leaving a drive in a room (the map's back arrow): out of the room and back here
-    G.onLeaveDrive = () => { if (!this.session) return false; this.leaveRoom(); this.show('rooms'); return true; };
+    // (round 6: the back arrow opens the map in the room instead, mp.js openTravel; leaving is in the player list)
+    G.onLeaveDrive = () => { if (!this.session) return false; try { if (this.session.openTravel(true)) return true; } catch (e) { console.warn('travel', e); } this.leaveRoom(); this.show('rooms'); return true; };
   }
 
   show(view = 'start') {
+    // (round 6) the home screen itself, from the map's menu while in a room (the travel map): out of the room first
+    if (view === 'start' && this.session) { try { this.session.closeTravel(false); } catch (e) {} this.leaveRoom(); }
     this.el.hidden = false; this.G.paused = true;
     this.view = view;
     clearInterval(this.refresh);
@@ -164,7 +169,13 @@ export class Home {
       let list; try { list = await this.net.rooms(); } catch (e) { return; }
       const box = C.querySelector('.mph-rooms'); if (!box) return;
       if (!list.length) { box.innerHTML = '<div class="mph-empty">No public rooms right now. Make one below and others can join it.</div>'; return; }
-      box.innerHTML = list.map(r => '<div class="mph-room"><div class="mph-pin">' + ICON.pin + '</div><div class="mph-rt"><div>' + esc(r.name) + '</div><div>' + r.n + ' of ' + r.max + ' · ' + esc(r.place.label || (r.place.lat.toFixed(3) + ', ' + r.place.lon.toFixed(3))) + '</div></div><button class="mph-sec" data-room="' + esc(r.id) + '"' + (r.n >= r.max ? ' disabled' : '') + '>' + (r.n >= r.max ? 'Full' : 'Join') + '</button></div>').join('');
+      // (round 6) where its players are: the room's place, or how many in each place when they have spread out
+      const where = r => {
+        const home = r.place.label || (r.place.lat.toFixed(3) + ', ' + r.place.lon.toFixed(3)), S = Array.isArray(r.spots) ? r.spots : [];
+        if (S.length < 2) return (S[0] && S[0][0]) || home;
+        return S.map(([l, n]) => n + ' in ' + (l || 'another place')).join(', ');
+      };
+      box.innerHTML = list.map(r => '<div class="mph-room"><div class="mph-pin">' + ICON.pin + '</div><div class="mph-rt"><div>' + esc(r.name) + '</div><div title="' + esc(where(r)) + '">' + r.n + ' of ' + r.max + ' · ' + esc(where(r)) + '</div></div><button class="mph-sec" data-room="' + esc(r.id) + '"' + (r.n >= r.max ? ' disabled' : '') + '>' + (r.n >= r.max ? 'Full' : 'Join') + '</button></div>').join('');
       box.querySelectorAll('[data-room]').forEach(b => b.onclick = () => this.joinRoom({ id: b.dataset.room }));
     };
     load();

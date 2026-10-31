@@ -19,10 +19,10 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=48';
-import { patchBaked } from './baked.js?v=48';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=48';
-import overture from './overture.js?v=48';
+import { frame, project } from './geo.js?v=49';
+import { patchBaked } from './baked.js?v=49';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=49';
+import overture from './overture.js?v=49';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -1956,7 +1956,8 @@ const UPQ = [];
 export const UPLOADS = []; // (tests: [when, ms, width] of the last uploads)
 if (typeof window !== 'undefined') window.__bldUploads = UPLOADS;
 let upOn = false, upLast = 0, upSkip = 0;
-const NO_ROOFPIC = (() => { try { return /[?&]noroofpic/.test(location.search); } catch (e) { return false; } })();
+// (round 6, perf P: and on the low tier, quality.js roofPics; the roofs keep their plain colour from the picture)
+const NO_ROOFPIC = (() => { try { return /[?&]noroofpic/.test(location.search) || !!(globalThis.__carQuality && globalThis.__carQuality.p && globalThis.__carQuality.p.roofPics === false); } catch (e) { return false; } })();
 function queueUpload(renderer, rec, roof, tex) {
   if (NO_ROOFPIC) { tex.dispose(); return; }
   const j = { renderer, rec, roof, tex, bitmap: undefined };
@@ -2262,7 +2263,8 @@ export function build(list, opts = {}) {
       let a = 0; for (const b of c.list) a += Math.abs(area2(b.outer));
       c.density = Math.min(1, a / (CELL * CELL));
       // (what Overture added changes a cell: its tags go into the signature with the ids)
-      c.sig = 'v3:' + c.key + ':' + c.list.map(b => b.id + (b.ovt ? 'o' : '')).sort().join(',');
+      // (round 6, agent T: a build that leaves the open tileset's buildings out keeps its cells apart from one that does not)
+      c.sig = (typeof opts.realAt === 'function' ? 'v3r:' : 'v3:') + c.key + ':' + c.list.map(b => b.id + (b.ovt ? 'o' : '')).sort().join(',');
     }
     order = [...cells.values()].sort((a, b) => dist(a) - dist(b));
     ctx.shopsKnown = list.some(b => b.shop);
@@ -2282,6 +2284,13 @@ export function build(list, opts = {}) {
       await k.slice('plan'); if (disposed) return;
     }
     if (!plans.length) return;
+    // (round 6, agent T) the buildings an open 3D tileset already has (opentiles.js, drive.js ctx.realAt): planned for
+    // their collision and roof as before, but not drawn, and no roof picture fetched for a cell of nothing but those
+    let allReal = false;
+    if (typeof opts.realAt === 'function') {
+      try { for (const P of plans) { let sx = 0, sz = 0; for (const p of P.outer) { sx += p[0]; sz += p[1]; } P.real = !!opts.realAt(sx / P.outer.length, sz / P.outer.length); } } catch (e) { for (const P of plans) P.real = false; }
+      allReal = plans.every(P => P.real);
+    }
     let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity, hmax = 0;
     for (const P of plans) { for (const p of P.outer) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); } hmax = Math.max(hmax, P.H); }
     const pad = 2 + Math.min(70, hmax * 0.3);
@@ -2289,12 +2298,12 @@ export function build(list, opts = {}) {
     // the lean) are waited for, 6 s at most; the picture itself is drawn on the roofs later, when its tiles are in,
     // uploaded one a frame (roofs are drawn in their own mean colour meanwhile)
     let img = null, pic = null;
-    if (imagery && (imagery.rectParts || imagery.rect)) {
+    if (imagery && !allReal && (imagery.rectParts || imagery.rect)) {
       // the near cells at the picture's best, the rest at half (a quarter of the texture memory and upload)
       const zoom = opts.zoom ?? (dist(c) < 320 ? 19 : 18);
       // (1536 px at most: a 2048 px picture took up to a few hundred ms to upload on a busy card; lead: 1024 and 768
       // now, each upload is a stall of the graphics process, and a cell of about 300 m at 1024 px is still 0.3 m a pixel)
-      const io = { zoom, maxSize: zoom >= 19 ? 1024 : 768, read: true };
+      const io = { zoom, maxSize: zoom >= 19 ? 1024 : 768, read: true, picture: !NO_ROOFPIC }; // (picture: round 6, perf P; none on the low tier)
       if (imagery.rectParts) {
         const parts = imagery.rectParts(x0 - pad, z0 - pad, x1 + pad, z1 + pad, io);
         img = { x0: parts.x0, z0: parts.z0, x1: parts.x1, z1: parts.z1, sample: null, lean: null };
@@ -2353,7 +2362,8 @@ export function build(list, opts = {}) {
       const eps = 0.012 + 0.0003 * Math.min(P.H, 400) + 0.014 * P.r4;
       if (!P.offset) { P.outer = offsetRing(P.outer, eps); P.holes = P.holes.map(h => offsetRing(h, eps)); P.offset = true; P.ob = obb(P.outer) || P.ob; P.ax = axesOf(P); }
       const w0 = W.idx.length, r0 = R.idx.length;
-      if (P.children) {
+      if (P.real) { stats.real = (stats.real || 0) + 1; } // (round 6, agent T: drawn by the open tileset)
+      else if (P.children) {
         // the wings stand on the house's own base, with its colours
         let gmin = Infinity; for (const q of P.outer) { const g = ctx.groundAt(q[0], q[1]); gmin = Math.min(gmin, g == null || !isFinite(g) ? ctx.g0 : g); }
         P.baseY = gmin;
@@ -2374,6 +2384,13 @@ export function build(list, opts = {}) {
       if (dt > 25) (stats.slowPlans || (stats.slowPlans = [])).push({ id: P.b.id, ms: Math.round(dt), shape: P.shape, n: P.outer.length, holes: P.holes.length, area: Math.round(P.area), t: P.t });
       await k.slice('emit');
       if (disposed) { if (pic) pic.then(r => r && r.texture.dispose()); return; }
+    }
+    // (round 6, agent T) nothing of ours to draw in this cell (every building in it is the open tileset's)
+    if (!W.idx.length && !R.idx.length) {
+      const rec = { sig: c.sig, meshes: [], mats: [], textures: [], refs: new Set([handle]), n: plans.length, dead: false };
+      built.set(c.sig, rec); recs.push(rec); stats.buildings += plans.length; stats.cells++;
+      if (pic) pic.then(r => r && r.texture.dispose());
+      return;
     }
     const wg = W.geometry();
     await k.slice('walls geometry');

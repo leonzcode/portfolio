@@ -4,7 +4,7 @@
 // parts are one InstancedMesh for all its parked copies, near ones with the detailed parts, the rest with the far
 // ones, so a hundred parked cars cost about what one moving car does.
 import * as THREE from 'three';
-import { frame } from './geo.js?v=48';
+import { frame } from './geo.js?v=49';
 
 const MODELS = ['fairheaven', 'milano', 'shvan', 'conquer', 's10', 'fairheaven', 'milano'];
 // outside North America no pickups or boxy American vans: saloons and hatchbacks
@@ -130,7 +130,12 @@ export class Parked {
           // facing the way traffic goes on that side of the road
           const along = (side > 0) !== leftHand;
           const heading = (Math.atan2(along ? tx : -tx, along ? -tz : tz) * 180 / Math.PI + 360) % 360;
-          const ML = inAmericas() ? MODELS : MODELS_ELSE, model = ML[(hash(e.id, k * 7 + 3) * ML.length) | 0];
+          // (round 6, perf P) the low tier keeps a share of the spots and only the traffic's few kinds of car (quality.js)
+          const QP = globalThis.__carQuality && globalThis.__carQuality.p;
+          if (QP && QP.parkedShare < 1 && hash(e.id, k * 13 + 5) > QP.parkedShare) continue;
+          let ML = inAmericas() ? MODELS : MODELS_ELSE;
+          if (QP && QP.trafficModels) { const few = ML.slice(0, 0).concat([...new Set(ML)].slice(0, QP.trafficModels)); ML = ML.filter(m => few.includes(m)); }
+          const model = ML[(hash(e.id, k * 7 + 3) * ML.length) | 0];
           out.push({ x, y: sf.h + lift, z, heading, model, paint: PAINTS[(hash(k, e.id * 3 + 1) * PAINTS.length) | 0] });
           if (out.length >= 420) break;
         }

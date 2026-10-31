@@ -26,7 +26,7 @@ export function loadPeople(drive) {
   Hp = (async () => {
     if (!/[?&]standin/.test(location.search)) {
       try {
-        const M = await import('./people.js?v=48');
+        const M = await import('./people.js?v=49');
         if (M && M.People && typeof M.People.createPerson === 'function') {
           const P = M.People;
           await P.load(drive && drive.G ? drive.G.renderer : undefined, drive ? drive.camera : undefined);
@@ -37,7 +37,7 @@ export function loadPeople(drive) {
         }
       } catch (e) { console.warn('people module', e && e.message); }
     }
-    const M = await import('./standin.js?v=48');
+    const M = await import('./standin.js?v=49');
     H = wrapStandin(M);
     return H;
   })();
@@ -156,7 +156,17 @@ export function guessSeats(rig) {
 
 // ------------------------------------------------------------------------------------------------------------
 
-const NEAR = 42, BUS_NEAR = 34, PARKED_NEAR = 26, MAX_CARS = 12, MAX_PARKED = 6, MAKE_PER_FRAME = 1;
+let NEAR = 42, BUS_NEAR = 34, PARKED_NEAR = 26, MAX_CARS = 12, MAX_PARKED = 6; const MAKE_PER_FRAME = 1;
+// (round 6, perf P) fewer people in fewer cars on the low tier (quality.js): each is a skinned mesh, costly to pose
+// and draw; nobody in parked cars there. The plan of who sits where is the same on every tier (picked from the car's
+// number in a room, so two pages agree); the low tier only makes the first OCC_MAX of a car's planned people.
+let OCC_MAX = 99;
+function tierOcc() {
+  const q = globalThis.__carQuality; if (!q || !q.p) return;
+  NEAR = Math.min(42, q.p.occupantReach ?? 42); BUS_NEAR = Math.min(34, NEAR); PARKED_NEAR = q.low ? 0 : 26;
+  MAX_CARS = q.low ? 3 : q.medium ? 8 : 12; MAX_PARKED = q.low ? 0 : q.medium ? 3 : 6; OCC_MAX = q.p.occupants ?? 99;
+}
+try { tierOcc(); if (globalThis.__carQuality) globalThis.__carQuality.on(tierOcc); } catch (e) {}
 const isBus = rig => !!(rig && rig.spec && (rig.spec.bus || rig.spec.kind === 'bus' || /bus/i.test(rig.spec.id || '')));
 
 // a random number stream from a seed (mulberry32): the same people for the same car number on every page
@@ -482,6 +492,9 @@ export class Occupants {
       const seat = R.seats[i];
       const isKid = !!seat.kid || (kid && i > 0);
       const look = R.looks[i] || (R.looks[i] = h.randomLook({ kid: isKid }, R.rand));
+      // (round 6, perf P) past the tier's people a car (the look still picked, in seat order, so the numbers drawn for
+      // the seats after stay as on every other page)
+      if (R.kind !== 'player' && R.people.filter(o => !o.player).length >= OCC_MAX) continue;
       // (one person a frame at most, and none in a frame after a slow one: each is a model copied and seated)
       while (!this.mayMake()) await new Promise(r => requestAnimationFrame(r));
       this.makeQ++;
