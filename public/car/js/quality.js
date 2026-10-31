@@ -1,6 +1,6 @@
 // The graphics tier: 'low' for Chromebooks, phones and other weak devices, 'medium' between, 'high' as the game was
 // built (round 6, perf agent P). Every module that costs frames or memory reads it: `import { quality } from
-// './quality.js?v=49'` (or window.__car.quality), then quality.low / quality.tier / quality.p (the numbers for the
+// './quality.js?v=50'` (or window.__car.quality), then quality.low / quality.tier / quality.p (the numbers for the
 // tier), and quality.on(fn) to hear a change (fn(quality, before)). The choice is Auto / Low / Medium / High, kept
 // in localStorage car_gfx; ?gfx=low|medium|high picks one for a visit without keeping it.
 //
@@ -34,10 +34,10 @@ export const PARAMS = {
     shadowSize: 1024,      // the sun's shadow map when there is one
     clouds: false,         // the cloud deck (a full screen of noise)
     envSize: 64,           // the sky picture the paint reflects (weather.js reads it once)
-    traffic: 8,            // most traffic cars
+    traffic: 6,            // most traffic cars (round 6b: 6, was 8)
     trafficSpacing: 2.2,   // times the normal gap between traffic cars
     trafficModels: 3,      // kinds of traffic and parked car loaded (each is its own pictures and buffers)
-    peds: 6,               // most pedestrians
+    peds: 4,               // most pedestrians (round 6b: 4, was 6)
     occupants: 1,          // people in a traffic car at most (the driver)
     occupantReach: 18,     // metres from the camera that cars get people at all
     parkedShare: 0.35,     // share of the parked cars kept
@@ -49,7 +49,7 @@ export const PARAMS = {
     roofPics: false,       // reload: no satellite pictures on the roofs (their plain colour)
     spareCars: 0,          // cars made ready ahead of a change (and the car left is not kept)
     firstCar: 'fairheaven', // the car a drive starts in (null: the first in cars.js, the Volvo)
-    tilesError: 4,         // the terrain tiles' error target (higher is coarser; 2 on high)
+    tilesError: 6,         // the terrain tiles' error target (higher is coarser; 2 on high; round 6b: 6, was 4)
     tilesBytes: 0.09,      // GB the tiles' cache may hold
     overlayLevels: 18,     // reload: finest satellite picture level on the ground
     texMax: 512,           // largest picture side in the game's own models (cars, people, props)
@@ -69,6 +69,9 @@ export const PARAMS = {
     tilesError: 2, tilesBytes: 0.4, overlayLevels: 19, texMax: 4096, tileTexMax: 0, area: 1,
   },
 };
+
+// (round 6b) what the low tier changes again when the graphics are drawn by the processor (SwiftShader and the like)
+export const SOFTWARE = { prMax: 0.6, prStart: 0.45, prFloor: 0.3, cameraFar: 1600, fog: 0.0016, bldReach: 300, tilesError: 10, traffic: 4, peds: 2, parkedShare: 0.2, propReach: 0.3, area: 0.7 };
 
 // ---- what the device is ----
 function gpuName(gl) {
@@ -161,6 +164,10 @@ function recompute() {
   const t = quality.forced || (quality.setting === 'auto' ? auto : quality.setting);
   quality.tier = t; quality.low = t === 'low'; quality.medium = t === 'medium'; quality.high = t === 'high';
   quality.p = PARAMS[t];
+  // (round 6b, perf P) graphics drawn by the processor (no graphics chip at all, or a blocked one): on the low tier a
+  // much smaller picture and a shorter view, since every pixel and every corner is worked out on the processor
+  quality.software = /SwiftShader|llvmpipe|softpipe|Microsoft Basic Render/i.test(info.gpu || '');
+  if (quality.software && t === 'low') quality.p = Object.assign({}, PARAMS.low, SOFTWARE);
 }
 function apply() {
   const before = quality.tier;

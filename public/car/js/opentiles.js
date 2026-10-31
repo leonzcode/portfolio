@@ -14,9 +14,9 @@ import { TilesRenderer } from '3d-tiles-renderer';
 import { GLTFExtensionsPlugin, TileCompressionPlugin, UpdateOnChangePlugin, ImplicitTilingPlugin } from '3d-tiles-renderer/plugins';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { frame, project } from './geo.js?v=49';
-import { patchBaked } from './baked.js?v=49';
-import { FACADE_NIGHT } from './facade.js?v=49'; // (the weather's night for the windows: weather.js sets it)
+import { frame, project } from './geo.js?v=50';
+import { patchBaked } from './baked.js?v=50';
+import { FACADE_NIGHT } from './facade.js?v=50'; // (the weather's night for the windows: weather.js sets it)
 
 const Q = new URLSearchParams(location.search);
 const D2R = Math.PI / 180;

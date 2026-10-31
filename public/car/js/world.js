@@ -7,9 +7,9 @@ import { GLTFExtensionsPlugin, TileCompressionPlugin, TilesFadePlugin, Terrarium
 import { GoogleCloudAuthPlugin } from '3d-tiles-renderer/core/plugins';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=49';
-import { patchBaked } from './baked.js?v=49';
-import { under } from './under.js?v=49';
+import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=50';
+import { patchBaked } from './baked.js?v=50';
+import { under } from './under.js?v=50';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -152,7 +152,7 @@ export class World extends THREE.EventDispatcher {
     if (this.open) { try { this.open.dispose(); } catch (e) {} this.open = null; }
     // (round 6) not on Low unless the player turned them on (perf.js, localStorage car_real3d); ?opentiles= always
     const wantOpen = (() => { if (/[?&]opentiles=/.test(location.search)) return true; let v = null; try { v = localStorage.getItem('car_real3d'); } catch (e) {} const q = window.__car && window.__car.quality; return v === '1' || (v !== '0' && !(q && q.low)); })();
-    const openP = mode === 'open' && wantOpen ? import('./opentiles.js?v=49').then(OT => OT.startOpenTiles(this, lat, lon)).catch(e => { console.warn('open tiles', e); return null; }) : null;
+    const openP = mode === 'open' && wantOpen ? import('./opentiles.js?v=50').then(OT => OT.startOpenTiles(this, lat, lon)).catch(e => { console.warn('open tiles', e); return null; }) : null;
     if (this.heights) await this.heights.want(lat, lon, 1500);
     if (openP) this.open = await openP;
     if (mode === 'google') {

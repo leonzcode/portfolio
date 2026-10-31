@@ -27,10 +27,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { Person, BONES } from './person.js?v=49';
-import { buildPoses } from './poses.js?v=49';
+import { Person, BONES } from './person.js?v=50';
+import { buildPoses } from './poses.js?v=50';
 
-const V = '?v=49';
+const V = '?v=50';
 const NOFREEZE = typeof location !== 'undefined' && /[?&]nofreeze/.test(location.search); // (tests: bones never frozen)
 const FREEZE_AFTER = (typeof location !== 'undefined' && +(/[?&]freezeafter=(\d+)/.exec(location.search) || [])[1]) || 1; // (tests: frames unposed before a freeze)
 const DIR = new URL('../models/people/', import.meta.url).href;
@@ -48,7 +48,9 @@ const bases = new Map(), baseP = new Map();
 function gltf() {
   if (loader) return loader;
   const d = new DRACOLoader(); d.setDecoderPath(DRACO);
-  loader = new GLTFLoader(); loader.setDRACOLoader(d);
+  // (round 6b, perf P: a manager of their own, so perf.js can give people's pictures a smaller cap on the low tier)
+  const man = new THREE.LoadingManager(); man.texCapKind = 'people';
+  loader = new GLTFLoader(man); loader.setDRACOLoader(d);
   return loader;
 }
 
@@ -57,7 +59,7 @@ export const People = {
   catalogue: [],
   env: null,
   camera: null,
-  nearDist: 22,
+  nearDist: (globalThis.__carQuality && globalThis.__carQuality.low) ? 10 : 22, // (round 6b, perf P: the detailed meshes only close by on the low tier)
   DEFAULT_LOOK: { base: 'm_adult_08', sex: 'm', kid: false, height: 1, build: 0, skin: null, hairColour: null, topColour: null, bottomColour: null, shoesColour: null },
   ready: false,
   renderer: null,

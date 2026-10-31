@@ -52,7 +52,7 @@ export class Person {
     // hand goes to a door handle and back instead of jumping there
     this.ikW = { handL: 1, handR: 1, footL: 1, footR: 1 };
     this.lookTarget = null; this.lookW = 0; this._lookQ = [new THREE.Quaternion(), new THREE.Quaternion()];
-    this.lodLevel = -1; this.lod = opts.lod ?? 'auto'; this.visibleDist = opts.far ?? 140;
+    this.lodLevel = -1; this.lod = opts.lod ?? 'auto'; this.visibleDist = opts.far ?? ((globalThis.__carQuality && globalThis.__carQuality.low) ? 70 : 140); // (round 6b, perf P: 70 m on low, in the fog)
     this.skip = 0; this.acc = 0; this.frame = (Math.random() * 8) | 0;
     this.speedScale = 1; this.seated = false; this.blinkT = Math.random() * 4;
     this.shadow = opts.shadow !== false;

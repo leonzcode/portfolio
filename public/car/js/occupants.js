@@ -26,7 +26,7 @@ export function loadPeople(drive) {
   Hp = (async () => {
     if (!/[?&]standin/.test(location.search)) {
       try {
-        const M = await import('./people.js?v=49');
+        const M = await import('./people.js?v=50');
         if (M && M.People && typeof M.People.createPerson === 'function') {
           const P = M.People;
           await P.load(drive && drive.G ? drive.G.renderer : undefined, drive ? drive.camera : undefined);
@@ -37,7 +37,7 @@ export function loadPeople(drive) {
         }
       } catch (e) { console.warn('people module', e && e.message); }
     }
-    const M = await import('./standin.js?v=49');
+    const M = await import('./standin.js?v=50');
     H = wrapStandin(M);
     return H;
   })();
@@ -164,7 +164,7 @@ let OCC_MAX = 99;
 function tierOcc() {
   const q = globalThis.__carQuality; if (!q || !q.p) return;
   NEAR = Math.min(42, q.p.occupantReach ?? 42); BUS_NEAR = Math.min(34, NEAR); PARKED_NEAR = q.low ? 0 : 26;
-  MAX_CARS = q.low ? 3 : q.medium ? 8 : 12; MAX_PARKED = q.low ? 0 : q.medium ? 3 : 6; OCC_MAX = q.p.occupants ?? 99;
+  MAX_CARS = q.low ? 2 : q.medium ? 8 : 12; /* (round 6b, perf P: 2 on low, was 3) */ MAX_PARKED = q.low ? 0 : q.medium ? 3 : 6; OCC_MAX = q.p.occupants ?? 99;
 }
 try { tierOcc(); if (globalThis.__carQuality) globalThis.__carQuality.on(tierOcc); } catch (e) {}
 const isBus = rig => !!(rig && rig.spec && (rig.spec.bus || rig.spec.kind === 'bus' || /bus/i.test(rig.spec.id || '')));

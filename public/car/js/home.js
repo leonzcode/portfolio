@@ -4,7 +4,7 @@
 // room). In the page's own Google Maps look; a link with ?lat= drops straight in and never shows this.
 // (round 6) Once in a room, a player may go anywhere and stay in it (mp.js openTravel); the room list says where the
 // players of each room are.
-import { Net, Session } from './mp.js?v=49';
+import { Net, Session } from './mp.js?v=50';
 
 const CSS = `
 .mph { position: fixed; inset: 0; z-index: 40; overflow: hidden; background: #1b1d1f; font-family: Roboto, 'Segoe UI', Arial, sans-serif; color: #1f1f1f; -webkit-font-smoothing: antialiased; }
