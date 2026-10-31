@@ -19,7 +19,7 @@
 // way, A/D turn on the spot (the pedals) and bank into the turn once moving. Let go of Space and Shift in the air and
 // it holds its height; let go of W/S and A/D and it levels itself.
 import * as THREE from 'three';
-import { VEHICLE_HOOKS } from './vehicle.js?v=50';
+import { VEHICLE_HOOKS } from './vehicle.js?v=51';
 
 const G = 9.81, RHO = 1.225;
 const clamp = THREE.MathUtils.clamp;

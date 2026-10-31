@@ -7,8 +7,8 @@
 // (its cheap model swapped for the detailed one once that is ready); the car the player left stays where it was,
 // solid, with its own physics, until it is far behind.
 import * as THREE from 'three';
-import { Vehicle } from './vehicle.js?v=50';
-import { Occupants, seatsOf, seatOffset, play, tick, YAW0, settled, isRagdoll, getUp, RECLINE } from './occupants.js?v=50';
+import { Vehicle } from './vehicle.js?v=51';
+import { Occupants, seatsOf, seatOffset, play, tick, YAW0, settled, isRagdoll, getUp, RECLINE } from './occupants.js?v=51';
 
 const STEP = 1 / 120;
 // on foot (m/s): a brisk walk, a jog once the person has kept going a second and a half, a run with Shift
@@ -258,7 +258,7 @@ export class OnFoot {
     if (this.mode === 'car' && !this.seq && D.car && this.doorFor === D.car.rig && ((this.fN = (this.fN || 0) + 1) % 4 === 0 || this.cutting)) {
       const I = this.doorOf(D.car.rig, 0);
       this.cutting = !!I && !this.doorCut(D.car.rig, I.door);
-      if (this.cutting) this.pumpDoor(D.car.rig, I.door, 3);
+      if (this.cutting) this.pumpDoor(D.car.rig, I.door, (globalThis.__carQuality && globalThis.__carQuality.low) ? 1 : 3); // (round 6c, perf P: 1 ms a frame on the low tier)
     }
     // the player in the driver's seat of the car being driven
     if (this.mode === 'car' && this.person && (!this.occ.player || this.occ.player.R !== this.occ.rec(D.car.rig) || this.occ.player.o.person !== this.person || this.person.object.parent !== D.car.rig.object)) {

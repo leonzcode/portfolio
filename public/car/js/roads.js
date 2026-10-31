@@ -24,12 +24,14 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=50';
-import { sharedTexture } from './texcache.js?v=50'; // (round 6, perf P)
+import { unproject } from './geo.js?v=51';
+import { sharedTexture } from './texcache.js?v=51'; // (round 6, perf P)
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
-const CURB_H = 0.15, CURB_W = 0.3, STEP = 3, CELL = 8, TILE = 400;
+// (round 6c, perf P: the road meshes are cut into 800 m squares on the low tier, not 400: a quarter of the draws for
+// the roads, curbs and pavements; set when the module loads)
+const CURB_H = 0.15, CURB_W = 0.3, STEP = 3, CELL = 8, TILE = (globalThis.__carQuality && globalThis.__carQuality.low) ? 800 : 400;
 
 // ---------------------------------------------------------------- region rules
 const LHT_BOXES = [ // [lat0, lon0, lat1, lon1]
@@ -140,7 +142,7 @@ let MATS = null;
 // (round 6, perf P) one copy of each picture on the graphics card, shared with the bridges (texcache.js); on the
 // low tier no normal or roughness picture
 function texture(file, srgb) {
-  return sharedTexture(BASE + 'textures/roads/' + file + '?v=50', { srgb, anisotropy: 8, optional: /_(nor_gl|rough)_/.test(file) });
+  return sharedTexture(BASE + 'textures/roads/' + file + '?v=51', { srgb, anisotropy: 8, optional: /_(nor_gl|rough)_/.test(file) });
 }
 const NOISE_GLSL = `
 float rdHash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }

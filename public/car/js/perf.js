@@ -5,9 +5,9 @@
 // section of the settings panel, an optional frame-rate counter, and keeps the page alive when the graphics card
 // drops the drawing context (a Chromebook short of memory does that rather than slowing down).
 import * as THREE from 'three';
-import { quality } from './quality.js?v=50';
-import { settings } from './settings.js?v=50';
-import { bakedUniforms } from './baked.js?v=50';
+import { quality } from './quality.js?v=51';
+import { settings } from './settings.js?v=51';
+import { bakedUniforms } from './baked.js?v=51';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 const NAMES = { auto: 'Auto', low: 'Low', medium: 'Medium', high: 'High' };
@@ -274,6 +274,35 @@ export function setupPerf(G) {
     if (!g.children.length) return;
     try { await Promise.race([R.compileAsync(g, camera, scene), new Promise(r => setTimeout(r, 60000))]); } catch (e) {}
   };
+
+  // ---- (round 6c) steady pacing, a test switch (?pace=1): when the frames cannot keep a steady 45 a second but can
+  // keep 30, they are drawn at an even 30 (every second screen refresh); slower than that it lets go (an even 20 or 15
+  // measured worse than an uneven 20) ----
+  const PACE_Q = (location.search.match(/[?&]pace=(\d)/) || [])[1];
+  let paceMs = 0, lastDraw = 0, paceT = 0, ivs = [], works = [], t0w = 0, paceWait = 0;
+  // (off unless asked for: measured on Low at 4x CPU throttle it drew 32 and 29 frames a second against 36 and 34 without,
+  // with no steadier spacing between them, so it stays a test switch)
+  const paceOn = () => PACE_Q === '1';
+  perf.pace = () => paceMs;
+  perf.skip = now => {
+    if (!paceOn() || !(G.drive && G.drive.active)) { paceMs = 0; return false; }
+    if (paceMs && lastDraw && now - lastDraw < paceMs - 5) return true;
+    if (lastDraw) { ivs.push(now - lastDraw); if (ivs.length > 90) ivs.shift(); }
+    lastDraw = now; t0w = performance.now();
+    if (now - paceT > 2000 && ivs.length >= 30) {
+      paceT = now;
+      const srt = a => a.slice().sort((x, y) => x - y), q = (a, k) => a[Math.min(a.length - 1, Math.floor(a.length * k))];
+      const p80 = q(srt(ivs), 0.8), w80 = works.length ? q(srt(works), 0.8) : 0;
+      // the slowest of the usual frames, rounded up to whole refreshes; down again when the work itself would fit
+      let want = paceMs;
+      if (!paceMs) want = p80 > 22 && p80 <= 38 && now > paceWait ? 33.3 : 0;
+      else if (p80 > paceMs + 12) { want = 0; paceWait = now + 10000; } // (and not again for 10 s)
+      else if (w80 < paceMs * 0.45) want = 0;
+      if (want !== paceMs) { paceMs = want; ivs = []; works = []; }
+    }
+    return false;
+  };
+  perf.done = () => { if (!t0w) return; works.push(performance.now() - t0w); if (works.length > 90) works.shift(); t0w = 0; };
 
   // ---- a tier down by itself when the lowest resolution is still too slow (main.js autoScale) ----
   perf.tooSlow = (fps) => {

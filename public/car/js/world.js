@@ -7,9 +7,9 @@ import { GLTFExtensionsPlugin, TileCompressionPlugin, TilesFadePlugin, Terrarium
 import { GoogleCloudAuthPlugin } from '3d-tiles-renderer/core/plugins';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=50';
-import { patchBaked } from './baked.js?v=50';
-import { under } from './under.js?v=50';
+import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=51';
+import { patchBaked } from './baked.js?v=51';
+import { under } from './under.js?v=51';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -152,7 +152,7 @@ export class World extends THREE.EventDispatcher {
     if (this.open) { try { this.open.dispose(); } catch (e) {} this.open = null; }
     // (round 6) not on Low unless the player turned them on (perf.js, localStorage car_real3d); ?opentiles= always
     const wantOpen = (() => { if (/[?&]opentiles=/.test(location.search)) return true; let v = null; try { v = localStorage.getItem('car_real3d'); } catch (e) {} const q = window.__car && window.__car.quality; return v === '1' || (v !== '0' && !(q && q.low)); })();
-    const openP = mode === 'open' && wantOpen ? import('./opentiles.js?v=50').then(OT => OT.startOpenTiles(this, lat, lon)).catch(e => { console.warn('open tiles', e); return null; }) : null;
+    const openP = mode === 'open' && wantOpen ? import('./opentiles.js?v=51').then(OT => OT.startOpenTiles(this, lat, lon)).catch(e => { console.warn('open tiles', e); return null; }) : null;
     if (this.heights) await this.heights.want(lat, lon, 1500);
     if (openP) this.open = await openP;
     if (mode === 'google') {
@@ -254,7 +254,7 @@ export class World extends THREE.EventDispatcher {
     const lp = this._up || (this._up = new THREE.Vector3(Infinity, 0, 0)), jump = cp.distanceToSquared(lp) > 400;
     if (this._ef === undefined) this._ef = /[?&]tileseveryframe/.test(location.search); // (test flag: the old way)
     // (round 6, perf P: every third frame on the low tier)
-    if (!jump && f - (this._ul || 0) < ((globalThis.__carQuality && globalThis.__carQuality.low) ? 3 : 2) && !this._ef) return;
+    if (!jump && f - (this._ul || 0) < ((globalThis.__carQuality && globalThis.__carQuality.low) ? 4 : 2) && !this._ef) return; // (round 6c, perf P: every fourth frame on the low tier)
     this._ul = f; lp.copy(cp);
     this.tiles.setResolutionFromRenderer(this.camera, this.renderer);
     this.tiles.update();

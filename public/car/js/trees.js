@@ -8,9 +8,9 @@
 //                         roadsMask, buildings, roads, centre: [x, z], radius, lean: [kx, kz] })
 //   t.group, t.ready (Promise of stats), t.dispose()
 import * as THREE from 'three';
-import { frame } from './geo.js?v=50';
-import { detect } from './treedetect.js?v=50';
-import { bakedUniforms } from './baked.js?v=50'; // (round 6, weather.js: the light of the moment, uSkyLight)
+import { frame } from './geo.js?v=51';
+import { detect } from './treedetect.js?v=51';
+import { bakedUniforms } from './baked.js?v=51'; // (round 6, weather.js: the light of the moment, uSkyLight)
 
 const D2R = Math.PI / 180;
 function hashf(n, salt = 0) {
@@ -217,7 +217,7 @@ function getWorker() {
   if (WORKER === false) return null;
   if (!WORKER) {
     try {
-      WORKER = new Worker(new URL('./treeworker.js?v=50', import.meta.url), { type: 'module' });
+      WORKER = new Worker(new URL('./treeworker.js?v=51', import.meta.url), { type: 'module' });
       WORKER.onmessage = (e) => { const j = jobs.get(e.data.id); if (!j) return; jobs.delete(e.data.id); if (e.data.error) j.reject(new Error(e.data.error)); else j.resolve(e.data.res); };
       WORKER.onerror = () => { WORKER = false; for (const j of jobs.values()) j.reject(new Error('worker failed')); jobs.clear(); };
     } catch (e) { WORKER = false; return null; }

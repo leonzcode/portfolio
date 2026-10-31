@@ -1,6 +1,6 @@
 // The game's settings panel (round 6): one panel for everything a player can set, opened from the gear button on
 // the drive's screen and from the map's menu. Other modules add their own section:
-//   import { settings } from './settings.js?v=50';
+//   import { settings } from './settings.js?v=51';
 //   settings.addSection('Weather and time', el => { ...build into el...; return () => { ...refresh when opened... }; }, { order: 20 });
 // buildFn(el, settings) builds the section's controls into el once (the first time the panel opens, or at once if it
 // is already open) and may return a function that is called every time the panel opens, to show the current state.

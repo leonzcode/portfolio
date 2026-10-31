@@ -26,7 +26,7 @@ export function loadPeople(drive) {
   Hp = (async () => {
     if (!/[?&]standin/.test(location.search)) {
       try {
-        const M = await import('./people.js?v=50');
+        const M = await import('./people.js?v=51');
         if (M && M.People && typeof M.People.createPerson === 'function') {
           const P = M.People;
           await P.load(drive && drive.G ? drive.G.renderer : undefined, drive ? drive.camera : undefined);
@@ -37,7 +37,7 @@ export function loadPeople(drive) {
         }
       } catch (e) { console.warn('people module', e && e.message); }
     }
-    const M = await import('./standin.js?v=50');
+    const M = await import('./standin.js?v=51');
     H = wrapStandin(M);
     return H;
   })();
@@ -161,6 +161,7 @@ let NEAR = 42, BUS_NEAR = 34, PARKED_NEAR = 26, MAX_CARS = 12, MAX_PARKED = 6; c
 // and draw; nobody in parked cars there. The plan of who sits where is the same on every tier (picked from the car's
 // number in a room, so two pages agree); the low tier only makes the first OCC_MAX of a car's planned people.
 let OCC_MAX = 99;
+const LOW_Q = () => !!(globalThis.__carQuality && globalThis.__carQuality.low); // (round 6c)
 function tierOcc() {
   const q = globalThis.__carQuality; if (!q || !q.p) return;
   NEAR = Math.min(42, q.p.occupantReach ?? 42); BUS_NEAR = Math.min(34, NEAR); PARKED_NEAR = q.low ? 0 : 26;
@@ -675,10 +676,13 @@ export class Occupants {
         // a sitting pose needs few new frames: the player's every frame, the near ones now and then (breathing,
         // looking about), the rest only until they are placed
         const busy = o.player || o.placed < 3 || o.model !== p.model;
+        // (round 6c, perf P: on the low tier the player's own driver is posed every second frame, with twice the time)
+        const half = o.player && o.placed >= 3 && o.model === p.model && LOW_Q();
+        if (half && (this.frame & 1)) continue;
         if (busy || (show && d < 16 && (this.frame + o.seat) % 3 === 0) || (show && (this.frame + o.seat * 7) % 30 === 0)) {
           if (o.drv && (o.player || d < 20) && !p.handsBusy) this.wheelTargets(R, o);
           this.footTargets(R, o);
-          tick(p, busy ? dt : (d < 16 ? dt * 3 : dt * 30));
+          tick(p, busy ? (half ? dt * 2 : dt) : (d < 16 ? dt * 3 : dt * 30));
           if (o.placed < 3 || o.model !== p.model || (!R.jolt && this.hipsOff(R, o) > 0.05)) this.place(R, o);
         }
       }
