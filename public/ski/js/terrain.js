@@ -7,7 +7,7 @@
 // frame, with skirts hiding the seams between sizes. Features with their own meshes (kickers, the pipe) are left out
 // of the patches (the ground under them is lowered a little) and drawn by park.js at finer spacing.
 import * as THREE from 'three';
-import { fbm, ridged, smoothstep, clamp } from './noise.js?v=4';
+import { fbm, ridged, smoothstep, clamp } from './noise.js?v=5';
 
 // ---- the run's long profile ----------------------------------------------------------------------------------------
 // [z where it starts, pitch in degrees]

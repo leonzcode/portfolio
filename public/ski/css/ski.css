@@ -102,3 +102,6 @@ select { font: 500 15px var(--body); padding: 6px 8px; border: 1px solid #b8c4cf
 .startlab { margin-top: 14px; font-family: var(--display); font-weight: 700; font-style: italic; text-transform: uppercase; letter-spacing: .1em; font-size: 14px; color: var(--signal); }
 .starts { justify-content: center; }
 .starts button { font-size: 14px; padding: 7px 10px; background: #3b4652; }
+
+#keys .gg { color: #6b7783; font-size: 12px; }
+#keys { columns: 1; }

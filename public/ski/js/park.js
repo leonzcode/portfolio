@@ -3,8 +3,8 @@
 // function the physics reads directly; kickers and the pipe also get meshes of their own, much finer at the lips,
 // knuckles and coping than the terrain's patches.
 import * as THREE from 'three';
-import { baseLine, pitchAt, ground } from './terrain.js?v=4';
-import { smoothstep, clamp, smax } from './noise.js?v=4';
+import { baseLine, pitchAt, ground } from './terrain.js?v=5';
+import { smoothstep, clamp, smax } from './noise.js?v=5';
 
 const RAD = Math.PI / 180;
 
@@ -70,24 +70,32 @@ class Kicker {
     let best = -Infinity;
     const ty = this.takeY(z);
     if (ty > -Infinity) {
-      const rel = ty - bz - Math.max(0, dx - this.wT) * 1.0;
+      const rel = ty - bz - Math.max(0, dx - this.wT) * 1.6;
       if (rel > 0) best = rel;
     }
     const dy = this.deckY(z);
     if (dy > -Infinity) {
-      let rel = dy - bz - Math.max(0, dx - this.deckHalf(z)) * 0.72;
+      let rel = dy - bz - Math.max(0, dx - this.deckHalf(z)) * 1.15;
       if (dx > this.wT) rel = Math.min(rel, (z - this.L.z) * 0.9 + 0.05);   // the table's front face beside the ramp
       if (rel > best) best = rel;
     }
     return best > 0 ? bz + lift + best : -Infinity;
   }
   surface(x, z) { return z > this.z0 && z < this.zMeet && Math.abs(x - this.x) < this.wL; }
+  // the dye lines park crews spray: along the lip and across the knuckle
+  dye(x, z) {
+    const dx = Math.abs(x - this.x);
+    if (Math.abs(z - this.L.z + 0.08) < 0.1 && dx < this.wT) return 1;
+    if (Math.abs(z - this.K.z - 0.4) < 0.12 && dx < this.wD) return 1;
+    return 0;
+  }
   // rows in z: fine at the lip and the knuckle
   rows(fine) {
     const r = [], st = fine ? 0.6 : 1.0;
     for (let z = this.z0 - 0.5; z < this.z1; z += st) r.push(z);
     for (let z = this.L.z - 0.5; z < this.zBack + 0.25; z += fine ? 0.05 : 0.1) r.push(z);
     for (let z = this.K.z - 0.5; z < this.Kend.z + 0.5; z += fine ? 0.2 : 0.35) r.push(z);
+    for (const z of [this.L.z - 0.2, this.L.z - 0.17, this.L.z + 0.03, this.K.z + 0.26, this.K.z + 0.29, this.K.z + 0.51, this.K.z + 0.54]) r.push(z);
     r.push(this.L.z, this.L.z - 0.005, this.zBack);
     return [...new Set(r.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
   }
@@ -325,12 +333,12 @@ function rainbow(x, z0, len, h0, rise) {
 // a feature with its own mesh: a grid on its rows and columns, heights from the full height function
 export function featureMesh(f, heightFn, material, fine = true) {
   const rows = f.rows(fine), cols = f.cols(fine), nx = cols.length, nz = rows.length;
-  const pos = new Float32Array(nx * nz * 3), nor = new Float32Array(nx * nz * 3), grm = new Float32Array(nx * nz);
+  const pos = new Float32Array(nx * nz * 3), nor = new Float32Array(nx * nz * 3), grm = new Float32Array(nx * nz), dye = new Float32Array(nx * nz);
   const n = new THREE.Vector3();
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
     const v = j * nx + i, x = cols[i], z = rows[j];
     pos[v * 3] = x; pos[v * 3 + 1] = heightFn(x, z); pos[v * 3 + 2] = z;
-    grm[v] = 0.65;
+    grm[v] = 0.65; dye[v] = f.dye ? f.dye(x, z) : 0;
   }
   // normals from the grid (central differences, uneven spacing)
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
@@ -351,6 +359,7 @@ export function featureMesh(f, heightFn, material, fine = true) {
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   g.setAttribute('aGroom', new THREE.BufferAttribute(grm, 1));
+  g.setAttribute('aDye', new THREE.BufferAttribute(dye, 1));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   g.computeBoundingSphere(); g.computeBoundingBox();
   const m = new THREE.Mesh(g, material);

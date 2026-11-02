@@ -29,6 +29,19 @@ export class Sound {
     g.gain.setValueAtTime(Math.min(1, 0.25 + power * 0.08), t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
     s.connect(f); f.connect(g); g.connect(this.master); s.start(t, Math.random()); s.stop(t + 0.4);
   }
+  // short sounds: 'pop' (snow crunch as the skis leave), 'rail' (a steel rail's clank), 'box' (a plastic thud)
+  hit(kind, power = 1) {
+    if (!this.ctx || !this.on) return;
+    const ctx = this.ctx, t = ctx.currentTime, s = ctx.createBufferSource(); s.buffer = this.noise;
+    const f = ctx.createBiquadFilter(), g = ctx.createGain();
+    if (kind === 'pop') { f.type = 'highpass'; f.frequency.value = 1400; g.gain.setValueAtTime(0.18 * power, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.09); }
+    else if (kind === 'rail') {
+      f.type = 'bandpass'; f.frequency.value = 2600; f.Q.value = 6; g.gain.setValueAtTime(0.35, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      const o = ctx.createOscillator(), og = ctx.createGain(); o.type = 'triangle'; o.frequency.value = 760;
+      og.gain.setValueAtTime(0.12, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.5); o.connect(og); og.connect(this.master); o.start(t); o.stop(t + 0.55);
+    } else { f.type = 'lowpass'; f.frequency.value = 420; g.gain.setValueAtTime(0.4, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.18); }
+    s.connect(f); f.connect(g); g.connect(this.master); s.start(t, Math.random()); s.stop(t + 0.6);
+  }
   frame(sk) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime, sp = sk.v.length();

@@ -2,7 +2,7 @@
 // groomer's corduroy on the run, the tracks from the track map (snow.js), glints where single crystals catch the sun,
 // a cold tint in the shade, and rock on the steepest valley walls.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=4';
+import { rng } from './noise.js?v=5';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
 function noiseTexture(size = 256, seed = 3) {
@@ -51,15 +51,15 @@ export function makeSnowMaterial(q) {
     Object.assign(s.uniforms, snowUniforms);
     s.vertexShader = s.vertexShader
       .replace('#include <common>', `#include <common>
-attribute float aGroom;
-varying vec3 vWPos; varying vec3 vWNor; varying float vGroom;`)
+attribute float aGroom; attribute float aDye;
+varying vec3 vWPos; varying vec3 vWNor; varying float vGroom; varying float vDye;`)
       .replace('#include <project_vertex>', `#include <project_vertex>
 vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
 vWNor = normalize(mat3(modelMatrix) * objectNormal);
-vGroom = aGroom;`);
+vGroom = aGroom; vDye = aDye;`);
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', `#include <common>
-varying vec3 vWPos; varying vec3 vWNor; varying float vGroom;
+varying vec3 vWPos; varying vec3 vWNor; varying float vGroom; varying float vDye;
 uniform sampler2D uNoise; uniform sampler2D uTrack;
 uniform vec2 uTrackOrigin; uniform vec2 uTrackSize; uniform vec2 uTrackTexel;
 uniform vec3 uSunDir; uniform float uSparkle; uniform float uTime;
@@ -76,6 +76,8 @@ float gTrackDepth; float gRock; float gTrackShadow;`)
   gRock = steep * smoothstep(0.45, 0.62, rn + (0.8 - wn.y) * 0.6) * (1.0 - vGroom);
   vec3 rock = mix(vec3(0.20, 0.19, 0.18), vec3(0.34, 0.32, 0.30), texture2D(uNoise, vWPos.xz * 0.2).b);
   diffuseColor.rgb = mix(diffuseColor.rgb, rock, gRock);
+  // the crews' blue dye on lips and knuckles, soaked into the snow unevenly
+  if (vDye > 0.01) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.12, 0.3, 0.78), vDye * (0.65 + 0.3 * texture2D(uNoise, vWPos.xz * 1.7).b));
   // big soft variation so the snow is never one flat white
   float big = texture2D(uNoise, vWPos.xz * 0.004).b - 0.5;
   diffuseColor.rgb *= 1.0 + big * 0.05;

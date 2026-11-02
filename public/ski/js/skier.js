@@ -9,8 +9,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=4';
-import { clamp, smoothstep } from './noise.js?v=4';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=5';
+import { clamp, smoothstep } from './noise.js?v=5';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -226,7 +226,7 @@ export class Skier {
     const inPipe = [this.park.pipe, this.park.qp].some(pp => pp && n.y < 0.55 && this.p.z > pp.z0 && this.p.z < pp.z1 && this.p.x > pp.x0 && this.p.x < pp.x1);
     this.events.push({ type: 'takeoff', how, sw: this.sw, speed: this.v.length(), press: this.press, butter: Math.abs(this.press) > 0.35, rail: !!this.rail, pipe: inPipe });
     this.press = 0; this.endButter();
-    this.grab = null; this.grabT = 0;
+    this.grab = null; this.grabT = 0; this.held = null;
   }
   stepAir(dt, I) {
     this.tAir += dt;
@@ -244,14 +244,16 @@ export class Skier {
     // spotting the landing: near the snow with nothing pressed, the body settles towards a landable attitude
     const tl = this.timeToGround();
     const assist = !I.spin && !I.flip && !I.tilt && tl < 0.45 ? 1 : 0;
-    if (assist) { const k = Math.max(0, 1 - dt * 5); ns *= k; nf *= k; nr *= k; }
     this.w.set(0, 0, 0).addScaledVector(up, ns).addScaledVector(left, nf).addScaledVector(fwd, nr);
     const wl = this.w.length();
     if (wl > 1e-5) { _q.setFromAxisAngle(_w.copy(this.w).divideScalar(wl), wl * dt); q.premultiply(_q).normalize(); }
-    if (assist) this.alignForLanding(dt * 4);
+    if (assist) { this.finishRotation(tl, dt); this.alignForLanding(dt * 4); }
     // grabs and positions
-    if (I.grab !== this.grab) { if (this.grab) this.events.push({ type: 'grabEnd', id: this.grab, t: this.grabT }); this.grab = I.grab; this.grabT = 0; if (I.grab) this.events.push({ type: 'grab', id: I.grab }); }
-    if (this.grab) this.grabT += dt;
+    // grabs and positions are both held things for the trick's name
+    const held = I.grab || I.pose || null;
+    if (held !== this.held) { if (this.held) this.events.push({ type: 'grabEnd', id: this.held, t: this.grabT }); this.held = held; this.grabT = 0; if (held) this.events.push({ type: 'grab', id: held }); }
+    if (this.held) this.grabT += dt;
+    this.grab = I.grab || null;
     this.pose = I.pose || null;
     this.crouch += ((grabbing ? 0.75 : I.crouch ? 0.6 : 0.3) - this.crouch) * Math.min(1, dt * 6);
     // flight
@@ -280,12 +282,45 @@ export class Skier {
   }
   timeToGround() {
     // when the flight path meets the snow (a few coarse steps)
-    let x = this.p.x, y = this.p.y, z = this.p.z, vy = this.v.y;
-    for (let t = 0; t < 1.2; t += 0.05) {
-      if (y <= height(x, z)) return t;
-      x += this.v.x * 0.05; z += this.v.z * 0.05; y += vy * 0.05; vy -= G * 0.05;
+    let x = this.p.x, y = this.p.y, z = this.p.z, vy = this.v.y, gap0 = y - height(x, z);
+    if (gap0 <= 0) return 0;
+    const st = 0.04;
+    for (let t = 0; t < 1.2; t += st) {
+      x += this.v.x * st; z += this.v.z * st; y += vy * st - 0.5 * G * st * st; vy -= G * st;
+      const gap = y - height(x, z);
+      if (gap <= 0) return t + st * gap0 / (gap0 - gap);      // where between the two samples it crossed
+      gap0 = gap;
     }
     return 9;
+  }
+  // a rider spots the landing: if the rotation is close to bringing the skis round to the travel (forwards or switch)
+  // by touchdown, it is finished or checked to do exactly that
+  finishRotation(tl, dt) {
+    const wl = this.w.length(); if (wl < 1.2 || tl > 0.6) return;
+    const n = normal(this.p.x + this.v.x * tl, this.p.z + this.v.z * tl, new THREE.Vector3());
+    const t = this.v.clone().addScaledVector(n, -this.v.dot(n)); if (t.lengthSq() < 0.1) return; t.normalize();
+    let best = null;
+    for (const s of [1, -1]) {
+      const f = t.clone().multiplyScalar(s), left = new THREE.Vector3().crossVectors(n, f).normalize();
+      _m.makeBasis(left, n, new THREE.Vector3().crossVectors(left, n)); const qt = new THREE.Quaternion().setFromRotationMatrix(_m);
+      const d = qt.multiply(this.q.clone().invert());
+      if (d.w < 0) { d.x = -d.x; d.y = -d.y; d.z = -d.z; d.w = -d.w; }
+      const a = 2 * Math.acos(Math.min(1, d.w)), sn = Math.sqrt(Math.max(1e-9, 1 - d.w * d.w));
+      const axis = new THREE.Vector3(d.x / sn, d.y / sn, d.z / sn);
+      // the angle still to turn going the way the body already turns
+      const along = axis.dot(this.w) >= 0 ? a : 2 * Math.PI - a, ax = axis.dot(this.w) >= 0 ? axis : axis.clone().negate();
+      // this landable attitude, or the same one a full turn further on: whichever the body's rate is nearest to
+      const qt2 = new THREE.Quaternion().setFromRotationMatrix(_m);
+      for (const extra of [0, 2 * Math.PI]) {
+        const need = (along + extra) / Math.max(0.08, tl), miss = Math.abs(need - wl);
+        if (!best || miss < best.miss) best = { need, miss, ax, qt: qt2, a: extra ? along + extra : along };
+      }
+    }
+    if (best.miss < Math.max(4, 0.6 * wl)) {
+      this.w.lerp(best.ax.clone().multiplyScalar(best.need), Math.min(1, dt * 12));
+      // the last moment before the skis touch: settle onto the landing
+      if (tl < 0.15 && best.a < 0.8) { this.q.slerp(best.qt, Math.min(1, dt * 16)); this.w.multiplyScalar(0.85); }
+    }
   }
   // turn a little towards the nearest landable attitude: up along the snow's normal, skis along the travel
   alignForLanding(k) {
@@ -318,8 +353,8 @@ export class Skier {
     if (aUp > 52 || aDir > 50 || vn > 13.5) q = 'crash';
     else if (aUp > 30 || aDir > 24 || grabbing || this.pose || vn > 10) q = 'sketchy';
     this.events.push({ type: 'land', q, aUp, aDir, vn, sw, wasSw: this.sw, tAir: this.tAir });
-    if (this.grab) { this.events.push({ type: 'grabEnd', id: this.grab, t: this.grabT }); this.grab = null; }
-    this.pose = null;
+    if (this.held) { this.events.push({ type: 'grabEnd', id: this.held, t: this.grabT }); this.held = null; }
+    this.grab = null; this.pose = null;
     this.p.y = h;
     if (q === 'crash') { this.crash('land'); return; }
     this.sw = sw;

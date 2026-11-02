@@ -1,21 +1,21 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=4';
-import { makePark, emptyPark, featureMesh, railMeshes } from './park.js?v=4';
-import { makeMaterials, snowUniforms } from './materials.js?v=4';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=4';
-import { Mountain, SPOTS } from './dem.js?v=4';
-import { Skier } from './skier.js?v=4';
-import { Rig } from './rig.js?v=4';
-import { Tricks } from './tricks.js?v=4';
-import { Input } from './input.js?v=4';
-import { Cams } from './camera.js?v=4';
-import { Tracks, Spray } from './snow.js?v=4';
-import { Hud } from './hud.js?v=4';
-import { Sound } from './sound.js?v=4';
-import { Net } from './net.js?v=4';
-import { mergeGear } from './gear.js?v=4';
-import { Touch, TOUCH_GRABS } from './touch.js?v=4';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=5';
+import { makePark, emptyPark, featureMesh, railMeshes } from './park.js?v=5';
+import { makeMaterials, snowUniforms } from './materials.js?v=5';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=5';
+import { Mountain, SPOTS } from './dem.js?v=5';
+import { Skier } from './skier.js?v=5';
+import { Rig } from './rig.js?v=5';
+import { Tricks } from './tricks.js?v=5';
+import { Input } from './input.js?v=5';
+import { Cams } from './camera.js?v=5';
+import { Tracks, Spray } from './snow.js?v=5';
+import { Hud } from './hud.js?v=5';
+import { Sound } from './sound.js?v=5';
+import { Net } from './net.js?v=5';
+import { mergeGear } from './gear.js?v=5';
+import { Touch, TOUCH_GRABS } from './touch.js?v=5';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
@@ -105,6 +105,8 @@ sel.cammode.onchange = () => { opts.cam = sel.cammode.value; cams.set(opts.cam);
 sel.gfx.onchange = () => { opts.gfx = sel.gfx.value; save(); hud.flash('Graphics change on the next load'); };
 sel.poles.onchange = () => { opts.poles = sel.poles.value; rig.setPoles(opts.poles === '1'); save(); };
 sel.rider.onchange = () => { opts.rider = sel.rider.value; save(); loadRider(); };
+const soundBox = $('sound'); soundBox.checked = opts.sound !== false; sound.on = soundBox.checked;
+soundBox.onchange = () => { opts.sound = soundBox.checked; sound.on = opts.sound; save(); };
 $('showfps').onchange = e => { opts.showfps = e.target.checked; save(); if (!opts.showfps) $('fps').textContent = ''; };
 let playing = false, paused = false, replay = null;
 function play() {
@@ -212,6 +214,8 @@ function tick() {
       for (const e of skier.events) {
         if (e.type === 'land') { sound.thump(e.vn); if (e.vn > 4 || skier.surf === 1) spray.burst(skier.p, Math.min(60, Math.round(e.vn * 6)), 1.2 + e.vn * 0.15); }
         if (e.type === 'crash') { sound.thump(8); spray.burst(skier.p, 40, 2); }
+        if (e.type === 'takeoff' && !e.rail) sound.hit('pop', Math.min(1.5, 0.5 + e.speed / 15));
+        if (e.type === 'railOn') sound.hit(e.kind === 'box' ? 'box' : 'rail');
       }
       tricks.step(skier, STEP);
       acc -= STEP; n++; window.__ski && (window.__ski.simT = (window.__ski.simT || 0) + STEP);

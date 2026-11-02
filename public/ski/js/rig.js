@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp } from './noise.js?v=4';
+import { clamp } from './noise.js?v=5';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q(), _q2 = Q(), _m = new THREE.Matrix4(), _a = V(), _b = V(), _c = V();
@@ -24,24 +24,24 @@ export const SKI = { len: 1.78, waist: 0.092, tip: 0.118, thick: 0.017, stack: 0
 // ski: { L: [dx, dy, dz, yaw, pitch, roll], R: [...] }  (pitch < 0 lifts the tip, yaw > 0 turns the tip left)
 // tuck: how far the knees come up (0..1), lean: chest forward (rad), twist: chest yaw (+ left), side: chest roll (+ left)
 export const GRABS = {
-  safety:   { name: 'Safety', hands: [['R', 'R', 0.04, 'out']], ski: { L: [0, 0.04, 0, 0, -0.12, 0], R: [0, 0.06, 0, 0, -0.12, 0] }, tuck: 0.8, lean: 0.38, twist: -0.12, side: -0.12 },
-  mute:     { name: 'Mute', hands: [['L', 'R', 0.2, 'out']], ski: { L: [-0.06, 0.06, 0.02, -0.28, -0.1, 0.1], R: [0.14, -0.02, 0, 0.32, -0.1, -0.15] }, tuck: 0.78, lean: 0.45, twist: -0.32, side: -0.05 },
-  japan:    { name: 'Japan', hands: [['R', 'L', 0.0, 'in']], ski: { L: [-0.06, 0.38, -0.12, -0.25, 0.85, 0.35], R: [-0.02, -0.12, 0.08, -0.08, -0.12, 0] }, tuck: 0.55, lean: 0.32, twist: 0.3, side: 0.1 },
-  tail:     { name: 'Tail', hands: [['R', 'R', -0.9, 'out']], ski: { L: [0, 0.18, -0.05, 0.05, 0.5, 0], R: [-0.02, 0.24, -0.06, -0.05, 0.62, 0] }, tuck: 0.72, lean: 0.25, twist: -0.35, side: -0.3 },
-  nose:     { name: 'Nose', hands: [['R', 'R', 0.9, 'end']], ski: { L: [0, 0, 0.22, 0.04, -0.72, 0], R: [0, 0.02, 0.26, -0.04, -0.78, 0] }, tuck: 0.15, lean: 0.62, twist: -0.1, side: -0.08 },
-  truck:    { name: 'Truck Driver', hands: [['L', 'L', 0.45, 'out'], ['R', 'R', 0.45, 'out']], ski: { L: [0.03, 0.06, 0.1, 0.06, -0.42, 0], R: [-0.03, 0.06, 0.1, -0.06, -0.42, 0] }, tuck: 0.72, lean: 0.52, twist: 0, side: 0 },
-  critical: { name: 'Critical', hands: [['L', 'R', 0.22, 'in']], ski: { L: [-0.04, 0.0, 0.02, -0.12, -0.05, 0], R: [0.12, 0.08, 0.03, 0.25, 0.25, 0.1] }, tuck: 0.72, lean: 0.4, twist: -0.25, side: -0.08 },
-  octo:     { name: 'Octograb', hands: [['R', 'R', 0.85, 'end'], ['L', 'L', -0.85, 'out']], ski: { L: [-0.05, 0.14, -0.18, -0.3, -0.35, 0], R: [0.06, 0.0, 0.22, 0.3, -0.6, 0] }, tuck: 0.5, lean: 0.4, twist: 0.08, side: 0 },
-  blunt:    { name: 'Blunt', hands: [['R', 'R', -1.0, 'end']], ski: { L: [0, 0.22, -0.02, 0.12, 0.8, 0], R: [-0.04, 0.3, -0.04, -0.1, 0.92, 0] }, tuck: 0.66, lean: 0.2, twist: -0.55, side: -0.38 },
-  stalefish:{ name: 'Stalefish', hands: [['R', 'L', -0.8, 'out']], ski: { L: [-0.08, 0.2, -0.06, -0.95, -0.25, 0.2], R: [-0.08, 0.14, -0.02, -0.9, -0.2, 0.2] }, tuck: 0.7, lean: 0.18, twist: -0.6, side: -0.2 },
-  bowarrow: { name: 'Bow and Arrow', hands: [['R', 'R', 0.88, 'end'], ['L', 'L', 0.4, 'out']], ski: { L: [0.02, 0.42, 0.06, 0.08, -0.3, 0], R: [-0.02, -0.08, 0.32, -0.05, -0.82, 0] }, tuck: 0.5, lean: 0.58, twist: 0.1, side: 0 },
-  dubtail:  { name: 'Double Tail', hands: [['L', 'L', -0.88, 'out'], ['R', 'R', -0.88, 'out']], ski: { L: [0, 0.22, -0.05, 0.05, 0.62, 0], R: [0, 0.22, -0.05, -0.05, 0.62, 0] }, tuck: 0.75, lean: 0.25, twist: 0, side: 0 },
-  seatbelt: { name: 'Seatbelt', hands: [['L', 'R', -0.82, 'out']], ski: { L: [-0.02, -0.02, 0.1, -0.1, -0.15, 0], R: [0.12, 0.24, -0.02, 0.4, 0.5, 0] }, tuck: 0.62, lean: 0.25, twist: -0.5, side: -0.15 },
+  safety:    { name: 'Safety', hands: [['R', 'R', 0, 'out']], arms: 'out', ski: { L: [-0.03, 0.04, 0.08, 0.02, -0.06, 0], R: [0.03, 0, 0.08, -0.02, -0.06, 0] }, tuck: 0.55, lean: 1.15, twist: 0.15, side: 0.3 },
+  mute:      { name: 'Mute', hands: [['L', 'R', 0.3, 'out']], arms: 'out', ski: { L: [-0.04, -0.1, 0, -0.3, 0.1, 0], R: [0.14, 0.1, 0.1, 0.6, -0.7, -0.2] }, tuck: 0.55, lean: 0.95, twist: -0.4, side: -0.3 },
+  japan:     { name: 'Japan', hands: [['R', 'L', 0, 'in']], arms: 'up', ski: { L: [-0.08, 0.22, -0.1, -0.4, 0.15, -0.15], R: [0.04, -0.15, 0.18, 0.3, 0.45, 0] }, tuck: 0.55, lean: 1.1, twist: 0.35, side: 0.3 },
+  tail:      { name: 'Tail', hands: [['R', 'R', -0.85, 'out']], arms: 'up', ski: { L: [0, 0.05, -0.2, -0.05, 0.7, 0], R: [0, 0.05, -0.2, 0.05, 0.75, 0] }, tuck: 0.35, lean: 0.3, twist: -0.45, side: 0.3 },
+  nose:      { name: 'Nose', hands: [['R', 'R', 0.94, 'end']], arms: 'out', ski: { L: [0, -0.03, 0.26, 0.04, -0.8, 0], R: [0, -0.03, 0.27, -0.04, -0.82, 0] }, tuck: 0.25, lean: 1.4, twist: 0.1, side: 0.25 },
+  truck:     { name: 'Truck Driver', hands: [['L', 'L', 0.35, 'out'], ['R', 'R', 0.35, 'out']], ski: { L: [-0.02, 0, 0.08, 0.05, -0.95, 0], R: [0.02, 0, 0.08, -0.05, -0.95, 0] }, tuck: 0.6, lean: 0.7, twist: 0, side: 0 },
+  critical:  { name: 'Critical', hands: [['L', 'R', 0.3, 'in']], arms: 'up', ski: { L: [-0.04, -0.18, -0.04, -0.15, 0.35, 0], R: [0.12, 0.1, 0.06, 0.35, -0.95, -0.1] }, tuck: 0.55, lean: 0.65, twist: -0.3, side: -0.25 },
+  octo:      { name: 'Octograb', hands: [['R', 'R', 0.85, 'end'], ['L', 'L', -0.85, 'out']], ski: { L: [-0.04, -0.05, -0.3, -0.15, 0.45, 0], R: [0.04, 0, 0.2, 0.2, -0.85, 0] }, tuck: 0.45, lean: 0.5, twist: 0.1, side: 0 },
+  blunt:     { name: 'Blunt', hands: [['R', 'R', -1, 'end']], arms: 'up', ski: { L: [0, 0.05, -0.2, -0.05, 0.8, 0], R: [0, 0.08, -0.22, 0.08, 0.85, 0] }, tuck: 0.35, lean: 0.25, twist: -0.55, side: 0.35 },
+  stalefish: { name: 'Stalefish', hands: [['R', 'L', -0.75, 'out']], arms: 'out', ski: { L: [-0.02, 0, -0.15, 1.15, 0.35, 0], R: [-0.04, 0, 0.1, 1.15, 0.3, 0] }, tuck: 0.5, lean: 0.35, twist: -0.25, side: 0.35 },
+  bowarrow:  { name: 'Bow and Arrow', hands: [['R', 'R', 0.9, 'end'], ['L', 'L', 0.4, 'out']], ski: { L: [0.12, 0.2, 0, 0.15, -1, -0.2], R: [-0.02, -0.12, 0.3, -0.08, -0.6, 0] }, tuck: 0.45, lean: 0.75, twist: 0.1, side: 0.1 },
+  dubtail:   { name: 'Double Tail', hands: [['L', 'L', -0.85, 'out'], ['R', 'R', -0.85, 'out']], ski: { L: [0.02, 0.05, -0.2, -0.08, 0.7, 0], R: [-0.02, 0.05, -0.2, 0.08, 0.7, 0] }, tuck: 0.35, lean: 0.3, twist: 0, side: 0 },
+  seatbelt:  { name: 'Seatbelt', hands: [['L', 'R', -0.85, 'out']], arms: 'up', ski: { L: [0.03, 0.02, -0.02, 0.05, 0.1, 0], R: [-0.08, 0, 0.2, 0.25, 0.65, 0] }, tuck: 0.4, lean: 0.55, twist: -0.8, side: -0.25 },
   // positions
-  daffy:    { name: 'Daffy', pos: true, hands: [], arms: 'out', ski: { L: [0.02, -0.04, 0.42, 0, -0.32, 0], R: [-0.02, 0.1, -0.44, 0, 0.38, 0] }, tuck: 0.05, lean: 0.12, twist: 0, side: 0 },
-  spread:   { name: 'Spread Eagle', pos: true, hands: [], arms: 'wide', ski: { L: [0.36, 0.12, 0, 0.35, 0, -0.55], R: [-0.36, 0.12, 0, -0.35, 0, 0.55] }, tuck: 0.1, lean: 0.08, twist: 0, side: 0 },
-  backscratch:{ name: 'Backscratcher', pos: true, hands: [], arms: 'up', ski: { L: [0.03, 0.42, -0.36, 0, 1.25, 0], R: [-0.03, 0.42, -0.36, 0, 1.25, 0] }, tuck: 0.35, lean: -0.15, twist: 0, side: 0 },
-  ironcross:{ name: 'Iron Cross', pos: true, hands: [['R', 'L', 0.85, 'end']], ski: { L: [-0.1, 0.1, 0.12, -0.55, -0.45, 0], R: [0.1, 0.02, 0.1, 0.55, -0.4, 0] }, tuck: 0.55, lean: 0.45, twist: 0.15, side: 0 },
+  daffy:     { name: 'Daffy', pos: true, hands: [], arms: 'wide', ski: { L: [0, -0.05, 0.5, 0, -1, 0], R: [0, -0.12, -0.5, 0, 0.85, 0] }, tuck: 0.05, lean: 0.05, twist: 0, side: 0 },
+  spread:    { name: 'Spread Eagle', pos: true, hands: [], arms: 'up', ski: { L: [0.48, 0.25, 0, 0.25, -0.85, 0.3], R: [-0.48, 0.25, 0, -0.25, -0.85, -0.3] }, tuck: 0.15, lean: 0.1, twist: 0, side: 0 },
+  backscratch: { name: 'Backscratcher', pos: true, hands: [], arms: 'up', ski: { L: [0.04, 0.2, -0.38, 0, 1.2, 0], R: [-0.04, 0.2, -0.38, 0, 1.2, 0] }, tuck: 0.35, lean: -0.1, twist: 0, side: 0 },
+  ironcross: { name: 'Iron Cross', pos: true, hands: [], arms: 'wide', ski: { L: [0.06, 0.05, -0.05, -0.75, 0.15, 0], R: [-0.06, 0, -0.05, 0.75, 0.15, 0] }, tuck: 0.5, lean: 0.6, twist: 0, side: 0 },
 };
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
@@ -188,7 +188,7 @@ export class Rig {
   async load(id, opts = {}) {
     const loader = new GLTFLoader();
     const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    const gl = await loader.loadAsync('./models/' + id + '.glb?v=4');
+    const gl = await loader.loadAsync('./models/' + id + '.glb?v=5');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     this.wrap = new THREE.Group(); this.wrap.add(model); this.body.add(this.wrap);
@@ -213,10 +213,10 @@ export class Rig {
       const mn = o.material && o.material.name;
       if (far || mn === 'hair') { o.visible = false; continue; }
       if (mn === 'head') o.layers.set(1);
-      if (mn === 'body') bodyMat = o.material;
+      if (mn === 'body') { bodyMat = o.material; o.geometry.computeBoundingBox(); this.bodyH = o.geometry.boundingBox.max.y - o.geometry.boundingBox.min.y; }
       this.skel = o.skeleton;
     }
-    if (bodyMat) await this.dress(bodyMat, id);
+    if (bodyMat) { await this.dress(bodyMat, id); if (this.dressU) this.dressU.uPuff.value = 0.022 * (this.bodyH > 0.1 ? (this.bodyH > 10 ? this.bodyH / 1.75 : 1) : 1); }
     // face it along +Z, feet at y = 0
     this.root.updateMatrixWorld(true);
     const lr = this.wpos(this.b.thL).sub(this.wpos(this.b.thR));
@@ -241,7 +241,7 @@ export class Rig {
   setPoles(on) { this.poles = on; if (this.poleL) { this.poleL.visible = on; this.poleR.visible = on; } }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=4';
+    const maskUrl = './models/' + id + '_m.png?v=5';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -252,12 +252,18 @@ export class Rig {
       uMask: { value: mask }, uMeans: { value: new THREE.Vector3(...means) },
       uTop: { value: col(this.outfit.jacket) }, uBottom: { value: col(this.outfit.pants) }, uShoe: { value: col('#202227') }, uGlove: { value: col(this.outfit.gloves) },
       uHandA: { value: new THREE.Vector4(-1, -1, -1, -1) }, uHandB: { value: new THREE.Vector4(-1, -1, -1, -1) },
+      uMaskV: { value: mask }, uPuff: { value: 0 },
     };
     this.dressU = U;
     mat.onBeforeCompile = (s) => {
       Object.assign(s.uniforms, U);
       s.vertexShader = s.vertexShader.replace('#include <common>', `#include <common>
-uniform vec4 uHandA; uniform vec4 uHandB; varying float vGlove;`)
+uniform vec4 uHandA; uniform vec4 uHandB; varying float vGlove; uniform sampler2D uMaskV; uniform float uPuff;`)
+        // ski clothes are puffier than street clothes: jacket and trousers pushed out along their normals
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+#ifdef USE_MAP
+{ vec4 mkv = texture2D(uMaskV, uv); transformed += normal * uPuff * (mkv.r * 1.0 + mkv.g * 0.8); }
+#endif`)
         .replace('#include <skinning_vertex>', `#include <skinning_vertex>
 #ifdef USE_SKINNING
 { float g = 0.0;
@@ -468,6 +474,8 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     const side = k('side', gw * G.side + (1 - gw) * (-edge * 0.32), 7);
     const head = k('headTurn', S.sw && !air ? 1.0 : 0, 3);
     const pelvisQ = Q().copy(R).multiply(_q.setFromAxisAngle(Y, twist * 0.35)).multiply(_q2.setFromAxisAngle(Z, -inc * 0.6 + side * 0.2));
+    // in the air the hips fold with the chest, so the shoulders come down over the knees (only the spine bent before)
+    if (air && gw > 0.01) pelvisQ.multiply(_q.setFromAxisAngle(X, lean * 0.4 * gw));
     const chestQ = Q().copy(R).multiply(_q.setFromAxisAngle(Y, twist)).multiply(_q2.setFromAxisAngle(Z, side * 0.6)).multiply(Q().setFromAxisAngle(X, lean));
     const crashQ = crashW > 0.01 ? Q().setFromEuler(new THREE.Euler(Math.sin(S.t * 3.1) * 0.6 * crashW, Math.sin(S.t * 2.3) * 0.5 * crashW, Math.cos(S.t * 2.7) * 0.6 * crashW)) : null;
     if (crashQ) chestQ.multiply(crashQ);
@@ -524,7 +532,11 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       const sp = side === 'L' ? sL : sR, ski = side === 'L' ? this.skiL : this.skiR;
       const ank = this.ankleOf(sp, W);
       const skiQ = Q().copy(R).multiply(sp.q);
-      const kneeDir = V().set(0, 0, 1).applyQuaternion(skiQ).addScaledVector(D(side === 'L' ? 1 : -1, 0, 0), 0.12).addScaledVector(D(0, 1, 0), 0.15);
+      // knees point the way the ski points, levelled in the body's frame: a ski tipped tail-up must not fold the knee down
+      const kf = V().set(0, 0, 1).applyQuaternion(skiQ).applyQuaternion(R.clone().invert()); kf.y = 0;
+      if (kf.lengthSq() < 0.01) kf.set(0, 0, 1);
+      kf.normalize().applyQuaternion(R);
+      const kneeDir = kf.addScaledVector(D(side === 'L' ? 1 : -1, 0, 0), 0.12).addScaledVector(D(0, 1, 0), 0.25);
       const th = side === 'L' ? this.b.thL : this.b.thR, ca = side === 'L' ? this.b.caL : this.b.caR, ft = side === 'L' ? this.b.ftL : this.b.ftR;
       this.twoBone(th, ca, ft, 'th', 'ca', ank, kneeDir, Z);
       // foot flat in the boot, along the ski
