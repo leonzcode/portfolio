@@ -4,11 +4,11 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=3';
-import { fbm, ridged, rng, smoothstep } from './noise.js?v=3';
-import { snowUniforms } from './materials.js?v=3';
+import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=4';
+import { fbm, ridged, rng, smoothstep } from './noise.js?v=4';
+import { snowUniforms } from './materials.js?v=4';
 
-export function makeSky(scene, renderer, q) {
+export function makeSky(scene, renderer, q, wide) {
   const sky = new Sky(); sky.scale.setScalar(45000); sky.name = 'sky';
   const u = sky.material.uniforms;
   u.turbidity.value = 3.2; u.rayleigh.value = 1.1; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.82;
@@ -38,7 +38,7 @@ export function makeSky(scene, renderer, q) {
   scene.environment = env; scene.environmentIntensity = 0.55;
   pm.dispose();
   const fogCol = new THREE.Color(0xc6d7e8);
-  scene.fog = new THREE.FogExp2(fogCol, q.tier === 'low' ? 0.00042 : 0.00028);
+  scene.fog = new THREE.FogExp2(fogCol, wide ? (q.tier === 'low' ? 0.00016 : 0.00011) : q.tier === 'low' ? 0.00042 : 0.00028);
   return {
     sky, sun, hemi, sunDir,
     follow(p) { sun.position.copy(p).addScaledVector(sunDir, 120); sun.updateMatrixWorld(); sun.target.position.copy(p); sun.target.updateMatrixWorld(); sky.position.copy(p); sky.updateMatrixWorld(); },
@@ -95,12 +95,21 @@ function cardTexture() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 export class Forest {
-  constructor(scene, q) {
+  constructor(scene, q, mtn) {
     const r = rng(5);
     this.trees = [];
     const max = q.tier === 'low' ? 2600 : q.tier === 'medium' ? 5000 : 8000;
+    // on a real mountain: below the treeline, thinning as it nears, on ground not too steep
+    if (mtn) for (let tries = 0; this.trees.length < max && tries < max * 12; tries++) {
+      const a = r() * Math.PI * 2, d = 30 + Math.sqrt(r()) * 2600, x = Math.cos(a) * d, z = Math.sin(a) * d;
+      const y = height(x, z), line = mtn.spot.treeline + 60 * fbm(x * 0.004, z * 0.004, 2);
+      if (y > line || r() < smoothstep(line - 150, line, y) * 0.9) continue;
+      if (fbm(x * 0.01 + 3, z * 0.01, 3) < -0.15) continue;
+      const n = normal(x, z); if (n.y < 0.8) continue;
+      this.trees.push({ x, y: y - 0.3, z, s: 6 + r() * 11, rot: r() * 6.28 });
+    }
     // scattered in clumps beside the run and up the valley sides
-    for (let tries = 0; this.trees.length < max && tries < max * 8; tries++) {
+    if (!mtn) for (let tries = 0; this.trees.length < max && tries < max * 8; tries++) {
       const z = -300 + r() * 1900, side = r() < 0.5 ? -1 : 1;
       const d = 4 + Math.pow(r(), 1.6) * 360;
       const x = side * (runHalf(z) + d);
@@ -167,6 +176,32 @@ export class Forest {
 }
 
 // ---- the far ranges ------------------------------------------------------------------------------------------------
+// the horizon round a real mountain: the coarse elevation grid as one mesh, sunk under the fine terrain near the start
+export function makeMountainRanges(scene, q, mtn) {
+  const e = mtn.farExtent(), N = q.tier === 'low' ? 140 : 220;
+  const pos = [], col = [], idx = [];
+  const fe = mtn.ext, inFine = (x, z, m) => x > fe.x0 + m && x < fe.x1 - m && z > fe.z0 + m && z < fe.z1 - m;
+  for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+    const x = e.x0 + (e.x1 - e.x0) * i / N, z = e.z0 + (e.z1 - e.z0) * j / N;
+    let y = mtn.farAt(x, z); if (inFine(x, z, 150)) y -= 40;
+    pos.push(x, y, z);
+  }
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const a = j * (N + 1) + i, b = a + 1, c = a + N + 1, d = c + 1; idx.push(a, c, b, b, c, d); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+  const nn = g.attributes.normal, snow = new THREE.Color(0xf2f5f9), rockC = new THREE.Color(0x5b5d62), forestC = new THREE.Color(0x26392d);
+  for (let k = 0; k < nn.count; k++) {
+    const ny = nn.getY(k), y = pos[k * 3 + 1], x = pos[k * 3], z = pos[k * 3 + 2], n = fbm(x * 0.003, z * 0.003, 2);
+    const c = snow.clone().lerp(rockC, smoothstep(0.7, 0.45, ny + n * 0.1) * 0.85);
+    const line = mtn.spot.treeline;
+    if (y < line) c.lerp(forestC, smoothstep(line, line - 200, y + n * 80) * 0.8 * smoothstep(0.6, 0.85, ny));
+    col.push(c.r, c.g, c.b);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  m.name = 'ranges'; m.matrixAutoUpdate = false; scene.add(m);
+  return m;
+}
+
 export function makeRanges(scene, q, snowMat) {
   const segA = q.tier === 'low' ? 160 : 280, segR = q.tier === 'low' ? 18 : 32;
   const pos = [], col = [], idx = [];

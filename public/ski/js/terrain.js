@@ -7,7 +7,7 @@
 // frame, with skirts hiding the seams between sizes. Features with their own meshes (kickers, the pipe) are left out
 // of the patches (the ground under them is lowered a little) and drawn by park.js at finer spacing.
 import * as THREE from 'three';
-import { fbm, ridged, smoothstep, clamp } from './noise.js?v=3';
+import { fbm, ridged, smoothstep, clamp } from './noise.js?v=4';
 
 // ---- the run's long profile ----------------------------------------------------------------------------------------
 // [z where it starts, pitch in degrees]
@@ -47,8 +47,14 @@ export function pitchAt(z) { const i = Math.round((clamp(z, Z0, Z1) - Z0) / DZ);
 // half width of the groomed run
 export function runHalf(z) { return 46 + 10 * smoothstep(1250, 1450, z) - 8 * smoothstep(-80, -200, z); }
 
+// a real mountain (dem.js) replaces the made-up valley when that map is chosen
+let mtn = null;
+export function setMountain(m) { mtn = m; }
+export function onMountain() { return !!mtn; }
+
 // the ground without features
 export function ground(x, z) {
+  if (mtn) return mtn.at(x, z) + 0.35 * fbm(x * 0.06, z * 0.06, 2) + 0.5 * Math.max(0, fbm(x * 0.11 + 4, z * 0.11, 2));
   const y0 = baseLine(z), W = runHalf(z), ax = Math.abs(x), d = ax - W;
   // gentle long undulations on the run, a slight crown, and the groomer's banks at its sides
   let y = y0 + 0.22 * fbm(x * 0.018 + 11, z * 0.014, 2) - 0.00018 * x * x;
@@ -99,6 +105,7 @@ export function normalBehind(x, z, dx, dz, out = new THREE.Vector3()) {
   return out.normalize();
 }
 export function surface(x, z) {
+  if (mtn) return 1;
   if (park && park.surface(x, z)) return 2;
   return Math.abs(x) - runHalf(z) > 1.2 ? 1 : 0;
 }
@@ -115,6 +122,7 @@ export class Terrain {
     this.cache = new Map(); this.shown = new Set(); this.queue = [];
     this.budget = opts.budget || 4;          // ms a frame for building
     this.index = this.makeIndex();
+    this.root = opts.root || ROOT;
     this.cam = new THREE.Vector3();
   }
   makeIndex() {
@@ -155,7 +163,7 @@ export class Terrain {
       const hx = H[(j + 1) * N + i + 2] - H[(j + 1) * N + i], hz = H[(j + 2) * N + i + 1] - H[j * N + i + 1];
       let nx = -hx, ny = 2 * st, nz = -hz; const l = Math.hypot(nx, ny, nz); nor[v * 3] = nx / l; nor[v * 3 + 1] = ny / l; nor[v * 3 + 2] = nz / l;
       const d = Math.abs(x) - runHalf(z);
-      grm[v] = 1 - smoothstep(-1.5, 1.5, d);
+      grm[v] = mtn ? 0 : 1 - smoothstep(-1.5, 1.5, d);
       if (h < ymin) ymin = h; if (h > ymax) ymax = h;
     }
     // skirts hang below the four edges
@@ -200,7 +208,7 @@ export class Terrain {
       else want.push(key);
     };
     this.queue.length = 0;
-    visit(ROOT.x0, ROOT.z0, ROOT.size, 0);
+    visit(this.root.x0, this.root.z0, this.root.size, 0);
     // build nearest first within the budget
     if (this.queue.length) {
       const seen = new Set();

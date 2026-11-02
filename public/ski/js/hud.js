@@ -1,6 +1,6 @@
 // The heads-up display: speed, score and the line's multiplier, trick names as they land, rail balance, a grab list.
-import { GRABS } from './rig.js?v=3';
-import { keyHelp } from './input.js?v=3';
+import { GRABS } from './rig.js?v=4';
+import { keyHelp } from './input.js?v=4';
 
 const $ = id => document.getElementById(id);
 export class Hud {

@@ -8,11 +8,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,800;1,700;1,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/ski.css?v=3">
+<link rel="stylesheet" href="./css/ski.css?v=4">
 <script type="importmap">
 {
   "imports": {
-    "three": "/car/vendor/three/three.module.js?v=ski3",
+    "three": "/car/vendor/three/three.module.js?v=ski4",
     "three/addons/": "/car/vendor/three/addons/"
   }
 }
@@ -45,6 +45,9 @@
       <button id="play" class="big" disabled>Loading&hellip;</button>
     </div>
     <div class="opts">
+      <label>Map
+        <select id="map"><option value="park">Terrain park</option><option value="mammoth">Mammoth Mountain (real terrain, deep snow)</option></select>
+      </label>
       <label>Controls
         <select id="scheme"><option value="mouse">Mouse steer</option><option value="keys">Keyboard</option></select>
       </label>
@@ -77,7 +80,7 @@
       </div>
     </div>
     <div id="keys"></div>
-    <p class="fine">Rider models: Microsoft Rocketbox (MIT). Everything else made for this game.</p>
+    <p class="fine">Rider models: Microsoft Rocketbox (MIT). Mountain map elevation: AWS Terrain Tiles (USGS 3DEP, SRTM and others, open data via Mapzen). Everything else made for this game.</p>
   </div>
 </div>
 
@@ -91,6 +94,6 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=3"></script>
+<script type="module" src="./js/main.js?v=4"></script>
 </body>
 </html>

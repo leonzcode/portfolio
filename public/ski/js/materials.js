@@ -2,7 +2,7 @@
 // groomer's corduroy on the run, the tracks from the track map (snow.js), glints where single crystals catch the sun,
 // a cold tint in the shade, and rock on the steepest valley walls.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=3';
+import { rng } from './noise.js?v=4';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
 function noiseTexture(size = 256, seed = 3) {

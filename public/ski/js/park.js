@@ -3,8 +3,8 @@
 // function the physics reads directly; kickers and the pipe also get meshes of their own, much finer at the lips,
 // knuckles and coping than the terrain's patches.
 import * as THREE from 'three';
-import { baseLine, pitchAt, ground } from './terrain.js?v=3';
-import { smoothstep, clamp, smax } from './noise.js?v=3';
+import { baseLine, pitchAt, ground } from './terrain.js?v=4';
+import { smoothstep, clamp, smax } from './noise.js?v=4';
 
 const RAD = Math.PI / 180;
 
@@ -309,6 +309,11 @@ export function makePark() {
     surface(x, z) { const l = near(x, z); if (!l) return false; for (const f of l) if (f.surface && f.surface(x, z)) return true; return false; },
   };
   return park;
+}
+// the backcountry map has no built features
+export function emptyPark() {
+  return { kickers: [], pipe: null, qp: null, rails: [], all: [], height: () => -Infinity, heightTerrainOnly: () => -Infinity, visualDip: () => 0, surface: () => false,
+    starts: [{ name: 'The summit', x: 0, z: 0, v: 2, here: true }] };
 }
 function rainbow(x, z0, len, h0, rise) {
   const pts = [];

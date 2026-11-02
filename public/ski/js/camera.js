@@ -1,7 +1,7 @@
 // Cameras: chase (behind the travel, held steady through spins), far chase, first person (a helmet camera at the
 // rider's eyes, turning with the head) and filmer (tripod spots beside the features, panning and zooming to follow).
 import * as THREE from 'three';
-import { height } from './terrain.js?v=3';
+import { height } from './terrain.js?v=4';
 
 const MODES = ['chase', 'far', 'pov', 'film'];
 export class Cams {
@@ -14,7 +14,7 @@ export class Cams {
     for (const k of park.kickers) {
       this.spots.push(new THREE.Vector3(k.x + 14, 0, k.L.z + 2), new THREE.Vector3(k.x - 13, 0, k.zMeet - 2));
     }
-    const p = park.pipe; for (let z = p.z0 + 25; z < p.z1; z += 45) this.spots.push(new THREE.Vector3(p.x + p.F + p.R + 3, 0, z));
+    const p = park.pipe; if (p) for (let z = p.z0 + 25; z < p.z1; z += 45) this.spots.push(new THREE.Vector3(p.x + p.F + p.R + 3, 0, z));
     for (const r of park.rails) this.spots.push(new THREE.Vector3(r.P[0].x + 7, 0, (r.P[0].z + r.P[r.P.length - 1].z) / 2));
     for (const s of this.spots) s.y = height(s.x, s.z) + 1.6;
     this.spots.sort((a, b) => a.z - b.z);
@@ -42,6 +42,15 @@ export class Cams {
       let s = null, best = Infinity;
       for (const c of this.spots) { const d = c.distanceTo(body); if (c.z > body.z - 25 && d < best) { best = d; s = c; } }
       if (!s) s = this.spots[this.spots.length - 1];
+      if (!s || best > 70) {
+        // no built feature near: a tripod set up ahead of the rider, moved on once they have gone past it
+        if (!this.free || this.free.distanceTo(body) > 70 || (sk.v && this.free.clone().sub(body).dot(sk.v) < -8)) {
+          const v = sk.v ? sk.v.clone().setY(0) : new THREE.Vector3(0, 0, 1); if (v.lengthSq() < 0.1) v.set(0, 0, 1); v.normalize();
+          this.free = body.clone().addScaledVector(v, 28).add(new THREE.Vector3(-v.z * 10, 0, v.x * 10));
+          this.free.y = height(this.free.x, this.free.z) + 1.7;
+        }
+        s = this.free;
+      }
       if (this.spot !== s) { this.spot = s; this.first = true; }
       cam.position.copy(s);
       this.look.lerp(body, this.first ? 1 : 1 - Math.exp(-dt * 8));

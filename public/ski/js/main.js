@@ -1,27 +1,28 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, height, normal, baseLine } from './terrain.js?v=3';
-import { makePark, featureMesh, railMeshes } from './park.js?v=3';
-import { makeMaterials, snowUniforms } from './materials.js?v=3';
-import { makeSky, Forest, makeRanges, makeProps } from './world.js?v=3';
-import { Skier } from './skier.js?v=3';
-import { Rig } from './rig.js?v=3';
-import { Tricks } from './tricks.js?v=3';
-import { Input } from './input.js?v=3';
-import { Cams } from './camera.js?v=3';
-import { Tracks, Spray } from './snow.js?v=3';
-import { Hud } from './hud.js?v=3';
-import { Sound } from './sound.js?v=3';
-import { Net } from './net.js?v=3';
-import { mergeGear } from './gear.js?v=3';
-import { Touch, TOUCH_GRABS } from './touch.js?v=3';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=4';
+import { makePark, emptyPark, featureMesh, railMeshes } from './park.js?v=4';
+import { makeMaterials, snowUniforms } from './materials.js?v=4';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=4';
+import { Mountain, SPOTS } from './dem.js?v=4';
+import { Skier } from './skier.js?v=4';
+import { Rig } from './rig.js?v=4';
+import { Tricks } from './tricks.js?v=4';
+import { Input } from './input.js?v=4';
+import { Cams } from './camera.js?v=4';
+import { Tracks, Spray } from './snow.js?v=4';
+import { Hud } from './hud.js?v=4';
+import { Sound } from './sound.js?v=4';
+import { Net } from './net.js?v=4';
+import { mergeGear } from './gear.js?v=4';
+import { Touch, TOUCH_GRABS } from './touch.js?v=4';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
 
 // ---- settings and graphics tier ------------------------------------------------------------------------------------
 const saved = (() => { try { return JSON.parse(localStorage.getItem('ski_opts') || '{}'); } catch (e) { return {}; } })();
-const opts = Object.assign({ scheme: 'mouse', cam: 'chase', gfx: 'auto', poles: '1', rider: 'm_adult_10', showfps: false }, saved);
+const opts = Object.assign({ scheme: 'mouse', cam: 'chase', gfx: 'auto', poles: '1', rider: 'm_adult_10', showfps: false, map: 'park' }, saved);
 const qs = new URLSearchParams(location.search);
 if (qs.get('gfx')) opts.gfx = qs.get('gfx');
 function detectTier() {
@@ -56,15 +57,23 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.15, 20000);
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
 
+// the map: the terrain park, or a real mountain from open elevation data
+if (qs.get('map')) opts.map = qs.get('map');
+let mtn = null;
+if (opts.map !== 'park' && SPOTS[opts.map]) {
+  $('play').textContent = 'Loading the mountain...';
+  try { mtn = await new Mountain(SPOTS[opts.map]).load(q.tier === 'low' ? 3 : 4, 3); setMountain(mtn); }
+  catch (e) { console.warn('mountain', e); mtn = null; opts.map = 'park'; }
+}
 const mats = makeMaterials(q);
-const park = makePark(); setPark(park);
-const sky = makeSky(scene, renderer, q);
-const terrain = new Terrain(scene, mats.snow, { minLeaf: q.minLeaf, K: q.K, seg: q.seg, budget: q.tier === 'low' ? 3 : 4 });
-for (const f of [...park.kickers, park.pipe, park.qp]) scene.add(featureMesh(f, height, mats.snow, q.fine));
-scene.add(railMeshes(park.rails, mats));
-const forest = new Forest(scene, q);
-makeRanges(scene, q, mats.snow);
-makeProps(scene, park, q);
+const park = mtn ? emptyPark() : makePark(); setPark(park);
+const sky = makeSky(scene, renderer, q, !!mtn);
+const terrain = new Terrain(scene, mats.snow, { minLeaf: q.minLeaf, K: q.K, seg: q.seg, budget: q.tier === 'low' ? 3 : 4, root: mtn ? { x0: -4096, z0: -4096, size: 8192 } : null });
+for (const f of [...park.kickers, park.pipe, park.qp]) if (f) scene.add(featureMesh(f, height, mats.snow, q.fine));
+if (park.rails.length) scene.add(railMeshes(park.rails, mats));
+const forest = new Forest(scene, q, mtn);
+if (mtn) makeMountainRanges(scene, q, mtn); else makeRanges(scene, q, mats.snow);
+if (!mtn) makeProps(scene, park, q);
 const tracks = new Tracks(renderer, q);
 const spray = new Spray(scene, q);
 
@@ -79,12 +88,16 @@ const touch = new Touch(input, () => { opts.cam = cams.next(); hud.flash({ chase
 Object.defineProperty(input.touch, 'grabId', { get: () => TOUCH_GRABS[input.touch.sel] });
 const sound = new Sound();
 
-const START = { x: -16, z: -30, v: 5 };
-skier.spawn(START.x, START.z, START.v, 0);
+const START = mtn ? (() => { const n = normal(0, 0); return { x: 0, z: 0, v: 2, yaw: Math.atan2(n.x, n.z) }; })() : { x: -16, z: -30, v: 5, yaw: 0 };
+const toStart = () => { skier.spawn(START.x, START.z, START.v, START.yaw); skier.safe.length = 0; cams.first = true; };
+// the end of a run: the bottom of the park, or far down or away on the mountain
+const runOver = () => mtn ? (Math.hypot(skier.p.x, skier.p.z) > 4000 || skier.p.y < -900) : skier.p.z > 1470;
+toStart();
 
 // ---- menu --------------------------------------------------------------------------------------------------------------
 function save() { try { localStorage.setItem('ski_opts', JSON.stringify(opts)); } catch (e) {} }
-const sel = { scheme: $('scheme'), cammode: $('cammode'), gfx: $('gfx'), poles: $('poles'), rider: $('rider') };
+const sel = { scheme: $('scheme'), cammode: $('cammode'), gfx: $('gfx'), poles: $('poles'), rider: $('rider'), map: $('map') };
+sel.map.value = opts.map; sel.map.onchange = () => { opts.map = sel.map.value; save(); location.reload(); };
 sel.scheme.value = opts.scheme; sel.cammode.value = opts.cam; sel.gfx.value = opts.gfx; sel.poles.value = opts.poles; sel.rider.value = opts.rider; $('showfps').checked = !!opts.showfps;
 input.setScheme(opts.scheme); hud.setScheme(opts.scheme); cams.set(opts.cam);
 sel.scheme.onchange = () => { opts.scheme = sel.scheme.value; input.setScheme(opts.scheme); hud.setScheme(opts.scheme); save(); };
@@ -117,13 +130,13 @@ function startReplay() {
 function endReplay() { if (!replay) return; cams.set(replay.camWas); replay = null; rec.length = 0; cams.first = true; rig.p = {}; }
 $('toreplay').onclick = startReplay;
 addEventListener('keydown', e => { if (replay && e.code === 'Space') { replay.slow = !replay.slow; e.preventDefault(); } });
-$('totop').onclick = () => { skier.spawn(START.x, START.z, START.v, 0); cams.first = true; play(); };
+$('totop').onclick = () => { toStart(); play(); };
 // start spots
 {
   const box = $('starts');
   for (const s of park.starts) {
     const b = document.createElement('button'); b.textContent = s.name;
-    b.onclick = () => { skier.spawn(s.x, s.z, s.v, 0); skier.safe.length = 0; cams.first = true; play(); };
+    b.onclick = () => { if (s.here) toStart(); else { skier.spawn(s.x, s.z, s.v, 0); skier.safe.length = 0; cams.first = true; } play(); };
     box.appendChild(b);
   }
 }
@@ -186,7 +199,7 @@ function tick() {
   if (live) {
     if (input.took('KeyC')) { opts.cam = cams.next(); sel.cammode.value = opts.cam; save(); hud.flash({ chase: 'Chase camera', far: 'Far chase', pov: 'First person', film: 'Filmer' }[opts.cam], 900); }
     if (input.took('KeyR')) { skier.crash('reset'); skier.tState = 9; }
-    if (input.took('Backspace')) { skier.spawn(START.x, START.z, START.v, 0); cams.first = true; }
+    if (input.took('Backspace')) toStart();
     // the mouse scheme: the pointing turns into a wanted direction across the fall line
     if (opts.scheme === 'mouse' && skier.state === 'ground' && !I.steer) {
       const a = (I.mouse || 0) * 1.66;
@@ -205,12 +218,12 @@ function tick() {
     }
     if (n === 8) acc = 0;
     // the bottom: back up on the lift
-    if (skier.p.z > 1470 && skier.state === 'ground') {
+    if (runOver() && skier.state === 'ground') {
       if (tricks.combo) tricks.endCombo();
       const run = hud.score - runStart; runStart = hud.score;
       const best = Math.max(run, +(opts.best || 0)); if (best !== +(opts.best || 0)) { opts.best = best; save(); }
       hud.flash(`Run: ${run.toLocaleString()} points${run >= best && run > 0 ? ' (your best)' : ` (best ${best.toLocaleString()})`}`, 3200);
-      skier.spawn(START.x, START.z, START.v, 0); cams.first = true;
+      toStart();
     }
   }
   let S, camSk = skier;

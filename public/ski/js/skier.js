@@ -9,8 +9,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=3';
-import { clamp, smoothstep } from './noise.js?v=3';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=4';
+import { clamp, smoothstep } from './noise.js?v=4';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -158,7 +158,7 @@ export class Skier {
     const cda = 0.55 - 0.3 * this.tuck + 0.2 * this.brake;
     a.addScaledVector(this.v, -0.5 * 1.2 * cda / 78 * speed);
     if (this.surf === 1) a.addScaledVector(this.v, -0.0045 * speed);
-    if (speed < 0.6 && !I.tuck && this.v.dot(_n.set(0, -1, 0)) < 0.2 && N > 9 && Math.abs(this.p.y - baseLine(this.p.z)) < 50 && a.length() < 0.4) a.multiplyScalar(0);
+    if (speed < 0.6 && !I.tuck && N > 9 && a.length() < 0.4) a.multiplyScalar(0);
     this.v.addScaledVector(a, dt);
     this.v.addScaledVector(n, -this.v.dot(n));
     // pop
