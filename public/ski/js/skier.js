@@ -9,8 +9,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=1';
-import { clamp, smoothstep } from './noise.js?v=1';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=2';
+import { clamp, smoothstep } from './noise.js?v=2';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -98,7 +98,7 @@ export class Skier {
     this.press += ((I.butter ? I.press : 0) - this.press) * Math.min(1, dt * 10);
     const buttering = Math.abs(this.press) > 0.35;
     const edgeMax = 1.05 * (1 - 0.6 * Math.abs(this.press));
-    this.edge += (u * edgeMax - this.edge) * Math.min(1, dt * 7);
+    this.edge += (u * edgeMax - this.edge) * Math.min(1, dt * (this.mouseTarget ? 6 : Math.abs(u) > Math.abs(this.edge) ? 3.2 : 6));
     this.brake += ((I.brake ? 1 : 0) - this.brake) * Math.min(1, dt * 8);
     this.tuck += ((I.tuck && !I.crouch ? 1 : 0) - this.tuck) * Math.min(1, dt * 5);
     // crouching charges the pop; letting go pops
@@ -119,7 +119,7 @@ export class Skier {
       this.brakeSide = 0;
       const Rsc = 15.5;
       const carve = ae > 0.08 ? Math.abs(vf) / (Rsc * Math.cos(Math.min(ae, 1.15))) * grip : 0;
-      const pivot = (buttering ? 4.2 : 2.6 - 1.7 * smoothstep(2, 22, speed)) * Math.abs(u);
+      const pivot = (buttering ? 4.2 : 2.4 - 1.95 * smoothstep(1, 14, speed)) * Math.abs(u);
       omega = Math.sign(u) * Math.max(carve, pivot);
       if (this.crouch > 0.6 && I.crouch && speed < 6) omega *= 0.5;
     }
@@ -149,9 +149,9 @@ export class Skier {
       if (over > 0.2) { const d = Math.min(3.2, over * 1.6); a.addScaledVector(this.v, -d / speed); this.scrub = d; }
     }
     // pumping the pipe's transitions: riders extend their legs going up the curve and gain speed doing it
-    const pp = this.park.pipe;
-    if (pp && n.y < 0.97 && n.y > 0.12 && pp.surface(this.p.x, this.p.z) && Math.abs(this.v.x) > 3) {
-      const upWall = Math.sign(this.p.x - pp.x) === Math.sign(this.v.x);
+    for (const pp of [this.park.pipe, this.park.qp]) {
+      if (!(pp && n.y < 0.97 && n.y > 0.12 && pp.surface(this.p.x, this.p.z) && Math.abs(this.v.x) > 3)) continue;
+      const upWall = (pp.dir || Math.sign(this.p.x - pp.x)) === Math.sign(this.v.x);
       a.addScaledVector(this.v, (upWall ? 2.3 : 1.0) / speed);
     }
     // air drag and deep snow
@@ -185,6 +185,7 @@ export class Skier {
     this.toTangent(this.f);
     this.groundQ();
     this.railCheck();
+    if (this.treeHit()) return;
     // remember safe places
     this.safeT += dt;
     if (this.safeT > 0.25 && (this.surf !== 2 || n.y > 0.985) && speed > 1.5 && Math.abs(this.edge) < 0.9) {
@@ -202,9 +203,9 @@ export class Skier {
     const n = this.n;
     if (pop) this.v.addScaledVector(n.y > 0.4 ? n : UP, pop);
     // in the pipe: a skier goes straight up the wall, not out over the deck
-    const pp = this.park.pipe;
-    if (n.y < 0.55 && pp && this.p.z > pp.z0 && this.p.z < pp.z1) {
-      const out = Math.sign(this.p.x - pp.x);
+    for (const pp of [this.park.pipe, this.park.qp]) {
+      if (!(n.y < 0.55 && pp && this.p.z > pp.z0 && this.p.z < pp.z1 && this.p.x > pp.x0 && this.p.x < pp.x1)) continue;
+      const out = pp.dir || Math.sign(this.p.x - pp.x);
       const vx = this.v.x * out;
       if (vx > -0.4) this.v.x = -0.4 * out;
     }
@@ -222,7 +223,8 @@ export class Skier {
       this.natural = ang;
     } else this.natural = 0;
     this.lastPress = this.press;
-    this.events.push({ type: 'takeoff', how, sw: this.sw, speed: this.v.length(), press: this.press, butter: Math.abs(this.press) > 0.35, rail: !!this.rail });
+    const inPipe = [this.park.pipe, this.park.qp].some(pp => pp && n.y < 0.55 && this.p.z > pp.z0 && this.p.z < pp.z1 && this.p.x > pp.x0 && this.p.x < pp.x1);
+    this.events.push({ type: 'takeoff', how, sw: this.sw, speed: this.v.length(), press: this.press, butter: Math.abs(this.press) > 0.35, rail: !!this.rail, pipe: inPipe });
     this.press = 0; this.endButter();
     this.grab = null; this.grabT = 0;
   }
@@ -261,6 +263,7 @@ export class Skier {
     this.p.copy(this.com).addScaledVector(_w.set(0, 1, 0).applyQuaternion(q), -comH);
     this.events.push({ type: 'air', dq: wl * dt });
     if (this.railCheck()) return;
+    if (this.treeHit()) return;
     const h = height(this.p.x, this.p.z);
     if (this.p.y <= h && this.tAir > 0.03) this.land(h);
     else if (this.tAir > 25) this.crash('lost');
@@ -335,6 +338,18 @@ export class Skier {
     this.state = 'ground'; this.tState = 0; this.crouch = Math.min(0.95, 0.4 + vn * 0.06);
     this.lastLanding = { q, vn };
     this.groundQ();
+  }
+
+  // trees: a trunk met at speed is a crash; slowly, it stops you and you slide round it
+  treeHit() {
+    if (!this.trees) return false;
+    const h = this.trees.hit(this.p.x, this.p.z, 0.3);
+    if (!h || this.p.y > h.t.y + h.t.s * 0.95) return false;
+    const vn = this.v.x * -h.nx + this.v.z * -h.nz;
+    if (vn > 4.5) { this.v.multiplyScalar(0.2); this.v.x += h.nx * 2; this.v.z += h.nz * 2; this.crash('tree'); return true; }
+    this.p.x = h.t.x + h.nx * h.R; this.p.z = h.t.z + h.nz * h.R;
+    if (vn > 0) { this.v.x += h.nx * vn; this.v.z += h.nz * vn; }
+    return false;
   }
 
   // ---- rails and boxes ----------------------------------------------------------------------------------------------

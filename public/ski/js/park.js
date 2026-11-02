@@ -3,8 +3,8 @@
 // function the physics reads directly; kickers and the pipe also get meshes of their own, much finer at the lips,
 // knuckles and coping than the terrain's patches.
 import * as THREE from 'three';
-import { baseLine, pitchAt, ground } from './terrain.js?v=1';
-import { smoothstep, clamp, smax } from './noise.js?v=1';
+import { baseLine, pitchAt, ground } from './terrain.js?v=2';
+import { smoothstep, clamp, smax } from './noise.js?v=2';
 
 const RAD = Math.PI / 180;
 
@@ -146,6 +146,23 @@ class Pipe {
   }
 }
 
+// a quarterpipe: one pipe wall standing across the slope, ridden into from the side (dir +1 rises towards +x)
+class QuarterPipe extends Pipe {
+  constructor(o) {
+    super(Object.assign({ F: 0, R: 4.2, vert: 0.4, deck: 3.0, entry: 6, exit: 6, name: 'quarterpipe', dir: 1 }, o));
+    const reach = this.R + 0.15 + this.deck + this.H / 0.7 + 1;
+    this.x0 = this.dir > 0 ? this.x - 1 : this.x - reach; this.x1 = this.dir > 0 ? this.x + reach : this.x + 1;
+  }
+  height(x, z, g) {
+    if (z < this.z0 || z > this.z1 || x < this.x0 || x > this.x1) return -Infinity;
+    const s = this.scale(z); if (s <= 0) return -Infinity;
+    const a = (x - this.x) * this.dir;
+    return g + this.wall(a) * s;
+  }
+  surface(x, z) { const a = (x - this.x) * this.dir; return z > this.z0 && z < this.z1 && a > -0.5 && a < this.R + this.deck; }
+  cols(fine) { return super.cols(fine).filter(v => (v - this.x) * this.dir >= -0.6); }
+}
+
 // ---- ground shapes that the terrain patches draw (no meshes of their own) ------------------------------------------
 class Rollers {
   constructor(o) { Object.assign(this, { amp: 1.2, len: 14, n: 3, x: 0, w: 30 }, o); this.z1 = this.z0 + this.len * this.n; this.x0 = this.x - this.w - 4; this.x1 = this.x + this.w + 4; }
@@ -220,6 +237,7 @@ export function makePark() {
     new Kicker({ name: 'Big air', x: 0, z0: 930, lip: 31, R: 16, drop: 0.9, table: 19, land: 34, wT: 3.4, wD: 6, wL: 10 }),
   ];
   const pipe = new Pipe({ x: 0, z0: 690, z1: 880 });
+  const qp = new QuarterPipe({ x: 30, z0: 1222, z1: 1262, dir: 1 });
   const ground2 = [
     new Rollers({ z0: 372, amp: 1.0, len: 13, n: 2, x: -14, w: 22 }),
     new Rollers({ z0: 590, amp: 1.3, len: 15, n: 3, x: 0, w: 34 }),
@@ -244,7 +262,7 @@ export function makePark() {
     R({ name: 'Down-flat-down rail', kind: 'rail', pts: [[-4, 1185, 0.95], [-4, 1192, 0.6], [-4, 1198, 0.6], [-4, 1205, 0.25]], ramp: 0.85 }),
   ];
   const ramps = rails.filter(r => r.ramp).map(r => new Wedge({ x: r.pts[0][0], zEnd: r.pts[0][1] - 0.7, h: r.ramp, hw: r.kind === 'box' ? 1.4 : 1.2 }));
-  const all = [...kickers, pipe, ...ground2, ...ramps];
+  const all = [...kickers, pipe, qp, ...ground2, ...ramps];
   // a 32 m bucket grid over x and z
   const B = 32, buckets = new Map();
   for (const f of all) {
@@ -255,7 +273,17 @@ export function makePark() {
   }
   const near = (x, z) => buckets.get(Math.floor(x / B) + ',' + Math.floor(z / B));
   const park = {
-    kickers, pipe, rails, all,
+    kickers, pipe, qp, rails, all,
+    // where a rider can start: the top and the start of each part of the park
+    starts: [
+      { name: 'Top of the park', x: -16, z: -30, v: 5 },
+      { name: 'Jump line', x: -16, z: 30, v: 9 },
+      { name: 'Jib line (boxes and rails)', x: 16, z: 40, v: 8 },
+      { name: 'Rail garden', x: -2, z: 380, v: 8 },
+      { name: 'Superpipe', x: -2, z: 700, v: 10 },
+      { name: 'Big air', x: 0, z: 880, v: 12 },
+      { name: 'Bottom jibs and quarterpipe', x: 0, z: 1090, v: 9 },
+    ],
     height(x, z, g) {
       const l = near(x, z); if (!l) return -Infinity;
       let best = -Infinity;

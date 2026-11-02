@@ -7,7 +7,7 @@
 // frame, with skirts hiding the seams between sizes. Features with their own meshes (kickers, the pipe) are left out
 // of the patches (the ground under them is lowered a little) and drawn by park.js at finer spacing.
 import * as THREE from 'three';
-import { fbm, ridged, smoothstep, clamp } from './noise.js?v=1';
+import { fbm, ridged, smoothstep, clamp } from './noise.js?v=2';
 
 // ---- the run's long profile ----------------------------------------------------------------------------------------
 // [z where it starts, pitch in degrees]
@@ -214,7 +214,7 @@ export class Terrain {
     }
     const now = new Set(want);
     for (const k of this.shown) if (!now.has(k)) { const m = this.cache.get(k); if (m) this.group.remove(m); }
-    for (const k of now) if (!this.shown.has(k)) { const m = this.cache.get(k); m.updateMatrix(); this.group.add(m); }
+    for (const k of now) if (!this.shown.has(k)) { const m = this.cache.get(k); m.updateMatrix(); this.group.add(m); m.updateMatrixWorld(); }
     for (const k of now) this.cache.get(k).userData.used = frame;
     this.shown = now;
     if (this.cache.size > 900) this.trim(frame);

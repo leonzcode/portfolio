@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp } from './noise.js?v=1';
+import { clamp } from './noise.js?v=2';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q(), _q2 = Q(), _m = new THREE.Matrix4(), _a = V(), _b = V(), _c = V();
@@ -152,7 +152,7 @@ function makeHelmet(col, lens) {
   const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.06, 6, 24), new THREE.MeshStandardMaterial({ color: 0x1b1d22, roughness: 0.7 }));
   rim.rotation.x = Math.PI / 2; rim.scale.set(0.117, 0.141, 0.12); rim.position.y = -0.012; g.add(rim);
   // goggles: a curved lens with a mirror coating and a strap round the helmet
-  const lensG = new THREE.SphereGeometry(1, 20, 8, -Math.PI * 0.33, Math.PI * 0.66, Math.PI * 0.42, Math.PI * 0.18);
+  const lensG = new THREE.SphereGeometry(1, 20, 8, -Math.PI * 0.34, Math.PI * 0.68, Math.PI * 0.39, Math.PI * 0.24);
   const lensM = new THREE.MeshStandardMaterial({ color: lens, metalness: 1.0, roughness: 0.08, envMapIntensity: 1.6 });
   const lensMesh = new THREE.Mesh(lensG, lensM); lensMesh.scale.set(0.118, 0.17, 0.108); lensMesh.rotation.y = 0; lensMesh.position.set(0, -0.02, 0.0); g.add(lensMesh);
   const frame = new THREE.Mesh(new THREE.TorusGeometry(1, 0.05, 5, 26, Math.PI * 0.7), new THREE.MeshStandardMaterial({ color: 0x111215, roughness: 0.6 }));
@@ -188,7 +188,7 @@ export class Rig {
   async load(id, opts = {}) {
     const loader = new GLTFLoader();
     const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    const gl = await loader.loadAsync('./models/' + id + '.glb?v=1');
+    const gl = await loader.loadAsync('./models/' + id + '.glb?v=2');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     this.wrap = new THREE.Group(); this.wrap.add(model); this.body.add(this.wrap);
@@ -241,7 +241,7 @@ export class Rig {
   setPoles(on) { this.poles = on; if (this.poleL) { this.poleL.visible = on; this.poleR.visible = on; } }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=1';
+    const maskUrl = './models/' + id + '_m.png?v=2';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -398,6 +398,13 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     // blend weight towards the grab's shape, and its definition kept while it blends out
     if (gdef) this.lastG = gdef;
     const gw = k('gw', gdef ? 1 : 0, gdef ? 9 : 7);
+    const gid = air ? (S.grab || S.pose) : null;
+    this.grabHeld = gid && gid === this.gid ? (this.grabHeld || 0) + dt : 0; this.gid = gid;
+    // pole plants: at each change of edge at speed, on the new inside
+    const eSign = Math.abs(S.edge) > 0.3 ? Math.sign(S.edge) : 0;
+    if (S.state === 'ground' && eSign && this.lastE && eSign !== this.lastE && S.speed > 4 && this.poles) this.plant = { side: eSign > 0 ? 'R' : 'L', t: 0 };
+    if (eSign) this.lastE = eSign;
+    if (this.plant) { this.plant.t += dt; if (this.plant.t > 0.4) this.plant = null; }
     const G = this.lastG || GRABS.safety;
     const crouch = k('crouch', S.crouch, 12);
     const edge = k('edge', air || rail ? 0 : S.edge, 10);
@@ -423,13 +430,16 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       const roll = edge * 0.95;
       q.multiply(_q.setFromAxisAngle(Z, roll));
       pos.y += Math.abs(Math.sin(roll)) * SKI.waist * 0.5;
+      // in a turn the inside ski leads a little and rides higher (the inside leg is more bent)
+      if (!air && !rail) { const inside = (edge > 0 && side === 'R') || (edge < 0 && side === 'L'); if (inside) { pos.z += 0.08 * Math.abs(edge); pos.y += 0.05 * Math.abs(edge); } }
       // butter: pitch about the pressed end
       const pitch = press * 0.26;
       pos.y += Math.abs(Math.sin(pitch)) * SKI.len * 0.36; pos.z += -Math.sign(pitch) * 0.04;
       q.multiply(_q.setFromAxisAngle(X, pitch));
       // in the air: the knees come up (tuck) and the grab's tweak
       if (air || gw > 0.01) {
-        const t = G.ski[side];
+        const t0 = G.ski[side], tw = 1 + 0.22 * Math.min(1, Math.max(0, (this.grabHeld - 0.5) / 0.7));
+        const t = t0.map((v, i) => i < 3 ? v * tw : v * (1 + (tw - 1) * 0.8));
         const up = (air ? 0.12 + 0.35 * crouch : 0) * (1 - gw) + gw * (0.12 + 0.5 * G.tuck);
         pos.x += t[0] * gw; pos.y += up + t[1] * gw; pos.z += t[2] * gw;
         q.multiply(_q.setFromAxisAngle(Y, t[3] * gw)).multiply(_q.setFromAxisAngle(X, t[4] * gw)).multiply(_q.setFromAxisAngle(Z, t[5] * gw));
@@ -440,7 +450,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     };
     const sL = skiPose('L'), sR = skiPose('R');
     // ---- pelvis and torso ----
-    const legK = 1 - (0.45 * crouch + 0.2 * tuck);
+    const legK = 0.95 - (0.5 * crouch + 0.2 * tuck);
     let pelY = this.ankleH + SKI.thick + SKI.stack + this.legLen * (0.98 * legK) + (this.pelvisY - this.hipY);
     if (air) pelY = 0.92 * (1 - S.crouch * 0.35) + (this.pelvisY - this.hipY) * 0.5;
     const lean = k('lean', gw > 0 ? G.lean * gw + 0.2 * (1 - gw) : 0.22 + 0.42 * crouch + 0.55 * tuck - 0.4 * Math.max(0, -press) + 0.3 * Math.max(0, press), 8);
@@ -537,7 +547,10 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       const chestFwd = V().set(0, 0, 1).applyQuaternion(chestQ), chestLeft = V().set(1, 0, 0).applyQuaternion(chestQ), up = V().set(0, 1, 0).applyQuaternion(R);
       ua.updateWorldMatrix(false, false);
       const shoulder = this.wpos(ua);
-      let free = shoulder.clone().addScaledVector(chestLeft, s * (0.13 + 0.06 * tuck)).addScaledVector(chestFwd, 0.33 - 0.06 * tuck).addScaledVector(up, -0.38 + 0.15 * tuck);
+      let free = shoulder.clone().addScaledVector(chestLeft, s * (0.2 + 0.04 * tuck)).addScaledVector(chestFwd, 0.4 - 0.08 * tuck).addScaledVector(up, -0.34 + 0.14 * tuck);
+      // a pole plant on the new inside of a turn: the hand reaches forward and down, the tip goes into the snow
+      const plantK = this.plant && this.plant.side === side ? Math.sin(Math.PI * Math.min(1, this.plant.t / 0.4)) : 0;
+      if (plantK > 0 && !air) free.addScaledVector(chestFwd, 0.12 * plantK).addScaledVector(up, -0.12 * plantK).addScaledVector(chestLeft, s * 0.04 * plantK);
       if (air && !gdef) free = shoulder.clone().addScaledVector(chestLeft, s * 0.38).addScaledVector(chestFwd, 0.22).addScaledVector(up, -0.2 + Math.sin(S.t * 5 + s) * 0.04);
       if (rail) free = shoulder.clone().addScaledVector(chestLeft, s * 0.5).addScaledVector(chestFwd, 0.12).addScaledVector(up, -0.12 + S.balance * s * 0.15);
       if (gdef && gdef.arms === 'wide') free = shoulder.clone().addScaledVector(chestLeft, s * 0.58).addScaledVector(up, 0.05);
@@ -566,6 +579,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       if (this.poles) {
         const gripP = this.wpos(ha).addScaledVector(fingerDir, 0.06).addScaledVector(palm, 0.025);
         let tip = V().set(0, 0, -1).applyQuaternion(R).multiplyScalar(0.55).addScaledVector(up, -1).addScaledVector(D(s, 0, 0), 0.08).normalize();
+        if (plantK > 0 && !air) tip.lerp(V().set(0, 0, 1).applyQuaternion(R).multiplyScalar(0.35).addScaledVector(up, -1).addScaledVector(D(s, 0, 0), 0.15).normalize(), plantK).normalize();
         if ((air || rail) && !gp) tip = V().set(0, 0, -1).applyQuaternion(R).multiplyScalar(0.9).addScaledVector(up, -0.75).addScaledVector(D(s, 0, 0), 0.1).normalize();
         if (gp && gw > 0.3) tip = V().set(0, 0, -1).applyQuaternion(R).addScaledVector(up, 0.15).addScaledVector(D(s, 0, 0), 0.35).normalize();
         pole.position.copy(gripP);

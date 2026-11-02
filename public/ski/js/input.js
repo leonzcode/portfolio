@@ -37,7 +37,7 @@ export class Input {
     this.airDx = 0; this.airDy = 0;
     this.grab = null; this.grabOrder = [];
     addEventListener('keydown', e => {
-      if (e.repeat) return;
+      if (e.repeat || (e.target && e.target.tagName === 'INPUT')) return;
       if (['Space', 'Tab', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
       this.keys.add(e.code); this.pressed.add(e.code);
       const id = GRAB_KEYS[this.scheme][e.code];

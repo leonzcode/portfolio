@@ -8,11 +8,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,800;1,700;1,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/ski.css?v=1">
+<link rel="stylesheet" href="./css/ski.css?v=2">
 <script type="importmap">
 {
   "imports": {
-    "three": "/car/vendor/three/three.module.js?v=ski1",
+    "three": "/car/vendor/three/three.module.js?v=ski2",
     "three/addons/": "/car/vendor/three/addons/"
   }
 }
@@ -29,6 +29,9 @@
   <div id="grabhint"></div>
   <div id="note"></div>
   <div id="fps"></div>
+  <div id="tags"></div>
+  <div id="chat"></div>
+  <input id="chatin" class="hidden" maxlength="160" placeholder="Say something to the park, Enter sends" autocomplete="off">
 </div>
 
 <div id="menu">
@@ -59,6 +62,20 @@
       </label>
       <label class="chk"><input type="checkbox" id="showfps"> Show frame rate</label>
     </div>
+    <div class="mp">
+      <div class="mphead">Ride with others</div>
+      <div class="mprow">
+        <input id="mpname" maxlength="16" placeholder="Your name" autocomplete="off">
+        <button id="mppublic">Join the park</button>
+        <button id="mpprivate">New private room</button>
+      </div>
+      <div class="mprow">
+        <input id="mpcode" maxlength="4" placeholder="Code" autocomplete="off" style="width:90px;text-transform:uppercase">
+        <button id="mpjoin">Join by code</button>
+        <button id="mpleave" class="hidden">Leave</button>
+        <span id="mpstatus"></span>
+      </div>
+    </div>
     <div id="keys"></div>
     <p class="fine">Rider models: Microsoft Rocketbox (MIT). Everything else made for this game.</p>
   </div>
@@ -68,10 +85,12 @@
   <div class="card slim">
     <h2>Paused</h2>
     <div class="row"><button id="resume" class="big">Keep riding</button></div>
-    <div class="row"><button id="totop">Back to the top</button><button id="tomenu">Settings and controls</button></div>
+    <div class="row"><button id="totop">Back to the top</button><button id="tomenu">Settings and controls</button><button id="toreplay">Watch the last 15 seconds</button></div>
+    <div class="startlab">Start somewhere else</div>
+    <div class="row starts" id="starts"></div>
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=1"></script>
+<script type="module" src="./js/main.js?v=2"></script>
 </body>
 </html>

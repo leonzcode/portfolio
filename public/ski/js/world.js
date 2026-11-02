@@ -4,9 +4,9 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=1';
-import { fbm, ridged, rng, smoothstep } from './noise.js?v=1';
-import { snowUniforms } from './materials.js?v=1';
+import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=2';
+import { fbm, ridged, rng, smoothstep } from './noise.js?v=2';
+import { snowUniforms } from './materials.js?v=2';
 
 export function makeSky(scene, renderer, q) {
   const sky = new Sky(); sky.scale.setScalar(45000); sky.name = 'sky';
@@ -41,7 +41,7 @@ export function makeSky(scene, renderer, q) {
   scene.fog = new THREE.FogExp2(fogCol, q.tier === 'low' ? 0.00042 : 0.00028);
   return {
     sky, sun, hemi, sunDir,
-    follow(p) { sun.position.copy(p).addScaledVector(sunDir, 120); sun.target.position.copy(p); sun.target.updateMatrixWorld(); sky.position.copy(p); },
+    follow(p) { sun.position.copy(p).addScaledVector(sunDir, 120); sun.updateMatrixWorld(); sun.target.position.copy(p); sun.target.updateMatrixWorld(); sky.position.copy(p); sky.updateMatrixWorld(); },
   };
 }
 
@@ -49,14 +49,14 @@ export function makeSky(scene, renderer, q) {
 function coniferGeometry(r) {
   // tiers of drooping, ragged cones, snow lying on their upper faces (vertex colours)
   const parts = [];
-  const tiers = 7, H = 1;
+  const tiers = 9;
   for (let i = 0; i < tiers; i++) {
-    const t = i / tiers, y0 = 0.12 + t * 0.78, rad = 0.36 * (1 - t * 0.82) + 0.03, h = 0.26 * (1 - t * 0.4);
-    const seg = 9;
+    const t = i / tiers, y0 = 0.1 + t * 0.8, rad = 0.34 * (1 - t * 0.85) * (0.9 + r() * 0.2) + 0.03, h = 0.22 * (1 - t * 0.35);
+    const seg = 11;
     const g = new THREE.ConeGeometry(rad, h, seg, 1, true);
     const pos = g.attributes.position;
     for (let k = 0; k < pos.count; k++) {
-      if (pos.getY(k) < 0) { const a = Math.atan2(pos.getZ(k), pos.getX(k)); const j = 1 + (r() - 0.5) * 0.45; pos.setX(k, Math.cos(a) * rad * j); pos.setZ(k, Math.sin(a) * rad * j); pos.setY(k, pos.getY(k) - r() * 0.04); }
+      if (pos.getY(k) < 0) { const a = Math.atan2(pos.getZ(k), pos.getX(k)); const j = 1 + (r() - 0.5) * 0.6; pos.setX(k, Math.cos(a) * rad * j); pos.setZ(k, Math.sin(a) * rad * j); pos.setY(k, pos.getY(k) - r() * 0.07 - (j - 1) * 0.05); }
     }
     g.translate(0, y0 + h / 2, 0); g.rotateY(r() * 6);
     parts.push(g);
@@ -64,7 +64,7 @@ function coniferGeometry(r) {
   const trunk = new THREE.CylinderGeometry(0.018, 0.03, 0.3, 5); trunk.translate(0, 0.15, 0); parts.push(trunk);
   let n = 0; for (const g of parts) n += g.index ? g.index.count : g.attributes.position.count;
   const pos = [], col = [];
-  const green = new THREE.Color(0x1d3324), dark = new THREE.Color(0x13241a), snow = new THREE.Color(0xe8eef5), bark = new THREE.Color(0x3a2a1e);
+  const green = new THREE.Color(0x1f3a28), dark = new THREE.Color(0x10201a), snow = new THREE.Color(0xeef3f8), bark = new THREE.Color(0x3a2a1e);
   parts.forEach((g, gi) => {
     const ng = g.toNonIndexed(); ng.computeVertexNormals();
     const p = ng.attributes.position, nn = ng.attributes.normal;
@@ -72,7 +72,8 @@ function coniferGeometry(r) {
       pos.push(p.getX(k), p.getY(k), p.getZ(k));
       const isTrunk = gi === parts.length - 1;
       let c = isTrunk ? bark : green.clone().lerp(dark, r() * 0.6);
-      if (!isTrunk) { const up = nn.getY(k); c = c.clone().lerp(snow, smoothstep(0.35, 0.75, up + (r() - 0.5) * 0.3) * 0.85); }
+      // snow lies in patches on the branches' tops; the tips and the rest stay dark green
+      if (!isTrunk) { const up = nn.getY(k), tip = p.getY(k) < (gi + 0.5) / parts.length - 0.02 ? 1 : 0; const lay = r() < 0.6 && up > 0.45 ? smoothstep(0.45, 0.8, up) : 0; c = c.clone().lerp(snow, lay * (0.85 - tip * 0.35)); }
       col.push(c.r, c.g, c.b);
     }
   });
@@ -110,9 +111,17 @@ export class Forest {
       const s = 6 + r() * 10 + (d < 30 ? 0 : r() * 6);
       this.trees.push({ x, y: height(x, z) - 0.3, z, s, rot: r() * 6.28 });
     }
+    // a grid of the trees for collisions (8 m cells)
+    this.grid = new Map();
+    for (const t of this.trees) { const k = Math.floor(t.x / 8) + ',' + Math.floor(t.z / 8); if (!this.grid.has(k)) this.grid.set(k, []); this.grid.get(k).push(t); }
     const near = q.tier === 'low' ? 260 : 520;
     this.geo = coniferGeometry(r);
-    this.near = new THREE.InstancedMesh(this.geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), near);
+    const tm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
+    // the undersides of the branches are in their own shade
+    tm.onBeforeCompile = s => { s.fragmentShader = s.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+ if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.045, 0.075, 0.055);`); };
+    tm.customProgramCacheKey = () => 'conifer';
+    this.near = new THREE.InstancedMesh(this.geo, tm, near);
     this.near.castShadow = q.tier !== 'low'; this.near.receiveShadow = true; this.near.frustumCulled = false;
     const card = new THREE.PlaneGeometry(1, 1); card.translate(0, 0.5, 0);
     const card2 = card.clone().rotateY(Math.PI / 2);
@@ -146,6 +155,15 @@ export class Forest {
     this.near.instanceMatrix.needsUpdate = true; this.far.instanceMatrix.needsUpdate = true;
   }
   nearCap() { return this.near.instanceMatrix.count; }
+  // the tree whose trunk (and lower branches) a body of radius r at x, z touches, or null
+  hit(x, z, r) {
+    const cx = Math.floor(x / 8), cz = Math.floor(z / 8);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const l = this.grid.get((cx + i) + ',' + (cz + j)); if (!l) continue;
+      for (const t of l) { const d = Math.hypot(t.x - x, t.z - z), R = 0.18 + t.s * 0.035 + r; if (d < R) return { t, d, R, nx: (x - t.x) / (d || 1), nz: (z - t.z) / (d || 1) }; }
+    }
+    return null;
+  }
 }
 
 // ---- the far ranges ------------------------------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 // groomer's corduroy on the run, the tracks from the track map (snow.js), glints where single crystals catch the sun,
 // a cold tint in the shade, and rock on the steepest valley walls.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=1';
+import { rng } from './noise.js?v=2';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
 function noiseTexture(size = 256, seed = 3) {
@@ -65,7 +65,7 @@ uniform vec2 uTrackOrigin; uniform vec2 uTrackSize; uniform vec2 uTrackTexel;
 uniform vec3 uSunDir; uniform float uSparkle; uniform float uTime;
 float hash13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
 vec3 hash33(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
-float gTrackDepth; float gRock;`)
+float gTrackDepth; float gRock; float gTrackShadow;`)
       // albedo: rock on steep faces, compacted grey-blue in tracks
       .replace('#include <color_fragment>', `#include <color_fragment>
 {
@@ -80,12 +80,23 @@ float gTrackDepth; float gRock;`)
   float big = texture2D(uNoise, vWPos.xz * 0.004).b - 0.5;
   diffuseColor.rgb *= 1.0 + big * 0.05;
   vec2 tuv = (vWPos.xz - uTrackOrigin) / uTrackSize;
-  gTrackDepth = 0.0;
+  gTrackDepth = 0.0; gTrackShadow = 0.0;
   if (tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
     vec4 tk = texture2D(uTrack, tuv);
     gTrackDepth = tk.r;
-    diffuseColor.rgb *= mix(1.0, 0.93, tk.r) * mix(1.0, 1.02, tk.g);
-    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.95, 0.97, 1.02), tk.r);
+    // compressed snow in a groove is a little greyer and bluer; the berm a little brighter
+    diffuseColor.rgb *= mix(1.0, 0.86, tk.r) * mix(1.0, 1.03, tk.g);
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.93, 0.96, 1.03), tk.r);
+    // the low sun's shadow inside the groove: march a few texels towards the sun over the track heights
+    vec2 sd = normalize(uSunDir.xz + 1e-4) * uTrackTexel * 1.6;
+    float h0 = tk.g * 0.6 - tk.r, sh = 0.0;
+    float rise = 1.6 * length(uTrackSize * uTrackTexel) * uSunDir.y / max(0.2, length(uSunDir.xz)) / 0.12;
+    for (int j = 1; j <= 4; j++) {
+      vec4 t2 = texture2D(uTrack, tuv + sd * float(j));
+      float hj = t2.g * 0.6 - t2.r;
+      sh = max(sh, clamp((hj - h0 - rise * float(j) * 0.2) * 3.0, 0.0, 1.0));
+    }
+    gTrackShadow = sh;
   }
 }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
@@ -118,8 +129,8 @@ roughnessFactor = mix(roughnessFactor, 0.9, gRock);`)
     float hd = dot(texture2D(uTrack, tuv - vec2(0.0, uTrackTexel.y)).rg, vec2(-1.0, 0.6));
     float hu = dot(texture2D(uTrack, tuv + vec2(0.0, uTrackTexel.y)).rg, vec2(-1.0, 0.6));
     vec2 px = uTrackSize * uTrackTexel;
-    pn.x -= (hr - hl) / (2.0 * px.x) * 0.09;
-    pn.z -= (hu - hd) / (2.0 * px.y) * 0.09;
+    pn.x -= (hr - hl) / (2.0 * px.x) * 0.2;
+    pn.z -= (hu - hd) / (2.0 * px.y) * 0.2;
   }
   pn = normalize(pn);
   normal = normalize((viewMatrix * vec4(pn, 0.0)).xyz);
@@ -132,12 +143,13 @@ roughnessFactor = mix(roughnessFactor, 0.9, gRock);`)
   ${detail ? `vec3 cell = floor(vWPos * 70.0);
   float r = hash13(cell);
   vec3 fn = normalize(vec3(hash33(cell) * 2.0 - 1.0) + vec3(0.0, 1.2, 0.0));
-  float gl = pow(max(0.0, dot(reflect(-uSunDir, fn), V)), 180.0) * step(0.86, r);
+  float gl = pow(max(0.0, dot(reflect(-uSunDir, fn), V)), 120.0) * step(0.84, r);
   float sunlit = smoothstep(0.08, 0.5, dot(reflectedLight.directDiffuse, vec3(0.33)));
   float fade = 1.0 - smoothstep(6.0, 40.0, camD);
   outgoingLight += vec3(1.0, 0.97, 0.92) * gl * 7.0 * sunlit * fade * uSparkle * (1.0 - gRock);` : ''}
   float lit = dot(reflectedLight.directDiffuse, vec3(0.33));
-  outgoingLight *= mix(vec3(0.93, 0.97, 1.06), vec3(1.0), smoothstep(0.05, 0.4, lit));
+  outgoingLight -= reflectedLight.directDiffuse * gTrackShadow * 0.7;
+  outgoingLight *= mix(vec3(0.93, 0.97, 1.06), vec3(1.0), smoothstep(0.05, 0.4, lit) * (1.0 - gTrackShadow * 0.7));
 }
 #include <opaque_fragment>`);
   };
