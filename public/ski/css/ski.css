@@ -1,0 +1,71 @@
+:root {
+  --snow: #f4f7fa;
+  --shade: #0d1b2a;
+  --signal: #ff6a13;
+  --ice: #9fc6e8;
+  --graphite: #2b2f36;
+  --display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  --body: 'IBM Plex Sans', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe0ee; color: var(--shade); font-family: var(--body); }
+canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+.hidden { display: none !important; }
+
+/* ---- HUD ---- */
+#hud { position: fixed; inset: 0; pointer-events: none; }
+#speed { position: absolute; left: 18px; bottom: 16px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.45); font-family: var(--display); }
+#speed b { font-size: 46px; font-weight: 800; font-style: italic; line-height: 1; }
+#speed span { font-size: 16px; margin-left: 6px; font-weight: 600; letter-spacing: .04em; }
+#score { position: absolute; right: 18px; top: 14px; text-align: right; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.45); font-family: var(--display); }
+#score .lab { display: block; font-size: 14px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; }
+#score b { font-size: 40px; font-style: italic; font-weight: 800; line-height: 1; }
+#combo { display: block; font-size: 18px; color: var(--signal); font-weight: 700; font-style: italic; min-height: 20px; }
+#tricks { position: absolute; left: 50%; bottom: 13%; transform: translateX(-50%); display: flex; flex-direction: column-reverse; align-items: center; gap: 6px; }
+.trick { font-family: var(--display); font-style: italic; color: #fff; background: rgba(13,27,42,.78); padding: 4px 14px 5px; border-left: 5px solid var(--signal); white-space: nowrap; animation: pop .22s ease-out; transition: opacity .5s, transform .5s; }
+.trick .n { font-size: 30px; font-weight: 800; letter-spacing: .01em; }
+.trick .p { font-size: 20px; font-weight: 700; color: var(--signal); margin-left: 12px; }
+.trick.bad { border-left-color: #8a96a3; }
+.trick.bad .p { color: #b9c3cc; }
+.trick.out { opacity: 0; transform: translateY(-14px); }
+@keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+#rail { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); text-align: center; color: #fff; font-family: var(--display); font-size: 15px; letter-spacing: .12em; text-transform: uppercase; display: none; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+#rail.on { display: block; }
+#railbar { width: 220px; height: 10px; background: rgba(13,27,42,.6); position: relative; margin-bottom: 4px; }
+#railbar::after { content: ''; position: absolute; left: 50%; top: -3px; width: 2px; height: 16px; background: #fff; }
+#railbar i { position: absolute; top: 0; width: 14px; height: 10px; margin-left: -7px; background: var(--signal); left: 50%; }
+#grabhint { position: absolute; left: 18px; top: 14px; color: #fff; font-size: 13px; line-height: 1.5; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-family: var(--mono); white-space: pre; opacity: .9; }
+#note { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); font-family: var(--display); font-weight: 800; font-style: italic; font-size: 34px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.5); opacity: 0; transition: opacity .3s; }
+#note.on { opacity: 1; }
+#fps { position: absolute; right: 18px; bottom: 16px; font-family: var(--mono); font-size: 12px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+
+/* ---- menus ---- */
+#menu, #pause { position: fixed; inset: 0; display: flex; align-items: center; justify-content: flex-start; padding: 4vh 6vw; background: linear-gradient(90deg, rgba(13,27,42,.62), rgba(13,27,42,.1) 70%); overflow-y: auto; }
+#pause { justify-content: center; background: rgba(13,27,42,.45); }
+.card { width: min(560px, 100%); background: rgba(244,247,250,.94); padding: 26px 28px 20px; border-top: 6px solid var(--signal); box-shadow: 0 18px 50px rgba(13,27,42,.35); }
+.card.slim { width: min(420px, 100%); text-align: center; }
+.kicker { font-family: var(--display); font-weight: 700; font-style: italic; text-transform: uppercase; letter-spacing: .18em; color: var(--signal); font-size: 15px; }
+h1 { font-family: var(--display); font-weight: 800; font-style: italic; font-size: clamp(46px, 8vw, 74px); line-height: .92; margin: 4px 0 8px; letter-spacing: -.01em; text-transform: uppercase; }
+h2 { font-family: var(--display); font-weight: 800; font-style: italic; font-size: 40px; margin: 0 0 14px; text-transform: uppercase; }
+.tag { margin: 0 0 18px; font-size: 15px; color: #3b4652; }
+.row { display: flex; gap: 10px; margin: 10px 0; flex-wrap: wrap; justify-content: inherit; }
+.card.slim .row { justify-content: center; }
+button { font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: .04em; text-transform: uppercase; border: 0; background: var(--graphite); color: #fff; padding: 9px 16px; cursor: pointer; }
+button.big { background: var(--signal); font-size: 26px; font-style: italic; font-weight: 800; padding: 10px 30px; }
+button:disabled { opacity: .55; cursor: default; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--ice); outline-offset: 2px; }
+.opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 16px 0 12px; }
+.opts label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: #4a5561; display: flex; flex-direction: column; gap: 4px; }
+.opts label.chk { flex-direction: row; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; font-size: 14px; color: var(--shade); }
+select { font: 500 15px var(--body); padding: 6px 8px; border: 1px solid #b8c4cf; background: #fff; color: var(--shade); }
+#keys { font-size: 13px; line-height: 1.55; border-top: 1px solid #d4dce4; padding-top: 10px; columns: 2; column-gap: 18px; }
+#keys div { break-inside: avoid; }
+#keys kbd { font-family: var(--mono); font-size: 12px; background: var(--shade); color: #fff; padding: 0 5px; margin-right: 4px; }
+.fine { font-size: 11px; color: #6b7783; margin: 12px 0 0; }
+@media (max-width: 640px) {
+  .opts { grid-template-columns: 1fr; }
+  #keys { columns: 1; }
+  #grabhint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .trick { animation: none; } }

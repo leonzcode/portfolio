@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="robots" content="noindex, nofollow">
+<title>Leon Freeski</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,800;1,700;1,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/ski.css?v=1">
+<script type="importmap">
+{
+  "imports": {
+    "three": "/car/vendor/three/three.module.js?v=ski1",
+    "three/addons/": "/car/vendor/three/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="speed"><b id="kmh">0</b><span>km/h</span></div>
+  <div id="score"><span class="lab">Score</span><b id="pts">0</b><span id="combo"></span></div>
+  <div id="tricks"></div>
+  <div id="rail"><div id="railbar"><i></i></div><span>Balance</span></div>
+  <div id="grabhint"></div>
+  <div id="note"></div>
+  <div id="fps"></div>
+</div>
+
+<div id="menu">
+  <div class="card">
+    <div class="brand">
+      <span class="kicker">Terrain park</span>
+      <h1>Leon Freeski</h1>
+      <p class="tag">Jumps, rails, a superpipe and fresh snow that keeps your lines.</p>
+    </div>
+    <div class="row">
+      <button id="play" class="big" disabled>Loading&hellip;</button>
+    </div>
+    <div class="opts">
+      <label>Controls
+        <select id="scheme"><option value="mouse">Mouse steer</option><option value="keys">Keyboard</option></select>
+      </label>
+      <label>Camera
+        <select id="cammode"><option value="chase">Chase</option><option value="far">Far chase</option><option value="pov">First person</option><option value="film">Filmer</option></select>
+      </label>
+      <label>Graphics
+        <select id="gfx"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select>
+      </label>
+      <label>Poles
+        <select id="poles"><option value="1">On</option><option value="0">Off</option></select>
+      </label>
+      <label>Rider
+        <select id="rider"><option value="m_adult_10">Red jacket</option><option value="m_adult_18">Grey hoodie</option><option value="m_adult_17">Blue hoodie</option><option value="f_adult_13">Grey jacket</option><option value="f_adult_14">Beige jacket</option></select>
+      </label>
+      <label class="chk"><input type="checkbox" id="showfps"> Show frame rate</label>
+    </div>
+    <div id="keys"></div>
+    <p class="fine">Rider models: Microsoft Rocketbox (MIT). Everything else made for this game.</p>
+  </div>
+</div>
+
+<div id="pause" class="hidden">
+  <div class="card slim">
+    <h2>Paused</h2>
+    <div class="row"><button id="resume" class="big">Keep riding</button></div>
+    <div class="row"><button id="totop">Back to the top</button><button id="tomenu">Settings and controls</button></div>
+  </div>
+</div>
+
+<script type="module" src="./js/main.js?v=1"></script>
+</body>
+</html>
