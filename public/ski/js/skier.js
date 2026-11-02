@@ -9,8 +9,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=2';
-import { clamp, smoothstep } from './noise.js?v=2';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=3';
+import { clamp, smoothstep } from './noise.js?v=3';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();

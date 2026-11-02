@@ -41,10 +41,10 @@ canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 #fps { position: absolute; right: 18px; bottom: 16px; font-family: var(--mono); font-size: 12px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
 
 /* ---- menus ---- */
-#menu, #pause { position: fixed; inset: 0; display: flex; align-items: center; justify-content: flex-start; padding: 4vh 6vw; background: linear-gradient(90deg, rgba(13,27,42,.62), rgba(13,27,42,.1) 70%); overflow-y: auto; }
+#menu, #pause { position: fixed; inset: 0; display: flex; align-items: flex-start; justify-content: flex-start; padding: 4vh 6vw; background: linear-gradient(90deg, rgba(13,27,42,.62), rgba(13,27,42,.1) 70%); overflow-y: auto; }
 #pause { justify-content: center; background: rgba(13,27,42,.45); }
-.card { width: min(560px, 100%); background: rgba(244,247,250,.94); padding: 26px 28px 20px; border-top: 6px solid var(--signal); box-shadow: 0 18px 50px rgba(13,27,42,.35); }
-.card.slim { width: min(420px, 100%); text-align: center; }
+.card { margin: auto 0; width: min(560px, 100%); background: rgba(244,247,250,.94); padding: 26px 28px 20px; border-top: 6px solid var(--signal); box-shadow: 0 18px 50px rgba(13,27,42,.35); }
+.card.slim { margin: auto; width: min(420px, 100%); text-align: center; }
 .kicker { font-family: var(--display); font-weight: 700; font-style: italic; text-transform: uppercase; letter-spacing: .18em; color: var(--signal); font-size: 15px; }
 h1 { font-family: var(--display); font-weight: 800; font-style: italic; font-size: clamp(46px, 8vw, 74px); line-height: .92; margin: 4px 0 8px; letter-spacing: -.01em; text-transform: uppercase; }
 h2 { font-family: var(--display); font-weight: 800; font-style: italic; font-size: 40px; margin: 0 0 14px; text-transform: uppercase; }
@@ -63,11 +63,21 @@ select { font: 500 15px var(--body); padding: 6px 8px; border: 1px solid #b8c4cf
 #keys div { break-inside: avoid; }
 #keys kbd { font-family: var(--mono); font-size: 12px; background: var(--shade); color: #fff; padding: 0 5px; margin-right: 4px; }
 .fine { font-size: 11px; color: #6b7783; margin: 12px 0 0; }
+@media (max-height: 520px) { .card { padding: 14px 18px 12px; } h1 { font-size: 40px; } .tag { margin-bottom: 8px; } }
 @media (max-width: 640px) {
   .opts { grid-template-columns: 1fr; }
   #keys { columns: 1; }
   #grabhint { display: none; }
 }
+/* ---- touch ---- */
+#touch .stick { position: absolute; left: 30px; bottom: 90px; width: 140px; height: 140px; border-radius: 50%; border: 2px solid rgba(255,255,255,.55); background: rgba(13,27,42,.18); pointer-events: auto; touch-action: none; }
+#touch .stick.on { bottom: auto; }
+#touch .stick i { position: absolute; left: 45px; top: 45px; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,.75); }
+#touch .tbtns { position: absolute; right: 18px; bottom: 70px; display: grid; grid-template-columns: repeat(2, 84px); gap: 10px; pointer-events: auto; }
+#touch button { height: 64px; border-radius: 14px; font-size: 17px; background: rgba(13,27,42,.55); border: 2px solid rgba(255,255,255,.6); touch-action: none; }
+#touch button.down { background: var(--signal); }
+#touch .pick { grid-column: span 2; height: 44px; font-size: 15px; }
+#touch .pop { background: rgba(255,106,19,.7); }
 @media (prefers-reduced-motion: reduce) { .trick { animation: none; } }
 
 /* ---- riding with others ---- */

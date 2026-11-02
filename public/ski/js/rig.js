@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp } from './noise.js?v=2';
+import { clamp } from './noise.js?v=3';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q(), _q2 = Q(), _m = new THREE.Matrix4(), _a = V(), _b = V(), _c = V();
@@ -188,7 +188,7 @@ export class Rig {
   async load(id, opts = {}) {
     const loader = new GLTFLoader();
     const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    const gl = await loader.loadAsync('./models/' + id + '.glb?v=2');
+    const gl = await loader.loadAsync('./models/' + id + '.glb?v=3');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     this.wrap = new THREE.Group(); this.wrap.add(model); this.body.add(this.wrap);
@@ -241,7 +241,7 @@ export class Rig {
   setPoles(on) { this.poles = on; if (this.poleL) { this.poleL.visible = on; this.poleR.visible = on; } }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=2';
+    const maskUrl = './models/' + id + '_m.png?v=3';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;

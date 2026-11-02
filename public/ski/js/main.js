@@ -1,19 +1,20 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, height, normal, baseLine } from './terrain.js?v=2';
-import { makePark, featureMesh, railMeshes } from './park.js?v=2';
-import { makeMaterials, snowUniforms } from './materials.js?v=2';
-import { makeSky, Forest, makeRanges, makeProps } from './world.js?v=2';
-import { Skier } from './skier.js?v=2';
-import { Rig } from './rig.js?v=2';
-import { Tricks } from './tricks.js?v=2';
-import { Input } from './input.js?v=2';
-import { Cams } from './camera.js?v=2';
-import { Tracks, Spray } from './snow.js?v=2';
-import { Hud } from './hud.js?v=2';
-import { Sound } from './sound.js?v=2';
-import { Net } from './net.js?v=2';
-import { mergeGear } from './gear.js?v=2';
+import { Terrain, setPark, height, normal, baseLine } from './terrain.js?v=3';
+import { makePark, featureMesh, railMeshes } from './park.js?v=3';
+import { makeMaterials, snowUniforms } from './materials.js?v=3';
+import { makeSky, Forest, makeRanges, makeProps } from './world.js?v=3';
+import { Skier } from './skier.js?v=3';
+import { Rig } from './rig.js?v=3';
+import { Tricks } from './tricks.js?v=3';
+import { Input } from './input.js?v=3';
+import { Cams } from './camera.js?v=3';
+import { Tracks, Spray } from './snow.js?v=3';
+import { Hud } from './hud.js?v=3';
+import { Sound } from './sound.js?v=3';
+import { Net } from './net.js?v=3';
+import { mergeGear } from './gear.js?v=3';
+import { Touch, TOUCH_GRABS } from './touch.js?v=3';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
@@ -62,7 +63,7 @@ const terrain = new Terrain(scene, mats.snow, { minLeaf: q.minLeaf, K: q.K, seg:
 for (const f of [...park.kickers, park.pipe, park.qp]) scene.add(featureMesh(f, height, mats.snow, q.fine));
 scene.add(railMeshes(park.rails, mats));
 const forest = new Forest(scene, q);
-makeRanges(scene, q);
+makeRanges(scene, q, mats.snow);
 makeProps(scene, park, q);
 const tracks = new Tracks(renderer, q);
 const spray = new Spray(scene, q);
@@ -74,6 +75,8 @@ const hud = new Hud();
 const tricks = new Tricks(t => { hud.trick(t); if (t.name && !t.banked && t.quality !== 'bail') net.trick(t.name, t.points); });
 const input = new Input(canvas);
 const cams = new Cams(camera, park);
+const touch = new Touch(input, () => { opts.cam = cams.next(); hud.flash({ chase: 'Chase camera', far: 'Far chase', pov: 'First person', film: 'Filmer' }[opts.cam], 900); });
+Object.defineProperty(input.touch, 'grabId', { get: () => TOUCH_GRABS[input.touch.sel] });
 const sound = new Sound();
 
 const START = { x: -16, z: -30, v: 5 };

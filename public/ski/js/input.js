@@ -92,6 +92,17 @@ export class Input {
     if (onRail && !air) { I.spin = k.took(mouse ? 'KeyE' : 'KeyE') ? 1 : k.took('KeyQ') ? -1 : 0; I.tilt = 0; }
     const id = this.grabOrder[this.grabOrder.length - 1] || null;
     if (id) { if (POSITIONS.has(id)) I.pose = id; else I.grab = id; }
+    // touch: the thumb stick and buttons (touch.js)
+    const T = this.touch;
+    if (T && (T.jx || T.jy || T.pop || T.grab || T.butter)) {
+      if (!air) {
+        if (Math.abs(T.jx) > 0.1) { I.steer = T.jx; I.mouse = undefined; }
+        if (!T.butter) { if (T.jy < -0.5) I.tuck = true; if (T.jy > 0.55) I.brake = true; }
+      } else { if (Math.abs(T.jx) > 0.15) I.spin = T.jx; if (Math.abs(T.jy) > 0.25) I.flip = -T.jy; }
+      if (T.pop) I.crouch = true;
+      if (T.butter) { I.butter = true; I.press = Math.abs(T.jy) > 0.3 ? -Math.sign(T.jy) : 0; }
+      if (T.grab && air && T.grabId) { if (POSITIONS.has(T.grabId)) I.pose = T.grabId; else I.grab = T.grabId; }
+    }
     this.mdx = 0; this.mdy = 0;
     return I;
   }

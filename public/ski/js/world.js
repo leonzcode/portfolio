@@ -4,9 +4,9 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=2';
-import { fbm, ridged, rng, smoothstep } from './noise.js?v=2';
-import { snowUniforms } from './materials.js?v=2';
+import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=3';
+import { fbm, ridged, rng, smoothstep } from './noise.js?v=3';
+import { snowUniforms } from './materials.js?v=3';
 
 export function makeSky(scene, renderer, q) {
   const sky = new Sky(); sky.scale.setScalar(45000); sky.name = 'sky';
@@ -167,25 +167,29 @@ export class Forest {
 }
 
 // ---- the far ranges ------------------------------------------------------------------------------------------------
-export function makeRanges(scene, q) {
-  const segA = q.tier === 'low' ? 128 : 220, segR = q.tier === 'low' ? 16 : 28;
+export function makeRanges(scene, q, snowMat) {
+  const segA = q.tier === 'low' ? 160 : 280, segR = q.tier === 'low' ? 18 : 32;
   const pos = [], col = [], idx = [];
-  const cx = 0, cz = 700, r0 = 1700, r1 = 9000;
+  const cx = 0, cz = 700, r0 = 2100, r1 = 11000;
   for (let j = 0; j <= segR; j++) for (let i = 0; i <= segA; i++) {
-    const a = i / segA * Math.PI * 2, t = j / segR, r = r0 + (r1 - r0) * Math.pow(t, 1.4);
+    const a = i / segA * Math.PI * 2, t = j / segR, r = r0 + (r1 - r0) * Math.pow(t, 1.7);
     const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
-    const peak = ridged(x * 0.00042 + 5, z * 0.00042, 6);
-    const h = baseLine(Math.max(-900, Math.min(2600, z))) * 0.3 + 120 + peak * (900 + 900 * smoothstep(0.1, 0.8, t)) - smoothstep(0.85, 1, t) * 500;
+    // broad massifs with sharper summits: a smooth base and a ridged top
+    const base = 0.5 + 0.5 * fbm(x * 0.00018 + 9, z * 0.00018, 3);
+    const peak = Math.pow(ridged(x * 0.00036 + 5, z * 0.00036, 4), 1.6);
+    const h = baseLine(Math.max(-900, Math.min(2600, z))) * 0.3 + 150 + base * 700 + peak * (650 + 500 * smoothstep(0.05, 0.6, t)) - smoothstep(0.85, 1, t) * 600;
     pos.push(x, h, z);
   }
   for (let j = 0; j < segR; j++) for (let i = 0; i < segA; i++) { const a = j * (segA + 1) + i, b = a + 1, c = a + segA + 1, d = c + 1; idx.push(a, c, b, b, c, d); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
   const nn = g.attributes.normal;
+  const snow = new THREE.Color(0xf2f5f9), rockC = new THREE.Color(0x5b5d62), forestC = new THREE.Color(0x2a3d31);
   for (let k = 0; k < nn.count; k++) {
-    const ny = nn.getY(k), y = pos[k * 3 + 1];
-    const rock = smoothstep(0.72, 0.5, ny) * (0.6 + 0.4 * Math.abs(Math.sin(k * 12.9898)));
-    const c = new THREE.Color(0xf1f4f8).lerp(new THREE.Color(0x6a6c70), rock * 0.75);
-    if (y < 260) c.lerp(new THREE.Color(0x23362a), smoothstep(260, 120, y) * 0.7);
+    const ny = nn.getY(k), y = pos[k * 3 + 1], x = pos[k * 3], z = pos[k * 3 + 2];
+    const n = fbm(x * 0.004, z * 0.004, 2);
+    const rock = smoothstep(0.66, 0.42, ny + n * 0.12);
+    const c = snow.clone().lerp(rockC, rock * 0.85);
+    if (y < 330) c.lerp(forestC, smoothstep(330, 160, y + n * 60) * 0.75);
     col.push(c.r, c.g, c.b);
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
