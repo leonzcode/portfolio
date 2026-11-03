@@ -74,7 +74,8 @@ export class Net {
       this.sendT = 0;
       const r3 = v => Math.round(v * 1000) / 1000;
       this.send({ type: 's', p: sk.p.toArray().map(r3), q: sk.q.toArray().map(r3), v: sk.v.toArray().map(r3), st: ST.indexOf(sk.state),
-        c: r3(sk.crouch), e: r3(sk.edge), tk: r3(sk.tuck), pr: r3(sk.press), b: r3(sk.balance || 0), br: r3(sk.brake), sw: sk.sw, g: sk.grab || null, po: sk.pose || null });
+        c: r3(sk.crouch), e: r3(sk.edge), tk: r3(sk.tuck), pr: r3(sk.press), b: r3(sk.balance || 0), br: r3(sk.brake), sw: sk.sw, g: sk.grab || null, po: sk.pose || null,
+        tw: sk.tweak || '', sh: r3(sk.shift || 0), sk: r3(sk.skate || 0), ab: r3(sk.absorb || 0), ra: r3(sk.railAng || 0), rp: r3(sk.railPress || 0), lb: !!sk.lookBack });
     }
     const now = performance.now() / 1000 - DELAY;
     const w = innerWidth, h = innerHeight, v = new THREE.Vector3();
@@ -88,7 +89,7 @@ export class Net {
       const s = (k < 0.5 ? a : c).s;
       if (r.rig && r.rig.ready) {
         r.rig.update({ p, q, state: ST[s.st] || 'ground', edge: s.e, crouch: s.c, tuck: s.tk, brake: s.br, press: s.pr, grab: s.g, pose: s.po,
-          sw: s.sw, speed: c.v.length(), vel: c.v, balance: s.b, t: time }, dt);
+          sw: s.sw, speed: c.v.length(), vel: c.v, balance: s.b, t: time, tweak: s.tw || '', shift: s.sh || 0, skate: s.sk || 0, absorb: s.ab || 0, railAng: s.ra || 0, railPress: s.rp || 0, lookBack: !!s.lb }, dt);
         for (const o of r.rig.root.children) if (o !== r.rig.body) o.updateMatrixWorld(true);
       }
       // the name over the helmet

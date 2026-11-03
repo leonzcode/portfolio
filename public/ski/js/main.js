@@ -1,21 +1,21 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=5';
-import { makePark, emptyPark, featureMesh, railMeshes } from './park.js?v=5';
-import { makeMaterials, snowUniforms } from './materials.js?v=5';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=5';
-import { Mountain, SPOTS } from './dem.js?v=5';
-import { Skier } from './skier.js?v=5';
-import { Rig } from './rig.js?v=5';
-import { Tricks } from './tricks.js?v=5';
-import { Input } from './input.js?v=5';
-import { Cams } from './camera.js?v=5';
-import { Tracks, Spray } from './snow.js?v=5';
-import { Hud } from './hud.js?v=5';
-import { Sound } from './sound.js?v=5';
-import { Net } from './net.js?v=5';
-import { mergeGear } from './gear.js?v=5';
-import { Touch, TOUCH_GRABS } from './touch.js?v=5';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=6';
+import { makePark, emptyPark, featureMesh, railMeshes } from './park.js?v=6';
+import { makeMaterials, snowUniforms } from './materials.js?v=6';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=6';
+import { Mountain, SPOTS } from './dem.js?v=6';
+import { Skier } from './skier.js?v=6';
+import { Rig } from './rig.js?v=6';
+import { Tricks } from './tricks.js?v=6';
+import { Input } from './input.js?v=6';
+import { Cams } from './camera.js?v=6';
+import { Tracks, Spray } from './snow.js?v=6';
+import { Hud } from './hud.js?v=6';
+import { Sound } from './sound.js?v=6';
+import { Net } from './net.js?v=6';
+import { mergeGear } from './gear.js?v=6';
+import { Touch, TOUCH_GRABS } from './touch.js?v=6';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
@@ -108,7 +108,8 @@ sel.rider.onchange = () => { opts.rider = sel.rider.value; save(); loadRider(); 
 const soundBox = $('sound'); soundBox.checked = opts.sound !== false; sound.on = soundBox.checked;
 soundBox.onchange = () => { opts.sound = soundBox.checked; sound.on = opts.sound; save(); };
 $('showfps').onchange = e => { opts.showfps = e.target.checked; save(); if (!opts.showfps) $('fps').textContent = ''; };
-let playing = false, paused = false, replay = null;
+let playing = false, paused = false, replay = null, enterHeld = false, enterWas = false;
+const chatOpen = () => document.activeElement && document.activeElement.id === 'chatin';
 function play() {
   $('menu').classList.add('hidden'); $('pause').classList.add('hidden'); hud.show(true);
   playing = true; paused = false; sound.start();
@@ -119,9 +120,16 @@ function pause() { if (!playing) return; if (replay) { endReplay(); return; } pa
 $('play').onclick = play; $('resume').onclick = play;
 // ---- replays: the last 15 seconds, recorded every frame, played back through the rider and the filmer camera
 const rec = [];
+// what the rider is posed from: the physics' state, live or recorded
+function poseState(sk, t) {
+  return { p: sk.p, q: sk.q, state: sk.state, edge: sk.edge, crouch: sk.crouch, tuck: sk.tuck, brake: sk.brake, press: sk.press, grab: sk.grab, pose: sk.pose,
+    sw: sk.sw, speed: sk.v.length(), vel: sk.v, balance: sk.balance || 0, t, tweak: sk.tweak || '', shift: sk.shift || 0, skate: sk.skate || 0, skateT: sk.skateT || 0,
+    absorb: sk.absorb || 0, landT: sk.landT, lookBack: !!sk.lookBack, railAng: sk.railAng || 0, railPress: sk.railPress || 0, turn: sk.turnRate || 0, slide: sk.slide || 0, tAir: sk.tAir || 0,
+    windup: sk.windup || 0, loading: sk.crouchT > 0.06 };
+}
 function record(t) {
-  rec.push({ t, p: skier.p.clone(), q: skier.q.clone(), v: skier.v.clone(), state: skier.state, edge: skier.edge, crouch: skier.crouch, tuck: skier.tuck, brake: skier.brake,
-    press: skier.press, grab: skier.grab, pose: skier.pose, sw: skier.sw, balance: skier.balance || 0, slide: skier.slide, surf: skier.surf });
+  const s = poseState(skier, t);
+  rec.push(Object.assign(s, { p: skier.p.clone(), q: skier.q.clone(), v: skier.v.clone(), vel: skier.v.clone() }));
   while (rec.length && rec[0].t < t - 15) rec.shift();
 }
 function startReplay() {
@@ -176,12 +184,15 @@ $('mpjoin').onclick = () => { const c = $('mpcode').value.trim().toUpperCase(); 
 $('mpleave').onclick = () => net.leave();
 const chatIn = $('chatin');
 addEventListener('keydown', e => {
-  if (e.code !== 'Enter' || !playing || paused) return;
+  if (!playing || paused) return;
+  const opener = opts.scheme === 'shred' ? 'KeyT' : 'Enter';
+  if (e.code !== 'Enter' && !(e.code === opener && e.target !== chatIn)) return;
   if (e.target === chatIn) {
+    if (e.code !== 'Enter') return;
     const t = chatIn.value.trim(); if (t) net.chat(t);
     chatIn.value = ''; chatIn.classList.add('hidden'); canvas.focus();
     if (opts.scheme === 'mouse') canvas.requestPointerLock?.();
-  } else if (net.inRoom) { chatIn.classList.remove('hidden'); chatIn.focus(); }
+  } else if (net.inRoom && e.code === opener) { e.preventDefault(); chatIn.classList.remove('hidden'); chatIn.focus(); }
 });
 chatIn.addEventListener('keydown', e => { if (e.code === 'Escape') { e.stopPropagation(); chatIn.value = ''; chatIn.classList.add('hidden'); canvas.focus(); } });
 
@@ -199,9 +210,16 @@ function tick() {
   const live = playing && !paused && !replay;
   const I = live ? input.read(skier.state === 'air', skier.state === 'rail') : { steer: 0, crouch: false, spin: 0, flip: 0, tilt: 0 };
   if (live) {
-    if (input.took('KeyC')) { opts.cam = cams.next(); sel.cammode.value = opts.cam; save(); hud.flash({ chase: 'Chase camera', far: 'Far chase', pov: 'First person', film: 'Filmer' }[opts.cam], 900); }
-    if (input.took('KeyR')) { skier.crash('reset'); skier.tState = 9; }
+    if (input.took(opts.scheme === 'shred' ? 'KeyQ' : 'KeyC')) { opts.cam = cams.next(); sel.cammode.value = opts.cam; save(); hud.flash({ chase: 'Chase camera', far: 'Far chase', pov: 'First person', film: 'Filmer' }[opts.cam], 900); }
+    if (opts.scheme !== 'shred' && input.took('KeyR')) { skier.crash('reset'); skier.tState = 9; }
     if (input.took('Backspace')) toStart();
+    if (opts.scheme === 'shred') {
+      if (input.took('Tab')) hud.flash(skier.setMarker() ? 'Marker set' : 'Set a marker on the snow', 900);
+      // Enter: back to the marker; held a second, back to the top
+      if (input.down('Enter') && !chatOpen()) { if (input.heldFor('Enter') > 900 && !enterHeld) { enterHeld = true; toStart(); hud.flash('Back to the top', 900); } }
+      else { if (enterWas && !enterHeld && !chatOpen()) { if (!skier.toMarker()) toStart(); cams.first = true; } enterHeld = false; }
+      enterWas = input.down('Enter');
+    }
     // the mouse scheme: the pointing turns into a wanted direction across the fall line
     if (opts.scheme === 'mouse' && skier.state === 'ground' && !I.steer) {
       const a = (I.mouse || 0) * 1.66;
@@ -235,11 +253,10 @@ function tick() {
     replay.t += dt * (replay.slow ? 0.3 : 1);
     let i = rec.findIndex(r => r.t >= replay.t); if (i < 0) { endReplay(); i = rec.length - 1; }
     const r = rec[Math.max(0, i)];
-    S = { p: r.p, q: r.q, state: r.state, edge: r.edge, crouch: r.crouch, tuck: r.tuck, brake: r.brake, press: r.press, grab: r.grab, pose: r.pose, sw: r.sw, speed: r.v.length(), vel: r.v, balance: r.balance, t: time };
-    camSk = { p: r.p, v: r.v, state: r.state, com: r.p.clone().add(new THREE.Vector3(0, 0.9, 0)) };
+    S = Object.assign({}, r, { speed: r.v.length(), vel: r.v, t: time });
+    camSk = { p: r.p, v: r.v, state: r.state, crouch: r.crouch, com: r.p.clone().add(new THREE.Vector3(0, 0.92 * (1 - r.crouch * 0.35), 0)) };
   } else {
-    S = { p: skier.p, q: skier.q, state: skier.state, edge: skier.edge, crouch: skier.crouch, tuck: skier.tuck, brake: skier.brake, press: skier.press, grab: skier.grab, pose: skier.pose,
-      sw: skier.sw, speed: skier.v.length(), vel: skier.v, balance: skier.balance, t: time };
+    S = poseState(skier, time);
     if (live) record(time);
   }
   rig.update(S, dt);

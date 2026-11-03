@@ -1,34 +1,25 @@
 // The heads-up display: speed, score and the line's multiplier, trick names as they land, rail balance, a grab list.
-import { GRABS } from './rig.js?v=5';
-import { keyHelp } from './input.js?v=5';
+import { GRABS, guideOf } from './grabs.js?v=6';
+import { keyHelp } from './input.js?v=6';
 
 const $ = id => document.getElementById(id);
-// what each grab is, the way freeskiers describe it (Backcountry Access, Red Bull, NBC's glossary)
-const GRAB_GUIDE = {
-  safety: 'same hand, same ski, under the boot, outside edge', mute: 'opposite hand to the other ski, outside edge in front of the binding, skis crossed',
-  japan: 'opposite hand under the knee to the tucked ski, inside edge', tail: 'same hand on the tail, tails pulled up behind',
-  nose: 'same hand on the tip, legs out straight', truck: 'both hands, each on its own ski in front of the bindings',
-  critical: 'opposite hand to the other ski, inside edge in front of the binding', octo: 'one hand on one tip, the other on the other tail, skis crossed',
-  blunt: 'same hand on the very end of the tail', stalefish: "right hand to the left ski's tail behind the legs, skis turned sideways",
-  bowarrow: 'both hands at the fronts, one leg to the chest, the other straight', dubtail: 'both hands on both tails',
-  seatbelt: "reach across the body to the other ski's tail", daffy: 'one ski forward, one back', spread: 'skis and legs wide',
-  backscratch: 'tails kicked up behind the back', ironcross: 'skis crossed in an X',
-};
 export class Hud {
   constructor() {
     this.kmh = $('kmh'); this.pts = $('pts'); this.combo = $('combo'); this.list = $('tricks'); this.rail = $('rail'); this.railI = document.querySelector('#railbar i');
     this.note = $('note'); this.fps = $('fps'); this.hint = $('grabhint');
     this.shown = []; this.score = 0; this.lastK = -1;
-    addEventListener('keydown', e => { if (e.code === 'Tab' && !(e.target && e.target.tagName === 'INPUT')) { e.preventDefault(); this.hint.classList.toggle('hidden'); } });
+    // Tab hides the grab list (in the Shredsauce scheme Tab sets a marker, so the key there is the one left of 1)
+    addEventListener('keydown', e => { if (e.code === (this.scheme === 'shred' ? 'Backquote' : 'Tab') && !(e.target && e.target.tagName === 'INPUT')) { e.preventDefault(); this.hint.classList.toggle('hidden'); } });
     setTimeout(() => this.hint.classList.add('hidden'), 25000);
   }
   show(on) { $('hud').classList.toggle('hidden', !on); }
   setScheme(scheme) {
+    this.scheme = scheme;
     const h = keyHelp(scheme);
     const gl = h.grabs.map(([k, id]) => `${k.padEnd(2)} ${GRABS[id].name}`).join('\n');
-    this.hint.textContent = gl + '\nTab hides this list';
+    this.hint.textContent = gl + (scheme === 'shred' ? '\n+E / +R  tweak or vary it\n` hides this list' : '\nTab hides this list');
     const box = $('keys');
-    box.innerHTML = h.base.map(([k, d]) => `<div><kbd>${k}</kbd>${d}</div>`).join('') + '<div style="margin-top:6px"><b>Grabs and positions</b></div>' + h.grabs.map(([k, id]) => `<div><kbd>${k}</kbd>${GRABS[id].name}<span class="gg"> ${GRAB_GUIDE[id] || ''}</span></div>`).join('');
+    box.innerHTML = h.base.map(([k, d]) => `<div><kbd>${k}</kbd>${d}</div>`).join('') + '<div style="margin-top:6px"><b>Grabs and positions</b></div>' + h.grabs.map(([k, id]) => `<div><kbd>${k}</kbd>${GRABS[id].name}<span class="gg"> ${guideOf(id)}</span></div>`).join('');
   }
   trick(t) {
     if (t.banked) { this.score += t.points; this.pts.textContent = this.score.toLocaleString(); this.combo.textContent = ''; if (!t.name) return; }

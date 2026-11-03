@@ -10,39 +10,37 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp } from './noise.js?v=5';
+import { clamp, smoothstep } from './noise.js?v=6';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=6';
+import { height } from './terrain.js?v=6';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
-const _p = V(), _s = V(), _q = Q(), _q2 = Q(), _m = new THREE.Matrix4(), _a = V(), _b = V(), _c = V();
-const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1);
+const _p = V(), _s = V(), _q = Q();
+const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1), NZ = new THREE.Vector3(0, 0, -1), ZERO = new THREE.Vector3();
+// scratch for the per-frame pose (nothing is allocated in update)
+const _sp = V(), _sq = Q(), _ss = V(), _sm = new THREE.Matrix4(), _fm1 = new THREE.Matrix4(), _fm2 = new THREE.Matrix4(), _bx = V(), _by = V(), _bz = V();
+const _aa = V(), _ab = V(), _aq = Q(), _aq2 = Q(), _tH = V(), _tD = V(), _tP = V(), _tK = V(), _tE = V(), _tU = V(), _bq = Q();
+const _qi = Q(), _q1 = Q(), _q2 = Q(), _q3 = Q(), _ub = V(), _acc = V(), _vb = V(), _v2 = V(), _v3 = V(), _v4 = V(), _v5 = V(), _v6 = V();
+const _cFl = V(), _sh = V(), _pelQ = Q(), _chQ = Q(), _hdQ = Q(), _eu = new THREE.Euler(), _kd = V(), _cF = V(), _cL = V(), _wr = V(), _fd = V(), _pa = V(), _el = V(), _tip = V();
+const _kq = Q(), _kv = V(), _kx = V(), _ky = V();
+const _qi2 = Q(), _ca = V(), _cb = V(), _cc = V(), _cd = V(), _ce = V(), _cf = V(), _cg = V();
+const TG = new Float64Array(6);
+const SKN = [['sL0', 'sL1', 'sL2', 'sL3', 'sL4', 'sL5'], ['sR0', 'sR1', 'sR2', 'sR3', 'sR4', 'sR5']], HWN = ['hwL', 'hwR'], PULLN = [['pLx', 'pLy', 'pLz'], ['pRx', 'pRy', 'pRz']], ARMN = [['aLx', 'aLy', 'aLz'], ['aRx', 'aRy', 'aRz']];
+// a grab's free arm (out from the shoulder, up, forward), all inside the arm's reach so the elbow stays bent; 'up' is a
+// hand raised beside and a little behind the head with the elbow out, not an arm pointed at the sky
+const ARM_MODE = { out: [0.34, -0.12, 0.24], up: [0.24, 0.27, -0.1], wide: [0.38, -0.14, 0.12] };
+// small continuous motion: a sum of three sines, about -1..1, never repeating soon (a is a phase per channel)
+// a reach that is kept short of a limb's full length: as it is up to a share a of the length, then easing towards b
+// (a hard stop near full reach makes the joint flick, since the angle changes fastest there)
+const softReach = (d, L, a, b) => { const s = a * L, w = (b - a) * L; return d <= s ? d : s + w * Math.tanh((d - s) / w); };
+const wob = (t, a) => 0.55 * Math.sin(t + a) + 0.3 * Math.sin(t * 1.71 + a * 2.3) + 0.15 * Math.sin(t * 2.93 + a * 0.7);
+const gpOut = () => ({ pt: V(), palm: V(), fingers: V() });
 
 export const SKI = { len: 1.78, waist: 0.092, tip: 0.118, thick: 0.017, stack: 0.03 };
 
-// ---- grabs and positions ------------------------------------------------------------------------------------------
-// skier frame: +X left, +Y up, +Z forward. 'L'/'R' are the skier's left and right.
-// hands: [hand, ski, at (-1 tail .. +1 tip), edge 'out' | 'in' | 'end']
-// ski: { L: [dx, dy, dz, yaw, pitch, roll], R: [...] }  (pitch < 0 lifts the tip, yaw > 0 turns the tip left)
-// tuck: how far the knees come up (0..1), lean: chest forward (rad), twist: chest yaw (+ left), side: chest roll (+ left)
-export const GRABS = {
-  safety:    { name: 'Safety', hands: [['R', 'R', 0, 'out']], arms: 'out', ski: { L: [-0.03, 0.04, 0.08, 0.02, -0.06, 0], R: [0.03, 0, 0.08, -0.02, -0.06, 0] }, tuck: 0.55, lean: 1.15, twist: 0.15, side: 0.3 },
-  mute:      { name: 'Mute', hands: [['L', 'R', 0.3, 'out']], arms: 'out', ski: { L: [-0.04, -0.1, 0, -0.3, 0.1, 0], R: [0.14, 0.1, 0.1, 0.6, -0.7, -0.2] }, tuck: 0.55, lean: 0.95, twist: -0.4, side: -0.3 },
-  japan:     { name: 'Japan', hands: [['R', 'L', 0, 'in']], arms: 'up', ski: { L: [-0.08, 0.22, -0.1, -0.4, 0.15, -0.15], R: [0.04, -0.15, 0.18, 0.3, 0.45, 0] }, tuck: 0.55, lean: 1.1, twist: 0.35, side: 0.3 },
-  tail:      { name: 'Tail', hands: [['R', 'R', -0.85, 'out']], arms: 'up', ski: { L: [0, 0.05, -0.2, -0.05, 0.7, 0], R: [0, 0.05, -0.2, 0.05, 0.75, 0] }, tuck: 0.35, lean: 0.3, twist: -0.45, side: 0.3 },
-  nose:      { name: 'Nose', hands: [['R', 'R', 0.94, 'end']], arms: 'out', ski: { L: [0, -0.03, 0.26, 0.04, -0.8, 0], R: [0, -0.03, 0.27, -0.04, -0.82, 0] }, tuck: 0.25, lean: 1.4, twist: 0.1, side: 0.25 },
-  truck:     { name: 'Truck Driver', hands: [['L', 'L', 0.35, 'out'], ['R', 'R', 0.35, 'out']], ski: { L: [-0.02, 0, 0.08, 0.05, -0.95, 0], R: [0.02, 0, 0.08, -0.05, -0.95, 0] }, tuck: 0.6, lean: 0.7, twist: 0, side: 0 },
-  critical:  { name: 'Critical', hands: [['L', 'R', 0.3, 'in']], arms: 'up', ski: { L: [-0.04, -0.18, -0.04, -0.15, 0.35, 0], R: [0.12, 0.1, 0.06, 0.35, -0.95, -0.1] }, tuck: 0.55, lean: 0.65, twist: -0.3, side: -0.25 },
-  octo:      { name: 'Octograb', hands: [['R', 'R', 0.85, 'end'], ['L', 'L', -0.85, 'out']], ski: { L: [-0.04, -0.05, -0.3, -0.15, 0.45, 0], R: [0.04, 0, 0.2, 0.2, -0.85, 0] }, tuck: 0.45, lean: 0.5, twist: 0.1, side: 0 },
-  blunt:     { name: 'Blunt', hands: [['R', 'R', -1, 'end']], arms: 'up', ski: { L: [0, 0.05, -0.2, -0.05, 0.8, 0], R: [0, 0.08, -0.22, 0.08, 0.85, 0] }, tuck: 0.35, lean: 0.25, twist: -0.55, side: 0.35 },
-  stalefish: { name: 'Stalefish', hands: [['R', 'L', -0.75, 'out']], arms: 'out', ski: { L: [-0.02, 0, -0.15, 1.15, 0.35, 0], R: [-0.04, 0, 0.1, 1.15, 0.3, 0] }, tuck: 0.5, lean: 0.35, twist: -0.25, side: 0.35 },
-  bowarrow:  { name: 'Bow and Arrow', hands: [['R', 'R', 0.9, 'end'], ['L', 'L', 0.4, 'out']], ski: { L: [0.12, 0.2, 0, 0.15, -1, -0.2], R: [-0.02, -0.12, 0.3, -0.08, -0.6, 0] }, tuck: 0.45, lean: 0.75, twist: 0.1, side: 0.1 },
-  dubtail:   { name: 'Double Tail', hands: [['L', 'L', -0.85, 'out'], ['R', 'R', -0.85, 'out']], ski: { L: [0.02, 0.05, -0.2, -0.08, 0.7, 0], R: [-0.02, 0.05, -0.2, 0.08, 0.7, 0] }, tuck: 0.35, lean: 0.3, twist: 0, side: 0 },
-  seatbelt:  { name: 'Seatbelt', hands: [['L', 'R', -0.85, 'out']], arms: 'up', ski: { L: [0.03, 0.02, -0.02, 0.05, 0.1, 0], R: [-0.08, 0, 0.2, 0.25, 0.65, 0] }, tuck: 0.4, lean: 0.55, twist: -0.8, side: -0.25 },
-  // positions
-  daffy:     { name: 'Daffy', pos: true, hands: [], arms: 'wide', ski: { L: [0, -0.05, 0.5, 0, -1, 0], R: [0, -0.12, -0.5, 0, 0.85, 0] }, tuck: 0.05, lean: 0.05, twist: 0, side: 0 },
-  spread:    { name: 'Spread Eagle', pos: true, hands: [], arms: 'up', ski: { L: [0.48, 0.25, 0, 0.25, -0.85, 0.3], R: [-0.48, 0.25, 0, -0.25, -0.85, -0.3] }, tuck: 0.15, lean: 0.1, twist: 0, side: 0 },
-  backscratch: { name: 'Backscratcher', pos: true, hands: [], arms: 'up', ski: { L: [0.04, 0.2, -0.38, 0, 1.2, 0], R: [-0.04, 0.2, -0.38, 0, 1.2, 0] }, tuck: 0.35, lean: -0.1, twist: 0, side: 0 },
-  ironcross: { name: 'Iron Cross', pos: true, hands: [], arms: 'wide', ski: { L: [0.06, 0.05, -0.05, -0.75, 0.15, 0], R: [-0.06, 0, -0.05, 0.75, 0.15, 0] }, tuck: 0.5, lean: 0.6, twist: 0, side: 0 },
-};
+// grabs and positions are data in grabs.js (with their mirror images and variations)
+export { GRABS } from './grabs.js?v=6';
+import { grabDef } from './grabs.js?v=6';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -182,13 +180,21 @@ export class Rig {
     this.root = new THREE.Group(); this.root.name = 'rider';          // stays at the origin: holds the body and the gear
     this.body = new THREE.Group(); this.body.name = 'body'; this.root.add(this.body);   // at the feet, in the body's frame
     this.ready = false;
-    this.p = {};          // smoothed pose parameters
+    this.p = {};          // the pose's springs (cleared to start them again)
     this.skiL = null; this.skiR = null;
+    this.sk = [{ pos: V(), q: Q() }, { pos: V(), q: Q() }];            // each ski in the body's frame
+    this.air6 = [new Float64Array(6), new Float64Array(6)];
+    this.hs = [0, 1].map(() => ({ cur: null, prev: null, f: new Spring(1), fx: 1, w: 0 }));   // what each hand holds
+    this.gpA = gpOut(); this.gpB = gpOut();
+    this._roll = [0, 0]; this._pv = V(); this._gl = { next: 3, until: 0, yaw: 0, pitch: 0 };
+    this.ph = Math.random() * 100;                                     // each rider's own idle rhythm
+    this.pull = [V(), V()]; this._pt = [V(), V()]; this._hold = [0, 0];                     // a grabbed ski brought up to the hand
+    this.eye = V(); this.headPos = V(); this.headQ = Q();
   }
   async load(id, opts = {}) {
     const loader = new GLTFLoader();
     const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    const gl = await loader.loadAsync('./models/' + id + '.glb?v=5');
+    const gl = await loader.loadAsync('./models/' + id + '.glb?v=6');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     this.wrap = new THREE.Group(); this.wrap.add(model); this.body.add(this.wrap);
@@ -224,6 +230,8 @@ export class Rig {
     this.wrap.rotation.y = -Math.atan2(fwd.x, fwd.z);
     this.root.updateMatrixWorld(true);
     this.measure();
+    // the nodes between the body and the skeleton's root, updated each frame without walking the whole skeleton
+    this.chain = []; for (let o = this.b.root.parent; o && o !== this.body; o = o.parent) this.chain.unshift(o);
     // gear
     this.skiL = makeSki(this.outfit.skiA, this.outfit.skiB); this.skiR = makeSki(this.outfit.skiA, this.outfit.skiB);
     this.root.add(this.skiL, this.skiR);
@@ -241,7 +249,7 @@ export class Rig {
   setPoles(on) { this.poles = on; if (this.poleL) { this.poleL.visible = on; this.poleR.visible = on; } }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=5';
+    const maskUrl = './models/' + id + '_m.png?v=6';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -302,7 +310,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     this.len = { th: d('thL', 'caL'), ca: d('caL', 'ftL'), ua: d('uaL', 'faL'), fa: d('faL', 'haL') };
     this.ankleH = rest.ftL.p.y;
     this.legLen = this.len.th + this.len.ca;
-    this.hipY = rest.thL.p.y; this.pelvisY = rest.pelvis.p.y;
+    this.hipY = rest.thL.p.y; this.pelvisY = rest.pelvis.p.y; this.hipHalf = Math.abs(rest.thL.p.x - rest.pelvis.p.x);
     this.ankleBack = 0.055;
     // which side is which: the model's left should be +X
     this.flipX = rest.thL.p.x < 0;
@@ -352,293 +360,538 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     this.restLocal = {}; for (const k in b) if (b[k]) this.restLocal[k] = b[k].quaternion.clone();
   }
 
-  // ---- pose helpers (world space) ---------------------------------------------------------------------------------
+  // ---- pose helpers (world space, nothing allocated) ----------------------------------------------------------------
+  // set a bone's world rotation; a parent posed earlier this frame gives its rotation without decomposing its matrix
+  // (exact here: the only scaled bone, the skeleton's root, is scaled evenly)
   setWorldQ(bone, wq) {
-    bone.parent.matrixWorld.decompose(_p, _q2, _s);
-    bone.quaternion.copy(_q2.invert().multiply(wq));
+    const par = bone.parent;
+    if (par._wf === this._frame) _sq.copy(par._wq).invert();
+    else { par.matrixWorld.decompose(_sp, _sq, _ss); _sq.invert(); }
+    bone.quaternion.copy(_sq.multiply(wq));
     bone.updateWorldMatrix(false, false);
+    (bone._wq || (bone._wq = new THREE.Quaternion())).copy(wq); bone._wf = this._frame;
   }
   setWorldPos(bone, wp) {
-    _m.copy(bone.parent.matrixWorld).invert();
-    bone.position.copy(wp).applyMatrix4(_m);
+    _sm.copy(bone.parent.matrixWorld).invert();
+    bone.position.copy(wp).applyMatrix4(_sm);
     bone.updateWorldMatrix(false, false);
   }
   // the rotation taking frame (a, b) to frame (c, d): a and c are the main axes, b and d say where the twist goes
-  static frameDelta(a, b, c, d, out = Q()) {
-    const m1 = basis(a, b), m2 = basis(c, d);
-    m1.transpose(); m2.multiply(m1); return out.setFromRotationMatrix(m2);
+  static frameDelta(a, b, c, d, out = new THREE.Quaternion()) {
+    basisInto(_fm1, a, b); basisInto(_fm2, c, d);
+    _fm1.transpose(); _fm2.multiply(_fm1); return out.setFromRotationMatrix(_fm2);
   }
   // point a bone (rest direction restD, rest twist restUp, both in the rider frame) along world dir with twist up
   aim(bone, restQ, restD, restUp, dir, up) {
     const R = this.rootQ;
-    const a = _a.copy(restD).applyQuaternion(R), b = _b.copy(restUp).applyQuaternion(R);
-    const dq = Rig.frameDelta(a, b, dir, up, _q);
-    const wq = Q().copy(R).multiply(restQ);            // rest orientation in the world
-    this.setWorldQ(bone, dq.multiply(wq));
+    _aa.copy(restD).applyQuaternion(R); _ab.copy(restUp).applyQuaternion(R);
+    Rig.frameDelta(_aa, _ab, dir, up, _aq);
+    this.setWorldQ(bone, _aq.multiply(_aq2.copy(R).multiply(restQ)));
   }
-  twoBone(upper, lower, end, kU, kL, target, pole, restUpU) {
+  // two-bone IK: upper and lower (rest keys ku, kl) reach target, bending towards pole
+  twoBone(upper, lower, ku, kl, target, pole, restUp) {
     upper.updateWorldMatrix(false, false);
-    const H = this.wpos(upper), l1 = kU === 'th' ? this.len.th : this.len.ua, l2 = kU === 'th' ? this.len.ca : this.len.fa;
-    const d = V().subVectors(target, H); let dist = d.length();
-    const dn = d.clone().divideScalar(dist || 1);
+    const H = _tH.setFromMatrixPosition(upper.matrixWorld);
+    const leg = ku[0] === 't', l1 = leg ? this.len.th : this.len.ua, l2 = leg ? this.len.ca : this.len.fa;
+    const dn = _tD.subVectors(target, H); let dist = dn.length(); dn.divideScalar(dist || 1);
     dist = clamp(dist, Math.abs(l1 - l2) + 0.01, (l1 + l2) * 0.999);
     const a = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
-    const p = pole.clone().addScaledVector(dn, -pole.dot(dn));
-    if (p.lengthSq() < 1e-6) p.copy(Y).addScaledVector(dn, -Y.dot(dn));
+    const p = _tP.copy(pole).addScaledVector(dn, -pole.dot(dn));
+    if (p.lengthSq() < 1e-6) p.copy(Y).addScaledVector(dn, -dn.y);
     p.normalize();
-    const knee = H.clone().addScaledVector(dn, a).addScaledVector(p, h);
-    const end2 = H.clone().addScaledVector(dn, dist);
-    const ru = restUpU;
-    this.aim(upper, this.rest[kU + this.side].q, this.restDir[kU + this.side], ru, knee.clone().sub(H).normalize(), p);
-    this.aim(lower, this.rest[kL + this.side].q, this.restDir[kL + this.side], ru, end2.clone().sub(knee).normalize(), p);
-    return end2;
+    const knee = _tK.copy(H).addScaledVector(dn, a).addScaledVector(p, h);
+    const end = _tE.copy(H).addScaledVector(dn, dist);
+    this.aim(upper, this.rest[ku].q, this.restDir[ku], restUp, _tU.subVectors(knee, H).normalize(), p);
+    this.aim(lower, this.rest[kl].q, this.restDir[kl], restUp, _tU.subVectors(end, knee).normalize(), p);
+    return end;
+  }
+  // a bone turned part of the way from qa to qb, on top of its rest orientation
+  blendBone(bone, key, qa, qb, f) {
+    if (!bone) return;
+    _bq.copy(qa); if (f > 0) _bq.slerp(qb, f);
+    this.setWorldQ(bone, _bq.multiply(this.rest[key].q));
   }
 
   // ---- the pose, every frame ---------------------------------------------------------------------------------------
-  // S: { p, q (body), state, edge, crouch, tuck, brake, press, grab, pose, sw, speed, vel, railMode, balance, turn, t, land, crash }
+  // S: { p, q (body), state, edge, crouch, tuck, brake, press, grab, pose, tweak, sw, speed, vel, balance, t, shift,
+  //      skate, skateT, absorb, landT, lookBack, railAng, railPress, turn, slide, tAir } (network riders send fewer)
+  // Every pose parameter that follows the controls goes through a spring (motion.js), so a change of input moves
+  // through the poses in between. The body leans against the snow's push (into a turn, back in a stop), worked out
+  // from how the velocity changes, so it is the same for the local rider, a replay and a network rider.
   update(S, dt) {
     if (!this.ready) return;
-    const P = this.p, k = (name, target, rate) => { P[name] = P[name] === undefined ? target : P[name] + (target - P[name]) * Math.min(1, dt * rate); return P[name]; };
-    const air = S.state === 'air', rail = S.state === 'rail', crash = S.state === 'crash';
-    const gdef = air && (S.grab || S.pose) ? GRABS[S.grab || S.pose] : null;
-    // blend weight towards the grab's shape, and its definition kept while it blends out
-    if (gdef) this.lastG = gdef;
-    const gw = k('gw', gdef ? 1 : 0, gdef ? 9 : 7);
-    const gid = air ? (S.grab || S.pose) : null;
+    this._frame = (this._frame || 0) + 1;
+    dt = dt > 0 ? Math.min(dt, 0.05) : 0;
+    const P = this.p, sp = springBank(P, dt);
+    const st = S.state || 'ground', air = st === 'air', rail = st === 'rail', crash = st === 'crash', ground = st === 'ground';
+    const t = S.t !== undefined ? S.t : (this._t = (this._t || 0) + dt);
+    const vel = S.vel || ZERO, speed = S.speed !== undefined ? S.speed : vel.length();
+    if (!P.crouch) { this._pq = null; this._pvOk = false; this._pst = st; this.lastE = 0; }   // the springs were cleared
+    // ---- the body's frame, at the feet
+    const body = this.body, BP = body.position, b = this.b;
+    BP.copy(S.p); body.quaternion.copy(S.q); body.updateWorldMatrix(false, false);
+    for (const o of this.chain) o.updateWorldMatrix(false, false);
+    const R = this.rootQ = body.quaternion, qi = _qi.copy(R).invert();
+    // ---- what the body is doing: how fast it turns (from the last frame's orientation), the snow's push on it
+    const changed = this._pst !== st;
+    let wx = 0, wy = 0, wz = 0;
+    if (this._pq && dt > 0 && !changed) {
+      const d = _q1.copy(this._pq).invert().multiply(R), g = (d.w < 0 ? -2 : 2) / dt;
+      wx = d.x * g; wy = d.y * g; wz = d.z * g;
+      if (wx * wx + wy * wy + wz * wz > 450) wx = wy = wz = 0;            // a jump (a respawn, a reset), not a rotation
+    }
+    (this._pq || (this._pq = new THREE.Quaternion())).copy(R);
+    const Wx = sp('wx', wx, 14), Wy = sp('wy', wy, 14), Wz = sp('wz', wz, 14);  // body frame: + front flip, + left, + roll right
+    // a spin slowing down (opening up to stop it): the arms go out
+    const open = sp('open', air && dt > 0 ? clamp((Math.abs(this._pWy || 0) - Math.abs(Wy)) / dt * 0.12, 0, 1) : 0, 10);
+    this._pWy = Wy;
+    const ub = _ub.set(0, 1, 0).applyQuaternion(R);
+    this._gT = ground && !changed ? (this._gT || 0) + dt : 0;
+    let sx = 0, sz = 0, an = 0;
+    if (ground && this._gT > 0.06 && dt > 0 && this._pvOk) {
+      // what the snow does to the body: its acceleration less gravity and the air's drag
+      const a = _acc.subVectors(vel, this._pv).divideScalar(dt);
+      an = clamp(a.dot(ub), -15, 30);
+      a.y += 9.81; a.addScaledVector(vel, 0.0042 * speed); a.applyQuaternion(qi);
+      sx = clamp(a.x, -13, 13); sz = clamp(a.z, -9, 9);
+    }
+    this._pv.copy(vel); this._pvOk = true; this._pst = st;
+    const Sx = sp('sx', sx, 10), Sz = sp('sz', sz, 9), An = sp('an', an, 10);
+    const vb = _vb.copy(vel).applyQuaternion(qi);
+    // the legs lean with the push: into a turn by v^2/R, back against a stop, upright to gravity standing across a slope
+    const phi = clamp(Math.atan2(-Sx, 9.81), -0.75, 0.75), psi = clamp(Math.atan2(Sz, 9.81), -0.35, 0.25);
+    const brake = sp('brake', ground ? S.brake || 0 : 0, 10), tuck = sp('tuck', S.tuck || 0, 9);
+    const press = sp('press', (rail ? S.railPress : ground ? S.press : 0) || 0, 14);
+    // ---- skating: V strides (one ski pushed out and back each half cycle), double-pole pushes when faster
+    const skate = sp('skate', ground ? S.skate || 0 : 0, 9);
+    let skT = S.skateT;
+    if (skT === undefined) { if (skate > 0.01) this._skT = (this._skT || 0) + dt * (1.2 + 0.05 * speed); skT = this._skT || 0; }
+    const poleK = smoothstep(4.5, 8, speed), strideW = skate * (1 - poleK), dpW = skate * poleK;
+    const hc = skT * 2, pushS = (Math.floor(hc) & 1) ? -1 : 1, u = hc - Math.floor(hc);
+    const strk = Math.sin(Math.PI * u) * strideW;                         // the hips' sway: a sine over the whole cycle
+    const strk2 = Math.sin(Math.PI * u) ** 2 * strideW;                   // each leg's push: no kink where the legs swap
+    const lift = (u > 0.4 ? Math.sin(Math.PI * (u - 0.4) / 0.6) ** 2 : 0) * strideW;
+    const u2 = skT - Math.floor(skT), crunch = Math.sin(Math.PI * clamp(u2 / 0.5, 0, 1)) * dpW;
+    const dpK = u2 < 0.45 ? smooth01(u2 / 0.45) : 1 - smooth01((u2 - 0.45) / 0.55);   // 0 poles planted ahead, 1 pushed back
+    // ---- the skis' roll: onto the edges the steering asks for, and in a skid onto the edges the slide asks for (the
+    // trailing ones), so a hockey stop is on its uphill edges and a transition out of a skid rolls over as it comes round
+    const slipX = ground ? vb.x : 0;
+    if (Math.abs(slipX) > 0.6) this._slip = slipX > 0 ? 1 : -1;
+    const slipK = smoothstep(0.7, 2.8, Math.abs(slipX));
+    let eT = 0;
+    if (ground) {
+      const eIn = (S.edge || 0) * (0.5 + 0.45 * smoothstep(1, 10, speed));
+      eT = eIn + (clamp(slipX / 3.5, -1, 1) * 0.9 - eIn) * slipK + brake * 0.22 * (this._slip || 1) * (1 - slipK);
+      // the edges that hold are the ones the snow pushes against: the roll never goes against the legs' lean
+      if (phi * eT >= 0) { if (Math.abs(eT) < Math.abs(phi) * 1.1) eT = phi * 1.1; }
+      else eT += (phi * 1.1 - eT) * smoothstep(0.06, 0.3, Math.abs(phi));
+    }
+    const edge = sp('edge', eT, 15);
+    const absorb = S.absorb || 0;
+    const tt = t + this.ph;                                                // this rider's own idle clock
+    this._airT = air ? (changed ? 0 : (this._airT || 0) + dt) : 0;
+    // just off the snow the legs drive straight (the pop, or rolling off a lip), then the knees come up
+    const popK = air ? smooth01(this._airT / 0.04) * (1 - smoothstep(0.1, 0.3, this._airT)) : 0;
+    // turning on a rail: the skis swivel under a steadier upper body, the knees come up a little (a small hop)
+    const ra = S.railAng || 0;
+    const raRate = rail && this._wasRail && dt > 0 ? Math.abs(wrapPi(ra - (this._pra || 0))) / dt : 0;
+    const swapK = sp('swap', rail ? clamp((raRate - 1.5) / 4, 0, 1) : 0, 16);
+    const comp = ground ? clamp(An * 0.008, -0.05, 0.13) : 0;           // bumps and transitions press the knees
+    const landX = ground ? absorb * 0.7 : 0;                            // a landing goes into the knees
+    const settled = smoothstep(0.8, 2.0, S.landT ?? 9);
+    const bob = (ground ? 0.04 * (1 - 0.6 * skate) * settled : rail ? 0.045 : 0) * wob(tt * (rail ? 4.2 : 3.1), 1.3);
+    const groove = ground ? 0.07 * (1 - smoothstep(0.3, 0.8, Math.abs(S.edge || 0))) * (1 - tuck) : 0;
+    const brakeC = brake * 0.12 * smoothstep(0.6, 3, speed);             // stopped, the stop's crouch eases off
+    let cT = (S.crouch ?? 0.3) + comp + brakeC + crunch * 0.16 + strk2 * 0.05 + groove + landX + bob + swapK * 0.16;
+    if (air && (S.grab || S.pose)) cT = Math.max(cT, 0.72);              // a grab's crouch at once (the physics eases into it)
+    if (air) cT += (0.04 - cT) * popK;
+    const crouch = sp('crouch', clamp(cT, 0, 1), popK > 0.2 || landX > 0.03 ? 30 : 22);
+    // ---- grabs and positions
+    const gid = air ? (S.grab || S.pose || null) : null;
+    const gd = gid ? grabDef(gid, S.tweak || '') : null;
+    if (gd) this.lastG = gd;
     this.grabHeld = gid && gid === this.gid ? (this.grabHeld || 0) + dt : 0; this.gid = gid;
-    // pole plants: at each change of edge at speed, on the new inside
-    const eSign = Math.abs(S.edge) > 0.3 ? Math.sign(S.edge) : 0;
-    if (S.state === 'ground' && eSign && this.lastE && eSign !== this.lastE && S.speed > 4 && this.poles) this.plant = { side: eSign > 0 ? 'R' : 'L', t: 0 };
-    if (eSign) this.lastE = eSign;
-    if (this.plant) { this.plant.t += dt; if (this.plant.t > 0.4) this.plant = null; }
-    const G = this.lastG || GRABS.safety;
-    const crouch = k('crouch', S.crouch, 12);
-    const edge = k('edge', air || rail ? 0 : S.edge, 10);
-    const press = k('press', S.press || 0, 10);
-    const tuck = k('tuck', S.tuck || 0, 6);
-    const brake = k('brake', S.brake || 0, 8);
-    const crashW = k('crash', crash ? 1 : 0, 6);
-    // place the root: the body's frame at the feet
-    this.body.position.copy(S.p);
-    this.body.quaternion.copy(S.q);
-    this.body.updateMatrixWorld(false);
-    this.rootQ = this.body.quaternion;
-    const R = this.rootQ;
-    const W = (x, y, z) => V().set(x, y, z).applyQuaternion(R).add(this.body.position);   // rider frame -> world
-    const D = (x, y, z) => V().set(x, y, z).applyQuaternion(R);                            // rider frame direction -> world
-    // ---- skis ----
-    const stance = 0.115 + 0.03 * crouch;
-    const skiPose = (side) => {
-      const s = side === 'L' ? 1 : -1;
-      const pos = V().set(s * stance, 0, 0);
-      const q = Q();
-      // on edge: both skis roll, lifted onto the edge
-      const roll = edge * 0.95;
-      q.multiply(_q.setFromAxisAngle(Z, roll));
+    const gW = sp('gw', gd ? 1 : 0, gd ? 13 : 9);
+    // the landing coming: the legs reach for the snow, so the skis are on it when the body gets there
+    const prep = air ? 1 - smoothstep(0.09, 0.36, this.timeToGround(S.p, vel)) : 0;
+    const ext = sp('ext', air ? 1 - prep : 0, air ? 28 : 32);
+    const airW = sp('airW', air ? 1 : 0, air ? 10 : 9), railW = sp('railW', rail ? 1 : 0, 12), crashW = sp('crash', crash ? 1 : 0, 6);
+    // a shifty: the lower body turned across under the body, the chest the other way (unwound before the landing)
+    const lowYaw = sp('lowYaw', air ? -(S.shift || 0) * 1.3 : 0, air ? 15 : 20, air ? 0.8 : 1) * smooth01(ext * 1.6);
+    // the air shape of each ski: the grab's or position's, or loose straight-air skis
+    const twk = 1 + 0.22 * smooth01((this.grabHeld - 0.45) / 0.75);
+    for (let k = 0; k < 2; k++) {
+      const s = k ? -1 : 1, A = this.air6[k], N = SKN[k];
+      if (gd) {
+        const g = gd.ski[k ? 'R' : 'L']; for (let i = 0; i < 6; i++) TG[i] = g[i] * (i < 3 ? twk : 1 + (twk - 1) * 0.8);
+        // a held ski is never pulled past about 60 degrees tip or tail up (a tweaked mute stood it vertical behind the back)
+        if (gd.hands.length) TG[4] = 1.05 * Math.tanh(TG[4] / 1.05);
+      }
+      else if (air) {
+        TG[0] = -s * 0.012; TG[1] = 0.015 * Math.sin(t * 1.3 + s); TG[2] = s * 0.035 * Math.sin(t * 1.9 + 0.7);
+        TG[3] = -s * 0.035 + 0.04 * Math.sin(t * 1.25 + s * 0.9) - clamp(Wy * 0.012, -0.08, 0.08);
+        TG[4] = -0.13 + 0.05 * Math.sin(t * 1.6 + s * 0.8) + clamp(Wx * 0.02, -0.12, 0.12);
+        TG[5] = s * 0.05 * Math.sin(t * 1.1 + 0.3);
+      } else for (let i = 0; i < 6; i++) TG[i] = 0;
+      for (let i = 0; i < 6; i++) A[i] = sp(N[i], TG[i], gd ? 18 : 11, air ? 0.95 : 1);
+    }
+    const kneeUp = sp('kneeUp', (gd ? 0.12 + 0.5 * gd.tuck : air ? 0.13 + 0.28 * crouch + clamp(Math.abs(Wx) * 0.02, 0, 0.1) + clamp(Math.abs(Wy) * 0.008, 0, 0.05) : 0) * (1 - popK), gd ? 18 : 13);
+    // ---- skis, in the body's frame
+    const stance = 0.122 + 0.03 * crouch;
+    this.railC2 = rail ? Math.cos(ra) ** 2 : 1;
+    // a butter or press tips the skis about the pressed end (on a rail the contact under the boots in a slide); the
+    // pivot's place eases between them, so leaving a box mid-press does not snap the skis
+    const zpL = sp('zpL', rail ? 0.55 * this.railC2 : 0.64, 12);
+    for (let k = 0; k < 2; k++) {
+      const s = k ? -1 : 1, ski = this.sk[k], pos = ski.pos, q = ski.q, A = this.air6[k];
+      pos.set(s * stance, 0, 0);
+      let yawV = 0, roll = edge;
+      if (strideW > 0.01) {
+        yawV = s * 0.24 * strideW;                                         // the V: both tips out
+        if (s === pushS) { pos.x += s * 0.2 * strk2; pos.z -= 0.12 * strk2; roll += s * 0.32 * strk2; yawV += s * 0.1 * strk2; pos.y += 0.06 * lift; }
+        else pos.x -= s * 0.04 * strk2;                                    // the gliding ski under the body
+      }
+      if (ground && edge * s < 0) pos.z += 0.07 * Math.abs(edge);          // the inside ski leads a little
+      this._roll[k] = roll;
+      if (yawV) { pos.x += 0.5 * Math.sin(yawV); pos.z += 0.5 * (Math.cos(yawV) - 1); }     // the V turns about the tails
+      q.setFromAxisAngle(Y, yawV).multiply(_q1.setFromAxisAngle(Z, roll));
       pos.y += Math.abs(Math.sin(roll)) * SKI.waist * 0.5;
-      // in a turn the inside ski leads a little and rides higher (the inside leg is more bent)
-      if (!air && !rail) { const inside = (edge > 0 && side === 'R') || (edge < 0 && side === 'L'); if (inside) { pos.z += 0.08 * Math.abs(edge); pos.y += 0.05 * Math.abs(edge); } }
-      // butter: pitch about the pressed end
-      const pitch = press * 0.26;
-      pos.y += Math.abs(Math.sin(pitch)) * SKI.len * 0.36; pos.z += -Math.sign(pitch) * 0.04;
-      q.multiply(_q.setFromAxisAngle(X, pitch));
-      // in the air: the knees come up (tuck) and the grab's tweak
-      if (air || gw > 0.01) {
-        const t0 = G.ski[side], tw = 1 + 0.22 * Math.min(1, Math.max(0, (this.grabHeld - 0.5) / 0.7));
-        const t = t0.map((v, i) => i < 3 ? v * tw : v * (1 + (tw - 1) * 0.8));
-        const up = (air ? 0.12 + 0.35 * crouch : 0) * (1 - gw) + gw * (0.12 + 0.5 * G.tuck);
-        pos.x += t[0] * gw; pos.y += up + t[1] * gw; pos.z += t[2] * gw;
-        q.multiply(_q.setFromAxisAngle(Y, t[3] * gw)).multiply(_q.setFromAxisAngle(X, t[4] * gw)).multiply(_q.setFromAxisAngle(Z, t[5] * gw));
-        if (!gdef && air) q.multiply(_q.setFromAxisAngle(X, -0.08));
+      // a butter (or a press on a box or rail): pitched about the pressed end, which stays down
+      if (Math.abs(press) > 0.002) {
+        const pa = press * 0.42, zp = (press > 0 ? 1 : -1) * zpL;
+        q.multiply(_q1.setFromAxisAngle(X, pa));
+        pos.y += zp * Math.sin(pa); pos.z += zp * (1 - Math.cos(pa));
       }
-      if (crashW > 0.01) { pos.y += 0.2 * crashW; q.multiply(_q.setFromAxisAngle(Y, s * 0.6 * crashW)); }
-      return { pos, q };
-    };
-    const sL = skiPose('L'), sR = skiPose('R');
-    // ---- pelvis and torso ----
-    const legK = 0.95 - (0.5 * crouch + 0.2 * tuck);
-    let pelY = this.ankleH + SKI.thick + SKI.stack + this.legLen * (0.98 * legK) + (this.pelvisY - this.hipY);
-    if (air) pelY = 0.92 * (1 - S.crouch * 0.35) + (this.pelvisY - this.hipY) * 0.5;
-    const lean = k('lean', gw > 0 ? G.lean * gw + 0.2 * (1 - gw) : 0.22 + 0.42 * crouch + 0.55 * tuck - 0.4 * Math.max(0, -press) + 0.3 * Math.max(0, press), 8);
-    const inc = edge * 0.38;                                   // the hips move inside the turn
-    const pelX = -inc * 0.55 * Math.min(1, S.speed / 6);
-    const pelZ = -0.08 - 0.12 * crouch + 0.14 * press - 0.05 * tuck;
-    // counter-rotation: the upper body faces the travel (downhill), more in a hockey stop or a slide
+      // the air: knees up, the shape on top
+      if (ext > 0.001) {
+        const legW = air ? 0.05 * wob(tt * 2.1, 5 + k * 3) * (1 - 0.6 * gW) * (1 - popK) : 0;   // loose legs in a straight air
+        pos.x += A[0] * ext; pos.y += (kneeUp + A[1] + legW) * ext; pos.z += A[2] * ext;
+        q.multiply(_q1.setFromAxisAngle(Y, A[3] * ext)).multiply(_q1.setFromAxisAngle(X, A[4] * ext)).multiply(_q1.setFromAxisAngle(Z, A[5] * ext));
+      }
+      if (Math.abs(lowYaw) > 1e-4) { _q1.setFromAxisAngle(Y, lowYaw); pos.applyQuaternion(_q1); q.premultiply(_q1); }
+      if (crashW > 0.01) { pos.y += 0.2 * crashW; q.multiply(_q1.setFromAxisAngle(Y, s * 0.6 * crashW)); }
+      if (swapK > 0.01) pos.y += 0.05 * swapK;                             // a swap unweights the skis off the rail
+    }
+    // ---- the pelvis: over the boots at the crouch's height, the leg column leaning with the snow's push
+    const A0 = this.ankleH + SKI.thick + SKI.stack;
+    let H = A0 + this.legLen * 0.98 * (0.95 - (0.5 * crouch + 0.2 * tuck)) + (this.pelvisY - this.hipY);
+    H += (0.92 * (1 - crouch * 0.35) + (this.pelvisY - this.hipY) * 0.5 - H) * airW;
+    const colL = H - A0;
+    // skating: the hips ride over each gliding ski in turn; riding and on rails the weight never quite stops moving
+    let pelX = -Math.sin(phi) * colL - pushS * 0.14 * strk + (0.016 + 0.014 * railW) * wob(tt * (1.7 + 0.9 * railW), 4.4) * (1 - airW);
+    let pelY = A0 + colL * Math.cos(phi) * Math.cos(psi);
+    const pelZ = -0.08 - 0.12 * crouch + 0.24 * press - 0.05 * tuck + Math.sin(psi) * colL * 0.8;
+    // ---- where the upper body and head go
     let face = 0;
-    if (S.vel && S.speed > 1) {
-      const v = S.vel.clone().applyQuaternion(R.clone().invert()); v.y = 0;
-      if (v.lengthSq() > 0.01) { let a = Math.atan2(v.x, v.z); if (S.sw) a = Math.atan2(-v.x, -v.z); face = clamp(a, -1.3, 1.3); }
+    if (ground && speed > 0.8) face = clamp(S.sw ? Math.atan2(-vb.x, -vb.z) : Math.atan2(vb.x, vb.z), -1.5, 1.5) * smoothstep(0.8, 2.5, speed);
+    if (S.sw && ground && Math.abs(face) > 0.15) this._swSide = face > 0 ? 1 : -1;
+    const swSide = (this._swSide || 1) * (S.lookBack ? -1 : 1), swK = sp('swK', S.sw && ground ? 1 : 0, 6);
+    // now and then a look round, riding along
+    const gl = this._gl;
+    if (t > gl.next || t < gl.next - 30) { gl.yaw = (Math.random() - 0.5) * 0.9; gl.pitch = (Math.random() - 0.35) * 0.2; gl.until = t + 0.6 + Math.random() * 0.8; gl.next = gl.until + 2.5 + Math.random() * 4; }
+    const glance = t < gl.until && ground && Math.abs(S.edge || 0) < 0.5 && brake < 0.2 && skate < 0.2;
+    // in a spin the shoulders and head lead well ahead of the hips; crouched with a spin wound up, they coil the other
+    // way first (windup + is a spin to the right, so the shoulders turn left), and unwind into the spin at the pop
+    const spinLead = sp('spinLead', air ? clamp(Wy * 0.09 + (P.wy ? P.wy.v : 0) * 0.035, -0.8, 0.8) : 0, 16);
+    const wind = sp('wind', ground ? clamp(S.windup || 0, -1, 1) : 0, 10);
+    const pressN = Math.max(0, press), pressT = Math.max(0, -press);
+    let twT, sdT, lnT, hyT, hpT;
+    if (air) {
+      twT = gd ? gd.twist : 0;
+      sdT = gd ? gd.side : clamp(Wz * 0.03, -0.2, 0.2);
+      lnT = (gd ? gd.lean : 0.16 + clamp(Wx * 0.045, -0.35, 0.3) + 0.12 * prep) + 0.28 * popK;   // over the knees off the lip
+      hyT = clamp(Wy * 0.08, -0.55, 0.55); hpT = 0.08 + 0.3 * prep;        // spotting the spin round, then the landing
+    } else if (rail) {
+      // the chest's angle to the rail (alpha) is its own slow spring: a swap swivels the skis under it, and in a slide
+      // it is turned most of the way down the rail
+      const aT = ra - 1.2 * Math.sin(ra);
+      if (!this._wasRail || !P.alpha) { const tw0 = P.tw ? P.tw.x : 0; (P.alpha || (P.alpha = new Spring(0))).set(tw0 + ra); }
+      const aCur = P.alpha.x, alpha = sp('alpha', aCur + wrapPi(aT - aCur), 6);
+      twT = wrapPi(alpha - ra);
+      sdT = (S.balance || 0) * 0.35 + 0.05 * wob(tt * 2.2, 7.7);           // balance corrections all the way along
+      lnT = 0.24 + 0.4 * pressN - 0.25 * pressT;
+      // the head looks down the rail over the nearer shoulder (kept until the chest has come right round), and turns
+      // with the body while the skis swivel
+      const aw = wrapPi(alpha);
+      if (Math.abs(aw) < 2.3) this._railLook = aw < 0 ? -1 : 1;
+      const look = Math.abs(aw) < 2.3 ? clamp(-aw, -1.45, 1.45) : -(this._railLook || 1) * 1.45;
+      hyT = twT + look * (1 - swapK); hpT = 0.12;
+    } else {
+      twT = face * (0.3 + 0.45 * brake) + swSide * 0.32 * swK + clamp(-Wy * 0.05, -0.22, 0.22) - pushS * 0.12 * strk + wind * 0.6;
+      sdT = 0;
+      lnT = 0.2 + 0.5 * tuck - 0.3 * pressT + 0.45 * pressN + 0.1 * strideW + 0.2 * (S.loading ? 1 : 0);
+      hyT = face * (0.85 + 0.12 * brake) + clamp(Wy * 0.22, -0.45, 0.45) + swSide * 1.35 * swK + (glance ? gl.yaw : 0) - wind * 0.45;   // where it is going
+      hpT = 0.05 + (glance ? gl.pitch : 0);
     }
-    if (air) face = 0;
-    const twist = k('twist', gw * G.twist + (1 - gw) * (rail ? face * 0.8 : face * (0.35 + 0.5 * brake)), 7);
-    const side = k('side', gw * G.side + (1 - gw) * (-edge * 0.32), 7);
-    const head = k('headTurn', S.sw && !air ? 1.0 : 0, 3);
-    const pelvisQ = Q().copy(R).multiply(_q.setFromAxisAngle(Y, twist * 0.35)).multiply(_q2.setFromAxisAngle(Z, -inc * 0.6 + side * 0.2));
-    // in the air the hips fold with the chest, so the shoulders come down over the knees (only the spine bent before)
-    if (air && gw > 0.01) pelvisQ.multiply(_q.setFromAxisAngle(X, lean * 0.4 * gw));
-    const chestQ = Q().copy(R).multiply(_q.setFromAxisAngle(Y, twist)).multiply(_q2.setFromAxisAngle(Z, side * 0.6)).multiply(Q().setFromAxisAngle(X, lean));
-    const crashQ = crashW > 0.01 ? Q().setFromEuler(new THREE.Euler(Math.sin(S.t * 3.1) * 0.6 * crashW, Math.sin(S.t * 2.3) * 0.5 * crashW, Math.cos(S.t * 2.7) * 0.6 * crashW)) : null;
-    if (crashQ) chestQ.multiply(crashQ);
-    // root bone: put the pelvis where it goes
-    const relRoot = Q().copy(this.rest.root.q);
-    const pelvisTarget = W(pelX, pelY, pelZ);
-    this.setWorldQ(this.b.root, Q().copy(pelvisQ).multiply(relRoot));
-    // move so the pelvis bone lands on its target
-    this.b.root.updateWorldMatrix(false, true);
-    const off = this.wpos(this.b.pelvis).sub(this.wpos(this.b.root));
-    this.setWorldPos(this.b.root, pelvisTarget.clone().sub(off));
-    this.b.root.updateWorldMatrix(false, true);
-    // spine: share the turn from the pelvis to the chest
-    const spin = (bone, k2, t) => { if (!bone) return; const f = Q().copy(pelvisQ).slerp(chestQ, t); f.multiply(Q().copy(R).invert()); this.setWorldQ(bone, f.multiply(Q().copy(R).multiply(this.rest[k2].q))); };
-    spin(this.b.pelvis, 'pelvis', 0.0);
-    spin(this.b.spine, 'spine', 0.35); spin(this.b.spine1, 'spine1', 0.7); spin(this.b.chest, 'chest', 1.0);
-    // head: looks where it goes; riding switch it looks back over the shoulder
-    const headQ = Q().copy(chestQ).multiply(_q.setFromAxisAngle(Y, -twist * 0.6 + head * 1.25 * Math.sign(face || 1))).multiply(_q2.setFromAxisAngle(X, -lean * 0.65 + (air ? 0.1 : 0.05)));
-    if (this.b.neck) { const f = Q().copy(chestQ).slerp(headQ, 0.5).multiply(Q().copy(R).invert()); this.setWorldQ(this.b.neck, f.multiply(Q().copy(R).multiply(this.rest.neck.q))); }
-    if (this.b.head) { const f = Q().copy(headQ).multiply(Q().copy(R).invert()); this.setWorldQ(this.b.head, f.multiply(Q().copy(R).multiply(this.rest.head.q))); }
-    for (const c of ['clL', 'clR']) if (this.b[c]) { const f = Q().copy(chestQ).multiply(Q().copy(R).invert()); this.setWorldQ(this.b[c], f.multiply(Q().copy(R).multiply(this.rest[c].q))); }
-    // ---- grabs: pull the grabbed ski towards the hand's reach ----
-    const grabPts = [];
-    if (gw > 0.02) {
-      for (const h of G.hands) {
-        const [hand, ski, at, edgeK] = h;
-        const sp = ski === 'L' ? sL : sR;
-        const uab = hand === 'L' ? this.b.uaL : this.b.uaR; uab.updateWorldMatrix(false, false);
-        const sh = this.wpos(uab);
-        const gp = this.skiPoint(sp, ski, at, edgeK, W);
-        const reach = (this.len.ua + this.len.fa) * 0.95 + 0.07;
-        const dd = gp.pt.distanceTo(sh);
-        if (dd > reach) {
-          // bring the ski up to the hand (in the rider frame), at most 45 cm
-          const pull = Math.min(0.45, dd - reach) * gw;
-          const dirR = sh.clone().sub(gp.pt).normalize().applyQuaternion(R.clone().invert());
-          sp.pos.addScaledVector(dirR, pull);
+    const wB = air && gd ? 16 : 9;                                         // a grab's shape comes quickly
+    const tw = sp('tw', twT, air && gd ? 15 : 8.5), sd = sp('sd', sdT, wB), ln = sp('ln', lnT, air ? (popK > 0.1 ? 20 : wB) : 9), hy = sp('hy', hyT, rail ? 7 : 9), hp = sp('hp', hpT, 7);
+    const onSnow = 1 - airW;
+    // a landing bends the knees with the chest kept up; a transition's compression puts the chest over the knees
+    const lean = ln + (0.42 * crouch * (1 - gW) - 0.42 * (landX + absorb) + 0.1 * absorb + 0.45 * crunch + 1.4 * Math.max(0, comp)) * onSnow + 0.02 * wob(tt * 1.1, 9.1);
+    const idleY = 0.035 * wob(tt * 0.9, 3.7) * onSnow * (1 - railW);      // the shoulders turn a little, riding along
+    const chYaw = tw + spinLead - lowYaw * 0.4 + idleY, pelYaw = tw * (0.3 + 0.12 * railW) - spinLead * 0.15 + lowYaw * 0.55 - pushS * 0.1 * strk;
+    const chRoll = phi * 0.3 + sd * 0.6 + pushS * 0.1 * strk + 0.025 * wob(tt * 1.3, 5.2) * onSnow, pelRoll = phi * 0.72 + sd * 0.2, pelPitch = lean * 0.4 * gW;
+    // on the snow the outside leg must still reach its boot: the pelvis comes down rather than lifting a ski
+    if (airW < 0.5) {
+      const hw = this.hipHalf, ca = Math.cos(pelYaw), sa = Math.sin(pelYaw), cb = Math.cos(pelRoll), sb = Math.sin(pelRoll), y0 = pelY;
+      for (let k = 0; k < 2; k++) {
+        const s = k ? -1 : 1, an2 = this.ankleLocal(this.sk[k], _v2);
+        const dx = pelX + s * hw * cb * ca - an2.x, dz = pelZ - s * hw * cb * sa - an2.z, dy = y0 + s * hw * sb - an2.y;
+        const d0 = Math.sqrt(dx * dx + dy * dy + dz * dz), d1 = softReach(d0, this.legLen, 0.88, 0.965), dy2 = d1 * d1 - dx * dx - dz * dz;
+        if (d1 < d0 && dy2 > 0) pelY = Math.min(pelY, an2.y + Math.sqrt(dy2) - s * hw * sb);
+      }
+    }
+    const pelQ = _pelQ.copy(R).multiply(_q1.setFromAxisAngle(Y, pelYaw)).multiply(_q1.setFromAxisAngle(Z, pelRoll));
+    if (Math.abs(pelPitch) > 1e-4) pelQ.multiply(_q1.setFromAxisAngle(X, pelPitch));
+    const chQ = _chQ.copy(R).multiply(_q1.setFromAxisAngle(Y, chYaw)).multiply(_q1.setFromAxisAngle(Z, chRoll)).multiply(_q1.setFromAxisAngle(X, lean));
+    if (crashW > 0.01) chQ.multiply(_q1.setFromEuler(_eu.set(Math.sin(t * 3.1) * 0.6 * crashW, Math.sin(t * 2.3) * 0.5 * crashW, Math.cos(t * 2.7) * 0.6 * crashW)));
+    // root bone: turned with the pelvis, moved so the pelvis bone lands on its place
+    this.setWorldQ(b.root, _q2.copy(pelQ).multiply(this.rest.root.q));
+    b.pelvis.updateWorldMatrix(false, false);
+    const off = _v2.setFromMatrixPosition(b.pelvis.matrixWorld).sub(_v3.setFromMatrixPosition(b.root.matrixWorld));
+    this.setWorldPos(b.root, _v3.set(pelX, pelY, pelZ).applyQuaternion(R).add(BP).sub(off));
+    // the spine shares the turn from the pelvis to the chest
+    this.blendBone(b.pelvis, 'pelvis', pelQ, chQ, 0);
+    this.blendBone(b.spine, 'spine', pelQ, chQ, 0.35); this.blendBone(b.spine1, 'spine1', pelQ, chQ, 0.7); this.blendBone(b.chest, 'chest', pelQ, chQ, 1);
+    // the head: steady, eyes kept level, looking where it goes (into the turn, round a spin, down the rail, back riding switch)
+    // on the snow and rails the head's aim is against the skis (so the chest's turn is taken off it); in the air it mostly keeps with the body
+    const hdYaw = clamp(hy - tw * (1 - 0.4 * airW) + lowYaw * 0.32 + 0.06 * wob(tt * 0.7, 2.9) * onSnow, -1.45, 1.45);
+    const hdQ = _hdQ.copy(chQ).multiply(_q1.setFromAxisAngle(Y, hdYaw)).multiply(_q1.setFromAxisAngle(Z, -chRoll * 0.5)).multiply(_q1.setFromAxisAngle(X, hp - lean * 0.62));
+    this.blendBone(b.neck, 'neck', chQ, hdQ, 0.5); this.blendBone(b.head, 'head', hdQ, hdQ, 0);
+    this.blendBone(b.clL, 'clL', chQ, chQ, 0); this.blendBone(b.clR, 'clR', chQ, chQ, 0);
+    // ---- grabs: which point each hand holds, cross-fading from the one it held before; let go as the landing comes
+    const holdOK = ext > 0.55;                                             // let go a moment before touchdown
+    this._pt[0].set(0, 0, 0); this._pt[1].set(0, 0, 0); this._hold[0] = this._hold[1] = 0;
+    for (let k = 0; k < 2; k++) {
+      const side = k ? 'R' : 'L', Hs = this.hs[k];
+      let want = null; if (gd) for (const h of gd.hands) if (h[0] === side) want = h;
+      const w = sp(HWN[k], want && holdOK ? 1 : 0, want && holdOK ? 22 : 12);
+      if (want && want !== Hs.cur && !(Hs.cur && Hs.cur[1] === want[1] && Hs.cur[2] === want[2] && Hs.cur[3] === want[3])) {
+        if (Hs.cur && w > 0.05) { Hs.prev = Hs.cur; Hs.f.set(0); } else { Hs.prev = null; Hs.f.set(1); }
+        Hs.cur = want;
+      }
+      Hs.fx = Hs.f.to(1, 13, dt);
+      Hs.w = Hs.cur ? w : 0;
+      // the grabbed ski is brought up to the hand when the hand cannot reach it (at most 60 cm); while the hand moves to
+      // another point the pull moves with it (from the point it held, weighted out, to the new one, weighted in)
+      if (Hs.w > 0.02) {
+        const ua = k ? b.uaR : b.uaL; ua.updateWorldMatrix(false, false);
+        const sh = _v2.setFromMatrixPosition(ua.matrixWorld), reach = (this.len.ua + this.len.fa) * 0.92;
+        const f = Hs.prev && Hs.fx < 0.999 ? smooth01(Hs.fx) : 1;
+        for (let j = 0; j < 2; j++) {
+          const spec = j ? Hs.prev : Hs.cur, wj = (j ? 1 - f : f) * Hs.w;
+          if (!spec || wj < 0.01) continue;
+          // measured to where the wrist will be (the palm on the edge, the fingers round it), kept inside the arm's soft range
+          const kk = spec[1] === 'L' ? 0 : 1, gp = this.skiPoint(this.sk[kk], spec[1], spec[2], spec[3], this.gpB);
+          this._hold[kk] = Math.max(this._hold[kk], wj);
+          const wp = _v4.copy(gp.pt).addScaledVector(gp.fingers, -0.07).addScaledVector(gp.palm, -0.03), dd = wp.distanceTo(sh);
+          if (dd > reach) this._pt[kk].addScaledVector(_v3.subVectors(sh, wp).normalize().applyQuaternion(qi), Math.min(0.6, dd - reach) * wj);
         }
-        grabPts.push({ hand, ski, at, edgeK });
       }
     }
-    // keep each ski within the leg's reach of its hip
-    for (const [sp, side] of [[sL, 'L'], [sR, 'R']]) {
-      const thb = side === 'L' ? this.b.thL : this.b.thR; thb.updateWorldMatrix(false, false);
-      const hip = this.wpos(thb);
-      const ank = this.ankleOf(sp, W);
-      const lim = this.legLen * 0.995, dd = ank.distanceTo(hip);
-      if (dd > lim) { const dirR = hip.clone().sub(ank).normalize().applyQuaternion(R.clone().invert()); sp.pos.addScaledVector(dirR, dd - lim); }
+    for (let k = 0; k < 2; k++) {
+      const pl = this.pull[k], N3 = PULLN[k];
+      pl.set(sp(N3[0], this._pt[k].x, 20), sp(N3[1], this._pt[k].y, 20), sp(N3[2], this._pt[k].z, 20));
+      this.sk[k].pos.add(pl);
+      // a held ski is kept out of the torso (a straight pull to the shoulder can go through it), as firmly as it is held
+      if (this._hold[k] > 0.01) this.clearTorso(this.sk[k], this._hold[k]);
     }
-    this.placeSki(this.skiL, sL, W); this.placeSki(this.skiR, sR, W);
-    // ---- legs ----
-    for (const side of ['L', 'R']) {
-      this.side = side;
-      const sp = side === 'L' ? sL : sR, ski = side === 'L' ? this.skiL : this.skiR;
-      const ank = this.ankleOf(sp, W);
-      const skiQ = Q().copy(R).multiply(sp.q);
-      // knees point the way the ski points, levelled in the body's frame: a ski tipped tail-up must not fold the knee down
-      const kf = V().set(0, 0, 1).applyQuaternion(skiQ).applyQuaternion(R.clone().invert()); kf.y = 0;
+    // keep each ski within its leg's reach, short of full lock (a locked knee snaps when its target moves)
+    for (let k = 0; k < 2; k++) {
+      const th = k ? b.thR : b.thL; th.updateWorldMatrix(false, false);
+      const hip = _v2.setFromMatrixPosition(th.matrixWorld), ank = this.ankleOf(this.sk[k], _v3);
+      const dd = ank.distanceTo(hip), L = this.legLen;
+      const lim = Math.min(dd, 0.975 * L) + (softReach(dd, L, 0.86, 0.975) - Math.min(dd, 0.975 * L)) * airW;
+      if (dd > lim) this.sk[k].pos.addScaledVector(_v4.subVectors(hip, ank).normalize().applyQuaternion(qi), dd - lim);
+    }
+    this.placeSki(this.skiL, this.sk[0]); this.placeSki(this.skiR, this.sk[1]);
+    // ---- legs: to the boots, knees along the skis and pushed into the turn by as much as the edge is past the lean
+    for (let k = 0; k < 2; k++) {
+      const s = k ? -1 : 1, spk = this.sk[k];
+      const ank = this.ankleOf(spk, _v5), skiQ = _q2.copy(R).multiply(spk.q);
+      const kf = _kd.set(0, 0, 1).applyQuaternion(spk.q); kf.y = 0;
       if (kf.lengthSq() < 0.01) kf.set(0, 0, 1);
-      kf.normalize().applyQuaternion(R);
-      const kneeDir = kf.addScaledVector(D(side === 'L' ? 1 : -1, 0, 0), 0.12).addScaledVector(D(0, 1, 0), 0.25);
-      const th = side === 'L' ? this.b.thL : this.b.thR, ca = side === 'L' ? this.b.caL : this.b.caR, ft = side === 'L' ? this.b.ftL : this.b.ftR;
-      this.twoBone(th, ca, ft, 'th', 'ca', ank, kneeDir, Z);
-      // foot flat in the boot, along the ski
-      this.setWorldQ(ft, Q().copy(skiQ).multiply(this.rest['ft' + side].q));
-      // the boot's cuff round the lower shin
-      const cuff = side === 'L' ? this.bootL.cuff : this.bootR.cuff;
-      const kp = this.wpos(ca), ap = this.wpos(ft);
-      const shin = ap.clone().sub(kp).normalize();
-      cuff.position.copy(ap).addScaledVector(shin, -0.1).addScaledVector(V().set(0, 0, 1).applyQuaternion(skiQ), 0.012);
-      cuff.quaternion.setFromUnitVectors(Y, shin.clone().negate());
+      kf.normalize();
+      const kneeIn = ground ? clamp(this._roll[k] - phi, -0.9, 0.9) * 0.8 : 0;
+      kf.x += s * 0.12 - kneeIn; kf.y += 0.25; kf.applyQuaternion(R);
+      const th = k ? b.thR : b.thL, ca = k ? b.caR : b.caL, ft = k ? b.ftR : b.ftL;
+      this.twoBone(th, ca, k ? 'thR' : 'thL', k ? 'caR' : 'caL', ank, kf, Z);
+      this.setWorldQ(ft, _q3.copy(skiQ).multiply(this.rest[k ? 'ftR' : 'ftL'].q));
+      const cuff = k ? this.bootR.cuff : this.bootL.cuff;
+      const kp = _v2.setFromMatrixPosition(ca.matrixWorld), ap = _v3.setFromMatrixPosition(ft.matrixWorld);
+      const shin = _v4.subVectors(ap, kp).normalize();
+      cuff.position.copy(ap).addScaledVector(shin, -0.1).addScaledVector(_v6.set(0, 0, 1).applyQuaternion(skiQ), 0.012);
+      cuff.quaternion.setFromUnitVectors(Y, shin.negate());
     }
-    // ---- arms ----
-    for (const side of ['L', 'R']) {
-      this.side = side;
-      const s = side === 'L' ? 1 : -1;
-      const ua = side === 'L' ? this.b.uaL : this.b.uaR, fa = side === 'L' ? this.b.faL : this.b.faR, ha = side === 'L' ? this.b.haL : this.b.haR;
-      const gp = grabPts.find(g => g.hand === side);
-      let wrist, fingerDir, palm, curl = 0.9;
-      // riding: hands forward of the hips, poles back
-      const chestFwd = V().set(0, 0, 1).applyQuaternion(chestQ), chestLeft = V().set(1, 0, 0).applyQuaternion(chestQ), up = V().set(0, 1, 0).applyQuaternion(R);
-      ua.updateWorldMatrix(false, false);
-      const shoulder = this.wpos(ua);
-      let free = shoulder.clone().addScaledVector(chestLeft, s * (0.2 + 0.04 * tuck)).addScaledVector(chestFwd, 0.4 - 0.08 * tuck).addScaledVector(up, -0.34 + 0.14 * tuck);
-      // a pole plant on the new inside of a turn: the hand reaches forward and down, the tip goes into the snow
-      const plantK = this.plant && this.plant.side === side ? Math.sin(Math.PI * Math.min(1, this.plant.t / 0.4)) : 0;
-      if (plantK > 0 && !air) free.addScaledVector(chestFwd, 0.12 * plantK).addScaledVector(up, -0.12 * plantK).addScaledVector(chestLeft, s * 0.04 * plantK);
-      if (air && !gdef) free = shoulder.clone().addScaledVector(chestLeft, s * 0.38).addScaledVector(chestFwd, 0.22).addScaledVector(up, -0.2 + Math.sin(S.t * 5 + s) * 0.04);
-      if (rail) free = shoulder.clone().addScaledVector(chestLeft, s * 0.5).addScaledVector(chestFwd, 0.12).addScaledVector(up, -0.12 + S.balance * s * 0.15);
-      if (gdef && gdef.arms === 'wide') free = shoulder.clone().addScaledVector(chestLeft, s * 0.58).addScaledVector(up, 0.05);
-      if (gdef && gdef.arms === 'up') free = shoulder.clone().addScaledVector(chestLeft, s * 0.3).addScaledVector(up, 0.45).addScaledVector(chestFwd, 0.1);
-      if (gdef && gdef.arms === 'out') free = shoulder.clone().addScaledVector(chestLeft, s * 0.45).addScaledVector(chestFwd, 0.25).addScaledVector(up, -0.05);
-      if (crashW > 0.5) free = shoulder.clone().addScaledVector(chestLeft, s * 0.45).addScaledVector(up, 0.25 + Math.sin(S.t * 9 + s) * 0.2);
-      wrist = free; fingerDir = chestFwd.clone().addScaledVector(up, -0.35).normalize(); palm = chestLeft.clone().multiplyScalar(-s); curl = this.poles ? 1.25 : 0.55;
-      if (gp && gw > 0.02) {
-        const sp = gp.ski === 'L' ? sL : sR;
-        const g = this.skiPoint(sp, gp.ski, gp.at, gp.edgeK, W);
-        // palm on the edge, fingers wrapped under it
-        const gwrist = g.pt.clone().addScaledVector(g.fingers, -0.07).addScaledVector(g.palm, -0.03);
-        wrist = free.clone().lerp(gwrist, gw);
-        fingerDir = fingerDir.clone().lerp(g.fingers, gw).normalize();
-        palm = palm.clone().lerp(g.palm, gw).normalize();
-        curl = curl + (1.35 - curl) * gw;
+    // ---- arms: loose and low riding, floating and leading the rotation in the air, out for balance on rails and butters
+    // a pole plant: only between proper turns at speed (the last one held a while), and only a flick of the wrist
+    const eSign = Math.abs(S.edge || 0) > 0.5 ? Math.sign(S.edge) : 0;
+    if (eSign && eSign === this.lastE) this._eHold = (this._eHold || 0) + dt;
+    if (ground && eSign && this.lastE && eSign !== this.lastE && speed > 6 && this.poles && (this._eHold || 0) > 0.45 && !(this.plantT < 0.9)) { this.plantK = eSign > 0 ? 1 : 0; this.plantT = 0; }
+    if (eSign && eSign !== this.lastE) this._eHold = 0;
+    if (eSign) this.lastE = eSign;
+    if (!ground) this._eHold = 0;
+    if (this.plantT !== undefined && this.plantT < 1) this.plantT += dt;
+    const cF = _cF.set(0, 0, 1).applyQuaternion(chQ), cL = _cL.set(1, 0, 0).applyQuaternion(chQ);
+    // forward for the hands is level with the body's up, so a chest leaning forward does not drag them down to full reach
+    const cFl = _cFl.copy(cF).addScaledVector(ub, -cF.dot(ub)); if (cFl.lengthSq() < 1e-4) cFl.copy(cF); cFl.normalize();
+    // in the air the arms lead a spin, on the snow they trail a pivot a little, but lead a butter spin
+    const btK = ground ? smoothstep(0.3, 0.7, Math.abs(press)) : 0;
+    const lead = air ? clamp(Wy * 0.07, -0.6, 0.6) : clamp(Wy * (0.06 * btK - 0.04 * (1 - btK)), -0.5, 0.5);
+    const armL = this.len.ua + this.len.fa;
+    for (let k = 0; k < 2; k++) {
+      const side = k ? 'R' : 'L', s = k ? -1 : 1, Hs = this.hs[k];
+      let lat, up, fwd;
+      if (air) {
+        // relaxed at the waist, a little forward and out; tight to the body in spins and corks, a little higher for a
+        // back flip, forward for a front flip, out to stop a spin, forward for the landing
+        lat = 0.25; up = -0.33; fwd = 0.24;
+        up += clamp(-Wx * 0.015, 0, 0.1); fwd += clamp(Wx * 0.025, 0, 0.12); lat -= clamp(Math.abs(Wx) * 0.01, 0, 0.05);
+        lat -= clamp(Math.abs(Wy) * 0.02 + Math.abs(Wz) * 0.02, 0, 0.11);
+        lat += 0.13 * open; up += 0.06 * open;
+        lat += 0.02 * prep; fwd += 0.14 * prep; up += 0.04 * prep;
+        fwd += 0.12 * popK; up += 0.1 * popK;                               // the arms swing up and forward with the pop
+        if (gd && gd.arms) { const m = ARM_MODE[gd.arms]; if (m) { lat = m[0]; up = m[1]; fwd = m[2]; } }
+      } else if (rail) {
+        const bal = S.balance || 0;
+        lat = 0.27 + 0.08 * Math.abs(bal) + 0.08 * swapK; up = -0.23 - s * bal * 0.2 + 0.08 * swapK; fwd = 0.2 + 0.08 * s * Math.sin(ra);   // loose, the hand on the travel's side ahead
+      } else {
+        // forward and a little wide of the hips, elbows soft
+        lat = 0.25 - 0.1 * tuck; up = -0.27 + 0.13 * tuck; fwd = 0.33 + 0.03 * tuck;
+        const load = (S.loading ? 1 : smoothstep(0.55, 0.85, S.crouch || 0)) * (1 - tuck);   // crouched to pop: the arms load back
+        fwd -= 0.16 * load; up += 0.03 * load; lat += 0.03 * load;
+        lat += 0.1 * btK; up += 0.08 * btK; fwd -= 0.03 * btK;              // a butter: out for balance, not a T
+        if (brake > 0.03) { const dn = (this._slip || 1) === s; fwd += brake * (dn ? 0.18 : -0.06); up += brake * (dn ? 0.1 : 0.03); lat += brake * (dn ? -0.02 : 0.06); }
+        const land = clamp(absorb * 2.2, 0, 1); fwd += 0.16 * land; up += 0.05 * land;
+        if (s * edge < 0) { fwd += 0.06 * Math.abs(edge); up -= 0.03 * Math.abs(edge); }   // the inside hand leads a turn
+        lat -= 0.06 * wind * s;                                             // the coil swings the arms with the shoulders
       }
-      const elbow = V().set(0, 0, -1).applyQuaternion(chestQ).addScaledVector(chestLeft, s * 0.7).addScaledVector(up, -0.6).normalize();
-      this.twoBone(ua, fa, ha, 'ua', 'fa', wrist, elbow, V().set(0, 0, -1));
-      // hand: fingers along fingerDir, palm towards palm
-      const H = this.hands[side];
-      this.aim(ha, this.rest['ha' + side].q, H.fd, H.palm, fingerDir, palm);
-      this.curl(H, curl);
-      // pole: from the grip down and back (or hanging from the strap while grabbing)
-      const pole = side === 'L' ? this.poleL : this.poleR;
+      if (crashW > 0.5) { lat = 0.36; up = 0.2; fwd = 0; }
+      const AN = ARMN[k];
+      lat = sp(AN[0], lat, 10, 0.72); up = sp(AN[1], up, 10, 0.72); fwd = sp(AN[2], fwd, 10, 0.72);
+      // what moves faster than a spring follows goes on top: strides, pole pushes, plants, the hands' own small moves
+      const pk = onSnow > 0.5 && this.plantK === k && this.plantT < 0.35 ? Math.sin(Math.PI * this.plantT / 0.35) : 0;
+      if (onSnow > 0.01) {
+        if (strideW > 0.01) { const opp = s === -pushS; fwd += strk2 * (opp ? 0.2 : -0.1); up += strk2 * (opp ? 0.1 : -0.02); }
+        if (dpW > 0.01) { fwd += dpW * (0.36 - 0.6 * dpK) - dpW * 0.3; up += dpW * (0.12 - 0.2 * dpK); }
+        if (pk > 0) { fwd += 0.05 * pk; up -= 0.03 * pk; }
+      }
+      const hm = (0.6 + 0.6 * railW) * (1 - 0.7 * (Hs.w || 0)), ak = 11 + k * 4;
+      lat += 0.03 * hm * wob(tt * (1.6 + railW), ak); up += 0.04 * hm * wob(tt * (1.9 + railW), ak + 2); fwd += 0.05 * hm * wob(tt * (1.4 + railW), ak + 6);
+      if (crashW > 0.5) up += Math.sin(t * 9 + s) * 0.2;
+      const x0 = s * lat, cl = Math.cos(lead), sl = Math.sin(lead);
+      const ua = k ? b.uaR : b.uaL, fa = k ? b.faR : b.faL, ha = k ? b.haR : b.haL;
+      ua.updateWorldMatrix(false, false);
+      const sh = _sh.setFromMatrixPosition(ua.matrixWorld);
+      const wr = _wr.copy(sh).addScaledVector(cL, x0 * cl + fwd * sl).addScaledVector(ub, up).addScaledVector(cFl, -x0 * sl + fwd * cl);
+      // never quite at full reach: a locked arm snaps when its target moves near the end of its range
+      { const d = wr.distanceTo(sh), m = softReach(d, armL, 0.78, 0.93); if (m < d) wr.sub(sh).multiplyScalar(m / d).add(sh); }
+      const fd = _fd.copy(cF).addScaledVector(ub, -0.35).normalize(), pa = _pa.copy(cL).multiplyScalar(-s);
+      let curl = this.poles ? 1.25 : 0.55;
+      if (Hs.w > 0.02) {
+        const g = this.skiPoint(this.sk[Hs.cur[1] === 'L' ? 0 : 1], Hs.cur[1], Hs.cur[2], Hs.cur[3], this.gpA);
+        if (Hs.prev && Hs.fx < 0.999) {
+          const g0 = this.skiPoint(this.sk[Hs.prev[1] === 'L' ? 0 : 1], Hs.prev[1], Hs.prev[2], Hs.prev[3], this.gpB), f = smooth01(Hs.fx);
+          g.pt.lerpVectors(g0.pt, g.pt, f); g.fingers.lerpVectors(g0.fingers, g.fingers, f).normalize(); g.palm.lerpVectors(g0.palm, g.palm, f).normalize();
+        }
+        // palm on the edge, fingers wrapped under it
+        const gw = _v2.copy(g.pt).addScaledVector(g.fingers, -0.07).addScaledVector(g.palm, -0.03);
+        wr.lerp(gw, Hs.w); fd.lerp(g.fingers, Hs.w).normalize(); pa.lerp(g.palm, Hs.w).normalize(); curl += (1.35 - curl) * Hs.w;
+      }
+      { const d = wr.distanceTo(sh), m = softReach(d, armL, 0.84 + 0.02 * Hs.w, 0.965 + 0.02 * Hs.w); if (m < d) wr.sub(sh).multiplyScalar(m / d).add(sh); }
+      // the elbow: back, out and down; with the hand raised, out and a little forward
+      const upK = smoothstep(-0.05, 0.2, up) * (1 - Hs.w);
+      const el = _el.set(0, 0, -1).applyQuaternion(chQ).addScaledVector(cL, s * (0.45 + 0.25 * Hs.w)).addScaledVector(ub, -0.7).normalize();
+      if (upK > 0.01) el.lerp(_v6.copy(cL).multiplyScalar(s).addScaledVector(cFl, 0.3).addScaledVector(ub, 0.15).normalize(), upK).normalize();
+      this.twoBone(ua, fa, k ? 'uaR' : 'uaL', k ? 'faR' : 'faL', wr, el, NZ);
+      const HH = this.hands[side];
+      this.aim(ha, this.rest[k ? 'haR' : 'haL'].q, HH.fd, HH.palm, fd, pa);
+      this.curl(HH, curl);
+      // the pole: from the grip down and back; forward into a plant; hanging from the strap while grabbing
       if (this.poles) {
-        const gripP = this.wpos(ha).addScaledVector(fingerDir, 0.06).addScaledVector(palm, 0.025);
-        let tip = V().set(0, 0, -1).applyQuaternion(R).multiplyScalar(0.55).addScaledVector(up, -1).addScaledVector(D(s, 0, 0), 0.08).normalize();
-        if (plantK > 0 && !air) tip.lerp(V().set(0, 0, 1).applyQuaternion(R).multiplyScalar(0.35).addScaledVector(up, -1).addScaledVector(D(s, 0, 0), 0.15).normalize(), plantK).normalize();
-        if ((air || rail) && !gp) tip = V().set(0, 0, -1).applyQuaternion(R).multiplyScalar(0.9).addScaledVector(up, -0.75).addScaledVector(D(s, 0, 0), 0.1).normalize();
-        if (gp && gw > 0.3) tip = V().set(0, 0, -1).applyQuaternion(R).addScaledVector(up, 0.15).addScaledVector(D(s, 0, 0), 0.35).normalize();
-        pole.position.copy(gripP);
+        const pole = k ? this.poleR : this.poleL, aw = Math.max(airW, railW);
+        let tx = s * 0.08 + s * 0.02 * aw, ty = -1 + 0.25 * aw, tz = -0.55 - 0.35 * aw;
+        if (pk > 0) { const w = 0.85 * pk; tx += (s * 0.12 - tx) * w; ty += (-1 - ty) * w; tz += (0.3 - tz) * w; }
+        if (dpW > 0.01) { const fx = s * 0.12, fy = -1 + 0.4 * dpK, fz = 0.1 - 1.1 * dpK; tx += (fx - tx) * dpW; ty += (fy - ty) * dpW; tz += (fz - tz) * dpW; }
+        if (Hs.w > 0.02) { const w = Math.min(1, Hs.w * 1.4); tx += (s * 0.35 - tx) * w; ty += (0.15 - ty) * w; tz += (-1 - tz) * w; }
+        const tip = _tip.set(tx, ty, tz).normalize().applyQuaternion(R);
+        pole.position.copy(_v2.setFromMatrixPosition(ha.matrixWorld)).addScaledVector(fd, 0.06).addScaledVector(pa, 0.025);
         pole.quaternion.setFromUnitVectors(Y, tip.negate());
       }
     }
-    // helmet on the head
-    const hp = this.wpos(this.b.head), hq = this.wquat(this.b.head);
-    const hFwd = V().set(0, 0, 1).applyQuaternion(headQ), hUp = V().set(0, 1, 0).applyQuaternion(headQ);
-    const eye = hp.clone().add(this.eyeOff.clone().applyQuaternion(headQ));
-    this.helmet.position.copy(eye).addScaledVector(hUp, 0.04).addScaledVector(hFwd, -0.062);
-    this.helmet.quaternion.copy(headQ);
-    this.headPos = hp; this.headQ = headQ; this.eye = eye.clone().addScaledVector(hFwd, 0.02);
-    this.body.updateMatrixWorld(true);
+    // ---- helmet, and where the eyes are for the first-person camera
+    const hpos = this.headPos.setFromMatrixPosition(b.head.matrixWorld);
+    const hFwd = _v2.set(0, 0, 1).applyQuaternion(hdQ), hUp = _v3.set(0, 1, 0).applyQuaternion(hdQ);
+    this.eye.copy(this.eyeOff).applyQuaternion(hdQ).add(hpos);
+    this.helmet.position.copy(this.eye).addScaledVector(hUp, 0.04).addScaledVector(hFwd, -0.062);
+    this.helmet.quaternion.copy(hdQ);
+    this.headQ.copy(hdQ); this.eye.addScaledVector(hFwd, 0.02);
+    this._wasRail = rail; this._pra = ra;
+    this.flushTree(body);
   }
-  // a point on a ski, with the palm's and fingers' directions for holding it there
-  skiPoint(sp, ski, at, edgeK, W) {
-    const R = this.rootQ;
-    const q = Q().copy(R).multiply(sp.q);
-    const half = SKI.len / 2;
-    const z = at * half * 0.98;
-    const side = ski === 'L' ? 1 : -1;                    // the ski's outside is +X for the left ski
-    const out = edgeK === 'in' ? -side : side;
-    const w = (SKI.waist + (SKI.tip - SKI.waist) * Math.pow(Math.abs(at), 2.2)) / 2;
-    const rise = Math.abs(at) > 0.78 ? Math.pow((Math.abs(at) - 0.78) / 0.22, 2.1) * 0.075 : 0;
-    const local = V().set(edgeK === 'end' ? 0 : out * (w + 0.005), rise + SKI.thick * 0.5, z);
-    const pt = V();
-    const sx = V().set(1, 0, 0).applyQuaternion(q), sy = V().set(0, 1, 0).applyQuaternion(q), sz = V().set(0, 0, 1).applyQuaternion(q);
-    pt.copy(sp.pos).applyQuaternion(R).add(this.body.position).add(local.clone().applyQuaternion(q));
-    let palm, fingers;
-    if (edgeK === 'end') { palm = sy.clone().negate(); fingers = sz.clone().multiplyScalar(Math.sign(at) || 1).addScaledVector(sy, -0.6).normalize(); }
-    else { palm = sx.clone().multiplyScalar(-out); fingers = sy.clone().negate().addScaledVector(sx, -out * 0.35).normalize(); }
-    return { pt, palm, fingers };
+  // the rest of the rider's tree (fingers, face, toes, the meshes) after the pose: the bones posed this frame are
+  // current already, so only the others are worked out (this was a walk of the whole tree)
+  flushTree(o) {
+    const ch = o.children, f = this._frame;
+    for (let i = 0; i < ch.length; i++) {
+      const c = ch[i];
+      // a skinned mesh does more in its own update (its bind matrix's inverse follows it), so it keeps that update
+      if (c.isSkinnedMesh) { c.updateMatrixWorld(true); continue; }
+      if (c._wf !== f) { if (c.matrixAutoUpdate) c.updateMatrix(); c.matrixWorld.multiplyMatrices(o.matrixWorld, c.matrix); c.matrixWorldNeedsUpdate = false; }
+      if (c.children.length) this.flushTree(c);
+    }
   }
-  ankleOf(sp, W) {
-    const R = this.rootQ, q = Q().copy(R).multiply(sp.q);
-    const local = V().set(0, SKI.thick + SKI.stack + this.ankleH, -this.ankleBack);
-    return V().copy(sp.pos).applyQuaternion(R).add(this.body.position).add(local.applyQuaternion(q));
+  // push a ski (in the body's frame) out of a capsule round the torso, pelvis to neck
+  // (the push blends every touching point, deeper ones counting more, so it never jumps from one point to another)
+  clearTorso(sk, w) {
+    const b = this.b, R = this.rootQ, qi = _qi2.copy(R).invert();
+    const A = _ca.setFromMatrixPosition(b.pelvis.matrixWorld), Bn = _cb.setFromMatrixPosition(b.neck.matrixWorld), ab = _cc.subVectors(Bn, A), L2 = ab.lengthSq();
+    const sq = _kq.copy(R).multiply(sk.q), base = _cd.copy(sk.pos).applyQuaternion(R).add(this.body.position), rad = 0.17;
+    let wsum = 0, worst = 0; _cg.set(0, 0, 0);
+    for (let i = 0; i < 5; i++) {
+      const p = _ce.set(0, SKI.thick, (i / 4 * 2 - 1) * SKI.len * 0.45).applyQuaternion(sq).add(base);
+      const tt = clamp(_cf.subVectors(p, A).dot(ab) / L2, 0, 1), c = _cf.copy(A).addScaledVector(ab, tt), d = p.distanceTo(c), pen = rad - d;
+      if (pen <= 0 || d < 1e-5) continue;
+      const wi = pen * pen; _cg.addScaledVector(_cf.subVectors(p, c), wi / d); wsum += wi; if (pen > worst) worst = pen;
+    }
+    if (wsum > 0 && _cg.lengthSq() > 1e-10) sk.pos.addScaledVector(_cg.normalize().applyQuaternion(qi), worst * w);
   }
-  placeSki(ski, sp, W) {
+  // seconds until the flight meets the snow (9 if not within about half a second)
+  timeToGround(p, v) {
+    const g0 = p.y - height(p.x, p.z);
+    if (g0 <= 0) return 0;
+    if (g0 > Math.max(0, -v.y) * 0.45 + 1.0 + 0.14 * Math.hypot(v.x, v.z)) return 9;
+    let gp = g0;
+    for (let k = 1; k <= 9; k++) {
+      const tt = k * 0.045, gap = p.y + v.y * tt - 4.905 * tt * tt - height(p.x + v.x * tt, p.z + v.z * tt);
+      if (gap <= 0) return tt - 0.045 + 0.045 * gp / (gp - gap);
+      gp = gap;
+    }
+    return 9;
+  }
+  // a point on a ski, with the palm's and fingers' directions for holding it there (into out: { pt, palm, fingers })
+  skiPoint(sp, ski, at, edgeK, out) {
+    const R = this.rootQ, q = _kq.copy(R).multiply(sp.q);
+    const z = at * SKI.len / 2 * 0.98, side = ski === 'L' ? 1 : -1, o = edgeK === 'in' ? -side : side, aa = Math.abs(at);
+    const w = (SKI.waist + (SKI.tip - SKI.waist) * Math.pow(aa, 2.2)) / 2;
+    const rise = aa > 0.78 ? Math.pow((aa - 0.78) / 0.22, 2.1) * 0.075 : 0;
+    out.pt.set(edgeK === 'end' ? 0 : o * (w + 0.005), rise + SKI.thick * 0.5, z).applyQuaternion(q).add(_kv.copy(sp.pos).applyQuaternion(R)).add(this.body.position);
+    const sx = _kx.set(1, 0, 0).applyQuaternion(q), sy = _ky.set(0, 1, 0).applyQuaternion(q);
+    if (edgeK === 'end') { out.palm.copy(sy).negate(); out.fingers.set(0, 0, Math.sign(at) || 1).applyQuaternion(q).addScaledVector(sy, -0.6).normalize(); }
+    else { out.palm.copy(sx).multiplyScalar(-o); out.fingers.copy(sy).negate().addScaledVector(sx, -o * 0.35).normalize(); }
+    return out;
+  }
+  // the ankle over a ski: in the body's frame, and in the world
+  ankleLocal(sp, out) { return out.set(0, SKI.thick + SKI.stack + this.ankleH, -this.ankleBack).applyQuaternion(sp.q).add(sp.pos); }
+  ankleOf(sp, out) { return this.ankleLocal(sp, out).applyQuaternion(this.rootQ).add(this.body.position); }
+  placeSki(ski, sp) {
     ski.position.copy(sp.pos).applyQuaternion(this.rootQ).add(this.body.position);
     ski.quaternion.copy(this.rootQ).multiply(sp.q);
   }
   curl(H, amt) {
     for (const f of H.fingers) {
       const a = amt * (f.thumb ? 0.45 : 1) * f.sign;
-      f.bn.quaternion.copy(f.rest).multiply(_q.setFromAxisAngle(f.axis, a));
+      f.bn.quaternion.copy(f.rest).multiply(_q1.setFromAxisAngle(f.axis, a));
     }
   }
   // world points the camera and effects use
@@ -649,9 +902,9 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
   }
   setFirstPerson(on) { /* the head, hair and helmet are on layer 1; the first-person camera leaves that layer out */ }
 }
-function basis(a, b) {
-  const x = a.clone().normalize();
-  const y = b.clone().addScaledVector(x, -b.dot(x)); if (y.lengthSq() < 1e-8) y.set(0, 1, 0).addScaledVector(x, -x.y); y.normalize();
-  const z = V().crossVectors(x, y);
-  return new THREE.Matrix4().makeBasis(x, y, z);
+// an orthonormal basis with x along a and y towards b
+function basisInto(m, a, b) {
+  const x = _bx.copy(a).normalize();
+  const y = _by.copy(b).addScaledVector(x, -b.dot(x)); if (y.lengthSq() < 1e-8) y.set(0, 1, 0).addScaledVector(x, -x.y); y.normalize();
+  return m.makeBasis(x, y, _bz.crossVectors(x, y));
 }

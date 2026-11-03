@@ -1,7 +1,7 @@
 // Cameras: chase (behind the travel, held steady through spins), far chase, first person (a helmet camera at the
 // rider's eyes, turning with the head) and filmer (tripod spots beside the features, panning and zooming to follow).
 import * as THREE from 'three';
-import { height } from './terrain.js?v=5';
+import { height } from './terrain.js?v=6';
 
 const MODES = ['chase', 'far', 'pov', 'film'];
 export class Cams {
@@ -25,7 +25,10 @@ export class Cams {
     if (this.mode === 'fixed') return;
     const cam = this.cam, k = this.first ? 1 : 1 - Math.exp(-dt * 6);
     this.cam.layers.enable(1);
-    const body = sk.state === 'crash' || sk.state === 'air' ? sk.com.clone() : sk.p.clone().add(new THREE.Vector3(0, 1.0, 0));
+    // the body's middle: in the air the centre of mass, on the snow the same height over the feet, so takeoffs and
+    // landings do not jolt the camera (the crouch it follows is already eased)
+    const comH = 0.92 * (1 - (sk.crouch ?? 0.3) * 0.35);
+    const body = sk.state === 'crash' || sk.state === 'air' ? sk.com.clone() : sk.p.clone().add(new THREE.Vector3(0, comH, 0));
     if (this.mode === 'pov' && rig.eye) {
       this.cam.layers.disable(1);
       const q = rig.headQ.clone();

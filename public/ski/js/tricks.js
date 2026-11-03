@@ -4,7 +4,7 @@
 //   [Switch] [Left|Right] [Double] Cork|Rodeo|Bio|Misty 1080 [Mute to Tail]   or   Back Flip, Lincoln Loop, 360...
 // Rails: entry spin, 50-50 or slide, swaps and presses, exit spin ("Left 270 On, Slide, Back Swap, 270 Out").
 import * as THREE from 'three';
-import { GRABS } from './rig.js?v=5';
+import { GRABS, grabDef } from './grabs.js?v=6';
 
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3();
 const MULT = ['', 'Double ', 'Triple ', 'Quad ', 'Quint '];
@@ -37,21 +37,23 @@ export class Tricks {
     A.spin += ang * axis.dot(up) * 180 / Math.PI;
     A.flip += ang * axis.dot(left) * 180 / Math.PI;
     A.roll += ang * axis.dot(fwd) * 180 / Math.PI;
+    A.total += ang * 180 / Math.PI;                 // all the turning, whatever the axis
     // in the pipe: a rotation that first turns the skis uphill is an alley-oop
     if (A.pipe && A.oop === null && Math.abs(A.spin) > 25) { const f = new THREE.Vector3(0, 0, 1).applyQuaternion(sk.q); f.y = 0; const f0 = A.fwd0.clone(); f0.y = 0; A.oop = f.normalize().z < f0.normalize().z - 0.05; }
-    const inv = up.y < -0.2;
+    const inv = up.y < -0.05;
     if (inv && !A.invNow) A.inv++;
     A.invNow = up.y < 0.1 ? (A.invNow || inv) : false;
   }
   event(e, sk) {
     switch (e.type) {
       case 'takeoff':
-        this.air = { sw: e.sw, how: e.how, spin: 0, flip: 0, roll: 0, inv: 0, invNow: false, grabs: [], prevQ: sk.q.clone(), fromRail: e.rail, press: e.press || 0, t0: performance.now(),
+        this.air = { sw: e.sw, how: e.how, spin: 0, flip: 0, roll: 0, total: 0, inv: 0, invNow: false, grabs: [], prevQ: sk.q.clone(), fromRail: e.rail, press: e.press || 0, t0: performance.now(),
           pipe: !!e.pipe, fwd0: new THREE.Vector3(0, 0, 1).applyQuaternion(sk.q), oop: null };
         if (!e.rail) this.railT = this.railT && this.railT.done ? null : this.railT;
         break;
       case 'grab': if (this.air) this.air.grabs.push({ id: e.id, t: 0 }); break;
-      case 'grabEnd': if (this.air) { const g = this.air.grabs.findLast?.(x => x.id === e.id) || this.air.grabs.filter(x => x.id === e.id).pop(); if (g) g.t = e.t; } break;
+      case 'grabEnd': if (this.air) { const g = this.air.grabs.findLast?.(x => x.id === e.id) || this.air.grabs.filter(x => x.id === e.id).pop(); if (g) { g.t = e.t; g.mod = e.mod || ''; } } break;
+      case 'shifty': if (this.air && !this.air.shifty) this.air.shifty = { dir: e.dir, t: e.t }; break;
       case 'land': this.land(e, sk); break;
       case 'railOn': {
         const entry = this.air ? round90(Math.abs(this.air.spin)) : 0;
@@ -60,10 +62,12 @@ export class Tricks {
         this.air = null;
         break;
       }
-      case 'railSwap': if (this.railT) this.railT.swaps.push(e.mode === 'slide' ? (e.dir > 0 ? 'Front Swap' : 'Back Swap') : 'Switch-Up'); break;
+      // from one slide to the other through a 50-50 is a front swap, through switch a back swap; anything else a switch-up
+      case 'railSwap': if (this.railT) { const half = Math.abs(Math.abs(e.from - e.to) - Math.PI) < 0.1; this.railT.swaps.push(half ? (e.mode === 'slide' ? (e.front ? 'Front Swap' : 'Back Swap') : '180 Switch-Up') : 'Switch-Up'); } break;
       case 'railOff': if (this.railT) { this.railT.done = true; this.railT.press = e.press || 0; this.railT.how = e.how; } break;
       case 'railFall': this.railT = null; break;
       case 'butter': this.award(`${e.nose ? 'Nose' : 'Tail'} Butter ${round180(e.deg)}`, 100 + round180(e.deg) / 180 * 110, 'clean'); break;
+      case 'revert': if (this.combo) this.award('Revert', 60, 'clean'); break;
       case 'crash': this.bail(); break;
       case 'respawn': this.air = null; this.railT = null; break;
     }
@@ -94,7 +98,9 @@ export class Tricks {
       return;
     }
     const tAir = e.tAir;
-    if (spinR < 180 && A.inv === 0 && !grabs.length && tAir < 0.9) return;     // a hop, not a trick
+    const shifty = A.shifty && A.shifty.t > 0.15 ? `${A.shifty.dir > 0 ? 'Right' : 'Left'} Shifty` : '';
+    if (spinR < 180 && A.inv === 0 && !grabs.length && !shifty && tAir < 0.9) return;     // a hop, not a trick
+    if (A.how === 'wall' && spinR < 180 && A.inv === 0 && !grabs.length) return;          // slid off a face
     if (A.sw) parts.push('Switch');
     const flipBack = A.flip < 0;
     if (A.inv > 0) {
@@ -104,24 +110,29 @@ export class Tricks {
         if (Math.abs(A.roll) > Math.abs(A.flip)) parts.push(`${mult}Lincoln Loop`);
         else parts.push(`${mult}${flipBack ? 'Back Flip' : 'Front Flip'}`);
       } else {
-        const off = Math.abs(A.flip) < spinAbs * 0.55;
+        // spin-led off-axis rotation is a cork (bio forwards); flip-led, the axis near level, a rodeo (misty forwards)
+        const off = Math.abs(A.flip) < spinAbs * 1.9;
         const kind = flipBack ? (off ? 'Cork' : 'Rodeo') : (off ? 'Bio' : 'Misty');
-        parts.push(A.spin > 0 ? 'Left' : 'Right', `${mult}${kind} ${spinR}`);
+        // off-axis tricks are counted by all their turning (a cork 720 is two turns round its tipped axis), and as
+        // riders count them one inversion fewer than the turns: a cork 720, a double cork 1080, a triple cork 1440
+        const deg = Math.max(spinR, round180(A.total)), invN = Math.max(1, Math.min(A.inv, Math.round(deg / 360) - 1));
+        parts.push(A.spin > 0 ? 'Left' : 'Right', `${MULT[Math.min(invN, 4) - 1]}${kind} ${deg}`);
       }
       pts += A.inv * 360 + (spinR >= 180 ? 120 : 0);
     } else if (spinR >= 180) {
       const pre = A.how === 'pop' && Math.abs(A.press) > 0.35 ? (A.press > 0 ? 'Nollie ' : 'Ollie ') : '';
       if (A.pipe && A.oop) parts.push('Alley-oop');
       parts.push(A.spin > 0 ? 'Left' : 'Right', `${pre}${spinR}`);
-    } else if (!grabs.length) parts.push('Straight Air');
+    } else if (!grabs.length && !shifty) parts.push('Straight Air');
+    if (shifty) { parts.push(shifty); pts += 90; }
     pts += spinR / 180 * 125;
     for (const g of grabs) {
       const d = GRABS[g.id]; if (!d) continue;
       pts += (d.pos ? 90 : 130) + Math.min(1.6, g.t) * (d.pos ? 160 : 240);
     }
-    // a grab held a second or more is tweaked: pulled further and held for style
-    const gn = grabs.map(g => GRABS[g.id] && ((g.t >= 1.0 && !GRABS[g.id].pos ? 'Tweaked ' : '') + GRABS[g.id].name)).filter(Boolean);
-    for (const g of grabs) if (g.t >= 1.0) pts += 80;
+    // a variation (E or R with the grab) is named for what it is; a plain grab held a second or more is tweaked
+    const gn = grabs.map(g => { const d = grabDef(g.id, g.mod); if (!d) return null; return (g.t >= 1.0 && !d.pos && !g.mod ? 'Tweaked ' : '') + d.name; }).filter(Boolean);
+    for (const g of grabs) { if (g.t >= 1.0) pts += 80; if (g.mod) pts += 70; }
     if (gn.length) parts.push(gn.join(' to '));
     pts += tAir * 45;
     if (A.sw) pts *= 1.2;
