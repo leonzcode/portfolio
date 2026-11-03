@@ -8,7 +8,7 @@
    or a door: the albedo from the strip, a flat normal map and a plain
    material map. The terrain files themselves are never changed.
 
-     const items = await loadItemStrip(base, '?v=118');
+     const items = await loadItemStrip(base, '?v=119');
      addItemPieces(items, manifest.layers, albPieces, nrmPieces, spcPieces);
      setItemLayers(manifest.layers);        // js/items.js
 
@@ -18,8 +18,10 @@
    texture array: GPUs allow 2048 layers in one, and the blocks, the
    dimensions' art and every frame together would pass that, leaving the
    whole array unmade and the world black.
+   (A clock in the world still tells the time: render/liveclock.js paints the
+   clock's own layer with the face the dials show.)
 --------------------------------------------------------------------------- */
-import { ITEM_TEX } from './itemdata.js?v=118';
+import { ITEM_TEX } from './itemdata.js?v=119';
 const RAW = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
 const PIECE = 128;
 // how many pictures of the strip go into the texture array: everything before the first frame
