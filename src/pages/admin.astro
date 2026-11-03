@@ -95,6 +95,12 @@ const primary =
           <label class="sr-only" for="adm-csearch">Search comments</label>
           <input id="adm-csearch" type="search" placeholder="Search names and text" class={field + " sm:!w-72"} />
         </div>
+        <div class="adm-bulk">
+          <label class="inline-flex items-center gap-2 cursor-pointer"><input type="checkbox" id="adm-call" class="adm-c-pick" /> Select all shown</label>
+          <span id="adm-csel" class="text-neutral-500"></span>
+          <button type="button" id="adm-cdel" class="adm-del" disabled>Delete selected</button>
+          <span class="text-neutral-400 text-[12.5px]">Shift-click a box to select every comment between it and the last one you clicked.</span>
+        </div>
         <ul id="adm-comments" class="border-t border-neutral-200 dark:border-neutral-800"></ul>
       </div>
 
@@ -180,19 +186,27 @@ const primary =
   .adm-status { font-size: 12.5px; color: #737373; min-height: 1.2em; }
   .adm-status.bad { color: #dc2626; }
 
-  .adm-c { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 16px 0; border-bottom: 1px solid #e5e5e5; }
+  .adm-c { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 16px; padding: 16px 0; border-bottom: 1px solid #e5e5e5; }
+  .adm-c.picked { background: #fef2f2; }
+  .dark .adm-c.picked { background: rgba(69, 10, 10, .35); }
+  .adm-c-pick { grid-row: 1 / span 3; grid-column: 1; align-self: start; margin: 3px 0 0 4px; width: 16px; height: 16px; accent-color: #b91c1c; cursor: pointer; }
+  .adm-c-meta, .adm-c-name { grid-column: 2; }
+  .adm-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 0 0 12px 4px; font-size: 13.5px; }
+  .adm-bulk .adm-c-pick { margin: 0; }
+  .adm-del:disabled { opacity: .45; cursor: default; }
+  .adm-del:disabled:hover { background: transparent; }
   .dark .adm-c { border-color: #262626; }
   .adm-c-meta { font-size: 12.5px; color: #737373; }
   .adm-c-meta a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
   .adm-c-name { font-size: 14px; font-weight: 500; }
-  .adm-c-text { grid-column: 1; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: #404040; }
+  .adm-c-text { grid-column: 2; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: #404040; }
   .dark .adm-c-text { color: #d4d4d4; }
-  .adm-del { grid-row: 1 / span 3; grid-column: 2; align-self: start; padding: 6px 12px; border-radius: 6px; font-size: 13px; border: 1px solid #fca5a5; color: #b91c1c; }
+  .adm-del { grid-row: 1 / span 3; grid-column: 3; align-self: start; padding: 6px 12px; border-radius: 6px; font-size: 13px; border: 1px solid #fca5a5; color: #b91c1c; }
   .adm-del:hover { background: #fef2f2; }
   .dark .adm-del { border-color: #7f1d1d; color: #fca5a5; }
   .dark .adm-del:hover { background: #450a0a; }
 
-  .adm button:focus-visible, .adm select:focus-visible, .adm a:focus-visible { outline: 2px solid var(--pencil); outline-offset: 2px; }
+  .adm input[type="checkbox"]:focus-visible, .adm button:focus-visible, .adm select:focus-visible, .adm a:focus-visible { outline: 2px solid var(--pencil); outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) { .adm * { transition: none !important; } }
 </style>
 
@@ -609,6 +623,30 @@ const primary =
   }
 
   /* ---------- comments ---------- */
+  // the comments ticked for deleting together, by project and id
+  const picked = new Set<string>();
+  const ckey = (c: Comment) => c.slug + "|" + c.id;
+  let lastPick = -1;
+  function shown(): Comment[] {
+    const only = $<HTMLSelectElement>("adm-cfilter").value;
+    const q = $<HTMLInputElement>("adm-csearch").value.trim().toLowerCase();
+    return S!.comments.filter((c) => (!only || c.slug === only) && (!q || (c.name + " " + c.text).toLowerCase().includes(q)));
+  }
+  function pickState() {
+    const list = shown(), on = list.filter((c) => picked.has(ckey(c))).length;
+    const all = $<HTMLInputElement>("adm-call");
+    all.checked = list.length > 0 && on === list.length;
+    all.indeterminate = on > 0 && on < list.length;
+    $("adm-csel").textContent = picked.size ? picked.size + " selected" : "";
+    const b = $<HTMLButtonElement>("adm-cdel");
+    b.disabled = !picked.size;
+    b.textContent = picked.size ? "Delete " + picked.size + " selected" : "Delete selected";
+  }
+  function forgetComments(gone: Comment[]) {
+    const g = new Set(gone);
+    S!.comments = S!.comments.filter((x) => !g.has(x));
+    for (const c of gone) { picked.delete(ckey(c)); const n = S!.counts[c.slug]; if (n && n.comments) n.comments--; }
+  }
   function buildComments() {
     const sel = $<HTMLSelectElement>("adm-cfilter");
     const keep = sel.value;
@@ -633,12 +671,31 @@ const primary =
     const q = $<HTMLInputElement>("adm-csearch").value.trim().toLowerCase();
     const list = S!.comments.filter((c) => (!only || c.slug === only) && (!q || (c.name + " " + c.text).toLowerCase().includes(q)));
     box.textContent = "";
+    lastPick = -1;
+    pickState();
     if (!list.length) {
       box.append(el("li", "py-6 text-[14px] text-neutral-500", S!.comments.length ? "No comments match." : "There are no comments yet."));
       return;
     }
-    for (const c of list) {
-      const li = el("li", "adm-c");
+    for (const [i, c] of list.entries()) {
+      const li = el("li", "adm-c" + (picked.has(ckey(c)) ? " picked" : ""));
+      const tick = el("input", "adm-c-pick");
+      tick.type = "checkbox"; tick.checked = picked.has(ckey(c));
+      tick.setAttribute("aria-label", "Select the comment by " + c.name);
+      tick.addEventListener("click", (e) => {
+        const on = tick.checked;
+        // shift-click: everything between this box and the last one clicked takes this box's state
+        const range = e.shiftKey && lastPick >= 0;
+        const from = range ? Math.min(lastPick, i) : i, to = range ? Math.max(lastPick, i) : i;
+        for (let k = from; k <= to; k++) {
+          const ck = ckey(list[k]);
+          if (on) picked.add(ck); else picked.delete(ck);
+          const row = box.children[k] as HTMLElement | undefined;
+          if (row) { row.classList.toggle("picked", on); const cb = row.querySelector("input") as HTMLInputElement | null; if (cb) cb.checked = on; }
+        }
+        lastPick = i;
+        pickState();
+      });
       const meta = el("p", "adm-c-meta");
       const p = byKey.get(c.slug);
       const a = el("a", "", p ? p.title : c.slug);
@@ -656,16 +713,44 @@ const primary =
           const r = await post(SITE + "/admin", { tok, op: "delete", slug: c.slug, id: c.id });
           if (sessionOver(r)) return;
           if (!r || !r.ok) { alert((r && r.error) || "That did not delete."); del.disabled = false; del.textContent = "Delete"; return; }
-          S!.comments = S!.comments.filter((x) => x !== c);
-          const n = S!.counts[c.slug];
-          if (n && n.comments) n.comments--;
+          forgetComments([c]);
           buildComments();
         } catch { alert("The server could not be reached."); del.disabled = false; del.textContent = "Delete"; }
       });
-      li.append(meta, del, el("p", "adm-c-name", c.name), el("p", "adm-c-text", c.text));
+      li.append(tick, meta, del, el("p", "adm-c-name", c.name), el("p", "adm-c-text", c.text));
       box.append(li);
     }
   }
+  $("adm-call").addEventListener("change", () => {
+    const on = $<HTMLInputElement>("adm-call").checked;
+    for (const c of shown()) { if (on) picked.add(ckey(c)); else picked.delete(ckey(c)); }
+    drawComments();
+  });
+  $("adm-cdel").addEventListener("click", async () => {
+    const gone = S!.comments.filter((c) => picked.has(ckey(c)));
+    if (!gone.length) return;
+    if (!confirm("Delete " + gone.length + (gone.length === 1 ? " comment" : " comments") + "? This cannot be undone.")) return;
+    const b = $<HTMLButtonElement>("adm-cdel");
+    b.disabled = true; b.textContent = "Deleting " + gone.length + "\u2026";
+    try {
+      // one request for the lot; a server from before it knew "deleteMany" gets them one at a time
+      let r = await post(SITE + "/admin", { tok, op: "deleteMany", items: gone.map((c) => ({ slug: c.slug, id: c.id })) });
+      if (sessionOver(r)) return;
+      let done = gone;
+      if (r && r.error === "Bad request.") {
+        done = [];
+        for (const c of gone) {
+          const one = await post(SITE + "/admin", { tok, op: "delete", slug: c.slug, id: c.id });
+          if (sessionOver(one)) return;
+          if (one && (one.ok || /not there/.test(one.error || ""))) done.push(c);
+        }
+        r = { ok: true, missing: gone.length - done.length };
+      } else if (!r || !r.ok) { alert((r && r.error) || "Those did not delete."); pickState(); return; }
+      forgetComments(done);
+      buildComments();
+      if (r.missing) alert(r.missing + " of them could not be deleted.");
+    } catch { alert("The server could not be reached."); pickState(); }
+  });
   $("adm-cfilter").addEventListener("change", drawComments);
   $("adm-csearch").addEventListener("input", drawComments);
 
