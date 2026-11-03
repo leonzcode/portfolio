@@ -7816,12 +7816,29 @@ creative = true;   // locked to creative for now
    block edits and chat, and renders the other players live. */
 const mp = { ws:null, active:false, id:null, name:null, players:new Map(), lastPos:0, server:'original', serverName:'', border:0, spectator:false };
 let mpTarget = { server:'original', pw:'' };   // which server the next connect joins
-let adminMode = localStorage.getItem('leoncraft_admin')==='1';   // the admin code: join any server, review requests, ADMIN tag
+// The admin code: join any server, review requests, ADMIN tag. The server checks a code typed in /code against its
+// salted hash and answers with a token (kept per mode below); everything admin sends that token, and the server
+// believes nothing else. A mode left on from before tokens is turned off until the code is typed again.
+let adminMode = localStorage.getItem('leoncraft_admin')==='1' && !!localStorage.getItem('leoncraft_atok1');
 // The longer code is the owner one. Everything an admin can do, plus the things
 // that change or destroy somebody else's server: delete it, rename it, redraw
 // its icon, set its password. Owner counts as admin too, so one code is enough.
-let ownerMode = localStorage.getItem('leoncraft_owner')==='1';
+let ownerMode = localStorage.getItem('leoncraft_owner')==='1' && !!localStorage.getItem('leoncraft_atok2');
 function isAdmin(){ return adminMode || ownerMode; }
+function adminTok(){ return (ownerMode && localStorage.getItem('leoncraft_atok2')) || (adminMode && localStorage.getItem('leoncraft_atok1')) || ''; }
+function atokQ(){ return '&atok=' + encodeURIComponent(adminTok()); }
+async function adminCode(code, msgEl){
+  let r = null;
+  try { r = await fetch(mcHttpBase() + '/code', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ code }) }).then(x => x.json()); } catch(e) {}
+  if(!r){ flashCode('Could not check that code. Is the server up?', msgEl); return; }
+  if(r.error){ flashCode(r.error, msgEl); return; }
+  if(!r.level){ flashCode('Unknown code.', msgEl); return; }
+  if(r.level >= 2){ ownerMode = !ownerMode; if(ownerMode) localStorage.setItem('leoncraft_atok2', r.tok); else localStorage.removeItem('leoncraft_atok2'); localStorage.setItem('leoncraft_owner', ownerMode?'1':'0'); }
+  else { adminMode = !adminMode; if(adminMode) localStorage.setItem('leoncraft_atok1', r.tok); else localStorage.removeItem('leoncraft_atok1'); localStorage.setItem('leoncraft_admin', adminMode?'1':'0'); }
+  if(mp.active) sendFx(); if(tabShown) renderTabList();
+  flashCode(r.level >= 2 ? (ownerMode?'OWNER mode on. You can also delete, rename and re-password any server.':'OWNER mode off.')
+                         : (adminMode?'ADMIN mode on. You can join any server and review requests.':'ADMIN mode off.'), msgEl);
+}
 
 /* ---- multiplayer poll: a blocking dialog you must answer before playing (server-tallied, one vote per computer) ---- */
 const pollScreenEl=document.getElementById('pollScreen');
@@ -7907,10 +7924,7 @@ function applyCode(raw, msgEl){
   if(!code) return;
   if(code==='bedwars'){ flashCode('Launching Bed Wars…', msgEl); startBedwars(); return; }
   let note='';
-  if(code==='[removed]'){ adminMode=!adminMode; localStorage.setItem('leoncraft_admin', adminMode?'1':'0'); if(mp.active) sendFx(); if(tabShown) renderTabList();
-    flashCode(adminMode?'ADMIN mode on. You can join any server and review requests.':'ADMIN mode off.', msgEl); return; }
-  if(code==='[removed]'){ ownerMode=!ownerMode; localStorage.setItem('leoncraft_owner', ownerMode?'1':'0'); if(mp.active) sendFx(); if(tabShown) renderTabList();
-    flashCode(ownerMode?'OWNER mode on. You can also delete, rename and re-password any server.':'OWNER mode off.', msgEl); return; }
+  if(/^[0-9]{6,20}$/.test(code)){ adminCode(code, msgEl); return; }   // the admin and owner codes are the server's to check
   if(code==='leoniscool'){ fx.color = fx.color ? '' : NAME_BLUE; note = fx.color ? 'Your name is now blue.' : 'Blue name turned off.'; }
   else if(code==='looc'){ fx.cool=!fx.cool;
     note = fx.cool ? 'COOL. Everyone can see it beside your name.' : 'Not cool any more.'; }
@@ -8109,18 +8123,18 @@ function mpUrl(){
   if(mp.mc){                                        // mecha chameleon: separate round
     const nm=getSavedName();
     return u + (u.indexOf('?')>=0?'&':'?') + 'mode=mecha' + (nm ? '&name='+encodeURIComponent(nm) : '')
-             + (isAdmin() ? '&admin=1' : '') + (fx.cool ? '&cool=1' : '') + (fx.prg ? '&prg=1' : '');
+             + (isAdmin() ? '&admin=1' + atokQ() : '') + (fx.cool ? '&cool=1' : '') + (fx.prg ? '&prg=1' : '');
   }
   if(mp.med){                                       // the map editor, which has a password
     const nm=getSavedName();
     return u + (u.indexOf('?')>=0?'&':'?') + 'mode=mcedit' + (nm ? '&name='+encodeURIComponent(nm) : '')
-             + '&pw=' + encodeURIComponent(med.pw || '') + (isAdmin() ? '&admin=1' : '');
+             + '&pw=' + encodeURIComponent(med.pw || '') + (isAdmin() ? '&admin=1' + atokQ() : '');
   }
   const p = new URLSearchParams();
   p.set('server', mpTarget.server || 'original');
   if(mpTarget.pw) p.set('pw', mpTarget.pw);
   if(mpTarget.spectate) p.set('spectate', '1');
-  if(isAdmin()) p.set('admin', '1');
+  if(isAdmin()){ p.set('admin', '1'); p.set('atok', adminTok()); }
   p.set('device', pollDeviceId());
   return u + (u.indexOf('?')>=0?'&':'?') + p.toString();
 }
@@ -8504,7 +8518,7 @@ async function refreshRequests(){
   if(!reqBoxEl) return;
   let data=null;
   try{
-    const r=await fetch(mcHttpBase()+'/requests?device='+encodeURIComponent(pollDeviceId())+(isAdmin()?'&admin=1':''));
+    const r=await fetch(mcHttpBase()+'/requests?device='+encodeURIComponent(pollDeviceId())+(isAdmin()?'&admin=1'+atokQ():''));
     data=await r.json();
   }catch(e){ reqBoxEl.hidden=true; return; }
   reqBoxEl.innerHTML=''; let shown=0;
@@ -8554,7 +8568,7 @@ async function reviewRequest(r, approve){
   const note = approve ? '' : (prompt('Tell them why, if you like (optional):','')||'');
   try{
     const res=await fetch(mcHttpBase()+'/reviewserver',{ method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ id:r.id, admin:true, approve:!!approve, note }) });
+      body:JSON.stringify({ id:r.id, admin:true, atok:adminTok(), approve:!!approve, note }) });
     const j=await res.json();
     refreshServers((j&&j.error) ? j.error : (approve ? '"'+r.name+'" approved.' : '"'+r.name+'" turned down.'));
   }catch(e){ refreshServers('Network error. Try again?'); }
@@ -8618,7 +8632,7 @@ async function restoreServer(t){
   serversNote('Restoring "'+t.name+'"…');
   try{
     const r=await fetch(mcHttpBase()+'/restoreserver',{ method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ admin:true, id:t.id }) }).then(x=>x.json());
+      body:JSON.stringify({ admin:true, atok:adminTok(), id:t.id }) }).then(x=>x.json());
     srvTrashArmed=null;
     refreshServers((r&&r.ok) ? ('"'+t.name+'" is back.') : ((r&&r.error)||'Could not restore it.'));
   }catch(e){ refreshServers('Network error.'); }
@@ -8627,7 +8641,7 @@ async function purgeServer(t){
   serversNote('Removing "'+t.name+'"…');
   try{
     const r=await fetch(mcHttpBase()+'/purgeserver',{ method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ admin:true, id:t.id }) }).then(x=>x.json());
+      body:JSON.stringify({ admin:true, atok:adminTok(), id:t.id }) }).then(x=>x.json());
     srvTrashArmed=null;
     refreshServers((r&&r.ok) ? ('"'+t.name+'" is gone for good.') : ((r&&r.error)||'Could not remove it.'));
   }catch(e){ refreshServers('Network error.'); }
@@ -8635,7 +8649,7 @@ async function purgeServer(t){
 async function refreshServers(finalNote){
   serversNote(finalNote||'Loading servers…'); srvListEl.innerHTML='';
   let data;
-  try{ const r=await fetch(mcHttpBase()+'/servers'+(isAdmin()?'?admin=1':''),{cache:'no-store'}); data=await r.json(); }
+  try{ const r=await fetch(mcHttpBase()+'/servers'+(isAdmin()?'?admin=1'+atokQ():''),{cache:'no-store'}); data=await r.json(); }
   catch(e){ serversNote(finalNote||'Could not reach the server list. Is the server online?'); refreshRequests(); renderTrash(); return; }
   serversNote(finalNote||'');
   refreshRequests();                                 // pending reviews for an admin, answers for whoever asked
@@ -8765,7 +8779,7 @@ async function dropServerOn(dragId, targetId, above){
   renderServerList();                                    // move it now; the save follows
   try{
     const r=await fetch(mcHttpBase()+'/serverorder',{ method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ admin:true, ids:movable.map(x=>x.id) }) });
+      body:JSON.stringify({ admin:true, atok:adminTok(), ids:movable.map(x=>x.id) }) });
     const jn=await r.json();
     if(jn && jn.error) refreshServers(jn.error);
     else serversNote('Moved "'+moved.name+'".');
@@ -8793,7 +8807,7 @@ async function ssDelete(){
   ssBusy=true; ssMsg('Deleting…');
   try{
     const r=await fetch(mcHttpBase()+'/deleteserver',{ method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ admin:true, owner:ownerMode, id:s.id, device:pollDeviceId() }) }).then(x=>x.json());
+      body:JSON.stringify({ admin:true, atok:adminTok(), owner:ownerMode, id:s.id, device:pollDeviceId() }) }).then(x=>x.json());
     if(r && r.error){ ssMsg(r.error, true); ssBusy=false; ssSetDelete(false); return; }
     closeServerSettings('Deleted "'+s.name+'".');
   }catch(e){ ssMsg('Network error. Try again?', true); ssBusy=false; }
@@ -8853,7 +8867,7 @@ async function ssTogglePw(){
     ssRenderPw();
     try{
       const r=await fetch(mcHttpBase()+'/revealpassword',{ method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ admin:true, id:ssTarget.id }) });
+        body:JSON.stringify({ admin:true, atok:adminTok(), id:ssTarget.id }) });
       const jn=await r.json();
       if(jn && jn.ok) ssPwValue = jn.password || '';
       else { ssPwShown=false; ssMsg((jn&&jn.error)||'Could not read it.', true); }
@@ -8925,11 +8939,11 @@ async function ssSave(){
   if(!s.mode && ssKind!=='public' && !pw && !s.hasPassword){ ssMsg('Set a password before making it '+SRV_KIND_LABEL[ssKind].toLowerCase()+'.', true); return; }
   ssBusy=true; ssMsg('Saving…');
   const post=(path, body)=>fetch(mcHttpBase()+path, { method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(Object.assign({ admin:true, id:s.id }, body)) }).then(r=>r.json());
+    body:JSON.stringify(Object.assign({ admin:true, atok:adminTok(), id:s.id }, body)) }).then(r=>r.json());
   try{
     const done=[];
     if(name!==s.name || ssIconChanged){
-      const body={ admin:true, id:s.id, name };
+      const body={ admin:true, atok:adminTok(), id:s.id, name };
       if(ssIconChanged) body.icon = ssIcon.toDataURL('image/png');
       const where = s.mode ? '/editmode' : '/editserver';   // a game keeps its name and icon somewhere else
       const r=await fetch(mcHttpBase()+where,{ method:'POST', headers:{'Content-Type':'application/json'},
@@ -9132,7 +9146,7 @@ async function csCreate(){
   const reason=(document.getElementById('csReason').value||'').trim();
   if(csEditing){
     try{
-      const body={ id:csEditing.id, owner:ownerMode, admin:isAdmin(), name, icon, kind:csKind, isPublic:(csKind==='public') };
+      const body={ id:csEditing.id, owner:ownerMode, admin:isAdmin(), atok:adminTok(), name, icon, kind:csKind, isPublic:(csKind==='public') };
       if(password) body.password=password;                 // blank means keep the one it has
       const r=await fetch(mcHttpBase()+'/editserver',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
       const j=await r.json();
