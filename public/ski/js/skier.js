@@ -14,8 +14,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=12';
-import { clamp, smoothstep } from './noise.js?v=12';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=13';
+import { clamp, smoothstep } from './noise.js?v=13';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -160,7 +160,8 @@ export class Skier {
     this.skate += (skateWant - this.skate) * Math.min(1, dt * 5);
     this.tuck += ((I.tuck && !I.crouch ? smoothstep(4.5, 8.5, speed) : 0) - this.tuck) * Math.min(1, dt * 4);
     // crouching loads the pop (the knees bend); letting go pops by the speed you have
-    if (I.crouch) { this.crouchT += dt; this.windup = clamp(this.windup + I.steer * dt * 2.4, -1, 1); }
+    // (crouched, the steering no longer winds up a spin: a takeoff never spins by itself, 2026-11-03)
+    if (I.crouch) this.crouchT += dt;
     this.absorb *= Math.exp(-dt * 2.6);
     const crouchWant = I.crouch ? 0.82 : 0.28 + 0.32 * this.tuck + 0.12 * Math.abs(this.edge) + 0.12 * this.brake + this.absorb;
     this.crouch += (Math.min(0.95, crouchWant) - this.crouch) * Math.min(1, dt * (crouchWant > this.crouch ? 10 : 5));
@@ -283,7 +284,9 @@ export class Skier {
     }
     // pop
     if (!I.crouch && this.crouchT > 0.06) {
-      const spin = -(this.windup * AIR.spin * 0.85 + this.turnRate * 0.35);   // + about up is to the left
+      // (no spin from the takeoff: not the turn you were in, not a wind-up; only the spin keys in the air spin you,
+      // 2026-11-03, for "remove the feature where if you lean on a takeoff you automatically spin")
+      const spin = 0;
       this.crouchT = 0;
       this.takeoff(dt, this.popFor(speed), spin, 'pop'); this.windup = 0; return;
     }
@@ -296,7 +299,7 @@ export class Skier {
     if (by > h1 + (this.landT < 0.3 ? 0.03 : 0.004) && speed > 2) {
       // rolled off a lip: a crouch held through it still winds the spin, and letting go just after still pops
       const crouched = I.crouch && this.crouchT > 0.06;
-      this.takeoff(dt, 0, -(this.turnRate * 0.4 + (crouched ? this.windup * AIR.spin * 0.85 : 0)), 'lip');
+      this.takeoff(dt, 0, 0, 'lip');
       this.lateCharge = crouched; if (crouched) this.windup = 0;
       return;
     }
@@ -660,7 +663,7 @@ export class Skier {
     this.v.copy(d).multiplyScalar(this.railV * this.railDir).addScaledVector(leftH, this.railOffV);
     this.setRailQ(false);
     if (!I.crouch && this.crouchT > 0.06) { this.crouchT = 0; this.leaveRail(dt, this.popFor(this.railV) * 0.85, this.railAngV - this.windup * AIR.spin * 0.85, 'pop'); this.windup = 0; return; }
-    if (I.crouch) { this.crouchT += dt; this.windup = clamp(this.windup + (I.steer ? 0 : I.spin) * dt * 2.4, -1, 1); }
+    if (I.crouch) this.crouchT += dt;
     else this.crouchT = 0;
   }
   leaveRail(dt, pop, spin, how) {
