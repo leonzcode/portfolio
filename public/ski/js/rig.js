@@ -10,9 +10,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=9';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=9';
-import { height } from './terrain.js?v=9';
+import { clamp, smoothstep } from './noise.js?v=10';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=10';
+import { height } from './terrain.js?v=10';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -40,8 +40,8 @@ const gpOut = () => ({ pt: V(), palm: V(), fingers: V() });
 export const SKI = { len: 1.78, waist: 0.092, tip: 0.118, thick: 0.017, stack: 0.03 };
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=9';
-import { grabDef } from './grabs.js?v=9';
+export { GRABS } from './grabs.js?v=10';
+import { grabDef } from './grabs.js?v=10';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -195,7 +195,7 @@ export class Rig {
   async load(id, opts = {}) {
     const loader = new GLTFLoader();
     const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    const gl = await loader.loadAsync('./models/' + id + '.glb?v=9');
+    const gl = await loader.loadAsync('./models/' + id + '.glb?v=10');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     this.wrap = new THREE.Group(); this.wrap.add(model); this.body.add(this.wrap);
@@ -260,7 +260,7 @@ export class Rig {
   setPoles(on) { this.poles = on; if (this.poleL) { this.poleL.visible = on; this.poleR.visible = on; } }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=9';
+    const maskUrl = './models/' + id + '_m.png?v=10';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -686,7 +686,9 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     // a landing bends the knees with the chest kept up; a transition's compression puts the chest over the knees
     const lean = ln + (0.42 * crouch * (1 - gW) - 0.42 * (landX + absorb) + 0.1 * absorb + 0.45 * crunch + 1.4 * Math.max(0, comp)) * onSnow + 0.02 * wob(tt * 1.1, 9.1);
     const idleY = 0.035 * wob(tt * 0.9, 3.7) * onSnow * (1 - railW);      // the shoulders turn a little, riding along
-    const chYaw = tw + spinLead - lowYaw * 0.4 + idleY, pelYaw = tw * (0.3 + 0.12 * railW) - spinLead * 0.15 + lowYaw * 0.55 - pushS * 0.1 * strk;
+    // (in a grab the hips turn with it too, the grab's own share or a third: not the chest alone, 2026-11-03)
+    const hipK = sp('hipK', gd ? (gd.hips ?? 0.35) : 0.3, 10);
+    const chYaw = tw + spinLead - lowYaw * 0.4 + idleY, pelYaw = tw * (hipK + 0.12 * railW) - spinLead * 0.15 + lowYaw * 0.55 - pushS * 0.1 * strk;
     const chRoll = phi * 0.3 + sd * 0.6 + pushS * 0.1 * strk + 0.025 * wob(tt * 1.3, 5.2) * onSnow, pelRoll = phi * 0.72 + sd * 0.2, pelPitch = lean * 0.4 * gW;
     // on the snow the outside leg must still reach its boot: the pelvis comes down rather than lifting a ski
     if (airW < 0.5) {

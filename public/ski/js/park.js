@@ -3,8 +3,8 @@
 // function the physics reads directly; kickers and the pipe also get meshes of their own, much finer at the lips,
 // knuckles and coping than the terrain's patches.
 import * as THREE from 'three';
-import { baseLine, pitchAt, ground } from './terrain.js?v=9';
-import { smoothstep, clamp, smax } from './noise.js?v=9';
+import { baseLine, pitchAt, ground } from './terrain.js?v=10';
+import { smoothstep, clamp, smax } from './noise.js?v=10';
 
 const RAD = Math.PI / 180;
 

@@ -12,7 +12,10 @@
 // (+ drops the right shoulder), arms: what the free arm does ('out', 'up', 'wide')
 export const GRABS = {
   safety:    { name: 'Right Safety', hand: 'R', hands: [['R', 'R', 0, 'out']], arms: 'out', ski: { L: [-0.03, 0.04, 0.08, 0.02, -0.06, 0], R: [0.03, 0, 0.08, -0.02, -0.06, 0] }, tuck: 0.55, lean: 1.15, twist: 0.15, side: 0.3 },
-  mute:      { name: 'Left Mute', hand: 'L', hands: [['L', 'R', 0.3, 'out']], arms: 'out', ski: { L: [-0.04, -0.1, 0, -0.3, 0.1, 0], R: [0.14, 0.1, 0.1, 0.6, -0.7, -0.2] }, tuck: 0.55, lean: 0.95, twist: -0.4, side: -0.3 },
+  // (2026-11-03, against photos: the grabbed ski's tip pulled up high and across in front, so the skis cross in a big
+  // X out ahead, the knees tucked up near the chest with the chest fairly upright, hips and shoulders turned to the
+  // grab, the grabbing shoulder dropped, the free arm up; it was folded over low knees with the X down at the feet)
+  mute:      { name: 'Left Mute', hand: 'L', hands: [['L', 'R', 0.28, 'out']], arms: 'up', ski: { L: [-0.05, -0.08, 0.06, -0.4, 0.2, 0.1], R: [0.16, 0.16, 0.16, 0.78, -0.95, -0.3] }, tuck: 0.78, lean: 0.5, twist: -0.6, side: -0.38, hips: 0.55 },
   japan:     { name: 'Right Japan', hand: 'R', hands: [['R', 'L', 0, 'in']], arms: 'up', ski: { L: [-0.08, 0.22, -0.1, -0.4, 0.15, -0.15], R: [0.04, -0.15, 0.18, 0.3, 0.45, 0] }, tuck: 0.55, lean: 1.1, twist: 0.35, side: 0.3 },
   tail:      { name: 'Right Tail', hand: 'R', kind: 'tail', hands: [['R', 'R', -0.85, 'out']], arms: 'up', ski: { L: [0, 0.05, -0.2, -0.05, 0.7, 0], R: [0, 0.05, -0.2, 0.05, 0.75, 0] }, tuck: 0.35, lean: 0.3, twist: -0.45, side: 0.3 },
   nose:      { name: 'Nose', hand: 'R', hands: [['R', 'R', 0.94, 'end']], arms: 'out', ski: { L: [0, -0.03, 0.26, 0.04, -0.8, 0], R: [0, -0.03, 0.27, -0.04, -0.82, 0] }, tuck: 0.25, lean: 1.4, twist: 0.1, side: 0.25 },
