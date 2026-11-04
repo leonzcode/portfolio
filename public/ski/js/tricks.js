@@ -4,7 +4,7 @@
 //   [Switch] [Left|Right] [Double] Cork|Rodeo|Bio|Misty 1080 [Mute to Tail]   or   Back Flip, Lincoln Loop, 360...
 // Rails: entry spin, 50-50 or slide, swaps and presses, exit spin ("Left 270 On, Slide, Back Swap, 270 Out").
 import * as THREE from 'three';
-import { GRABS, grabDef } from './grabs.js?v=6';
+import { GRABS, grabDef } from './grabs.js?v=7';
 
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3();
 const MULT = ['', 'Double ', 'Triple ', 'Quad ', 'Quint '];

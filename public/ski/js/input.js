@@ -7,14 +7,14 @@
 //   shred: the layout of Shredsauce's keyboard controls (shredsauce.com/controls): arrows turn and spin, Up crouches
 //          for less drag and front flips, Down brakes and back flips, G/H Lincoln loops, Space crouch and pop, N butters
 //          and presses, grabs on A Z S X D C F V B (left hand on the top row, right hand under it), each tweaked or
-//          varied by E or R held with it, Tab sets a marker, Enter goes back to it (held, to the top), P looks over
+//          varied by E or R held with it, Tab sets a marker, Enter goes back to the last crash (or the marker, if set since; twice, to the start), P looks over
 //          the other shoulder riding switch, a quick second press of a spin key spins faster, N pressed twice just
 //          after a landing reverts. Shift skates forward on the snow (in the air: a shifty, Left Shift to the left,
 //          Right Shift or Alt to the right). Q changes the camera here (C is a grab).
 // A press is only used within 0.3 s of being made, so an old one never fires later.
 // All: C changes the camera (Q in the shred scheme), Backspace goes back to the top, Esc pauses; R starts again a
 // little earlier (mouse and keys; in the shred scheme R is a tweak key and Enter does it).
-import { POSITIONS } from './grabs.js?v=6';
+import { POSITIONS } from './grabs.js?v=7';
 export { POSITIONS };
 
 const GRAB_KEYS = {
@@ -42,7 +42,7 @@ export function keyHelp(scheme) {
     ['Space', 'crouch for less drag, let go to pop'], ['N', 'butter on the nose (with ↓ the tail), turn it with ← / →; on a rail a nose or tail press'],
     ['N N', 'just after a landing: a revert'], ['Air: ← ← / → →', 'a quick second press spins faster'],
     ['Grab + E / R', 'tweak it or vary it (poked, uncrossed blunt, truck to the left or right)'],
-    ['Tab', 'set a marker'], ['Enter', 'back to the marker (hold: back to the top)'], ['P', 'look over the other shoulder riding switch'], ['T', 'chat (in a room)'],
+    ['Tab', 'set a marker'], ['Enter', 'back to your last crash (or your marker); twice: the start'], ['P', 'look over the other shoulder riding switch'], ['T', 'chat (in a room)'],
   ];
   else base = [
     ['A / D', 'turn'], ['W', 'tuck, skate on the flat'], ['S', 'brake (hold harder to stop)'], ['Space', 'hold to crouch, let go to pop'],

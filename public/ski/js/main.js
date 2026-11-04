@@ -1,21 +1,21 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=6';
-import { makePark, emptyPark, featureMesh, railMeshes } from './park.js?v=6';
-import { makeMaterials, snowUniforms } from './materials.js?v=6';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=6';
-import { Mountain, SPOTS } from './dem.js?v=6';
-import { Skier } from './skier.js?v=6';
-import { Rig } from './rig.js?v=6';
-import { Tricks } from './tricks.js?v=6';
-import { Input } from './input.js?v=6';
-import { Cams } from './camera.js?v=6';
-import { Tracks, Spray } from './snow.js?v=6';
-import { Hud } from './hud.js?v=6';
-import { Sound } from './sound.js?v=6';
-import { Net } from './net.js?v=6';
-import { mergeGear } from './gear.js?v=6';
-import { Touch, TOUCH_GRABS } from './touch.js?v=6';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=7';
+import { makePark, emptyPark, featureMesh, railMeshes } from './park.js?v=7';
+import { makeMaterials, snowUniforms } from './materials.js?v=7';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=7';
+import { Mountain, SPOTS } from './dem.js?v=7';
+import { Skier } from './skier.js?v=7';
+import { Rig } from './rig.js?v=7';
+import { Tricks } from './tricks.js?v=7';
+import { Input } from './input.js?v=7';
+import { Cams } from './camera.js?v=7';
+import { Tracks, Spray } from './snow.js?v=7';
+import { Hud } from './hud.js?v=7';
+import { Sound } from './sound.js?v=7';
+import { Net } from './net.js?v=7';
+import { mergeGear } from './gear.js?v=7';
+import { Touch, TOUCH_GRABS } from './touch.js?v=7';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
@@ -108,7 +108,7 @@ sel.rider.onchange = () => { opts.rider = sel.rider.value; save(); loadRider(); 
 const soundBox = $('sound'); soundBox.checked = opts.sound !== false; sound.on = soundBox.checked;
 soundBox.onchange = () => { opts.sound = soundBox.checked; sound.on = opts.sound; save(); };
 $('showfps').onchange = e => { opts.showfps = e.target.checked; save(); if (!opts.showfps) $('fps').textContent = ''; };
-let playing = false, paused = false, replay = null, enterHeld = false, enterWas = false;
+let playing = false, paused = false, replay = null, lastEnter = 0;
 const chatOpen = () => document.activeElement && document.activeElement.id === 'chatin';
 function play() {
   $('menu').classList.add('hidden'); $('pause').classList.add('hidden'); hud.show(true);
@@ -215,10 +215,21 @@ function tick() {
     if (input.took('Backspace')) toStart();
     if (opts.scheme === 'shred') {
       if (input.took('Tab')) hud.flash(skier.setMarker() ? 'Marker set' : 'Set a marker on the snow', 900);
-      // Enter: back to the marker; held a second, back to the top
-      if (input.down('Enter') && !chatOpen()) { if (input.heldFor('Enter') > 900 && !enterHeld) { enterHeld = true; toStart(); hud.flash('Back to the top', 900); } }
-      else { if (enterWas && !enterHeld && !chatOpen()) { if (!skier.toMarker()) toStart(); cams.first = true; } enterHeld = false; }
-      enterWas = input.down('Enter');
+      /* Enter: back to where you last crashed (the run-in a few seconds before it), or to the Tab marker when that was
+         set since; pressed again straight away, back to the start (2026-11-03) */
+      if (input.took('Enter') && !chatOpen()) {
+        const now = performance.now();
+        if (now - lastEnter < 550) { lastEnter = 0; toStart(); hud.flash('Back to the start', 900); }
+        else {
+          lastEnter = now;
+          const c = skier.crashSpot, m = skier.marker, toM = m && skier.state !== 'crash' && (!c || m.at > c.at);
+          if (toM && skier.toMarker()) hud.flash('Back to your marker', 900);
+          else if (skier.toCrash()) hud.flash('Back to your last crash', 900);
+          else if (skier.toMarker()) hud.flash('Back to your marker', 900);
+          else { toStart(); hud.flash('Back to the start', 900); }
+        }
+        cams.first = true;
+      }
     }
     // the mouse scheme: the pointing turns into a wanted direction across the fall line
     if (opts.scheme === 'mouse' && skier.state === 'ground' && !I.steer) {

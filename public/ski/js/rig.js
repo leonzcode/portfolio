@@ -10,9 +10,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=6';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=6';
-import { height } from './terrain.js?v=6';
+import { clamp, smoothstep } from './noise.js?v=7';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=7';
+import { height } from './terrain.js?v=7';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -39,8 +39,8 @@ const gpOut = () => ({ pt: V(), palm: V(), fingers: V() });
 export const SKI = { len: 1.78, waist: 0.092, tip: 0.118, thick: 0.017, stack: 0.03 };
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=6';
-import { grabDef } from './grabs.js?v=6';
+export { GRABS } from './grabs.js?v=7';
+import { grabDef } from './grabs.js?v=7';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -194,7 +194,7 @@ export class Rig {
   async load(id, opts = {}) {
     const loader = new GLTFLoader();
     const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    const gl = await loader.loadAsync('./models/' + id + '.glb?v=6');
+    const gl = await loader.loadAsync('./models/' + id + '.glb?v=7');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     this.wrap = new THREE.Group(); this.wrap.add(model); this.body.add(this.wrap);
@@ -219,10 +219,20 @@ export class Rig {
       const mn = o.material && o.material.name;
       if (far || mn === 'hair') { o.visible = false; continue; }
       if (mn === 'head') o.layers.set(1);
-      if (mn === 'body') { bodyMat = o.material; o.geometry.computeBoundingBox(); this.bodyH = o.geometry.boundingBox.max.y - o.geometry.boundingBox.min.y; }
+      if (mn === 'body') {
+        bodyMat = o.material; o.geometry.computeBoundingBox(); this.bodyH = o.geometry.boundingBox.max.y - o.geometry.boundingBox.min.y; this.bodyY0 = o.geometry.boundingBox.min.y;
+        // the legs in the mesh's own space, for the trousers: the middle between them and how far out each one's middle
+        // is, measured from the shins and thighs themselves (the mesh's x is across the body)
+        const P = o.geometry.attributes.position, yb = this.bodyY0, H = this.bodyH;
+        let n = 0, sx = 0; for (let i = 0; i < P.count; i++) { const y = (P.getY(i) - yb) / H; if (y > 0.12 && y < 0.4) { sx += P.getX(i); n++; } }
+        if (n) {
+          const mx = sx / n; let sa = 0; for (let i = 0; i < P.count; i++) { const y = (P.getY(i) - yb) / H; if (y > 0.12 && y < 0.4) sa += Math.abs(P.getX(i) - mx); }
+          this.legMid = V().set(mx, 0, 0); this.legLat = V().set(1, 0, 0); this.legHalf = sa / n;
+        }
+      }
       this.skel = o.skeleton;
     }
-    if (bodyMat) { await this.dress(bodyMat, id); if (this.dressU) this.dressU.uPuff.value = 0.022 * (this.bodyH > 0.1 ? (this.bodyH > 10 ? this.bodyH / 1.75 : 1) : 1); }
+    if (bodyMat) { await this.dress(bodyMat, id); if (this.dressU) { this.dressU.uPuff.value = 0.022 * (this.bodyH > 0.1 ? (this.bodyH > 10 ? this.bodyH / 1.75 : 1) : 1); this.dressU.uLeg.value.set(this.bodyY0 || 0, Math.max(1e-3, this.bodyH || 1.75)); if (this.legLat) { this.dressU.uLegMid.value.copy(this.legMid); this.dressU.uLegLat.value.copy(this.legLat); this.dressU.uLegHalf.value = this.legHalf; } } }
     // face it along +Z, feet at y = 0
     this.root.updateMatrixWorld(true);
     const lr = this.wpos(this.b.thL).sub(this.wpos(this.b.thR));
@@ -249,7 +259,7 @@ export class Rig {
   setPoles(on) { this.poles = on; if (this.poleL) { this.poleL.visible = on; this.poleR.visible = on; } }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=6';
+    const maskUrl = './models/' + id + '_m.png?v=7';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -260,17 +270,30 @@ export class Rig {
       uMask: { value: mask }, uMeans: { value: new THREE.Vector3(...means) },
       uTop: { value: col(this.outfit.jacket) }, uBottom: { value: col(this.outfit.pants) }, uShoe: { value: col('#202227') }, uGlove: { value: col(this.outfit.gloves) },
       uHandA: { value: new THREE.Vector4(-1, -1, -1, -1) }, uHandB: { value: new THREE.Vector4(-1, -1, -1, -1) },
-      uMaskV: { value: mask }, uPuff: { value: 0 },
+      uMaskV: { value: mask }, uPuff: { value: 0 }, uLeg: { value: new THREE.Vector2(0, 1.75) }, uLegMid: { value: new THREE.Vector3() }, uLegLat: { value: new THREE.Vector3(1, 0, 0) }, uLegHalf: { value: 0 },
     };
     this.dressU = U;
     mat.onBeforeCompile = (s) => {
       Object.assign(s.uniforms, U);
       s.vertexShader = s.vertexShader.replace('#include <common>', `#include <common>
-uniform vec4 uHandA; uniform vec4 uHandB; varying float vGlove; uniform sampler2D uMaskV; uniform float uPuff;`)
-        // ski clothes are puffier than street clothes: jacket and trousers pushed out along their normals
+uniform vec4 uHandA; uniform vec4 uHandB; varying float vGlove; uniform sampler2D uMaskV; uniform float uPuff; uniform vec2 uLeg; uniform vec3 uLegMid; uniform vec3 uLegLat; uniform float uLegHalf;`)
+        /* ski clothes are puffier than street clothes: the jacket pushed out along its normals, and baggy trousers
+           (2026-11-03, for "more baggy pants"): loose from the hips and widest at the shins, flared over the boots,
+           with a few loose folds stacked above the hem, the hem let down over the boots' tops, and the insides of the
+           legs kept apart (pushed out as far, the two legs met in one skirt). hN is the height up the body, 0 at the
+           soles; side, which leg (from the hips' own place in the mesh). */
         .replace('#include <begin_vertex>', `#include <begin_vertex>
 #ifdef USE_MAP
-{ vec4 mkv = texture2D(uMaskV, uv); transformed += normal * uPuff * (mkv.r * 1.0 + mkv.g * 0.8); }
+{ vec4 mkv = texture2D(uMaskV, uv);
+  float hN = clamp((position.y - uLeg.x) / uLeg.y, 0.0, 1.0);
+  float shin = 1.0 - smoothstep(0.1, 0.46, hN);
+  float folds = shin * shin * (0.5 + 0.5 * sin(hN * 120.0));
+  float side = dot(position - uLegMid, uLegLat);
+  float mid = uLegHalf > 0.0 ? 1.0 - smoothstep(0.15 * uLegHalf, 0.6 * uLegHalf, abs(side)) : 0.0;
+  float inner = max(clamp(-dot(normal, uLegLat) * sign(side), 0.0, 1.0), mid) * (1.0 - smoothstep(0.42, 0.55, hN));
+  float pants = mkv.g * (2.1 + 2.5 * shin + 0.6 * folds) * (1.0 - 0.8 * inner);
+  transformed += normal * uPuff * (mkv.r * 1.25 + pants);
+  transformed.y -= mkv.g * uPuff * 3.2 * (1.0 - smoothstep(0.05, 0.16, hN)); }
 #endif`)
         .replace('#include <skinning_vertex>', `#include <skinning_vertex>
 #ifdef USE_SKINNING
@@ -537,7 +560,8 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     }
     const kneeUp = sp('kneeUp', (gd ? 0.12 + 0.5 * gd.tuck : air ? 0.13 + 0.28 * crouch + clamp(Math.abs(Wx) * 0.02, 0, 0.1) + clamp(Math.abs(Wy) * 0.008, 0, 0.05) : 0) * (1 - popK), gd ? 18 : 13);
     // ---- skis, in the body's frame
-    const stance = 0.122 + 0.03 * crouch;
+    // (the feet a little under hip width: a relaxed, narrow park stance)
+    const stance = 0.094 + 0.018 * crouch;
     this.railC2 = rail ? Math.cos(ra) ** 2 : 1;
     // a butter or press tips the skis about the pressed end (on a rail the contact under the boots in a slide); the
     // pivot's place eases between them, so leaving a box mid-press does not snap the skis
