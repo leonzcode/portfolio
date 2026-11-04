@@ -14,8 +14,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=13';
-import { clamp, smoothstep } from './noise.js?v=13';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=14';
+import { clamp, smoothstep } from './noise.js?v=14';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -149,7 +149,7 @@ export class Skier {
     // (let go, the skis flatten at once and the turn stops with the key: no turning on after it, 2026-11-03; the other way,
     // they roll across quickly; onto the edge, still eased)
     const release = !u && !this.mouseTarget, back = eWant * this.edge < 0 || Math.abs(eWant) < Math.abs(this.edge);
-    const wE = (this.mouseTarget ? 9 : release ? 30 : back ? 18 : 10) * (release ? 1 : clamp(1 - (slipNow - 3) / 6, 0.55, 1));
+    const wE = (this.mouseTarget ? 9 : release ? 30 : back ? 16 : 8) * (release ? 1 : clamp(1 - (slipNow - 3) / 6, 0.55, 1));
     this.edgeV += (wE * wE * (eWant - this.edge) - 2 * wE * this.edgeV) * dt;
     this.edge = clamp(this.edge + this.edgeV * dt, -1.1, 1.1);
     // the brake builds over about half a second (a tap is a speed check, a hold a hockey stop) and eases off when let go
@@ -194,10 +194,12 @@ export class Skier {
          full one the carve (radius 15.5 m x cos of the edge). Both grow from nothing with the edge, so the turn comes
          in as smoothly as the skis tip. Pivoting (the feet steering the skis round, mostly when slow) follows the edge
          too. */
-      const Rsc = 15.5, eN = clamp(ae / 0.75, 0, 1);
-      const carving = Math.sign(this.edge) * eN * Math.abs(vf) / (Rsc * Math.cos(Math.min(ae, 1.15))) * grip;
+      // (TURN: how sharply the keys turn you, 0.6 of the sidecut's own: with no drift a full edge at speed went round in
+      // about 7 m, too sensitive, 2026-11-03)
+      const Rsc = 15.5, TURN = 0.6, eN = clamp(ae / 0.75, 0, 1);
+      const carving = Math.sign(this.edge) * eN * Math.abs(vf) / (Rsc * Math.cos(Math.min(ae, 1.15))) * grip * TURN;
       const steerNow = clamp(this.edge / Math.max(0.2, edgeMax), -1, 1);
-      const pivot = (buttering ? 4.2 : 2.2 - 1.75 * smoothstep(1, 14, speed)) * (buttering ? u : steerNow);
+      const pivot = (buttering ? 4.2 : (2.2 - 1.75 * smoothstep(1, 14, speed)) * 0.7) * (buttering ? u : steerNow);
       let target = Math.abs(carving) > Math.abs(pivot) ? carving : pivot;
       if (this.crouch > 0.6 && I.crouch && speed < 6) target *= 0.5;
       // after a brake the skis come back round to the way you were going (unless you steer)
