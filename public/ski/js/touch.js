@@ -2,7 +2,7 @@
 // brake; in the air it spins and flips), and buttons on the right: Pop (hold to crouch, let go to pop), Grab (hold
 // for the grab shown on the picker above it, tap the picker to change grab), Butter (hold, the stick presses the nose
 // or tail), and the camera.
-import { GRABS } from './grabs.js?v=7';
+import { GRABS } from './grabs.js?v=8';
 
 const ORDER = ['safety', 'mute', 'japan', 'tail', 'nose', 'truck', 'critical', 'octo', 'blunt', 'stalefish', 'bowarrow', 'dubtail', 'seatbelt', 'daffy', 'spread', 'backscratch', 'ironcross'];
 

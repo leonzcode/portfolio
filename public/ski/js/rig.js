@@ -10,9 +10,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=7';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=7';
-import { height } from './terrain.js?v=7';
+import { clamp, smoothstep } from './noise.js?v=8';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=8';
+import { height } from './terrain.js?v=8';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -39,8 +39,8 @@ const gpOut = () => ({ pt: V(), palm: V(), fingers: V() });
 export const SKI = { len: 1.78, waist: 0.092, tip: 0.118, thick: 0.017, stack: 0.03 };
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=7';
-import { grabDef } from './grabs.js?v=7';
+export { GRABS } from './grabs.js?v=8';
+import { grabDef } from './grabs.js?v=8';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -194,7 +194,7 @@ export class Rig {
   async load(id, opts = {}) {
     const loader = new GLTFLoader();
     const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    const gl = await loader.loadAsync('./models/' + id + '.glb?v=7');
+    const gl = await loader.loadAsync('./models/' + id + '.glb?v=8');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     this.wrap = new THREE.Group(); this.wrap.add(model); this.body.add(this.wrap);
@@ -259,7 +259,7 @@ export class Rig {
   setPoles(on) { this.poles = on; if (this.poleL) { this.poleL.visible = on; this.poleR.visible = on; } }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=7';
+    const maskUrl = './models/' + id + '_m.png?v=8';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -468,6 +468,20 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     // a spin slowing down (opening up to stop it): the arms go out
     const open = sp('open', air && dt > 0 ? clamp((Math.abs(this._pWy || 0) - Math.abs(Wy)) / dt * 0.12, 0, 1) : 0, 10);
     this._pWy = Wy;
+    /* the air, loose (2026-11-03, for "more human like rather than robot like" and flips that look "lively and loose
+       rather than stiff"): how fast the rotation changes, through an underdamped spring, so the skis and legs lag a
+       flip or spin thrown and swing past when it stops; how much of a front or back flip the body is in (a tuck, the
+       arms up for a back flip, reaching for the skis in a front flip), the throw that starts one (the head and chest
+       thrown back, or forward) and the opening that ends it (legs and arms out); and in a straight air with nothing
+       held, a slow loose sway through the chest, arms and legs */
+    const aRx = air && dt > 0 && this._pWx !== undefined ? clamp((Wx - this._pWx) / dt, -40, 40) : 0;
+    const aRy = air && dt > 0 && this._pWy2 !== undefined ? clamp((Wy - this._pWy2) / dt, -40, 40) : 0;
+    this._pWx = Wx; this._pWy2 = Wy;
+    const Ax = sp('ax', aRx, 8, 0.5), Ay = sp('ay', aRy, 8, 0.5);
+    const flF = sp('flF', air ? smoothstep(0.7, 4.2, Wx) : 0, 7, 0.75), flB = sp('flB', air ? smoothstep(0.7, 4.2, -Wx) : 0, 7, 0.75);
+    const throwF = sp('thF', air && Wx > 0.5 && aRx > 0 ? clamp(aRx / 6, 0, 1) : 0, 9, 0.6);
+    const arch = sp('arch', air && Wx < -0.5 && aRx < 0 ? clamp(-aRx / 6, 0, 1) : 0, 9, 0.6);
+    const opening = sp('opening', air && Math.abs(Wx) > 0.5 && aRx * Wx < 0 ? clamp(Math.abs(aRx) / 6, 0, 1) : 0, 8, 0.6);
     const ub = _ub.set(0, 1, 0).applyQuaternion(R);
     this._gT = ground && !changed ? (this._gT || 0) + dt : 0;
     let sx = 0, sz = 0, an = 0;
@@ -542,23 +556,35 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     // a shifty: the lower body turned across under the body, the chest the other way (unwound before the landing)
     const lowYaw = sp('lowYaw', air ? -(S.shift || 0) * 1.3 : 0, air ? 15 : 20, air ? 0.8 : 1) * smooth01(ext * 1.6);
     // the air shape of each ski: the grab's or position's, or loose straight-air skis
-    const twk = 1 + 0.22 * smooth01((this.grabHeld - 0.45) / 0.75);
+    // (a held grab breathes: the grabbed ski pulled in a little further and let back, once it is set)
+    const twk = 1 + 0.22 * smooth01((this.grabHeld - 0.45) / 0.75) + 0.05 * Math.sin(this.grabHeld * 3.4) * smooth01(this.grabHeld / 0.6);
+    const flow = air ? (1 - gW) * (1 - smoothstep(1.2, 3.5, Math.abs(Wx) + Math.abs(Wy))) : 0;
     for (let k = 0; k < 2; k++) {
       const s = k ? -1 : 1, A = this.air6[k], N = SKN[k];
       if (gd) {
         const g = gd.ski[k ? 'R' : 'L']; for (let i = 0; i < 6; i++) TG[i] = g[i] * (i < 3 ? twk : 1 + (twk - 1) * 0.8);
-        // a held ski is never pulled past about 60 degrees tip or tail up (a tweaked mute stood it vertical behind the back)
-        if (gd.hands.length) TG[4] = 1.05 * Math.tanh(TG[4] / 1.05);
+        // a held ski is never pulled past about 60 degrees tip or tail up (a tweaked mute stood it vertical behind the
+        // back); a tail grab's ski goes further, its tail up at the hand
+        const cap = gd.kind === 'tail' ? 1.35 : 1.05;
+        if (gd.hands.length) TG[4] = cap * Math.tanh(TG[4] / cap);
       }
       else if (air) {
-        TG[0] = -s * 0.012; TG[1] = 0.015 * Math.sin(t * 1.3 + s); TG[2] = s * 0.035 * Math.sin(t * 1.9 + 0.7);
-        TG[3] = -s * 0.035 + 0.04 * Math.sin(t * 1.25 + s * 0.9) - clamp(Wy * 0.012, -0.08, 0.08);
-        TG[4] = -0.13 + 0.05 * Math.sin(t * 1.6 + s * 0.8) + clamp(Wx * 0.02, -0.12, 0.12);
-        TG[5] = s * 0.05 * Math.sin(t * 1.1 + 0.3);
+        TG[0] = -s * 0.012 + s * 0.045 * flow * wob(tt * 0.8, 21 + k * 3.1); TG[1] = 0.015 * Math.sin(t * 1.3 + s) + 0.07 * flow * wob(tt * 1.35, 3 + k * 2.7);
+        TG[2] = s * 0.035 * Math.sin(t * 1.9 + 0.7) + 0.1 * flow * wob(tt * 1.05, 7 + k * 1.9);
+        TG[3] = -s * 0.035 + 0.04 * Math.sin(t * 1.25 + s * 0.9) - clamp(Wy * 0.012, -0.08, 0.08) + 0.1 * flow * wob(tt * 0.9, 2 + k * 4.2);
+        TG[4] = -0.13 + 0.05 * Math.sin(t * 1.6 + s * 0.8) + clamp(Wx * 0.02, -0.12, 0.12) + 0.13 * flow * wob(tt * 1.2, 5 + k * 3.3);
+        TG[5] = s * 0.05 * Math.sin(t * 1.1 + 0.3) + s * 0.05 * flow * wob(tt * 1.0, 9 + k * 2.2);
+        // a flip: a back flip brings the tips up to the chest and the skis forward, a front flip the tails up behind
+        TG[4] += -0.5 * flB + 0.36 * flF; TG[2] += 0.13 * flB - 0.1 * flF; TG[1] += 0.06 * (flB + flF);
+        // each ski a little apart in a flip, one lagging the other (loose legs, not one block)
+        TG[4] += s * 0.16 * (flB + flF) * Math.sin(tt * 2.3 + k); TG[2] += s * 0.07 * (flB + flF) * Math.sin(tt * 1.7 + 0.5); TG[3] += s * 0.08 * (flB + flF);
       } else for (let i = 0; i < 6; i++) TG[i] = 0;
-      for (let i = 0; i < 6; i++) A[i] = sp(N[i], TG[i], gd ? 18 : 11, air ? 0.95 : 1);
+      // the skis trail the rotation: a flip or spin thrown leaves them behind, and they swing past when it stops (the
+      // second ski a little later than the first); held in a grab, half as much
+      if (air) { const lag = (gd ? 0.5 : 1) * (1 + 0.35 * k); TG[4] += clamp(-Ax * 0.04 * lag, -0.45, 0.45); TG[3] += clamp(-Ay * 0.018 * lag, -0.3, 0.3); TG[2] += clamp(-Ax * 0.012 * lag, -0.12, 0.12); }
+      for (let i = 0; i < 6; i++) A[i] = sp(N[i], TG[i], gd ? 14 + 2 * k : 11 - 1.5 * k, air ? (gd ? 0.74 : 0.72) : 1);
     }
-    const kneeUp = sp('kneeUp', (gd ? 0.12 + 0.5 * gd.tuck : air ? 0.13 + 0.28 * crouch + clamp(Math.abs(Wx) * 0.02, 0, 0.1) + clamp(Math.abs(Wy) * 0.008, 0, 0.05) : 0) * (1 - popK), gd ? 18 : 13);
+    const kneeUp = sp('kneeUp', (gd ? 0.12 + 0.5 * gd.tuck : air ? 0.13 + 0.28 * crouch + clamp(Math.abs(Wx) * 0.02, 0, 0.1) + clamp(Math.abs(Wy) * 0.008, 0, 0.05) + 0.3 * (flF + flB) - 0.16 * opening + 0.08 * flow * wob(tt * 1.15, 17.3) : 0) * (1 - popK), gd ? 15 : 12, air ? 0.8 : 1);
     // ---- skis, in the body's frame
     // (the feet a little under hip width: a relaxed, narrow park stance)
     const stance = 0.094 + 0.018 * crouch;
@@ -621,10 +647,16 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     const pressN = Math.max(0, press), pressT = Math.max(0, -press);
     let twT, sdT, lnT, hyT, hpT;
     if (air) {
-      twT = gd ? gd.twist : 0;
-      sdT = gd ? gd.side : clamp(Wz * 0.03, -0.2, 0.2);
-      lnT = (gd ? gd.lean : 0.16 + clamp(Wx * 0.045, -0.35, 0.3) + 0.12 * prep) + 0.28 * popK;   // over the knees off the lip
-      hyT = clamp(Wy * 0.08, -0.55, 0.55); hpT = 0.08 + 0.3 * prep;        // spotting the spin round, then the landing
+      // a grab held, the body moves round it a little; a straight air sways loosely; a flip tucks the chest to the knees
+      // after the throw that starts it (back: head and chest thrown back; front: thrown forward), the head tucked in a
+      // front flip and back, spotting, in a back flip
+      const sway = 0.08 * gW + 0.2 * flow;
+      twT = (gd ? gd.twist : 0) + sway * wob(tt * 1.25, 8.8);
+      sdT = (gd ? gd.side : clamp(Wz * 0.03, -0.2, 0.2)) + (0.05 * gW + 0.1 * flow) * wob(tt * 1.05, 6.1);
+      lnT = (gd ? gd.lean : 0.16 + clamp(Wx * 0.045, -0.35, 0.3) + 0.12 * prep + 0.42 * flF + 0.3 * flB) + 0.28 * popK
+        + 0.4 * throwF - 0.6 * arch - 0.15 * opening + 0.1 * flow * wob(tt * 0.85, 4.4);
+      hyT = clamp(Wy * 0.08, -0.55, 0.55) + 0.12 * flow * wob(tt * 0.6, 12.5);
+      hpT = 0.08 + 0.3 * prep + 0.32 * flF - 0.28 * flB - 0.3 * arch + 0.1 * flow * wob(tt * 0.7, 3.3);   // spotting the spin round, then the landing
     } else if (rail) {
       // the chest's angle to the rail (alpha) is its own slow spring: a swap swivels the skis under it, and in a slide
       // it is turned most of the way down the rail
@@ -647,8 +679,8 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       hyT = face * (0.85 + 0.12 * brake) + clamp(Wy * 0.22, -0.45, 0.45) + swSide * 1.35 * swK + (glance ? gl.yaw : 0) - wind * 0.45;   // where it is going
       hpT = 0.05 + (glance ? gl.pitch : 0);
     }
-    const wB = air && gd ? 16 : 9;                                         // a grab's shape comes quickly
-    const tw = sp('tw', twT, air && gd ? 15 : 8.5), sd = sp('sd', sdT, wB), ln = sp('ln', lnT, air ? (popK > 0.1 ? 20 : wB) : 9), hy = sp('hy', hyT, rail ? 7 : 9), hp = sp('hp', hpT, 7);
+    const wB = air && gd ? 13 : 9, zA = air ? 0.75 : 1;                   // a grab's shape comes quickly, swinging a little past
+    const tw = sp('tw', twT, air && gd ? 13 : 8.5, zA), sd = sp('sd', sdT, wB, zA), ln = sp('ln', lnT, air ? (popK > 0.1 ? 20 : wB + 2) : 9, zA), hy = sp('hy', hyT, rail ? 7 : 9), hp = sp('hp', hpT, 7, air ? 0.8 : 1);
     const onSnow = 1 - airW;
     // a landing bends the knees with the chest kept up; a transition's compression puts the chest over the knees
     const lean = ln + (0.42 * crouch * (1 - gW) - 0.42 * (landX + absorb) + 0.1 * absorb + 0.45 * crunch + 1.4 * Math.max(0, comp)) * onSnow + 0.02 * wob(tt * 1.1, 9.1);
@@ -775,7 +807,12 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
         lat += 0.13 * open; up += 0.06 * open;
         lat += 0.02 * prep; fwd += 0.14 * prep; up += 0.04 * prep;
         fwd += 0.12 * popK; up += 0.1 * popK;                               // the arms swing up and forward with the pop
+        // a back flip: up over the head, thrown higher at its start; a front flip: reaching down the shins for the skis;
+        // opening out at the end of either
+        up += 0.38 * flB + 0.2 * arch - 0.16 * flF; fwd += -0.12 * flB - 0.1 * arch + 0.24 * flF + 0.1 * throwF; lat += 0.07 * flB - 0.08 * flF + 0.16 * opening;
         if (gd && gd.arms) { const m = ARM_MODE[gd.arms]; if (m) { lat = m[0]; up = m[1]; fwd = m[2]; } }
+        // (the free arm of a grab floats, not held up stiff)
+        if (gd && gd.arms) { lat += 0.05 * wob(tt * 1.3, 31 + k * 4); up += 0.07 * wob(tt * 1.6, 33 + k * 3); fwd += 0.06 * wob(tt * 1.1, 37 + k * 5); }
       } else if (rail) {
         const bal = S.balance || 0;
         lat = 0.27 + 0.08 * Math.abs(bal) + 0.08 * swapK; up = -0.23 - s * bal * 0.2 + 0.08 * swapK; fwd = 0.2 + 0.08 * s * Math.sin(ra);   // loose, the hand on the travel's side ahead
@@ -792,7 +829,8 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       }
       if (crashW > 0.5) { lat = 0.36; up = 0.2; fwd = 0; }
       const AN = ARMN[k];
-      lat = sp(AN[0], lat, 10, 0.72); up = sp(AN[1], up, 10, 0.72); fwd = sp(AN[2], fwd, 10, 0.72);
+      const zArm = air ? 0.6 : 0.72;
+      lat = sp(AN[0], lat, 10, zArm); up = sp(AN[1], up, 10, zArm); fwd = sp(AN[2], fwd, 10, zArm);
       // what moves faster than a spring follows goes on top: strides, pole pushes, plants, the hands' own small moves
       const pk = onSnow > 0.5 && this.plantK === k && this.plantT < 0.35 ? Math.sin(Math.PI * this.plantT / 0.35) : 0;
       if (onSnow > 0.01) {
@@ -800,7 +838,8 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
         if (dpW > 0.01) { fwd += dpW * (0.36 - 0.6 * dpK) - dpW * 0.3; up += dpW * (0.12 - 0.2 * dpK); }
         if (pk > 0) { fwd += 0.05 * pk; up -= 0.03 * pk; }
       }
-      const hm = (0.6 + 0.6 * railW) * (1 - 0.7 * (Hs.w || 0)), ak = 11 + k * 4;
+      const hm = (0.6 + 0.6 * railW + 1.6 * flow) * (1 - 0.7 * (Hs.w || 0)), ak = 11 + k * 4;
+      if (flow > 0.01) { const sw = Math.sin(tt * 1.9 + 0.6); fwd += s * 0.09 * sw * flow; up += (0.05 + s * 0.04 * sw) * flow; lat += 0.03 * flow; }
       lat += 0.03 * hm * wob(tt * (1.6 + railW), ak); up += 0.04 * hm * wob(tt * (1.9 + railW), ak + 2); fwd += 0.05 * hm * wob(tt * (1.4 + railW), ak + 6);
       if (crashW > 0.5) up += Math.sin(t * 9 + s) * 0.2;
       const x0 = s * lat, cl = Math.cos(lead), sl = Math.sin(lead);

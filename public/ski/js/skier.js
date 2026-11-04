@@ -14,8 +14,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=7';
-import { clamp, smoothstep } from './noise.js?v=7';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=8';
+import { clamp, smoothstep } from './noise.js?v=8';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -238,9 +238,11 @@ export class Skier {
     this.slide = Math.abs(vr2) + (this.scrub || 0) * 0.35;
     // a rider checks speed on a kicker's in-run (unless tucking for more): scrubbing towards its design speed
     this.scrub = 0;
+    // (up the takeoff too, towards the speed that leaves the lip at its own: what the ramp takes is then whatever it is)
     if (!I.tuck && !I.push && speed > 4) for (const k of this.park.kickers) {
-      if (this.p.z < k.z0 - 50 || this.p.z > k.z0 || Math.abs(this.p.x - k.x) > k.wT + 3) continue;
-      const over = speed - k.vDesign;
+      if (this.p.z < k.z0 - 50 || this.p.z > k.L.z - 0.4 || Math.abs(this.p.x - k.x) > k.wT + 3) continue;
+      const want = this.p.z < k.z0 ? k.vDesign : Math.sqrt(k.vLip * k.vLip + 2 * 9.81 * Math.max(0, k.L.y - this.p.y) * 1.05);
+      const over = speed - want;
       if (over > 0.2) { const d = Math.min(3.2, over * 1.6); a.addScaledVector(this.v, -d / speed); this.scrub = d; }
     }
     // pumping the pipe's transitions: riders extend their legs going up the curve and gain speed doing it
@@ -320,21 +322,23 @@ export class Skier {
     this.com.copy(this.p).addScaledVector(this.up, COM * (1 - this.crouch * 0.35));
     const up = this.up;
     this.w.copy(up).multiplyScalar(spin);
-    // the natural rotation of a good takeoff: the body turns forward through the air to meet the landing's slope
-    const pr = how === 'wall' ? null : this.predictLanding();
-    if (pr) {
-      const left = new THREE.Vector3(1, 0, 0).applyQuaternion(this.q);
-      const u1 = up.clone().addScaledVector(left, -up.dot(left)), n1 = pr.n.clone().addScaledVector(left, -pr.n.dot(left));
-      const ang = Math.atan2(new THREE.Vector3().crossVectors(u1, n1).dot(left), u1.dot(n1));
-      if (Math.abs(ang) < 1.4) this.w.addScaledVector(left, ang / Math.max(0.3, pr.T * 0.92));
-      this.natural = ang;
-    } else this.natural = 0;
+    this.natural = how === 'wall' ? 0 : this.naturalTurn();
     this.wNat.copy(this.w); this.wKeys.set(0, 0, 0); this.wCork = false;
     this.lastPress = this.press;
     const inPipe = [this.park.pipe, this.park.qp].some(pp => pp && n.y < 0.55 && this.p.z > pp.z0 && this.p.z < pp.z1 && this.p.x > pp.x0 && this.p.x < pp.x1);
     this.events.push({ type: 'takeoff', how, sw: this.sw, speed: this.v.length(), press: this.press, butter: Math.abs(this.press) > 0.35, rail: !!this.rail, pipe: inPipe });
     this.press = 0; this.endButter();
     this.grab = null; this.grabT = 0; this.held = null; this.tweak = ''; this.shiftyT = 0; this.shiftDir = 0;
+  }
+  // the natural rotation of a good takeoff (off a lip or off the end of a rail): the body turns forward through the
+  // air to meet the landing's slope; added to w, the angle returned
+  naturalTurn() {
+    const pr = this.predictLanding(); if (!pr) return 0;
+    const up = this.up, left = new THREE.Vector3(1, 0, 0).applyQuaternion(this.q);
+    const u1 = up.clone().addScaledVector(left, -up.dot(left)), n1 = pr.n.clone().addScaledVector(left, -pr.n.dot(left));
+    const ang = Math.atan2(new THREE.Vector3().crossVectors(u1, n1).dot(left), u1.dot(n1));
+    if (Math.abs(ang) < 1.4) this.w.addScaledVector(left, ang / Math.max(0.3, pr.T * 0.92));
+    return ang;
   }
   stepAir(dt, I) {
     this.tAir += dt;
@@ -649,7 +653,12 @@ export class Skier {
     // off a slide the skis come back round to the travel (forwards or switch) as they leave it, unless spun off
     const ang = this.railAng, e = wrapPi((Math.cos(ang) >= 0 ? 0 : Math.PI) - ang);
     if (Math.abs(Math.sin(ang)) > 0.5 && (how !== 'pop' || Math.abs(spin) < 1)) spin += e / 0.34;
-    this.w.copy(UP).multiplyScalar(spin); this.wNat.copy(this.w); this.wKeys.set(0, 0, 0); this.wCork = false;
+    this.w.copy(UP).multiplyScalar(spin);
+    // (riding off the end of a rail into a steep landing, or popping off, the body turns to meet the landing as off a
+    // lip: it stayed upright, and every tube on the Jump Line set the rider down 34 degrees off, 2026-11-03; a fall off
+    // the side is left as it is)
+    this.natural = how === 'fall' ? 0 : this.naturalTurn();
+    this.wNat.copy(this.w); this.wKeys.set(0, 0, 0); this.wCork = false;
     this.events.push({ type: 'takeoff', how: 'rail', sw: Math.cos(ang) < 0 ? !this.sw : this.sw, speed: this.v.length(), rail: true });
     this.railTurn = null; this.balance = 0;
     this.grab = null; this.grabT = 0; this.held = null; this.tweak = ''; this.shiftyT = 0;

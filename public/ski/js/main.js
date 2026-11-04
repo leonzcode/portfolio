@@ -1,21 +1,21 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=7';
-import { makePark, emptyPark, featureMesh, railMeshes } from './park.js?v=7';
-import { makeMaterials, snowUniforms } from './materials.js?v=7';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=7';
-import { Mountain, SPOTS } from './dem.js?v=7';
-import { Skier } from './skier.js?v=7';
-import { Rig } from './rig.js?v=7';
-import { Tricks } from './tricks.js?v=7';
-import { Input } from './input.js?v=7';
-import { Cams } from './camera.js?v=7';
-import { Tracks, Spray } from './snow.js?v=7';
-import { Hud } from './hud.js?v=7';
-import { Sound } from './sound.js?v=7';
-import { Net } from './net.js?v=7';
-import { mergeGear } from './gear.js?v=7';
-import { Touch, TOUCH_GRABS } from './touch.js?v=7';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=8';
+import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=8';
+import { makeMaterials, snowUniforms } from './materials.js?v=8';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=8';
+import { Mountain, SPOTS } from './dem.js?v=8';
+import { Skier } from './skier.js?v=8';
+import { Rig } from './rig.js?v=8';
+import { Tricks } from './tricks.js?v=8';
+import { Input } from './input.js?v=8';
+import { Cams } from './camera.js?v=8';
+import { Tracks, Spray } from './snow.js?v=8';
+import { Hud } from './hud.js?v=8';
+import { Sound } from './sound.js?v=8';
+import { Net } from './net.js?v=8';
+import { mergeGear } from './gear.js?v=8';
+import { Touch, TOUCH_GRABS } from './touch.js?v=8';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
@@ -60,13 +60,13 @@ addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight, fal
 // the map: the terrain park, or a real mountain from open elevation data
 if (qs.get('map')) opts.map = qs.get('map');
 let mtn = null;
-if (opts.map !== 'park' && SPOTS[opts.map]) {
+if (SPOTS[opts.map]) {
   $('play').textContent = 'Loading the mountain...';
   try { mtn = await new Mountain(SPOTS[opts.map]).load(q.tier === 'low' ? 3 : 4, 3); setMountain(mtn); }
   catch (e) { console.warn('mountain', e); mtn = null; opts.map = 'park'; }
 }
 const mats = makeMaterials(q);
-const park = mtn ? emptyPark() : makePark(); setPark(park);
+const park = mtn ? emptyPark() : opts.map === 'jumpline' ? makeJumpLine() : makePark(); setPark(park);
 const sky = makeSky(scene, renderer, q, !!mtn);
 const terrain = new Terrain(scene, mats.snow, { minLeaf: q.minLeaf, K: q.K, seg: q.seg, budget: q.tier === 'low' ? 3 : 4, root: mtn ? { x0: -4096, z0: -4096, size: 8192 } : null });
 for (const f of [...park.kickers, park.pipe, park.qp]) if (f) scene.add(featureMesh(f, height, mats.snow, q.fine));
@@ -108,7 +108,7 @@ sel.rider.onchange = () => { opts.rider = sel.rider.value; save(); loadRider(); 
 const soundBox = $('sound'); soundBox.checked = opts.sound !== false; sound.on = soundBox.checked;
 soundBox.onchange = () => { opts.sound = soundBox.checked; sound.on = opts.sound; save(); };
 $('showfps').onchange = e => { opts.showfps = e.target.checked; save(); if (!opts.showfps) $('fps').textContent = ''; };
-let playing = false, paused = false, replay = null, lastEnter = 0;
+let playing = false, paused = false, replay = null, lastEnter = 0, filmHold = false;
 const chatOpen = () => document.activeElement && document.activeElement.id === 'chatin';
 function play() {
   $('menu').classList.add('hidden'); $('pause').classList.add('hidden'); hud.show(true);
@@ -205,6 +205,7 @@ function frame() {
   try { tick(); } catch (e) { console.error(e); }
 }
 function tick() {
+  if (filmHold) { clock.getDelta(); return; }            // a test is stepping the frames itself (__ski.film)
   const dt = Math.min(0.05, clock.getDelta());
   time += dt;
   const live = playing && !paused && !replay;
@@ -310,7 +311,17 @@ function tick() {
   } catch (e) {
     console.error(e); $('play').textContent = 'Could not load';
   }
-  window.__ski = { THREE, renderer, scene, camera, skier, get rig() { return rig; }, park, terrain, tricks, input, cams, tracks, spray, q, opts, height, normal, baseLine, play, step: (n, I) => { for (let i = 0; i < n; i++) { skier.step(STEP, Object.assign({ steer: 0, crouch: false, spin: 0, flip: 0, tilt: 0 }, I)); tricks.step(skier, STEP); } } };
+  // (tests: hold the loop, then step physics, the rider, the camera and a draw one frame of dt at a time with inputs I)
+  const film = (dt, I, camAt) => {
+    filmHold = true;
+    const n = Math.max(1, Math.round(dt / STEP)), J = Object.assign({ steer: 0, crouch: false, spin: 0, flip: 0, tilt: 0 }, I || {});
+    for (let i = 0; i < n; i++) { skier.step(STEP, J); tricks.step(skier, STEP); skier.events.length = 0; }
+    time += dt; rig.update(poseState(skier, time), dt);
+    for (const o of rig.root.children) if (o !== rig.body) o.updateMatrixWorld(true);
+    if (camAt) camAt(camera, skier); else cams.update(dt, skier, rig);
+    renderer.render(scene, camera);
+  };
+  window.__ski = { THREE, renderer, scene, camera, skier, film, release: () => { filmHold = false; }, get rig() { return rig; }, park, terrain, tricks, input, cams, tracks, spray, q, opts, height, normal, baseLine, play, step: (n, I) => { for (let i = 0; i < n; i++) { skier.step(STEP, Object.assign({ steer: 0, crouch: false, spin: 0, flip: 0, tilt: 0 }, I)); tricks.step(skier, STEP); } } };
   clock.getDelta();
   frame();
 })();

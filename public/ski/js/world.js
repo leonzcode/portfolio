@@ -4,9 +4,9 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=7';
-import { fbm, ridged, rng, smoothstep } from './noise.js?v=7';
-import { snowUniforms } from './materials.js?v=7';
+import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=8';
+import { fbm, ridged, rng, smoothstep } from './noise.js?v=8';
+import { snowUniforms } from './materials.js?v=8';
 
 export function makeSky(scene, renderer, q, wide) {
   const sky = new Sky(); sky.scale.setScalar(45000); sky.name = 'sky';
@@ -274,7 +274,7 @@ export function makeProps(scene, park, q) {
   add(new THREE.BoxGeometry(0.5, 6, 0.5), 'dark', -9, sy + 3, -20); add(new THREE.BoxGeometry(0.5, 6, 0.5), 'dark', 9, sy + 3, -20);
   const banner = document.createElement('canvas'); banner.width = 1024; banner.height = 128; const bx = banner.getContext('2d');
   bx.fillStyle = '#0d1b2a'; bx.fillRect(0, 0, 1024, 128); bx.fillStyle = '#ff6a13'; bx.fillRect(0, 108, 1024, 20);
-  bx.font = 'italic 800 84px "Barlow Condensed", Arial Narrow, sans-serif'; bx.fillStyle = '#fff'; bx.textAlign = 'center'; bx.fillText('LEON FREESKI  PARK', 512, 92);
+  bx.font = 'italic 800 84px "Barlow Condensed", Arial Narrow, sans-serif'; bx.fillStyle = '#fff'; bx.textAlign = 'center'; bx.fillText(park.banner || 'LEON FREESKI  PARK', 512, 92);
   const bt = new THREE.CanvasTexture(banner); bt.colorSpace = THREE.SRGBColorSpace;
   const bn = new THREE.Mesh(new THREE.BoxGeometry(18.5, 2.2, 0.2), new THREE.MeshStandardMaterial({ map: bt, roughness: 0.8 })); bn.position.set(0, sy + 5.6, -20); bn.castShadow = true; group.add(bn);
   // orange fences beside the jump line and the pipe
@@ -287,13 +287,14 @@ export function makeProps(scene, park, q) {
     for (let i = 0; i < n; i++) { const a = pts[i * 2], b = pts[i * 2 + 2], c = pts[i * 2 + 1], d = pts[i * 2 + 3]; tri.push(a, c, b, b, c, d); }
     const g = new THREE.BufferGeometry().setFromPoints(tri); g.computeVertexNormals(); buckets.orange.push(g);
   };
-  fence(-30, 40, -30, 330); fence(-2.5, 60, -2.5, 320);
-  const pp = park.pipe, px = pp.F + pp.R + pp.deck + 9;
-  fence(pp.x - px, pp.z0, pp.x - px, pp.z1); fence(pp.x + px, pp.z0, pp.x + px, pp.z1);
-  // flags on the knuckles
-  const flagG = new THREE.PlaneGeometry(0.7, 0.45), poleG = new THREE.CylinderGeometry(0.025, 0.025, 2.2, 5);
+  for (const f of park.fences || []) fence(...f);
+  const pp = park.pipe;
+  if (pp) { const px = pp.F + pp.R + pp.deck + 9; fence(pp.x - px, pp.z0, pp.x - px, pp.z1); fence(pp.x + px, pp.z0, pp.x + px, pp.z1); }
+  // flags on the knuckles (not where a rail or tube runs past)
+  const flagG = new THREE.PlaneGeometry(0.7, 0.45), poleG = new THREE.CylinderGeometry(0.025, 0.025, 2.2, 5), cl = {};
   for (const k of park.kickers) for (const s of [-1, 1]) {
     const x = k.x + s * (k.wD + 1.2), z = k.K.z, y = height(x, z);
+    if ((park.rails || []).some(r => { r.closest(new THREE.Vector3(x, y + 0.5, z), cl); return cl.dh < 1.8; })) continue;
     add(poleG, 'dark', x, y + 1.1, z); add(flagG, 'orange', x + 0.36, y + 1.95, z);
   }
   for (const key in buckets) {

@@ -3,8 +3,8 @@
 // function the physics reads directly; kickers and the pipe also get meshes of their own, much finer at the lips,
 // knuckles and coping than the terrain's patches.
 import * as THREE from 'three';
-import { baseLine, pitchAt, ground } from './terrain.js?v=7';
-import { smoothstep, clamp, smax } from './noise.js?v=7';
+import { baseLine, pitchAt, ground } from './terrain.js?v=8';
+import { smoothstep, clamp, smax } from './noise.js?v=8';
 
 const RAD = Math.PI / 180;
 
@@ -31,22 +31,28 @@ class Kicker {
     this.zMeet = z; this.z1 = z + 14;
     this.x0 = this.x - this.wL - 9; this.x1 = this.x + this.wL + 9;
     this.lipH = this.L.y - baseLine(this.L.z);
-    // the speed off the lip that lands a third of the way down the landing (drag left out)
-    const target = this.Kend.z + 0.4 * (this.zMeet - this.Kend.z);
-    let lo = 4, hi = 32;
+    /* the speed off the lip that lands about 45% of the way down the landing, with the air's drag the skier feels in flight
+       (left out, the big jumps' riders landed on the knuckle: 2026-11-03) */
+    // (aimed deeper for a higher lip: the riders' flights come out a little shorter than this one, more so on the big
+    // jumps, measured: a 1.6 m lip landed where it was aimed, a 4.3 m one 23% of the landing short)
+    const frac = clamp(0.45 + 0.08 * (this.lipH - 1.6), 0.4, 0.75);
+    const target = this.Kend.z + frac * (this.zMeet - this.Kend.z), kd = 0.5 * 1.2 * 0.5 / 78, dt = 0.01;
+    let lo = 4, hi = 34;
     for (let it = 0; it < 30; it++) {
-      const v = (lo + hi) / 2, vz = v * Math.cos(lip), vy = v * Math.sin(lip);
-      let t = 0.02, zl = Infinity;
-      for (; t < 8; t += 0.01) {
-        const z = this.L.z + vz * t, y = this.L.y + vy * t - 4.905 * t * t;
+      const v = (lo + hi) / 2;
+      let vz = v * Math.cos(lip), vy = v * Math.sin(lip), z = this.L.z, y = this.L.y, zl = Infinity;
+      for (let t = 0; t < 8; t += dt) {
+        const sp = Math.hypot(vz, vy); vz -= kd * sp * vz * dt; vy -= (9.81 + kd * sp * vy) * dt; z += vz * dt; y += vy * dt;
         const d = this.deckY(z), gy = d > -Infinity ? d : baseLine(z);
         if (z > this.L.z + 0.5 && y <= gy) { zl = z; break; }
       }
       if (zl < target) lo = v; else hi = v;
     }
     this.vLip = (lo + hi) / 2;
-    // the speed at the foot of the takeoff that leaves the lip at vLip (climbing the ramp costs g * lip height)
-    this.vDesign = Math.sqrt(this.vLip * this.vLip + 2 * 9.81 * (this.L.y - baseLine(this.z0)) * 1.12) + 0.4;
+    // the speed at the foot of the takeoff that leaves the lip at vLip (climbing the ramp costs g x its rise, and the
+    // snow and the air take more on a long ramp)
+    const rise = this.L.y - baseLine(this.z0);
+    this.vDesign = Math.sqrt(this.vLip * this.vLip + 2 * 9.81 * rise * (1.12 + 0.02 * rise)) + 0.5;
     this.knuckleH = this.yT - baseLine(this.K.z);
   }
   // centre-line height of the takeoff (or -Inf) and of the deck (or -Inf)
@@ -203,11 +209,12 @@ class Wedge {            // a short ramp up to a rail or box
 }
 
 // ---- rails and boxes ---------------------------------------------------------------------------------------------------
-// pts: [x, z, height of the top over the snow]; kind 'rail' (a round tube) or 'box' (a flat top 0.5 m wide)
+// pts: [x, z, height of the top over the snow]; kind 'rail' (a round tube), 'tube' (a fat one, 0.22 m across) or
+// 'box' (a flat top 0.5 m wide)
 export class Rail {
   constructor(o) {
     Object.assign(this, { kind: 'rail', name: 'rail' }, o);
-    this.w = this.kind === 'box' ? 0.5 : 0.07;
+    this.w = this.kind === 'box' ? 0.5 : this.kind === 'tube' ? 0.22 : 0.07;
     this.P = this.pts.map(([x, z, h]) => new THREE.Vector3(x, ground(x, z) + h, z));
     this.seg = []; let s = 0;
     for (let i = 0; i < this.P.length - 1; i++) {
@@ -269,8 +276,20 @@ export function makePark() {
     R({ name: 'Long rail', kind: 'rail', pts: [[20, 1128, 0.6], [20, 1152, 0.6]], ramp: 0.5 }),
     R({ name: 'Down-flat-down rail', kind: 'rail', pts: [[-4, 1185, 0.95], [-4, 1192, 0.6], [-4, 1198, 0.6], [-4, 1205, 0.25]], ramp: 0.85 }),
   ];
+  return assemble({ kickers, pipe, qp, ground2, rails, fences: [[-30, 40, -30, 330], [-2.5, 60, -2.5, 320]], starts: [
+    { name: 'Top of the park', x: -16, z: -30, v: 5 },
+    { name: 'Jump line', x: -16, z: 30, v: 9 },
+    { name: 'Jib line (boxes and rails)', x: 16, z: 40, v: 8 },
+    { name: 'Rail garden', x: -2, z: 380, v: 8 },
+    { name: 'Superpipe', x: -2, z: 700, v: 10 },
+    { name: 'Big air', x: 0, z: 880, v: 12 },
+    { name: 'Bottom jibs and quarterpipe', x: 0, z: 1090, v: 9 },
+  ] });
+}
+// a layout's features made into a park: the lookup grid and the height functions the terrain and physics ask
+function assemble({ kickers, pipe = null, qp = null, ground2 = [], rails = [], starts, fences = [], banner = null }) {
   const ramps = rails.filter(r => r.ramp).map(r => new Wedge({ x: r.pts[0][0], zEnd: r.pts[0][1] - 0.7, h: r.ramp, hw: r.kind === 'box' ? 1.4 : 1.2 }));
-  const all = [...kickers, pipe, qp, ...ground2, ...ramps];
+  const all = [...kickers, pipe, qp, ...ground2, ...ramps].filter(Boolean);
   // a 32 m bucket grid over x and z
   const B = 32, buckets = new Map();
   for (const f of all) {
@@ -281,17 +300,9 @@ export function makePark() {
   }
   const near = (x, z) => buckets.get(Math.floor(x / B) + ',' + Math.floor(z / B));
   const park = {
-    kickers, pipe, qp, rails, all,
+    kickers, pipe, qp, rails, all, fences, banner,
     // where a rider can start: the top and the start of each part of the park
-    starts: [
-      { name: 'Top of the park', x: -16, z: -30, v: 5 },
-      { name: 'Jump line', x: -16, z: 30, v: 9 },
-      { name: 'Jib line (boxes and rails)', x: 16, z: 40, v: 8 },
-      { name: 'Rail garden', x: -2, z: 380, v: 8 },
-      { name: 'Superpipe', x: -2, z: 700, v: 10 },
-      { name: 'Big air', x: 0, z: 880, v: 12 },
-      { name: 'Bottom jibs and quarterpipe', x: 0, z: 1090, v: 9 },
-    ],
+    starts,
     height(x, z, g) {
       const l = near(x, z); if (!l) return -Infinity;
       let best = -Infinity;
@@ -318,6 +329,55 @@ export function makePark() {
   };
   return park;
 }
+/* ---- the Jump Line (2026-11-03) ------------------------------------------------------------------------------------
+   Seven jumps down the run, each one three takeoffs side by side, Large, Medium and Small, landing on one shared
+   landing: the Large lane's table and landing are built first, and each smaller lane is placed up the hill so that its
+   own (lower) table meets that same landing plane, just further down it, with the table length asked for (found by
+   bisection: further down the hill, the table comes out shorter). So you can choose a size at each jump and change
+   lanes between them. Beside every Large lane a fat tube runs up alongside the takeoff, along the table and out over
+   the knuckle, ending just over the landing so it sets you down in it. */
+const LANES = {
+  L: { lip: 30, R: 15, drop: 0.8, table: 17, land: 34, wT: 3.2, wD: 5.6, wL: 9.5 },
+  M: { lip: 27, R: 11, drop: 0.6, table: 11, land: 34, wT: 2.8, wD: 4.8, wL: 8.5 },
+  S: { lip: 24, R: 7.5, drop: 0.4, table: 6, land: 34, wT: 2.4, wD: 4.2, wL: 7.5 },
+};
+// a lane that lands on another kicker's landing line, with about the table length asked for
+function laneOn(big, o) {
+  const tl = Math.tan(big.land * RAD), Rk = big.Rk;
+  const c = big.Kend.y + big.Kend.z * tl;                        // the landing line: y + z tan(land) = c
+  const tableFor = k => (c - k.yT + Rk * (1 - Math.cos(big.land * RAD))) / tl - Rk * Math.sin(big.land * RAD) - k.L.z;
+  let lo = big.z0 - 60, hi = big.K.z;
+  for (let it = 0; it < 40; it++) {
+    const mid = (lo + hi) / 2, t = tableFor(new Kicker(Object.assign({}, o, { z0: mid, table: 5 })));
+    if (t > o.table) lo = mid; else hi = mid;
+  }
+  const k0 = new Kicker(Object.assign({}, o, { z0: (lo + hi) / 2, table: 5 }));
+  return new Kicker(Object.assign({}, o, { z0: k0.z0, table: Math.max(2.5, tableFor(k0)), Rk }));
+}
+export function makeJumpLine() {
+  const kickers = [], rails = [], starts = [{ name: 'Top of the Jump Line', x: 0, z: -30, v: 5 }];
+  const X = { L: -19, M: -6, S: 6 };
+  let z0 = 58;
+  for (let j = 0; j < 7; j++) {
+    const big = new Kicker(Object.assign({ name: `Jump ${j + 1} Large`, x: X.L, z0 }, LANES.L));
+    const med = laneOn(big, Object.assign({ name: `Jump ${j + 1} Medium`, x: X.M }, LANES.M));
+    const sml = laneOn(big, Object.assign({ name: `Jump ${j + 1} Small`, x: X.S }, LANES.S));
+    kickers.push(big, med, sml);
+    // the tube: from the foot of the Large takeoff up beside it, along the table half a metre over it, out over the
+    // knuckle, and down with the landing to stop 0.9 m over it (heights are over the bare ground, as rails take them)
+    const tx = X.L - big.wD - 1.6, gz = z => ground(tx, z);
+    const top = big.yT + 0.55, zA = big.z0 - 3, zB = big.L.z + 1.5, zK = big.Kend.z + 1.2, zE = zK + 4.5;
+    const landY = z => big.deckY(z);
+    rails.push(new Rail({ name: `Jump ${j + 1} tube`, kind: 'tube', ramp: 0.7, pts: [
+      [tx, zA, 0.7], [tx, zB, top - gz(zB)], [tx, zK, top - gz(zK)], [tx, zE, landY(zE) + 0.9 - gz(zE)]] }));
+    starts.push({ name: `Jump ${j + 1} (in-run)`, x: X.M, z: big.z0 - 40, v: 10 });
+    // the next jump: room after this landing to set up again
+    z0 = big.zMeet + 34;
+  }
+  const zEnd = kickers[kickers.length - 3].zMeet + 10;
+  return assemble({ kickers, rails, starts, banner: 'JUMP  LINE', fences: [[X.L - LANES.L.wL - 3, 30, X.L - LANES.L.wL - 3, zEnd], [X.S + LANES.S.wL + 3, 30, X.S + LANES.S.wL + 3, zEnd]] });
+}
+
 // the backcountry map has no built features
 export function emptyPark() {
   return { kickers: [], pipe: null, qp: null, rails: [], all: [], height: () => -Infinity, heightTerrainOnly: () => -Infinity, visualDip: () => 0, surface: () => false,
@@ -374,9 +434,9 @@ export function railMeshes(rails, mats) {
     for (const g of r.seg) {
       const mid = g.a.clone().lerp(g.b, 0.5), len = g.len;
       const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), g.d);
-      if (r.kind === 'rail') {
-        const c = new THREE.CylinderGeometry(0.035, 0.035, len + 0.02, 14, 1, false); c.rotateX(Math.PI / 2);
-        c.applyQuaternion(q); c.translate(mid.x, mid.y - 0.035, mid.z); tubes.push(c);
+      if (r.kind === 'rail' || r.kind === 'tube') {
+        const rr = r.w / 2, c = new THREE.CylinderGeometry(rr, rr, len + 0.02, r.kind === 'tube' ? 20 : 14, 1, false); c.rotateX(Math.PI / 2);
+        c.applyQuaternion(q); c.translate(mid.x, mid.y - rr, mid.z); tubes.push(c);
       } else {
         const b = new THREE.BoxGeometry(0.5, 0.06, len + 0.01); b.applyQuaternion(q); b.translate(mid.x, mid.y - 0.03, mid.z); boxes.push(b);
         const s = new THREE.BoxGeometry(0.46, 0.28, len); s.applyQuaternion(q); s.translate(mid.x, mid.y - 0.06 - 0.14, mid.z); legs.push(s);
@@ -386,9 +446,9 @@ export function railMeshes(rails, mats) {
     for (let s = 0.4; s < r.len; s += 2.5) {
       const p = r.at(Math.min(s, r.len - 0.3)), gy = ground(p.x, p.z), h = p.y - gy;
       if (h < 0.15) continue;
-      const w = r.kind === 'rail' ? 0.05 : 0.08;
+      const w = r.kind === 'rail' ? 0.05 : r.kind === 'tube' ? 0.09 : 0.08;
       const l = new THREE.BoxGeometry(w, h + 0.4, w); l.translate(p.x, gy + (h - 0.4) / 2 - 0.05, p.z); legs.push(l);
-      if (r.kind === 'rail') { const f = new THREE.BoxGeometry(0.5, 0.05, 0.08); f.translate(p.x, gy + 0.02, p.z); legs.push(f); }
+      if (r.kind !== 'box') { const f = new THREE.BoxGeometry(r.kind === 'tube' ? 0.7 : 0.5, 0.05, 0.08); f.translate(p.x, gy + 0.02, p.z); legs.push(f); }
     }
   }
   const merge = (list) => {
