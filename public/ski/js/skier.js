@@ -14,8 +14,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=10';
-import { clamp, smoothstep } from './noise.js?v=10';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=11';
+import { clamp, smoothstep } from './noise.js?v=11';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -146,8 +146,10 @@ export class Skier {
        turning from 5 degrees of edge, so one press turned a lot and the turn came in steps.) */
     const edgeMax = 1.05 * (1 - 0.6 * Math.abs(this.press));
     const slipNow = Math.abs(vr), eWant = u * edgeMax;
-    const back = eWant * this.edge < 0 || Math.abs(eWant) < Math.abs(this.edge);
-    const wE = (this.mouseTarget ? 9 : back ? 14 : 9) * clamp(1 - (slipNow - 3) / 6, 0.55, 1);
+    // (let go, the skis flatten at once and the turn stops with the key: no turning on after it, 2026-11-03; the other way,
+    // they roll across quickly; onto the edge, still eased)
+    const release = !u && !this.mouseTarget, back = eWant * this.edge < 0 || Math.abs(eWant) < Math.abs(this.edge);
+    const wE = (this.mouseTarget ? 9 : release ? 30 : back ? 18 : 10) * (release ? 1 : clamp(1 - (slipNow - 3) / 6, 0.55, 1));
     this.edgeV += (wE * wE * (eWant - this.edge) - 2 * wE * this.edgeV) * dt;
     this.edge = clamp(this.edge + this.edgeV * dt, -1.1, 1.1);
     // the brake builds over about half a second (a tap is a speed check, a hold a hockey stop) and eases off when let go
@@ -201,9 +203,11 @@ export class Skier {
       if (this.brakeHead) { const ang = cwAngle(this.brakeHead, skis, n); if (!u && Math.abs(ang) > 0.015 && this.unbrakeT < 0.9) target = clamp(-ang * 6, -2.5, 2.5); else this.brakeHead = null; }
       // a revert: spun round 180 on the snow straight after a landing
       if (this.revertLeft) target = -Math.sign(this.revertLeft) * 9;
-      const A = this.revertLeft ? 60 : buttering ? 14 : 7;           // how fast the turn can build or reverse (rad/s2)
+      // how fast the turn can build or reverse (rad/s2); a turn let go of dies away quickly
+      const slowing = Math.abs(target) < Math.abs(this.turnRate) && target * this.turnRate >= 0;
+      const A = this.revertLeft ? 60 : buttering ? 14 : slowing ? 16 : 7;
       // (eased towards what the skis ask for: it arrives smoothly instead of at a constant rate)
-      omega = this.turnRate + clamp((target - this.turnRate) * Math.min(1, dt * (this.revertLeft ? 60 : 15)), -A * dt, A * dt);
+      omega = this.turnRate + clamp((target - this.turnRate) * Math.min(1, dt * (this.revertLeft ? 60 : slowing ? 30 : 15)), -A * dt, A * dt);
       if (this.revertLeft) { const st = -omega * dt; if (Math.abs(st) >= Math.abs(this.revertLeft)) { omega = -this.revertLeft / dt; this.revertLeft = 0; this.events.push({ type: 'revert' }); } else this.revertLeft -= st; }
       if (Math.abs(this.edge) > 0.25) this.lastEdge = Math.sign(this.edge);
     }

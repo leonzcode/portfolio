@@ -14,7 +14,7 @@
 // A press is only used within 0.3 s of being made, so an old one never fires later.
 // All: C changes the camera (Q in the shred scheme), Backspace goes back to the top, Esc pauses; R starts again a
 // little earlier (mouse and keys; in the shred scheme R is a tweak key and Enter does it).
-import { POSITIONS } from './grabs.js?v=10';
+import { POSITIONS } from './grabs.js?v=11';
 export { POSITIONS };
 
 const GRAB_KEYS = {
