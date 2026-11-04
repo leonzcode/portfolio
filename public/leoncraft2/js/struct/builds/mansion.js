@@ -26,8 +26,8 @@
    tiles of the house. Each tile replays the whole drawing through a pen
    that keeps only its own columns, so every tile (and every chunk) agrees.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=119';
-import { rng, door, DX, DZ } from './util.js?v=119';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=120';
+import { rng, door, DX, DZ } from './util.js?v=120';
 
 export const PLANS = {};
 

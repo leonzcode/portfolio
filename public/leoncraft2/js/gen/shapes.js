@@ -14,9 +14,9 @@
 
    Registered into FEATURES; templates by their name into TEMPLATES.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=119';
-import { FEATURES, strip, placePlaced, fluidOf, NOTE_TABLES, longHalves } from './features.js?v=119';
-import { stateOf } from './states.js?v=119';
+import { B, BLOCKS } from '../blocks.js?v=120';
+import { FEATURES, strip, placePlaced, fluidOf, NOTE_TABLES, longHalves } from './features.js?v=120';
+import { stateOf } from './states.js?v=120';
 
 const MIN_Y = -64, MAX_Y = 319, SEA_LEVEL = 63;
 const DX = [0, 1, 0, -1], DZ = [-1, 0, 1, 0];          // north, east, south, west

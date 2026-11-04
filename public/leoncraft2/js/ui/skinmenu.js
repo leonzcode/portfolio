@@ -3,9 +3,11 @@
    Skin Customization's Skins...).
 
      SkinsScreen        what you wear, front and back, and the ways to change it:
-                        the Skin Gallery (skins.js), a file of your own, a
-                        Minecraft player's skin and cape by name, the skin
-                        editor, the capes, the arm width, back to default
+                        a Minecraft username to search, right at the top
+                        (2026-11-03, for "the minecraft name search is more
+                        accessible and easy to find"), the Skin Gallery
+                        (skins.js), a file of your own, the skin editor, the
+                        capes, the arm width, back to default
      UsernameScreen     a Minecraft player's skin and cape by their name, fetched
                         live from Mojang's servers through the mc server
                         (mlhub /mc/lc2/mcskin)
@@ -15,14 +17,17 @@
 
    They only set options (skin, skinModel, skinName, cape, capeName,
    skinParts.cape); the game puts what they hold on the player and tells the
-   server. A skin is kept as a PNG data URL, a cape as a 64 x 32 one.
+   server. A skin is kept as a PNG data URL, a cape as a 64 x 32 one; the
+   account keeps them too (net/looksync.js), up to 40 000 characters a skin,
+   so a file of your own carrying more than its pixels is drawn again
+   (skinData).
 --------------------------------------------------------------------------- */
-import { Screen, Button, CycleButton, TextField, WHITE, GREY } from './gui.js?v=119';
-import { SkinGalleryScreen } from './skins.js?v=119';
-import { httpBase } from '../net/account.js?v=119';
-import { CAPES, capeDataUrl, paintCape } from '../capes.js?v=119';
+import { Screen, Button, CycleButton, TextField, WHITE, GREY } from './gui.js?v=120';
+import { SkinGalleryScreen } from './skins.js?v=120';
+import { httpBase } from '../net/account.js?v=120';
+import { CAPES, capeDataUrl, paintCape } from '../capes.js?v=120';
 
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=119', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=120', import.meta.url).href;
 const RED = 0xFF5555, GREEN = 0x55FF55;
 
 /* ------------------------------ pictures ------------------------------ */
@@ -136,6 +141,14 @@ function pickPicture() {
     inp.click();
   });
 }
+/* A skin file as it is kept: as read, unless it is not a PNG data URL or is long enough to be refused by the account
+   (lc2accounts.js keeps 40 000 characters at most: a 64 x 64 picture with a colour profile or a painting program's
+   notes in it can be more); then its pixels alone, drawn again. */
+export function skinData(url, img) {
+  if (typeof url === 'string' && url.startsWith('data:image/png;base64,') && url.length <= 36000) return url;
+  const c = skinCanvas(img);
+  return c ? c.toDataURL('image/png') : url;
+}
 // what wearing a picture as a skin or a cape says, or '' when it is fine
 function skinProblem(img) { return img.width === 64 && (img.height === 64 || img.height === 32) ? '' : 'A skin has to be a 64 x 64 (or 64 x 32) PNG. That one is ' + img.width + ' x ' + img.height + '.'; }
 function capeProblem(img) { return capeScale(img.width, img.height) ? '' : 'A cape has to be a 64 x 32 PNG (or 22 x 17). That one is ' + img.width + ' x ' + img.height + '.'; }
@@ -149,20 +162,26 @@ const panel = (g, x, y, w, h) => g.fill(x, y, x + w, y + h, 0x60000000);
 /* ------------------------------ Skins ------------------------------ */
 
 export class SkinsScreen extends Screen {
-  constructor() { super('Skins'); this.msg = ''; this.msgColour = RED; }
+  constructor() { super('Skins'); this.msg = ''; this.msgColour = RED; this.name = ''; }
   init() {
     const W = this.width, H = this.height, g = this.gui, o = this.options;
     GUI = g;
-    const bw = 150, n = 7;
-    this.pw = 120; this.ph = n * 22 - 2;
-    this.px = Math.floor((W - (this.pw + 10 + bw)) / 2);
-    this.py = Math.max(26, Math.floor((H - 34 - this.ph) / 2) + 4);
+    const bw = 150, n = 6, full = 120 + 10 + bw;
+    this.pw = 120; this.ph = Math.max(140, n * 22 - 2);
+    this.px = Math.floor((W - full) / 2);
+    // the username search over the preview and the buttons, the three kept together in the middle
+    this.sy = Math.max(24, Math.floor((H - 34 - 26 - this.ph) / 2) + 4);
+    this.py = this.sy + 26;
+    this.nameField = this.add(new TextField(this.px + 1, this.sy + 1, full - 64, 18, {
+      value: this.name, maxLength: 16, hint: 'Search a Minecraft username', hintFocused: true, filter: v => /^[A-Za-z0-9_]*$/.test(v),
+      onChange: v => { this.name = v; }, onEnter: () => this.searchName(),
+    }));
+    this.add(new Button(this.px + full - 58, this.sy, 58, 20, 'Search', () => this.searchName(), "Wear the skin and cape of any Minecraft player, by their name"));
     const bx = this.px + this.pw + 10;
     let y = this.py;
     const add = (label, fn, tip) => { const b = this.add(new Button(bx, y, bw, 20, label, fn, tip)); y += 22; return b; };
     add('Skin Gallery...', () => g.open(new SkinGalleryScreen()), 'Skins other players drew and shared, to wear');
     add('Upload Skin...', () => this.upload(), 'A 64 x 64 (or old 64 x 32) PNG skin from your computer');
-    add('Minecraft Username...', () => g.open(new UsernameScreen()), 'Wear the skin and cape of a Minecraft player');
     add('Edit Skin...', () => g.open(new SkinEditorScreen()), 'Draw on your skin, pixel by pixel');
     add('Capes...', () => g.open(new CapeScreen()), 'Pick one of our capes, or upload or draw your own');
     this.add(new CycleButton(bx, y, bw, 20, 'Model', { values: ['classic', 'slim'], value: o.get('skinModel') === 'slim' ? 'slim' : 'classic', format: v => v === 'slim' ? 'Slim' : 'Classic', onChange: v => o.set('skinModel', v), tooltip: () => 'Classic arms are 4 pixels wide, slim arms 3.' }));
@@ -170,6 +189,16 @@ export class SkinsScreen extends Screen {
     const reset = add('Reset to Default', () => { o.set('skin', 'default'); o.set('skinModel', 'classic'); o.set('skinName', ''); this.msg = ''; g._initScreen(this); }, 'Back to the default skin (your cape stays)');
     reset.active = o.get('skin') !== 'default' || o.get('skinModel') !== 'classic';
     this.add(new Button(W / 2 - 100, H - 27, 200, 20, 'Done', () => g.back()));
+    g.focusText(this.nameField);
+  }
+  // the name typed at the top: its skin and cape on the username screen, to wear
+  searchName() {
+    const name = this.name.trim();
+    if (!name) { this.say('Type a Minecraft username in the box at the top first.'); this.gui.focusText(this.nameField); return; }
+    const s = new UsernameScreen();
+    s.name = name;
+    this.gui.open(s);
+    s.search();
   }
   // a skin file from your computer (also for tests: useFile(dataUrl))
   upload() { pickPicture().then(({ url, img }) => this.useFile(url, img), e => this.say(e.message)); }
@@ -178,7 +207,7 @@ export class SkinsScreen extends Screen {
     const bad = skinProblem(img);
     if (bad) { this.say(bad); return; }
     const o = this.options;
-    o.set('skin', url); o.set('skinName', '');
+    o.set('skin', skinData(url, img)); o.set('skinName', '');
     this.say('Wearing your own skin.', GREEN);
     if (this.gui.screen === this) this.gui._initScreen(this);
   }

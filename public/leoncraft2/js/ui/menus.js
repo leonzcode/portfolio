@@ -26,19 +26,19 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=119';
-import { Packs } from './pack.js?v=119';
-import { Account } from '../net/account.js?v=119';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=119';
-import { packArtSummary } from '../entities/packart.js?v=119';
-import { LanScreen } from './lan.js?v=119';
-import { parseSeed } from '../gen/random.js?v=119';
-import { SOUND_CREDITS } from '../sound/credits.js?v=119';
-import { PAINTING_ART } from '../paintingdata.js?v=119';
-import { SkinGalleryScreen, skinCredits } from './skins.js?v=119';
-import { SkinsScreen } from './skinmenu.js?v=119';
-import { FlatCustomizeScreen } from './flat.js?v=119';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=119';
+} from './gui.js?v=120';
+import { Packs } from './pack.js?v=120';
+import { Account } from '../net/account.js?v=120';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=120';
+import { packArtSummary } from '../entities/packart.js?v=120';
+import { LanScreen } from './lan.js?v=120';
+import { parseSeed } from '../gen/random.js?v=120';
+import { SOUND_CREDITS } from '../sound/credits.js?v=120';
+import { PAINTING_ART } from '../paintingdata.js?v=120';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=120';
+import { SkinsScreen, skinData } from './skinmenu.js?v=120';
+import { FlatCustomizeScreen } from './flat.js?v=120';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=120';
 
 const PI = Math.PI;
 
@@ -264,7 +264,7 @@ export class TitleScreen extends Screen {
       if (Account.admin) this.add(new Button(W - 128, 4, 60, 20, 'Admin', () => withAccount(g, () => g.open(new AdminScreen()))));
     }
     // (Skins beside Realms: what you wear, any time, no account needed)
-    this.add(new Button(W / 2 - 100, l + 48, 98, 20, 'Skins', () => g.open(new SkinsScreen()), 'Change your skin and cape'));
+    this.add(new Button(W / 2 - 100, l + 48, 98, 20, 'Skins', () => g.open(new SkinsScreen()), "Change your skin and cape, or wear a Minecraft player's by their username"));
     const realms = this.add(new Button(W / 2 + 2, l + 48, 98, 20, 'Leoncraft Realms', null, 'Not available in Leoncraft'));
     realms.active = false;
     this.add(new IconButton(W / 2 - 124, l + 84, 'language', () => g.open(new LanguageScreen()), 'Language'));
@@ -410,7 +410,7 @@ export class SelectWorldScreen extends Screen {
     if (this.importing) return;
     this.importing = true; this.lc1B.active = false; this.lc1B.message = 'Importing...'; this.gui.markDirty();
     const done = msg => { this.importing = false; if (this.lc1B) { this.lc1B.active = true; this.lc1B.message = 'Import from Leoncraft 1'; } this.gui.markDirty(); if (msg) this.gui.open(new NoticeScreen('Import from Leoncraft 1', msg)); };
-    import('../lc1/spimport.js?v=119').then(m => {
+    import('../lc1/spimport.js?v=120').then(m => {
       const saves = m.lc1Saves();
       if (!saves.length) return done('There is no Leoncraft 1 world in this browser.');
       return m.importLC1(saves[0].key, Worlds).then(r => {
@@ -745,9 +745,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=119';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=119';
-import { minimapButtons } from './minimap.js?v=119';
+export { VideoSettingsScreen } from './video.js?v=120';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=120';
+import { minimapButtons } from './minimap.js?v=120';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -867,7 +867,7 @@ export class SkinCustomizationScreen extends OptionsListScreen {
     const reset = new Button(0, 0, 150, 20, 'Reset to Default', () => { o.set('skin', 'default'); o.set('skinModel', 'classic'); o.set('skinName', ''); g._initScreen(this); });
     const gallery = new Button(0, 0, 310, 20, 'Skin Gallery...', () => g.open(new SkinGalleryScreen()));
     gallery.tooltip = 'Skins other players drew and shared, to wear';
-    const skins = new Button(0, 0, 150, 20, 'Skins...', () => g.open(new SkinsScreen()), 'Upload, edit or search for a skin, and pick a cape');
+    const skins = new Button(0, 0, 150, 20, 'Skins...', () => g.open(new SkinsScreen()), 'Search a Minecraft username, upload or edit a skin, and pick a cape');
     reset.active = o.get('skin') !== 'default';
     list.entries = [
       new WidgetRow(part('hat', 'Hat'), part('jacket', 'Jacket')),
@@ -890,7 +890,7 @@ export class SkinCustomizationScreen extends OptionsListScreen {
       r.onload = () => {
         const img = new Image();
         img.onload = () => {
-          if (img.width === 64 && (img.height === 64 || img.height === 32)) { o.set('skin', r.result); o.set('skinName', ''); g._initScreen(this); g.markDirty(); }
+          if (img.width === 64 && (img.height === 64 || img.height === 32)) { o.set('skin', skinData(r.result, img)); o.set('skinName', ''); g._initScreen(this); g.markDirty(); }
           else g.open(new NoticeScreen('Skin not used', 'A skin has to be a 64 x 64 (or 64 x 32) PNG. That file is ' + img.width + ' x ' + img.height + '.'));
         };
         img.onerror = () => g.open(new NoticeScreen('Skin not used', 'That file could not be read as a PNG picture.'));

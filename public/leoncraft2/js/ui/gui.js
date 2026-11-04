@@ -52,7 +52,7 @@
    textures/gui/. The pack leaves button interiors see-through, so a
    translucent fill goes under them for legible text over the world.
 --------------------------------------------------------------------------- */
-import { Font, cssRGB } from './font.js?v=119';
+import { Font, cssRGB } from './font.js?v=120';
 
 /* ------------------------------ options ------------------------------ */
 
@@ -156,7 +156,15 @@ const clone = v => (v && typeof v === 'object') ? JSON.parse(JSON.stringify(v)) 
 
 /* The player's settings, kept in localStorage. get/set by key; set saves and
    tells every listener (key, value). Objects (keys, skinParts) come back as
-   the live object: change them with setKey / setPart, or set a new object. */
+   the live object: change them with setKey / setPart, or set a new object.
+
+   So that they always save (2026-11-03): each save carries its time
+   (savedAt); a save the browser refuses (its storage for the site full) goes
+   into IndexedDB instead, read back at the next start when it is newer; a
+   change saved by another tab of the game is taken here at once (the
+   storage event), so a tab left open never writes its old settings over it;
+   visit(k, v) sets an option for this visit only (?q=), keeping the chosen
+   value for saving. net/looksync.js also keeps them with the account. */
 // a Chromebook, or a machine with little memory or two cores
 export function lowEndDevice() {
   const n = navigator;
@@ -167,9 +175,13 @@ export class Options {
     this.storageKey = storageKey;
     this.listeners = [];
     this.data = clone(DEFAULT_OPTIONS);
+    this.held = {};          // options set for this visit only: the value kept for them
+    this.from = '';          // while another tab's settings are being taken: 'tab' (net/looksync.js leaves those alone)
+    this.savedAt = 0;
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
       if (saved && typeof saved === 'object') {
+        this.savedAt = +saved.savedAt || 0;
         for (const k in saved) {
           if (!(k in DEFAULT_OPTIONS)) continue;
           if (k === 'keys' || k === 'keys2' || k === 'skinParts') Object.assign(this.data[k], saved[k]);
@@ -180,6 +192,30 @@ export class Options {
       }
       this.tuneForDevice();
     } catch (e) { /* private window or bad JSON: defaults */ }
+    try { addEventListener('storage', e => { if (e.key === this.storageKey && e.newValue) this.adopt(e.newValue, 'tab'); }); } catch (e) {}
+    backup(storageKey).then(text => { if (text) this.adopt(text, 'backup'); }, () => {});
+  }
+  /* Settings saved somewhere else: another tab's (the storage event) or the backup kept when the browser's storage
+     was full (only when newer than what was read). Whatever differs is taken and told to the listeners. */
+  adopt(text, from) {
+    let saved;
+    try { saved = JSON.parse(text); } catch (e) { return; }
+    if (!saved || typeof saved !== 'object') return;
+    if (from === 'backup' && !((+saved.savedAt || 0) > this.savedAt)) return;
+    const changed = [];
+    for (const k in saved) {
+      if (!(k in DEFAULT_OPTIONS)) continue;
+      const v = (k === 'keys' || k === 'keys2' || k === 'skinParts') ? Object.assign(clone(DEFAULT_OPTIONS[k]), saved[k]) : saved[k];
+      if (k in this.held) { this.held[k] = v; continue; }
+      if (JSON.stringify(this.data[k]) === JSON.stringify(v)) continue;
+      this.data[k] = v;
+      changed.push(k);
+    }
+    this.savedAt = Math.max(this.savedAt, +saved.savedAt || 0);
+    this.from = from;
+    try { for (const k of changed) this.tell(k); } finally { this.from = ''; }
+    // (another tab has saved it; the backup's is put back where it belongs if there is room now)
+    if (from === 'backup') this.save();
   }
   /* A Chromebook or another small machine starts on the game's Fast preset (video.js PRESET_VALUES' first
      column), once: a new player, or one whose Preset is still the Fancy they never changed. */
@@ -234,11 +270,21 @@ export class Options {
   }
   get(k) { return this.data[k]; }
   set(k, v) {
-    if (this.data[k] === v && typeof v !== 'object') return;
+    // (a choice made now is kept, not the value this visit was started with)
+    const held = k in this.held;
+    if (held) delete this.held[k];
+    if (this.data[k] === v && typeof v !== 'object') { if (held) this.save(); return; }
     this.data[k] = v;
     this.save();
-    for (const fn of this.listeners) { try { fn(k, v, this); } catch (e) { console.error(e); } }
+    this.tell(k);
   }
+  tell(k) { const v = this.data[k]; for (const fn of this.listeners) { try { fn(k, v, this); } catch (e) { console.error(e); } } }
+  // what is kept for k (not the value given for this visit only)
+  stored(k) { return k in this.held ? this.held[k] : this.data[k]; }
+  // k set for this visit only (a test's ?q=): used now, never saved
+  visit(k, v) { if (!(k in this.held)) this.held[k] = this.data[k]; this.data[k] = v; }
+  // a value from elsewhere (the account): as set, but an option held for this visit keeps its visit's value
+  apply(k, v) { if (k in this.held) { this.held[k] = v; this.save(); } else this.set(k, v); }
   reset(k) { this.set(k, clone(DEFAULT_OPTIONS[k])); }
   setKey(action, code) { const keys = Object.assign({}, this.data.keys); keys[action] = code; this.set('keys', keys); }
   setPart(part, on) { const p = Object.assign({}, this.data.skinParts); p[part] = on; this.set('skinParts', p); }
@@ -250,7 +296,32 @@ export class Options {
     return null;
   }
   onChange(fn) { this.listeners.push(fn); return () => { const i = this.listeners.indexOf(fn); if (i >= 0) this.listeners.splice(i, 1); }; }
-  save() { try { localStorage.setItem(this.storageKey, JSON.stringify(this.data)); } catch (e) { /* storage full or blocked */ } }
+  save() {
+    const out = Object.assign({}, this.data, this.held);
+    out.savedAt = this.savedAt = Math.max(Date.now(), this.savedAt + 1);
+    const text = JSON.stringify(out);
+    try { localStorage.setItem(this.storageKey, text); }
+    // (the site's storage is full or blocked: into IndexedDB, read back at the next start)
+    catch (e) { backup(this.storageKey, text).catch(() => {}); }
+  }
+}
+
+/* A copy of the settings in IndexedDB (database lc2-options), for when localStorage refuses them: the whole site
+   (leonzhao.dev) shares its 5 MB, and the first Leoncraft keeps its world there. backup(key) reads, backup(key, text)
+   writes; both settle quietly when IndexedDB is not there. */
+let optDb = null;
+function backup(key, text) {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  optDb = optDb || new Promise((res, rej) => {
+    const r = indexedDB.open('lc2-options', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+  return optDb.then(db => new Promise(res => {
+    const tx = db.transaction('kv', text === undefined ? 'readonly' : 'readwrite'), st = tx.objectStore('kv');
+    if (text === undefined) { const q = st.get(key); q.onsuccess = () => res(typeof q.result === 'string' ? q.result : null); q.onerror = () => res(null); }
+    else { st.put(text, key); tx.oncomplete = () => res(null); tx.onerror = () => res(null); }
+  }), () => null);
 }
 
 // how a key code reads on the Key Binds screen
@@ -303,7 +374,7 @@ export class Gui {
     this.ctx = canvas.getContext('2d');
     this.base = base || new URL('../../textures/gui/', import.meta.url).href;
     if (!this.base.endsWith('/')) this.base += '/';
-    this.version = version || '?v=119';
+    this.version = version || '?v=120';
     this.options = options || new Options();
     this.hooks = hooks || {};
     this.sheets = new Map();
@@ -1018,13 +1089,16 @@ export const onOff = v => v ? 'ON' : 'OFF';
 
 /* The edit box: black with a grey border (white when focused), the caret
    blinking every 300 ms, typing through the GUI's hidden input.
-   opts: { value, maxLength = 32, hint, filter(str) -> bool, onChange(str), onEnter() } */
+   opts: { value, maxLength = 32, hint, hintFocused (the hint shown while it is
+   focused and empty too, the caret a bar before it), filter(str) -> bool,
+   onChange(str), onEnter() } */
 export class TextField extends Widget {
   constructor(x, y, w, h, opts = {}) {
     super(x, y, w, h, '');
     this.value = opts.value || '';
     this.maxLength = opts.maxLength || 32;
     this.hint = opts.hint || '';
+    this.hintFocused = !!opts.hintFocused;
     this.filter = opts.filter || null;
     this.onChange = opts.onChange || null;
     this.onEnter = opts.onEnter || null;
@@ -1071,7 +1145,8 @@ export class TextField extends Widget {
     while (this.first < this.cursor && f.width(val.slice(this.first, this.cursor)) > inner) this.first++;
     const shown = f.trim(val.slice(this.first), inner);
     const colour = this.active ? LABEL : 0x707070;
-    if (!this.value && !this.focused && this.hint) g.text(f.trim(this.hint, inner), tx, ty, 0x808080);
+    const hinted = !this.value && this.hint && (!this.focused || this.hintFocused);
+    if (hinted) g.text(f.trim(this.hint, inner), tx, ty, 0x808080);
     g.text(shown, tx, ty, colour);
     const cx = tx + f.width(val.slice(this.first, this.cursor));
     if (this.selEnd !== this.cursor) {
@@ -1085,7 +1160,8 @@ export class TextField extends Widget {
     }
     const on = this.focused && (((g.now - this.focusTime) / 300 | 0) & 1) === 0;
     if (on) {
-      if (this.cursor < val.length || val.length >= this.maxLength) g.fill(cx, ty - 1, cx + 1, ty + 9, 0xFFD0D0D0);
+      if (hinted) g.fill(cx - 2, ty - 1, cx - 1, ty + 9, 0xFFD0D0D0);
+      else if (this.cursor < val.length || val.length >= this.maxLength) g.fill(cx, ty - 1, cx + 1, ty + 9, 0xFFD0D0D0);
       else g.text('_', cx, ty, colour);
     }
   }
