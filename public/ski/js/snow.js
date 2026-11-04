@@ -3,8 +3,8 @@
 // The snow material (materials.js) reads the map for its relief. The map follows the rider: when they get far from
 // its middle it is copied, shifted by whole texels, so the tracks behind stay.
 import * as THREE from 'three';
-import { snowUniforms } from './materials.js?v=14';
-import { height, surface } from './terrain.js?v=14';
+import { snowUniforms } from './materials.js?v=15';
+import { height, surface } from './terrain.js?v=15';
 
 const STAMP_VS = `
 attribute vec4 aSeg;    // groove depth, berm height, half width (m), unused

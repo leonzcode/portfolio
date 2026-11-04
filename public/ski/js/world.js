@@ -4,9 +4,9 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=14';
-import { fbm, ridged, rng, smoothstep } from './noise.js?v=14';
-import { snowUniforms } from './materials.js?v=14';
+import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=15';
+import { fbm, ridged, rng, smoothstep } from './noise.js?v=15';
+import { snowUniforms } from './materials.js?v=15';
 
 export function makeSky(scene, renderer, q, wide) {
   const sky = new Sky(); sky.scale.setScalar(45000); sky.name = 'sky';

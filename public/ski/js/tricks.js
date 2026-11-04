@@ -4,7 +4,7 @@
 //   [Switch] [Left|Right] [Double] Cork|Rodeo|Bio|Misty 1080 [Mute to Tail]   or   Back Flip, Lincoln Loop, 360...
 // Rails: entry spin, 50-50 or slide, swaps and presses, exit spin ("Left 270 On, Slide, Back Swap, 270 Out").
 import * as THREE from 'three';
-import { GRABS, grabDef } from './grabs.js?v=14';
+import { GRABS, grabDef } from './grabs.js?v=15';
 
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3();
 const MULT = ['', 'Double ', 'Triple ', 'Quad ', 'Quint '];
@@ -68,6 +68,7 @@ export class Tricks {
       case 'railFall': this.railT = null; break;
       case 'butter': this.award(`${e.nose ? 'Nose' : 'Tail'} Butter ${round180(e.deg)}`, 100 + round180(e.deg) / 180 * 110, 'clean'); break;
       case 'revert': if (this.combo) this.award('Revert', 60, 'clean'); break;
+      case 'lazyboy': this.award('Lazy Boy', Math.round(80 + 60 * Math.min(3, e.t)), 'clean'); break;
       case 'crash': this.bail(); break;
       case 'respawn': this.air = null; this.railT = null; break;
     }

@@ -17,24 +17,34 @@ export const GRABS = {
      hanging low and out. What tells the grabs apart is which hand holds which ski where, and how the body turns to
      it. They had skis crossed wide or turned 66 degrees sideways, nearly vertical, and free arms held up stiff.) */
   safety:    { name: 'Right Safety', hand: 'R', hands: [['R', 'R', 0, 'out']], arms: 'out', ski: { L: [-0.02, 0.03, 0.06, 0.03, -0.12, 0], R: [0.02, 0.02, 0.06, -0.03, -0.12, 0] }, tuck: 0.55, lean: 1.2, twist: 0.12, side: 0.3 },
-  mute:      { name: 'Left Mute', hand: 'L', hands: [['L', 'R', 0.3, 'out']], arms: 'out', ski: { L: [-0.03, 0.02, 0.08, -0.08, -0.22, 0], R: [0.06, 0.06, 0.1, 0.16, -0.3, -0.05] }, tuck: 0.55, lean: 1.15, twist: -0.32, side: -0.3, hips: 0.4 },
+  // a mute: the other hand reaches across the front of the body to the other ski, in front of the binding; that ski
+  // pulled up and a little across the first (a small X), the body turned and the reaching shoulder dropped into it
+  // (2026-11-03: it read as a safety)
+  mute:      { name: 'Left Mute', hand: 'L', hands: [['L', 'R', 0.32, 'out']], arms: 'out', ski: { L: [-0.05, -0.02, 0.06, -0.2, -0.15, 0.04], R: [0.11, 0.14, 0.12, 0.36, -0.45, -0.12] }, tuck: 0.65, lean: 1.05, twist: -0.58, side: -0.45, hips: 0.5 },
   japan:     { name: 'Right Japan', hand: 'R', hands: [['R', 'L', 0.1, 'in']], arms: 'out', ski: { L: [-0.05, 0.1, 0.02, -0.12, 0.2, -0.05], R: [0.01, 0.02, 0.06, -0.04, 0.12, 0] }, tuck: 0.6, lean: 1.15, twist: 0.3, side: 0.28, hips: 0.4 },
-  tail:      { name: 'Right Tail', hand: 'R', kind: 'tail', hands: [['R', 'R', -0.82, 'out']], arms: 'out', ski: { L: [0, 0.04, -0.16, -0.04, 0.6, 0], R: [0, 0.06, -0.18, 0.05, 0.66, 0] }, tuck: 0.45, lean: 0.55, twist: -0.32, side: 0.32 },
+  // a tail grab: the hand at the very end of the tail beside the hip, both skis steeply tips down (60 to 70 degrees)
+  // and together, the legs hanging lower, the chest fairly upright and turned and dropped a little to the grab
+  tail:      { name: 'Right Tail', hand: 'R', kind: 'tail', hands: [['R', 'R', -0.93, 'out']], arms: 'out', ski: { L: [0.01, -0.02, -0.12, -0.04, 1.35, 0], R: [-0.01, 0, -0.14, 0.05, 1.45, 0] }, tuck: 0.3, lean: 0.4, twist: -0.35, side: 0.38 },
   nose:      { name: 'Nose', hand: 'R', hands: [['R', 'R', 0.94, 'end']], arms: 'out', ski: { L: [0, -0.03, 0.26, 0.04, -0.8, 0], R: [0, -0.03, 0.27, -0.04, -0.82, 0] }, tuck: 0.25, lean: 1.4, twist: 0.1, side: 0.25 },
   truck:     { name: 'Truck Driver', hand: 'B', kind: 'truck', hands: [['L', 'L', 0.35, 'out'], ['R', 'R', 0.35, 'out']], ski: { L: [-0.02, 0, 0.1, 0.04, -0.55, 0], R: [0.02, 0, 0.1, -0.04, -0.55, 0] }, tuck: 0.65, lean: 1.0, twist: 0, side: 0 },
   critical:  { name: 'Critical', hand: 'L', hands: [['L', 'R', 0.55, 'in']], arms: 'out', ski: { L: [-0.02, 0, 0.04, -0.06, 0.08, 0], R: [0.04, 0.06, 0.1, 0.12, -0.55, -0.05] }, tuck: 0.5, lean: 1.2, twist: -0.25, side: -0.22, hips: 0.4 },
   octo:      { name: 'Octograb', hand: 'B', hands: [['R', 'R', 0.85, 'end'], ['L', 'L', -0.82, 'out']], ski: { L: [-0.03, 0.02, -0.18, -0.06, 0.4, 0], R: [0.03, 0, 0.18, 0.06, -0.6, 0] }, tuck: 0.45, lean: 0.75, twist: 0.1, side: 0 },
   // a blunt: the very end of the tail held, that ski steeply tail up beside the hip and crossed a little under the other
   blunt:     { name: 'Right Blunt', hand: 'R', kind: 'tail', hands: [['R', 'R', -1, 'end']], arms: 'out', ski: { L: [0.01, 0.02, -0.06, -0.1, 0.5, 0], R: [-0.04, 0.1, -0.12, 0.22, 0.95, 0.1] }, tuck: 0.5, lean: 0.55, twist: -0.45, side: 0.42 },
-  stalefish: { name: 'Stalefish', hand: 'R', hands: [['R', 'L', -0.6, 'out']], arms: 'out', ski: { L: [-0.04, 0.06, -0.1, -0.12, 0.42, 0], R: [-0.02, 0.03, -0.06, -0.06, 0.38, 0] }, tuck: 0.55, lean: 0.6, twist: -0.3, side: 0.35, hips: 0.4 },
+  // (the grabbed ski brought behind the other leg, which stays forward, so neither goes through the other)
+  stalefish: { name: 'Stalefish', hand: 'R', hands: [['R', 'L', -0.6, 'out']], arms: 'out', ski: { L: [-0.03, 0.08, -0.2, -0.2, 0.45, 0], R: [-0.03, 0, 0.08, -0.04, 0.3, 0] }, tuck: 0.55, lean: 0.6, twist: -0.3, side: 0.35, hips: 0.4 },
   bowarrow:  { name: 'Bow and Arrow', hand: 'B', hands: [['R', 'R', 0.9, 'end'], ['L', 'L', 0.4, 'out']], ski: { L: [0.06, 0.12, 0.02, 0.08, -0.7, -0.1], R: [-0.02, -0.05, 0.26, -0.05, -0.65, 0] }, tuck: 0.45, lean: 0.9, twist: 0.1, side: 0.1 },
-  dubtail:   { name: 'Double Tail', hand: 'B', hands: [['L', 'L', -0.82, 'out'], ['R', 'R', -0.82, 'out']], ski: { L: [0.02, 0.05, -0.18, -0.06, 0.62, 0], R: [-0.02, 0.05, -0.18, 0.06, 0.62, 0] }, tuck: 0.42, lean: 0.45, twist: 0, side: 0 },
-  seatbelt:  { name: 'Seatbelt', hand: 'L', hands: [['L', 'R', -0.8, 'out']], arms: 'out', ski: { L: [0.02, 0.02, -0.04, 0.04, 0.32, 0], R: [-0.04, 0.04, -0.08, 0.12, 0.5, 0] }, tuck: 0.45, lean: 0.6, twist: -0.6, side: -0.22, hips: 0.4 },
+  dubtail:   { name: 'Double Tail', hand: 'B', kind: 'tail', hands: [['L', 'L', -0.93, 'out'], ['R', 'R', -0.93, 'out']], ski: { L: [0.02, -0.02, -0.12, -0.05, 1.35, 0], R: [-0.02, -0.02, -0.12, 0.05, 1.35, 0] }, tuck: 0.3, lean: 0.4, twist: 0, side: 0 },
+  // a seatbelt: the other hand reaches across the front of the body to the tail: that ski's boot pulled up and forward,
+  // the ski steeply tail up so its tail stands in front of the hips (it went behind, through the left leg)
+  seatbelt:  { name: 'Seatbelt', hand: 'L', kind: 'tail', hands: [['L', 'R', -0.8, 'out']], arms: 'out', ski: { L: [0.02, -0.04, -0.04, 0.04, 0.25, 0], R: [0.05, 0.25, 0.3, -0.3, 1.25, 0.15] }, tuck: 0.6, lean: 0.7, twist: -0.5, side: -0.25, hips: 0.4 },
   // positions
   daffy:     { name: 'Daffy', pos: true, hands: [], arms: 'wide', ski: { L: [0, -0.05, 0.5, 0, -1, 0], R: [0, -0.12, -0.5, 0, 0.85, 0] }, tuck: 0.05, lean: 0.05, twist: 0, side: 0 },
   spread:    { name: 'Spread Eagle', pos: true, hands: [], arms: 'up', ski: { L: [0.48, 0.25, 0, 0.25, -0.85, 0.3], R: [-0.48, 0.25, 0, -0.25, -0.85, -0.3] }, tuck: 0.15, lean: 0.1, twist: 0, side: 0 },
   backscratch: { name: 'Backscratcher', pos: true, hands: [], arms: 'up', ski: { L: [0.04, 0.2, -0.38, 0, 1.2, 0], R: [-0.04, 0.2, -0.38, 0, 1.2, 0] }, tuck: 0.35, lean: -0.1, twist: 0, side: 0 },
-  ironcross: { name: 'Iron Cross', pos: true, hands: [], arms: 'wide', ski: { L: [0.06, 0.05, -0.05, -0.75, 0.15, 0], R: [-0.06, 0, -0.05, 0.75, 0.15, 0] }, tuck: 0.5, lean: 0.6, twist: 0, side: 0 },
+  // (the legs spread in a V and the crossed tails at two heights, so they cross well behind the heels and pass each
+  // other and the legs even tweaked)
+  ironcross: { name: 'Iron Cross', pos: true, hands: [], arms: 'wide', ski: { L: [0.15, 0.09, -0.05, -0.6, 0.15, 0], R: [-0.15, -0.01, -0.05, 0.6, 0.15, 0] }, tuck: 0.5, lean: 0.6, twist: 0, side: 0 },
 };
 export const POSITIONS = new Set(['daffy', 'spread', 'backscratch', 'ironcross']);
 

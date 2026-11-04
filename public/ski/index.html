@@ -8,11 +8,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,800;1,700;1,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/ski.css?v=14">
+<link rel="stylesheet" href="./css/ski.css?v=15">
 <script type="importmap">
 {
   "imports": {
-    "three": "/car/vendor/three/three.module.js?v=ski14",
+    "three": "/car/vendor/three/three.module.js?v=ski15",
     "three/addons/": "/car/vendor/three/addons/"
   }
 }
@@ -35,53 +35,63 @@
 </div>
 
 <div id="menu">
-  <div class="card">
+  <div class="card home">
     <div class="brand">
-      <span class="kicker">Terrain park</span>
       <h1>Leon Freeski</h1>
-      <p class="tag">Jumps, rails, a superpipe and fresh snow that keeps your lines.</p>
+      <p class="tag">Pick a run, then ride.</p>
     </div>
-    <div class="row">
-      <button id="play" class="big" disabled>Loading&hellip;</button>
+    <div class="maps" role="radiogroup" aria-label="Map">
+      <button class="map" data-map="park" role="radio"><span class="sign park" aria-hidden="true">Park</span><b>Terrain park</b><small>Jumps, rails, the pipe</small></button>
+      <button class="map" data-map="jumpline" role="radio"><span class="sign diamond" aria-hidden="true"><i></i></span><b>Jump Line</b><small>Seven jumps, three sizes</small></button>
+      <button class="map" data-map="mammoth" role="radio"><span class="sign diamond two" aria-hidden="true"><i></i><i></i></span><b>Mammoth</b><small>Real mountain, deep snow</small></button>
     </div>
-    <div class="opts">
-      <label>Map
-        <select id="map"><option value="park">Terrain park</option><option value="jumpline">Jump Line (seven jumps, Large, Medium and Small lanes)</option><option value="mammoth">Mammoth Mountain (real terrain, deep snow)</option></select>
-      </label>
-      <label>Controls
-        <select id="scheme"><option value="mouse">Mouse steer</option><option value="keys">Keyboard</option><option value="shred">Shredsauce Controls</option></select>
-      </label>
-      <label>Camera
-        <select id="cammode"><option value="chase">Chase</option><option value="far">Far chase</option><option value="pov">First person</option><option value="film">Filmer</option></select>
-      </label>
-      <label>Graphics
-        <select id="gfx"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select>
-      </label>
-      <label>Poles
-        <select id="poles"><option value="1">On</option><option value="0">Off</option></select>
-      </label>
-      <label>Rider
-        <select id="rider"><option value="m_adult_10">Red jacket</option><option value="m_adult_18">Grey hoodie</option><option value="m_adult_17">Blue hoodie</option><option value="f_adult_13">Grey jacket</option><option value="f_adult_14">Beige jacket</option></select>
-      </label>
-      <label class="chk"><input type="checkbox" id="showfps"> Show frame rate</label>
-      <label class="chk"><input type="checkbox" id="sound" checked> Sound</label>
+    <button id="play" class="big" disabled>Loading&hellip;</button>
+    <div class="seg" role="radiogroup" aria-label="Controls">
+      <span class="seglab">Controls</span>
+      <button data-scheme="mouse" role="radio">Mouse</button><button data-scheme="keys" role="radio">Keyboard</button><button data-scheme="shred" role="radio">Shredsauce</button>
     </div>
-    <div class="mp">
-      <div class="mphead">Ride with others</div>
-      <div class="mprow">
-        <input id="mpname" maxlength="16" placeholder="Your name" autocomplete="off">
-        <button id="mppublic">Join the park</button>
-        <button id="mpprivate">New private room</button>
+    <details class="fold">
+      <summary>Settings</summary>
+      <div class="opts">
+        <select id="map" hidden><option value="park">Terrain park</option><option value="jumpline">Jump Line</option><option value="mammoth">Mammoth Mountain</option></select>
+        <select id="scheme" hidden><option value="mouse">Mouse steer</option><option value="keys">Keyboard</option><option value="shred">Shredsauce Controls</option></select>
+        <label>Camera
+          <select id="cammode"><option value="chase">Chase</option><option value="far">Far chase</option><option value="pov">First person</option><option value="film">Filmer</option></select>
+        </label>
+        <label>Graphics
+          <select id="gfx"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select>
+        </label>
+        <label>Rider
+          <select id="rider"><option value="m_adult_10">Red jacket</option><option value="m_adult_18">Grey hoodie</option><option value="m_adult_17">Blue hoodie</option><option value="f_adult_13">Grey jacket</option><option value="f_adult_14">Beige jacket</option></select>
+        </label>
+        <label>Poles
+          <select id="poles"><option value="1">On</option><option value="0">Off</option></select>
+        </label>
+        <label class="chk"><input type="checkbox" id="sound" checked> Sound</label>
+        <label class="chk"><input type="checkbox" id="showfps"> Show frame rate</label>
       </div>
-      <div class="mprow">
-        <input id="mpcode" maxlength="4" placeholder="Code" autocomplete="off" style="width:90px;text-transform:uppercase">
-        <button id="mpjoin">Join by code</button>
-        <button id="mpleave" class="hidden">Leave</button>
-        <span id="mpstatus"></span>
+    </details>
+    <details class="fold">
+      <summary>Ride with others</summary>
+      <div class="mp">
+        <div class="mprow">
+          <input id="mpname" maxlength="16" placeholder="Your name" autocomplete="off">
+          <button id="mppublic">Join the park</button>
+          <button id="mpprivate">Private room</button>
+        </div>
+        <div class="mprow">
+          <input id="mpcode" maxlength="4" placeholder="Code" autocomplete="off" class="code">
+          <button id="mpjoin">Join by code</button>
+          <button id="mpleave" class="hidden">Leave</button>
+          <span id="mpstatus"></span>
+        </div>
       </div>
-    </div>
-    <div id="keys"></div>
-    <p class="fine">Rider models: Microsoft Rocketbox (MIT). Mountain map elevation: AWS Terrain Tiles (USGS 3DEP, SRTM and others, open data via Mapzen). Everything else made for this game.</p>
+    </details>
+    <details class="fold">
+      <summary>Keys</summary>
+      <div id="keys"></div>
+    </details>
+    <p class="fine">Rider models: Microsoft Rocketbox (MIT). Mountain elevation: AWS Terrain Tiles (USGS 3DEP, SRTM and others, open data via Mapzen). Everything else made for this game.</p>
   </div>
 </div>
 
@@ -95,6 +105,6 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=14"></script>
+<script type="module" src="./js/main.js?v=15"></script>
 </body>
 </html>

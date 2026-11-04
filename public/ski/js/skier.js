@@ -14,8 +14,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=14';
-import { clamp, smoothstep } from './noise.js?v=14';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=15';
+import { clamp, smoothstep } from './noise.js?v=15';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -59,7 +59,7 @@ export class Skier {
     this.com = new THREE.Vector3();
     this.state = 'ground';
     this.sw = false;                          // riding switch (backwards)
-    this.edge = 0; this.edgeV = 0; this.crouch = 0; this.tuck = 0; this.brake = 0; this.press = 0; this.skate = 0; this.skateT = 0;
+    this.edge = 0; this.edgeV = 0; this.crouch = 0; this.tuck = 0; this.brake = 0; this.press = 0; this.skate = 0; this.skateT = 0; this.lazy = 0; this.lazyT = 0;
     this.crouchT = 0;                         // how long the pop key has been held
     this.slide = 0;                           // lateral sliding speed (m/s), for spray and sound
     this.tAir = 0; this.tState = 0; this.windup = 0; this.turnRate = 0;
@@ -138,6 +138,10 @@ export class Skier {
     }
     // butter: the base pressed on the nose or tail, the skis pivot on that end with little grip
     this.press += ((I.butter ? I.press : 0) - this.press) * Math.min(1, dt * 8);
+    // a lazy boy (held, on the snow): counted once it has been held half a second, scored when let go
+    this.lazy += ((I.lazy ? 1 : 0) - this.lazy) * Math.min(1, dt * 6);
+    if (I.lazy && speed > 2) this.lazyT += dt;
+    else { if (this.lazyT >= 0.5) this.events.push({ type: 'lazyboy', t: this.lazyT }); this.lazyT = 0; }
     const buttering = Math.abs(this.press) > 0.35;
     /* the edge rolls on and off as a body does: eased in and out (a critically damped spring, not a fixed rate), so a
        quick tap tips the skis a little and lets them back, holding rolls them over through about half a second, and a

@@ -10,9 +10,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=14';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=14';
-import { height } from './terrain.js?v=14';
+import { clamp, smoothstep } from './noise.js?v=15';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=15';
+import { height } from './terrain.js?v=15';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -29,6 +29,27 @@ const SKN = [['sL0', 'sL1', 'sL2', 'sL3', 'sL4', 'sL5'], ['sR0', 'sR1', 'sR2', '
 // a grab's free arm (out from the shoulder, up, forward), all inside the arm's reach so the elbow stays bent; 'up' is a
 // hand raised beside and a little behind the head with the elbow out, not an arm pointed at the sky
 // (the hands' place from the shoulder: out, up, forward. Brought in and down, hanging more naturally, 2026-11-03)
+const _sa0 = new THREE.Vector3(), _sb0 = new THREE.Vector3(), _sa1 = new THREE.Vector3(), _sb1 = new THREE.Vector3(), _sp0 = new THREE.Vector3(), _sp1 = new THREE.Vector3(), _sd = new THREE.Vector3(), _sv = new THREE.Vector3(), _su = new THREE.Vector3(), _sw = new THREE.Vector3(), _sr = new THREE.Vector3();
+// the closest points of two segments (p1 q1, p2 q2) into c1, c2; their distance returned
+function segSeg(p1, q1, p2, q2, c1, c2) {
+  const d1 = _su.subVectors(q1, p1), d2 = _sw.subVectors(q2, p2), r = _sr.subVectors(p1, p2);
+  const a = d1.dot(d1), e = d2.dot(d2), f = d2.dot(r);
+  let s, t;
+  if (a < 1e-9 && e < 1e-9) { s = t = 0; }
+  else if (a < 1e-9) { s = 0; t = clamp(f / e, 0, 1); }
+  else {
+    const c = d1.dot(r);
+    if (e < 1e-9) { t = 0; s = clamp(-c / a, 0, 1); }
+    else {
+      const bb = d1.dot(d2), den = a * e - bb * bb;
+      s = den > 1e-9 ? clamp((bb * f - c * e) / den, 0, 1) : 0;
+      t = (bb * s + f) / e;
+      if (t < 0) { t = 0; s = clamp(-c / a, 0, 1); } else if (t > 1) { t = 1; s = clamp((bb - c) / a, 0, 1); }
+    }
+  }
+  c1.copy(p1).addScaledVector(d1, s); c2.copy(p2).addScaledVector(d2, t);
+  return c1.distanceTo(c2);
+}
 const ARM_MODE = { out: [0.22, -0.22, 0.2], up: [0.19, 0.25, -0.08], wide: [0.3, -0.2, 0.1] };
 // small continuous motion: a sum of three sines, about -1..1, never repeating soon (a is a phase per channel)
 // a reach that is kept short of a limb's full length: as it is up to a share a of the length, then easing towards b
@@ -40,8 +61,8 @@ const gpOut = () => ({ pt: V(), palm: V(), fingers: V() });
 export const SKI = { len: 1.78, waist: 0.092, tip: 0.118, thick: 0.017, stack: 0.03 };
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=14';
-import { grabDef } from './grabs.js?v=14';
+export { GRABS } from './grabs.js?v=15';
+import { grabDef } from './grabs.js?v=15';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -106,7 +127,14 @@ function makeSki(colA, colB) {
     new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.25, metalness: 0.1 }),
     new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.3, metalness: 0.8 }),
   ];
-  const ski = new THREE.Mesh(g, mats); ski.castShadow = true; ski.name = 'ski';
+  /* the ski flexes: a bend along its length (ends up from the middle, uBend metres at the tips), for a butter or a
+     press (2026-11-03, for "make butter look more like butter with skis bending slightly") */
+  const bend = { value: 0 }, half = (SKI.len / 2).toFixed(4);
+  for (const m of mats) {
+    m.onBeforeCompile = s => { s.uniforms.uBend = bend; s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nuniform float uBend;').replace('#include <begin_vertex>', `#include <begin_vertex>\n{ float t = position.z / ${half}; transformed.y += uBend * t * t; }`); };
+    m.customProgramCacheKey = () => 'ski-bend';
+  }
+  const ski = new THREE.Mesh(g, mats); ski.castShadow = true; ski.name = 'ski'; ski.userData.bend = bend;
   // binding: toe piece and heel piece
   const bm = new THREE.MeshStandardMaterial({ color: 0x23262c, roughness: 0.45, metalness: 0.4 });
   const am = new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.4, metalness: 0.3 });
@@ -144,9 +172,28 @@ function makePole() {
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
   return g;
 }
+// the helmet's paint: a navy shell, a yellow disc on each side, red stripes over the top from front to back (our own
+// design, in the spirit of a sponsored rider's lid; no brand's name or logo), on the sphere's u (round) and v (down)
+function helmetPaint() {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 256; const x = c.getContext('2d');
+  x.fillStyle = '#16255e'; x.fillRect(0, 0, 512, 256);
+  x.fillStyle = '#c8cdd6'; x.fillRect(0, 236, 512, 20);                                   // a silver rim band
+  // red stripes from the front (u 0.25) over the top to the back (u 0.75): along v at the front and back columns
+  x.fillStyle = '#d7192f';
+  for (const u of [0.25, 0.75]) { x.fillRect(u * 512 - 22, 0, 12, 236); x.fillRect(u * 512 + 10, 0, 12, 236); }
+  x.fillRect(0, 0, 512, 16);
+  // the yellow discs on the sides (u 0 and 0.5), a thin red ring round each
+  for (const u of [0, 0.5, 1]) {
+    const cx = u * 512, cy = 140;
+    x.fillStyle = '#d7192f'; x.beginPath(); x.ellipse(cx, cy, 52, 66, 0, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#ffc20e'; x.beginPath(); x.ellipse(cx, cy, 44, 56, 0, 0, Math.PI * 2); x.fill();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
 function makeHelmet(col, lens) {
   const g = new THREE.Group();
-  const shell = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.56), new THREE.MeshStandardMaterial({ color: col, roughness: 0.42, metalness: 0.05 }));
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.56), new THREE.MeshStandardMaterial({ color: 0xffffff, map: helmetPaint(), roughness: 0.28, metalness: 0.15 }));
   shell.scale.set(0.118, 0.13, 0.142); g.add(shell);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.06, 6, 24), new THREE.MeshStandardMaterial({ color: 0x1b1d22, roughness: 0.7 }));
   rim.rotation.x = Math.PI / 2; rim.scale.set(0.117, 0.141, 0.12); rim.position.y = -0.012; g.add(rim);
@@ -195,7 +242,7 @@ export class Rig {
   async load(id, opts = {}) {
     const loader = new GLTFLoader();
     const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    const gl = await loader.loadAsync('./models/' + id + '.glb?v=14');
+    const gl = await loader.loadAsync('./models/' + id + '.glb?v=15');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     this.wrap = new THREE.Group(); this.wrap.add(model); this.body.add(this.wrap);
@@ -260,7 +307,7 @@ export class Rig {
   setPoles(on) { this.poles = on; if (this.poleL) { this.poleL.visible = on; this.poleR.visible = on; } }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=14';
+    const maskUrl = './models/' + id + '_m.png?v=15';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -292,8 +339,8 @@ uniform vec4 uHandA; uniform vec4 uHandB; varying float vGlove; uniform sampler2
   float side = dot(position - uLegMid, uLegLat);
   float mid = uLegHalf > 0.0 ? 1.0 - smoothstep(0.15 * uLegHalf, 0.6 * uLegHalf, abs(side)) : 0.0;
   float inner = max(clamp(-dot(normal, uLegLat) * sign(side), 0.0, 1.0), mid) * (1.0 - smoothstep(0.42, 0.55, hN));
-  float pants = mkv.g * (2.1 + 2.5 * shin + 0.6 * folds) * (1.0 - 0.8 * inner);
-  transformed += normal * uPuff * (mkv.r * 1.25 + pants);
+  float pants = mkv.g * (2.7 + 3.0 * shin + 0.7 * folds) * (1.0 - 0.8 * inner);
+  transformed += normal * uPuff * (mkv.r * 1.9 + pants);
   transformed.y -= mkv.g * uPuff * 3.2 * (1.0 - smoothstep(0.05, 0.16, hN)); }
 #endif`)
         .replace('#include <skinning_vertex>', `#include <skinning_vertex>
@@ -500,6 +547,8 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     const phi = clamp(Math.atan2(-Sx, 9.81), -0.75, 0.75), psi = clamp(Math.atan2(Sz, 9.81), -0.35, 0.25);
     const brake = sp('brake', ground ? S.brake || 0 : 0, 10), tuck = sp('tuck', S.tuck || 0, 9);
     const press = sp('press', (rail ? S.railPress : ground ? S.press : 0) || 0, 14);
+    // a lazy boy (S on the snow in Shredsauce Controls): sat right back on the tails, the tips high
+    const lazy = sp('lazy', ground ? S.lazy || 0 : 0, 8);
     // ---- skating: V strides (one ski pushed out and back each half cycle), double-pole pushes when faster
     const skate = sp('skate', ground ? S.skate || 0 : 0, 9);
     let skT = S.skateT;
@@ -540,7 +589,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     const bob = (ground ? 0.04 * (1 - 0.6 * skate) * settled : rail ? 0.045 : 0) * wob(tt * (rail ? 4.2 : 3.1), 1.3);
     const groove = ground ? 0.07 * (1 - smoothstep(0.3, 0.8, Math.abs(S.edge || 0))) * (1 - tuck) : 0;
     const brakeC = brake * 0.12 * smoothstep(0.6, 3, speed);             // stopped, the stop's crouch eases off
-    let cT = (S.crouch ?? 0.3) + comp + brakeC + crunch * 0.16 + strk2 * 0.05 + groove + landX + bob + swapK * 0.16;
+    let cT = (S.crouch ?? 0.3) + comp + brakeC + crunch * 0.16 + strk2 * 0.05 + groove + landX + bob + swapK * 0.16 + 0.22 * lazy;
     if (air && (S.grab || S.pose)) cT = Math.max(cT, 0.72);              // a grab's crouch at once (the physics eases into it)
     if (air) cT += (0.04 - cT) * popK;
     const crouch = sp('crouch', clamp(cT, 0, 1), popK > 0.2 || landX > 0.03 ? 30 : 22);
@@ -566,7 +615,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
         const g = gd.ski[k ? 'R' : 'L']; for (let i = 0; i < 6; i++) TG[i] = g[i] * (i < 3 ? twk : 1 + (twk - 1) * 0.8);
         // a held ski is never pulled past about 60 degrees tip or tail up (a tweaked mute stood it vertical behind the
         // back); a tail grab's ski goes further, its tail up at the hand
-        const cap = gd.kind === 'tail' ? 1.35 : 1.05;
+        const cap = gd.kind === 'tail' ? 1.5 : 1.05;
         if (gd.hands.length) TG[4] = cap * Math.tanh(TG[4] / cap);
       }
       else if (air) {
@@ -609,7 +658,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       pos.y += Math.abs(Math.sin(roll)) * SKI.waist * 0.5;
       // a butter (or a press on a box or rail): pitched about the pressed end, which stays down
       if (Math.abs(press) > 0.002) {
-        const pa = press * 0.42, zp = (press > 0 ? 1 : -1) * zpL;
+        const pa = press * 0.42 - 0.3 * lazy, zp = (press > 0 ? 1 : -1) * zpL;
         q.multiply(_q1.setFromAxisAngle(X, pa));
         pos.y += zp * Math.sin(pa); pos.z += zp * (1 - Math.cos(pa));
       }
@@ -631,7 +680,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     // skating: the hips ride over each gliding ski in turn; riding and on rails the weight never quite stops moving
     let pelX = -Math.sin(phi) * colL - pushS * 0.14 * strk + (0.016 + 0.014 * railW) * wob(tt * (1.7 + 0.9 * railW), 4.4) * (1 - airW);
     let pelY = A0 + colL * Math.cos(phi) * Math.cos(psi);
-    const pelZ = -0.08 - 0.12 * crouch + 0.24 * press - 0.05 * tuck + Math.sin(psi) * colL * 0.8;
+    const pelZ = -0.08 - 0.12 * crouch + 0.24 * press - 0.05 * tuck + Math.sin(psi) * colL * 0.8 - 0.24 * lazy;
     // ---- where the upper body and head go
     let face = 0;
     if (ground && speed > 0.8) face = clamp(S.sw ? Math.atan2(-vb.x, -vb.z) : Math.atan2(vb.x, vb.z), -1.5, 1.5) * smoothstep(0.8, 2.5, speed);
@@ -676,9 +725,9 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     } else {
       twT = face * (0.3 + 0.45 * brake) + swSide * 0.32 * swK + clamp(-Wy * 0.05, -0.22, 0.22) - pushS * 0.12 * strk + wind * 0.6;
       sdT = 0;
-      lnT = 0.2 + 0.5 * tuck - 0.3 * pressT + 0.45 * pressN + 0.1 * strideW + 0.2 * (S.loading ? 1 : 0);
+      lnT = 0.2 + 0.5 * tuck - 0.3 * pressT + 0.45 * pressN + 0.1 * strideW + 0.2 * (S.loading ? 1 : 0) - 1.0 * lazy;
       hyT = face * (0.85 + 0.12 * brake) + clamp(Wy * 0.22, -0.45, 0.45) + swSide * 1.35 * swK + (glance ? gl.yaw : 0) - wind * 0.45;   // where it is going
-      hpT = 0.05 + (glance ? gl.pitch : 0);
+      hpT = 0.05 + (glance ? gl.pitch : 0) + 0.5 * lazy;
     }
     const wB = air && gd ? 13 : 9, zA = air ? 0.75 : 1;                   // a grab's shape comes quickly, swinging a little past
     const tw = sp('tw', twT, air && gd ? 13 : 8.5, zA), sd = sp('sd', sdT, wB, zA), ln = sp('ln', lnT, air ? (popK > 0.1 ? 20 : wB + 2) : 9, zA), hy = sp('hy', hyT, rail ? 7 : 9), hp = sp('hp', hpT, 7, air ? 0.8 : 1);
@@ -763,7 +812,11 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       const lim = Math.min(dd, 0.975 * L) + (softReach(dd, L, 0.86, 0.975) - Math.min(dd, 0.975 * L)) * airW;
       if (dd > lim) this.sk[k].pos.addScaledVector(_v4.subVectors(hip, ank).normalize().applyQuaternion(qi), dd - lim);
     }
+    // (a few rounds: pushing one ski off the body can bring it to the other)
+    if (!ground) for (let it = 0; it < 3; it++) this.separateSkis(Math.max(airW, railW));
     this.placeSki(this.skiL, this.sk[0]); this.placeSki(this.skiR, this.sk[1]);
+    const bendNow = 0.09 * Math.abs(press) + 0.05 * lazy;
+    for (const s of [this.skiL, this.skiR]) if (s && s.userData.bend) s.userData.bend.value = bendNow;
     // ---- legs: to the boots, knees along the skis and pushed into the turn by as much as the edge is past the lean
     for (let k = 0; k < 2; k++) {
       const s = k ? -1 : 1, spk = this.sk[k];
@@ -824,7 +877,8 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
         lat = 0.12 - 0.04 * tuck; up = -0.41 + 0.15 * tuck; fwd = 0.2 + 0.1 * tuck;
         const load = (S.loading ? 1 : smoothstep(0.55, 0.85, S.crouch || 0)) * (1 - tuck);   // crouched to pop: the arms load back
         fwd -= 0.16 * load; up += 0.03 * load; lat += 0.03 * load;
-        lat += 0.08 * btK; up += 0.08 * btK; fwd -= 0.03 * btK;              // a butter: out for balance, not a T
+        lat += 0.08 * btK; up += 0.08 * btK; fwd -= 0.03 * btK;
+        fwd += 0.16 * lazy; up += 0.12 * lazy; lat += 0.04 * lazy;           // a lazy boy: the arms forward for balance              // a butter: out for balance, not a T
         if (brake > 0.03) { const dn = (this._slip || 1) === s; fwd += brake * (dn ? 0.18 : -0.06); up += brake * (dn ? 0.1 : 0.03); lat += brake * (dn ? -0.02 : 0.06); }
         const land = clamp(absorb * 2.2, 0, 1); fwd += 0.16 * land; up += 0.05 * land;
         if (s * edge < 0) { fwd += 0.06 * Math.abs(edge); up -= 0.03 * Math.abs(edge); }   // the inside hand leads a turn
@@ -921,6 +975,38 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       const wi = pen * pen; _cg.addScaledVector(_cf.subVectors(p, c), wi / d); wsum += wi; if (pen > worst) worst = pen;
     }
     if (wsum > 0 && _cg.lengthSq() > 1e-10) sk.pos.addScaledVector(_cg.normalize().applyQuaternion(qi), worst * w);
+  }
+  /* the skis kept out of each other and out of the body (2026-11-03, for "make sure that the skis do not enter the
+     body or go through each other in any of the grabs"): each ski's centre line against the other's, kept a ski's
+     thickness and a binding apart where they cross, and against the torso and the other leg (as last frame posed
+     them), each pushed the shortest way out, by w (how much of the air or rail it is) */
+  separateSkis(w) {
+    if (w < 0.01) return;
+    const R = this.rootQ, qi = _qi2.copy(R).invert(), base = this.body.position, b = this.b, E = SKI.len * 0.47;
+    const line = (k, A, B) => { const s = this.sk[k], q = _kq.copy(R).multiply(s.q), c = _sv.copy(s.pos).applyQuaternion(R).add(base);
+      A.set(0, SKI.thick, E).applyQuaternion(q).add(c); B.set(0, SKI.thick, -E).applyQuaternion(q).add(c); };
+    line(0, _sa0, _sb0); line(1, _sa1, _sb1);
+    const MIN = 0.075, d = segSeg(_sa0, _sb0, _sa1, _sb1, _sp0, _sp1);
+    if (d < MIN) {
+      const n = _sd.subVectors(_sp0, _sp1); if (n.lengthSq() < 1e-8) n.set(0, 1, 0).applyQuaternion(R); n.normalize().applyQuaternion(qi);
+      const push = (MIN - d) * 0.5 * w; this.sk[0].pos.addScaledVector(n, push); this.sk[1].pos.addScaledVector(n, -push);
+    }
+    const pos = (bn, out) => out.setFromMatrixPosition(bn.matrixWorld);
+    for (let k = 0; k < 2; k++) {
+      line(k, _sa0, _sb0);
+      // the torso, and the other leg's thigh and shin
+      const caps = k ? [[b.pelvis, b.neck, 0.17], [b.thL, b.caL, 0.1], [b.caL, b.ftL, 0.085]] : [[b.pelvis, b.neck, 0.17], [b.thR, b.caR, 0.1], [b.caR, b.ftR, 0.085]];
+      let worst = 0; _cg.set(0, 0, 0);
+      for (const [ba, bb, rad] of caps) {
+        const A = pos(ba, _ca), B = pos(bb, _cb), ab = _cc.subVectors(B, A), L2 = Math.max(1e-6, ab.lengthSq());
+        for (let i = 0; i <= 8; i++) {
+          const p = _ce.lerpVectors(_sa0, _sb0, i / 8), t = clamp(_cf.subVectors(p, A).dot(ab) / L2, 0, 1), c = _cf.copy(A).addScaledVector(ab, t), dd = p.distanceTo(c), pen = rad + 0.012 - dd;
+          if (pen <= 0 || dd < 1e-5) continue;
+          _cg.addScaledVector(_sd.subVectors(p, c), pen * pen / dd); if (pen > worst) worst = pen;
+        }
+      }
+      if (worst > 0 && _cg.lengthSq() > 1e-10) this.sk[k].pos.addScaledVector(_cg.normalize().applyQuaternion(qi), worst * w);
+    }
   }
   // seconds until the flight meets the snow (9 if not within about half a second)
   timeToGround(p, v) {

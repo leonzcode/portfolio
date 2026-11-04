@@ -14,7 +14,7 @@
 // A press is only used within 0.3 s of being made, so an old one never fires later.
 // All: C changes the camera (Q in the shred scheme), Backspace goes back to the top, Esc pauses; R starts again a
 // little earlier (mouse and keys; in the shred scheme R is a tweak key and Enter does it).
-import { POSITIONS } from './grabs.js?v=14';
+import { POSITIONS } from './grabs.js?v=15';
 export { POSITIONS };
 
 const GRAB_KEYS = {
@@ -40,7 +40,7 @@ export function keyHelp(scheme) {
   ];
   else if (scheme === 'shred') base = [
     ['← / →', 'turn / spin'], ['↓', 'brake (hold to stop) / back flip'], ['↑', 'crouch for less drag, skate on the flat / front flip'],
-    ['Shift', 'skate forward; in the air a shifty (Left Shift left, Right Shift or Alt right)'], ['Air: A / D', 'left / right shifty'], ['G / H', 'Lincoln loop'],
+    ['Shift', 'skate forward; in the air a shifty (Left Shift left, Right Shift or Alt right)'], ['Air: A / D', 'left / right shifty'], ['S (on the snow)', 'lazy boy: sit back on the tails'], ['G / H', 'Lincoln loop'],
     ['Space', 'crouch for less drag, let go to pop'], ['N', 'butter on the nose (with ↓ the tail), turn it with ← / →; on a rail a nose or tail press'],
     ['N N', 'just after a landing: a revert'], ['Air: ← ← / → →', 'a quick second press spins faster'],
     ['Grab + E / R', 'tweak it or vary it (poked, uncrossed blunt, truck to the left or right)'],
@@ -116,6 +116,8 @@ export class Input {
       }
       if (!air) {
         I.steer = (R ? 1 : 0) - (L ? 1 : 0);
+        // S: a lazy boy, sat back on the tails (in the air S is still the Left Safety)
+        if (k.down('KeyS')) { I.lazy = true; I.butter = true; I.press = -1; }
         if (!I.butter) { I.tuck = F; I.brake = B; }
       } else {
         I.spin = (R ? 1 : 0) - (L ? 1 : 0);

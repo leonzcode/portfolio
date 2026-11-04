@@ -50,5 +50,6 @@ export function mergeGear(rig) {
   // the helmet: everything but the mirrored lens
   const lens = [];
   rig.helmet.traverse(o => { if (o.isMesh && o.material && o.material.metalness >= 0.99) lens.push(o); });
-  mergeInto(rig.helmet, o => lens.includes(o));
+  // (and the shell, which wears its painted picture: merged, it came out plain white)
+  mergeInto(rig.helmet, o => lens.includes(o) || !!(o.material && o.material.map));
 }

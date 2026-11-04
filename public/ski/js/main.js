@@ -1,21 +1,21 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=14';
-import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=14';
-import { makeMaterials, snowUniforms } from './materials.js?v=14';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=14';
-import { Mountain, SPOTS } from './dem.js?v=14';
-import { Skier } from './skier.js?v=14';
-import { Rig } from './rig.js?v=14';
-import { Tricks } from './tricks.js?v=14';
-import { Input } from './input.js?v=14';
-import { Cams } from './camera.js?v=14';
-import { Tracks, Spray } from './snow.js?v=14';
-import { Hud } from './hud.js?v=14';
-import { Sound } from './sound.js?v=14';
-import { Net } from './net.js?v=14';
-import { mergeGear } from './gear.js?v=14';
-import { Touch, TOUCH_GRABS } from './touch.js?v=14';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=15';
+import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=15';
+import { makeMaterials, snowUniforms } from './materials.js?v=15';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=15';
+import { Mountain, SPOTS } from './dem.js?v=15';
+import { Skier } from './skier.js?v=15';
+import { Rig } from './rig.js?v=15';
+import { Tricks } from './tricks.js?v=15';
+import { Input } from './input.js?v=15';
+import { Cams } from './camera.js?v=15';
+import { Tracks, Spray } from './snow.js?v=15';
+import { Hud } from './hud.js?v=15';
+import { Sound } from './sound.js?v=15';
+import { Net } from './net.js?v=15';
+import { mergeGear } from './gear.js?v=15';
+import { Touch, TOUCH_GRABS } from './touch.js?v=15';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
@@ -120,6 +120,11 @@ sel.rider.onchange = () => { opts.rider = sel.rider.value; save(); loadRider(); 
 const soundBox = $('sound'); soundBox.checked = opts.sound !== false; sound.on = soundBox.checked;
 soundBox.onchange = () => { opts.sound = soundBox.checked; sound.on = opts.sound; save(); };
 $('showfps').onchange = e => { opts.showfps = e.target.checked; save(); if (!opts.showfps) $('fps').textContent = ''; };
+// the home screen's run tiles and controls switch stand for the map and scheme selects (kept, hidden, for the wiring above)
+const mark = (sel_, attr, v) => document.querySelectorAll(`[${attr}]`).forEach(b => b.setAttribute('aria-checked', String(b.getAttribute(attr) === v)));
+mark(null, 'data-map', opts.map); mark(null, 'data-scheme', opts.scheme);
+document.querySelectorAll('[data-map]').forEach(b => b.onclick = () => { if (b.dataset.map === opts.map) return; mark(null, 'data-map', b.dataset.map); sel.map.value = b.dataset.map; sel.map.onchange(); });
+document.querySelectorAll('[data-scheme]').forEach(b => b.onclick = () => { mark(null, 'data-scheme', b.dataset.scheme); sel.scheme.value = b.dataset.scheme; sel.scheme.onchange(); });
 let playing = false, paused = false, replay = null, lastEnter = 0, filmHold = false;
 const chatOpen = () => document.activeElement && document.activeElement.id === 'chatin';
 function play() {
@@ -136,7 +141,7 @@ const rec = [];
 function poseState(sk, t) {
   return { p: sk.p, q: sk.q, state: sk.state, edge: sk.edge, crouch: sk.crouch, tuck: sk.tuck, brake: sk.brake, press: sk.press, grab: sk.grab, pose: sk.pose,
     sw: sk.sw, speed: sk.v.length(), vel: sk.v, balance: sk.balance || 0, t, tweak: sk.tweak || '', shift: sk.shift || 0, skate: sk.skate || 0, skateT: sk.skateT || 0,
-    absorb: sk.absorb || 0, landT: sk.landT, lookBack: !!sk.lookBack, railAng: sk.railAng || 0, railPress: sk.railPress || 0, turn: sk.turnRate || 0, slide: sk.slide || 0, tAir: sk.tAir || 0,
+    lazy: sk.lazy || 0, absorb: sk.absorb || 0, landT: sk.landT, lookBack: !!sk.lookBack, railAng: sk.railAng || 0, railPress: sk.railPress || 0, turn: sk.turnRate || 0, slide: sk.slide || 0, tAir: sk.tAir || 0,
     windup: sk.windup || 0, loading: sk.crouchT > 0.06 };
 }
 function record(t) {
