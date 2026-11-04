@@ -14,8 +14,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=11';
-import { clamp, smoothstep } from './noise.js?v=11';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=12';
+import { clamp, smoothstep } from './noise.js?v=12';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -271,6 +271,16 @@ export class Skier {
     if (speed < 0.6 && this.skate < 0.05 && N > 9 && a.length() < 0.4) a.multiplyScalar(0);
     this.v.addScaledVector(a, dt);
     this.v.addScaledVector(n, -this.v.dot(n));
+    /* no drift (2026-11-03, for "remove it completely except for on landings"): on the snow the skis go where they point,
+       a turn taking the travel round with them at the speed it had. A slide is left only after a landing that came
+       down across the skis (until it has skidded out), braking and just after, buttering, on a face too steep for the
+       edges, in a revert, and nearly stopped. */
+    const sp2 = this.v.length();
+    if (this.landSkid && Math.abs(this.v.dot(right)) < 0.6) this.landSkid = false;
+    if (sp2 > 1 && !buttering && this.brake < 0.03 && this.unbrakeT > 0.9 && steep > 0.95 && !this.landSkid && !this.revertLeft) {
+      const al = this.v.dot(f);
+      this.v.copy(f).multiplyScalar((al < 0 ? -1 : al > 0 ? 1 : travel) * sp2);
+    }
     // pop
     if (!I.crouch && this.crouchT > 0.06) {
       const spin = -(this.windup * AIR.spin * 0.85 + this.turnRate * 0.35);   // + about up is to the left
@@ -500,6 +510,8 @@ export class Skier {
       const along = this.v.dot(fa), across = this.v.clone().addScaledVector(fa, -along);
       this.v.copy(fa).multiplyScalar(along).addScaledVector(across, q === 'clean' ? 0.3 : 0.55);
     }
+    // (landed across the skis: this slide is left to skid out; see stepGround's no drift)
+    this.landSkid = this.v.clone().addScaledVector(fa, -this.v.dot(fa)).length() > 0.8;
     this.lastSpinDir = Math.sign(this.w.dot(up)) || this.lastSpinDir || 1;
     this.w.set(0, 0, 0);
     this.state = 'ground'; this.tState = 0; this.landT = 0; this.revertLeft = 0; this.edgeV = 0;

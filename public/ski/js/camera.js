@@ -1,7 +1,7 @@
 // Cameras: chase (behind the travel, held steady through spins), far chase, first person (a helmet camera at the
 // rider's eyes, turning with the head) and filmer (tripod spots beside the features, panning and zooming to follow).
 import * as THREE from 'three';
-import { height } from './terrain.js?v=11';
+import { height } from './terrain.js?v=12';
 
 const MODES = ['chase', 'far', 'pov', 'film'];
 export class Cams {

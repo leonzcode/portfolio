@@ -1,21 +1,21 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=11';
-import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=11';
-import { makeMaterials, snowUniforms } from './materials.js?v=11';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=11';
-import { Mountain, SPOTS } from './dem.js?v=11';
-import { Skier } from './skier.js?v=11';
-import { Rig } from './rig.js?v=11';
-import { Tricks } from './tricks.js?v=11';
-import { Input } from './input.js?v=11';
-import { Cams } from './camera.js?v=11';
-import { Tracks, Spray } from './snow.js?v=11';
-import { Hud } from './hud.js?v=11';
-import { Sound } from './sound.js?v=11';
-import { Net } from './net.js?v=11';
-import { mergeGear } from './gear.js?v=11';
-import { Touch, TOUCH_GRABS } from './touch.js?v=11';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=12';
+import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=12';
+import { makeMaterials, snowUniforms } from './materials.js?v=12';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=12';
+import { Mountain, SPOTS } from './dem.js?v=12';
+import { Skier } from './skier.js?v=12';
+import { Rig } from './rig.js?v=12';
+import { Tricks } from './tricks.js?v=12';
+import { Input } from './input.js?v=12';
+import { Cams } from './camera.js?v=12';
+import { Tracks, Spray } from './snow.js?v=12';
+import { Hud } from './hud.js?v=12';
+import { Sound } from './sound.js?v=12';
+import { Net } from './net.js?v=12';
+import { mergeGear } from './gear.js?v=12';
+import { Touch, TOUCH_GRABS } from './touch.js?v=12';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
