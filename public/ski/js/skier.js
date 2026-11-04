@@ -14,8 +14,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=8';
-import { clamp, smoothstep } from './noise.js?v=8';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=9';
+import { clamp, smoothstep } from './noise.js?v=9';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -219,7 +219,9 @@ export class Skier {
     const vf2 = this.v.dot(f), vr2 = this.v.dot(right);
     const mu = this.surf === 1 ? 0.07 : 0.036;
     if (Math.abs(vf2) > 0.03) a.addScaledVector(f, -Math.sign(vf2) * mu * N);
-    else a.addScaledVector(f, -a.dot(f) * (speed < 0.3 && this.skate < 0.05 ? 1 : 0));
+    // (stopped, the snow holds the skis unless the slope pulls along them harder than about 4.6 degrees does: pointed
+    // down a steeper one they slide off, 2026-11-03; stopped across the hill or on the flat they stay)
+    else a.addScaledVector(f, -a.dot(f) * (speed < 0.3 && this.skate < 0.05 && Math.abs(a.dot(f)) < 0.08 * N ? 1 : 0));
     // across the skis: a set edge holds what the turn asks for; once the skis slide sideways they only get the snow's
     // sliding friction, so a skid or a hockey stop slows you gradually instead of stopping you dead
     const edgeK = buttering ? 0.25 : (0.32 + 0.68 * smoothstep(0.05, 0.55, ae)) * (1 + this.brake * 0.6);
@@ -434,7 +436,7 @@ export class Skier {
     // the face pushes back sideways only (pushed along its normal the rider was thrown up it and rode onto the deck)
     const nh = new THREE.Vector3(nn.x, 0, nn.z); if (nh.lengthSq() < 1e-6) nh.set(0, 0, -1); nh.normalize();
     const vn = this.v.dot(nh);
-    if (vn < -8) { this.crash('wall'); return; }
+    if (vn < -10) { this.crash('wall'); return; }
     const dy = h + 0.004 - this.p.y; this.p.y += dy; this.com.y += dy;
     if (this.v.y < 0) this.v.y *= 0.6;
     if (vn < 0) this.v.addScaledVector(nh, -vn * 1.1);
@@ -471,8 +473,11 @@ export class Skier {
     }
     const grabbing = !!this.grab;
     let q = 'clean';
-    if (aUp > 52 || aDir > 50 || vn > 13.5) q = 'crash';
-    else if (aUp > 30 || aDir > 24 || grabbing || this.pose || vn > 10) q = 'sketchy';
+    // (a landing crashes only on the body: more than 65 degrees off the snow's normal, or into it at 16 m/s; landed
+    // sideways, however far, the skis just skid it out (sketchy). It was 52 degrees, 50 off the travel and 13.5 m/s,
+    // which with no landing help went down too often, 2026-11-03)
+    if (aUp > 65 || vn > 16) q = 'crash';
+    else if (aUp > 34 || aDir > 30 || grabbing || this.pose || vn > 11.5) q = 'sketchy';
     if (this.shiftyT > 0.15) { this.events.push({ type: 'shifty', dir: this.shiftDir, t: this.shiftyT }); this.shiftyT = 0; }
     this.events.push({ type: 'land', q, aUp, aDir, vn, sw, wasSw: this.sw, tAir: this.tAir });
     if (this.held) { this.events.push({ type: 'grabEnd', id: this.held, t: this.grabT, mod: this.bestMod() }); this.held = null; }
@@ -506,7 +511,7 @@ export class Skier {
     const h = this.trees.hit(this.p.x, this.p.z, 0.3);
     if (!h || this.p.y > h.t.y + h.t.s * 0.95) return false;
     const vn = this.v.x * -h.nx + this.v.z * -h.nz;
-    if (vn > 4.5) { this.v.multiplyScalar(0.2); this.v.x += h.nx * 2; this.v.z += h.nz * 2; this.crash('tree'); return true; }
+    if (vn > 7) { this.v.multiplyScalar(0.2); this.v.x += h.nx * 2; this.v.z += h.nz * 2; this.crash('tree'); return true; }
     this.p.x = h.t.x + h.nx * h.R; this.p.z = h.t.z + h.nz * h.R;
     if (vn > 0) { this.v.x += h.nx * vn; this.v.z += h.nz * vn; }
     return false;
@@ -551,7 +556,7 @@ export class Skier {
       if (l < 1e-3) { nx = -this.v.x; nz = -this.v.z; l = Math.hypot(nx, nz) || 1; }
       nx /= l; nz /= l;
       const vn = this.v.x * nx + this.v.z * nz;
-      if (vn < -6) { this.v.multiplyScalar(0.3); this.crash('rail'); return true; }
+      if (vn < -8.5) { this.v.multiplyScalar(0.3); this.crash('rail'); return true; }
       const dx = c.x + nx * half - this.p.x, dz = c.z + nz * half - this.p.z;
       this.p.x += dx; this.p.z += dz; if (this.state === 'air') { this.com.x += dx; this.com.z += dz; }
       if (vn < 0) { this.v.x -= nx * vn * 1.1; this.v.z -= nz * vn * 1.1; }

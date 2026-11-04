@@ -10,9 +10,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=8';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=8';
-import { height } from './terrain.js?v=8';
+import { clamp, smoothstep } from './noise.js?v=9';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=9';
+import { height } from './terrain.js?v=9';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -28,7 +28,8 @@ const TG = new Float64Array(6);
 const SKN = [['sL0', 'sL1', 'sL2', 'sL3', 'sL4', 'sL5'], ['sR0', 'sR1', 'sR2', 'sR3', 'sR4', 'sR5']], HWN = ['hwL', 'hwR'], PULLN = [['pLx', 'pLy', 'pLz'], ['pRx', 'pRy', 'pRz']], ARMN = [['aLx', 'aLy', 'aLz'], ['aRx', 'aRy', 'aRz']];
 // a grab's free arm (out from the shoulder, up, forward), all inside the arm's reach so the elbow stays bent; 'up' is a
 // hand raised beside and a little behind the head with the elbow out, not an arm pointed at the sky
-const ARM_MODE = { out: [0.34, -0.12, 0.24], up: [0.24, 0.27, -0.1], wide: [0.38, -0.14, 0.12] };
+// (the hands' place from the shoulder: out, up, forward. Brought in and down, hanging more naturally, 2026-11-03)
+const ARM_MODE = { out: [0.22, -0.22, 0.2], up: [0.19, 0.25, -0.08], wide: [0.3, -0.2, 0.1] };
 // small continuous motion: a sum of three sines, about -1..1, never repeating soon (a is a phase per channel)
 // a reach that is kept short of a limb's full length: as it is up to a share a of the length, then easing towards b
 // (a hard stop near full reach makes the joint flick, since the angle changes fastest there)
@@ -39,8 +40,8 @@ const gpOut = () => ({ pt: V(), palm: V(), fingers: V() });
 export const SKI = { len: 1.78, waist: 0.092, tip: 0.118, thick: 0.017, stack: 0.03 };
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=8';
-import { grabDef } from './grabs.js?v=8';
+export { GRABS } from './grabs.js?v=9';
+import { grabDef } from './grabs.js?v=9';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -194,7 +195,7 @@ export class Rig {
   async load(id, opts = {}) {
     const loader = new GLTFLoader();
     const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    const gl = await loader.loadAsync('./models/' + id + '.glb?v=8');
+    const gl = await loader.loadAsync('./models/' + id + '.glb?v=9');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     this.wrap = new THREE.Group(); this.wrap.add(model); this.body.add(this.wrap);
@@ -259,7 +260,7 @@ export class Rig {
   setPoles(on) { this.poles = on; if (this.poleL) { this.poleL.visible = on; this.poleR.visible = on; } }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=8';
+    const maskUrl = './models/' + id + '_m.png?v=9';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -801,7 +802,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       if (air) {
         // relaxed at the waist, a little forward and out; tight to the body in spins and corks, a little higher for a
         // back flip, forward for a front flip, out to stop a spin, forward for the landing
-        lat = 0.25; up = -0.33; fwd = 0.24;
+        lat = 0.12; up = -0.44; fwd = 0.15;
         up += clamp(-Wx * 0.015, 0, 0.1); fwd += clamp(Wx * 0.025, 0, 0.12); lat -= clamp(Math.abs(Wx) * 0.01, 0, 0.05);
         lat -= clamp(Math.abs(Wy) * 0.02 + Math.abs(Wz) * 0.02, 0, 0.11);
         lat += 0.13 * open; up += 0.06 * open;
@@ -815,13 +816,13 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
         if (gd && gd.arms) { lat += 0.05 * wob(tt * 1.3, 31 + k * 4); up += 0.07 * wob(tt * 1.6, 33 + k * 3); fwd += 0.06 * wob(tt * 1.1, 37 + k * 5); }
       } else if (rail) {
         const bal = S.balance || 0;
-        lat = 0.27 + 0.08 * Math.abs(bal) + 0.08 * swapK; up = -0.23 - s * bal * 0.2 + 0.08 * swapK; fwd = 0.2 + 0.08 * s * Math.sin(ra);   // loose, the hand on the travel's side ahead
+        lat = 0.21 + 0.08 * Math.abs(bal) + 0.07 * swapK; up = -0.23 - s * bal * 0.2 + 0.08 * swapK; fwd = 0.2 + 0.08 * s * Math.sin(ra);   // loose, the hand on the travel's side ahead
       } else {
         // forward and a little wide of the hips, elbows soft
-        lat = 0.25 - 0.1 * tuck; up = -0.27 + 0.13 * tuck; fwd = 0.33 + 0.03 * tuck;
+        lat = 0.12 - 0.04 * tuck; up = -0.41 + 0.15 * tuck; fwd = 0.2 + 0.1 * tuck;
         const load = (S.loading ? 1 : smoothstep(0.55, 0.85, S.crouch || 0)) * (1 - tuck);   // crouched to pop: the arms load back
         fwd -= 0.16 * load; up += 0.03 * load; lat += 0.03 * load;
-        lat += 0.1 * btK; up += 0.08 * btK; fwd -= 0.03 * btK;              // a butter: out for balance, not a T
+        lat += 0.08 * btK; up += 0.08 * btK; fwd -= 0.03 * btK;              // a butter: out for balance, not a T
         if (brake > 0.03) { const dn = (this._slip || 1) === s; fwd += brake * (dn ? 0.18 : -0.06); up += brake * (dn ? 0.1 : 0.03); lat += brake * (dn ? -0.02 : 0.06); }
         const land = clamp(absorb * 2.2, 0, 1); fwd += 0.16 * land; up += 0.05 * land;
         if (s * edge < 0) { fwd += 0.06 * Math.abs(edge); up -= 0.03 * Math.abs(edge); }   // the inside hand leads a turn
@@ -839,7 +840,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
         if (pk > 0) { fwd += 0.05 * pk; up -= 0.03 * pk; }
       }
       const hm = (0.6 + 0.6 * railW + 1.6 * flow) * (1 - 0.7 * (Hs.w || 0)), ak = 11 + k * 4;
-      if (flow > 0.01) { const sw = Math.sin(tt * 1.9 + 0.6); fwd += s * 0.09 * sw * flow; up += (0.05 + s * 0.04 * sw) * flow; lat += 0.03 * flow; }
+      if (flow > 0.01) { const sw = Math.sin(tt * 1.9 + 0.6); fwd += s * 0.09 * sw * flow; up += (0.05 + s * 0.04 * sw) * flow; lat += 0.01 * flow; }
       lat += 0.03 * hm * wob(tt * (1.6 + railW), ak); up += 0.04 * hm * wob(tt * (1.9 + railW), ak + 2); fwd += 0.05 * hm * wob(tt * (1.4 + railW), ak + 6);
       if (crashW > 0.5) up += Math.sin(t * 9 + s) * 0.2;
       const x0 = s * lat, cl = Math.cos(lead), sl = Math.sin(lead);
@@ -864,7 +865,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       { const d = wr.distanceTo(sh), m = softReach(d, armL, 0.84 + 0.02 * Hs.w, 0.965 + 0.02 * Hs.w); if (m < d) wr.sub(sh).multiplyScalar(m / d).add(sh); }
       // the elbow: back, out and down; with the hand raised, out and a little forward
       const upK = smoothstep(-0.05, 0.2, up) * (1 - Hs.w);
-      const el = _el.set(0, 0, -1).applyQuaternion(chQ).addScaledVector(cL, s * (0.45 + 0.25 * Hs.w)).addScaledVector(ub, -0.7).normalize();
+      const el = _el.set(0, 0, -1).applyQuaternion(chQ).addScaledVector(cL, s * (0.2 + 0.35 * Hs.w)).addScaledVector(ub, -1.15).normalize();
       if (upK > 0.01) el.lerp(_v6.copy(cL).multiplyScalar(s).addScaledVector(cFl, 0.3).addScaledVector(ub, 0.15).normalize(), upK).normalize();
       this.twoBone(ua, fa, k ? 'uaR' : 'uaL', k ? 'faR' : 'faL', wr, el, NZ);
       const HH = this.hands[side];

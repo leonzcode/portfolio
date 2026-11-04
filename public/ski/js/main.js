@@ -1,21 +1,21 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=8';
-import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=8';
-import { makeMaterials, snowUniforms } from './materials.js?v=8';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=8';
-import { Mountain, SPOTS } from './dem.js?v=8';
-import { Skier } from './skier.js?v=8';
-import { Rig } from './rig.js?v=8';
-import { Tricks } from './tricks.js?v=8';
-import { Input } from './input.js?v=8';
-import { Cams } from './camera.js?v=8';
-import { Tracks, Spray } from './snow.js?v=8';
-import { Hud } from './hud.js?v=8';
-import { Sound } from './sound.js?v=8';
-import { Net } from './net.js?v=8';
-import { mergeGear } from './gear.js?v=8';
-import { Touch, TOUCH_GRABS } from './touch.js?v=8';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=9';
+import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=9';
+import { makeMaterials, snowUniforms } from './materials.js?v=9';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=9';
+import { Mountain, SPOTS } from './dem.js?v=9';
+import { Skier } from './skier.js?v=9';
+import { Rig } from './rig.js?v=9';
+import { Tricks } from './tricks.js?v=9';
+import { Input } from './input.js?v=9';
+import { Cams } from './camera.js?v=9';
+import { Tracks, Spray } from './snow.js?v=9';
+import { Hud } from './hud.js?v=9';
+import { Sound } from './sound.js?v=9';
+import { Net } from './net.js?v=9';
+import { mergeGear } from './gear.js?v=9';
+import { Touch, TOUCH_GRABS } from './touch.js?v=9';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
@@ -88,7 +88,19 @@ const touch = new Touch(input, () => { opts.cam = cams.next(); hud.flash({ chase
 Object.defineProperty(input.touch, 'grabId', { get: () => TOUCH_GRABS[input.touch.sel] });
 const sound = new Sound();
 
-const START = mtn ? (() => { const n = normal(0, 0); return { x: 0, z: 0, v: 2, yaw: Math.atan2(n.x, n.z) }; })() : { x: -16, z: -30, v: 5, yaw: 0 };
+// where a run starts: each park map's own first start (on a slope steep enough to roll away down), and on the mountain
+// down the fall line from the summit to where the snow is about 12 degrees (the summit itself is nearly flat)
+const START = mtn ? (() => {
+  let x = 0, z = 0, dx = 0, dz = 1;
+  for (let i = 0; i < 150; i++) {
+    const n = normal(x, z), s = Math.hypot(n.x, n.z);
+    if (s > 1e-3) { dx = n.x / s; dz = n.z / s; }
+    const drop = (height(x, z) - height(x + dx * 6, z + dz * 6)) / 6;
+    if (i > 2 && drop > Math.tan(12 * Math.PI / 180)) break;
+    x += dx * 2; z += dz * 2;
+  }
+  return { x, z, v: 2, yaw: Math.atan2(dx, dz) };
+})() : { x: park.starts[0].x, z: park.starts[0].z, v: park.starts[0].v, yaw: 0 };
 const toStart = () => { skier.spawn(START.x, START.z, START.v, START.yaw); skier.safe.length = 0; cams.first = true; };
 // the end of a run: the bottom of the park, or far down or away on the mountain
 const runOver = () => mtn ? (Math.hypot(skier.p.x, skier.p.z) > 4000 || skier.p.y < -900) : skier.p.z > 1470;
@@ -219,10 +231,12 @@ function tick() {
       /* Enter: back to where you last crashed (the run-in a few seconds before it), or to the Tab marker when that was
          set since; pressed again straight away, back to the start (2026-11-03) */
       if (input.took('Enter') && !chatOpen()) {
-        const now = performance.now();
-        if (now - lastEnter < 550) { lastEnter = 0; toStart(); hud.flash('Back to the start', 900); }
+        // (a second press straight after, and any after that in quick succession, go to the start and stay there; it
+        // used to go back to the crash again on a third press)
+        const now = performance.now(), again = now - lastEnter < 700;
+        lastEnter = now;
+        if (again) { toStart(); hud.flash('Back to the start', 900); }
         else {
-          lastEnter = now;
           const c = skier.crashSpot, m = skier.marker, toM = m && skier.state !== 'crash' && (!c || m.at > c.at);
           if (toM && skier.toMarker()) hud.flash('Back to your marker', 900);
           else if (skier.toCrash()) hud.flash('Back to your last crash', 900);

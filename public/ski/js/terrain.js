@@ -7,12 +7,12 @@
 // frame, with skirts hiding the seams between sizes. Features with their own meshes (kickers, the pipe) are left out
 // of the patches (the ground under them is lowered a little) and drawn by park.js at finer spacing.
 import * as THREE from 'three';
-import { fbm, ridged, smoothstep, clamp } from './noise.js?v=8';
+import { fbm, ridged, smoothstep, clamp } from './noise.js?v=9';
 
 // ---- the run's long profile ----------------------------------------------------------------------------------------
 // [z where it starts, pitch in degrees]
 const SECTIONS = [
-  [-900, 26], [-150, 9], [-55, 3], [12, 19], [42, 14], [395, 11], [640, 15], [700, 17], [890, 13],
+  [-900, 26], [-150, 10], [-55, 10], [12, 19], [42, 14], [395, 11], [640, 15], [700, 17], [890, 13],
   [960, 15], [1060, 11], [1150, 9], [1300, 5], [1420, 2], [1560, 0.5]
 ];
 const Z0 = -900, Z1 = 2600, DZ = 0.5, NZ = Math.round((Z1 - Z0) / DZ) + 1;
