@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=120';
-import { idx, H } from '../world-const.js?v=120';
-import { DIMS, DIM_IDS } from '../dims.js?v=120';
-import { Save } from '../save.js?v=120';
-import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=120';
-import { glints } from '../render/armor.js?v=120';
-import { containerKind } from '../containers.js?v=120';
-import { getSkinSettings } from '../render/avatar.js?v=120';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=120';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=120';
-import { Y0 } from '../world-const.js?v=120';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=120';
-import { Projectile } from '../entities/projectiles.js?v=120';
-import { Combat } from '../combat/combat.js?v=120';
-import { Vehicles } from './vehicles.js?v=120';
-import { Mobs, Orbs } from './mobs.js?v=120';
-import { Events } from './events.js?v=120';
-import { EndSync } from './endfight.js?v=120';
-import { Hub } from './hub.js?v=120';
-import { Account, wsBase, httpBase } from './account.js?v=120';
-import { rankTag } from './players.js?v=120';
+import { B, BLOCKS } from '../blocks.js?v=121';
+import { idx, H } from '../world-const.js?v=121';
+import { DIMS, DIM_IDS } from '../dims.js?v=121';
+import { Save } from '../save.js?v=121';
+import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=121';
+import { glints } from '../render/armor.js?v=121';
+import { containerKind } from '../containers.js?v=121';
+import { getSkinSettings } from '../render/avatar.js?v=121';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=121';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=121';
+import { Y0 } from '../world-const.js?v=121';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=121';
+import { Projectile } from '../entities/projectiles.js?v=121';
+import { Combat } from '../combat/combat.js?v=121';
+import { Vehicles } from './vehicles.js?v=121';
+import { Mobs, Orbs } from './mobs.js?v=121';
+import { Events } from './events.js?v=121';
+import { EndSync } from './endfight.js?v=121';
+import { Hub } from './hub.js?v=121';
+import { Account, wsBase, httpBase } from './account.js?v=121';
+import { rankTag } from './players.js?v=121';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -1585,7 +1585,8 @@ export class Net {
       // (burnt, fallen out of the world, taken by a hopper: said by the player nearest it; blown up: by whoever's blast it was)
       if (e.nid && (e.blown || net.ownsAt(e.pos.x, e.pos.z))) { net.send({ t: 'it-', id: e.nid }); net.items[dimCode(net.game.dim)].delete(e.nid); }
     };
-    D._merge = function () {};
+    // (it joins nothing: 0 stacks before it went, which drops.tick takes from its place in the list)
+    D._merge = function () { return 0; };
     /* A hopper or a hopper cart on this page wants a shared item: asked for as a player asks (it-, take), and put in
        when the server gives it, the rest dropped again as an item of its own, so the server's count stays right.
        (Taken here alone, part of a stack shrank on this page and the server still held the whole stack, given whole

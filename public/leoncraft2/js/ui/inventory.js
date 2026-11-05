@@ -34,18 +34,18 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=120';
-import { Screen, TextField, WHITE } from './gui.js?v=120';
-import { PAINTING_ART } from '../paintingdata.js?v=120';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=120';
-import { matchGrid, consumeGrid } from '../crafting.js?v=120';
-import { enchName, ENCH } from '../enchanting.js?v=120';
-import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=120';
-import { patternLines, drawBannerIcon } from '../banners.js?v=120';
-import { mapLines } from '../maps.js?v=120';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=120';
-import { dialPicture, usePicture } from '../dials.js?v=120';
-import { RecipeBook } from './recipebook.js?v=120';
+import { BLOCKS, B } from '../blocks.js?v=121';
+import { Screen, TextField, WHITE } from './gui.js?v=121';
+import { PAINTING_ART } from '../paintingdata.js?v=121';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=121';
+import { matchGrid, consumeGrid } from '../crafting.js?v=121';
+import { enchName, ENCH } from '../enchanting.js?v=121';
+import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=121';
+import { patternLines, drawBannerIcon } from '../banners.js?v=121';
+import { mapLines } from '../maps.js?v=121';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=121';
+import { dialPicture, usePicture } from '../dials.js?v=121';
+import { RecipeBook } from './recipebook.js?v=121';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -685,7 +685,15 @@ export class ContainerScreen extends Screen {
     if (!r) return;
     if (!c) { this.setCarried(this.craftOnce()); return; }
     // the same item on the mouse with room for a whole result: take it on top
-    if (same(c, r.stack) && c.count + r.stack.count <= maxStack(c.id)) { const o = this.craftOnce(); if (o) c.count += o.count; }
+    if (same(c, r.stack) && c.count + r.stack.count <= maxStack(c.id)) { const o = this.craftOnce(); if (o) c.count += o.count; return; }
+    /* Something else on the mouse (or no room on it): one craft goes into the inventory instead, if it all fits
+       (Leon, 2026-11-04: "make it able to grab items after crafting while holding an item"; the game does nothing
+       here, so a chest made with planks on the mouse meant putting the planks down first). */
+    if (this.inv.roomFor(r.stack) < r.stack.count) return;
+    const o = this.craftOnce();
+    if (!o) return;
+    this.moveInto(o, TO_PLAYER_REVERSED);
+    if (o.count) this.inv.placeBack(o);
   }
   // shift-click on the result: craft while it stays the same and fits
   shiftResult() {
@@ -926,7 +934,9 @@ export class ContainerScreen extends Screen {
       // middle: a full stack of it on the mouse, in creative; or spread full stacks
       if (this.creative && !c) { const st = this.getStack(s); if (st) this.setCarried(withCount(st, maxStack(st.id))); }
       else if (this.creative && c && this.canDrag(s)) this.drag = { button: 1, slots: [s] };
-    } else if (shift && !c) {
+    } else if (shift && (!c || s.kind === 'result' || s.output)) {
+      // (with something on the mouse too, for a result or an output: the game's screen sends that shift-click as a
+      // quick move when the button comes up, so a crafted chest goes into the inventory with planks still held)
       // shift and a double click with a container open: every stack like the one just moved goes across too
       if (this.dbl && button === 0 && this.box && this.lastQuick && !this.special(s) && !s.output) this.quickMoveAll(s, this.lastQuick);
       else { const st = this.getStack(s); this.lastQuick = st ? withCount(st, 1) : null; this.shiftClick(s); }

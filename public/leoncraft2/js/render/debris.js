@@ -14,11 +14,11 @@
    the texture it shows, the layers of its six faces and the light where it
    is. Moved 20 times a second (tick), eased between ticks each frame.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, SOLID } from '../blocks.js?v=120';
-import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=120';
-import { VANILLA } from './vanilla.js?v=120';
-import { Terrain } from '../entities/terrain.js?v=120';
-import { Smoke } from './smoke.js?v=120';
+import { BLOCKS, B, SOLID } from '../blocks.js?v=121';
+import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=121';
+import { VANILLA } from './vanilla.js?v=121';
+import { Terrain } from '../entities/terrain.js?v=121';
+import { Smoke } from './smoke.js?v=121';
 const THREE = window.THREE;
 
 const MAX = 900;

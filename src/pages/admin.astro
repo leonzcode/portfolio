@@ -643,6 +643,9 @@ const primary =
     b.textContent = picked.size ? "Delete " + picked.size + " selected" : "Delete selected";
   }
   function forgetComments(gone: Comment[]) {
+    // (a comment's replies go with it on the server: they leave this list too)
+    const tops = new Set(gone.filter((c) => !c.parent).map((c) => c.slug + "|" + c.id));
+    gone = gone.concat(S!.comments.filter((x) => x.parent && tops.has(x.slug + "|" + x.parent) && !gone.includes(x)));
     const g = new Set(gone);
     S!.comments = S!.comments.filter((x) => !g.has(x));
     for (const c of gone) { picked.delete(ckey(c)); const n = S!.counts[c.slug]; if (n && n.comments) n.comments--; }
@@ -707,7 +710,8 @@ const primary =
       del.type = "button";
       del.setAttribute("aria-label", "Delete the comment by " + c.name);
       del.addEventListener("click", async () => {
-        if (!confirm("Delete this comment by " + c.name + "?")) return;
+        const nr = c.parent ? 0 : S!.comments.filter((x) => x.slug === c.slug && x.parent === c.id).length;
+        if (!confirm("Delete this comment by " + c.name + (nr ? " and its " + (nr === 1 ? "reply" : nr + " replies") : "") + "?")) return;
         del.disabled = true; del.textContent = "Deleting…";
         try {
           const r = await post(SITE + "/admin", { tok, op: "delete", slug: c.slug, id: c.id });

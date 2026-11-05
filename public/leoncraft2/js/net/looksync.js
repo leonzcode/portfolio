@@ -34,8 +34,8 @@
    lapsed session's player keeps it, another player's account does not get
    it. Guests keep theirs in the browser, as before.
 --------------------------------------------------------------------------- */
-import { Account, httpBase } from './account.js?v=120';
-import { DEFAULT_OPTIONS } from '../ui/gui.js?v=120';
+import { Account, httpBase } from './account.js?v=121';
+import { DEFAULT_OPTIONS } from '../ui/gui.js?v=121';
 
 const LOOK = ['skin', 'skinModel', 'skinName', 'cape', 'capeName', 'skinParts'];
 const DEVICE = ['graphicsPreset', 'deviceTuned', 'renderDistance', 'simulationDistance', 'chunkBuilder', 'smoothLighting', 'biomeBlend',

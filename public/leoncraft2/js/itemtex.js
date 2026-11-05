@@ -8,7 +8,7 @@
    or a door: the albedo from the strip, a flat normal map and a plain
    material map. The terrain files themselves are never changed.
 
-     const items = await loadItemStrip(base, '?v=120');
+     const items = await loadItemStrip(base, '?v=121');
      addItemPieces(items, manifest.layers, albPieces, nrmPieces, spcPieces);
      setItemLayers(manifest.layers);        // js/items.js
 
@@ -21,7 +21,7 @@
    (A clock in the world still tells the time: render/liveclock.js paints the
    clock's own layer with the face the dials show.)
 --------------------------------------------------------------------------- */
-import { ITEM_TEX } from './itemdata.js?v=120';
+import { ITEM_TEX } from './itemdata.js?v=121';
 const RAW = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
 const PIECE = 128;
 // how many pictures of the strip go into the texture array: everything before the first frame

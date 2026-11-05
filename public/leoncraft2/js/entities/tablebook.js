@@ -23,11 +23,11 @@
    on, it shows at once (wantBook), and it goes when the book is taken or
    the lectern broken.
 --------------------------------------------------------------------------- */
-import { Entity } from './entity.js?v=120';
-import { register } from './mobs.js?v=120';
-import { model } from './mobs2.js?v=120';
-import { addArt } from './mobart.js?v=120';
-import { B, BLOCKS } from '../blocks.js?v=120';
+import { Entity } from './entity.js?v=121';
+import { register } from './mobs.js?v=121';
+import { model } from './mobs2.js?v=121';
+import { addArt } from './mobart.js?v=121';
+import { B, BLOCKS } from '../blocks.js?v=121';
 
 const THREE = window.THREE;
 const R = () => Math.random();

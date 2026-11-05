@@ -39,15 +39,15 @@
      dropItem(world, x, y, z, 'diamond', 2)     from anywhere (mob loot...)
      giveXp(x, y, z, 7)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=120';
-import { collisionBoxes } from './models.js?v=120';
-import { LEVEL, FALLING } from './world-const.js?v=120';
-import { lightNear } from './lightlevel.js?v=120';
-import { glints } from './render/armor.js?v=120';
-import { setGlint } from './render/glint.js?v=120';
-import { DIMS } from './dims.js?v=120';
-import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=120';
-import { blockGeometry, intAttribute } from './render/blockmesh.js?v=120';
+import { B, BLOCKS, SOLID, FLUID } from './blocks.js?v=121';
+import { collisionBoxes } from './models.js?v=121';
+import { LEVEL, FALLING } from './world-const.js?v=121';
+import { lightNear } from './lightlevel.js?v=121';
+import { glints } from './render/armor.js?v=121';
+import { setGlint } from './render/glint.js?v=121';
+import { DIMS } from './dims.js?v=121';
+import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=121';
+import { blockGeometry, intAttribute } from './render/blockmesh.js?v=121';
 const THREE = window.THREE;
 
 const ITEM_W = 0.125, ITEM_H = 0.25;           // half width, height
@@ -120,6 +120,7 @@ const HURTS = new Map();
 for (const [n, d] of [['fire', 1], ['soul_fire', 2], ['cactus', 1]]) if (B[n] !== undefined) HURTS.set(B[n], d);
 // a block column as one number, for the items' grid (columns 2^20 apart share a key: only ever a few extra to look at)
 const colKey = (x, z) => (x & 0xfffff) * 1048576 + (z & 0xfffff);
+const isBed = b => !!(BLOCKS[b] && /_bed$/.test(BLOCKS[b].name));
 function orbIcon(v) { for (let i = 0; i < ORB_SIZES.length; i++) if (v >= ORB_SIZES[i]) return 10 - i; return 0; }
 
 export class Drops {
@@ -162,7 +163,7 @@ export class Drops {
     const e = {
       stack: withCount(stack, stack.count), pos: new THREE.Vector3(x, y, z), prev: new THREE.Vector3(x, y, z),
       vel: new THREE.Vector3(), age: opts.age | 0, delay: opts.delay === undefined ? 10 : opts.delay, onGround: false,
-      spin: Math.random() * Math.PI * 2, mesh: null, light: -1, lightT: 0, gone: false, fly: 0, hp: 5, keep: !!opts.keep,
+      spin: Math.random() * Math.PI * 2, tk: 0, mesh: null, light: -1, lightT: 0, gone: false, fly: 0, hp: 5, keep: !!opts.keep,
     };
     if (opts.vel) e.vel.set(opts.vel[0], opts.vel[1], opts.vel[2]);
     else if (opts.pop !== false) e.vel.set(Math.random() * 0.2 - 0.1, 0.2, Math.random() * 0.2 - 0.1);
@@ -326,6 +327,16 @@ export class Drops {
     const mz = clip(2, v.z, lo, hi);
     e.onGround = v.y < 0 && my !== v.y;
     p.x += mx; p.y += my; p.z += mz;
+    /* Stopped going up or down: what is left of the fall is what the block under it gives back, as the game's
+       Block.updateEntityAfterFallOn has it (the block 0.2 under its feet): nothing, but a slime block's 0.8 of it
+       and a bed's 0.66 x 0.8 for anything that is not alive. Every landing used to bounce back up at half the
+       speed it came down (the -0.5 below is the game's, but for a fall it had already ended), so a thrown item
+       hopped a quarter of a block and an orb bounced on and on. */
+    if (my !== v.y) {
+      const u = this.world.get(Math.floor(p.x), Math.floor(p.y - 0.2), Math.floor(p.z));
+      if (u === B.slime_block || isBed(u)) { if (v.y < 0) v.y = -v.y * (u === B.slime_block ? 0.8 : 0.66 * 0.8); }
+      else v.y = 0;
+    }
     if (my !== v.y) e.hitY = true; else e.hitY = false;
     if (mx !== v.x) v.x = 0;
     if (mz !== v.z) v.z = 0;
@@ -450,6 +461,7 @@ export class Drops {
       if (e.fly > 0) { if (--e.fly <= 0 || !P) this._remove(e, i); continue; }
       if (!this._awake(e.pos.x, e.pos.z)) continue;
       e.age++;
+      e.tk++;
       if (e.delay > 0) e.delay--;
       /* Five minutes lain. On a server the server says when a shared one's time is up (it counts the ticks it lay near
          anyone, net.js), so this page's own count, which stops while you are away, is no reason to throw it away:
@@ -490,7 +502,9 @@ export class Drops {
       const crossed = f(e.pos.x) !== f(e.prev.x) || f(e.pos.y) !== f(e.prev.y) || f(e.pos.z) !== f(e.prev.z);
       // (a stack can take in several before it in the list at once: the loop carries on below where it is now,
       // not past the end of the shortened list)
-      if (e.age % (crossed ? 2 : 40) === 0) i -= this._merge(e, i);
+      // (| 0: a _merge put in by net.js that gave nothing back made i NaN and ended the loop, every item before it
+      // in the list missing that tick, so they were drawn jumping back and forth)
+      if (e.age % (crossed ? 2 : 40) === 0) i -= this._merge(e, i) | 0;
       if (e.gone) continue;
       // picked up
       if (P && collector && collector.alive && e.delay <= 0) {
@@ -739,8 +753,10 @@ export class Drops {
           Lr.needsUpdate = true;
         }
       }
-      // (flying, its bob and turn stay as they were when it was taken, as the game's copy of it does)
-      const t = e.fly > 0 ? e.age : e.age + alpha;
+      /* (flying, its bob and turn stay as they were when it was taken, as the game's copy of it does; they go by its
+         own ticks on this page, as the game's client counts them, not its age, which a stack joining it or the
+         server's count sets back and the bob and turn jumped with it) */
+      const t = e.fly > 0 ? e.tk : e.tk + alpha;
       p.lerpVectors(e.prev, e.pos, alpha);
       // flying into the player when picked up
       // (one someone else took goes to them; if they cannot be placed it simply goes where it lies)

@@ -31,10 +31,10 @@
    Drawn with the world's own block shader and textures (render/blockmesh.js),
    lit by the light where it is, in whichever look the game is in.
 --------------------------------------------------------------------------- */
-import { Entity } from './entity.js?v=120';
-import { register } from './mobs.js?v=120';
-import { BLOCKS, FLUID, B } from '../blocks.js?v=120';
-import { blockGeometry } from '../render/blockmesh.js?v=120';
+import { Entity } from './entity.js?v=121';
+import { register } from './mobs.js?v=121';
+import { BLOCKS, FLUID, B } from '../blocks.js?v=121';
+import { blockGeometry } from '../render/blockmesh.js?v=121';
 const THREE = window.THREE;
 
 // blocks that fall as sand does (blocks.js and blockdata.js mark them)
