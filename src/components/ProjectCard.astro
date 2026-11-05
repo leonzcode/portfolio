@@ -3,13 +3,13 @@ import type { Project } from "../data/projects";
 
 interface Props extends Project {}
 
-const { title, description, href, image, imagePosition, tag, detailHref } = Astro.props;
+const { title, description, href, image, imagePosition, tag, detailHref, socialKey: keyGiven } = Astro.props;
 const linkHref = detailHref ?? href;
 const isInternalDetail = !!detailHref;
 const isExternal = !isInternalDetail && linkHref.startsWith("http");
 const isPlaceholder = linkHref === "#";
-// "games/ski" from "/games/ski": which project's views and likes this card shows
-const socialKey = isInternalDetail ? detailHref!.replace(/^\//, "").replace(/\/$/, "") : null;
+// "ai/avalanche" from "/ai/avalanche" (or the key the project names): which project's views and likes this card shows
+const socialKey = keyGiven ?? (isInternalDetail ? detailHref!.replace(/^\//, "").replace(/\/$/, "") : null);
 ---
 
 <article class="group">

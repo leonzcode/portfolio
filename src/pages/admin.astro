@@ -9,14 +9,14 @@
    (apps/mc/server.js siteAdminOf, apps/mc/sitesocial.js). The edits live
    there too, and the pages put them in as they load (src/scripts/siteedits.ts). */
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { aiProjects, scienceProjects, mathProjects, gameProjects, type Project } from "../data/projects";
+import { aiProjects, scienceProjects, mathProjects, otherProjects, type Project } from "../data/projects";
 
 // in the site's own tab order
 const groups: [string, string, Project[]][] = [
   ["ai", "AI", aiProjects],
   ["science", "Science", scienceProjects],
   ["math", "Math", mathProjects],
-  ["games", "Games", gameProjects],
+  ["games", "Others", otherProjects],
 ];
 const data = {
   cats: groups.map(([id, label, list]) => ({ id, label, n: list.length })),

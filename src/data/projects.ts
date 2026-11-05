@@ -13,6 +13,11 @@ export interface Project {
   tech?: string[];
   screenshots?: string[];
   detailHref?: string;
+  /** the address's last part when it is not the slug ("wordle" for wordle-game) */
+  urlSlug?: string;
+  /** "games/ski": the key the server keeps the counts, comments and edits under,
+      when it is not the address (the Others tab was the Games tab at /games) */
+  socialKey?: string;
 }
 
 export const aiProjects: Project[] = [
@@ -101,26 +106,26 @@ aiProjects.forEach((p) => {
   p.detailHref = `/ai/${p.slug}`;
 });
 
-export const gameProjects: Project[] = [
+export const otherProjects: Project[] = [
   {
     slug: "leoncraft2",
     title: "Leoncraft 2",
     description:
-      "A second, much bigger take on a Minecraft-style game in the browser: worlds made the way the real game makes them, survival, the Nether and the End, shader levels from plain to cinematic, and online servers with accounts.",
+      "A second, much bigger take on a Minecraft-style world in the browser: terrain made the way Minecraft makes it, survival, the Nether and the End, shader levels from plain to cinematic, and online servers with accounts.",
     href: "/leoncraft2/",
     image: "/cards/card_leoncraft2.png",
-    tag: "Multiplayer",
+    tag: "Online",
     story: [
-      "Leoncraft 2 is a new engine, not an update to the first Leoncraft. I wanted to see how close a browser game could get to the real thing, so the terrain follows Minecraft's own world generation: the same biome tables, caves, aquifers, ore veins and structures, built from the seed into chunks by a pool of web workers while you play.",
-      "Most of survival is in: crafting, mining, hunger, mobs, farming, redstone, enchanting and brewing, the Nether and the End with the dragon fight, advancements and statistics. The graphics have a Shaders button with five levels, from Off (lit the way the vanilla game lights its blocks) up to a full pipeline with soft shadows, volumetric clouds, water reflections and light shafts.",
-      "Multiplayer runs against a Node server on my own VPS. You make an account, then join or create servers; mobs, items, explosions and the dragon fight are shared between players, and server owners get the commands and settings a real server owner has. None of the game's art or sound comes from Mojang: the textures are openly licensed packs I audited and patched, and the sounds are CC0 recordings and my own synthesis.",
+      "Leoncraft 2 is a new engine, not an update to the first Leoncraft. I wanted to see how close a browser version could get to the real thing, so the terrain follows Minecraft's own world generation: the same biome tables, caves, aquifers, ore veins and structures, built from the seed into chunks by a pool of web workers as you move around.",
+      "Most of survival is in: crafting, mining, hunger, mobs, farming, redstone, enchanting and brewing, the Nether and the End with the dragon fight, advancements and statistics. The graphics have a Shaders button with five levels, from Off (lit the way vanilla Minecraft lights its blocks) up to a full pipeline with soft shadows, volumetric clouds, water reflections and light shafts.",
+      "The online side runs on a Node server on my own VPS. You make an account, then join or create servers; mobs, items, explosions and the dragon fight are shared by everyone on a server, and server owners get the commands and settings a real server owner has. None of the art or sound comes from Mojang: the textures are openly licensed packs I audited and patched, and the sounds are CC0 recordings and my own synthesis.",
     ],
     tech: [
       "Three.js (WebGL 2) with hand-written GLSL, plain ES modules, no build step",
       "Minecraft-style world generation (noise router, aquifers, carvers, structures) in web workers, cached in IndexedDB",
       "Five shader levels: vanilla-style lighting up to shadows, bloom, volumetric clouds and screen-space reflections",
-      "Node + ws game server on a Hetzner VPS: accounts, shared mobs, server owners and commands",
-      "Openly licensed textures and sounds only, checked against the real game's files",
+      "Node + ws server on a Hetzner VPS: accounts, shared mobs, server owners and commands",
+      "Openly licensed textures and sounds only, checked against Minecraft's own files",
     ],
   },
   {
@@ -130,38 +135,38 @@ export const gameProjects: Project[] = [
       "An original kart racer with five circuits that are drawn fresh every race, drift mini-turbos, gliders, items, and a server so you can race other people.",
     href: "/mario/",
     image: "/cards/leonkart-logo.png",
-    tag: "Multiplayer",
+    tag: "Online",
     story: [
-      "A kart racer written from scratch with Three.js. None of it is anybody else's: the cars, the circuits, the items and the music are all either generated in code or built from CC0 art, and the five places you race are laid out by the game rather than drawn by hand. Each round picks a seed and builds a closed circuit from it, then hangs ten sections off that lap, so Sunfield Loop is recognisably Sunfield Loop every time while never being quite the same lap twice.",
+      "A kart racer written from scratch with Three.js. None of it is anybody else's: the cars, the circuits, the items and the music are all either generated in code or built from CC0 art, and the five places you race are laid out by code rather than drawn by hand. Each round picks a seed and builds a closed circuit from it, then hangs ten sections off that lap, so Sunfield Loop is recognisably Sunfield Loop every time while never being quite the same lap twice.",
       "The places do not just look different, they drive differently. Glacier Pass takes the grip away and puts ice down one side of a straight, Redrock Dunes is the narrowest road on the calendar with two canyon gaps you have to be launched over, Neon Mile is half boost pad and has an anti-gravity stretch where running into somebody throws you both forward, and Ember Hollow has the biggest jumps and ground that erupts under you. Falling into a gap gets you fished out by a balloon and set back down where you went in.",
-      "Most of the work went into how it feels rather than what it does. A drift charges in tiers you can hear as well as see, and the boost it pays is worth what you held it for. Leaving a ramp is a projectile problem and nothing else, so the arc is real and there is no bounce on the way down. Sitting in somebody's air for a few seconds drags you along with them. You can hold an item behind the car instead of throwing it, where it shields your back. Everything bolted to the kart changes how it drives, and the multiplayer runs against a small Node server on my own VPS.",
+      "Most of the work went into how it feels rather than what it does. A drift charges in tiers you can hear as well as see, and the boost it pays is worth what you held it for. Leaving a ramp is a projectile problem and nothing else, so the arc is real and there is no bounce on the way down. Sitting in somebody's air for a few seconds drags you along with them. You can hold an item behind the car instead of throwing it, where it shields your back. Everything bolted to the kart changes how it drives, and the online races run against a small Node server on my own VPS.",
     ],
     tech: [
       "Three.js (WebGL), no build step, plain ES modules",
       "Circuits generated per race from a seed: Catmull-Rom spline, ten placed sections, smoothing and gradient passes",
       "Kart physics: projectile jumps, tiered drift charge, slipstream, gliders, per-part handling stats",
       "Instanced scenery and merged geometry to hold the draw calls down",
-      "Node + ws lobby server on a Hetzner VPS for multiplayer rounds",
+      "Node + ws lobby server on a Hetzner VPS for online races",
     ],
   },
   {
     slug: "minecraft",
     title: "Leoncraft",
     description:
-      "A voxel sandbox built from scratch in the browser: procedural worlds, hundreds of blocks, mobs, and a shared multiplayer server where you build alongside other people live.",
+      "A voxel sandbox built from scratch in the browser: procedural worlds, hundreds of blocks, mobs, and a shared online server where you build alongside other people live.",
     href: "/legacy/minecraft.html",
     image: "/cards/card_minecraft.png",
-    tag: "Multiplayer",
+    tag: "Online",
     story: [
-      "A block-building sandbox written from scratch with Three.js, in the spirit of Minecraft but with none of its assets. The terrain is generated procedurally from Perlin noise, split into chunks, and meshed with face culling and ambient occlusion so it stays smooth even with a large world loaded. Every texture is painted onto a canvas when the page loads, so nothing is copied from the original game.",
+      "A block-building sandbox written from scratch with Three.js, in the spirit of Minecraft but with none of its assets. The terrain is generated procedurally from Perlin noise, split into chunks, and meshed with face culling and ambient occlusion so it stays smooth even with a large world loaded. Every texture is painted onto a canvas when the page loads, so nothing is copied from Minecraft.",
       "It comes with hundreds of placeable blocks, sorted into creative-style categories with a search bar, and each block behaves the way you would expect: water flows, sand and gravel fall, glass and leaves let light through, and you can sneak along an edge without falling off. You can fly, break and place blocks, and spawn a couple of custom creatures.",
-      "The multiplayer mode connects to a small server I run on my own VPS. Everyone who joins shares one persistent world: you see other players move and place blocks in real time, the world autosaves and loads back the same every time, and you can talk to the room by pressing T to chat. The server is an authoritative relay written in Node, it hands out the shared world seed and every edit so all players stay in sync.",
+      "The online mode connects to a small server I run on my own VPS. Everyone who joins shares one persistent world: you see other people move and place blocks in real time, the world autosaves and loads back the same every time, and you can talk to the room by pressing T to chat. The server is an authoritative relay written in Node, it hands out the shared world seed and every edit so everyone stays in sync.",
     ],
     tech: [
       "Three.js (WebGL), single file, no build step",
       "Chunked voxel engine: face-culled meshing + ambient occlusion",
       "Procedural Perlin terrain, canvas-generated textures",
-      "Node.js + ws multiplayer relay (shared seed, block persistence)",
+      "Node.js + ws relay for the shared world (shared seed, block persistence)",
       "Self-hosted on a Hetzner VPS behind Caddy over secure WebSocket",
     ],
   },
@@ -169,7 +174,7 @@ export const gameProjects: Project[] = [
     slug: "slope",
     title: "Slope",
     description:
-      "A ball rolling down an endless neon slope, faster and faster. Play solo or race a friend in split screen.",
+      "A ball rolling down an endless neon slope, faster and faster. Go solo or race a friend in split screen.",
     href: "https://leonzcode.github.io/slope/",
     image: "/cards/card_slope.png",
     tag: "Live demo",
@@ -187,7 +192,7 @@ export const gameProjects: Project[] = [
     slug: "basket",
     title: "Sports Un-random",
     description:
-      "Goofy physics sports minigames in the spirit of the Random series.",
+      "Goofy physics sports challenges in the spirit of the Random series.",
     href: "https://leonzcode.github.io/basket/",
     image: "/cards/card_basket.png",
     tag: "Live demo",
@@ -195,7 +200,7 @@ export const gameProjects: Project[] = [
   {
     slug: "blackjoy",
     title: "Double Dutch",
-    description: "A 3D double dutch game about rhythm, community, and Black joy.",
+    description: "A 3D double dutch project about rhythm, community, and Black joy.",
     href: "https://leonzcode.github.io/blackjoy/",
     image: "/cards/card_blackjoy.png",
     tag: "Live demo",
@@ -218,7 +223,7 @@ export const gameProjects: Project[] = [
     image: "/cards/card_leonski2.png",
     tag: "Live demo",
     story: [
-      "A full 3D skiing sandbox that reconstructs real ski resorts on the fly. Search any mountain in the world and it pulls the pistes and lifts from OpenStreetMap, elevation from public terrain DEM tiles, and satellite imagery, then builds a playable snow-covered mountain in your browser with Three.js.",
+      "A full 3D skiing sandbox that reconstructs real ski resorts on the fly. Search any mountain in the world and it pulls the pistes and lifts from OpenStreetMap, elevation from public terrain DEM tiles, and satellite imagery, then builds a snow-covered mountain you can ski in your browser with Three.js.",
       "Ski it in third person with carving, jumps, butters, grabs, and spins, or switch to a free-fly camera to explore. Ride the chairlifts, gondolas, T-bars, and magic carpets back up, then bomb down again. No installs, no accounts, everything reconstructed live from open data.",
     ],
     tech: ["Three.js (WebGL)", "OpenStreetMap Overpass API", "AWS Terrain DEM tiles", "Esri satellite imagery", "Single-file, zero build step"],
@@ -250,7 +255,7 @@ export const gameProjects: Project[] = [
   },
   {
     slug: "imposter",
-    title: "Imposter Game",
+    title: "Imposter",
     description: "Among Us style social deduction for a group huddled around one screen.",
     href: "https://leonzcode.github.io/imposter/",
     image: "/cards/card_imposter.png",
@@ -260,7 +265,7 @@ export const gameProjects: Project[] = [
     slug: "castlefall",
     title: "Castlefall",
     description:
-      "A hidden-teams party word game you pass around a single phone.",
+      "A hidden-teams word challenge for a group, passed around a single phone.",
     href: "/legacy/castlefall.html",
     image: "/cards/card_castlefall.png",
     tag: "Live demo",
@@ -276,6 +281,7 @@ export const gameProjects: Project[] = [
   },
   {
     slug: "wordle-game",
+    urlSlug: "wordle",
     title: "Leon's Wordle",
     description:
       "My own Wordle, hunting down the hidden five-letter word.",
@@ -285,7 +291,7 @@ export const gameProjects: Project[] = [
   },
   {
     slug: "blackjack",
-    title: "Blackjack Game",
+    title: "Blackjack",
     description: "A hand of blackjack against a computer dealer.",
     href: "https://leonzcode.github.io/blackjack/",
     image: "/cards/card_blackjack.png",
@@ -294,7 +300,7 @@ export const gameProjects: Project[] = [
   {
     slug: "tennis",
     title: "Tennis",
-    description: "Two-player tennis sharing one keyboard.",
+    description: "Tennis for two people sharing one keyboard.",
     href: "https://leonzcode.github.io/tennis/",
     image: "/cards/card_tennis.png",
     tag: "Live demo",
@@ -333,8 +339,9 @@ export const gameProjects: Project[] = [
   },
 ];
 
-gameProjects.forEach((p) => {
-  p.detailHref = `/games/${p.slug}`;
+otherProjects.forEach((p) => {
+  p.detailHref = `/edu/${p.urlSlug ?? p.slug}`;
+  p.socialKey = `games/${p.slug}`;
 });
 
 export const mathProjects: Project[] = [
@@ -519,7 +526,7 @@ const localProjectPaths: Record<string, string> = {
   "kinetic-theory": "/legacy/particle.html",
 };
 
-[gameProjects, mathProjects, scienceProjects].forEach((group) => {
+[otherProjects, mathProjects, scienceProjects].forEach((group) => {
   group.forEach((project) => {
     const localHref = localProjectPaths[project.slug];
     if (localHref) {

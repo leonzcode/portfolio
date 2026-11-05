@@ -18,7 +18,7 @@ const buildSearchIndex = (p: Project) =>
     .join(" ")
     .toLowerCase();
 // "games/ski": the key the server keeps the project's counts and edits under
-const keyOf = (p: Project) => (p.detailHref ? p.detailHref.replace(/^\//, "").replace(/\/$/, "") : undefined);
+const keyOf = (p: Project) => p.socialKey ?? (p.detailHref ? p.detailHref.replace(/^\//, "").replace(/\/$/, "") : undefined);
 ---
 
 <div data-project-section>
