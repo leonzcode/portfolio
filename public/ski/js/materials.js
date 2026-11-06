@@ -4,7 +4,7 @@
 // (env.js: groomed, powder, packed, spring slush, ice), the floodlights' pools by night, and fog the colour of the sky's
 // own horizon in each direction.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=16';
+import { rng } from './noise.js?v=17';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
 function noiseTexture(size = 256, seed = 3) {
@@ -35,11 +35,17 @@ function noiseTexture(size = 256, seed = 3) {
 
 export const snowUniforms = {
   uNoise: { value: null },
+  // the fine track map round the rider (snow.js): it wraps round (a place's texel is the place modulo its size, from
+  // uTrackBase.xy, its texel uTrackBase.z m); uTrackWin is the window it holds now (origin x, z and size); uTrackK: the
+  // edge field's slope per metre in the fine map and the coarse map, and 1 / the fine map's size
   uTrack: { value: null },
-  uTrackOrigin: { value: new THREE.Vector2(-48, -96) },
-  uTrackSize: { value: new THREE.Vector2(96, 384) },
-  uTrackTexel: { value: new THREE.Vector2(1 / 1024, 1 / 4096) },
-  // the coarse track map over the whole run (snow.js): every track, kept
+  uTrackWin: { value: new THREE.Vector4(-1e5, -1e5, 64, 128) },
+  uTrackBase: { value: new THREE.Vector4(-32, 0, 0.0625, 0) },
+  uTrackK: { value: new THREE.Vector4(2.67, 1, 1 / 64, 1 / 128) },
+  // how the snow kind takes a track (env.js): the walls' softness (m), how much a skid polishes, scratches (ice: white,
+  // not dark), how lumpy heaped snow is
+  uTrackLook: { value: new THREE.Vector4(0.003, 0.6, 0, 0.5) },
+  // the coarse track map over the whole park (snow.js): every track, kept
   uTrack2: { value: null },
   uTrack2Origin: { value: new THREE.Vector2(-80, -100) },
   uTrack2Size: { value: new THREE.Vector2(160, 1620) },
@@ -61,6 +67,7 @@ export const snowUniforms = {
   uSnowLit: { value: new THREE.Vector3(0.95, 0.96, 0.98) },
   uFarFade: { value: new THREE.Vector2(2300, 3200) },     // the snow is all horizon colour by .y m (the terrain's last patches)   // how lit snow looks on the screen, for the unlit spray (env.js)
 };
+if (typeof window !== 'undefined') window.__snowU = snowUniforms;     // (a test handle)
 // the snow's grain and lumps: tangent-space normals in red and green, height in blue (512 px, tiling)
 function snowTexture(url, fallback) {
   const t = new THREE.TextureLoader().load(url);
@@ -91,14 +98,23 @@ vGroom = aGroom; vDye = aDye;`);
 varying vec3 vWPos; varying vec3 vWNor; varying float vGroom; varying float vDye;
 uniform sampler2D uNoise; uniform sampler2D uTrack;
 uniform sampler2D uTrack2; uniform vec2 uTrack2Origin; uniform vec2 uTrack2Size; uniform vec2 uTrack2Texel;
-float trH(sampler2D t, vec2 uv) { return dot(texture2D(t, uv).rg, vec2(-1.0, 0.6)); }
-uniform vec2 uTrackOrigin; uniform vec2 uTrackSize; uniform vec2 uTrackTexel;
+uniform vec4 uTrackWin; uniform vec4 uTrackBase; uniform vec4 uTrackK; uniform vec4 uTrackLook;
+// one look at the tracks here: (the distance into a groove (m, + inside, through its edge field), the heap, the scrape,
+// the groove's depth), the fine map and the coarse map weighed by wf and wc (what neither covers counts as untouched)
+// (gTrkAny: the most any channel read; nothing at all there means no track within a few texels)
+float gTrkAny;
+vec4 trTap(vec2 p, float wf, float wc) {
+  vec4 r = vec4((wf + wc - 1.0) * 0.25, 0.0, 0.0, 0.0);
+  if (wf > 0.0) { vec4 t = textureLod(uTrack, (p - uTrackBase.xy) * uTrackK.zw, 0.0); r += wf * vec4((t.r - 0.5) / uTrackK.x, t.gba); gTrkAny = max(gTrkAny, max(max(t.r, t.g), max(t.b, t.a))); }
+  if (wc > 0.0) { vec4 t = textureLod(uTrack2, (p - uTrack2Origin) / uTrack2Size, 0.0); r += wc * vec4((t.r - 0.5) / uTrackK.y, t.gba); gTrkAny = max(gTrkAny, max(max(t.r, t.g), max(t.b, t.a))); }
+  return r;
+}
 uniform vec3 uSunDir; uniform float uSparkle; uniform float uTime;
 uniform sampler2D uHorizon; uniform vec4 uSnowLook; uniform float uSnowRough; uniform float uNight;
 uniform vec4 uLights; uniform float uLightsN; uniform vec2 uFarFade; uniform sampler2D uGrain; uniform sampler2D uLumps; uniform float uTrackDepth;
 float hash13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
 vec3 hash33(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
-float gTrackDepth; float gRock; float gTrackShadow; float gScrape; vec4 gLump;`)
+float gRock; float gTrackShadow; float gScrape; float gCover; float gTDep; float gBerm; vec2 gTN; vec4 gLump; vec3 gPN;`)
       // albedo: rock on steep faces, compacted grey-blue in tracks
       .replace('#include <color_fragment>', `#include <color_fragment>
 {
@@ -128,35 +144,70 @@ float gTrackDepth; float gRock; float gTrackShadow; float gScrape; vec4 gLump;`)
     float scr = texture2D(uNoise, vec2(vWPos.x * 0.9, vWPos.z * 0.05)).b;
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.71, 0.79) * (0.84 + scr * 0.32), uSnowLook.w * (1.0 - gRock) * (0.35 + 0.65 * smoothstep(0.3, 0.7, scr + big)));
   }
-  vec2 tuv = (vWPos.xz - uTrackOrigin) / uTrackSize, tuv2 = (vWPos.xz - uTrack2Origin) / uTrack2Size;
-  gTrackDepth = 0.0; gTrackShadow = 0.0; gScrape = 0.0;
-  bool fineIn = tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0;
-  bool coarseIn = tuv2.x > 0.0 && tuv2.x < 1.0 && tuv2.y > 0.0 && tuv2.y < 1.0;
-  if (fineIn || coarseIn) {
-    vec4 tk = fineIn ? texture2D(uTrack, tuv) : texture2D(uTrack2, tuv2) * vec4(1.6, 1.0, 1.0, 1.0);   // (the coarse map's grooves are blurred wider and shallower)
-    gTrackDepth = tk.r; gScrape = tk.b;
-    // compressed snow in a groove is a little greyer and bluer; the berm a little brighter
-    diffuseColor.rgb *= mix(1.0, fineIn ? 0.86 : 0.74, tk.r) * mix(1.0, 1.03, tk.g);
-    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.93, 0.96, 1.03), tk.r);
-    // the low sun's shadow inside the groove: march a few texels towards the sun over the track heights
-    // (heights in the map's units; the sun ray climbs rise units a step)
-    vec2 sd = normalize(uSunDir.xz + 1e-4) * uTrackTexel * 1.6;
-    float h0 = tk.g * 0.6 - tk.r, sh = 0.0;
-    if (fineIn) {
-    float rise = 1.6 * length(uTrackSize * uTrackTexel) * 0.7071 * uSunDir.y / max(0.12, length(uSunDir.xz)) / uTrackDepth;
-    for (int j = 1; j <= 4; j++) {
-      vec4 t2 = texture2D(uTrack, tuv + sd * float(j));
-      float hj = t2.g * 0.6 - t2.r;
-      sh = max(sh, clamp((hj - h0 - rise * float(j)) * 4.0, 0.0, 1.0));
+  // ---- the tracks (snow.js). Three looks at the maps (here and a texel along x and z) give everything: a groove's edge
+  // is drawn where its edge field crosses zero, anti-aliased by how much of the snow the pixel spans across it, so it
+  // stays crisp up close and fades rather than flickers far off; its wall, floor, the heaps beside and a skid's scrape
+  // tilt the normal; the wall nearer a low sun shades the floor beside it
+  gTN = vec2(0.0); gCover = 0.0; gScrape = 0.0; gBerm = 0.0; gTDep = 0.0; gTrackShadow = 0.0;
+  {
+    vec2 xz = vWPos.xz, dpx = dFdx(xz), dpy = dFdy(xz);
+    // the fine map over its window, fading to the coarse one over its last 6 m; the coarse one fading out at the park's edge
+    vec2 rel = xz - uTrackWin.xy, c2 = (xz - uTrack2Origin) / uTrack2Size, e2 = min(c2, 1.0 - c2) * uTrack2Size;
+    float wf = smoothstep(0.0, 6.0, min(min(rel.x, uTrackWin.z - rel.x), min(rel.y, uTrackWin.w - rel.y)));
+    float wc = smoothstep(0.0, 5.0, min(e2.x, e2.y)) * (1.0 - wf);
+    float flatK = smoothstep(0.45, 0.7, wn.y);       // (none on steep faces: the maps are seen from above)
+    gTrkAny = 0.0;
+    vec4 t0 = (wf + wc) * flatK > 0.002 ? trTap(xz, wf, wc) : vec4(0.0);
+    if (gTrkAny > 0.003) {
+      vec2 st = wf > 0.0 ? uTrackBase.zz : uTrack2Size * uTrack2Texel;
+      vec4 tx = trTap(xz + vec2(st.x, 0.0), wf, wc), tz = trTap(xz + vec2(0.0, st.y), wf, wc);
+      vec2 gd = vec2(tx.x - t0.x, tz.x - t0.x) / st;
+      float gl = max(length(gd), 0.2);                // (1 on a crisp wall's side of the field, less on a soft one)
+      vec2 n = gd / gl;                               // into the groove, away from the nearer wall
+      float dw = t0.x / gl;                           // how far inside the groove (m)
+      // how much of the pixel the groove covers: the pixel's width across it (P) against a groove at least a ski's
+      // groove wide (a box filter): crisp near by, and far off, where a groove is less than a pixel wide, as much
+      // darker as it is wide, the same wherever the pixel falls on it, so it stays put as the camera moves
+      float pix = abs(dot(n, dpx)) + abs(dot(n, dpy));
+      // (the snow's own softness widens the edge too; off the groomed run the snow is deep whatever the kind: soft
+      // walls, deeper)
+      float e = mix(max(uTrackLook.x, 0.035), uTrackLook.x, vGroom) / gl;
+      float P = max(pix, 2.0 * e) + 1e-4, hwE = max(0.05, dw), rr = hwE - dw;
+      gCover = clamp((min(rr + 0.5 * P, hwE) - max(rr - 0.5 * P, -hwE)) / P, 0.0, 1.0) * flatK;
+      e = max(e, 0.5 * pix);
+      float tD = mix(max(uTrackDepth, 0.2), uTrackDepth, vGroom);
+      gTDep = t0.w; gBerm = t0.y * flatK; gScrape = t0.z * flatK;
+      float fd = tD * gTDep;                          // the groove's depth here (m)
+      // the wall: about 2.4 times as steep as it is wide where an edge cut it, gentler where the field says it is soft
+      float wW = max(fd * 0.42 / gl, 0.003);
+      gTN = n * (fd / wW) * gCover * (1.0 - smoothstep(wW - e, wW + e, dw));
+      gTN += (vec2(tx.w, tz.w) - t0.w) / st * tD * gCover;                  // the floor, deepest at the inside wall
+      gTN -= (vec2(tx.y, tz.y) - t0.y) / st * tD * 0.45 * flatK;            // the snow heaped beside
+      gTN += (vec2(tx.z, tz.z) - t0.z) / st * tD * 0.12 * flatK;            // a scraped band sits a little lower
+      // (far off, where a pixel spans more than these few centimetres of relief, it would only sparkle: it fades)
+      float farK = 1.0 - 0.8 * smoothstep(0.05, 0.25, length(dpx) + length(dpy));
+      gTN *= farK;
+      // the wall between the floor and a low sun shades the floor as far as its height throws a shadow
+      float sxz = length(uSunDir.xz);
+      if (sxz > 0.01 && gCover > 0.0) {
+        float L = fd * sxz / max(uSunDir.y, 0.06) * max(0.0, -dot(n, uSunDir.xz / sxz));
+        gTrackShadow = gCover * (1.0 - smoothstep(L - e, L + e, dw)) * step(0.002, L) * farK;
+      }
+      // snow pressed into a groove is a little greyer and bluer (wet slush darker); heaped loose snow a touch brighter;
+      // on ice a scratch is shaved ice, white and dull. (Far off, where the relief and its shadow have faded, a groove
+      // keeps their average: a little darker again.)
+      float inG = gCover * (0.35 + 0.65 * gTDep);
+      diffuseColor.rgb *= mix(1.0, 0.9 - uSnowLook.z * 0.1 - 0.36 * (1.0 - farK) * (1.0 - uTrackLook.z), inG) * (1.0 + gBerm * 0.035 + gScrape * 0.035 * (1.0 - uTrackLook.z));
+      diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.95, 0.975, 1.03), inG);
+      if (uTrackLook.z > 0.001) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.9, 0.93), uTrackLook.z * clamp(gCover + gScrape * 0.6, 0.0, 1.0) * (1.0 - gRock));
     }
-    }
-    gTrackShadow = sh;
   }
 }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor = uSnowRough;
-roughnessFactor = mix(roughnessFactor, min(roughnessFactor, 0.55), gTrackDepth * 0.7);
-roughnessFactor = mix(roughnessFactor, min(roughnessFactor, 0.38), gScrape * 0.85);     // a skid scrapes the snow smooth and shiny
+roughnessFactor = mix(roughnessFactor, min(roughnessFactor, 0.6), gCover * 0.6);               // the base pressed the floor smoother
+roughnessFactor = mix(roughnessFactor, min(roughnessFactor, 0.3), gScrape * uTrackLook.y);    // a skid polishes the snow
+roughnessFactor = mix(roughnessFactor, 0.85, uTrackLook.z * clamp(gCover + gScrape, 0.0, 1.0));   // (ice: a scratch is dull)
 roughnessFactor = mix(roughnessFactor, 0.9, gRock);`)
       // the surface's relief, in world space
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
@@ -173,31 +224,24 @@ roughnessFactor = mix(roughnessFactor, 0.9, gRock);`)
   vec3 pn = wn;
   float side = 1.0 - abs(wn.y);
   float fine = (0.32 + uSnowLook.z * 0.35) * (1.0 - uSnowLook.w * 0.75);
-  fine *= 1.0 - gScrape * 0.7;
-  pn.xz += (g1 * fine * near + g2 * 0.16 * (1.0 - uSnowLook.w * 0.6) + gl * (0.06 + max(uSnowLook.y, 0.55 * (1.0 - vGroom)) * 0.38) * (1.0 - vGroom * uSnowLook.x * 0.6)) * (1.0 - side * 0.6);
+  // (a track flattens the grain: a skid smooths it away, a groove's floor is pressed)
+  float flat_ = 1.0 - max(gScrape * 0.8, gCover * 0.5);
+  pn.xz += (g1 * fine * near * flat_ + g2 * 0.16 * (1.0 - uSnowLook.w * 0.6) + gl * (0.06 + max(uSnowLook.y, 0.55 * (1.0 - vGroom)) * 0.38) * (1.0 - vGroom * uSnowLook.x * 0.6) * (1.0 - gScrape * 0.6)) * (1.0 - side * 0.6);
   pn.xy += g3 * 0.12 * side;
-  // corduroy: ridges about 3 cm apart along the fall line on groomed snow, faded before they alias
+  // corduroy: ridges about 3 cm apart along the fall line on groomed snow, faded before they alias; a track cuts
+  // through them (crisply, with the groove's edge) and a skid wipes them out
   float fw = fwidth(vWPos.x);
-  float cord = (1.0 - smoothstep(0.004, 0.014, fw)) * vGroom * uSnowLook.x * (1.0 - gTrackDepth);
+  float cord = (1.0 - smoothstep(0.004, 0.014, fw)) * vGroom * uSnowLook.x * (1.0 - max(gCover, smoothstep(0.15, 0.5, gScrape)));
   float band = step(0.5, fract(vWPos.x / 5.2 + 0.13)) * 0.35 + 0.65;
   pn.x += sin(vWPos.x * 6.2831 / 0.031) * 0.32 * cord * band;
-  // tracks: the groove and berm heights from the map, as slopes
-  vec2 tuv = (vWPos.xz - uTrackOrigin) / uTrackSize, tuv2 = (vWPos.xz - uTrack2Origin) / uTrack2Size;
-  if (tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
-    float hl = trH(uTrack, tuv - vec2(uTrackTexel.x, 0.0)), hr = trH(uTrack, tuv + vec2(uTrackTexel.x, 0.0));
-    float hd = trH(uTrack, tuv - vec2(0.0, uTrackTexel.y)), hu = trH(uTrack, tuv + vec2(0.0, uTrackTexel.y));
-    vec2 px = uTrackSize * uTrackTexel;
-    pn.x -= (hr - hl) / (2.0 * px.x) * uTrackDepth;
-    pn.z -= (hu - hd) / (2.0 * px.y) * uTrackDepth;
-  } else if (tuv2.x > 0.0 && tuv2.x < 1.0 && tuv2.y > 0.0 && tuv2.y < 1.0) {
-    // further off: the coarse map's broader relief
-    float hl = trH(uTrack2, tuv2 - vec2(uTrack2Texel.x, 0.0)), hr = trH(uTrack2, tuv2 + vec2(uTrack2Texel.x, 0.0));
-    float hd = trH(uTrack2, tuv2 - vec2(0.0, uTrack2Texel.y)), hu = trH(uTrack2, tuv2 + vec2(0.0, uTrack2Texel.y));
-    vec2 px = uTrack2Size * uTrack2Texel;
-    pn.x -= (hr - hl) / (2.0 * px.x) * uTrackDepth * 3.0;
-    pn.z -= (hu - hd) / (2.0 * px.y) * uTrackDepth * 3.0;
+  // the tracks' relief (worked out with the albedo above), and the lumps of loose snow on what is heaped beside them
+  pn.xz += gTN;
+  if (gBerm > 0.12) {
+    vec2 ch = texture2D(uGrain, vWPos.xz * 2.7 + 0.31).rg * 2.0 - 1.0;
+    pn.xz += ch * smoothstep(0.12, 0.6, gBerm) * uTrackLook.w * 0.55;
   }
   pn = normalize(pn);
+  gPN = pn;
   normal = normalize((viewMatrix * vec4(pn, 0.0)).xyz);
 }`)
       // glints and the cold shade
@@ -213,10 +257,14 @@ roughnessFactor = mix(roughnessFactor, 0.9, gRock);`)
   float fade = 1.0 - smoothstep(6.0, 40.0, camD);
   outgoingLight += vec3(1.0, 0.97, 0.92) * gl * 7.0 * sunlit * fade * uSparkle * (1.0 - gRock) * (1.0 - uNight);` : ''}   // (no glints on the low tier: they cost about 0.35 ms a frame up close on the test machine)
   float lit = dot(reflectedLight.directDiffuse, vec3(0.33));
-  outgoingLight -= reflectedLight.directDiffuse * gTrackShadow * 0.7;
+  outgoingLight -= reflectedLight.directDiffuse * gTrackShadow * 0.75;
+  // (a deep trench sees less of the sky)
+  outgoingLight -= reflectedLight.indirectDiffuse * gCover * gTDep * clamp(uTrackDepth * 2.5, 0.0, 0.55);
   // by night: pools of light under the park's floodlight towers (two rows, evenly spaced; lamps aimed at the run)
   if (uNight > 0.001) {
-    vec3 wn = normalize(vWNor);
+    // (the snow's own relief, tracks and all, catches the towers' light; only half of it: the light from the towers is
+    // spread wide and bounced about the white slope, so a wall turned away from them is shaded, not black)
+    vec3 wn = normalize(normalize(vWNor) + (gPN - normalize(vWNor)) * 0.5);
     float pool = 0.0;
     float fz = (vWPos.z - uLights.z) / uLights.w, k = floor(fz + 0.5);
     for (int s = 0; s < 2; s++) {
@@ -234,8 +282,9 @@ roughnessFactor = mix(roughnessFactor, 0.9, gRock);`)
     pool *= 150.0;
     // the light that follows the rider is the floodlight by night: the snow keeps only a little of it (enough for the
     // rider's shadow) and is lit by the pools instead
-    outgoingLight -= (reflectedLight.directDiffuse + reflectedLight.directSpecular) * uNight * 0.85;
-    outgoingLight += diffuseColor.rgb * vec3(1.0, 0.9, 0.76) * pool * uNight * (1.0 - gTrackShadow * 0.5);
+    // (less what a track's shadow already took, or a shaded groove would go below black)
+    outgoingLight -= (reflectedLight.directDiffuse * (1.0 - gTrackShadow * 0.75) + reflectedLight.directSpecular) * uNight * 0.85;
+    outgoingLight += diffuseColor.rgb * vec3(1.0, 0.9, 0.76) * pool * uNight * (1.0 - gTrackShadow * 0.15);
   }
   outgoingLight *= mix(vec3(0.93, 0.97, 1.06), vec3(1.0), smoothstep(0.05, 0.4, lit) * (1.0 - gTrackShadow * 0.7));
 }

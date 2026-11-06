@@ -21,7 +21,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { ground, height } from './terrain.js?v=16';
+import { ground, height } from './terrain.js?v=17';
 
 // ---- the model's numbers (metres, from models/lift/lift.glb) --------------------------------------------------------
 const HALF = 2.388;                  // half the gauge: each cable's distance from the line's middle (the chairs' grips)
@@ -30,7 +30,7 @@ const SEAT_Z = 0.04;                 // where the hips sit on it, along the chai
 const SEATS = [-0.78, -0.26, 0.26, 0.78];   // the four seats across the chair
 const CHAIR_BOTTOM = -3.05;          // the lowest point of a chair under its grip
 const HC = 9.2;                      // the cable over a tower's foot (on its sheaves)
-const ST = { back: 4.09, front: 13.29, base: -4.42, half: 3.79 };   // a station round its bull wheel (+z towards the line)
+const ST = { back: 4.09, front: 13.29, base: -4.42, half: 3.79, roof: 4.79 };   // a station round its bull wheel (+z towards the line)
 const LOAD = 3.26;                   // the cable over the snow at the load and unload lines (the seat half a metre up)
 // ---- the lift's running -----------------------------------------------------------------------------------------------
 let XL = 36;                         // the line's middle, on the run's right-hand side riding down (planLift sets it)
@@ -52,6 +52,10 @@ export function planLift(park) {
   // line's chairs at least 2.6 m from them, and the stations inside the groomed run
   const fR = park.fences && park.fences.length ? Math.max(...park.fences.map(f => Math.max(f[0], f[2]))) : 16.5;
   XL = Math.max(36, Math.min(41, fR + 7.5)); xU = XL - HALF; xD = XL + HALF;
+  // the floodlight poles on the lift's side of the park, where env.js makeLightTowers puts them (2.5 m outside the
+  // right-hand fence, every 45 m from 10 m below the fences' top end): the chase camera keeps off them riding up
+  const fz = park.fences && park.fences.length >= 2 ? park.fences : null;
+  const lights = fz ? { x: Math.max(fz[0][0], fz[1][0]) + 2.5, z0: Math.min(fz[0][1], fz[1][1]) + 10, z1: Math.max(fz[0][3], fz[1][3]), S: 45 } : null;
   const lastMeet = Math.max(...park.kickers.map(k => k.zMeet || k.z0 || 0));
   const top = { front: -45 }; top.z = top.front - ST.front;              // bull wheel z (the station runs from z - back to z + front)
   const bot = { front: lastMeet + 42 }; bot.z = bot.front + ST.front;
@@ -176,7 +180,7 @@ export function planLift(park) {
     const dir = st === top ? 1 : -1;            // +1: the station's line end is down the hill (+z)
     colliders.push({ x: XL, z: st.z + dir * 2.0, r: 1.3, y: st.pad.y, s: 6 }, { x: XL, z: st.z + dir * 11.5, r: 0.4, y: st.pad.y, s: 6 });
   }
-  return { XL, top, bot, pads, towers, sup, cableY, px, py, pz, S, vel, tau, n, len, T, N, sLoad, sUnload, load, unload, seat, colliders };
+  return { XL, top, bot, pads, towers, sup, cableY, px, py, pz, S, vel, tau, n, len, T, N, sLoad, sUnload, load, unload, seat, colliders, lights };
 }
 
 // ---- the lift: meshes, the chairs' motion, and riding ---------------------------------------------------------------
@@ -206,7 +210,7 @@ export class Lift {
   async load() {
     const loader = new GLTFLoader();
     const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    const gltf = await loader.loadAsync('./models/lift/lift.glb?v=16');
+    const gltf = await loader.loadAsync('./models/lift/lift.glb?v=17');
     draco.dispose();
     const part = name => { let m = null; gltf.scene.traverse(o => { if (o.isMesh && o.name === name) m = o; }); if (!m) throw new Error('lift: no ' + name); return m; };
     const chair = part('chair'), chairLo = part('chair_lo'), tower = part('tower'), towerLo = part('tower_lo'), station = part('station'), bull = part('bull');
@@ -223,8 +227,8 @@ export class Lift {
     this.chFar = new THREE.InstancedMesh(geo(chairLo), mat, N + 8);
     for (const m of [this.chNear, this.chFar]) { m.frustumCulled = false; m.count = 0; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.matrixAutoUpdate = false; }
     this.chNear.castShadow = true; this.chNear.receiveShadow = !low;
-    // everything that never moves in one mesh (one draw call, one more for its shadow): the stations, their bull
-    // wheels, the towers and the cable's tube
+    // everything that never moves in one mesh (one draw call, one more for its shadow): the stations, the towers and
+    // the cable's tube
     const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
     // (the towers: on the low tier a lighter copy, the same but for the ladder's rungs)
     const stG = geo(station), bw = geo(bull), twG = geo(low ? towerLo : tower), parts = [];
@@ -232,22 +236,30 @@ export class Lift {
       // the station on its pad, the base under the snow, the up line on the park side (the model mirrored across);
       // the model's line end is +z: the top station faces down the hill as it is, the bottom one is turned round
       const m4 = new THREE.Matrix4().compose(_p.set(XL, st.y, st.z), _q.setFromAxisAngle(Y, st === P.top ? 0 : Math.PI), _v.set(-1, 1, 1));
-      for (const g0 of [stG, bw]) {
-        const g1 = g0.clone().applyMatrix4(m4);
-        // (mirrored, so each triangle's corners go the other way round to keep its front face outward)
-        const ix = g1.index.array; for (let k = 0; k < ix.length; k += 3) { const t = ix[k + 1]; ix[k + 1] = ix[k + 2]; ix[k + 2] = t; }
-        parts.push(g1);
-      }
+      const g1 = stG.clone().applyMatrix4(m4);
+      // (mirrored, so each triangle's corners go the other way round to keep its front face outward)
+      const ix = g1.index.array; for (let k = 0; k < ix.length; k += 3) { const t = ix[k + 1]; ix[k + 1] = ix[k + 2]; ix[k + 2] = t; }
+      parts.push(g1);
     }
+    /* the two bull wheels turn with the cable, so they are not in the merged mesh: one instanced mesh of two (one draw
+       call, the chairs' own program, so no shader of its own), drawn only near the camera and in view. No shadow of
+       their own: they turn under the housings' roofs, which shade them. (Not mirrored as the stations are: the wheel is
+       round, and an instance turned inside out would show its back faces.) */
+    this.wheels = new THREE.InstancedMesh(bw, mat, 2);
+    this.wheels.frustumCulled = false; this.wheels.count = 0; this.wheels.visible = false; this.wheels.matrixAutoUpdate = false;
+    this.wheels.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.wheels.castShadow = false; this.wheels.receiveShadow = !low;   // (as the chairs: one material, one program variant)
+    this.wheelR = low ? 110 : 190;
     for (const t of P.towers) parts.push(twG.clone().translate(t.x, t.y, t.z));
     const cable = this.cableMeshes();
     parts.push(cable.tube);
-    const still = this.still = new THREE.Mesh(mergeGeometries(parts, false), mat);
+    // (its own copy of the material: a plain mesh sharing the instanced chairs' material made three.js look its program
+    // up again on every draw, twice a frame)
+    const still = this.still = new THREE.Mesh(mergeGeometries(parts, false), mat.clone());
     still.castShadow = true; still.receiveShadow = true; still.matrixAutoUpdate = false; still.updateMatrixWorld(true);
     this.stillTris = still.geometry.index.count / 3;
     group.add(still, cable.line);
-    group.add(this.chNear, this.chFar);
-    for (const m of [this.chNear, this.chFar, cable.line]) m.updateMatrixWorld(true);
+    group.add(this.chNear, this.chFar, this.wheels);
+    for (const m of [this.chNear, this.chFar, this.wheels, cable.line]) m.updateMatrixWorld(true);
     this.scene.add(group);
     this.place(0, null);
     this.ready = true;
@@ -350,6 +362,23 @@ export class Lift {
     this.chNear.count = nn; this.chFar.count = nf;
     if (nn) this.chNear.instanceMatrix.needsUpdate = true;
     if (nf) this.chFar.instanceMatrix.needsUpdate = true;
+    // the bull wheels: the haul rope runs round them at line speed all the time (only the chairs let go of it and slow
+    // down in the stations), so a wheel turns at V / HALF, about 36 turns a minute, on the lift's own clock (quicker
+    // with Space held, stopped by a pause); the cable goes round both the same way seen from above
+    const W = this.wheels;
+    if (W) {
+      let nw = 0;
+      const a = -((c * V / HALF) % (Math.PI * 2)), wr2 = this.wheelR * this.wheelR, aw = W.instanceMatrix.array;
+      for (const st of [P.top, P.bot]) {
+        if ((XL - cx) ** 2 + (st.y - cy) ** 2 + (st.z - cz) ** 2 > wr2) continue;
+        _sph.center.set(XL, st.y, st.z); _sph.radius = 3;
+        if (!_f.intersectsSphere(_sph)) continue;
+        _q.setFromAxisAngle(Y, a + (st === P.top ? 0 : Math.PI)); _p.set(XL, st.y, st.z); _m.compose(_p, _q, _s);
+        _m.toArray(aw, nw * 16); nw++;
+      }
+      W.count = nw; W.visible = nw > 0;
+      if (nw) W.instanceMatrix.needsUpdate = true;
+    }
   }
   // the chair that will next reach loop place s at least `lead` seconds from now: its slot and how long until then
   nextTo(s, lead) {
@@ -386,6 +415,9 @@ export class Lift {
     this.ride = { phase: 'walk', t: 0, walk, from, yaw0, chair: pick.i, seat: P.seat, sit: 0 };
     if (this.input) this.input.stick = 0;     // (the mouse scheme's pointer looks round on the chair: start it behind)
     this.camShot = 'bot';
+    // put straight on the load line (the end of the run): the tripod at once, not a glide from the old place through
+    // the station's housing
+    this.cutIn = walk === 0;
     this.feet.set(L.x, L.y, L.z); this.feetOn = true;
     if (walk === 0) { from.set(L.x, L.y, L.z); this.ride.yaw0 = Math.PI; }
     return true;
@@ -481,14 +513,39 @@ export class Lift {
       // the chair's speed for the camera, the wind and the readout
       _v.set(0, 0, 1).applyAxisAngle(Y, this.yaw[i]).multiplyScalar(this.v[i]); sk.v.copy(_v);
     }
-    // going past a tower the chase camera swings a little way out to the park side, clear of its sheaves (camera.js
-    // orbit, which comes back behind the chair after; in the mouse scheme lookMouse adds it)
+    // going past a tower the chase camera swings out to the park side, clear of its head (camera(), as cams.orbitAuto
+    // on top of the rider's own look, only while they are not looking round; camera.js adds the two). How far is the
+    // tower's own (towerSwing): wide, for a clean view of the chair passing the tower from the side, unless a floodlight
+    // pole stands where the swung camera would pass it; then just far enough to clear the head, on the lift's side of
+    // the poles
     this.swing = 0;
     if (this.ride && this.ride.phase === 'ride') {
-      const z = this.gz[i];
-      for (const t of P.towers) { const d = z - t.z; if (d > -8 && d < 12) { this.swing = -1.15; break; } }
+      const z = this.gz[i], sw = this.towerSwing || this.swings();
+      for (let k = 0; k < P.towers.length; k++) { const d = z - P.towers[k].z; if (d > -8 && d < 12) { this.swing = sw[k]; break; } }
     }
-    if (g.cams && this.swing && g.cams.mode === 'chase' && !g.mouse) g.cams.orbit = (g.cams.orbit || 0) + (this.swing - (g.cams.orbit || 0)) * Math.min(1, dt * 3);
+    // looking round now: a turn key held, or the mouse moved in the last half second (lookMouse)
+    this.looking = !!(g.live && g.I && g.I.steer) || (!!g.mouse && (this.lookIdle ?? 9) < 0.5);
+    // the chair moved on a long way at once (the lift runs on the wall clock, so after the page was in the background):
+    // the camera is put straight behind it rather than flying across the hill to catch up
+    if (this.ride && this.ride.phase === 'ride') {
+      const gz = this.gz[this.ride.chair];
+      if (g.cams && this.lastGz !== undefined && Math.abs(gz - this.lastGz) > 30) g.cams.first = true;
+      this.lastGz = gz;
+    } else this.lastGz = undefined;
+  }
+  /* each tower's swing (radians, negative: the view turns right, the camera goes to the park side), worked out once.
+     The chase camera rides 4.2 m behind the rider; swung 1.15 rad it passes 3.8 m out on the park side, which is where
+     the floodlight poles stand (2.5 m outside the fence); swung just enough to pass 0.9 m clear of the head's end (3 m
+     from the line's middle) it stays 1 m on the lift's side of them. The camera is swung from about 16 m before the
+     tower to 13 m after it (the chair 12 m before to 8 m after, and the ease back). */
+  swings() {
+    const P = this.plan, Lt = P.lights, wide = -1.15, near = -Math.asin(Math.min(0.95, Math.max(0, P.load.x - (XL - 3.9)) / 4.2));
+    this.towerSwing = P.towers.map(t => {
+      if (!Lt || Math.abs(XL - 2.4 - Lt.x) > 6) return wide;
+      for (let z = Lt.z0; z <= Lt.z1 + 1; z += Lt.S) if (z > t.z - 15 && z < t.z + 18) return near;
+      return wide;
+    });
+    return this.towerSwing;
   }
   // the drive's hum near the stations and on a chair, and the clack of a grip running over a tower's sheaves near you
   sounds(dt, g) {
@@ -518,32 +575,68 @@ export class Lift {
     if (g.mouse && g.input) g.input.stick = Math.atan2(0.85, 0.53) / 1.66;
     this.after = 1.1; this.camShot = 'top';
   }
-  /* The camera through loading and unloading (main.js, after camera.js has placed it): the station's housing is only
-     3.1 m over the snow, so the chase camera would be under or inside it. A tripod beside the station takes over
-     instead, low on the park side, out of the housing and clear of its piers: at the bottom from the moment you are
-     taken to the load line until the chair is out of the station, at the top from just before the chair goes in until
-     a moment after you ski off. It blends in and out of the chase camera and pans to follow the rider. */
+  // a point in or within m of a station's housing, anywhere from the snow up to its roof (the piers, the chairs going
+  // round under it and the housing itself): 'top', 'bot' or ''
+  inStation(p, m) {
+    if (p.x < XL - ST.half - m || p.x > XL + ST.half + m) return '';
+    const P = this.plan;
+    if (p.z > P.top.z - ST.back - m && p.z < P.top.z + ST.front + m && p.y < P.top.y + ST.roof + m) return 'top';
+    if (p.z > P.bot.z - ST.front - m && p.z < P.bot.z + ST.back + m && p.y < P.bot.y + ST.roof + m) return 'bot';
+    return '';
+  }
+  /* The camera by the stations (main.js, after camera.js has placed it). The housing's underside is only 2.2 m over the
+     snow and the chairs go round under it, so a chase camera behind a rider at the load or unload line would be in the
+     housing. A tripod beside the station takes over instead, low on the park side, out of the housing and clear of its
+     piers: at the bottom from the moment you are taken to the load line until the chair is out of the station, at the
+     top from just before the chair goes in until you have skied off far enough for the chase camera to be clear of the
+     housing, and whenever the chase camera itself would be in a housing (skiing round a station). It blends in and out
+     of the chase camera, but never through a housing: a blend that would go in cuts instead, and so does being put
+     straight on the load line at the end of a run, or a change of camera. Between the stations the chase camera swings
+     out past each tower, and no third-person camera goes through a tower's head, a chair or a floodlight pole (keepClear).
+     Nothing here allocates. */
   camera(dt, cam, cams, sk) {
     if (!this.ready) return;
-    const P = this.plan, r = this.ride;
+    const P = this.plan, r = this.ride, mode = cams.mode, third = mode === 'chase' || mode === 'far';
+    if (!r && this.after > 0) this.after -= dt;
     let on = false;
-    if (r && (cams.mode === 'chase' || cams.mode === 'far')) {
-      const z = r.phase === 'walk' || r.phase === 'wait' ? sk.p.z : this.gz[r.chair];
-      if (r.phase === 'walk' || r.phase === 'wait' || r.phase === 'sit' || (r.phase === 'ride' && z > P.bot.front - 14 && z < P.bot.z + 30)) { on = true; this.camShot = 'bot'; }
-      else if (r.phase === 'stand' || (r.phase === 'ride' && z < P.top.front + 20 && z > P.top.z - 30)) { on = true; this.camShot = 'top'; }
-    } else if (!r && this.after > 0 && (cams.mode === 'chase' || cams.mode === 'far')) { this.after -= dt; on = true; }
-    const w = this.camW = (this.camW || 0) + ((on ? 1 : 0) - (this.camW || 0)) * Math.min(1, dt * 2.4);
-    if (w < 0.003) { this.camW = 0; return; }
-    // the tripod, on the park side clear of the housing and its piers, a little over head height: at the bottom behind
-    // the load line (the rider, the chair coming round and the line going up the hill ahead all in view), at the top
-    // up the hill from the unload line (the chair coming in, and the rider skiing off down the ramp)
+    if (third) {
+      if (r) {
+        const z = r.phase === 'walk' || r.phase === 'wait' ? sk.p.z : this.gz[r.chair];
+        if (r.phase === 'walk' || r.phase === 'wait' || r.phase === 'sit' || (r.phase === 'ride' && z > P.bot.front - 14 && z < P.bot.z + 30)) { on = true; this.camShot = 'bot'; }
+        else if (r.phase === 'stand' || (r.phase === 'ride' && z < P.top.front + 20 && z > P.top.z - 30)) { on = true; this.camShot = 'top'; }
+      } else if (this.after > 0) on = true;
+      // the chase camera itself in (or at) a housing: the tripod stays, or comes in
+      const inside = this.inStation(cams.pos, 0.6);
+      if (inside) { if (!on) this.camShot = inside; on = true; }
+    }
+    // a change of camera, or put straight on the load line: a cut
+    if (mode !== this.camMode || this.cutIn) { this.camMode = mode; this.cutIn = false; this.camW = on ? 1 : 0; this.camLookOk = false; }
+    // passing a tower: the chase camera's swing out to the park side (eased, on the next frame's camera.js), unless the
+    // rider is looking round; and whatever the camera does, never through a tower's head, a chair coming down or a
+    // floodlight pole (keepClear, on the camera's final place; only riding the chair: a skier on the snow under the
+    // line keeps the chase camera low)
+    const auto = mode === 'chase' && r && r.phase === 'ride' && !this.looking ? this.swing || 0 : 0;
+    cams.orbitAuto = (cams.orbitAuto || 0) + (auto - (cams.orbitAuto || 0)) * Math.min(1, dt * 3);
+    if (Math.abs(cams.orbitAuto) < 1e-4) cams.orbitAuto = 0;
+    const clear = third && r && r.phase === 'ride';
+    let w = this.camW = (this.camW || 0) + ((on ? 1 : 0) - (this.camW || 0)) * Math.min(1, dt * 2.4);
+    if (w < 0.003) { this.camW = 0; this.camLookOk = false; if (clear && this.keepClear(cam.position)) { cam.up.set(0, 1, 0); cam.lookAt(cams.look); } return; }
+    // the tripod: at the bottom behind the load line (the rider, the chair coming round and the line going up the hill
+    // ahead all in view), at the top up the hill from the unload line (the chair coming in, the rider skiing off)
     const top = this.camShot === 'top', st = top ? P.top : P.bot, spot = top ? P.unload : P.load;
     const pos = _cp.set(spot.x - (this.camDX ?? 8), st.pad.y + (this.camDY ?? 1.3), spot.z + (top ? (this.camDZt ?? -9) : (this.camDZ ?? 9)));
-    const tgt = _ct.set(sk.p.x, Math.min(sk.p.y, st.pad.y + 1.2) + 0.2, sk.p.z + (top ? 0.5 : -1.5));
-    if (!this.camLookOk) { this.camLook = new THREE.Vector3().copy(tgt); this.camLookOk = true; }
-    if (w < 0.01) this.camLook.copy(tgt); else this.camLook.lerp(tgt, Math.min(1, dt * 5));
-    const k = w * w * (3 - 2 * w);
-    cam.position.lerp(pos, k);
+    // it looks at the rider: the hips on the chair, the middle of the body standing (it looked at the snow under a
+    // chair still high over it coming in at the top)
+    const tgt = _ct.set(sk.p.x, sk.p.y + (sk.state === 'lift' ? 0.45 : 1.0), sk.p.z + (top ? 0.5 : -1.5));
+    if (!this.camLook) this.camLook = new THREE.Vector3();
+    if (!this.camLookOk) { this.camLook.copy(tgt); this.camLookOk = true; } else this.camLook.lerp(tgt, Math.min(1, dt * 5));
+    let k = w * w * (3 - 2 * w);
+    _v.copy(cam.position).lerp(pos, k);
+    // a blend that would pass through a housing: straight to whichever end it was going to
+    if (k < 1 && this.inStation(_v, 0.6)) { w = this.camW = on ? 1 : 0; k = w; _v.copy(cam.position).lerp(pos, k); }
+    if (k <= 0) { this.camLookOk = false; if (clear && this.keepClear(cam.position)) { cam.up.set(0, 1, 0); cam.lookAt(cams.look); } return; }
+    cam.position.copy(_v);
+    if (clear) this.keepClear(cam.position);
     // (never under the snow on the way between the two: the top station's pad stands over the slope)
     const gy = height(cam.position.x, cam.position.z) + 0.8; if (cam.position.y < gy) cam.position.y = gy;
     // the eyes go to the rider quickly, while the camera itself moves over
@@ -551,12 +644,55 @@ export class Lift {
     cam.up.set(0, 1, 0); cam.lookAt(_cl);
     cam.fov += ((this.camFov ?? 45) - cam.fov) * k; cam.updateProjectionMatrix();
   }
-  // in the mouse scheme on the chair: the camera turns with the pointer (input.stick, -1 .. 1), the turn keys move the
-  // pointer too, and going past a tower it swings out as with the keys while the pointer is near the middle
+  /* What a third-person camera must keep clear of riding up between the stations:
+     - a tower's head (the crossarm, the sheave trains on both lines and the gantry over them, 3 m either side of the
+       line's middle) stands round the cable, where the chase camera rides behind and over the chair. The swing out to
+       the park side takes the camera past it when the rider looks ahead; looking round can still put the camera in its
+       way, so near a head the camera goes up over it: its lowest height falls away gently along the line (the camera
+       passes at the chair's speed) and quickly to the sides (where the swing puts it, it is hardly moved);
+     - the chairs coming down the other line: looking round towards them (or back up a steep span, where the cable ahead
+       is higher than the camera) the camera stays over their cable as they pass;
+     - the park's floodlight poles, a little way out on the park side: looking right the camera goes round them.
+     Smooth maxima throughout (no kink), so the camera eases out of the way and back. Returns whether it moved it. */
+  keepClear(p) {
+    const P = this.plan;
+    let need = -Infinity, moved = false;
+    const dx = Math.abs(p.x - XL) - 3.0;
+    if (dx < 1.5) for (const t of P.towers) {
+      const dz = Math.abs(p.z - t.z) - 2.8; if (dz > 7) continue;
+      const drop = Math.max(0, dx * 1.6, dz * 0.33);
+      need = Math.max(need, t.y + 11.7 - drop);   // (the head's top is 10.7 over the foot: 1 m clear)
+    }
+    const dd = Math.abs(p.x - xD) - 1.3;          // (a chair is 1.1 to 1.2 m either side of its line)
+    if (dd < 1.5 && p.z < P.bot.front && p.z > P.top.front) need = Math.max(need, P.cableY(p.z) + 0.8 - Math.max(0, dd) * 0.9);
+    const d = need - p.y;
+    if (d > -0.6) { p.y += d >= 0.6 ? d : (d + 0.6) * (d + 0.6) / 2.4; moved = true; }
+    // the nearest floodlight pole: the camera at least 1.1 m from its middle (it is 0.16 thick at the foot, 13.5 tall)
+    const Lt = P.lights;
+    if (Lt && Math.abs(p.x - Lt.x) < 1.5) {
+      const nL = Math.floor((Lt.z1 - Lt.z0) / Lt.S), i = Math.max(0, Math.min(nL, Math.round((p.z - Lt.z0) / Lt.S))), pz = Lt.z0 + i * Lt.S;
+      const ex = p.x - Lt.x, ez = p.z - pz, e = Math.hypot(ex, ez), R = 1.1, w = 0.4;
+      if (e < R + w && p.y < height(Lt.x, pz) + 14.2) {
+        const g = R - e, push = g >= w ? g : (g + w) * (g + w) / (4 * w);
+        const ux = e > 1e-3 ? ex / e : (p.x >= Lt.x ? 1 : -1), uz = e > 1e-3 ? ez / e : 0;
+        p.x += ux * push; p.z += uz * push; moved = true;
+      }
+    }
+    return moved;
+  }
+  /* In the mouse scheme on the chair: the camera turns with the pointer (input.stick, -1 .. 1; right looks right), the
+     turn keys move the pointer too. Let go (no mouse movement and no turn key for 0.8 s), the pointer drifts back to
+     the middle and the camera comes round behind the chair again, as the keys' look does (camera.js lookRound). The
+     camera's turn follows the pointer at a limited rate, so a fast flick of the mouse still swings it smoothly. */
   lookMouse(cams, input, I, dt) {
     if (I.steer) input.stick = Math.max(-1, Math.min(1, input.stick + I.steer * dt * 0.7));
-    const want = -input.stick * 2.4 + (Math.abs(input.stick) < 0.2 ? this.swing || 0 : 0);
-    cams.orbit = (cams.orbit || 0) + (want - (cams.orbit || 0)) * Math.min(1, dt * 6);
+    if (I.steer || input.stick !== this.stick0) this.lookIdle = 0; else this.lookIdle = (this.lookIdle || 0) + dt;
+    if (this.lookIdle > 0.8) input.stick -= input.stick * Math.min(1, dt * 1.6);
+    this.stick0 = input.stick;
+    const o = cams.orbit || 0, want = -input.stick * 2.4;
+    let step = (want - o) * Math.min(1, dt * 6);
+    const cap = 4.5 * dt; if (step > cap) step = cap; else if (step < -cap) step = -cap;
+    cams.orbit = o + step;
   }
   // seconds until chair i reaches loop place s (it is ahead of it)
   untilAt(i, s) {

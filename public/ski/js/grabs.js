@@ -18,10 +18,27 @@ export const GRABS = {
      it. They had skis crossed wide or turned 66 degrees sideways, nearly vertical, and free arms held up stiff.) */
   safety:    { name: 'Right Safety', hand: 'R', hands: [['R', 'R', 0, 'out']], arms: 'out', ski: { L: [-0.02, 0.03, 0.06, 0.03, -0.12, 0], R: [0.02, 0.02, 0.06, -0.03, -0.12, 0] }, tuck: 0.55, lean: 1.2, twist: 0.12, side: 0.3 },
   // a mute: the other hand reaches across the front of the body to the other ski, in front of the binding; that ski
-  // pulled up and a little across the first (a small X), the body turned and the reaching shoulder dropped into it
-  // (2026-11-03: it read as a safety)
-  mute:      { name: 'Left Mute', hand: 'L', hands: [['L', 'R', 0.32, 'out']], arms: 'out', ski: { L: [-0.05, -0.02, 0.06, -0.2, -0.15, 0.04], R: [0.11, 0.14, 0.12, 0.36, -0.45, -0.12] }, tuck: 0.65, lean: 1.05, twist: -0.58, side: -0.45, hips: 0.5 },
-  japan:     { name: 'Right Japan', hand: 'R', hands: [['R', 'L', 0.1, 'in']], arms: 'out', ski: { L: [-0.05, 0.1, 0.02, -0.12, 0.2, -0.05], R: [0.01, 0.02, 0.06, -0.04, 0.12, 0] }, tuck: 0.6, lean: 1.15, twist: 0.3, side: 0.28, hips: 0.4 },
+  // pulled up and right across the first (a big X, as in photos of real ones), the knees tucked up, the body turned
+  // and the reaching shoulder dropped into it, the free arm thrown up high with its pole (2026-11-03: it read as a
+  // safety; 2026-11-05, for "make the mute grab look more like mute exaggerated": the X was small and the arm low)
+  mute:      { name: 'Left Mute', hand: 'L', hands: [['L', 'R', 0.3, 'out']], arms: 'high', ski: { L: [-0.07, -0.04, 0.04, -0.5, -0.1, 0.06], R: [0.13, 0.16, 0.14, 0.72, -0.72, -0.18] }, tuck: 0.8, lean: 1.1, twist: -0.78, side: -0.6, hips: 0.6,
+    // E (the grabbing hand's key) tweaks it further, R pokes the free leg, both together do both
+    vary: {
+      tweak: { ski: { L: [-0.08, -0.06, 0.02, -0.62, -0.05, 0.1], R: [0.16, 0.2, 0.15, 0.95, -0.85, -0.3] }, tuck: 0.86, lean: 1.2, twist: -1.0, side: -0.78, hips: 0.7 },
+      poke: { ski: { L: [-0.12, -0.26, 0.3, -0.5, -0.7, 0.08], R: [0.05, 0.22, 0.12, 0.78, -0.75, -0.2] }, tuck: 0.55, lean: 0.95, twist: -0.85, side: -0.66, hips: 0.6 },
+      both: { ski: { L: [-0.12, -0.28, 0.3, -0.6, -0.72, 0.1], R: [0.08, 0.26, 0.15, 1.0, -0.88, -0.32] }, tuck: 0.62, lean: 1.05, twist: -1.05, side: -0.8, hips: 0.7 },
+    } },
+  // a japan: the hand reaches round the front of the tucked knee to the inside of that ski, the other leg kicked out
+  // straight with its ski across under the first, the free arm up high (2026-11-05, for "v should default to v + e":
+  // the plain japan is now what the poked one was, and its variations go further)
+  japan:     { name: 'Right Japan', hand: 'R', hands: [['R', 'L', 0.1, 'in']], arms: 'high', ski: { L: [-0.05, 0.1, 0.02, -0.12, 0.2, -0.05], R: [-0.11, -0.2, 0.38, -0.29, -0.75, 0] }, tuck: 0.4, lean: 1.0, twist: 0.36, side: 0.34, hips: 0.4,
+    // R (the grabbing hand's key) tweaks it: the held ski pulled up and back behind, the body wound hard round to it;
+    // E pokes the free leg further and crosses its ski under the held one (a big X); both together do both
+    vary: {
+      tweak: { ski: { L: [-0.1, 0.2, -0.12, -0.42, 0.62, -0.18], R: [-0.12, -0.22, 0.38, -0.32, -0.78, 0] }, tuck: 0.55, lean: 1.15, twist: 0.78, side: 0.55, hips: 0.55 },
+      poke: { ski: { L: [-0.07, 0.14, -0.06, -0.3, 0.42, -0.08], R: [-0.22, -0.34, 0.48, 0.72, -1.0, 0.16] }, tuck: 0.32, lean: 0.92, twist: 0.58, side: 0.45, hips: 0.5 },
+      both: { ski: { L: [-0.1, 0.22, -0.14, -0.5, 0.68, -0.2], R: [-0.24, -0.36, 0.48, 0.78, -1.02, 0.16] }, tuck: 0.45, lean: 1.08, twist: 0.92, side: 0.62, hips: 0.62 },
+    } },
   // a tail grab: the hand at the very end of the tail beside the hip, both skis steeply tips down (60 to 70 degrees)
   // and together, the legs hanging lower, the chest fairly upright and turned and dropped a little to the grab
   tail:      { name: 'Right Tail', hand: 'R', kind: 'tail', hands: [['R', 'R', -0.93, 'out']], arms: 'out', ski: { L: [0.01, -0.02, -0.12, -0.04, 1.35, 0], R: [-0.01, 0, -0.14, 0.05, 1.45, 0] }, tuck: 0.3, lean: 0.4, twist: -0.35, side: 0.38 },
@@ -34,7 +51,9 @@ export const GRABS = {
   // stands nearly upright beside and behind the body, its tip pointing down past the other boot (yawed in, then pitched
   // up: the long line runs from the shoulder down across behind the legs), the knee bent up; the chest turned to the
   // grab and leaning towards it; the other ski level under the rider. Read from behind it is one long diagonal line.
-  blunt:     { name: 'Right Blunt', hand: 'R', kind: 'blunt', hands: [['R', 'R', -1, 'end']], arms: 'wide', ski: { L: [0.02, -0.08, 0.06, -0.06, 0.06, 0], R: [-0.06, 0.0, -0.08, 1.45, 1.15, 0.5] }, tuck: 0.45, lean: 0.3, twist: -0.75, side: 0.5, hips: 0.45 },
+  // (2026-11-05: the ski moved further back and out to the side, where the chase camera above and behind sees it clear
+  // of the body; it hid behind the jacket)
+  blunt:     { name: 'Right Blunt', hand: 'R', kind: 'blunt', hands: [['R', 'R', -1, 'end']], arms: 'wide', ski: { L: [0.02, -0.08, 0.06, -0.06, 0.06, 0], R: [-0.16, 0.04, -0.3, 1.3, 1.2, 0.45] }, tuck: 0.45, lean: 0.25, twist: -0.9, side: 0.5, hips: 0.5 },
   // (the grabbed ski brought behind the other leg, which stays forward, so neither goes through the other)
   stalefish: { name: 'Stalefish', hand: 'R', hands: [['R', 'L', -0.6, 'out']], arms: 'out', ski: { L: [-0.03, 0.08, -0.2, -0.2, 0.45, 0], R: [-0.03, 0, 0.08, -0.04, 0.3, 0] }, tuck: 0.55, lean: 0.6, twist: -0.3, side: 0.35, hips: 0.4 },
   bowarrow:  { name: 'Bow and Arrow', hand: 'B', hands: [['R', 'R', 0.9, 'end'], ['L', 'L', 0.4, 'out']], ski: { L: [0.06, 0.12, 0.02, 0.08, -0.7, -0.1], R: [-0.02, -0.05, 0.26, -0.05, -0.65, 0] }, tuck: 0.45, lean: 0.9, twist: 0.1, side: 0.1 },
@@ -57,7 +76,9 @@ const LR = s => s === 'L' ? 'R' : s === 'R' ? 'L' : s;
 function mirror(g) {
   const m = (t) => [-t[0], t[1], t[2], -t[3], t[4], -t[5]];
   const name = g.name.startsWith('Left ') ? 'Right ' + g.name.slice(5) : g.name.startsWith('Right ') ? 'Left ' + g.name.slice(6) : g.name;
-  return Object.assign({}, g, { name, hand: LR(g.hand), hands: g.hands.map(([h, s, at, e]) => [LR(h), LR(s), at, e]), ski: { L: m(g.ski.R), R: m(g.ski.L) }, twist: -g.twist, side: -g.side });
+  const out = Object.assign({}, g, { name, hand: LR(g.hand), hands: g.hands.map(([h, s, at, e]) => [LR(h), LR(s), at, e]), ski: { L: m(g.ski.R), R: m(g.ski.L) }, twist: -g.twist, side: -g.side });
+  if (g.vary) { out.vary = {}; for (const k in g.vary) { const v = g.vary[k]; out.vary[k] = Object.assign({}, v, { ski: { L: m(v.ski.R), R: m(v.ski.L) }, twist: -v.twist, side: -v.side }); } }
+  return out;
 }
 for (const id of ['safety', 'mute', 'japan', 'tail', 'blunt', 'critical', 'seatbelt', 'stalefish', 'nose']) GRABS[id + '_m'] = mirror(GRABS[id]);
 
@@ -101,7 +122,13 @@ export function grabDef(id, mod = '') {
     else { d = tweaked(g); name = 'Tweaked ' + g.name; if (E && R) { d = tweaked(d); name = 'Double Tweaked ' + g.name; } }
   } else {
     const own = g.hand === 'L' ? E : R, other = g.hand === 'L' ? R : E;
-    if ((g.kind === 'tail' || g.kind === 'blunt') && other && !own) { d = blunt(g); name = 'Uncrossed ' + d.name; }
+    // a grab with its own variations (the mute, the japan): its own shapes, named as the others are
+    if (g.vary) {
+      const k = own && other ? 'both' : own ? 'tweak' : 'poke';
+      d = Object.assign({}, g, g.vary[k], { tw: own ? 1 : 0, poke: other ? 'free' : undefined });
+      name = k === 'both' ? 'Tweaked Poked ' + g.name : k === 'tweak' ? 'Tweaked ' + g.name : 'Poked ' + g.name;
+    }
+    else if ((g.kind === 'tail' || g.kind === 'blunt') && other && !own) { d = blunt(g); name = 'Uncrossed ' + d.name; }
     else if (own && other) { d = poked(tweaked(g)); name = 'Tweaked ' + NAMES.poke.trim() + ' ' + g.name; }
     else if (own) { d = tweaked(g); name = NAMES.tweak + g.name; }
     else { d = poked(g); name = NAMES.poke + g.name; }
@@ -114,8 +141,8 @@ export const grabName = (id, mod) => { const d = grabDef(id, mod); return d ? d.
 
 // what each grab is, the way freeskiers describe it (Backcountry Access, Red Bull, NBC's glossary)
 export const GRAB_GUIDE = {
-  safety: 'same hand, same ski, under the boot, outside edge', mute: 'opposite hand to the other ski, outside edge in front of the binding, skis crossed',
-  japan: 'opposite hand under the knee to the tucked ski, inside edge', tail: 'same hand on the tail, tails pulled up behind',
+  safety: 'same hand, same ski, under the boot, outside edge', mute: 'opposite hand to the other ski, outside edge in front of the binding, skis crossed in a big X',
+  japan: 'opposite hand round the tucked knee to that ski, inside edge, the other leg kicked out', tail: 'same hand on the tail, tails pulled up behind',
   nose: 'same hand on the tip, legs out straight', truck: 'both hands, each on its own ski in front of the bindings',
   critical: 'opposite hand to the other ski, inside edge in front of the binding', octo: 'one hand on one tip, the other on the other tail, skis crossed',
   blunt: 'same hand on the very end of the tail', stalefish: "a hand to the other ski's tail behind the legs, skis turned sideways",

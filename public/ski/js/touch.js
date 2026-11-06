@@ -2,8 +2,8 @@
 // brake; in the air it spins and flips), and buttons on the right: Pop (hold to crouch, let go to pop), Grab (hold
 // for the grab shown on the picker above it, tap the picker to change grab), Butter (hold, the stick presses the nose
 // or tail), and the camera.
-import { GRABS } from './grabs.js?v=16';
-import { rideGrabDef } from './board.js?v=16';      // (B: a board's own grab names on the picker)
+import { GRABS } from './grabs.js?v=17';
+import { rideGrabDef } from './board.js?v=17';      // (B: a board's own grab names on the picker)
 
 const ORDER = ['safety', 'mute', 'japan', 'tail', 'nose', 'truck', 'critical', 'octo', 'blunt', 'stalefish', 'bowarrow', 'dubtail', 'seatbelt', 'daffy', 'spread', 'backscratch', 'ironcross'];
 
@@ -52,6 +52,10 @@ export class Touch {
   get grabId() { return ORDER[this.state.sel]; }
   // (B: what you ride: the picker names its grabs)
   nameOf(id) { const d = this.kind && this.kind !== 'ski' ? rideGrabDef(this.kind, id) : null; return d ? d.name : GRABS[id].name; }
-  setRide(kind) { this.kind = kind; if (this.pick) this.pick.textContent = this.nameOf(ORDER[this.state.sel]); }
+  setRide(kind) {
+    this.kind = kind; if (this.pick) this.pick.textContent = this.nameOf(ORDER[this.state.sel]);
+    // (X: a scooter's, snowbike's or sled's grab button does its tricks: a tailwhip, a superman...)
+    const gb = this.el && this.el.querySelector('.grab'); if (gb) gb.textContent = kind === 'scoot' || kind === 'bike' || kind === 'sled' ? 'Trick' : 'Grab';
+  }
 }
 export const TOUCH_GRABS = ORDER;

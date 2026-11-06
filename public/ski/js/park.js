@@ -3,8 +3,8 @@
 // function the physics reads directly; kickers and the pipe also get meshes of their own, much finer at the lips,
 // knuckles and coping than the terrain's patches.
 import * as THREE from 'three';
-import { baseLine, pitchAt, ground } from './terrain.js?v=16';
-import { smoothstep, clamp, smax } from './noise.js?v=16';
+import { baseLine, pitchAt, ground } from './terrain.js?v=17';
+import { smoothstep, clamp, smax } from './noise.js?v=17';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -767,7 +767,7 @@ function legsUnder(G, r, every, w, from) {
 }
 let benchSrc = null;
 function loadBench() {
-  if (!benchSrc) benchSrc = new GLTFLoader().loadAsync('models/park/bench.glb?v=16').then(g => { let m = null; g.scene.traverse(o => { if (o.isMesh && !m) m = o; }); return m; });
+  if (!benchSrc) benchSrc = new GLTFLoader().loadAsync('models/park/bench.glb?v=17').then(g => { let m = null; g.scene.traverse(o => { if (o.isMesh && !m) m = o; }); return m; });
   return benchSrc;
 }
 // the bench model stretched along a rail's two points: the ends (with their legs) kept, the seat between stretched, the
@@ -828,7 +828,7 @@ export function railMeshes(rails, mats) {
   const add = (G, mat) => { const g = G.geometry(); if (!g) return; const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false; out.add(m); };
   /* scuffed plastic and scratched steel: roughness maps from ambientCG's CC0 "Plastic 010" (its roughness) and "Scratches
      005" (its scratches made into roughness), 512 px */
-  const tl = new THREE.TextureLoader(), rough = f => new Promise(res => tl.load('models/park/' + f + '?v=16', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
+  const tl = new THREE.TextureLoader(), rough = f => new Promise(res => tl.load('models/park/' + f + '?v=17', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
   const plRough = rough('plastic_rough.webp'), stRough = rough('steel_rough.webp');
   const paintM = mats.paint || (mats.paint = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.48, metalness: 0.05 }));
   const steelM = mats.railSteel || (mats.railSteel = new THREE.MeshStandardMaterial({ color: 0xb8bdc2, metalness: 0.9, roughness: 0.32 }));

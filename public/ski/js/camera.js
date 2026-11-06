@@ -1,9 +1,10 @@
 // Cameras: chase (behind the travel, held steady through spins), far chase, first person (a helmet camera at the
 // rider's eyes, turning with the head) and filmer (tripod spots beside the features, panning and zooming to follow).
 import * as THREE from 'three';
-import { height } from './terrain.js?v=16';
+import { height } from './terrain.js?v=17';
 
 const MODES = ['chase', 'far', 'pov', 'film'];
+const _lf = new THREE.Vector3(), _Y = new THREE.Vector3(0, 1, 0);   // (L: the chairlift's look round)
 export class Cams {
   constructor(camera, park) {
     this.cam = camera; this.mode = 'chase';
@@ -22,7 +23,14 @@ export class Cams {
   set(mode) { this.mode = mode; this.first = true; }
   // looking round (on the chairlift: the turn keys swing the chase camera round the chair, -1 .. 1; let go, it comes back)
   // (L: named lookRound, not look: this.look is the camera's look-at point, set in the constructor, and hid the method)
-  lookRound(u, dt) { this.orbitV = u || 0; this.orbit = (this.orbit || 0) + (u ? u * 1.6 * dt : -(this.orbit || 0) * Math.min(1, dt * 1.5)); this.orbit = Math.max(-2.6, Math.min(2.6, this.orbit)); }
+  // The view turns the way of the key (right looks right, as the mouse does: orbit < 0 turns the view right); the turn
+  // speeds up and slows down over about a tenth of a second instead of starting and stopping dead.
+  lookRound(u, dt) {
+    const want = u ? -u * 1.6 : 0;
+    this.orbitV = (this.orbitV || 0) + (want - (this.orbitV || 0)) * Math.min(1, dt * 10);
+    this.orbit = (this.orbit || 0) + (u ? this.orbitV * dt : -(this.orbit || 0) * Math.min(1, dt * 1.5));
+    this.orbit = Math.max(-2.6, Math.min(2.6, this.orbit));
+  }
   next() { this.set(MODES[(MODES.indexOf(this.mode) + 1) % MODES.length]); return this.mode; }
   update(dt, sk, rig) {
     if (this.mode === 'fixed') return;
@@ -38,6 +46,8 @@ export class Cams {
       // look a little down the slope, and keep the horizon from rolling too much on the snow
       const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(q), up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
       if (sk.state !== 'air') up.lerp(new THREE.Vector3(0, 1, 0), 0.6).normalize();
+      // (L) on the chairlift the look keys and the mouse turn the head camera too (the same orbit as the chase camera's)
+      if (sk.state === 'lift' && this.orbit) { fwd.applyAxisAngle(_Y, this.orbit); up.applyAxisAngle(_Y, this.orbit); }
       const target = rig.eye.clone().add(fwd).addScaledVector(up, -0.28);
       cam.position.copy(rig.eye);
       cam.up.copy(up); cam.lookAt(target);
@@ -73,9 +83,15 @@ export class Cams {
         const v = sk.v.clone(); v.y = 0;
         if (v.lengthSq() > 0.5) this.dir.lerp(v.normalize(), this.first ? 1 : 1 - Math.exp(-dt * 3)).normalize();
       } else if (sk.state === 'lift' && sk.q) {
-        // on the chairlift: behind the chair, the way it faces, swung round by lookRound()
-        const f = new THREE.Vector3(0, 0, 1).applyQuaternion(sk.q); f.y = 0;
-        if (f.lengthSq() > 1e-4) { f.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), this.orbit || 0); this.dir.lerp(f, this.first ? 1 : 1 - Math.exp(-dt * 4)).normalize(); }
+        // on the chairlift: behind the chair, the way it faces, swung round by lookRound() (L: eased by its angle rather
+        // than by blending two directions, so even a big turn of the look goes round evenly)
+        const f = _lf.set(0, 0, 1).applyQuaternion(sk.q); f.y = 0;
+        if (f.lengthSq() > 1e-4) {
+          // (orbitAuto: lift.js's own swing out past a tower, while the rider is not looking round)
+          const want = Math.atan2(f.x, f.z) + Math.max(-2.6, Math.min(2.6, (this.orbit || 0) + (this.orbitAuto || 0))), now = Math.atan2(this.dir.x, this.dir.z);
+          const d = Math.atan2(Math.sin(want - now), Math.cos(want - now)), a = this.first ? want : now + d * (1 - Math.exp(-dt * 4));
+          this.dir.set(Math.sin(a), 0, Math.cos(a));
+        }
       }
       const want = body.clone().addScaledVector(this.dir, -dist); want.y += hgt;
       if (sk.state === 'air') want.y += 0.9;

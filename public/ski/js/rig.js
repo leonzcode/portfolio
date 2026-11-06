@@ -10,10 +10,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=16';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=16';
-import { height } from './terrain.js?v=16';
-import { gltfLoader, gearParts, LOOK, FIT } from './gear.js?v=16';
+import { clamp, smoothstep } from './noise.js?v=17';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=17';
+import { height } from './terrain.js?v=17';
+import { gltfLoader, gearParts, LOOK, FIT } from './gear.js?v=17';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -51,7 +51,7 @@ function segSeg(p1, q1, p2, q2, c1, c2) {
   c1.copy(p1).addScaledVector(d1, s); c2.copy(p2).addScaledVector(d2, t);
   return c1.distanceTo(c2);
 }
-const ARM_MODE = { out: [0.22, -0.22, 0.2], up: [0.19, 0.25, -0.08], wide: [0.3, -0.2, 0.1] };
+const ARM_MODE = { out: [0.22, -0.22, 0.2], up: [0.19, 0.25, -0.08], wide: [0.3, -0.2, 0.1], high: [0.24, 0.4, -0.12] };   // (high: thrown up over the head with the pole, as in photos of mutes and japans)
 // small continuous motion: a sum of three sines, about -1..1, never repeating soon (a is a phase per channel)
 // a reach that is kept short of a limb's full length: as it is up to a share a of the length, then easing towards b
 // (a hard stop near full reach makes the joint flick, since the angle changes fastest there)
@@ -63,8 +63,8 @@ const gpOut = () => ({ pt: V(), palm: V(), fingers: V() });
 export const SKI = { len: 1.78, waist: 0.092, tip: 0.118, thick: 0.017, stack: 0.03 };
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=16';
-import { grabDef } from './grabs.js?v=16';
+export { GRABS } from './grabs.js?v=17';
+import { grabDef } from './grabs.js?v=17';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -358,7 +358,7 @@ export class Rig {
     const kind = opts.kind || 'ski';
     const want = { goggles: gearParts('goggles'), head: look.head === 'beanie' ? gearParts('beanie') : look.head === 'painted' ? null : gearParts('helmet_c'),
       ski: kind === 'ski' && look.ski !== 'park' ? gearParts(look.ski === 'pow' ? 'ski_b' : 'ski_a') : null, pole: kind === 'ski' ? gearParts('pole') : null, plate: kind === 'ski' ? gearParts('binding') : null };
-    const gl = await gltfLoader().loadAsync('./models/' + id + '.glb?v=16');
+    const gl = await gltfLoader().loadAsync('./models/' + id + '.glb?v=17');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     if (opts.look) for (const k of ['jacket', 'pants', 'gloves', 'helmet', 'lens', 'boots', 'skiA', 'skiB']) if (opts.look[k]) this.outfit[k] = opts.look[k];
@@ -442,7 +442,7 @@ export class Rig {
   }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=16';
+    const maskUrl = './models/' + id + '_m.png?v=17';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -908,13 +908,13 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     // ---- the pelvis: over the boots at the crouch's height, the leg column leaning with the snow's push
     const A0 = this.ankleH + SKI.thick + SKI.stack;
     let H = A0 + this.legLen * 0.98 * (0.95 - (0.5 * crouch + 0.2 * tuck)) + (this.pelvisY - this.hipY);
-    H -= 0.43 * this.legLen * lazy;                                     // a lazy boy sits right down
+    H -= 0.5 * this.legLen * lazy;                                      // a lazy boy sits right down
     H += (0.92 * (1 - crouch * 0.35) + (this.pelvisY - this.hipY) * 0.5 - H) * airW;
     const colL = H - A0;
     // skating: the hips ride over each gliding ski in turn; riding and on rails the weight never quite stops moving
     let pelX = -Math.sin(phi) * colL - pushS * 0.14 * strk + (0.016 + 0.014 * railW) * wob(tt * (1.7 + 0.9 * railW), 4.4) * (1 - airW);
     let pelY = A0 + colL * Math.cos(phi) * Math.cos(psi);
-    const pelZ = -0.08 - 0.12 * crouch + (press > 0 ? 0.42 : 0.28) * press * (1 - lazy) - 0.05 * tuck + Math.sin(psi) * colL * 0.8 - 0.66 * lazy;   // (a lazy boy: the hips back over the tails, the legs reaching forward to the boots)
+    const pelZ = -0.08 - 0.12 * crouch + (press > 0 ? 0.42 : 0.28) * press * (1 - lazy) - 0.05 * tuck + Math.sin(psi) * colL * 0.8 - 0.8 * lazy;    // (a lazy boy: the hips back over the tails, the legs reaching forward to the boots)
     // ---- where the upper body and head go
     let face = 0;
     if (ground && speed > 0.8) face = clamp(S.sw ? Math.atan2(-vb.x, -vb.z) : Math.atan2(vb.x, vb.z), -1.5, 1.5) * smoothstep(0.8, 2.5, speed);
@@ -958,11 +958,11 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       hyT = twT + look * (1 - swapK); hpT = 0.12;
     } else {
       twT = face * (0.3 + 0.45 * brake) + swSide * 0.32 * swK + clamp(-Wy * 0.05, -0.22, 0.22) - pushS * 0.12 * strk + wind * 0.6 - lzS * 0.3 * lazy;
-      sdT = lzS * 1.35 * lazy;
+      sdT = lzS * 0.95 * lazy;      // (2026-11-05, "further back": less of the lean to the side, more of it back)
       // (a nose butter: the weight far forward over the noses; a tail butter back over the tails)
-      lnT = 0.2 + 0.5 * tuck - 0.35 * pressT * (1 - lazy) + 0.75 * pressN + 0.1 * strideW + 0.2 * (S.loading ? 1 : 0) - 1.4 * lazy;
+      lnT = 0.2 + 0.5 * tuck - 0.35 * pressT * (1 - lazy) + 0.75 * pressN + 0.1 * strideW + 0.2 * (S.loading ? 1 : 0) - 1.85 * lazy;
       hyT = face * (0.85 + 0.12 * brake) + clamp(Wy * 0.22, -0.45, 0.45) + swSide * 1.35 * swK + (glance ? gl.yaw : 0) - wind * 0.45;   // where it is going
-      hpT = 0.05 + (glance ? gl.pitch : 0) + 0.15 * lazy;
+      hpT = 0.05 + (glance ? gl.pitch : 0) + 0.42 * lazy;     // (laid back, the chin comes up to look where it goes)
     }
     const wB = air && gd ? 13 : 9, zA = air ? 0.75 : 1;                   // a grab's shape comes quickly, swinging a little past
     const tw = sp('tw', twT, air && gd ? 13 : 8.5, zA), sd = sp('sd', sdT, wB, zA), ln = sp('ln', lnT, air ? (popK > 0.1 ? 20 : wB + 2) : 9, zA), hy = sp('hy', hyT, rail ? 7 : 9), hp = sp('hp', hpT, 7, air ? 0.8 : 1);

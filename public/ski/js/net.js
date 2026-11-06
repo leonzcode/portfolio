@@ -22,6 +22,9 @@ export class Net {
     // (L) what fills the state's open bag x: functions fn(x, skier) (the relay passes up to 24 short keys), and the
     // chairlift, so a rider on a chair is drawn on this page's own chair
     this.xFns = []; this.lift = null;
+    // (X) the extra rides' timed tricks (a tailwhip, a bar spin, a briflip...) go in it too: ra the trick, rt how far into
+    // this round (s); the others' pages carry the time on from the snapshot, so the part turns smoothly there
+    this.xFns.push((x, sk) => { if (sk.act) { x.ra = sk.act; x.rt = Math.round(sk.actT * 1000) / 1000; } });
   }
   get inRoom() { return !!this.code; }
   connect(name, rider, { code = '', priv = false } = {}) {
@@ -103,12 +106,13 @@ export class Net {
       const p = new THREE.Vector3(), q = new THREE.Quaternion();
       if (now > c.t) { p.copy(c.p).addScaledVector(c.v, Math.min(0.25, now - c.t)); q.copy(c.q); }
       else { p.lerpVectors(a.p, c.p, k); q.slerpQuaternions(a.q, c.q, k); }
-      const s = (k < 0.5 ? a : c).s;
+      const snap = now > c.t ? c : k < 0.5 ? a : c, s = snap.s;      // (X: past the last snapshot, the last one's state, not the oldest's)
+      const xa = s.x && s.x.ra ? s.x.ra : null, xt = xa ? Math.max(0, (s.x.rt || 0) + (now - snap.t)) : 0;   // (X)
       // (L) a rider on the chairlift sits on this page's own chair of that number, so they ride it exactly
       const lk = s.x && s.x.lf && this.lift ? this.lift.remoteSeat(s.x, p, q, r.lk || (r.lk = {})) : null;
       if (r.rig && r.rig.ready) {
         r.rig.update({ p, q, state: lk ? 'lift' : s.x && s.x.lf ? 'ground' : ST[s.st] || 'ground', edge: s.e, crouch: s.c, tuck: s.tk, brake: s.br, press: s.pr, grab: s.g, pose: s.po,
-          sw: s.sw, speed: c.v.length(), vel: c.v, balance: s.b, t: time, tweak: s.tw || '', shift: s.sh || 0, skate: s.sk || 0, absorb: s.ab || 0, railAng: s.ra || 0, railPress: s.rp || 0, lookBack: !!s.lb, liftSit: lk ? lk.sit : 0, liftFeet: lk ? lk.feet : null }, dt);
+          sw: s.sw, speed: c.v.length(), vel: c.v, balance: s.b, t: time, tweak: s.tw || '', shift: s.sh || 0, skate: s.sk || 0, absorb: s.ab || 0, railAng: s.ra || 0, railPress: s.rp || 0, lookBack: !!s.lb, liftSit: lk ? lk.sit : 0, liftFeet: lk ? lk.feet : null, act: xa, actT: xt }, dt);
         for (const o of r.rig.root.children) if (o !== r.rig.body) o.updateMatrixWorld(true);
       }
       // the name over the helmet

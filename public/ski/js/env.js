@@ -12,8 +12,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { snowUniforms } from './materials.js?v=16';
-import { height, runHalf, getPark } from './terrain.js?v=16';
+import { snowUniforms } from './materials.js?v=17';
+import { height, runHalf, getPark } from './terrain.js?v=17';
 
 const KEY = 'ski_env';
 export const ENV = Object.assign({ time: 12.5, sky: 'clear', snow: 'groomed' },
@@ -24,18 +24,21 @@ const saveEnv = () => { try { localStorage.setItem(KEY, JSON.stringify(ENV)); } 
 // snowK: multipliers on the riding (1 = groomed): mu sliding friction, drag (air and snow), grip of the edges, sink (how
 // deep the skis ride: powder). look: groom (corduroy), lumps (powder's soft relief), wet (spring's darker, glossy, coarse
 // grains), ice (blue-grey glaze), rough (roughness), sparkle; track: how tracks are pressed in this snow (trackM: how
-// deep a full groove is, metres).
+// deep a full groove is, metres; depth, width, berm: multipliers on a groove's depth, width and the snow heaped beside
+// it; sharp: how crisp a carve's outside wall is; soft: how soft the walls are drawn (m: crumbling powder and slush 2 to
+// 4 cm, a hard edge's cut a few mm); polish: how shiny a skid leaves it; scratch: ice, where a track is a white
+// scratch, not a dark groove; lump: how lumpy heaped snow is). The look is uniforms only: a change builds no shader.
 export const SNOW = {
   groomed: { trackM: 0.07, name: 'Groomed', snowK: { mu: 1, drag: 1, grip: 1, sink: 0 },
-    look: { groom: 1, lumps: 0.15, wet: 0, ice: 0, rough: 0.78, sparkle: 1 }, track: { depth: 1, width: 1, berm: 1, sharp: 1 } },
+    look: { groom: 1, lumps: 0.15, wet: 0, ice: 0, rough: 0.78, sparkle: 1 }, track: { depth: 1, width: 1, berm: 1, sharp: 1, soft: 0.003, polish: 0.6, scratch: 0, lump: 0.5 } },
   powder: { trackM: 0.28, name: 'Powder', snowK: { mu: 1.35, drag: 1.6, grip: 0.7, sink: 0.22 },
-    look: { groom: 0, lumps: 1, wet: 0, ice: 0, rough: 0.9, sparkle: 1.25 }, track: { depth: 2.2, width: 2.1, berm: 1.7, sharp: 0.45 } },
+    look: { groom: 0, lumps: 1, wet: 0, ice: 0, rough: 0.9, sparkle: 1.25 }, track: { depth: 1, width: 2.1, berm: 1.5, sharp: 0.45, soft: 0.035, polish: 0.1, scratch: 0, lump: 1 } },
   packed: { trackM: 0.04, name: 'Packed', snowK: { mu: 0.85, drag: 1, grip: 1.08, sink: 0 },
-    look: { groom: 0.2, lumps: 0.05, wet: 0, ice: 0.15, rough: 0.62, sparkle: 0.7 }, track: { depth: 0.55, width: 0.9, berm: 0.5, sharp: 1.1 } },
+    look: { groom: 0.2, lumps: 0.05, wet: 0, ice: 0.15, rough: 0.62, sparkle: 0.7 }, track: { depth: 0.8, width: 0.9, berm: 0.45, sharp: 1.1, soft: 0.002, polish: 0.9, scratch: 0.12, lump: 0.3 } },
   spring: { trackM: 0.1, name: 'Spring slush', snowK: { mu: 1.6, drag: 1.25, grip: 0.92, sink: 0.07 },
-    look: { groom: 0.35, lumps: 0.55, wet: 1, ice: 0, rough: 0.5, sparkle: 0.35 }, track: { depth: 1.6, width: 1.7, berm: 1.3, sharp: 0.55 } },
+    look: { groom: 0.35, lumps: 0.55, wet: 1, ice: 0, rough: 0.5, sparkle: 0.35 }, track: { depth: 1, width: 1.6, berm: 1.3, sharp: 0.55, soft: 0.018, polish: 0.4, scratch: 0, lump: 0.9 } },
   ice: { trackM: 0.012, name: 'Ice', snowK: { mu: 0.55, drag: 1, grip: 0.55, sink: 0 },
-    look: { groom: 0.1, lumps: 0, wet: 0, ice: 1, rough: 0.28, sparkle: 0.4 }, track: { depth: 0.18, width: 0.75, berm: 0.1, sharp: 1.6 } },
+    look: { groom: 0.1, lumps: 0, wet: 0, ice: 1, rough: 0.28, sparkle: 0.4 }, track: { depth: 1, width: 0.75, berm: 0.08, sharp: 1.6, soft: 0.0008, polish: 0, scratch: 1, lump: 0.1 } },
 };
 export const snowKind = () => SNOW[ENV.snow] || SNOW.groomed;
 
@@ -203,6 +206,7 @@ export class Env {
     snowUniforms.uSnowRough.value = L.rough;
     snowUniforms.uSparkle.value = L.sparkle;
     snowUniforms.uTrackDepth.value = s.trackM;
+    const T = s.track; snowUniforms.uTrackLook.value.set(T.soft, T.polish, T.scratch, T.lump);
   }
   // everything that follows from the settings (cheap: about 0.15 ms; the reflection map is made again in follow())
   apply() {

@@ -1,26 +1,27 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=16';
-import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=16';
-import { makeMaterials, snowUniforms } from './materials.js?v=16';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=16';
-import { Mountain, SPOTS } from './dem.js?v=16';
-import { Skier } from './skier.js?v=16';
-import { Rig } from './rig.js?v=16';
-import './board.js?v=16';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
-import './scoot.js?v=16';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
-import './sled.js?v=16';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
-import { Tricks } from './tricks.js?v=16';
-import { Input } from './input.js?v=16';
-import { Cams } from './camera.js?v=16';
-import { Tracks, Spray } from './snow.js?v=16';
-import { Hud } from './hud.js?v=16';
-import { Sound } from './sound.js?v=16';
-import { Net } from './net.js?v=16';
-import { mergeGear } from './gear.js?v=16';
-import { Touch, TOUCH_GRABS } from './touch.js?v=16';
-import { Locker, loadLook, cleanLook } from './locker.js?v=16';
-import { planLift, Lift } from './lift.js?v=16';      // (L: the chairlift)
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=17';
+import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=17';
+import { makeMaterials, snowUniforms } from './materials.js?v=17';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=17';
+import { Mountain, SPOTS } from './dem.js?v=17';
+import { Skier } from './skier.js?v=17';
+import { Rig } from './rig.js?v=17';
+import './board.js?v=17';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
+import './scoot.js?v=17';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
+import './sled.js?v=17';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
+import { Tricks } from './tricks.js?v=17';
+import { Input } from './input.js?v=17';
+import { Cams } from './camera.js?v=17';
+import { Tracks, Spray } from './snow.js?v=17';
+import { Hud } from './hud.js?v=17';
+import { Sound } from './sound.js?v=17';
+import { Net } from './net.js?v=17';
+import { mergeGear } from './gear.js?v=17';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Touch, TOUCH_GRABS } from './touch.js?v=17';
+import { Locker, loadLook, cleanLook } from './locker.js?v=17';
+import { planLift, Lift } from './lift.js?v=17';      // (L: the chairlift)
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
@@ -80,7 +81,24 @@ const park = mtn ? emptyPark() : opts.map === 'jumpline' ? makeJumpLine() : make
 const liftPlan = !mtn && opts.map === 'jumpline' && !qs.has('nolift') ? planLift(park) : null;   // (?nolift: without it, for tests)
 const sky = makeSky(scene, renderer, q, !!mtn);
 const terrain = new Terrain(scene, mats.snow, { minLeaf: q.minLeaf, K: q.K, seg: q.seg, budget: q.tier === 'low' ? 3 : 4, far: q.tier === 'low' ? 2000 : 2600, root: mtn ? { x0: -4096, z0: -4096, size: 8192 } : null });
-for (const f of [...park.kickers, park.pipe, park.qp]) if (f) scene.add(featureMesh(f, height, mats.snow, q.fine));
+{
+  /* (2026-11-06, the lag pass: a jump's three takeoffs side by side are one mesh and one draw call; they were one each,
+     21 on the Jump Line. Each jump is still left out when it is out of view.) */
+  const groups = new Map();
+  for (const f of [...park.kickers, park.pipe, park.qp]) if (f) {
+    const m = featureMesh(f, height, mats.snow, q.fine), key = (/^Jump \d+/.exec(f.name || '') || [m.uuid])[0];
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(m);
+  }
+  for (const [key, ms] of groups) {
+    const g = ms.length > 1 ? mergeGeometries(ms.map(m => m.geometry), false) : null;
+    if (!g) { for (const m of ms) scene.add(m); continue; }
+    for (const m of ms) m.geometry.dispose();
+    const m = new THREE.Mesh(g, mats.snow);
+    m.receiveShadow = true; m.castShadow = false; m.matrixAutoUpdate = false; m.name = key;
+    scene.add(m);
+  }
+}
 // (the park's rails and boxes; the benches' model loads, and is in before the shaders are compiled at boot: K)
 const railsG = park.rails.length ? railMeshes(park.rails, mats) : null; if (railsG) scene.add(railsG);
 const forest = new Forest(scene, q, mtn);
@@ -175,6 +193,8 @@ function poseState(sk, t) {
     windup: sk.windup || 0, loading: sk.crouchT > 0.06,
     // (P: what you ride, how deep the skis ride in the snow, and the last rail contact: seconds since, 'on' or 'swap', the side it turned to)
     kind: sk.kind || 'ski', goofy: !!sk.goofy, sink: sk.sink || 0, railHitT: sk.railHitT ?? 9, railHit: sk.railHit || '', railHitDir: sk.railHitDir || 0, railKind: sk.rail ? sk.rail.kind : '',
+    // (X: the extra rides' timed tricks going round: the trick's id or null, seconds into this round; and a sled's flat spin)
+    act: sk.act || null, actT: sk.actT || 0, flatSpin: sk.flatSpinOn ? 1 : 0,
     // (L: on the chairlift, 0 standing at the load or unload line to 1 seated, and the snow under the feet while standing)
     liftSit: lift ? lift.sit : 0, liftFeet: lift && lift.feetOn ? lift.feet : null };
 }

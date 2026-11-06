@@ -1,216 +1,406 @@
-// What skis do to snow: the track map (a picture of the ground round the rider, red = how deep a groove is pressed,
-// green = the snow pushed up beside it, blue = snow scraped smooth) drawn into by every ski (or the board) on the snow,
-// and the spray thrown off edges. The snow material (materials.js) reads the map for its relief. The map follows the
-// rider: when they get far from its middle it is copied, shifted by whole texels, so the tracks behind stay. A second,
-// coarse map covers the whole run and keeps every track (so you see your lines from the chairlift and on the next run);
-// the fine map fills what it uncovers from it.
-// The tracks follow what real skis leave: a carving edge cuts a narrow, sharp-walled line with the snow it pushes heaped
-// on the outside of the turn; a skid scrapes a wide, shallow, smoothed band with a ridge of loose snow along its far side;
-// powder takes a deep soft trench; ice barely a scratch (env.js's snow kinds).
+// What skis do to snow: the track maps (pictures of the ground, drawn into by every ski, the board, a sled's runners, a
+// fall) and the spray thrown off edges. The snow material (materials.js) reads the maps.
+// A map's four channels, each the most any stamp left there (MAX blending):
+//   r  the grooves' edges as a distance field: 0.5 on a groove's edge, more inside, less outside (uK per metre), so the
+//      snow material draws the edge crisp at any distance however coarse the map's texels; a groove's softer outside
+//      wall is a gentler slope of the field (its edge is drawn softer)
+//   g  snow pushed up: the little lip beside a carve, the ridge along a skid, a powder trench's heaped sides (lumpy)
+//   b  snow scraped smooth by a skidding base (a skid polishes, it does not dig)
+//   a  how deep a groove is (0..1 of the snow kind's depth, env.js), deepest at a carve's inside wall
+// A strong skid first rubs out what was under it (a MIN pass): a skid erases the carve lines and lips it slides over.
+// The fine map (6.25 cm texels) covers 64 x 128 m round the rider, most of it behind, and wraps round (its texel for a
+// place is fixed: the place modulo the map's size): as the rider moves it only fills the strip it uncovers (from the
+// coarse map), never copies itself, so nothing pops or shifts. The coarse map covers the whole park and keeps every
+// track; the snow fades from one to the other over the fine map's last few metres.
+// The tracks follow what real skis leave: a carving edge cuts a narrow groove with a crisp, steep inside wall and a
+// small lip on the outside of the turn; a skid scrapes a wide, flat, smoothed fan with loose snow along its outside;
+// powder takes a deep soft-walled trench with lumps heaped beside it; ice only a fine white scratch; a landing presses a
+// short flat patch; a fall leaves a hollow.
 import * as THREE from 'three';
-import { snowUniforms } from './materials.js?v=16';
-import { height, surface } from './terrain.js?v=16';
-import { snowKind, SNOW } from './env.js?v=16';
+import { snowUniforms } from './materials.js?v=17';
+import { height, surface, getPark } from './terrain.js?v=17';
+import { snowKind, SNOW } from './env.js?v=17';
 const SNOW_POWDER = SNOW.powder, SNOW_SPRING = SNOW.spring, SNOW_ICE = SNOW.ice;
 
-// a stamp's corners are its centre line's ends (world x, z) pushed out across it here, at least uMinW either side so a
-// narrow line still covers a texel of a coarse map; there the groove is widened to the texel and made shallower
+const FINE = { W: 1024, H: 2048, SX: 64, SZ: 128, back: 0.72, step: 0.5, bx: -32, bz: 0 };   // (bx, bz: where its tiles start, so no tile edge runs down the Jump Line's middle lane)
+const RAMP = 3;           // the edge field runs 3 texels past an edge (bilinear filtering then puts the edge exactly)
+const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+// a stamp: the segment a..b of a ski's path, pushed out across it (in the shader, so the vertices only carry the segment
+// and the stamp's numbers); drawn straight into a map's texels (uMap: the map's origin and size; the fine map's copies
+// for each of its tiles the stamp reaches are offset by aTile)
 const STAMP_VS = `
-attribute vec4 aSeg;    // groove depth, berm height, half width (m), which side the berm is on (-1..1, 0 both)
-attribute vec3 aSeg2;   // sharpness of the walls (0 soft U .. 1 sharp), how much is scraped smooth, berm width (m)
-attribute vec3 aN;      // the unit across the line (x, z) and which side this corner is (-1 or +1)
-uniform vec2 uMinW;     // the least half-texel-and-more a stamp covers in this map: across (x) and along (z) metres
-varying vec2 vUv; varying vec4 vSeg; varying vec3 vSeg2;
+attribute vec4 aAB;     // the segment: a (x, z), b (x, z)
+attribute vec4 aP1;     // groove half width (m), depth 0..1, the outside wall's slope (0..1, 1 as steep as the inside), which side the inside is (+1 left, -1 right, 0 none)
+attribute vec4 aP2;     // heap height 0..1, heap width (m), which side it is heaped (+1 left, -1 right, 0 both), scrape 0..1
+attribute vec2 aTile;   // the world origin of the fine map's tile this copy is for (position: corner across -1..1,
+                        // corner along 0..1, the scraped band's half width m)
+uniform vec4 uMap; uniform vec2 uTexel; uniform float uK; uniform float uUseTile;
+varying vec3 vL; varying vec4 vP1; varying vec4 vP2; varying float vSW; varying vec2 vW; varying vec2 vT;
 void main() {
-  vSeg = aSeg; vSeg2 = aSeg2;
-  float hw = max(aSeg.z, uMinW.x * 0.5), w = hw + max(aSeg2.z, uMinW.x * 0.5);
-  vSeg.x *= mix(1.0, aSeg.z / hw, 0.6); vSeg.z = hw; vSeg2.z = w - hw;
-  vUv = vec2(aN.z, uv.y);
-  // (and its ends pushed out along the line by half of uMinW, so short pieces join up in a coarse map's long texels)
-  vec2 along = vec2(-aN.y, aN.x) * (uv.y * 2.0 - 1.0) * uMinW.y * 0.5;
-  gl_Position = projectionMatrix * viewMatrix * vec4(position.x + aN.x * aN.z * w + along.x, position.z + aN.y * aN.z * w + along.y, 0.0, 1.0);
+  vec2 A = aAB.xy, dv = aAB.zw - A; float L = length(dv);
+  vec2 t = L > 1e-5 ? dv / L : vec2(0.0, 1.0), nr = vec2(t.y, -t.x);    // nr: the rider's left of the way a to b
+  // (a groove or band narrower than this map's texels can hold is widened to them, and made shallower in step)
+  float minW = 0.7 * dot(abs(nr), uTexel);
+  vP1 = aP1; vP2 = aP2; vSW = position.z;
+  if (aP1.x > 0.0) { float hw = max(aP1.x, minW); vP1.y *= mix(1.0, aP1.x / hw, 0.6); vP1.x = hw; }
+  if (vSW > 0.0) vSW = max(vSW, minW);
+  vP2.y = max(vP2.y, minW);
+  float ramp = 0.5 / uK / max(vP1.z, 0.25);
+  float ext = max(vP1.x + ramp, max(vP1.x, vSW) + vP2.y) + 0.6 * max(uTexel.x, uTexel.y);
+  float across = position.x * ext, along = mix(-ext, L + ext, position.y);
+  vL = vec3(across, along, L);
+  vec2 P = A + t * along + nr * across;
+  vW = P; vT = t;
+  gl_Position = vec4((P - uMap.xy - aTile * uUseTile) / uMap.zw * 2.0 - 1.0, 0.0, 1.0);
 }`;
-const STAMP_FS = `
-varying vec2 vUv; varying vec4 vSeg; varying vec3 vSeg2;
+const STAMP_COMMON = `
+uniform float uK; uniform vec2 uTexel;
+varying vec3 vL; varying vec4 vP1; varying vec4 vP2; varying float vSW; varying vec2 vW; varying vec2 vT;
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y); }
+`;
+const STAMP_FS = STAMP_COMMON + `
 void main() {
-  // vUv.x: -1..1 across the stamp (the berm runs out past the groove)
-  float hw = vSeg.z, bw = vSeg2.z, a = vUv.x * (hw + bw), d = abs(a);
-  float u = clamp(d / hw, 0.0, 1.0);
-  // the groove's floor: a soft U in deep snow, a flat floor with steep walls where an edge cut it
-  float groove = vSeg.x * mix(1.0 - u * u, 1.0 - smoothstep(0.72, 1.0, u), vSeg2.x) * step(d, hw);
-  // the snow pushed out, heaped beside the groove (on one side or both)
-  float side = vSeg.w == 0.0 ? 1.0 : clamp(1.0 + vSeg.w * sign(a), 0.0, 2.0) * 0.6;
-  float t = (d - hw * 0.9) / bw;
-  float berm = vSeg.y * side * smoothstep(0.0, 0.25, t) * (1.0 - smoothstep(0.35, 1.0, t));
-  gl_FragColor = vec4(groove, berm, vSeg2.y * step(d, hw), 1.0);
+  float a = vL.x, dist = length(vec2(a, max(0.0, max(-vL.y, vL.y - vL.z))));     // to the segment (round ends)
+  float hw = vP1.x, R = 0.0, A = 0.0;
+  if (hw > 0.0) {
+    // (a wide hollow, a fall's or a trough's, has a broken, uneven edge)
+    dist += (vnoise(vW * 6.0) - 0.5) * 0.1 * smoothstep(0.1, 0.3, hw);
+    float s = a * vP1.w;                                                     // + towards the inside wall
+    float sl = mix(vP1.z, 1.0, smoothstep(-0.4 * hw, 0.4 * hw, s));
+    R = clamp(0.5 + uK * sl * (hw - dist), 0.0, 1.0);
+    float tx = max(uTexel.x, uTexel.y);
+    A = vP1.y * (0.55 + 0.45 * smoothstep(-hw, hw, s)) * (1.0 - smoothstep(hw + tx, hw + 2.0 * tx, dist));
+  }
+  // the scraped band, its edge ragged (the base catches and lets go), streaked along the way it slid (the edges'
+  // scratches)
+  float B = 0.0, edge = max(hw, vSW);
+  if (vSW > 0.0) {
+    float rag = (vnoise(vW * 9.0) - 0.5) * 0.08 + (vnoise(vW * 27.0) - 0.5) * 0.04;
+    float streak = vnoise(vec2(dot(vW, vec2(vT.y, -vT.x)) * 7.0, dot(vW, vT) * 0.6));
+    B = vP2.w * (1.0 - smoothstep(vSW - 0.06, vSW + 0.01, dist + rag)) * (0.68 + 0.32 * streak);
+  }
+  // the snow pushed out: beside the groove or band, on one side or both; a big heap breaks into lumps
+  float G = 0.0;
+  if (vP2.x > 0.0) {
+    float u = (dist - edge * 0.9) / vP2.y;
+    float side = mix(1.0, smoothstep(-0.3 * edge - 0.02, 0.3 * edge + 0.02, a * vP2.z), abs(vP2.z));
+    float lump = 0.45 + 1.1 * vnoise(vW * 13.0) * (0.6 + 0.4 * vnoise(vW * 4.0));
+    G = vP2.x * side * smoothstep(0.0, 0.25, u) * (1.0 - smoothstep(0.3, 1.0, u)) * mix(1.0, lump, smoothstep(0.25, 0.75, vP2.x));
+  }
+  gl_FragColor = vec4(R, clamp(G, 0.0, 1.0), B, A);
 }`;
-// the fine map moved on: what it still covers is copied over, what it uncovers comes from the coarse map
-const COPY_FS = `
-uniform sampler2D tSrc; uniform sampler2D tCoarse; uniform vec2 uShift; uniform vec2 uOrigin; uniform vec2 uSize; uniform vec2 uO2; uniform vec2 uS2; varying vec2 vUv;
+// before a strong skid's own stamp: what it slides over is rubbed out (MIN blending; 1 leaves a channel alone)
+const ERASE_FS = STAMP_COMMON + `
 void main() {
-  vec2 uv = vUv + uShift;
-  if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) {
-    vec2 c = (uOrigin + vUv * uSize - uO2) / uS2;
-    gl_FragColor = (c.x < 0.0 || c.y < 0.0 || c.x > 1.0 || c.y > 1.0) ? vec4(0.0) : texture2D(tCoarse, c);
-  } else gl_FragColor = texture2D(tSrc, uv);
+  float er = vSW > 0.0 ? step(0.6, vP2.w) : 0.0;
+  if (er < 0.5) discard;
+  float dist = length(vec2(vL.x, max(0.0, max(-vL.y, vL.y - vL.z))));
+  float inside = 1.0 - smoothstep(vSW - 0.05, vSW, dist);
+  // (the grooves' field minus the band: the band's own outside, as a field; exact for distance fields)
+  gl_FragColor = vec4(clamp(0.5 + uK * (dist - vSW + 0.02), 0.0, 1.0), 1.0 - inside * 0.85, 1.0, 1.0 - inside);
 }`;
+// the fine map's newly uncovered texels, from the coarse map (its edge field in the fine map's units)
+const FILL_VS = `
+attribute vec2 aW; varying vec2 vW;
+void main() { vW = aW; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+const FILL_FS = `
+uniform sampler2D tCoarse; uniform vec2 uO2; uniform vec2 uS2; uniform vec2 uKs; varying vec2 vW;
+void main() {
+  vec2 c = (vW - uO2) / uS2;
+  if (c.x < 0.0 || c.y < 0.0 || c.x > 1.0 || c.y > 1.0) { gl_FragColor = vec4(0.0); return; }
+  vec4 t = texture2D(tCoarse, c);
+  gl_FragColor = vec4(clamp(0.5 + (t.r - 0.5) / uKs.y * uKs.x, 0.0, 1.0), t.gba);
+}`;
+
+// the park's extent (the coarse map covers it): its fences, starts, kickers and rails, or the old whole run
+function parkBounds() {
+  const P = getPark();
+  const D = { x0: -80, x1: 80, z0: -100, z1: 1520 };
+  if (!P || P.pipe || P.qp || !P.kickers || !P.kickers.length) return D;
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  const add = (x, z) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); };
+  for (const f of P.fences || []) { add(f[0], f[1]); add(f[2], f[3]); }
+  for (const s of P.starts || []) add(s.x, s.z);
+  for (const k of P.kickers) { if (Number.isFinite(k.x0)) add(k.x0, k.z0); if (Number.isFinite(k.x1)) add(k.x1, k.zMeet || k.z0); }
+  for (const r of P.rails || []) for (const p of r.pts || []) add(p[0], p[1]);
+  if (!Number.isFinite(x0)) return D;
+  return { x0: x0 - 10, x1: x1 + 10, z0: z0 - 40, z1: z1 + 90 };
+}
+
+// the numbers of one stamp (filled in before each call: nothing is made per stamp)
+const SP = { hw: 0, dep: 0, sl: 1, inSide: 0, berm: 0, bw: 0.1, bSide: 0, scrape: 0, sw: 0 };
+const setSP = (hw, dep, sl, inSide, berm, bw, bSide, scrape, sw) => { SP.hw = hw; SP.dep = dep; SP.sl = sl; SP.inSide = inSide; SP.berm = berm; SP.bw = bw; SP.bSide = bSide; SP.scrape = scrape; SP.sw = sw; return SP; };
 
 export class Tracks {
   constructor(renderer, q) {
     this.r = renderer;
-    const W = q.tier === 'low' ? 512 : 1024, H = W * 4;
-    this.W = W; this.H = H;
-    // 48 x 192 m round the rider: a texel is 4.7 cm (9.4 on the low tier), fine enough for a carving edge's line
-    this.size = new THREE.Vector2(48, 192);
+    const low = q.tier === 'low';
+    // ---- the fine map: wraps round, 6.25 cm texels
+    this.W = FINE.W; this.H = FINE.H; this.SX = FINE.SX; this.SZ = FINE.SZ; this.tx = FINE.SX / FINE.W;
+    this.kF = 0.5 / (RAMP * this.tx);
     const opt = { type: THREE.UnsignedByteType, format: THREE.RGBAFormat, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false };
-    this.rt = [new THREE.WebGLRenderTarget(W, H, opt), new THREE.WebGLRenderTarget(W, H, opt)];
-    this.cur = 0;
-    for (const t of this.rt) { renderer.setRenderTarget(t); renderer.setClearColor(0x000000, 0); renderer.clear(); }
-    renderer.setRenderTarget(null);
-    this.origin = new THREE.Vector2(-24, -60);
-    snowUniforms.uTrack.value = this.rt[0].texture;
-    snowUniforms.uTrackOrigin.value.copy(this.origin);
-    snowUniforms.uTrackSize.value.copy(this.size);
-    snowUniforms.uTrackTexel.value.set(1 / W, 1 / H);
-    // the coarse map: 160 x 1620 m over the whole run, 31 x 40 cm texels (31 x 79 on the low tier); it never moves
-    const CW = 512, CH = q.tier === 'low' ? 2048 : 4096;
-    this.o2 = new THREE.Vector2(-80, -100); this.s2 = new THREE.Vector2(160, 1620);
+    this.rt = new THREE.WebGLRenderTarget(this.W, this.H, Object.assign({ wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping }, opt));
+    this.rt.texture.wrapS = this.rt.texture.wrapT = THREE.RepeatWrapping;
+    // ---- the coarse map: the whole park, fixed (on the Jump Line about 9 x 18 cm texels, 18 x 36 on the low tier)
+    const B = parkBounds();
+    this.o2 = new THREE.Vector2(B.x0, B.z0); this.s2 = new THREE.Vector2(B.x1 - B.x0, B.z1 - B.z0);
+    const CW = low ? 512 : 1024, CH = low ? 2048 : 4096;
+    this.t2 = new THREE.Vector2(this.s2.x / CW, this.s2.y / CH);
+    this.kC = 0.5 / (RAMP * Math.max(this.t2.x, this.t2.y));
     this.rt2 = new THREE.WebGLRenderTarget(CW, CH, opt);
-    renderer.setRenderTarget(this.rt2); renderer.clear(); renderer.setRenderTarget(null);
-    snowUniforms.uTrack2.value = this.rt2.texture;
-    snowUniforms.uTrack2Origin.value.copy(this.o2); snowUniforms.uTrack2Size.value.copy(this.s2); snowUniforms.uTrack2Texel.value.set(1 / CW, 1 / CH);
-    this.minW = [new THREE.Vector2(1.4 * this.size.x / W, 1.4 * this.size.y / H), new THREE.Vector2(1.2 * this.s2.x / CW, 1.2 * this.s2.y / CH)];
-    // stamps: up to 64 quads a frame, drawn with MAX blending
-    this.N = 64;
-    const g = new THREE.BufferGeometry();
-    this.pos = new Float32Array(this.N * 4 * 3); this.uv = new Float32Array(this.N * 4 * 2); this.seg = new Float32Array(this.N * 4 * 4); this.seg2 = new Float32Array(this.N * 4 * 3); this.nrm = new Float32Array(this.N * 4 * 3);
-    const idx = []; for (let i = 0; i < this.N; i++) idx.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 2, i * 4 + 1, i * 4 + 3);
-    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(this.uv, 2)); g.setAttribute('aSeg', new THREE.BufferAttribute(this.seg, 4)); g.setAttribute('aSeg2', new THREE.BufferAttribute(this.seg2, 3)); g.setAttribute('aN', new THREE.BufferAttribute(this.nrm, 3));
-    g.setIndex(idx);
+    // the park's sides: the fine map's middle stays over the park where it can (so all of its lanes stay fine)
+    this.bx = B.x1 - B.x0 > this.SX ? [B.x0 + this.SX / 2, B.x1 - this.SX / 2] : [(B.x0 + B.x1) / 2, (B.x0 + B.x1) / 2];
+    if (B.x0 === -80 && B.x1 === 80) this.bx = null;          // (no park to keep to: the old whole run)
+    this.r = renderer; this.clearMaps();
+    this.ox = 0; this.oz = 0; this.placed = false;
+    const U = snowUniforms;
+    U.uTrack.value = this.rt.texture; U.uTrackWin.value.set(-1e5, -1e5, this.SX, this.SZ);
+    U.uTrack2.value = this.rt2.texture; U.uTrack2Origin.value.copy(this.o2); U.uTrack2Size.value.copy(this.s2); U.uTrack2Texel.value.set(1 / CW, 1 / CH);
+    U.uTrackK.value.set(this.kF, this.kC, 1 / this.SX, 1 / this.SZ); U.uTrackBase.value.set(FINE.bx, FINE.bz, this.tx, 0);
+    // ---- the stamps: up to N quads (four frames' worth: the coarse map takes them every fourth frame), MAX blending
+    this.N = 128;
+    const g = new THREE.BufferGeometry(), V = this.N * 4;
+    this.aPos = new Float32Array(V * 3); this.aAB = new Float32Array(V * 4); this.aP1 = new Float32Array(V * 4); this.aP2 = new Float32Array(V * 4); this.aTile = new Float32Array(V * 2);
+    const idx = new Uint16Array(this.N * 6);
+    for (let i = 0; i < this.N; i++) {
+      idx.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 2, i * 4 + 1, i * 4 + 3], i * 6);
+      const C = [-1, 0, 1, 0, -1, 1, 1, 1];
+      for (let k = 0; k < 4; k++) { this.aPos[(i * 4 + k) * 3] = C[k * 2]; this.aPos[(i * 4 + k) * 3 + 1] = C[k * 2 + 1]; }
+    }
+    const att = (name, arr, n) => { const a = new THREE.BufferAttribute(arr, n); a.setUsage(THREE.DynamicDrawUsage); g.setAttribute(name, a); return a; };
+    this.atts = [att('position', this.aPos, 3), att('aAB', this.aAB, 4), att('aP1', this.aP1, 4), att('aP2', this.aP2, 4), att('aTile', this.aTile, 2)];
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
     this.geo = g;
-    this.minWU = { value: this.minW[0] };
-    const mat = new THREE.ShaderMaterial({ uniforms: { uMinW: this.minWU }, vertexShader: STAMP_VS, fragmentShader: STAMP_FS, depthTest: false, depthWrite: false, transparent: true,
+    this.mU = { uMap: { value: new THREE.Vector4() }, uTexel: { value: new THREE.Vector2() }, uK: { value: 1 }, uUseTile: { value: 1 } };
+    const stampMat = new THREE.ShaderMaterial({ uniforms: this.mU, vertexShader: STAMP_VS, fragmentShader: STAMP_FS, depthTest: false, depthWrite: false, transparent: true,
       blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor });
-    this.mesh = new THREE.Mesh(g, mat); this.mesh.frustumCulled = false;
-    this.scene = new THREE.Scene(); this.scene.add(this.mesh);
-    // the stamps are drawn in world x, z through a camera over each map
-    this.cam = new THREE.OrthographicCamera(0, 1, 1, 0, -10, 10);
-    this.camF = new THREE.OrthographicCamera(0, 1, 1, 0, -10, 10); this.placeCam();
-    this.cam2 = new THREE.OrthographicCamera(this.o2.x, this.o2.x + this.s2.x, this.o2.y + this.s2.y, this.o2.y, -10, 10); this.cam2.updateMatrixWorld();
-    this.copyMat = new THREE.ShaderMaterial({ uniforms: { tSrc: { value: null }, tCoarse: { value: this.rt2.texture }, uShift: { value: new THREE.Vector2() }, uOrigin: { value: new THREE.Vector2() }, uSize: { value: this.size }, uO2: { value: this.o2 }, uS2: { value: this.s2 } },
-      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: COPY_FS, depthTest: false, depthWrite: false });
-    this.copyQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.copyMat); this.copyQuad.frustumCulled = false;
-    this.copyScene = new THREE.Scene(); this.copyScene.add(this.copyQuad);
-    // the stamp and copy shaders draw only into the maps: build them now (with a map bound, as they are drawn), not in
-    // the first frame that leaves a track
-    renderer.setRenderTarget(this.rt2); renderer.compile(this.scene, this.cam2); renderer.compile(this.copyScene, this.cam); renderer.setRenderTarget(null);
-    this.n = 0;
-    this.last = new Map();     // per ski: the last stamped point
-    this._f = new THREE.Vector3();
+    const eraseMat = new THREE.ShaderMaterial({ uniforms: this.mU, vertexShader: STAMP_VS, fragmentShader: ERASE_FS, depthTest: false, depthWrite: false, transparent: true,
+      blending: THREE.CustomBlending, blendEquation: THREE.MinEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor });
+    // (one scene, so a frame's work on a map is one draw call each and one render: the fill first, then the rub-out,
+    // then the stamps; what a frame does not need is hidden)
+    const mesh = (geo, m, order) => { const o = new THREE.Mesh(geo, m); o.frustumCulled = false; o.renderOrder = order; o.matrixAutoUpdate = false; return o; };
+    this.eraseMesh = mesh(g, eraseMat, 1); this.stampMesh = mesh(g, stampMat, 2);
+    this.scene = new THREE.Scene(); this.scene.matrixWorldAutoUpdate = false;
+    this.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -1, 1);
+    // ---- filling what the fine map uncovers: up to 8 quads in the map's own texture space, each carrying its world place
+    const fg = new THREE.BufferGeometry();
+    this.fPos = new Float32Array(32 * 3); this.fW = new Float32Array(32 * 2);
+    const fidx = new Uint16Array(8 * 6); for (let i = 0; i < 8; i++) fidx.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 2, i * 4 + 1, i * 4 + 3], i * 6);
+    this.fAtt = [new THREE.BufferAttribute(this.fPos, 3), new THREE.BufferAttribute(this.fW, 2)];
+    for (const a of this.fAtt) a.setUsage(THREE.DynamicDrawUsage);
+    fg.setAttribute('position', this.fAtt[0]); fg.setAttribute('aW', this.fAtt[1]); fg.setIndex(new THREE.BufferAttribute(fidx, 1));
+    this.fGeo = fg;
+    const fillMat = new THREE.ShaderMaterial({ uniforms: { tCoarse: { value: this.rt2.texture }, uO2: { value: this.o2 }, uS2: { value: this.s2 }, uKs: { value: new THREE.Vector2(this.kF, this.kC) } },
+      vertexShader: FILL_VS, fragmentShader: FILL_FS, depthTest: false, depthWrite: false });
+    this.fillMesh = mesh(fg, fillMat, 0);
+    this.scene.add(this.fillMesh, this.eraseMesh, this.stampMesh);
+    this.nf = 0;
+    // every program these draw with is built now, with a map bound as when they draw (not in the first frame that
+    // leaves a track)
+    renderer.setRenderTarget(this.rt2); renderer.compile(this.scene, this.cam); renderer.setRenderTarget(null);
+    this.n = 0; this.nF = 0; this.frame = 0; this.erF = false; this.erC = false;
+    this.last = []; this.has = [];         // per track point: the last stamped place
+    for (let i = 0; i < 10; i++) { this.last.push(new THREE.Vector2()); this.has.push(false); }
+    this._f = new THREE.Vector3(); this._l = new THREE.Vector3();
+    this._landSeen = null; this.skidK = 0; this.tv = new THREE.Vector2(0, 1);
   }
-  placeCam() {
-    const c = this.camF; c.left = this.origin.x; c.right = this.origin.x + this.size.x; c.bottom = this.origin.y; c.top = this.origin.y + this.size.y;
-    c.updateProjectionMatrix(); c.updateMatrixWorld();
+
+  // every track gone (both maps), for a fresh run of tests or a new map
+  clear() {
+    this.clearMaps();
+    this.n = 0; this.nF = 0; this.nf = 0; for (let i = 0; i < this.has.length; i++) this.has[i] = false;
   }
-  // keep the rider inside the map: x in its middle, z a quarter from its top (more room behind)
+
+  clearMaps() {
+    const r = this.r, cc = r.getClearColor(new THREE.Color()), ca = r.getClearAlpha();     // (the renderer's own, put back)
+    for (const t of [this.rt, this.rt2]) { r.setRenderTarget(t); r.setClearColor(0x000000, 0); r.clear(); }
+    r.setRenderTarget(null); r.setClearColor(cc, ca);
+  }
+
+  // ---- the fine map follows the rider -------------------------------------------------------------------------------
+  // its window: x on the rider (kept over the park), z with most of it behind (the rider goes down +z); it moves in half
+  // metre steps, snapped to its texels, and only the strips it uncovers are filled (from the coarse map)
   follow(p) {
-    const wantX = p.x - this.size.x / 2, wantZ = p.z - this.size.y * 0.3;
-    const dx = wantX - this.origin.x, dz = wantZ - this.origin.y;
-    if (Math.abs(dx) < this.size.x * 0.22 && Math.abs(dz) < this.size.y * 0.18) return;
-    const tx = Math.round(dx / this.size.x * this.W), tz = Math.round(dz / this.size.y * this.H);
-    if (!tx && !tz) return;
-    const src = this.rt[this.cur], dst = this.rt[1 - this.cur];
-    this.origin.x += tx / this.W * this.size.x; this.origin.y += tz / this.H * this.size.y;
-    this.copyMat.uniforms.tSrc.value = src.texture; this.copyMat.uniforms.uShift.value.set(tx / this.W, tz / this.H); this.copyMat.uniforms.uOrigin.value.copy(this.origin);
-    this.r.setRenderTarget(dst); this.r.render(this.copyScene, this.cam); this.r.setRenderTarget(null);
-    this.cur = 1 - this.cur;
-    snowUniforms.uTrack.value = this.rt[this.cur].texture;
-    snowUniforms.uTrackOrigin.value.copy(this.origin);
-    this.placeCam();
-  }
-  // a groove from a to b (world points on the snow), half width hw, depth and berm 0..1; side: which side the berm is
-  // heaped on (+1 the left of the way from a to b, -1 the right, 0 both); sharp 0..1; scrape 0..1 smoothed; bw the berm's width (m)
-  stamp(ax, az, bx, bz, hw, depth, berm, side = 0, sharp = 1, scrape = 0, bw = 0.12) {
-    if (this.n >= this.N) return;
-    const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz);
-    if (L < 1e-4) return;
-    const nx = -dz / L, nz = dx / L;
-    const i = this.n * 4, P = this.pos, NN = this.nrm;
-    // corners: a, a, b, b (the shader pushes them out across the line: side -1 is +n, as the old corners were)
-    for (let k = 0; k < 4; k++) {
-      const o = (i + k) * 3, atB = k >= 2, sd = k & 1 ? 1 : -1;
-      P[o] = atB ? bx : ax; P[o + 1] = 0; P[o + 2] = atB ? bz : az;
-      NN[o] = -nx; NN[o + 1] = -nz; NN[o + 2] = sd;
+    const SX = this.SX, SZ = this.SZ, tx = this.tx;
+    let cx = this.bx ? Math.min(this.bx[1], Math.max(this.bx[0], p.x)) : p.x;
+    cx = Math.min(p.x + SX / 2 - 10, Math.max(p.x - SX / 2 + 10, cx));     // (and the rider always 10 m inside it)
+    const nx = Math.round((cx - SX / 2) / tx) * tx, nz = Math.round((p.z - SZ * FINE.back) / tx) * tx;
+    if (!this.placed) { this.placed = true; this.ox = nx; this.oz = nz; snowUniforms.uTrackWin.value.set(nx, nz, SX, SZ); return; }
+    const dx = nx - this.ox, dz = nz - this.oz;
+    if (Math.abs(dx) < FINE.step && Math.abs(dz) < FINE.step) return;
+    if (this.nf) this.flush(false, true);           // (a fill still waiting: in before the window moves again)
+    this.nf = 0;
+    if (Math.abs(dx) >= SX || Math.abs(dz) >= SZ) this.fillRect(nx, nz, nx + SX, nz + SZ);
+    else {
+      if (dx > 0) this.fillRect(this.ox + SX, nz, nx + SX, nz + SZ); else if (dx < 0) this.fillRect(nx, nz, this.ox, nz + SZ);
+      if (dz > 0) this.fillRect(nx, this.oz + SZ, nx + SX, nz + SZ); else if (dz < 0) this.fillRect(nx, nz, nx + SX, this.oz);
     }
-    const uv = [-1, 0, 1, 0, -1, 1, 1, 1]; for (let k = 0; k < 8; k++) this.uv[i * 2 + k] = uv[k];
-    for (let k = 0; k < 4; k++) {
-      const o = (i + k) * 4; this.seg[o] = depth; this.seg[o + 1] = berm; this.seg[o + 2] = hw; this.seg[o + 3] = side;
-      const o2 = (i + k) * 3; this.seg2[o2] = sharp; this.seg2[o2 + 1] = scrape; this.seg2[o2 + 2] = bw;
-    }
-    this.n++;
+    if (this.nf) { for (const a of this.fAtt) a.needsUpdate = true; this.fGeo.setDrawRange(0, this.nf * 6); }   // (drawn by flush)
+    this.ox = nx; this.oz = nz;
+    snowUniforms.uTrackWin.value.set(nx, nz, SX, SZ);
   }
-  // every ski on the snow (or the board) leaves a track: narrow and sharp when carving, broad, shallow and scraped smooth
-  // when skidding, a deep soft trench in powder; how deep and wide follows the snow kind (env.js)
+  // a world rectangle into fill quads, cut where the map wraps
+  fillRect(x0, z0, x1, z1) {
+    const SX = this.SX, SZ = this.SZ, X0 = FINE.bx, Z0 = FINE.bz;
+    const u0 = (x0 - X0) / SX, u1 = (x1 - X0) / SX, v0 = (z0 - Z0) / SZ, v1 = (z1 - Z0) / SZ;
+    for (let i = Math.floor(u0); i < u1; i++) for (let j = Math.floor(v0); j < v1; j++) {
+      if (this.nf >= 8) return;
+      const a = Math.max(u0, i) - i, b = Math.min(u1, i + 1) - i, c = Math.max(v0, j) - j, d = Math.min(v1, j + 1) - j;
+      if (b - a < 1e-6 || d - c < 1e-6) continue;
+      const k = this.nf * 4;
+      for (let m = 0; m < 4; m++) {
+        const X = m & 1 ? b : a, Y = m & 2 ? d : c;      // (corners: a c, b c, a d, b d)
+        this.fPos[(k + m) * 3] = X * 2 - 1; this.fPos[(k + m) * 3 + 1] = Y * 2 - 1;
+        this.fW[(k + m) * 2] = X0 + (X + i) * SX; this.fW[(k + m) * 2 + 1] = Z0 + (Y + j) * SZ;
+      }
+      this.nf++;
+    }
+  }
+
+  // ---- stamps ---------------------------------------------------------------------------------------------------------
+  // the segment a..b (world x, z) with the numbers in P (SP); a copy for each tile of the fine map it reaches
+  stamp(ax, az, bx, bz, P) {
+    const ramp = 0.5 / this.kF / Math.max(P.sl, 0.25);
+    const ext = Math.max(P.hw + ramp, Math.max(P.hw, P.sw) + Math.max(P.bw, 0.05)) + 0.1;
+    const SX = this.SX, SZ = this.SZ, X0 = FINE.bx, Z0 = FINE.bz;
+    const i0 = Math.floor((Math.min(ax, bx) - ext - X0) / SX), i1 = Math.floor((Math.max(ax, bx) + ext - X0) / SX);
+    const j0 = Math.floor((Math.min(az, bz) - ext - Z0) / SZ), j1 = Math.floor((Math.max(az, bz) + ext - Z0) / SZ);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      if (this.n >= this.N) this.flush(true);
+      const q = this.n++;
+      for (let k = 0; k < 4; k++) {
+        const v = q * 4 + k, o4 = v * 4;
+        this.aPos[v * 3 + 2] = P.sw;
+        this.aAB[o4] = ax; this.aAB[o4 + 1] = az; this.aAB[o4 + 2] = bx; this.aAB[o4 + 3] = bz;
+        this.aP1[o4] = P.hw; this.aP1[o4 + 1] = Math.min(1, P.dep); this.aP1[o4 + 2] = P.sl; this.aP1[o4 + 3] = P.inSide;
+        this.aP2[o4] = Math.min(1, P.berm); this.aP2[o4 + 1] = P.bw; this.aP2[o4 + 2] = P.bSide; this.aP2[o4 + 3] = Math.min(1, P.scrape);
+        this.aTile[v * 2] = X0 + i * SX; this.aTile[v * 2 + 1] = Z0 + j * SZ;
+      }
+    }
+    if (P.sw > 0 && P.scrape >= 0.6) { this.erF = true; this.erC = true; }
+  }
+
+  // every ski on the snow (or the board, or a ride's own track points) leaves its track
   fromSkier(sk, rig) {
     if (!rig.ready) return;
-    const onSnow = sk.state === 'ground' || (sk.state === 'crash' && sk.p.y < height(sk.p.x, sk.p.z) + 0.15);
-    const K = sk.K || {}, one = K.tracks === 1 || rig.skiL === rig.skiR, T = snowKind().track;
-    const turn = sk.turnRate || 0, edge = Math.abs(sk.edge || 0), sink = sk.sink || 0;
-    // (P: a ride with its own track points (the snow scooter's two boards, the snowbike's skis and foot skis, the sled's
-    // runners) lists them in rig.tracks: children of rig.root placed where each meets the snow, userData.hw its half width)
-    const list = rig.tracks || null, nT = list ? list.length : one ? 1 : 2;
+    const T = snowKind().track, K = sk.K || {};
+    const one = K.tracks === 1 || rig.skiL === rig.skiR;
+    const list = rig.tracks || null, nT = Math.min(8, list ? list.length : one ? 1 : 2);
+    const onSnow = sk.state === 'ground' || (sk.state === 'crash' && sk.p.y < height(sk.p.x, sk.p.z) + 0.3);
+    const crash = sk.state === 'crash';
+    const turn = sk.turnRate || 0, edge = Math.min(1, Math.abs(sk.edge || 0)), sink = sk.sink || 0;
+    const speed = Math.hypot(sk.v.x, sk.v.z), brake = sk.brake || 0;
+    const lenS = one ? 1.5 : list ? 0.8 : 1.7;                 // how long a ski (board, runner) is along the snow
+    const powder = surface(sk.p.x, sk.p.z) === 1 || snowKind() === SNOW_POWDER;
+    const landed = sk.lastLanding && sk.lastLanding !== this._landSeen && sk.state === 'ground';
+    if (sk.lastLanding !== this._landSeen) this._landSeen = sk.lastLanding;
+    // the inside of the turn: + the rider's left (+x facing down the hill; turnRate > 0 turns right, towards -x)
+    const inTurn = Math.abs(turn) > 0.08 ? -Math.sign(turn) : 0;
+    let skidMax = 0;
     for (let i = 0; i < nT; i++) {
-      const key = list ? 'T' + i : i ? 'R' : 'L', ski = list ? list[i] : i ? rig.skiR : rig.skiL;
+      const ski = list ? list[i] : i ? rig.skiR : rig.skiL;
       if (!ski) continue;
-      const c = ski.position;
-      const last = this.last.get(key);
-      if (!onSnow) { this.last.delete(key); continue; }
-      if (last && (Math.hypot(c.x - last.x, c.z - last.z) < 0.06)) continue;
-      if (last && Math.hypot(c.x - last.x, c.z - last.z) < 4) {
-        const surf = surface(c.x, c.z), deep = surf === 1 || T.depth > 2;
-        // how far the ski is turned across its travel (sin of the slip)
-        const fwd = this._f.set(0, 0, 1).applyQuaternion(ski.quaternion);
-        const tx = c.x - last.x, tz = c.z - last.z, tl = Math.hypot(tx, tz);
-        const cr = (fwd.x * tz - fwd.z * tx) / (tl || 1), across = Math.abs(cr);
-        const halfW = list ? ski.userData.hw : (K.trackW || (one ? 0.27 : 0.1)) / 2;
-        // the snow goes to the outside of the turn (turnRate > 0 turns to the rider's left, +x; a stamp's side +1 is the
-        // left of its way)
-        const out = turn ? -Math.sign(turn) : 0;
-        let hw, depth, berm, side, sharp, scrape, bw;
-        if (sk.state === 'crash') { hw = 0.35; depth = 0.9; berm = 0.5; side = 0; sharp = 0.2; scrape = 0.3; bw = 0.25; }
-        else if (across < 0.18) {
-          // carving: the edge's own line, as wide as the ski, deeper the harder it is set
-          hw = halfW * (1 + across * 2) * Math.min(1.6, T.width);
-          depth = (0.32 + edge * 0.45) * T.depth + sink * 2.5;
-          berm = (0.25 + edge * 0.55) * T.berm; side = out * Math.min(1, edge * 1.6); sharp = Math.min(1, T.sharp);
-          scrape = 0.15; bw = 0.05 + hw * 0.8 + (deep ? 0.12 : 0);
-        } else {
-          // skidding: the base scrapes a wide band smooth and pushes loose snow up along its far side
-          const k = Math.min(1, (across - 0.18) / 0.5);
-          hw = halfW + across * (one ? 0.7 : 0.75) * T.width;
-          depth = (0.22 - k * 0.08) * T.depth + sink * 2;
-          berm = (0.45 + k * 0.4) * T.berm; side = out || Math.sign(cr); sharp = 0.35 * T.sharp; scrape = 0.6 + k * 0.4;
-          bw = 0.1 + hw * 0.35;
-        }
-        if (deep) { depth = Math.max(depth, 0.85); sharp *= 0.5; berm = Math.max(berm, 0.7); bw += 0.1; }
-        this.stamp(last.x, last.z, c.x, c.z, hw, Math.min(1, Math.max(0.08, depth)), Math.min(1, berm), side, Math.min(1, sharp), scrape, bw);
+      const c = ski.position, L = this.last[i];
+      if (!onSnow || crash) { this.has[i] = false; continue; }
+      const halfW = list ? (ski.userData.hw || 0.05) : (K.trackW || (one ? 0.27 : 0.1)) / 2;
+      const fwd = this._f.set(0, 0, 1).applyQuaternion(ski.quaternion); fwd.y = 0;
+      const fl = Math.hypot(fwd.x, fwd.z) || 1; fwd.x /= fl; fwd.z /= fl;
+      if (landed) {
+        // a landing: the whole ski slapped flat on the snow (its own imprint), and round it a short patch pressed smooth
+        // by the impact, the snow squeezed out at its sides
+        const vn = Math.abs(sk.lastLanding.vn || 3), h = lenS * 0.45;
+        const dep = Math.min(0.9, 0.35 + vn * 0.06) * T.depth;
+        this.stamp(c.x - fwd.x * h, c.z - fwd.z * h, c.x + fwd.x * h, c.z + fwd.z * h,
+          setSP(halfW * 1.25 * Math.min(1.5, T.width), powder ? Math.max(dep, 0.8) : dep, 0.8, 0, (0.3 + Math.min(0.4, vn * 0.04)) * T.berm, 0.08 + halfW, 0,
+            powder ? 0.2 : 0.75, halfW + 0.1 + Math.min(0.14, vn * 0.02)));
       }
-      if (last) last.copy(c); else this.last.set(key, c.clone());
+      if (!this.has[i]) { L.set(c.x, c.z); this.has[i] = true; continue; }
+      const tx = c.x - L.x, tz = c.z - L.y, tl = Math.hypot(tx, tz);
+      if (tl < 0.05) continue;
+      if (tl > 4) { L.set(c.x, c.z); continue; }
+      // how far the ski is turned across its way (sin of the slip; + it points left of the way)
+      const cr = (fwd.x * tz - fwd.z * tx) / tl, across = Math.abs(cr);
+      const ks = sstep(0.12, 0.42, across);                     // 0 carving or running straight .. 1 skidding
+      skidMax = Math.max(skidMax, ks);
+      let hw = halfW * Math.min(1.7, T.width), dep, sl, inSide, berm, bw, bSide, scrape, sw = 0;
+      // the carve: as wide as the ski; set on edge, a crisp deep inside wall and a soft outside one with a little lip
+      // beyond it; flat, a shallow even imprint
+      const ek = sstep(0.1, 0.6, edge) * (inTurn ? 1 : 0);
+      dep = ((0.3 + 0.7 * edge) * T.depth + sink * 3) * (1 - ks);
+      sl = 1 - 0.65 * ek * Math.min(1, T.sharp); inSide = inTurn * ek;
+      berm = (0.15 + 0.4 * ek) * T.berm; bw = 0.03 + hw * 0.9; bSide = -inTurn * ek;
+      scrape = 0.15;
+      if (ks > 0) {
+        // the skid: the base sweeps a band as wide as the ski is turned across, scraping it smooth, and pushes the snow
+        // it takes off to the outside of the turn (braking straight, ahead of the skis: the heap left where they stop)
+        sw = halfW + across * lenS * 0.46;
+        scrape = Math.max(scrape, ks * (0.55 + 0.45 * Math.max(brake, ks)));
+        berm = Math.max(berm, ks * (0.45 + 0.35 * brake) * T.berm);
+        bw = Math.max(bw, 0.08 + sw * 0.35);
+        bSide = -inTurn;
+        hw *= 1 - ks;
+      }
+      if (powder) {
+        // powder: the skis sink in a deep trench with soft crumbling walls and lumps heaped both sides; a skid shoves a
+        // wide trough rather than polishing anything
+        if (ks > 0.3) { hw = Math.max(hw, sw); sw = 0; }
+        dep = Math.max(dep, 0.75 + sink * 2); sl = Math.min(sl, 0.6); berm = Math.max(berm, 0.75) * Math.min(1.2, T.berm); bw = Math.max(bw, 0.06 + hw * 1.4);
+        bSide *= 0.5; scrape *= 0.25;
+      }
+      if (hw < 0.003) hw = 0;
+      this.stamp(L.x, L.y, c.x, c.z, setSP(hw, Math.max(0.05, dep), sl, inSide, berm, bw, bSide, scrape, sw));
+      if (i === 0) this.tv.set(tx / tl, tz / tl);
+      L.set(c.x, c.z);
     }
+    // a skidded stop leaves a heap in front of the skis
+    if (sk.state === 'ground' && this.skidK > 0.5 && speed < 1.2 && nT) {
+      const ski = list ? list[0] : rig.skiL, c = ski.position, fwd = this._f.set(0, 0, 1).applyQuaternion(ski.quaternion);
+      const h = lenS * 0.45, ox = this.tv.x * 0.14, oz = this.tv.y * 0.14;
+      const side = Math.sign(fwd.z * this.tv.x - fwd.x * this.tv.y) || 1;        // the side of the ski the snow went
+      this.stamp(c.x - fwd.x * h + ox, c.z - fwd.z * h + oz, c.x + fwd.x * h + ox, c.z + fwd.z * h + oz,
+        setSP(0, 0, 1, 0, (powder ? 1 : 0.85) * Math.min(1.2, T.berm), 0.22, side, 0, 0));
+      this.skidK = 0;
+    } else if (sk.state === 'ground') this.skidK = speed > 2 ? Math.max(this.skidK * 0.98, skidMax * (brake > 0.2 || skidMax > 0.6 ? 1 : 0)) : this.skidK;
+    else this.skidK = 0;
+    // a fall: the body's hollow, dragged along the snow, with lumps thrown out round it
+    const CI = 9, CL = this.last[CI];
+    if (crash && onSnow) {
+      if (this.has[CI]) {
+        const d = Math.hypot(sk.p.x - CL.x, sk.p.z - CL.y);
+        if (d > 0.08 && d < 5) { this.stamp(CL.x, CL.y, sk.p.x, sk.p.z, setSP(0.3, 0.85 * Math.max(0.6, T.depth), 0.2, 0, 0.8 * Math.min(1.3, T.berm), 0.25, 0, 0.35, 0.38)); CL.set(sk.p.x, sk.p.z); }
+      } else { CL.set(sk.p.x, sk.p.z); this.has[CI] = true; }
+    } else this.has[CI] = false;
   }
-  flush() {
-    if (!this.n) return;
-    for (let i = this.n * 4; i < this.N * 4; i++) { this.pos[i * 3] = -1e5; this.pos[i * 3 + 2] = -1e5; }
-    const A = this.geo.attributes;
-    A.position.needsUpdate = true; A.uv.needsUpdate = true; A.aSeg.needsUpdate = true; A.aSeg2.needsUpdate = true; A.aN.needsUpdate = true;
-    this.geo.setDrawRange(0, this.n * 6);
-    const ac = this.r.autoClear; this.r.autoClear = false;
-    // into the fine map round the rider, then the coarse map that keeps them
-    this.minWU.value = this.minW[0]; this.r.setRenderTarget(this.rt[this.cur]); this.r.render(this.scene, this.camF);
-    this.minWU.value = this.minW[1]; this.r.setRenderTarget(this.rt2); this.r.render(this.scene, this.cam2);
-    this.r.setRenderTarget(null);
-    this.r.autoClear = ac;
-    this.n = 0;
+
+  // into the maps: the fine map every second frame (what the window uncovered, then the stamps; the newest piece of
+  // track is under the ski anyway), the coarse map every fourth (or when the stamps fill up); fillOnly: just a waiting
+  // fill. (Each is one render of three tiny draws: on a Chromebook a render's own cost is most of it.)
+  flush(force = false, fillOnly = false) {
+    if (!fillOnly) { this.frame++; if (!force && (this.frame & 1)) return; }
+    const r = this.r, newSt = !fillOnly && this.n > this.nF;
+    if (newSt || this.nf) {
+      if (newSt) for (const a of this.atts) { a.clearUpdateRanges(); a.addUpdateRange(this.nF * 4 * a.itemSize, (this.n - this.nF) * 4 * a.itemSize); a.needsUpdate = true; }
+      const ac = r.autoClear; r.autoClear = false;
+      this.geo.setDrawRange(this.nF * 6, (this.n - this.nF) * 6);
+      this.mU.uMap.value.set(0, 0, this.SX, this.SZ); this.mU.uTexel.value.set(this.tx, this.tx); this.mU.uK.value = this.kF; this.mU.uUseTile.value = 1;
+      this.fillMesh.visible = this.nf > 0; this.eraseMesh.visible = newSt && this.erF; this.stampMesh.visible = newSt;
+      r.setRenderTarget(this.rt); r.render(this.scene, this.cam); r.setRenderTarget(null);
+      r.autoClear = ac;
+      this.nf = 0;
+      if (newSt) { this.nF = this.n; this.erF = false; }
+    }
+    if (!fillOnly && this.n && (force || this.frame % 4 === 0 || this.n > this.N - 32)) {
+      const ac = r.autoClear; r.autoClear = false;
+      this.geo.setDrawRange(0, this.n * 6);
+      this.mU.uMap.value.set(this.o2.x, this.o2.y, this.s2.x, this.s2.y); this.mU.uTexel.value.copy(this.t2); this.mU.uK.value = this.kC; this.mU.uUseTile.value = 0;
+      this.fillMesh.visible = false; this.eraseMesh.visible = this.erC; this.stampMesh.visible = true;
+      r.setRenderTarget(this.rt2); r.render(this.scene, this.cam); r.setRenderTarget(null);
+      r.autoClear = ac;
+      this.n = 0; this.nF = 0; this.erC = false;
+    }
   }
 }
 

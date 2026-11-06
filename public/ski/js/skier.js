@@ -14,8 +14,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=16';
-import { clamp, smoothstep } from './noise.js?v=16';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=17';
+import { clamp, smoothstep } from './noise.js?v=17';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -50,7 +50,10 @@ export const KIND = {
   /* the sled, ridden lying on it head first: steered by leaning, so a turn builds and dies away slowly and is slower
      than on skis; a small hop (a pull on the front, a push off the snow); wooden runners drag more on the snow but a body
      lying flat has half the air drag (2026-11-05) */
-  sled: { com: 0.34, footBrake: 5.2, turn: 0.72, tap: 0.035, build: 0.3, release: 0.25, sidecut: 14, edgeMax: 0.45, grip: 0.82, pop: 0.6, butter: 1.5, skate: 0.45, tracks: 2, trackW: 0.035, reachAlong: 0.5, reachAcross: 0.22, mu: 1.3, cda: 0.3 },
+  /* (X, 2026-11-05: the butter key with a turn key spins the sled flat on the snow, a bodyboarder's spinner: 7.6 rad/s,
+     a 360 in under a second, reached in a quarter of one (butterSlew); flatSpin: let go, it carries on round to face
+     the way it slides, forwards or backwards, keeps sliding while it turns, and is scored as a spin, X) */
+  sled: { com: 0.34, footBrake: 5.2, turn: 0.72, tap: 0.035, build: 0.3, release: 0.25, sidecut: 14, edgeMax: 0.45, grip: 0.82, pop: 0.6, butter: 7.6, butterSlew: 32, flatSpin: true, skate: 0.45, tracks: 2, trackW: 0.035, reachAlong: 0.5, reachAcross: 0.22, mu: 1.3, cda: 0.3 },
   // the snowbike: sat on it, the bars steering a front ski, a longer wheelbase than a scooter (a little slower to turn),
   // heavier to pop, sat upright (more air drag), steel-edged skis that hold well
   bike: { turn: 0.92, tap: 0.05, build: 0.09, sidecut: 11, edgeMax: 0.75, grip: 1.08, pop: 0.88, butter: 2.5, skate: 0.7, tracks: 2, trackW: 0.16, reachAlong: 0.55, reachAcross: 0.1, mu: 1, cda: 0.62 },
@@ -58,6 +61,13 @@ export const KIND = {
   scoot: { turn: 1.1, tap: 0.06, build: 0.06, sidecut: 8, edgeMax: 0.8, grip: 1.0, pop: 1.08, butter: 3.0, skate: 0.9, tracks: 2, trackW: 0.2, reachAlong: 0.45, reachAcross: 0.13, mu: 1, cda: 0.52 },
   board: { turn: 1.0, tap: 0.055, build: 0.07, sidecut: 7.8, edgeMax: 0.95, grip: 0.95, pop: 1.05, butter: 3.6, skate: 0.6, tracks: 1, trackW: 0.27, reachAlong: 0.76, reachAcross: 0.14 },
 };
+/* (X) the extra rides' timed tricks, a part of the vehicle turned all the way round (a tailwhip, a bar spin, a briflip):
+   RIDE_ACTS[kind](grabKey) gives { id, T (seconds a round), loop (false: held, it does not go round again) } or null;
+   scoot.js registers the scooter's and the snowbike's. A key starts one; it goes round in T and again while the key is
+   still held at the end of a round (a double whip); each one done is an 'act' event { id, n, at } for tricks.js, and
+   landing with a part between a sixth and five sixths of the way round is a crash (closer than that, sketchy). The
+   skier keeps act (the trick's id or null), actT (seconds into this round), actDur and actN (rounds done) for the pose. */
+export const RIDE_ACTS = {};
 // the snow (env.js sets skier.snowK; 1 everywhere is groomed): mu x the sliding friction, drag x the snow's drag (on the
 // run, drag over 1 adds that much of deep snow's), grip x the edges' hold, sink: metres more the skis ride under the
 // surface in this snow (0 for groomed; skier.sink is the whole depth)
@@ -73,7 +83,7 @@ const RAIL_MU = { rail: 0.07, tube: 0.06, box: 0.085, bench: 0.11, ledge: 0.11, 
 const topOf = r => r.top || (FLAT_TOPS.has(r.kind) ? 'flat' : 'round');
 // how far under the top line the top's surface is at a distance off its middle (a round top curves away)
 function railDrop(r, off) { if (topOf(r) !== 'round') return 0; const R = r.w / 2, a = Math.min(Math.abs(off), R); return R - Math.sqrt(R * R - a * a); }
-const _rc = {}, _f = new THREE.Vector3();
+const _rc = {}, _f = new THREE.Vector3(), _fs = new THREE.Vector3();
 // the landing pull: the last T seconds, at most rate (rad/s), k x the error below that, full help within full, none past max
 const PULL = { T: 0.35, rate: 0.9, k: 2.4, full: 30 * Math.PI / 180, max: 42 * Math.PI / 180 };
 const LOCKS = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
@@ -125,7 +135,10 @@ export class Skier {
     this.sink = 0;                            // how deep the skis ride under the snow's surface (m), for the rig and tracks
     // rail contact for the pose and effects: seconds since the skis last met a rail or swapped on it, and which
     this.railHitT = 9; this.railHit = ''; this.railHitDir = 0;
+    // (X) the extra rides: a timed trick going round (RIDE_ACTS), and a sled's flat spin on the snow
+    this.act = null; this.actT = 0; this.actDur = 1; this.actN = 0; this.actKey = null; this.actAt = 0; this.flatSpin = 0; this.flatSpinOn = false;
   }
+  actStop() { this.act = null; this.actT = 0; this.actN = 0; this.actKey = null; }
   // put the skier at x, z facing down the fall line
   spawn(x, z, speed = 0, yaw = 0) {
     this.p.set(x, height(x, z), z);
@@ -136,6 +149,7 @@ export class Skier {
     this.edge = 0; this.edgeV = 0; this.crouch = 0; this.crouchT = 0; this.tState = 0; this.butter = 0; this.press = 0; this.brake = 0; this.brakeHead = null; this.absorb = 0; this.skate = 0;
     this.windup = 0; this.turnRate = 0; this.lateCharge = false; this.revertLeft = 0; this.wNat.set(0, 0, 0); this.wKeys.set(0, 0, 0); this.wCork = false; this.landT = 9; this.unbrakeT = 9; this.corkAx = null;
     this.landSkid = false; this.wallOff = false; this.pullPr = null; this.unslide = 0; this.tapLeft = 0; this.turnDir = 0; this.railCooldown = 0; this.brakeRef = null; this.lazy = 0; this.lazyT = 0; this.tuck = 0; this.held = null;
+    this.actStop(); this.flatSpin = 0; this.flatSpinOn = false;
     this.groundQ();
     this.events.push({ type: 'spawn' });
   }
@@ -276,7 +290,7 @@ export class Skier {
       if (dir && dir !== this.turnDir) { this.tapDir = dir; this.tapLeft = Kd.tap; if (Math.sign(this.turnRate) !== dir) this.turnRate = 0; }
       this.turnDir = dir;
       let target = 0, slew = Kd.turn / Kd.build;
-      if (buttering) { target = Kd.butter * u; slew = 14; this.tapLeft = 0; }
+      if (buttering) { target = Kd.butter * u; slew = Kd.butterSlew || 14; this.tapLeft = 0; }
       else if (mouseErr !== null && !dir) { target = Math.abs(mouseErr) < 0.004 ? 0 : clamp(mouseErr * 4.5, -Kd.turn, Kd.turn); this.tapLeft = 0; }
       else if (dir) target = dir * Kd.turn * Math.min(1, Math.abs(u) * 1.25);
       else if (this.tapLeft > 0) target = this.tapDir * Kd.turn;
@@ -300,7 +314,8 @@ export class Skier {
       if (Math.abs(this.edge) > 0.25) this.lastEdge = Math.sign(this.edge);
     }
     if (I.revert && !this.revertLeft && this.landT < 0.8 && speed > 3) this.revertLeft = (this.lastSpinDir || 1) * Math.PI;
-    this.turnRate = omega;
+    if (Kd.flatSpin) omega = this.sledSpin(omega, buttering && Math.abs(u) > 0.05, speed, f, n, dt);     // (X: a sled's flat spin)
+    this.turnRate = this.spinSnap ? 0 : omega; this.spinSnap = false;      // (X: a flat spin that has just stopped turns no further)
     f.applyAxisAngle(n, -omega * dt).normalize(); this.f.copy(f);
     right.crossVectors(f, n).normalize();
     if (buttering) { this.butter += -omega * dt; this.butterNose = this.press > 0; } else if (Math.abs(this.butter) > 0) { this.endButter(); }
@@ -317,7 +332,8 @@ export class Skier {
     else a.addScaledVector(f, -a.dot(f) * (speed < 0.3 && this.skate < 0.05 && Math.abs(a.dot(f)) < 0.08 * N ? 1 : 0));
     // across the skis: a set edge holds what the turn asks for; once the skis slide sideways they only get the snow's
     // sliding friction, so a skid or a hockey stop slows you gradually instead of stopping you dead
-    const edgeK = buttering ? 0.25 : (0.32 + 0.68 * smoothstep(0.05, 0.55, ae)) * (1 + this.brake * 0.6);
+    // (X: a sled in a flat spin barely holds sideways, so it keeps sliding the way it went while it turns)
+    const edgeK = this.flatSpinOn ? 0.05 : buttering ? 0.25 : (0.32 + 0.68 * smoothstep(0.05, 0.55, ae)) * (1 + this.brake * 0.6);
     const pipe = this.inPipe(this.p.x, this.p.z);
     const steep = n.y > 0.8 || pipe ? 1 : smoothstep(this.surf === 2 ? WALL_PARK : WALL_ANY, 0.82, n.y);   // a steep face (not the pipe) lets the edges go
     const hold = (grip * N * edgeK * 1.35 + 0.6) * steep;
@@ -378,7 +394,7 @@ export class Skier {
        edges, in a revert, and nearly stopped. */
     const sp2 = this.v.length();
     if (this.landSkid && Math.abs(this.v.dot(right)) < 0.6) this.landSkid = false;
-    if (sp2 > 1 && !buttering && (this.brake < 0.03 && this.unbrakeT > 0.9 || Kd.footBrake) && steep > 0.95 && !this.landSkid && !this.revertLeft) {
+    if (sp2 > 1 && !buttering && !this.flatSpinOn && (this.brake < 0.03 && this.unbrakeT > 0.9 || Kd.footBrake) && steep > 0.95 && !this.landSkid && !this.revertLeft) {
       const al = this.v.dot(f);
       this.v.copy(f).multiplyScalar((al < 0 ? -1 : al > 0 ? 1 : travel) * sp2);
     }
@@ -432,8 +448,34 @@ export class Skier {
   }
   endButter() {
     const deg = Math.abs(this.butter) * 180 / Math.PI;
-    if (deg > 140) this.events.push({ type: 'butter', deg, nose: !!this.butterNose, dir: Math.sign(this.butter) });
+    if (deg > 140 && !(this.K && this.K.flatSpin)) this.events.push({ type: 'butter', deg, nose: !!this.butterNose, dir: Math.sign(this.butter) });   // (X: a sled's are its flat spins)
     this.butter = 0;
+  }
+  /* (X) a sled's flat spin on the snow, a bodyboarder's spinner: once the butter key and a turn key have it turning fast
+     it counts as a spin; let go, it carries on round the same way (at least 5.5 rad/s) until it faces the way it slides,
+     forwards or backwards, and stops there. Done, it is a 'sledspin' event { deg, dir } for tricks.js. */
+  sledSpin(omega, spinning, speed, f, n, dt) {
+    if (spinning && Math.abs(omega) > 2.5) this.flatSpinOn = true;
+    if (!this.flatSpinOn) { this.flatSpin = 0; return omega; }
+    if (!spinning) {
+      if (Math.abs(this.flatSpin) < 0.6 || speed < 0.8) { this.endFlatSpin(); return omega; }
+      const w = Math.sign(this.flatSpin) * Math.max(Math.abs(omega), 5.5);
+      const vd = _fs.copy(this.v).addScaledVector(n, -this.v.dot(n)).normalize();
+      const rel = cwAngle(vd, f, n), nx = rel + w * dt;
+      // (the heading passes the travel, or its reverse, in this step: stop there exactly)
+      if (Math.floor(rel / Math.PI) !== Math.floor(nx / Math.PI) || Math.abs(Math.sin(rel)) < 0.02) {
+        omega = (Math.round(nx / Math.PI) * Math.PI - rel) / dt;
+        this.flatSpin += omega * dt; this.endFlatSpin(); return omega;
+      }
+      omega = w;
+    }
+    this.flatSpin += omega * dt;
+    return omega;
+  }
+  endFlatSpin() {
+    const deg = Math.abs(this.flatSpin) * 180 / Math.PI;
+    if (deg > 140) this.events.push({ type: 'sledspin', deg, dir: Math.sign(this.flatSpin) });
+    this.flatSpin = 0; this.flatSpinOn = false; this.spinSnap = true;
   }
 
   // ---- in the air -------------------------------------------------------------------------------------------------
@@ -457,6 +499,7 @@ export class Skier {
     const inPipe = [this.park.pipe, this.park.qp].some(pp => pp && n.y < 0.55 && this.p.z > pp.z0 && this.p.z < pp.z1 && this.p.x > pp.x0 && this.p.x < pp.x1);
     this.events.push({ type: 'takeoff', how, sw: this.sw, speed: this.v.length(), press: this.press, butter: Math.abs(this.press) > 0.35, rail: !!this.rail, pipe: inPipe });
     this.press = 0; this.endButter();
+    if (this.flatSpinOn) this.endFlatSpin(); this.actStop();     // (X)
     this.grab = null; this.grabT = 0; this.held = null; this.tweak = ''; this.shiftyT = 0; this.shiftDir = 0;
   }
   // the natural rotation of a good takeoff (off a lip or off the end of a rail): the body turns forward through the
@@ -544,6 +587,7 @@ export class Skier {
     this.shift += ((I.shifty || 0) - this.shift) * Math.min(1, dt * 7);
     if (Math.abs(this.shift) > 0.6) { this.shiftyT += dt; this.shiftDir = Math.sign(this.shift); }
     else if (this.shiftyT > 0.15) { this.events.push({ type: 'shifty', dir: this.shiftDir, t: this.shiftyT }); this.shiftyT = 0; }
+    if (RIDE_ACTS[this.kind]) this.stepAct(dt, RIDE_ACTS[this.kind]);        // (X: a tailwhip, a bar spin... going round)
     this.crouch += ((grabbing ? 0.75 : I.crouch ? 0.6 : 0.34 + 0.1 * Math.abs(this.shift)) - this.crouch) * Math.min(1, dt * 6);
     // flight
     const sp = this.v.length();
@@ -564,6 +608,22 @@ export class Skier {
       else this.land(h);
     }
     else if (this.tAir > 25) this.crash('lost');
+  }
+  /* (X) the extra rides: a timed trick (RIDE_ACTS). A held key starts one; it goes round in actDur seconds, and round
+     again if the same key is still held as a round ends (a double whip); a different trick's key held then starts that
+     one straight after. A trick that does not loop waits for its key to be let go before it can start again. */
+  stepAct(dt, AF) {
+    const def = this.held ? AF(this.held) : null;
+    if (this.act) {
+      this.actT += dt;
+      if (this.actT >= this.actDur) {
+        this.actN++;
+        if (def && def.id === this.act && def.loop !== false && this.held === this.actKey) this.actT -= this.actDur;
+        else { const was = this.act; this.events.push({ type: 'act', id: was, n: this.actN, at: this.actAt }); this.actStop(); this.actKey = def && def.id === was ? this.held : null; }
+      }
+    }
+    if (!this.act && def && this.held !== this.actKey) { this.act = def.id; this.actDur = def.T; this.actT = 0; this.actN = 0; this.actKey = this.held; this.actAt = this.tAir; }
+    if (!this.held) this.actKey = null;
   }
   // a face too steep to land on: the skis bounce off it and slide down it, hard into it is a crash
   wallHit(h, nn) {
@@ -651,6 +711,14 @@ export class Skier {
     if (aUp > 65 || vn > 16) q = 'crash';
     else if (aUp > 34 || aDir > 30 || grabbing || this.pose || vn > 11.5) q = 'sketchy';
     if (this.shiftyT > 0.15) { this.events.push({ type: 'shifty', dir: this.shiftDir, t: this.shiftyT }); this.shiftyT = 0; }
+    // (X: the extra rides: landed with a part of the vehicle still on its way round. Nearly round (or barely started) it
+    // is sketchy; anywhere between, the deck or the bars are across the rider's feet or hands, and that is a crash)
+    if (this.act) {
+      const u = this.actT / this.actDur, done = u >= 5 / 6;
+      if (!done && u > 1 / 6) q = 'crash'; else if (q === 'clean') q = 'sketchy';
+      this.events.push({ type: 'act', id: this.act, n: this.actN + (done ? 1 : 0), at: this.actAt, cut: true });
+      this.actStop();
+    }
     this.events.push({ type: 'land', q, aUp, aUpRaw, aDir, vn, sw, wasSw: this.sw, tAir: this.tAir });
     if (this.held) { this.events.push({ type: 'grabEnd', id: this.held, t: this.grabT, mod: this.bestMod() }); this.held = null; }
     this.grab = null; this.pose = null; this.tweak = ''; this.shift = 0;
@@ -787,7 +855,7 @@ export class Skier {
     this.setRailMode();
     this.balance = 0;
     this.state = 'rail'; this.tState = 0;
-    this.grab = null; this.pose = null; this.tweak = '';
+    this.grab = null; this.pose = null; this.tweak = ''; this.actStop();
     if (this.held) { this.events.push({ type: 'grabEnd', id: this.held, t: this.grabT, mod: this.bestMod() }); this.held = null; }
     this.railPress = 0; this.railPressAcc = 0; this.railKey = null; this.railHold = 0; this.railTurn = null;
     // (at: where the skis meet it, dir: the way along it you go, impact: how hard you came down onto it, m/s)
@@ -921,7 +989,7 @@ export class Skier {
 
   // ---- crashes ------------------------------------------------------------------------------------------------------
   crash(why) {
-    this.state = 'crash'; this.tState = 0; this.grab = null; this.pose = null; this.rail = null; this.tweak = '';
+    this.state = 'crash'; this.tState = 0; this.grab = null; this.pose = null; this.rail = null; this.tweak = ''; this.actStop(); this.flatSpin = 0; this.flatSpinOn = false;
     this.crashSpin = new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 8);
     this.events.push({ type: 'crash', why, speed: this.v.length() });
   }
@@ -976,7 +1044,7 @@ export class Skier {
     this.grab = null; this.pose = null; this.rail = null; this.tweak = ''; this.shift = 0; this.shiftyT = 0;
     this.edge = 0; this.edgeV = 0; this.turnRate = 0; this.brake = 0; this.press = 0; this.skate = 0; this.lazy = 0; this.lazyT = 0;
     this.brakeHead = null; this.landSkid = false; this.revertLeft = 0; this.crouchT = 0; this.crouch = 0.3; this.tuck = 0; this.absorb = 0;
-    this.turnDir = 0; this.tapLeft = 0; this.sink = 0; this.unslide = 0;
+    this.turnDir = 0; this.tapLeft = 0; this.sink = 0; this.unslide = 0; this.actStop(); this.flatSpin = 0; this.flatSpinOn = false;
     this.events.push({ type: 'lift' });
   }
   offLift(x, z, yaw = 0, speed = 2) {

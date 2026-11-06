@@ -8,7 +8,7 @@
 // frame, with skirts hiding the seams between sizes. Features with their own meshes (kickers, the pipe) are left out
 // of the patches (the ground under them is lowered a little) and drawn by park.js at finer spacing.
 import * as THREE from 'three';
-import { fbm, ridged, smoothstep, clamp } from './noise.js?v=16';
+import { fbm, ridged, smoothstep, clamp } from './noise.js?v=17';
 
 // ---- the run's long profile ----------------------------------------------------------------------------------------
 // [z where it starts, pitch in degrees] (above the start the slope behind is a gentle 12 degrees, not the old 26: with
@@ -203,14 +203,20 @@ export class Terrain {
   }
   // choose the patches for the camera at cam; meshes not built yet are queued and their parent stays meanwhile
   update(cam, frame) {
+    /* (2026-11-06, the lag pass: the walk sampled the noise twice at every node, every frame, about 5% of a frame on a
+       slow machine. Nothing waiting to be built and the camera within 1.5 m of where it last chose: the same patches
+       stand, so the walk is skipped; a camera moved that little never changes a patch's detail.) */
+    if (!this.queue.length && this._at && this._at.distanceToSquared(cam) < 2.25) return 0;
+    (this._at || (this._at = cam.clone())).copy(cam);
     this.cam.copy(cam);
     const want = [];
     const visit = (x0, z0, size, lvl) => {
-      if (lvl > 0 && this.dist(x0, z0, size) > this.cull) return;
+      const d = this.dist(x0, z0, size);
+      if (lvl > 0 && d > this.cull) return;
       const key = lvl + ':' + x0 + ':' + z0;
       // (the open snow well off the run and above the start is smooth: it is split at 0.6 of the distance)
       const open = this.cull !== Infinity && (x0 > 120 || x0 + size < -120 || z0 + size < -250);
-      const split = size > this.minLeaf && this.dist(x0, z0, size) < size * this.K * (open ? 0.6 : 1);
+      const split = size > this.minLeaf && d < size * this.K * (open ? 0.6 : 1);
       if (split) {
         const h = size / 2, kids = [[x0, z0], [x0 + h, z0], [x0, z0 + h], [x0 + h, z0 + h]];
         const ready = kids.every(([kx, kz]) => this.cache.has((lvl + 1) + ':' + kx + ':' + kz));

@@ -4,9 +4,9 @@
 //   [Switch] [Left|Right] [Double] Cork|Rodeo|Bio|Misty 1080 [Mute to Tail]   or   Back Flip, Lincoln Loop, 360...
 // Rails: entry spin, 50-50 or slide, swaps and presses, exit spin ("Left 270 On, Slide, Back Swap, 270 Out").
 import * as THREE from 'three';
-import { GRABS, grabDef } from './grabs.js?v=16';
+import { GRABS, grabDef } from './grabs.js?v=17';
 // (B: on a snowboard the grabs, spins and slides have the board's own names, board.js)
-import { rideGrabDef, boardSpinParts, boardRailName } from './board.js?v=16';
+import { rideGrabDef, boardSpinParts, boardRailName } from './board.js?v=17';
 
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3();
 // (P: the extra rides name their own spins and flips: RIDE_SPIN[kind](A) gives the parts for a rotation, or null for
@@ -60,6 +60,10 @@ export class Tricks {
       case 'grab': if (this.air) this.air.grabs.push({ id: e.id, t: 0, at: sk.tAir || 0 }); break;
       case 'grabEnd': if (this.air) { const g = this.air.grabs.findLast?.(x => x.id === e.id) || this.air.grabs.filter(x => x.id === e.id).pop(); if (g) { g.t = e.t; g.mod = e.mod || ''; } } break;
       case 'shifty': if (this.air && !this.air.shifty) this.air.shifty = { dir: e.dir, t: e.t }; break;
+      // (X: the extra rides' timed tricks done in the air: a tailwhip, a barspin, a briflip..., n times round)
+      case 'act': if (this.air && e.n > 0) (this.air.acts || (this.air.acts = [])).push({ id: e.id, n: e.n, at: e.at || 0 }); break;
+      // (X: a sled's flat spin on the snow, a bodyboarder's spinner)
+      case 'sledspin': { const d = round180(e.deg); this.award(`${d} Spinner`, 110 + d / 180 * 120, 'clean'); break; }
       case 'land': this.land(e, sk); break;
       case 'railOn': {
         const entry = this.air ? round90(Math.abs(this.air.spin)) : 0;
@@ -96,7 +100,10 @@ export class Tricks {
     if (!A) return;
     if (e.q === 'crash') return;          // the crash event that follows says Bail
     const spinAbs = Math.abs(A.spin), spinR = round180(spinAbs);
-    const grabs = A.grabs.filter(g => g.t >= 0.18);
+    // (X: on the extra rides the key of a timed trick is not a grab: the trick is named from its 'act' events)
+    const rideK = sk.kind && sk.kind !== 'ski' ? sk.kind : null, isAct = id => { const d = rideK && rideGrabDef(rideK, id); return !!(d && d.act); };
+    const grabs = A.grabs.filter(g => g.t >= 0.18 && !isAct(g.id));
+    const acts = A.acts || [];
     const parts = [];
     let pts = 0;
     // a rail trick finishes with what came off it
@@ -121,7 +128,7 @@ export class Tricks {
     }
     const tAir = e.tAir;
     const shifty = A.shifty && A.shifty.t > 0.15 ? `${A.shifty.dir > 0 ? 'Right' : 'Left'} Shifty` : '';
-    if (spinR < 180 && A.inv === 0 && !grabs.length && !shifty && tAir < 0.9) return;     // a hop, not a trick
+    if (spinR < 180 && A.inv === 0 && !grabs.length && !shifty && !acts.length && tAir < 0.9) return;     // a hop, not a trick
     if (A.how === 'wall' && spinR < 180 && A.inv === 0 && !grabs.length) return;          // slid off a face
     const rsp = RIDE_SPIN[sk.kind];
     const board = sk.kind === 'board', ride = sk.kind && sk.kind !== 'ski', bsp = board ? boardSpinParts(A, sk.goofy) : rsp ? rsp(A) : null, gDef = id => ride ? rideGrabDef(sk.kind, id) : GRABS[id];
@@ -151,7 +158,7 @@ export class Tricks {
       if (A.pipe && A.oop) parts.push('Alley-oop');
       if (bsp) { if (pre) parts.push(pre.trim()); parts.push(...bsp); }
       else parts.push(A.spin > 0 ? 'Left' : 'Right', `${pre}${spinR}`);
-    } else if (!grabs.length && !shifty) parts.push('Straight Air');
+    } else if (!grabs.length && !shifty && !acts.length) parts.push('Straight Air');
     if (shifty) { parts.push(shifty); pts += 90; }
     pts += spinR / 180 * 125;
     for (const g of grabs) {
@@ -161,7 +168,20 @@ export class Tricks {
     // a variation (E or R with the grab) is named for what it is; a plain grab held a second or more is tweaked
     const gn = grabs.map(g => { const d = ride ? rideGrabDef(sk.kind, g.id, g.mod) : grabDef(g.id, g.mod); if (!d) return null; return (g.t >= 1.0 && !d.pos && !d.noTweak && !g.mod ? 'Tweaked ' : '') + d.name; }).filter(Boolean);
     for (const g of grabs) { if (g.t >= 1.0) pts += 80; if (g.mod) pts += 70; }
-    if (gn.length) parts.push(gn.join(' to '));
+    // (X: the extra rides: the timed tricks and the held ones in the order they were started, "360 Tailwhip to Superman",
+    // "Double Tailwhip", "Backflip Barspin")
+    if (acts.length) {
+      const seq = []; for (const g of grabs) { const d = rideGrabDef(sk.kind, g.id, g.mod); if (d) seq.push({ at: g.at || 0, name: d.name }); }
+      for (const a of acts) {
+        const d = rideGrabDef(sk.kind, a.id); if (!d) continue;
+        const last = seq.length && seq[seq.length - 1];
+        if (last && last.act === a.id) { last.n += a.n; last.name = `${MULT[Math.min(last.n, 5) - 1]}${d.name}`; }
+        else seq.push({ at: a.at, act: a.id, n: a.n, name: `${MULT[Math.min(a.n, 5) - 1]}${d.name}` });
+        pts += (d.pts || 250) * a.n * (1 + 0.35 * (a.n - 1));
+      }
+      seq.sort((x, y) => x.at - y.at);
+      if (seq.length) parts.push(seq.map(x => x.name).join(' to '));
+    } else if (gn.length) parts.push(gn.join(' to '));
     pts += tAir * 45;
     if (A.sw) pts *= 1.2;
     this.award(parts.join(' '), pts, e.q);

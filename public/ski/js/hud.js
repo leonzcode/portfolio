@@ -1,7 +1,7 @@
 // The heads-up display: speed, score and the line's multiplier, trick names as they land, rail balance, a grab list.
-import { GRABS, guideOf } from './grabs.js?v=16';
-import { keyHelp } from './input.js?v=16';
-import { rideGrabDef, rideGuide } from './board.js?v=16';      // (B: a board's, scooter's... own grab names in the lists)
+import { GRABS, guideOf } from './grabs.js?v=17';
+import { keyHelp } from './input.js?v=17';
+import { rideGrabDef, rideGuide } from './board.js?v=17';      // (B: a board's, scooter's... own grab names in the lists)
 
 const $ = id => document.getElementById(id);
 export class Hud {
@@ -21,9 +21,13 @@ export class Hud {
     const h = keyHelp(scheme), other = this.kind && this.kind !== 'ski';
     const nm = id => { const d = other && rideGrabDef(this.kind, id); return d ? d.name : GRABS[id].name; }, gd = id => other ? rideGuide(this.kind, id) : guideOf(id);
     const gl = h.grabs.map(([k, id]) => `${k.padEnd(2)} ${nm(id)}`).join('\n');
-    this.hint.textContent = gl + (scheme === 'shred' ? '\n+E / +R  tweak or vary it\n` hides this list' : '\nTab hides this list');
+    // (X: the scooter's, snowbike's and sled's tricks have no variations, so no E / R line for them)
+    const vary = !other || this.kind === 'board' ? '\n+E / +R  tweak or vary it' : '';
+    this.hint.textContent = gl + (scheme === 'shred' ? vary + '\n` hides this list' : '\nTab hides this list');
     const box = $('keys');
-    box.innerHTML = h.base.map(([k, d]) => `<div><kbd>${k}</kbd>${d}</div>`).join('') + '<div style="margin-top:6px"><b>Grabs and positions</b></div>' + h.grabs.map(([k, id]) => `<div><kbd>${k}</kbd>${nm(id)}<span class="gg"> ${gd(id)}</span></div>`).join('');
+    // (X: on a scooter, snowbike or sled the grab keys are its tricks; on a sled the butter keys spin it flat on the snow)
+    const base = other && this.kind === 'sled' ? h.base.map(([k, d]) => [k, /butter/.test(d) ? 'with a turn key: spin the sled flat on the snow (a spinner)' : d]) : h.base;
+    box.innerHTML = base.map(([k, d]) => `<div><kbd>${k}</kbd>${d}</div>`).join('') + `<div style="margin-top:6px"><b>${other ? 'Tricks' : 'Grabs and positions'}</b></div>` + h.grabs.map(([k, id]) => `<div><kbd>${k}</kbd>${nm(id)}<span class="gg"> ${gd(id)}</span></div>`).join('');
   }
   trick(t) {
     if (t.banked) { this.score += t.points; this.pts.textContent = this.score.toLocaleString(); this.combo.textContent = ''; if (!t.name) return; }

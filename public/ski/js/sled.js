@@ -2,17 +2,21 @@
 // on your stomach like a bodyboard, head first, hands on the front of it, legs trailing off the back. Registered with
 // the rig like the board (Rig.loader.sled, Rig.poser.sled). Steering leans the body and the sled and drags the inside
 // foot; tricks of our own are held like grabs (SLED_TRICKS / SLED_FOR): Superman, No Hander, One Hander, Scorpion,
-// Spread Eagle, Table Top, Kneel Up, Tuck, Heel Click; the spin, flip and roll keys spin, flip and roll it all.
+// Spread Eagle, Table Top, Kneel Up, Tuck, Heel Click, and (X, 2026-11-05) Surfer (stood up on it side on, arms out),
+// Handstand (on the front of it, legs straight up) and Lazy Boy (rolled onto your back on it, feet over the front, hands
+// behind the head); the spin, flip and roll keys spin, flip and roll it all. On the snow the butter key with a turn key
+// spins it flat, a bodyboarder's spinner (skier.js KIND.sled.flatSpin), and in a spin, on the snow or in the air, the
+// body reacts to it: the legs flung out wide and trailing the turn, the head spotting into it, the hands gripping tight.
 //   Frames: the physics' body frame (skier.q) is the sled's: +Z forward (the curled runners), +Y up, +X left. The
 //   body lies along +Z face down: the rider's rest frame turned forward a quarter round about X.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { Rig, springBank, smooth01, softReach, wob } from './rig.js?v=16';
-import { RIDE_GRABS, seatRider, holdOnLift, liftStand } from './board.js?v=16';
-import { clamp, smoothstep } from './noise.js?v=16';
-import { RIDE_SPIN } from './tricks.js?v=16';
-import { rideSpin } from './scoot.js?v=16';
+import { Rig, springBank, smooth01, softReach, wob } from './rig.js?v=17';
+import { RIDE_GRABS, RIDE_GUIDES, seatRider, holdOnLift } from './board.js?v=17';
+import { clamp, smoothstep } from './noise.js?v=17';
+import { RIDE_SPIN } from './tricks.js?v=17';
+import { rideSpin } from './scoot.js?v=17';
 
 // the slats' top (m over the snow), where the hands hold (each side, up, forward), where the hips lie
 export const SLED = { top: 0.213, hand: [0.2, 0.24, 0.22], hips: -0.32 };
@@ -30,23 +34,32 @@ export const SLED_TRICKS = {
   kneel:    { name: 'Kneel Up', hands: 'both', legs: 'kneel', table: 0 },
   tuck:     { name: 'Tuck', hands: 'both', legs: 'tuck', table: 0 },
   click:    { name: 'Heel Click', hands: 'both', legs: 'click', table: 0 },
+  surfer:   { name: 'Surfer', hands: 'none', legs: 'surf', table: 0 },
+  handstand: { name: 'Handstand', hands: 'both', legs: 'hand', table: 0 },
+  lazyboy:  { name: 'Lazy Boy', hands: 'head', legs: 'lazy', table: 0 },
 };
 for (const k in SLED_TRICKS) SLED_TRICKS[k].noTweak = true;
+// what each one is, for the key list
+const SLED_GUIDE = { superman: 'flown off the back, holding the front', nohander: 'both hands off, arms out', onehander: 'one hand off',
+  scorpion: 'knees bent, feet over to the head', spread: 'arms and legs out wide', tabletop: 'the sled laid on its side', kneel: 'kneeling up on it',
+  tuck: 'balled up on it, knees to the chest', click: 'heels clicked together up behind', surfer: 'stood up on it side on, arms out',
+  handstand: 'a handstand on the front of it', lazyboy: 'rolled onto your back, feet over the front' };
 export const SLED_FOR = {
   safety: 'superman', safety_m: 'superman', mute: 'nohander', mute_m: 'nohander', japan: 'onehander', japan_m: 'onehander', tail: 'scorpion', tail_m: 'scorpion',
-  nose: 'kneel', nose_m: 'kneel', truck: 'spread', critical: 'tabletop', critical_m: 'tabletop', octo: 'tuck', blunt: 'superman', blunt_m: 'superman',
-  stalefish: 'click', stalefish_m: 'click', bowarrow: 'onehander', dubtail: 'tuck', seatbelt: 'scorpion', seatbelt_m: 'scorpion',
-  daffy: 'click', spread: 'spread', backscratch: 'scorpion', ironcross: 'spread',
+  nose: 'kneel', nose_m: 'kneel', truck: 'spread', critical: 'tabletop', critical_m: 'tabletop', octo: 'tuck', blunt: 'surfer', blunt_m: 'surfer',
+  stalefish: 'click', stalefish_m: 'click', bowarrow: 'handstand', dubtail: 'tuck', seatbelt: 'lazyboy', seatbelt_m: 'lazyboy',
+  daffy: 'click', spread: 'spread', backscratch: 'handstand', ironcross: 'surfer',
 };
 export const sledTrickDef = (id) => SLED_TRICKS[SLED_FOR[id] || id] || null;
 RIDE_GRABS.sled = sledTrickDef;
+RIDE_GUIDES.sled = id => SLED_GUIDE[SLED_FOR[id] || id] || '';
 RIDE_SPIN.sled = rideSpin;
 
 let _gltf = null;
 Rig.loader.sled = async (rig) => {
   if (!_gltf) {
     const loader = new GLTFLoader(), draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    _gltf = loader.loadAsync('./models/sled/sled.glb?v=16').catch(e => { _gltf = null; throw e; });
+    _gltf = loader.loadAsync('./models/sled/sled.glb?v=17').catch(e => { _gltf = null; throw e; });
   }
   const gl = await _gltf;
   let mesh = null; gl.scene.traverse(o => { if (o.isMesh && !mesh) mesh = o; });
@@ -61,21 +74,26 @@ Rig.loader.sled = async (rig) => {
 };
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
+const _SW0 = new THREE.Matrix4();
 const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1), NZ = new THREE.Vector3(0, 0, -1), ZERO = new THREE.Vector3();
-const _q1 = Q(), _q2 = Q(), _qi = Q(), _pelQ = Q(), _chQ = Q(), _hdQ = Q(), _lq = Q(), _bq = Q();
-const _v1 = V(), _v2 = V(), _v3 = V(), _v4 = V(), _v5 = V(), _v6 = V(), _lp = V(), _acc = V(), _sh = V(), _wr = V(), _el = V(), _fd = V(), _pa = V(), _ft = [V(), V()];
+const _q1 = Q(), _q2 = Q(), _q3 = Q(), _qi = Q(), _pelQ = Q(), _chQ = Q(), _hdQ = Q(), _lq = Q(), _bq = Q();
+const _v1 = V(), _v2 = V(), _v3 = V(), _v4 = V(), _v5 = V(), _v6 = V(), _v7 = V(), _lp = V(), _acc = V(), _sh = V(), _wr = V(), _el = V(), _fd = V(), _pa = V(), _ft = [V(), V()];
 
 Rig.poser.sled = (rig, S0, dt) => {
   const sl = rig.sl; if (!sl) return;
-  const S = liftStand(S0);
+  const S = S0;
   const P = rig.p, sp = springBank(P, dt), b = rig.b;
   const st = S.state || 'ground', air = st === 'air', crash = st === 'crash', ground = st === 'ground', rail = st === 'rail';
   const t = S.t !== undefined ? S.t : (rig._t = (rig._t || 0) + dt), tt = t + rig.ph;
   const vel = S.vel || ZERO;
   const R = rig.placeBody(S), BP = rig.body.position, qi = _qi.copy(R).invert();
-  // on the chairlift: sat on the chair, the sled held hanging in front
-  if (st === 'lift') { seatRider(rig, S, t); holdOnLift(rig, sl.root, 0.5); rig._pst = st; return; }
+  // on the chairlift: sat on the chair, the sled held hanging in front; at the load and unload lines stood on the snow
+  // with the sled held beside (X, for the lift agent: lying on it there, the chair came through the rider)
+  if (st === 'lift') { liftPose(rig, S, t); rig._pst = st; rig._gon = 1; return; }
   const changed = rig._pst !== st;
+  // (X) just off the lift at the top: stood holding the sled, then down onto it over half a second
+  const gon = rig._gon > 0 ? smooth01(rig._gon) : 0; if (rig._gon > 0) rig._gon = Math.max(0, rig._gon - dt / 0.5);
+  if (gon > 0.001) carryTargets(rig, R, BP);
   let wy = 0;
   if (rig._pq && dt > 0 && !changed) { const d = _q1.copy(rig._pq).invert().multiply(R); wy = d.y * (d.w < 0 ? -2 : 2) / dt; if (Math.abs(wy) > 20) wy = 0; }
   (rig._pq || (rig._pq = new THREE.Quaternion())).copy(R);
@@ -93,7 +111,12 @@ Rig.poser.sled = (rig, S0, dt) => {
   const sup = W('lsup', hold && hold.legs === 'super', 8);
   const up = W('lup', hold && hold.legs === 'up'), scorp = W('lscorp', hold && hold.legs === 'scorpion'), spread = W('lspread', hold && hold.legs === 'spread');
   const kneel = W('lkneel', hold && hold.legs === 'kneel'), tuck = W('ltuck', hold && hold.legs === 'tuck'), click = W('lclick', hold && hold.legs === 'click');
-  const noH = W('lnoh', hold && hold.hands === 'none', 12), oneH = W('loneh', hold && (hold.hands === 'one' || hold.hands === 'none'), 12), table = W('ltable', hold && hold.table);
+  const noH = W('lnoh', hold && (hold.hands === 'none' || hold.hands === 'head'), 12), oneH = W('loneh', hold && (hold.hands === 'one' || hold.hands === 'none' || hold.hands === 'head'), 12), table = W('ltable', hold && hold.table);
+  // (X) stood up on it side on, a handstand on its front, rolled onto the back
+  const surf = W('lsurf', hold && hold.legs === 'surf', 8), hand = W('lhand', hold && hold.legs === 'hand', 7), lazy = W('llazy', hold && hold.legs === 'lazy', 8);
+  /* (X) a spin, flat on the snow or in the air: the legs flung out and trailing the turn, the head spotting into it,
+     the hands gripping tight (how much from how fast it turns about the sled's up) */
+  const spinK = crash ? 0 : smoothstep(2.0, 5.5, Math.abs(Wy)) * (1 - Math.min(1, surf + hand + lazy + kneel + tuck)), spinD = Math.sign(Wy);
   const absorb = S.absorb || 0;
   // ---- the sled: leaning with the turn, a little lifted in the air, laid over for a table top
   const lp = _lp.set(0, -(S.sink || 0) + 0.05 * airW, 0), lq = _lq.setFromAxisAngle(Z, phi * 0.6);
@@ -101,17 +124,32 @@ Rig.poser.sled = (rig, S0, dt) => {
   if (crashW > 0.01) lq.multiply(_q1.setFromAxisAngle(Y, 0.7 * crashW * Math.sin(t * 2.2)));
   sl.root.position.copy(lp).applyQuaternion(R).add(BP); sl.root.quaternion.copy(R).multiply(lq);
   sl.root.updateMatrixWorld(true);
-  const SW = sl.root.matrixWorld;
+  const SW = _SW0.copy(sl.root.matrixWorld);
   // the runners' tracks
   for (let k = 0; k < 2; k++) { sl.tr[k].position.set(k ? -0.2 : 0.2, 0, -0.08).applyMatrix4(SW); sl.root.getWorldQuaternion(sl.tr[k].quaternion); }
+  // (X) a shifty in the air (skier.shift): the sled swung across under the rider about the hips and back; the body stays
+  // (SW above, the sled before the swing, places the body; the hands go to the sled where it is)
+  const shy = sp('lshy', air ? -0.8 * (S.shift || 0) : 0, 14);
+  if (Math.abs(shy) > 0.004) {
+    const piv = _v7.set(0, 0, SLED.hips + 0.15).applyMatrix4(SW);
+    _q3.setFromAxisAngle(_v2.set(0, 1, 0).applyQuaternion(sl.root.quaternion), shy);
+    sl.root.position.sub(piv).applyQuaternion(_q3).add(piv); sl.root.quaternion.premultiply(_q3); sl.root.updateMatrixWorld(true);
+  }
   // ---- the body lying on it face down, head forward: the rest frame pitched forward a quarter round; the chest a
-  // little raised (looking ahead), the hips on the back of the slats; kneeling up or tucked in a trick
+  // little raised (looking ahead), the hips on the back of the slats; kneeling up or tucked in a trick; stood up side
+  // on (surfer: the pitch gone, turned a quarter); over on the front in a handstand (pitched right over); on the back
   const sledQ = _bq.copy(R).multiply(lq);
-  const upK = Math.max(kneel, tuck * 0.8);
-  const pelPitch = Math.PI / 2 - 0.05 - 1.2 * upK;
-  const pelQ = _pelQ.copy(sledQ).multiply(_q1.setFromAxisAngle(Y, clamp(-Wy * 0.03, -0.15, 0.15))).multiply(_q1.setFromAxisAngle(X, pelPitch));
-  const chQ = _chQ.copy(pelQ).multiply(_q1.setFromAxisAngle(X, -0.32 - 0.1 * absorb + 0.1 * wob(tt * 0.8, 3) * airW + 0.6 * upK + 0.22 * sup)).multiply(_q1.setFromAxisAngle(Z, phi * 0.3));
-  const pelW = _v1.set(0, SLED.top + 0.13 + 0.25 * upK + 0.1 * sup, SLED.hips + 0.15 * upK - 0.6 * sup).applyMatrix4(SW);
+  const upK = kneel;
+  const pelPitch = (Math.PI / 2 - 0.05 - 1.2 * upK - 0.6 * tuck) * (1 - surf) + (Math.PI / 2 + 0.05) * hand - (Math.PI - 0.2) * lazy;
+  const pelQ = _pelQ.copy(sledQ).multiply(_q1.setFromAxisAngle(Y, clamp(-Wy * 0.03, -0.15, 0.15) * (1 - spinK) - Math.PI / 2 * surf)).multiply(_q1.setFromAxisAngle(X, pelPitch * (1 - gon)));
+  const chQ = _chQ.copy(pelQ).multiply(_q1.setFromAxisAngle(X, (-0.32 - 0.1 * absorb + 0.1 * wob(tt * 0.8, 3) * airW + 0.6 * upK + 0.22 * sup + 0.15 * spinK + 0.75 * tuck) * Math.max(0, 1 - surf - hand - lazy) + 0.25 * surf + 0.12 * lazy)).multiply(_q1.setFromAxisAngle(Z, phi * 0.3));
+  const pelW = _v1.set(0, SLED.top + 0.13 + 0.25 * upK + 0.1 * sup + 0.14 * tuck, SLED.hips + 0.15 * upK - 0.6 * sup + 0.06 * tuck);
+  // (stood on the slats, knees bent; up over the hands; lying on the back in the middle of it)
+  if (surf > 0.001) pelW.lerp(_v2.set(0.02, SLED.top + rig.ankleH + 0.03 + rig.legLen * 0.97 * 0.72 + (rig.pelvisY - rig.hipY), -0.02), surf);
+  if (hand > 0.001) pelW.lerp(_v2.set(0, SLED.hand[1] + (rig.len.ua + rig.len.fa) * 0.93 + 0.48, SLED.hand[2] - 0.08), hand);
+  if (lazy > 0.001) pelW.lerp(_v2.set(0, SLED.top + 0.12, -0.05), lazy);
+  pelW.applyMatrix4(SW);
+  if (gon > 0.001) pelW.lerp(CY.pel, gon);
   if (crashW > 0.01) chQ.multiply(_q1.setFromAxisAngle(X, Math.sin(t * 3.1) * 0.5 * crashW));
   rig.setWorldQ(b.root, _q2.copy(pelQ).multiply(rig.rest.root.q));
   b.pelvis.updateWorldMatrix(false, false);
@@ -119,8 +157,9 @@ Rig.poser.sled = (rig, S0, dt) => {
   rig.setWorldPos(b.root, _v3.copy(pelW).sub(off));
   rig.blendBone(b.pelvis, 'pelvis', pelQ, chQ, 0);
   rig.blendBone(b.spine, 'spine', pelQ, chQ, 0.35); rig.blendBone(b.spine1, 'spine1', pelQ, chQ, 0.7); rig.blendBone(b.chest, 'chest', pelQ, chQ, 1);
-  // the head lifted to look where it goes
-  const hdQ = _hdQ.copy(chQ).multiply(_q1.setFromAxisAngle(Y, clamp(Wy * 0.15, -0.5, 0.5))).multiply(_q1.setFromAxisAngle(X, -0.85 + 0.6 * upK));
+  // the head lifted to look where it goes (into a spin, spotting the way it turns); a surfer looks along the sled over
+  // the front shoulder; upside down, at the snow by the hands; on the back, along the body to the feet
+  const hdQ = _hdQ.copy(chQ).multiply(_q1.setFromAxisAngle(Y, clamp(Wy * 0.15, -0.5, 0.5) * (1 - spinK) + spinD * 0.6 * spinK + 1.25 * surf)).multiply(_q1.setFromAxisAngle(X, (-0.85 + 0.6 * upK + 0.9 * tuck) * Math.max(0, 1 - surf - hand - lazy) - 0.55 * hand + 0.55 * lazy));
   rig.blendBone(b.neck, 'neck', chQ, hdQ, 0.5); rig.blendBone(b.head, 'head', hdQ, hdQ, 0);
   rig.blendBone(b.clL, 'clL', chQ, chQ, 0); rig.blendBone(b.clR, 'clR', chQ, chQ, 0);
   // ---- legs: trailing off the back, toes down; the inside foot drags lower in a turn; up straight (superman), bent
@@ -132,6 +171,8 @@ Rig.poser.sled = (rig, S0, dt) => {
     const hip = _v2.setFromMatrixPosition(th.matrixWorld);
     const drag = ground ? clamp(-phi * s * 2, 0, 1) : 0;
     const a = _ft[k].copy(hip).addScaledVector(sFw, -rig.legLen * 0.93).addScaledVector(sLf, s * 0.07).addScaledVector(sUp, -0.06 - 0.08 * drag + 0.04 * wob(tt * 1.4, 5 + k));
+    // (X) a spin: the legs flung out wide and trailing the turn, lifted a little off the snow
+    if (spinK > 0.01) a.addScaledVector(sLf, (spinD * 0.26 + s * 0.2) * spinK).addScaledVector(sUp, 0.07 * spinK).addScaledVector(sFw, 0.06 * spinK);
     // a superman: straight out behind, level with the body
     if (sup > 0.01) a.lerp(_v3.copy(hip).addScaledVector(sFw, -rig.legLen * 0.95).addScaledVector(sUp, 0.06).addScaledVector(sLf, s * 0.06), sup);
     if (up > 0.01) a.lerp(_v3.copy(hip).addScaledVector(sFw, -rig.legLen * 0.75).addScaledVector(sUp, rig.legLen * 0.5).addScaledVector(sLf, s * 0.05), up);
@@ -139,36 +180,118 @@ Rig.poser.sled = (rig, S0, dt) => {
     if (spread > 0.01) a.lerp(_v3.copy(hip).addScaledVector(sFw, -rig.legLen * 0.65).addScaledVector(sLf, s * 0.55).addScaledVector(sUp, 0.12), spread);
     if (click > 0.01) a.lerp(_v3.copy(hip).addScaledVector(sFw, -0.45).addScaledVector(sUp, 0.42).addScaledVector(sLf, s * 0.02), click);
     if (kneel > 0.01) a.lerp(_v3.set(s * 0.14, SLED.top + 0.12, SLED.hips - 0.12).applyMatrix4(SW), kneel);
-    if (tuck > 0.01) a.lerp(_v3.set(s * 0.16, SLED.top + 0.12, SLED.hips + 0.05).applyMatrix4(SW), tuck);
+    if (tuck > 0.01) a.lerp(_v3.set(s * 0.13, SLED.top + 0.1, SLED.hips - 0.02).applyMatrix4(SW), tuck);
+    // (X) stood on the slats, the left foot to the front; straight up over the hands; over the curled front
+    if (surf > 0.01) a.lerp(_v3.set(0.03, SLED.top + rig.ankleH + 0.03, k ? -0.27 : 0.24).applyMatrix4(SW), surf);
+    if (hand > 0.01) a.lerp(_v3.copy(hip).addScaledVector(sUp, rig.legLen * 0.96).addScaledVector(sFw, -0.06).addScaledVector(sLf, s * 0.05), hand);
+    if (lazy > 0.01) a.lerp(_v3.set(s * 0.13, SLED.top + 0.42, 0.68).applyMatrix4(SW), lazy);
+    if (gon > 0.001) a.lerp(CY.foot[k], gon);
     const d = a.distanceTo(hip), m = softReach(d, rig.legLen, 0.9, 0.985); if (m < d) a.sub(hip).multiplyScalar(m / d).add(hip);
-    // the knees bend down towards the snow (lying), back (kneeling)
+    // the knees bend down towards the snow (lying), back (kneeling), forward (stood up), up (on the back)
     const kp = _v3.copy(sUp).negate().addScaledVector(sFw, 0.2 + 0.8 * upK).addScaledVector(sLf, s * 0.1);
     if (scorp + click > 0.01) kp.lerp(_v2.copy(sUp).negate(), scorp + click);
+    if (surf > 0.01) kp.lerp(_v2.copy(sLf).negate().addScaledVector(sFw, 0.3 * s), surf);
+    if (hand > 0.01) kp.lerp(_v2.copy(sFw).negate(), hand);
+    if (lazy > 0.01) kp.lerp(_v2.copy(sUp), lazy);
+    if (gon > 0.001) kp.lerp(_v2.set(0, 0.3, 1).applyQuaternion(R), gon);
+    if (tuck > 0.01) kp.lerp(_v2.copy(sFw).addScaledVector(sUp, 0.4).addScaledVector(sLf, s * 0.2), tuck);
     rig.twoBone(th, ca, k ? 'thR' : 'thL', k ? 'caR' : 'caL', a, kp, Z);
-    // feet pointed (toes down and back) lying, flat kneeling
-    _q2.copy(sledQ).multiply(_q1.setFromAxisAngle(X, Math.PI * 0.95 * (1 - upK)));
+    // feet pointed (toes down and back) lying, flat kneeling or stood; pointed up in a handstand
+    _q2.copy(sledQ).multiply(_q1.setFromAxisAngle(X, Math.PI * 0.95 * (1 - Math.max(upK, surf))));
+    if (surf > 0.01) _q2.multiply(_q1.setFromAxisAngle(Y, (-Math.PI / 2 + (k ? 0.3 : -0.2)) * surf));
+    if (hand + lazy > 0.01) _q2.slerp(_q3.copy(pelQ).multiply(_q1.setFromAxisAngle(X, -0.9)), Math.min(1, hand + lazy));
+    if (gon > 0.001) _q2.slerp(_q3.copy(R), gon);
     rig.setWorldQ(ft, _q2.multiply(rig.rest[k ? 'ftR' : 'ftL'].q));
   }
-  // ---- arms: hands on the front of the sled; out wide with no hands (the right one first)
+  // ---- arms: hands on the front of the sled; out wide with no hands (the right one first); out like a surfer's;
+  // behind the head lying on the back
   const cL = _v2.set(1, 0, 0).applyQuaternion(chQ), armL = rig.len.ua + rig.len.fa;
   for (let k = 0; k < 2; k++) {
     const s = k ? -1 : 1, ua = k ? b.uaR : b.uaL, fa = k ? b.faR : b.faL, ha = k ? b.haR : b.haL;
     ua.updateWorldMatrix(false, false);
     const sh = _sh.setFromMatrixPosition(ua.matrixWorld);
-    const offK = k ? oneH : noH;
-    const hold_ = _wr.set(s * SLED.hand[0], SLED.hand[1], SLED.hand[2]).applyMatrix4(SW);
+    const offK = (k ? oneH : noH) * (1 - hand);
+    const hold_ = _wr.set(s * SLED.hand[0], SLED.hand[1], SLED.hand[2]).applyMatrix4(sl.root.matrixWorld);
     const free = _v3.copy(sh).addScaledVector(sLf, s * (0.5 + 0.05 * wob(tt * 1.3, 31 + k))).addScaledVector(sUp, 0.15 + 0.08 * wob(tt * 1.7, 33 + k)).addScaledVector(sFw, 0.15);
+    if (surf > 0.01) free.lerp(_v7.copy(sh).addScaledVector(cL, s * 0.52).addScaledVector(sUp, -0.06 + 0.04 * Math.sin(tt * 1.6 + k)), surf);
+    if (lazy > 0.01) free.lerp(_v7.set(0, 1, 0).applyQuaternion(chQ).multiplyScalar(0.3).add(sh).addScaledVector(cL, -s * 0.1).addScaledVector(sUp, 0.12), lazy);
     const wr = hold_.lerp(free, offK);
+    if (gon > 0.001) wr.lerp(k ? CY.hand[1] : _v7.copy(sh).addScaledVector(sUp, -0.5), gon);
     if (crashW > 0.5) wr.copy(sh).addScaledVector(cL, s * 0.35).addScaledVector(sUp, 0.25 + Math.sin(t * 9 + s) * 0.2);
     { const d = wr.distanceTo(sh), m = softReach(d, armL, 0.82, 0.97); if (m < d) wr.sub(sh).multiplyScalar(m / d).add(sh); }
-    const el = _el.copy(cL).multiplyScalar(s).addScaledVector(sUp, 0.6).normalize();
+    const el = _el.copy(cL).multiplyScalar(s).addScaledVector(sUp, 0.6 * Math.max(0, 1 - hand - lazy)).normalize();
+    // (gripping tight in a spin: the elbows in close)
+    if (spinK > 0.01) el.addScaledVector(sUp, -0.5 * spinK).normalize();
     rig.twoBone(ua, fa, k ? 'uaR' : 'uaL', k ? 'faR' : 'faL', wr, el, NZ);
     const HH = rig.hands[k ? 'R' : 'L'];
-    const fd = _fd.copy(sFw).addScaledVector(sUp, -0.4).normalize(), pa = _pa.copy(sUp).negate().lerp(_v6.copy(cL).multiplyScalar(-s), offK).normalize();
+    const fd = _fd.copy(sFw).addScaledVector(sUp, -0.4).normalize(), pa = _pa.copy(sUp).negate().lerp(_v7.copy(cL).multiplyScalar(-s), offK).normalize();
     rig.aim(ha, rig.rest[k ? 'haR' : 'haL'].q, HH.fd, HH.palm, fd, pa);
-    rig.curl(HH, 1.25 - 0.7 * offK);
+    rig.curl(HH, 1.25 - 0.7 * offK + 0.35 * spinK * (1 - offK));
     sFw.set(0, 0, 1).applyQuaternion(sledQ); sUp.set(0, 1, 0).applyQuaternion(sledQ); sLf.set(1, 0, 0).applyQuaternion(sledQ);
   }
+  // (X) the sled from the carried hold down onto the snow, as the rider gets on it
+  if (gon > 0.001) { sl.root.position.lerp(CY.sp, gon); sl.root.quaternion.slerp(CY.sq, gon); }
   rig.placeHead(hdQ);
   rig.flushTree(rig.body);
 };
+
+/* (X) the sled carried, standing on the snow at F (feet) facing R's way: the sled stood on its tail beside the right
+   foot, nose up and a little forward, its slats towards the rider, the curled front held in the right hand; the left
+   hand hangs. Into CY (world). */
+const CY = { sp: V(), sq: Q(), pel: V(), foot: [V(), V()], hand: [V(), V()] };
+const _cx = V(), _cy = V(), _cz = V(), _cm = new THREE.Matrix4();
+function carryTargets(rig, R, F) {
+  const up = _cy.set(0, 1, 0).applyQuaternion(R), fw = _cz.set(0, 0, 1).applyQuaternion(R), lf = _cx.set(1, 0, 0).applyQuaternion(R);
+  const zA = _v6.copy(up).multiplyScalar(Math.cos(0.3)).addScaledVector(fw, Math.sin(0.3)).normalize();   // the nose
+  const yA = _v4.copy(lf).addScaledVector(zA, -lf.dot(zA)).normalize();                                     // the slats' top
+  const xA = _v5.crossVectors(yA, zA);
+  CY.sq.setFromRotationMatrix(_cm.makeBasis(xA, yA, zA));
+  CY.sp.copy(F).addScaledVector(lf, -0.36).addScaledVector(fw, 0.02).addScaledVector(up, 0.02).addScaledVector(zA, 0.49);
+  CY.pel.copy(F).addScaledVector(up, rig.ankleH + rig.legLen * 0.95 + (rig.pelvisY - rig.hipY)).addScaledVector(lf, 0.03).addScaledVector(fw, -0.03);
+  for (let k = 0; k < 2; k++) CY.foot[k].copy(F).addScaledVector(lf, (k ? -1 : 1) * 0.12).addScaledVector(up, rig.ankleH + 0.01).addScaledVector(fw, k ? -0.03 : 0.04);
+  CY.hand[1].set(-0.03, 0.22, 0.4).applyQuaternion(CY.sq).add(CY.sp);
+}
+/* (X) on the chairlift: seated (as every ride but skis), and at the load and unload lines (S.liftFeet set, S.liftSit
+   from 0 stood there to 1 sat down) between that and standing with the sled carried, the hips going from over the feet
+   to the seat as the chair comes, and back at the top */
+function liftPose(rig, S, t) {
+  const sl = rig.sl, b = rig.b;
+  seatRider(rig, S, t); holdOnLift(rig, sl.root, 0.5);
+  const F = S.liftFeet, sit = smooth01(S.liftSit ?? 1);
+  if (!F || sit > 0.999) return;
+  const st0 = 1 - sit, R = rig.body.quaternion, BP = rig.body.position;
+  carryTargets(rig, R, F);
+  const up = _v4.set(0, 1, 0).applyQuaternion(R), fw = _v5.set(0, 0, 1).applyQuaternion(R), lf = _v6.set(1, 0, 0).applyQuaternion(R);
+  // the hips: from the seat to over the feet, the whole skeleton with them
+  const pel = _v1.set(0, rig.pelvisY - rig.hipY + 0.1, -0.02).applyQuaternion(R).add(BP).lerp(CY.pel, st0);
+  b.pelvis.updateWorldMatrix(false, false);
+  const off = _v2.setFromMatrixPosition(b.pelvis.matrixWorld).sub(_v3.setFromMatrixPosition(b.root.matrixWorld));
+  rig.setWorldPos(b.root, _v3.copy(pel).sub(off));
+  b.root.updateMatrixWorld(true);
+  // legs: from thighs along the seat and shins hanging to standing on the snow
+  for (let k = 0; k < 2; k++) {
+    const s = k ? -1 : 1, th = k ? b.thR : b.thL, ca = k ? b.caR : b.caL, ft = k ? b.ftR : b.ftL;
+    const hip = _v2.setFromMatrixPosition(th.matrixWorld);
+    const an = _v3.copy(hip).addScaledVector(fw, rig.len.th * 0.95 + 0.08).addScaledVector(up, -rig.len.ca * 0.95).addScaledVector(lf, s * 0.06).lerp(CY.foot[k], st0);
+    { const d = an.distanceTo(hip), m = softReach(d, rig.legLen, 0.9, 0.985); if (m < d) an.sub(hip).multiplyScalar(m / d).add(hip); }
+    rig.twoBone(th, ca, k ? 'thR' : 'thL', k ? 'caR' : 'caL', an, _v7.copy(fw).addScaledVector(up, 0.3 * sit), Z);
+    _q2.copy(R).multiply(_q1.setFromAxisAngle(Y, s * 0.15)).multiply(_q3.setFromAxisAngle(X, 0.35 * sit));
+    rig.setWorldQ(ft, _q2.multiply(rig.rest[k ? 'ftR' : 'ftL'].q));
+  }
+  // arms: from the hands on the thighs to the right hand on the sled's front, the left one hanging
+  for (let k = 0; k < 2; k++) {
+    const s = k ? -1 : 1, ua = k ? b.uaR : b.uaL, fa = k ? b.faR : b.faL, ha = k ? b.haR : b.haL;
+    const sh = _sh.setFromMatrixPosition(ua.matrixWorld);
+    const wr = _wr.copy(sh).addScaledVector(fw, 0.32).addScaledVector(up, -0.42).addScaledVector(lf, s * 0.02);
+    wr.lerp(k ? CY.hand[1] : _v2.copy(sh).addScaledVector(up, -0.5).addScaledVector(fw, 0.08).addScaledVector(lf, 0.07), st0);
+    { const d = wr.distanceTo(sh), armL = rig.len.ua + rig.len.fa, m = softReach(d, armL, 0.82, 0.97); if (m < d) wr.sub(sh).multiplyScalar(m / d).add(sh); }
+    rig.twoBone(ua, fa, k ? 'uaR' : 'uaL', k ? 'faR' : 'faL', wr, _el.copy(lf).multiplyScalar(s * 0.6).addScaledVector(up, -0.6).addScaledVector(fw, -0.3).normalize(), NZ);
+    const HH = rig.hands[k ? 'R' : 'L'];
+    rig.aim(ha, rig.rest[k ? 'haR' : 'haL'].q, HH.fd, HH.palm, _fd.copy(fw).lerp(_v2.copy(up), k ? st0 : 0).normalize(), _pa.copy(up).negate().lerp(_v2.copy(lf), st0 * (k ? 1 : 0.5)).normalize());
+    rig.curl(HH, 0.5 + (k ? 0.8 : 0.1) * st0);
+  }
+  // the sled: from hanging in front of the shins to carried beside
+  sl.root.position.lerp(CY.sp, st0); sl.root.quaternion.slerp(CY.sq, st0);
+  rig.placeHead(rig.headQ);
+  rig.flushTree(rig.body);
+}
