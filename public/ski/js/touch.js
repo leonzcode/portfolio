@@ -2,7 +2,8 @@
 // brake; in the air it spins and flips), and buttons on the right: Pop (hold to crouch, let go to pop), Grab (hold
 // for the grab shown on the picker above it, tap the picker to change grab), Butter (hold, the stick presses the nose
 // or tail), and the camera.
-import { GRABS } from './grabs.js?v=15';
+import { GRABS } from './grabs.js?v=16';
+import { rideGrabDef } from './board.js?v=16';      // (B: a board's own grab names on the picker)
 
 const ORDER = ['safety', 'mute', 'japan', 'tail', 'nose', 'truck', 'critical', 'octo', 'blunt', 'stalefish', 'bowarrow', 'dubtail', 'seatbelt', 'daffy', 'spread', 'backscratch', 'ironcross'];
 
@@ -44,9 +45,13 @@ export class Touch {
     };
     hold('pop', 'pop'); hold('grab', 'grab'); hold('butter', 'butter');
     const pick = el.querySelector('.pick');
-    pick.addEventListener('touchstart', e => { st.sel = (st.sel + 1) % ORDER.length; pick.textContent = GRABS[ORDER[st.sel]].name; e.preventDefault(); }, { passive: false });
+    pick.addEventListener('touchstart', e => { st.sel = (st.sel + 1) % ORDER.length; pick.textContent = this.nameOf(ORDER[st.sel]); e.preventDefault(); }, { passive: false });
+    this.pick = pick;
     el.querySelector('.cam').addEventListener('touchstart', e => { onCamera(); e.preventDefault(); }, { passive: false });
   }
   get grabId() { return ORDER[this.state.sel]; }
+  // (B: what you ride: the picker names its grabs)
+  nameOf(id) { const d = this.kind && this.kind !== 'ski' ? rideGrabDef(this.kind, id) : null; return d ? d.name : GRABS[id].name; }
+  setRide(kind) { this.kind = kind; if (this.pick) this.pick.textContent = this.nameOf(ORDER[this.state.sel]); }
 }
 export const TOUCH_GRABS = ORDER;

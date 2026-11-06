@@ -141,3 +141,30 @@ select { font: 500 15px var(--body); padding: 6px 8px; border: 1px solid #b8c4cf
 .mprow input.code { width: 90px; text-transform: uppercase; }
 .home .fine { border-top: 1px solid #d4dce4; padding-top: 8px; margin-top: 0; }
 @media (max-width: 420px) { .card.home { padding: 18px 16px 12px; } .maps .map b { font-size: 16px; } .maps .map small { font-size: 11px; } }
+.maps.rides { grid-template-columns: repeat(2, 1fr); }
+.maps.rides:has(> :nth-child(3)) { grid-template-columns: repeat(3, 1fr); }   /* (B: five rides, the snow scooter, snowbike and sled added) */
+.maps.rides:has(> :nth-child(3)) .map { padding: 8px 8px 7px; } .maps.rides:has(> :nth-child(3)) .map b { font-size: 16px; } .maps.rides:has(> :nth-child(3)) .map small { font-size: 11px; }
+/* time, sky and snow (env.js fills #opt-scene) */
+#opt-scene input[type=range] { width: 100%; accent-color: var(--signal); margin: 4px 0 0; }
+#opt-scene .envtime { font-family: var(--mono, monospace); letter-spacing: 0; text-transform: none; color: var(--shade); }
+.envpre { display: flex; flex-wrap: wrap; gap: 4px; margin-top: -4px; }
+.envpre button { flex: 1 0 auto; background: #fff; color: var(--shade); border: 1px solid #c9d3dc; font-size: 13px; padding: 5px 6px; }
+.envpre button[aria-pressed="true"] { background: var(--shade); color: #fff; border-color: var(--shade); }
+
+/* ---- the locker (R, 2026-11-05): rows of the menu's own switches, then a grid of colour wells ---- */
+#locker { padding: 2px 0 12px; }
+.lk-row { display: flex; align-items: center; gap: 0; margin: 0 0 8px; }
+.lk-row .seglab { flex: 0 0 64px; margin: 0; }
+.lk-row select { flex: 1; }
+.lk-row .lk-seg { flex: 1; margin: 0; }
+.lk-row .lk-seg button { font-size: 14px; padding: 6px 2px; }
+.lk-wells { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 14px; margin: 10px 0 8px; }
+.lk-well { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--shade); cursor: pointer; }
+.lk-well input[type=color] { -webkit-appearance: none; appearance: none; width: 30px; height: 22px; padding: 0; border: 1px solid #b8c4cf; background: none; cursor: pointer; flex: 0 0 auto; }
+.lk-well input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+.lk-well input[type=color]::-webkit-color-swatch { border: 0; }
+.lk-well input[type=color]::-moz-color-swatch { border: 0; }
+.lk-acts { display: flex; gap: 8px; }
+.lk-acts button { flex: 1; background: #fff; color: var(--shade); border: 1px solid #c9d3dc; font-size: 15px; padding: 6px 4px; }
+.lk-acts button:hover { border-color: var(--shade); }
+@media (max-width: 420px) { .lk-row .seglab { flex-basis: 52px; } .lk-row .lk-seg button { font-size: 12px; } }

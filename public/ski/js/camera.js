@@ -1,7 +1,7 @@
 // Cameras: chase (behind the travel, held steady through spins), far chase, first person (a helmet camera at the
 // rider's eyes, turning with the head) and filmer (tripod spots beside the features, panning and zooming to follow).
 import * as THREE from 'three';
-import { height } from './terrain.js?v=15';
+import { height } from './terrain.js?v=16';
 
 const MODES = ['chase', 'far', 'pov', 'film'];
 export class Cams {
@@ -20,6 +20,9 @@ export class Cams {
     this.spots.sort((a, b) => a.z - b.z);
   }
   set(mode) { this.mode = mode; this.first = true; }
+  // looking round (on the chairlift: the turn keys swing the chase camera round the chair, -1 .. 1; let go, it comes back)
+  // (L: named lookRound, not look: this.look is the camera's look-at point, set in the constructor, and hid the method)
+  lookRound(u, dt) { this.orbitV = u || 0; this.orbit = (this.orbit || 0) + (u ? u * 1.6 * dt : -(this.orbit || 0) * Math.min(1, dt * 1.5)); this.orbit = Math.max(-2.6, Math.min(2.6, this.orbit)); }
   next() { this.set(MODES[(MODES.indexOf(this.mode) + 1) % MODES.length]); return this.mode; }
   update(dt, sk, rig) {
     if (this.mode === 'fixed') return;
@@ -27,7 +30,7 @@ export class Cams {
     this.cam.layers.enable(1);
     // the body's middle: in the air the centre of mass, on the snow the same height over the feet, so takeoffs and
     // landings do not jolt the camera (the crouch it follows is already eased)
-    const comH = 0.92 * (1 - (sk.crouch ?? 0.3) * 0.35);
+    const comH = sk.comH ? sk.comH() : 0.92 * (1 - (sk.crouch ?? 0.3) * 0.35);
     const body = sk.state === 'crash' || sk.state === 'air' ? sk.com.clone() : sk.p.clone().add(new THREE.Vector3(0, comH, 0));
     if (this.mode === 'pov' && rig.eye) {
       this.cam.layers.disable(1);
@@ -69,9 +72,14 @@ export class Cams {
       if (sk.state === 'ground' || sk.state === 'rail') {
         const v = sk.v.clone(); v.y = 0;
         if (v.lengthSq() > 0.5) this.dir.lerp(v.normalize(), this.first ? 1 : 1 - Math.exp(-dt * 3)).normalize();
+      } else if (sk.state === 'lift' && sk.q) {
+        // on the chairlift: behind the chair, the way it faces, swung round by lookRound()
+        const f = new THREE.Vector3(0, 0, 1).applyQuaternion(sk.q); f.y = 0;
+        if (f.lengthSq() > 1e-4) { f.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), this.orbit || 0); this.dir.lerp(f, this.first ? 1 : 1 - Math.exp(-dt * 4)).normalize(); }
       }
       const want = body.clone().addScaledVector(this.dir, -dist); want.y += hgt;
       if (sk.state === 'air') want.y += 0.9;
+      if (sk.state === 'lift') want.y += 1.2;
       const gy = height(want.x, want.z) + 0.7; if (want.y < gy) want.y = gy;
       this.pos.lerp(want, this.first ? 1 : 1 - Math.exp(-dt * (sk.state === 'air' ? 6 : 8)));
       const gy2 = height(this.pos.x, this.pos.z) + 0.5; if (this.pos.y < gy2) this.pos.y = gy2;

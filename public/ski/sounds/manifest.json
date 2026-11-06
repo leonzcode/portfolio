@@ -1,0 +1,146 @@
+{
+ "wind": {
+  "file": "wind.mp3",
+  "loop": true,
+  "loopStart": 0.12,
+  "loopEnd": 6.12,
+  "dur": 6.24,
+  "gain": 0.5,
+  "note": "High-wind recording, high-passed at 130 Hz to take out a low hum; mostly low rush, no whistles.",
+  "bytes": 36509
+ },
+ "carve": {
+  "file": "carve.mp3",
+  "loop": true,
+  "loopStart": 0.12,
+  "loopEnd": 3.12,
+  "dur": 3.24,
+  "gain": 0.6,
+  "note": "Steady snow hiss from a real recording of skiing down a groomed piste (wind and ski noise together).",
+  "bytes": 26475
+ },
+ "skid": {
+  "file": "skid.mp3",
+  "loop": true,
+  "loopStart": 0.12,
+  "loopEnd": 2.62,
+  "dur": 2.74,
+  "gain": 0.6,
+  "note": "Brighter, louder stretch of a real alpine ski POV recording, high-passed at 500 Hz; closest real match to a sideways scrape.",
+  "bytes": 29573
+ },
+ "powder": {
+  "file": "powder.mp3",
+  "loop": true,
+  "loopStart": 0.12,
+  "loopEnd": 3.12,
+  "dur": 3.24,
+  "gain": 0.6,
+  "note": "Soft, muffled stretch of the same real ski recording, low-passed at 2.5 kHz; no true deep-powder recording was found.",
+  "bytes": 22884
+ },
+ "pop": {
+  "file": "pop.mp3",
+  "loop": false,
+  "dur": 0.22,
+  "gain": 0.8,
+  "note": "Stand-in: a single crisp snow crunch from a snow footstep recording.",
+  "bytes": 3232
+ },
+ "land": {
+  "file": "land.mp3",
+  "loop": false,
+  "dur": 0.5,
+  "gain": 0.8,
+  "note": "Body falling onto hard snow (thump with crunch).",
+  "bytes": 4424
+ },
+ "land_soft": {
+  "file": "land_soft.mp3",
+  "loop": false,
+  "dur": 0.4,
+  "gain": 0.8,
+  "note": "A softer fall onto snow from the same recording.",
+  "bytes": 4139
+ },
+ "crash": {
+  "file": "crash.mp3",
+  "loop": false,
+  "dur": 1.4,
+  "gain": 0.8,
+  "note": "Snow collapse and fall: thumps and snow scattering.",
+  "bytes": 9078
+ },
+ "rail_hit": {
+  "file": "rail_hit.mp3",
+  "loop": false,
+  "dur": 0.5,
+  "gain": 0.8,
+  "note": "Single metal clang from a metal hit recording.",
+  "bytes": 4530
+ },
+ "rail_grind": {
+  "file": "rail_grind.mp3",
+  "loop": true,
+  "loopStart": 0.12,
+  "loopEnd": 1.62,
+  "dur": 1.74,
+  "gain": 0.5,
+  "note": "Real recording of a skateboard sliding on a metal rail (the closest found to skis on a rail).",
+  "bytes": 14676
+ },
+ "box_hit": {
+  "file": "box_hit.mp3",
+  "loop": false,
+  "dur": 0.3,
+  "gain": 0.8,
+  "note": "Plastic impact/drop from a plastic impact recording.",
+  "bytes": 4823
+ },
+ "box_slide": {
+  "file": "box_slide.mp3",
+  "loop": true,
+  "loopStart": 0.12,
+  "loopEnd": 1.62,
+  "dur": 1.74,
+  "gain": 0.5,
+  "note": "Real recording of sliding on bumpy plastic.",
+  "bytes": 15303
+ },
+ "schat": {
+  "file": "schat.mp3",
+  "loop": false,
+  "dur": 0.18,
+  "gain": 0.8,
+  "note": "Stand-in: a single snow crunch grain, high-passed at 2 kHz to make a short sharp flick.",
+  "bytes": 2920
+ },
+ "lift_hum": {
+  "file": "lift_hum.mp3",
+  "loop": true,
+  "loopStart": 0.12,
+  "loopEnd": 4.12,
+  "dur": 4.24,
+  "gain": 0.5,
+  "note": "Real recording of a ski lift motor (remontee mecanique).",
+  "bytes": 34747
+ },
+ "lift_clack": {
+  "file": "lift_clack.mp3",
+  "loop": false,
+  "dur": 1.2,
+  "gain": 0.8,
+  "note": "Sheave clacks of a chairlift passing a tower.",
+  "bytes": 11224
+ },
+ "ambience": {
+  "file": "ambience.mp3",
+  "loop": true,
+  "loopStart": 0.12,
+  "loopEnd": 10.12,
+  "dur": 10.24,
+  "gain": 0.3,
+  "note": "Distant wind in trees on a windy winter day; steady, no voices.",
+  "bytes": 70724
+ }
+}

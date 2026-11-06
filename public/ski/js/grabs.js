@@ -29,8 +29,12 @@ export const GRABS = {
   truck:     { name: 'Truck Driver', hand: 'B', kind: 'truck', hands: [['L', 'L', 0.35, 'out'], ['R', 'R', 0.35, 'out']], ski: { L: [-0.02, 0, 0.1, 0.04, -0.55, 0], R: [0.02, 0, 0.1, -0.04, -0.55, 0] }, tuck: 0.65, lean: 1.0, twist: 0, side: 0 },
   critical:  { name: 'Critical', hand: 'L', hands: [['L', 'R', 0.55, 'in']], arms: 'out', ski: { L: [-0.02, 0, 0.04, -0.06, 0.08, 0], R: [0.04, 0.06, 0.1, 0.12, -0.55, -0.05] }, tuck: 0.5, lean: 1.2, twist: -0.25, side: -0.22, hips: 0.4 },
   octo:      { name: 'Octograb', hand: 'B', hands: [['R', 'R', 0.85, 'end'], ['L', 'L', -0.82, 'out']], ski: { L: [-0.03, 0.02, -0.18, -0.06, 0.4, 0], R: [0.03, 0, 0.18, 0.06, -0.6, 0] }, tuck: 0.45, lean: 0.75, twist: 0.1, side: 0 },
-  // a blunt: the very end of the tail held, that ski steeply tail up beside the hip and crossed a little under the other
-  blunt:     { name: 'Right Blunt', hand: 'R', kind: 'tail', hands: [['R', 'R', -1, 'end']], arms: 'out', ski: { L: [0.01, 0.02, -0.06, -0.1, 0.5, 0], R: [-0.04, 0.1, -0.12, 0.22, 0.95, 0.1] }, tuck: 0.5, lean: 0.55, twist: -0.45, side: 0.42 },
+  // a blunt (2026-11-05, for "make it so that the f grab in shredsauce actually looks like blunt", from photos of real
+  // ones in ski5/R/ref): the very end of the tail held by the same hand up beside and behind the shoulder, so that ski
+  // stands nearly upright beside and behind the body, its tip pointing down past the other boot (yawed in, then pitched
+  // up: the long line runs from the shoulder down across behind the legs), the knee bent up; the chest turned to the
+  // grab and leaning towards it; the other ski level under the rider. Read from behind it is one long diagonal line.
+  blunt:     { name: 'Right Blunt', hand: 'R', kind: 'blunt', hands: [['R', 'R', -1, 'end']], arms: 'wide', ski: { L: [0.02, -0.08, 0.06, -0.06, 0.06, 0], R: [-0.06, 0.0, -0.08, 1.45, 1.15, 0.5] }, tuck: 0.45, lean: 0.3, twist: -0.75, side: 0.5, hips: 0.45 },
   // (the grabbed ski brought behind the other leg, which stays forward, so neither goes through the other)
   stalefish: { name: 'Stalefish', hand: 'R', hands: [['R', 'L', -0.6, 'out']], arms: 'out', ski: { L: [-0.03, 0.08, -0.2, -0.2, 0.45, 0], R: [-0.03, 0, 0.08, -0.04, 0.3, 0] }, tuck: 0.55, lean: 0.6, twist: -0.3, side: 0.35, hips: 0.4 },
   bowarrow:  { name: 'Bow and Arrow', hand: 'B', hands: [['R', 'R', 0.9, 'end'], ['L', 'L', 0.4, 'out']], ski: { L: [0.06, 0.12, 0.02, 0.08, -0.7, -0.1], R: [-0.02, -0.05, 0.26, -0.05, -0.65, 0] }, tuck: 0.45, lean: 0.9, twist: 0.1, side: 0.1 },
@@ -97,7 +101,7 @@ export function grabDef(id, mod = '') {
     else { d = tweaked(g); name = 'Tweaked ' + g.name; if (E && R) { d = tweaked(d); name = 'Double Tweaked ' + g.name; } }
   } else {
     const own = g.hand === 'L' ? E : R, other = g.hand === 'L' ? R : E;
-    if (g.kind === 'tail' && other && !own) { d = blunt(g); name = 'Uncrossed ' + d.name; }
+    if ((g.kind === 'tail' || g.kind === 'blunt') && other && !own) { d = blunt(g); name = 'Uncrossed ' + d.name; }
     else if (own && other) { d = poked(tweaked(g)); name = 'Tweaked ' + NAMES.poke.trim() + ' ' + g.name; }
     else if (own) { d = tweaked(g); name = NAMES.tweak + g.name; }
     else { d = poked(g); name = NAMES.poke + g.name; }

@@ -3,18 +3,34 @@
 // function the physics reads directly; kickers and the pipe also get meshes of their own, much finer at the lips,
 // knuckles and coping than the terrain's patches.
 import * as THREE from 'three';
-import { baseLine, pitchAt, ground } from './terrain.js?v=15';
-import { smoothstep, clamp, smax } from './noise.js?v=15';
+import { baseLine, pitchAt, ground } from './terrain.js?v=16';
+import { smoothstep, clamp, smax } from './noise.js?v=16';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const RAD = Math.PI / 180;
 
 // ---- kickers --------------------------------------------------------------------------------------------------------
 // The centre line in (z, y): a takeoff arc of radius R from the slope's pitch up to the lip angle, a steep back face
 // down to a level table, a rounded knuckle, a straight landing, and a blend back into the slope.
+/* Across it (2026-11-05, for riding over a kicker's sides and knuckle and landing on its sides): a flat core as wide as
+   the takeoff (the jump plus, on the Jump Line, the strip beside it that carries a rail or box), a rounded shoulder,
+   then sides of about 32 degrees (sideS) and a soft toe into the snow. The landing's sides are gentler (landS), so
+   with the landing's own 34 degrees no side is steeper than about 42; the old sides were 49 to 58 degrees with sharp
+   edges. The lip's back face is steep only across the core and eases to 30 degrees within 1.6 m past its edges. */
+// (a soft max(v, 0) over +-t; t shrinks with the centre line's own height, so where that is 0, at the takeoff's foot and
+// the landing's run-out, nothing is added and the kicker ends flush with the snow)
+const toe = (v, t) => t < 1e-4 ? Math.max(v, 0) : v >= t ? v : v <= -t ? 0 : (v + t) * (v + t) / (4 * t);
 class Kicker {
   constructor(o) {
-    Object.assign(this, { lip: 27, R: 10, drop: 0.5, table: 10, Rk: 3.5, land: 31, wT: 2.6, wD: 4.5, wL: 7.5, name: 'kicker' }, o);
+    Object.assign(this, { lip: 27, R: 10, drop: 0.5, table: 10, Rk: 3.5, land: 31, wT: 2.6, wD: 4.5, wL: 7.5, name: 'kicker',
+      side: 1, wF: 0, sideS: 0.62, landS: 0.5, shoulder: 0.8, toe: 0.35 }, o);
     this.ownMesh = true;
+    // the takeoff's core: the jump (x +- wT) and the feature strip of width wF on one side of it
+    this.cxT = this.x + this.side * this.wF / 2; this.hwT = this.wT + this.wF / 2;
+    this.splay = Math.max(0, (this.wD - this.wT) * 0.5);          // the table widens a little towards the knuckle
+    this.hwLand = Math.max(this.wL + this.wF / 2, this.hwT + this.splay + 0.5);
+    this.ents = [];                                               // snow ramps up to the features' starts (Jump Line)
     const p = pitchAt(this.z0), A = { z: this.z0, y: baseLine(this.z0) };
     const C = { z: A.z + this.R * Math.sin(p), y: A.y + this.R * Math.cos(p) };
     const lip = this.lip * RAD, land = this.land * RAD;
@@ -29,7 +45,6 @@ class Kicker {
     let z = this.Kend.z;
     while (z < this.Kend.z + 200 && this.Kend.y - (z - this.Kend.z) * this.tl > baseLine(z)) z += 0.25;
     this.zMeet = z; this.z1 = z + 14;
-    this.x0 = this.x - this.wL - 9; this.x1 = this.x + this.wL + 9;
     this.lipH = this.L.y - baseLine(this.L.z);
     /* the speed off the lip that lands about 45% of the way down the landing, with the air's drag the skier feels in flight
        (left out, the big jumps' riders landed on the knuckle: 2026-11-03) */
@@ -54,6 +69,10 @@ class Kicker {
     const rise = this.L.y - baseLine(this.z0);
     this.vDesign = Math.sqrt(this.vLip * this.vLip + 2 * 9.81 * rise * (1.12 + 0.02 * rise)) + 0.5;
     this.knuckleH = this.yT - baseLine(this.K.z);
+    // how far out the sides reach: the highest point over the slope down the gentler side slope, the shoulder and the toe
+    const hMax = Math.max(this.lipH, this.knuckleH) + 0.3;
+    const reach = Math.max(this.hwT + this.splay, this.hwLand) + hMax / Math.min(this.sideS, this.landS) + this.shoulder + this.toe + 0.5;
+    this.x0 = this.cxT - reach; this.x1 = this.cxT + reach;
   }
   // centre-line height of the takeoff (or -Inf) and of the deck (or -Inf)
   takeY(z) {
@@ -64,52 +83,105 @@ class Kicker {
   deckY(z) {
     if (z < this.L.z || z > this.z1) return -Infinity;
     if (z < this.zBack) return this.L.y - (z - this.L.z) * Math.tan(65 * RAD);
+    return this.tableY(z);
+  }
+  // the table, the knuckle and the landing (no back face)
+  tableY(z) {
     if (z < this.K.z) return this.yT;
     if (z < this.Kend.z) { const s = (z - this.K.z) / this.Rk; return this.yT - this.Rk * (1 - Math.sqrt(Math.max(0, 1 - s * s))); }
     const lineY = this.Kend.y - (z - this.Kend.z) * this.tl;
-    return smax(lineY, baseLine(z), 2.2);
+    return smax(lineY, baseLine(z), this.blend());
   }
-  deckHalf(z) { return this.wD + (this.wL - this.wD) * smoothstep(this.K.z, this.zMeet, z); }
+  /* how gently the landing rounds into the slope: 2.2 m, less on a landing so short that the rounding would have reached
+     back up to the knuckle's end and left a step there (the small lanes of jumps 5 to 7 threw riders off it at walking
+     pace, 2026-11-05) */
+  blend() { return this._bl ?? (this._bl = clamp((this.Kend.y - baseLine(this.Kend.z)) * 0.9, 0.3, 2.2)); }
+  // the core's half width along the kicker: the takeoff's, splaying a little along the table, then out to the landing's
+  hwAt(z) {
+    if (z <= this.L.z) return this.hwT;
+    if (z <= this.K.z) return this.hwT + this.splay * (z - this.L.z) / (this.K.z - this.L.z);
+    return this.hwT + this.splay + (this.hwLand - this.hwT - this.splay) * smoothstep(this.K.z, this.zMeet, z);
+  }
+  deckHalf(z) { return this.hwAt(z); }
+  // the side slope: sideS, easing to landS down the knuckle (the landing's own pitch adds to its sides')
+  sideAt(z) { return this.sideS + (this.landS - this.sideS) * smoothstep(this.K.z, this.Kend.z + 3, z); }
+  // the centre line's height over the run's base line, d metres outside the core (the lip's back face eases off there)
+  rel(z, d) {
+    if (z < this.z0 || z > this.z1) return -Infinity;
+    if (z <= this.L.z) return this.takeY(z) - baseLine(z);
+    const t = clamp(d / 1.6, 0, 1), k = t * t * (3 - 2 * t);
+    const back = this.drop / (Math.tan(65 * RAD) + (Math.tan(30 * RAD) - Math.tan(65 * RAD)) * k);
+    if (z < this.L.z + back) return this.L.y - (z - this.L.z) * (this.drop / back) - baseLine(z);
+    return this.tableY(z) - baseLine(z);
+  }
+  sideDrop(d, s) { const r = this.shoulder; return d <= 0 ? 0 : d < r ? s * d * d / (2 * r) : s * (d - r / 2); }
+  // height over the ground of the kicker's own snow (no entry ramps), or <= 0
+  bareRel(x, z) {
+    const d = Math.abs(x - this.cxT) - this.hwAt(z), c = this.rel(z, d);
+    if (c === -Infinity) return -Infinity;
+    this._c = c;
+    return c - this.sideDrop(d, this.sideAt(z));
+  }
+  toeOf() { return Math.min(this.toe, Math.max(0, this._c) * 0.5); }
+  /* the snow ramps up to features' starts: rising along z to h at z1, level with the ramp at both ends (so it lifts the
+     skis onto the feature's top instead of throwing them over it), a little under the start, then easing away */
+  entryRel(x, z) {
+    let best = 0;
+    for (const e of this.ents) {
+      if (z < e.z0 || z > e.z1 + 1.8) continue;
+      const ax = Math.abs(x - e.x), dx = ax - e.hw; if (dx > 1.6) continue;
+      // (behind the start it goes within 0.6 m under the feature, but its sides ease away over 1.6 m: steeper, they stood out
+      // past the feature as a steep face)
+      const back = 0.6 + smoothstep(e.hw - 0.35, e.hw + 0.25, ax);
+      let r = z <= e.z1 ? e.h * smoothstep(e.z0, e.z1, z) : z < e.z1 + 0.2 ? e.h : e.h * (1 - smoothstep(e.z1 + 0.2, e.z1 + 0.2 + back, z));
+      // (its flanks: a rounded edge, then 27 degrees, so a rider passing just beside it rolls over them; they were 44)
+      if (dx > 0) r -= dx < 0.5 ? 0.5 * dx * dx : 0.5 * (dx - 0.25);
+      if (r > best) best = r;
+    }
+    return best;
+  }
   height(x, z, g) {
     if (z < this.z0 - 0.5 || z > this.z1 || x < this.x0 || x > this.x1) return -Infinity;
-    const bz = baseLine(z), dx = Math.abs(x - this.x), lift = g - bz;
-    let best = -Infinity;
-    const ty = this.takeY(z);
-    if (ty > -Infinity) {
-      const rel = ty - bz - Math.max(0, dx - this.wT) * 1.6;
-      if (rel > 0) best = rel;
-    }
-    const dy = this.deckY(z);
-    if (dy > -Infinity) {
-      let rel = dy - bz - Math.max(0, dx - this.deckHalf(z)) * 1.15;
-      if (dx > this.wT) rel = Math.min(rel, (z - this.L.z) * 0.9 + 0.05);   // the table's front face beside the ramp
-      if (rel > best) best = rel;
-    }
-    return best > 0 ? bz + lift + best : -Infinity;
+    let rel = this.bareRel(x, z);
+    if (rel === -Infinity) return -Infinity;
+    const tt = this.toeOf();
+    if (this.ents.length && rel > 0) rel += this.entryRel(x, z);
+    rel = toe(rel, tt);
+    return rel > 0 ? g + rel : -Infinity;
   }
-  surface(x, z) { return z > this.z0 && z < this.zMeet && Math.abs(x - this.x) < this.wL; }
-  // the dye lines park crews spray: along the lip and across the knuckle
+  // the snow under a point of a feature on this kicker (no entry ramps)
+  snowY(x, z) { const g = ground(x, z), r = this.bareRel(x, z); return g + (r > -Infinity ? toe(r, this.toeOf()) : 0); }
+  surface(x, z) { return z > this.z0 && z < this.zMeet && Math.abs(x - this.cxT) < this.hwAt(z) + 1.5; }
+  // the dye lines park crews spray: along the jump's lip, down the jump's edges just below it, and across the knuckle
   dye(x, z) {
     const dx = Math.abs(x - this.x);
     if (Math.abs(z - this.L.z + 0.08) < 0.1 && dx < this.wT) return 1;
-    if (Math.abs(z - this.K.z - 0.4) < 0.12 && dx < this.wD) return 1;
+    if (this.wF > 0 && z > this.L.z - 1.4 && z < this.L.z && Math.abs(dx - this.wT) < 0.07) return 1;
+    if (Math.abs(z - this.K.z - 0.4) < 0.12 && Math.abs(x - this.cxT) < this.hwAt(this.K.z)) return 1;
     return 0;
   }
-  // rows in z: fine at the lip and the knuckle
+  // rows in z: fine at the lip, its back face and the knuckle, and over the entry ramps
   rows(fine) {
     const r = [], st = fine ? 0.6 : 1.0;
-    for (let z = this.z0 - 0.5; z < this.z1; z += st) r.push(z);
-    for (let z = this.L.z - 0.5; z < this.zBack + 0.25; z += fine ? 0.05 : 0.1) r.push(z);
+    for (let z = this.z0 - 0.5; z < this.L.z; z += st) r.push(z);
+    for (let z = this.L.z; z < this.K.z - 0.5; z += fine ? 1.2 : 2.0) r.push(z);
+    for (let z = this.Kend.z + 0.5; z < this.z1; z += fine ? 1.2 : 2.0) r.push(z);
+    for (let z = this.L.z - 0.5; z < this.L.z + this.drop * 1.75 + 0.3; z += fine ? 0.06 : 0.1) r.push(z);
     for (let z = this.K.z - 0.5; z < this.Kend.z + 0.5; z += fine ? 0.2 : 0.35) r.push(z);
-    for (const z of [this.L.z - 0.2, this.L.z - 0.17, this.L.z + 0.03, this.K.z + 0.26, this.K.z + 0.29, this.K.z + 0.51, this.K.z + 0.54]) r.push(z);
+    for (const z of [this.L.z - 0.2, this.L.z - 0.17, this.L.z + 0.03, this.K.z + 0.26, this.K.z + 0.29, this.K.z + 0.51, this.K.z + 0.54, this.L.z - 1.4]) r.push(z);
+    for (const e of this.ents) { for (let z = e.z0; z < e.z1 + 1.9; z += fine ? 0.25 : 0.4) r.push(z); r.push(e.z1, e.z1 + 0.2); }
     r.push(this.L.z, this.L.z - 0.005, this.zBack);
     return [...new Set(r.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
   }
+  // columns in x: fine over the shoulders and the dye lines, coarse over the flat core and the plain side slopes
   cols(fine) {
-    const c = [], st = fine ? 0.5 : 0.85;
+    const c = [], st = fine ? 0.9 : 1.4;
     for (let x = this.x0; x <= this.x1; x += st) c.push(x);
-    for (const s of [-1, 1]) for (const w of [this.wT, this.wD]) for (const e of [-0.12, 0, 0.12]) c.push(this.x + s * (w + e));
-    return [...new Set(c.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
+    for (const hw of [this.hwT, this.hwT + this.splay, (this.hwT + this.hwLand) / 2, this.hwLand]) for (const s of [-1, 1])
+      for (const e of fine ? [-0.25, 0, 0.2, 0.4, 0.6, 0.8, 1.1] : [-0.2, 0, 0.4, 0.8]) c.push(this.cxT + s * (hw + e));
+    for (const s of [-1, 1]) for (const e of [-0.12, -0.07, 0, 0.07, 0.12]) c.push(this.x + s * (this.wT + e));
+    for (const e of this.ents) for (let x = e.x - e.hw - 1.6; x <= e.x + e.hw + 1.61; x += fine ? 0.2 : 0.35) c.push(x);
+    return [...new Set(c.map(v => Math.round(v * 1000) / 1000))].filter(v => v >= this.x0 && v <= this.x1).sort((a, b) => a - b);
   }
 }
 
@@ -209,13 +281,22 @@ class Wedge {            // a short ramp up to a rail or box
 }
 
 // ---- rails and boxes ---------------------------------------------------------------------------------------------------
-// pts: [x, z, height of the top over the snow]; kind 'rail' (a round tube), 'tube' (a fat one, 0.22 m across) or
-// 'box' (a flat top 0.5 m wide)
+/* pts: [x, z, height of the top over the snow], or with abs: true [x, z, y of the top]. The top line is what the skis
+   ride. kind: 'rail' (round steel), 'tube' (a fat round plastic tube), 'box' (a flat top on coloured sides), 'bench' (a
+   wooden seat), 'rainbow' (an arc), 'dd' (a donkey dick: a short tube sticking out of a lip), 'kink' (up, level, then
+   down), 'down'. top: 'round' or 'flat'. w: the top's width (m), wider than before everywhere (2026-11-05, for "make all
+   rails wider in size"): steel rails 0.12 or more, tubes 0.34 to 0.5, boxes 0.6 to 0.8, benches 0.5 to 0.6. h: the top's
+   height over the snow under its start (hAt(s) anywhere along it); under(x, z): that snow. */
+const FLAT_KINDS = new Set(['box', 'bench', 'ledge', 'picnic']);
+const WIDTH = { rail: 0.12, tube: 0.4, box: 0.6, bench: 0.5, rainbow: 0.12, dd: 0.36, kink: 0.12, down: 0.12 };
+const _hv = new THREE.Vector3();
 export class Rail {
   constructor(o) {
     Object.assign(this, { kind: 'rail', name: 'rail' }, o);
-    this.w = this.kind === 'box' ? 0.5 : this.kind === 'tube' ? 0.22 : 0.07;
-    this.P = this.pts.map(([x, z, h]) => new THREE.Vector3(x, ground(x, z) + h, z));
+    if (!this.top) this.top = FLAT_KINDS.has(this.kind) ? 'flat' : 'round';
+    if (!this.w) this.w = WIDTH[this.kind] || 0.12;
+    if (!this.under) this.under = ground;
+    this.P = this.pts.map(([x, z, h]) => new THREE.Vector3(x, this.abs ? h : ground(x, z) + h, z));
     this.seg = []; let s = 0;
     for (let i = 0; i < this.P.length - 1; i++) {
       const a = this.P[i], b = this.P[i + 1], d = b.clone().sub(a), len = d.length();
@@ -223,7 +304,9 @@ export class Rail {
     }
     this.len = s;
     this.box = new THREE.Box3().setFromPoints(this.P).expandByScalar(1.5);
+    this.h = this.P[0].y - this.under(this.P[0].x, this.P[0].z);
   }
+  hAt(s) { const p = this.at(s, _hv); return p.y - this.under(p.x, p.z); }
   // the closest point on the top line to p: { s, point, dir, seg, dh (horizontal distance), dy (p above it) }
   closest(p, out = {}) {
     let best = Infinity;
@@ -299,22 +382,33 @@ function assemble({ kickers, pipe = null, qp = null, ground2 = [], rails = [], s
     }
   }
   const near = (x, z) => buckets.get(Math.floor(x / B) + ',' + Math.floor(z / B));
+  /* the highest feature's snow, rounded into the next one where their slopes meet in a crease (2026-11-05: where two
+     lanes' sides met there was a sharp V that took 1.5 to 1.9 m/s off a rider crossing it in one step). The rounding is
+     as wide as the slopes differ (up to 1.6 m), so two features lying in one plane (the lanes' shared landing) are not
+     raised where they overlap. g is the bare ground under x, z. */
+  const KX = 1.6, E = 0.05;
+  const topOf = (l, x, z, g, terrainOnly) => {
+    let a = -Infinity, b = -Infinity, fa = null, fb = null;
+    for (const f of l) {
+      if (terrainOnly && f.ownMesh) continue;
+      const y = f.height(x, z, g);
+      if (y > a) { b = a; fb = fa; a = y; fa = f; } else if (y > b) { b = y; fb = f; }
+    }
+    if (b === -Infinity || a - b >= KX) return a;
+    const ax = fa.height(x + E, z, g) - fa.height(x - E, z, g), az = fa.height(x, z + E, g) - fa.height(x, z - E, g);
+    const bx = fb.height(x + E, z, g) - fb.height(x - E, z, g), bz = fb.height(x, z + E, g) - fb.height(x, z - E, g);
+    if (!(Number.isFinite(ax) && Number.isFinite(az) && Number.isFinite(bx) && Number.isFinite(bz))) return a;
+    // (and no wider than the crease stands over the ground: two sides meeting at their feet are already rounded there by
+    // their toes, and rounding them again raised a ridge between them)
+    const k = Math.min(KX, Math.hypot(ax - bx, az - bz) / (2 * E) * 1.3, Math.max(0, b - g) * 2.5);
+    return a - b >= k ? a : smax(a, b, k);
+  };
   const park = {
     kickers, pipe, qp, rails, all, fences, banner,
     // where a rider can start: the top and the start of each part of the park
     starts,
-    height(x, z, g) {
-      const l = near(x, z); if (!l) return -Infinity;
-      let best = -Infinity;
-      for (const f of l) { const y = f.height(x, z, g); if (y > best) best = y; }
-      return best;
-    },
-    heightTerrainOnly(x, z, g) {
-      const l = near(x, z); if (!l) return -Infinity;
-      let best = -Infinity;
-      for (const f of l) { if (f.ownMesh) continue; const y = f.height(x, z, g); if (y > best) best = y; }
-      return best;
-    },
+    height(x, z, g) { const l = near(x, z); return l ? topOf(l, x, z, g, false) : -Infinity; },
+    heightTerrainOnly(x, z, g) { const l = near(x, z); return l ? topOf(l, x, z, g, true) : -Infinity; },
     // the ground under kickers and the pipe is lowered so it never shows through their meshes
     visualDip(x, z) {
       const l = near(x, z); if (!l) return 0;
@@ -334,13 +428,36 @@ function assemble({ kickers, pipe = null, qp = null, ground2 = [], rails = [], s
    landing: the Large lane's table and landing are built first, and each smaller lane is placed up the hill so that its
    own (lower) table meets that same landing plane, just further down it, with the table length asked for (found by
    bisection: further down the hill, the table comes out shorter). So you can choose a size at each jump and change
-   lanes between them. Beside every Large lane a fat tube runs up alongside the takeoff, along the table and out over
-   the knuckle, ending just over the landing so it sets you down in it. */
+   lanes between them.
+   Every takeoff is wider than its jump and carries a feature on the rider's left, on the same ramp (2026-11-05, from
+   Leon's picture: a fat tube running up the left part of a kicker's ramp to its lip, the jump on the right part), so
+   at each takeoff you pick the jump or the feature. The features change from jump to jump and lane to lane and are
+   sized to their jump: tubes, boxes, a bench, donkey dicks, rainbows off the lip and up-flat-down rails. The lanes sit
+   further apart than before so that the bigger lanes' sides (now about 32 degrees) clear the next lane's takeoff. */
 const LANES = {
-  L: { lip: 30, R: 15, drop: 0.8, table: 17, land: 34, wT: 3.2, wD: 5.6, wL: 9.5 },
-  M: { lip: 27, R: 11, drop: 0.6, table: 11, land: 34, wT: 2.8, wD: 4.8, wL: 8.5 },
-  S: { lip: 24, R: 7.5, drop: 0.4, table: 6, land: 34, wT: 2.4, wD: 4.2, wL: 7.5 },
+  L: { lip: 30, R: 15, drop: 0.8, table: 17, land: 34, wT: 3.2, wD: 5.6, wL: 9.5, Rk: 4.5 },
+  M: { lip: 27, R: 11, drop: 0.6, table: 11, land: 34, wT: 2.8, wD: 4.8, wL: 9, Rk: 4.5 },
+  S: { lip: 24, R: 7.5, drop: 0.4, table: 6, land: 34, wT: 2.4, wD: 4.2, wL: 8, Rk: 4.5 },
 };
+// the features' sizes by lane: widths of each kind's top (m), heights of their tops over the ramp, the strip they need,
+// and the rainbows' reach past the lip (arcR) and top over it (arcRise)
+const FEAT = {
+  L: { wF: 3.0, tube: 0.5, box: 0.8, boxH: 0.45, bench: 0.6, benchL: 4.2, rail: 0.14, railH: 0.55, dd: 0.42, ddIn: 2.4, ddOut: 2.2, arcR: 5.6, arcRise: 0.75 },
+  M: { wF: 2.7, tube: 0.42, box: 0.7, boxH: 0.4, bench: 0.55, benchL: 3.5, rail: 0.13, railH: 0.52, dd: 0.38, ddIn: 2.0, ddOut: 1.8, arcR: 4.4, arcRise: 0.6 },
+  S: { wF: 2.4, tube: 0.36, box: 0.6, boxH: 0.35, bench: 0.5, benchL: 2.8, rail: 0.12, railH: 0.48, dd: 0.34, ddIn: 1.6, ddOut: 1.4, arcR: 3.2, arcRise: 0.42 },
+};
+// what stands on each jump's takeoffs: [Large, Medium, Small] (three different kinds at every jump)
+const PLAN = [
+  ['tube', 'box', 'bench'],
+  ['kinkTube', 'dd', 'tube'],
+  ['rainbowBox', 'tube', 'box'],
+  ['box', 'bench', 'dd'],
+  ['dd', 'rainbow', 'tube'],
+  ['bench', 'kink', 'box'],
+  ['upRail', 'tube', 'rainbow'],
+];
+// box sides and donkey dicks: park colours
+const PAINT = [0xff6a13, 0x1f6fd1, 0x2fa84f, 0xd8312b, 0xf2c014, 0x8a3ffc];
 // a lane that lands on another kicker's landing line, with about the table length asked for
 function laneOn(big, o) {
   const tl = Math.tan(big.land * RAD), Rk = big.Rk;
@@ -354,28 +471,103 @@ function laneOn(big, o) {
   const k0 = new Kicker(Object.assign({}, o, { z0: (lo + hi) / 2, table: 5 }));
   return new Kicker(Object.assign({}, o, { z0: k0.z0, table: Math.max(2.5, tableFor(k0)), Rk }));
 }
+// points along the ramp at x from za to zb, the top T over the snow (abs y)
+function alongRamp(k, x, za, zb, T, step = 0.7) {
+  const n = Math.max(1, Math.ceil((zb - za) / step)), pts = [];
+  for (let i = 0; i <= n; i++) { const z = za + (zb - za) * i / n; pts.push([x, z, k.snowY(x, z) + T]); }
+  return pts;
+}
+// a snow ramp up to a feature's start, its top `gap` under the feature's
+function entry(k, x, z1, T, hw, gap = 0.03) { k.ents.push({ x, z0: z1 - clamp(T * 5.5, 1.5, 2.8), z1, h: Math.max(0.05, T - gap), hw }); }
+// the feature on one takeoff
+function takeoffFeature(k, kind, sz, j, lane) {
+  const F = FEAT[sz], x = k.x + k.side * (k.wT + k.wF / 2), ramp = k.L.z - k.z0, under = (px, pz) => k.snowY(px, pz);
+  const name = `Jump ${j + 1} ${{ L: 'Large', M: 'Medium', S: 'Small' }[sz]} `, colour = PAINT[(j * 3 + lane) % PAINT.length];
+  const R = o => new Rail(Object.assign({ abs: true, under, onKicker: k, colour, size: sz }, o));
+  const lipA = k.lip * RAD;
+  switch (kind) {
+    case 'tube': {        // Leon's picture: a fat tube lying on the ramp, from part way up to the lip
+      const w = F.tube, T = w * 0.95, za = k.z0 + 0.32 * ramp;
+      entry(k, x, za, T, w / 2 + 0.35);
+      return R({ name: name + 'tube', kind: 'tube', w, pts: alongRamp(k, x, za, k.L.z - 0.04, T), look: 'tube' });
+    }
+    case 'box': {         // a flat box up the ramp to the lip
+      const w = F.box, T = F.boxH, za = k.z0 + 0.38 * ramp;
+      entry(k, x, za, T, w / 2 + 0.3);
+      return R({ name: name + 'box', kind: 'box', w, pts: alongRamp(k, x, za, k.L.z - 0.03, T), look: 'box' });
+    }
+    case 'bench': {       // a wooden bench laid up the top of the ramp, its seat straight, ending at the lip
+      const w = F.bench, T = 0.48 - (sz === 'S' ? 0.04 : 0), zb = k.L.z - 0.08;
+      let za = zb - F.benchL * Math.cos(lipA * 0.85);
+      for (let it = 0; it < 6; it++) { const dy = k.snowY(x, zb) - k.snowY(x, za); za = zb - Math.sqrt(Math.max(1, F.benchL * F.benchL - dy * dy)); }
+      entry(k, x, za, T, w / 2 + 0.3);
+      return R({ name: name + 'bench', kind: 'bench', w, pts: [[x, za, k.snowY(x, za) + T], [x, zb, k.snowY(x, zb) + T]], look: 'bench' });
+    }
+    case 'dd': {          // a donkey dick: a short fat tube coming out of the ramp below the lip and sticking out past it
+      const w = F.dd, za = k.L.z - F.ddIn, a = lipA + 8 * RAD, ya = k.snowY(x, za) + 0.03;
+      // aimed so that it leaves the snow at the lip's angle plus 8 degrees and runs ddOut past the lip
+      const zb = k.L.z + F.ddOut * Math.cos(a), yb = ya + (zb - za) * Math.tan(a);
+      return R({ name: name + 'donkey dick', kind: 'dd', w, pts: [[x, za, ya], [x, zb, yb]], look: 'dd' });
+    }
+    case 'rainbow': case 'rainbowBox': {   // an arc out of the lip, over the table and down onto it
+      /* it starts 0.6 m down the ramp, flush with the snow and along it, so the skis meet its top as they ride up
+         (started past the lip, its end stood in the way of a rider still coming up to it); then two smooth curves, up
+         to a top over the table and down to end over it */
+      const box = kind === 'rainbowBox', w = box ? F.box * 0.9 : F.rail, pts = [];
+      const zS = k.L.z - 0.6, yS = k.snowY(x, zS) + 0.03, mS = Math.tan(Math.asin(clamp((zS - k.arc.C.z) / k.R, -1, 1)));
+      const zA = k.L.z + F.arcR * 0.38, yA = k.L.y + F.arcRise, zE = k.L.z + F.arcR, yE = k.yT + (box ? 0.42 : 0.45), mE = -Math.tan(28 * RAD);
+      const herm = (t, p0, m0, p1, m1, L) => { const t2 = t * t, t3 = t2 * t; return (2 * t3 - 3 * t2 + 1) * p0 + (t3 - 2 * t2 + t) * m0 * L + (-2 * t3 + 3 * t2) * p1 + (t3 - t2) * m1 * L; };
+      for (const [za, ya, ma, zb, yb, mb] of [[zS, yS, mS, zA, yA, 0], [zA, yA, 0, zE, yE, mE]]) {
+        const n = Math.max(3, Math.ceil((zb - za) / 0.3));
+        for (let i = pts.length ? 1 : 0; i <= n; i++) { const t = i / n; pts.push([x, za + (zb - za) * t, herm(t, ya, ma, yb, mb, zb - za)]); }
+      }
+      return R({ name: name + (box ? 'rainbow box' : 'rainbow rail'), kind: 'rainbow', top: box ? 'flat' : 'round', w, pts, look: box ? 'box' : 'steel', legs: true });
+    }
+    case 'kink': case 'kinkTube': case 'upRail': {   // up the ramp; then level over the table and down (kinks), or straight on off the lip
+      const tube = kind === 'kinkTube', w = tube ? F.tube : F.rail, T = tube ? w * 0.95 : F.railH, za = k.z0 + 0.4 * ramp;
+      entry(k, x, za, T, w / 2 + 0.35);
+      const pts = alongRamp(k, x, za, k.L.z - 0.02, T, 0.8), top = pts[pts.length - 1][2];
+      if (kind === 'upRail') {
+        const out = sz === 'L' ? 1.4 : 1.1;
+        pts.push([x, k.L.z + out * Math.cos(lipA), top + out * Math.sin(lipA)]);
+      } else {
+        // the bend over the lip rounded (a tube bends; a steel kink is sharper), level for part of the table, then down
+        const rb = tube ? 2.2 : 0.8, zl = k.L.z - 0.02, flat = k.table * (tube ? 0.55 : 0.45);
+        for (let i = 1; i <= 4; i++) { const a = lipA * (1 - i / 4); pts.push([x, zl + rb * (Math.sin(lipA) - Math.sin(a)), top + rb * (Math.cos(a) - Math.cos(lipA))]); }
+        const [, zf, yf] = pts[pts.length - 1], zd = zf + flat, dn = (tube ? 22 : 25) * RAD;
+        pts.push([x, zd, yf]);
+        const hEnd = tube ? 0.85 : 0.6;
+        let z = zd, y = yf;
+        for (let i = 0; i < 40 && y - k.snowY(x, z) > hEnd; i++) { z += 0.25 * Math.cos(dn); y -= 0.25 * Math.sin(dn); }
+        pts.push([x, z, y]);
+      }
+      return R({ name: name + (tube ? 'up-flat-down tube' : kind === 'upRail' ? 'up rail' : 'kinked rail'), kind: tube ? 'kink' : kind === 'upRail' ? 'rail' : 'kink', w, pts, look: tube ? 'tube' : 'steel', legs: true });
+    }
+  }
+  return null;
+}
 export function makeJumpLine() {
   const kickers = [], rails = [], starts = [{ name: 'Top of the Jump Line', x: 0, z: -30, v: 5 }];
-  const X = { L: -19, M: -6, S: 6 };
+  const X = { L: -20, M: 2, S: 18 };
   let z0 = 58;
   for (let j = 0; j < 7; j++) {
-    const big = new Kicker(Object.assign({ name: `Jump ${j + 1} Large`, x: X.L, z0 }, LANES.L));
-    const med = laneOn(big, Object.assign({ name: `Jump ${j + 1} Medium`, x: X.M }, LANES.M));
-    const sml = laneOn(big, Object.assign({ name: `Jump ${j + 1} Small`, x: X.S }, LANES.S));
+    const big = new Kicker(Object.assign({ name: `Jump ${j + 1} Large`, x: X.L, z0, side: 1, wF: FEAT.L.wF }, LANES.L));
+    const med = laneOn(big, Object.assign({ name: `Jump ${j + 1} Medium`, x: X.M, side: 1, wF: FEAT.M.wF }, LANES.M));
+    const sml = laneOn(big, Object.assign({ name: `Jump ${j + 1} Small`, x: X.S, side: 1, wF: FEAT.S.wF }, LANES.S));
     kickers.push(big, med, sml);
-    // the tube: from the foot of the Large takeoff up beside it, along the table half a metre over it, out over the
-    // knuckle, and down with the landing to stop 0.9 m over it (heights are over the bare ground, as rails take them)
-    const tx = X.L - big.wD - 1.6, gz = z => ground(tx, z);
-    const top = big.yT + 0.55, zA = big.z0 - 3, zB = big.L.z + 1.5, zK = big.Kend.z + 1.2, zE = zK + 4.5;
-    const landY = z => big.deckY(z);
-    rails.push(new Rail({ name: `Jump ${j + 1} tube`, kind: 'tube', ramp: 0.7, pts: [
-      [tx, zA, 0.7], [tx, zB, top - gz(zB)], [tx, zK, top - gz(zK)], [tx, zE, landY(zE) + 0.9 - gz(zE)]] }));
+    [big, med, sml].forEach((k, i) => { const r = takeoffFeature(k, PLAN[j][i], 'LMS'[i], j, i); if (r) rails.push(r); });
     starts.push({ name: `Jump ${j + 1} (in-run)`, x: X.M, z: big.z0 - 40, v: 10 });
     // the next jump: room after this landing to set up again
     z0 = big.zMeet + 34;
   }
   const zEnd = kickers[kickers.length - 3].zMeet + 10;
-  return assemble({ kickers, rails, starts, banner: 'JUMP  LINE', fences: [[X.L - LANES.L.wL - 3, 30, X.L - LANES.L.wL - 3, zEnd], [X.S + LANES.S.wL + 3, 30, X.S + LANES.S.wL + 3, zEnd]] });
+  // fences just outside where the outer lanes' sides meet the snow
+  let fl = Infinity, fr = -Infinity;
+  for (const k of kickers) for (let z = k.z0; z < k.zMeet; z += 2) {
+    for (let x = k.x0; x < k.cxT; x += 0.5) if (k.bareRel(x, z) > 0) { fl = Math.min(fl, x); break; }
+    for (let x = k.x1; x > k.cxT; x -= 0.5) if (k.bareRel(x, z) > 0) { fr = Math.max(fr, x); break; }
+  }
+  return assemble({ kickers, rails, starts, banner: 'JUMP  LINE', fences: [[fl - 2.5, 30, fl - 2.5, zEnd], [fr + 2.5, 30, fr + 2.5, zEnd]] });
 }
 
 // the backcountry map has no built features
@@ -409,65 +601,258 @@ export function featureMesh(f, heightFn, material, fine = true) {
     const hz = (pos[(ju * nx + i) * 3 + 1] - pos[(jd * nx + i) * 3 + 1]) / dz;
     n.set(-hx, 1, -hz).normalize(); nor[v * 3] = n.x; nor[v * 3 + 1] = n.y; nor[v * 3 + 2] = n.z;
   }
+  /* a kicker's grid reaches well past its sides: only the cells where it is the snow on top are kept (2026-11-05: the
+     wider Jump Line kickers overlap their neighbours, and most of each grid was bare slope the terrain draws anyway) */
+  let keep = null;
+  if (f instanceof Kicker) {
+    keep = new Uint8Array(nx * nz);
+    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+      const x = cols[i], z = rows[j], g = ground(x, z), y = f.height(x, z, g);
+      keep[j * nx + i] = y > g + 0.003 && y >= pos[(j * nx + i) * 3 + 1] - 0.45 ? 1 : 0;   // (0.45: the rounding between features lifts the snow by up to 0.4)
+    }
+  }
   const idx = new (nx * nz > 65535 ? Uint32Array : Uint16Array)((nx - 1) * (nz - 1) * 6);
   let k = 0;
   for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
     const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
+    if (keep && !(keep[a] | keep[b] | keep[c] | keep[d])) continue;
     idx[k++] = a; idx[k++] = c; idx[k++] = b; idx[k++] = b; idx[k++] = c; idx[k++] = d;
   }
+  // (the vertices no kept cell uses are dropped too)
+  let P = pos, N = nor, G = grm, D = dye, I = k < idx.length ? idx.slice(0, k) : idx;
+  if (keep) {
+    const map = new Int32Array(nx * nz).fill(-1); let n2 = 0;
+    for (let q = 0; q < k; q++) if (map[I[q]] < 0) map[I[q]] = n2++;
+    P = new Float32Array(n2 * 3); N = new Float32Array(n2 * 3); G = new Float32Array(n2); D = new Float32Array(n2);
+    for (let v = 0; v < nx * nz; v++) { const w = map[v]; if (w < 0) continue; P.set(pos.subarray(v * 3, v * 3 + 3), w * 3); N.set(nor.subarray(v * 3, v * 3 + 3), w * 3); G[w] = grm[v]; D[w] = dye[v]; }
+    const I2 = new (n2 > 65535 ? Uint32Array : Uint16Array)(k);
+    for (let q = 0; q < k; q++) I2[q] = map[I[q]];
+    I = I2;
+  }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-  g.setAttribute('aGroom', new THREE.BufferAttribute(grm, 1));
-  g.setAttribute('aDye', new THREE.BufferAttribute(dye, 1));
-  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+  g.setAttribute('aGroom', new THREE.BufferAttribute(G, 1));
+  g.setAttribute('aDye', new THREE.BufferAttribute(D, 1));
+  g.setIndex(new THREE.BufferAttribute(I, 1));
   g.computeBoundingSphere(); g.computeBoundingBox();
   const m = new THREE.Mesh(g, material);
   m.receiveShadow = true; m.castShadow = false; m.matrixAutoUpdate = false; m.name = f.name;
   return m;
 }
 
-// rails and boxes: steel tubes and plastic-topped boxes on legs, all in two instanced-free merged meshes
-export function railMeshes(rails, mats) {
-  const tubes = [], boxes = [], legs = [];
-  for (const r of rails) {
-    for (const g of r.seg) {
-      const mid = g.a.clone().lerp(g.b, 0.5), len = g.len;
-      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), g.d);
-      if (r.kind === 'rail' || r.kind === 'tube') {
-        const rr = r.w / 2, c = new THREE.CylinderGeometry(rr, rr, len + 0.02, r.kind === 'tube' ? 20 : 14, 1, false); c.rotateX(Math.PI / 2);
-        c.applyQuaternion(q); c.translate(mid.x, mid.y - rr, mid.z); tubes.push(c);
-      } else {
-        const b = new THREE.BoxGeometry(0.5, 0.06, len + 0.01); b.applyQuaternion(q); b.translate(mid.x, mid.y - 0.03, mid.z); boxes.push(b);
-        const s = new THREE.BoxGeometry(0.46, 0.28, len); s.applyQuaternion(q); s.translate(mid.x, mid.y - 0.06 - 0.14, mid.z); legs.push(s);
-      }
-    }
-    // legs every 2.5 m down into the snow
-    for (let s = 0.4; s < r.len; s += 2.5) {
-      const p = r.at(Math.min(s, r.len - 0.3)), gy = ground(p.x, p.z), h = p.y - gy;
-      if (h < 0.15) continue;
-      const w = r.kind === 'rail' ? 0.05 : r.kind === 'tube' ? 0.09 : 0.08;
-      const l = new THREE.BoxGeometry(w, h + 0.4, w); l.translate(p.x, gy + (h - 0.4) / 2 - 0.05, p.z); legs.push(l);
-      if (r.kind !== 'box') { const f = new THREE.BoxGeometry(r.kind === 'tube' ? 0.7 : 0.5, 0.05, 0.08); f.translate(p.x, gy + 0.02, p.z); legs.push(f); }
-    }
+/* rails, tubes, boxes and benches, all in three merged meshes: the steel, one painted mesh whose colours are in its
+   vertices (black plastic tubes, the boxes' slick tops and coloured sides, donkey dicks, posts), and the wooden
+   benches; so the whole park's features are three draw calls (2026-11-05). Round tops are swept along the top line (the skis ride the line, so the
+   tube's axis is its radius under the top, square to the line); boxes are a top plate on coloured sides down into the
+   snow; the bench is a downloaded model ("Low Poly Old Red Painted Wooden Bench" by Kuutti Siitonen, CC BY 4.0) cut at
+   its legs and stretched to each bench's length, its legs reaching down to the ramp. */
+class Geo {
+  constructor(colour) { this.p = []; this.n = []; this.c = colour ? [] : null; this.i = []; this.cur = null; }
+  // (with colours, a vertex given none takes this.cur)
+  v(x, y, z, nx, ny, nz, col) { this.p.push(x, y, z); this.n.push(nx, ny, nz); if (this.c) { const c = col || this.cur; this.c.push(c.r, c.g, c.b); } return this.p.length / 3 - 1; }
+  // a triangle facing the way of the normal given (wound to suit)
+  tri(a, b, c, nx, ny, nz) {
+    const P = this.p, ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2];
+    const ux = P[b * 3] - ax, uy = P[b * 3 + 1] - ay, uz = P[b * 3 + 2] - az, wx = P[c * 3] - ax, wy = P[c * 3 + 1] - ay, wz = P[c * 3 + 2] - az;
+    const d = (uy * wz - uz * wy) * nx + (uz * wx - ux * wz) * ny + (ux * wy - uy * wx) * nz;
+    if (d >= 0) this.i.push(a, b, c); else this.i.push(a, c, b);
   }
-  const merge = (list) => {
-    if (!list.length) return null;
-    let n = 0, ni = 0; for (const g of list) { n += g.attributes.position.count; ni += g.index.count; }
-    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), idx = new Uint32Array(ni);
-    let o = 0, oi = 0;
-    for (const g of list) {
-      pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3);
-      const ix = g.index.array; for (let i = 0; i < ix.length; i++) idx[oi + i] = ix[i] + o;
-      o += g.attributes.position.count; oi += ix.length; g.dispose();
+  quad(a, b, c, d, nx, ny, nz) { this.tri(a, b, c, nx, ny, nz); this.tri(a, c, d, nx, ny, nz); }
+  geometry() {
+    if (!this.i.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
+    if (this.c) g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    // texture coordinates for the scuffs and scratches: projected along the axis the face mostly looks down, 2 m a repeat
+    const n = this.p.length / 3, uv = new Float32Array(n * 2);
+    for (let i = 0; i < n; i++) {
+      const x = this.p[i * 3], y = this.p[i * 3 + 1], z = this.p[i * 3 + 2], ax = Math.abs(this.n[i * 3]), ay = Math.abs(this.n[i * 3 + 1]), az = Math.abs(this.n[i * 3 + 2]);
+      if (ay >= ax && ay >= az) { uv[i * 2] = x * 0.5; uv[i * 2 + 1] = z * 0.5; } else if (ax >= az) { uv[i * 2] = z * 0.5; uv[i * 2 + 1] = y * 0.5; } else { uv[i * 2] = x * 0.5; uv[i * 2 + 1] = y * 0.5; }
     }
-    const m = new THREE.BufferGeometry();
-    m.setAttribute('position', new THREE.BufferAttribute(pos, 3)); m.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-    m.setIndex(new THREE.BufferAttribute(idx, 1)); m.computeBoundingSphere();
-    return m;
-  };
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setIndex(this.p.length / 3 > 65535 ? new THREE.Uint32BufferAttribute(this.i, 1) : new THREE.Uint16BufferAttribute(this.i, 1));
+    g.computeBoundingSphere();
+    return g;
+  }
+}
+const UPV = new THREE.Vector3(0, 1, 0);
+// frames along a top line: the tangent (between its two segments at a joint), square-to-it up, and the side
+function frames(P) {
+  const F = [];
+  for (let i = 0; i < P.length; i++) {
+    const t = new THREE.Vector3();
+    if (i > 0) t.add(P[i].clone().sub(P[i - 1]).normalize());
+    if (i < P.length - 1) t.add(P[i + 1].clone().sub(P[i]).normalize());
+    t.normalize();
+    const u = UPV.clone().addScaledVector(t, -t.y).normalize(), s = new THREE.Vector3().crossVectors(t, u).normalize();
+    F.push({ t, u, s });
+  }
+  return F;
+}
+// a round tube whose top runs along P, radius r, n sides, flat ends
+function sweepTube(G, P, r, n, col) {
+  const F = frames(P), rings = [], c = new THREE.Vector3(), d = new THREE.Vector3();
+  for (let i = 0; i < P.length; i++) {
+    const { t, u, s } = F[i], ring = [];
+    c.copy(P[i]).addScaledVector(u, -r);
+    for (let k = 0; k <= n; k++) {
+      const a = k / n * Math.PI * 2; d.copy(u).multiplyScalar(Math.cos(a)).addScaledVector(s, Math.sin(a));
+      ring.push(G.v(c.x + d.x * r, c.y + d.y * r, c.z + d.z * r, d.x, d.y, d.z, col));
+    }
+    rings.push({ ring, c: c.clone(), t });
+  }
+  for (let i = 0; i < rings.length - 1; i++) for (let k = 0; k < n; k++) {
+    const a = rings[i].ring[k], b = rings[i].ring[k + 1], cc = rings[i + 1].ring[k + 1], dd = rings[i + 1].ring[k];
+    const nx = G.n[a * 3] + G.n[cc * 3], ny = G.n[a * 3 + 1] + G.n[cc * 3 + 1], nz = G.n[a * 3 + 2] + G.n[cc * 3 + 2];
+    G.quad(a, b, cc, dd, nx, ny, nz);
+  }
+  for (const [e, sg] of [[rings[0], -1], [rings[rings.length - 1], 1]]) {
+    const nx = e.t.x * sg, ny = e.t.y * sg, nz = e.t.z * sg, m = G.v(e.c.x, e.c.y, e.c.z, nx, ny, nz, col), cap = [];
+    for (let k = 0; k <= n; k++) { const q = e.ring[k]; cap.push(G.v(G.p[q * 3], G.p[q * 3 + 1], G.p[q * 3 + 2], nx, ny, nz, col)); }
+    for (let k = 0; k < n; k++) G.tri(m, cap[k], cap[k + 1], nx, ny, nz);
+  }
+}
+// a box: a top plate w wide along P (top: boxTop) on sides (paint) reaching down to under() - 0.15, or `skirt` deep
+function sweepBox(Gt, Gp, P, w, under, col, skirt) {
+  const F = frames(P), hw = w / 2, th = 0.05, L = [], hs = hw - 0.025;
+  for (let i = 0; i < P.length; i++) {
+    const { u, s } = F[i], p = P[i];
+    const tl = p.clone().addScaledVector(s, -hw), tr = p.clone().addScaledVector(s, hw);
+    const bl = tl.clone().addScaledVector(u, -th), br = tr.clone().addScaledVector(u, -th);
+    const sl = p.clone().addScaledVector(s, -hs).addScaledVector(u, -th), sr = p.clone().addScaledVector(s, hs).addScaledVector(u, -th);
+    const gl = skirt ? sl.y - skirt : under(sl.x, sl.z) - 0.15, gr = skirt ? sr.y - skirt : under(sr.x, sr.z) - 0.15;
+    L.push({
+      t: [Gt.v(tl.x, tl.y, tl.z, u.x, u.y, u.z), Gt.v(tr.x, tr.y, tr.z, u.x, u.y, u.z)],
+      e: [Gt.v(tl.x, tl.y, tl.z, -s.x, -s.y, -s.z), Gt.v(bl.x, bl.y, bl.z, -s.x, -s.y, -s.z), Gt.v(tr.x, tr.y, tr.z, s.x, s.y, s.z), Gt.v(br.x, br.y, br.z, s.x, s.y, s.z)],
+      k: [Gp.v(sl.x, sl.y, sl.z, -s.x, 0, -s.z, col), Gp.v(sl.x, gl, sl.z, -s.x, 0, -s.z, col), Gp.v(sr.x, sr.y, sr.z, s.x, 0, s.z, col), Gp.v(sr.x, gr, sr.z, s.x, 0, s.z, col)],
+      s, u, pts: [tl, tr, sl, sr, gl, gr],
+    });
+  }
+  for (let i = 0; i < L.length - 1; i++) {
+    const A = L[i], B = L[i + 1], u = A.u, s = A.s;
+    Gt.quad(A.t[0], A.t[1], B.t[1], B.t[0], u.x, u.y, u.z);
+    Gt.quad(A.e[0], A.e[1], B.e[1], B.e[0], -s.x, -s.y, -s.z);
+    Gt.quad(A.e[2], A.e[3], B.e[3], B.e[2], s.x, s.y, s.z);
+    Gp.quad(A.k[0], A.k[1], B.k[1], B.k[0], -s.x, 0, -s.z);
+    Gp.quad(A.k[2], A.k[3], B.k[3], B.k[2], s.x, 0, s.z);
+  }
+  // the two ends: the plate's edge and a painted panel under it
+  for (const [i, sg] of [[0, -1], [L.length - 1, 1]]) {
+    const t = F[i].t, [tl, tr, sl, sr, gl, gr] = L[i].pts, nx = t.x * sg, ny = 0, nz = t.z * sg;
+    const a = Gp.v(sl.x, sl.y, sl.z, nx, ny, nz, col), b = Gp.v(sr.x, sr.y, sr.z, nx, ny, nz, col), c = Gp.v(sr.x, gr, sr.z, nx, ny, nz, col), d = Gp.v(sl.x, gl, sl.z, nx, ny, nz, col);
+    Gp.quad(a, b, c, d, nx, ny, nz);
+    const bl = tl.clone().addScaledVector(F[i].u, -0.05), br = tr.clone().addScaledVector(F[i].u, -0.05);
+    const e0 = Gt.v(tl.x, tl.y, tl.z, t.x * sg, t.y * sg, t.z * sg), e1 = Gt.v(tr.x, tr.y, tr.z, t.x * sg, t.y * sg, t.z * sg), e2 = Gt.v(br.x, br.y, br.z, t.x * sg, t.y * sg, t.z * sg), e3 = Gt.v(bl.x, bl.y, bl.z, t.x * sg, t.y * sg, t.z * sg);
+    Gt.quad(e0, e1, e2, e3, t.x * sg, t.y * sg, t.z * sg);
+  }
+}
+// a square post from y0 down to y1 at x, z
+function post(G, x, z, y0, y1, w) {
+  const h = w / 2, c = [[-h, -h], [h, -h], [h, h], [-h, h]];
+  for (let k = 0; k < 4; k++) {
+    const [ax, az] = c[k], [bx, bz] = c[(k + 1) % 4], nx = (ax + bx), nz = (az + bz), l = Math.hypot(nx, nz);
+    const a = G.v(x + ax, y0, z + az, nx / l, 0, nz / l), b = G.v(x + bx, y0, z + bz, nx / l, 0, nz / l), cc = G.v(x + bx, y1, z + bz, nx / l, 0, nz / l), d = G.v(x + ax, y1, z + az, nx / l, 0, nz / l);
+    G.quad(a, b, cc, d, nx / l, 0, nz / l);
+  }
+}
+// posts every `every` metres where the rail stands clear of the snow
+function legsUnder(G, r, every, w, from) {
+  for (let s = 0.35; s < r.len - 0.2; s += every) {
+    const p = r.at(s), sy = r.under(p.x, p.z), y0 = p.y - from;
+    if (y0 - sy < 0.12) continue;
+    post(G, p.x, p.z, y0, sy - 0.25, w);
+  }
+}
+let benchSrc = null;
+function loadBench() {
+  if (!benchSrc) benchSrc = new GLTFLoader().loadAsync('models/park/bench.glb?v=16').then(g => { let m = null; g.scene.traverse(o => { if (o.isMesh && !m) m = o; }); return m; });
+  return benchSrc;
+}
+// the bench model stretched along a rail's two points: the ends (with their legs) kept, the seat between stretched, the
+// legs reaching down to the snow under each one
+function benchGeometry(src, r) {
+  const g = src.geometry, pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv;
+  g.computeBoundingBox();
+  const bb = g.boundingBox, half = (bb.max.x - bb.min.x) / 2, top = bb.max.y, seatBot = 0.39, end = 0.62;
+  const A = r.P[0], B = r.P[1], t = B.clone().sub(A), len = t.length(); t.divideScalar(len);
+  const s = new THREE.Vector3().crossVectors(t, UPV).normalize(), sw = r.w / (bb.max.z - bb.min.z);
+  const J = new THREE.Matrix3(), N = new THREE.Matrix3();
+  const P = new Float32Array(pos.count * 3), Nn = new Float32Array(pos.count * 3), U = new Float32Array(pos.count * 2);
+  const w = new THREE.Vector3(), n = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    // along the bench: the ends' parts keep their distance from the ends, the middle stretches
+    const ax = Math.abs(x), along = ax > half - end ? Math.sign(x) * (len / 2 - (half - ax)) : x * (len / 2 - end) / (half - end);
+    const k = ax > half - end ? 1 : (len / 2 - end) / (half - end);
+    w.copy(A).addScaledVector(t, len / 2 + along).addScaledVector(s, z * sw).addScaledVector(UPV, y - top);
+    if (y < seatBot) {                       // the legs: down to the snow under them
+      const lo = r.under(w.x, w.z) - 0.08, yb = w.y + (seatBot - y);
+      w.y = lo + (yb - lo) * (y / seatBot);
+    }
+    P[i * 3] = w.x; P[i * 3 + 1] = w.y; P[i * 3 + 2] = w.z;
+    // normals through the stretch and shear (the inverse transpose of how the model was laid on the line)
+    J.set(t.x * k, 0, s.x * sw, t.y * k, 1, s.y * sw, t.z * k, 0, s.z * sw);
+    N.copy(J).invert().transpose();
+    n.set(nor.getX(i), nor.getY(i), nor.getZ(i)).applyMatrix3(N).normalize();
+    Nn[i * 3] = n.x; Nn[i * 3 + 1] = n.y; Nn[i * 3 + 2] = n.z;
+    U[i * 2] = uv.getX(i); U[i * 2 + 1] = uv.getY(i);
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(P, 3)); out.setAttribute('normal', new THREE.BufferAttribute(Nn, 3)); out.setAttribute('uv', new THREE.BufferAttribute(U, 2));
+  out.setIndex(g.index.clone());
+  return out;
+}
+export function railMeshes(rails, mats) {
   const out = new THREE.Group(); out.name = 'rails';
-  const add = (g, mat) => { if (!g) return; const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false; out.add(m); };
-  add(merge(tubes), mats.steel); add(merge(boxes), mats.boxTop); add(merge(legs), mats.frame);
+  // (everything but the steel and the benches is one painted mesh, its colours in its vertices: black plastic tubes,
+  // the boxes' dark slick tops, their coloured sides, the donkey dicks, the dark posts)
+  const steel = new Geo(), paint = new Geo(true);
+  const col = new THREE.Color(), lin = h => new THREE.Color(h).convertSRGBToLinear();
+  const PLASTIC = lin(0x15171a), TOP = lin(0x1d2128), POST = lin(0x2c3036);
+  for (const r of rails) {
+    col.set(r.colour ?? 0xff6a13).convertSRGBToLinear();
+    const look = r.look || (r.top === 'flat' ? 'box' : r.kind === 'tube' ? 'tube' : 'steel');
+    if (look === 'bench') continue;
+    paint.cur = TOP;
+    if (look === 'box') sweepBox(paint, paint, r.P, r.w, r.under, col, r.legs ? 0.24 : 0);
+    else if (look === 'dd') sweepTube(paint, r.P, r.w / 2, 18, col);
+    else if (look === 'tube') sweepTube(paint, r.P, r.w / 2, 18, PLASTIC);
+    else sweepTube(steel, r.P, r.w / 2, 10, null);
+    // posts: steel rails always; tubes and boxes only where they stand off the snow (over a table, off a lip)
+    paint.cur = POST;
+    if (look === 'steel') legsUnder(paint, r, 1.6, Math.max(0.05, r.w * 0.45), r.w / 2);
+    else if (r.legs) legsUnder(paint, r, 1.8, 0.08, look === 'box' ? 0.28 : r.w / 2);
+  }
+  const add = (G, mat) => { const g = G.geometry(); if (!g) return; const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false; out.add(m); };
+  /* scuffed plastic and scratched steel: roughness maps from ambientCG's CC0 "Plastic 010" (its roughness) and "Scratches
+     005" (its scratches made into roughness), 512 px */
+  const tl = new THREE.TextureLoader(), rough = f => new Promise(res => tl.load('models/park/' + f + '?v=16', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
+  const plRough = rough('plastic_rough.webp'), stRough = rough('steel_rough.webp');
+  const paintM = mats.paint || (mats.paint = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.48, metalness: 0.05 }));
+  const steelM = mats.railSteel || (mats.railSteel = new THREE.MeshStandardMaterial({ color: 0xb8bdc2, metalness: 0.9, roughness: 0.32 }));
+  add(steel, steelM); add(paint, paintM);
+  // (the materials take their maps before the boot compiles them: the maps change the shader)
+  const maps = Promise.all([plRough, stRough]).then(([a, b]) => {
+    if (a) { paintM.roughnessMap = a; paintM.roughness = 1; paintM.needsUpdate = true; }
+    if (b) { steelM.roughnessMap = b; steelM.roughness = 1; steelM.needsUpdate = true; }
+  });
+  // the benches arrive with their model (ready resolves once they are in, so they can be compiled before the first frame)
+  const benches = rails.filter(r => r.look === 'bench');
+  const benchesIn = !benches.length ? Promise.resolve() : loadBench().then(src => {
+    if (!src) return;
+    const g = mergeGeometries(benches.map(r => benchGeometry(src, r)), false);
+    const m = new THREE.Mesh(g, src.material); m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false; m.name = 'benches';
+    out.add(m); out.updateMatrixWorld(true);
+  }).catch(e => {
+    // (the model could not be had: plain wooden-coloured boxes stand in, so a bench is never an invisible rail)
+    console.warn('bench', e);
+    const t2 = new Geo(), p2 = new Geo(true); col.set(0x8a4b32).convertSRGBToLinear();
+    for (const r of benches) sweepBox(t2, p2, r.P, r.w, r.under, col, 0);
+    const wood = new THREE.MeshStandardMaterial({ color: 0x8a4b32, roughness: 0.85 });
+    add(t2, wood); add(p2, paintM); out.updateMatrixWorld(true);
+  });
+  out.ready = Promise.all([benchesIn, maps]);
   return out;
 }

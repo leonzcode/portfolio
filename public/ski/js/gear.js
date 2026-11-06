@@ -3,6 +3,47 @@
 // own mirrored material. About 35 meshes a rider become about 19, in the colour pass and again in the shadow pass.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+/* Downloaded gear (2026-11-05, models/gear/, credits in CREDITS.md): goggles, a beanie, a bike lid, two skis and a pole,
+   loaded once each and shared by every rider (each rider gets its own copies of the materials, for its colours).
+   One Draco decoder and one loader for the whole page (the riders too). */
+let _loader = null;
+export function gltfLoader() {
+  if (_loader) return _loader;
+  const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/');
+  _loader = new GLTFLoader(); _loader.setDRACOLoader(draco);
+  return _loader;
+}
+/* what a rider looks like (the locker, locker.js; saved as ski_look, sent to the room as the rider's look). Body: one
+   of the five Rocketbox riders. head: 'lid' (the downloaded helmet), 'painted' (our own painted helmet) or 'beanie'.
+   fit: how baggy the clothes are. ski: 'park' (our own twin tip), 'twin' or 'pow' (downloaded). */
+export const LOOK = {
+  body: 'm_adult_10', head: 'lid', helmet: '#f2f2ef', lens: '#ff8a2a', frame: '#16181c', jacket: '#c8392b', pants: '#232b36', gloves: '#16181c',
+  fit: 'baggy', boots: '#e9eaec', ski: 'park', skiA: '#0d1b2a', skiB: '#ff6a13', poles: 'on', poleCol: '#c9ccd1',
+};
+export const FIT = { baggy: 1, regular: 0.7, slim: 0.45 };
+const _gear = new Map();
+export function gearModel(name) {
+  if (!_gear.has(name)) _gear.set(name, gltfLoader().loadAsync('./models/gear/' + name + '.glb?v=16').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));
+  return _gear.get(name);
+}
+// the model's meshes as plain meshes in the model's own frame (the node transforms baked into copies of their
+// geometry), each with its own copy of its material, keyed by the material's name
+export async function gearParts(name) {
+  const sc = await gearModel(name); if (!sc) return null;
+  const out = {};
+  sc.traverse(o => {
+    if (!o.isMesh) return;
+    const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld);
+    const m = o.material.clone(), k = m.name || 'part';
+    if (m.map) m.userData.sharedMaps = true;            // (the picture is the cached model's, shared by every rider)
+    const mesh = new THREE.Mesh(g, m); mesh.castShadow = true; mesh.name = k;
+    if (out[k]) { out[k].geometry = mergeGeometries([out[k].geometry.toNonIndexed(), g.toNonIndexed()], false) || out[k].geometry; } else out[k] = mesh;
+  });
+  return out;
+}
 
 const _m = new THREE.Matrix4(), _inv = new THREE.Matrix4();
 function mergeInto(group, keep = () => false) {
@@ -28,7 +69,8 @@ function mergeInto(group, keep = () => false) {
   if (parts.length < 2) return null;
   const geo = mergeGeometries(parts, false);
   if (!geo) return null;
-  for (const o of drop) o.parent.remove(o);
+  // (the pieces merged are freed: their copies are in the merged mesh)
+  for (const o of drop) { o.parent.remove(o); o.geometry.dispose(); }
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: rough / n, metalness: Math.min(0.5, metal / n), side }));
   mesh.castShadow = true; mesh.name = group.name + '-merged';
   if (layer !== null) mesh.layers.mask = layer;
@@ -39,6 +81,8 @@ function mergeInto(group, keep = () => false) {
 export function mergeGear(rig) {
   if (!rig || !rig.ready || rig._merged) return;
   rig._merged = true;
+  // (another ride, a snowboard..., has no skis, boots or poles of ours: only the helmet is merged here)
+  if (rig.skiL && rig.poleL) {
   // each ski: its binding pieces into one (the ski itself keeps its three surfaces)
   for (const ski of [rig.skiL, rig.skiR]) {
     const g = new THREE.Group(); g.name = 'binding';
@@ -47,6 +91,7 @@ export function mergeGear(rig) {
   }
   for (const b of [rig.bootL, rig.bootR]) { mergeInto(b.lower); mergeInto(b.cuff); }
   for (const p of [rig.poleL, rig.poleR]) mergeInto(p);
+  }
   // the helmet: everything but the mirrored lens
   const lens = [];
   rig.helmet.traverse(o => { if (o.isMesh && o.material && o.material.metalness >= 0.99) lens.push(o); });

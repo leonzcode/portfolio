@@ -1,5 +1,6 @@
-// The mountain: a groomed run going downhill along +z (x across, y up), deep snow and valley walls beside it,
-// and the park's features (park.js) on it. One height function serves the physics and the meshes:
+// The mountain: a groomed run going downhill along +z (x across, y up), deep snow beside it rising gently into a
+// wide open snowfield (no mountains round it: Leon, 2026-11-05, "just a blue sky for now"), and the park's features
+// (park.js) on it. One height function serves the physics and the meshes:
 //   height(x, z)       full surface (features included)
 //   normal(x, z, out)  its normal
 //   surface(x, z)      0 groomed, 1 deep snow, 2 park feature (packed)
@@ -7,12 +8,13 @@
 // frame, with skirts hiding the seams between sizes. Features with their own meshes (kickers, the pipe) are left out
 // of the patches (the ground under them is lowered a little) and drawn by park.js at finer spacing.
 import * as THREE from 'three';
-import { fbm, ridged, smoothstep, clamp } from './noise.js?v=15';
+import { fbm, ridged, smoothstep, clamp } from './noise.js?v=16';
 
 // ---- the run's long profile ----------------------------------------------------------------------------------------
-// [z where it starts, pitch in degrees]
+// [z where it starts, pitch in degrees] (above the start the slope behind is a gentle 12 degrees, not the old 26: with
+// the mountains gone it is open snow up to the sky)
 const SECTIONS = [
-  [-900, 26], [-150, 10], [-55, 10], [12, 19], [42, 14], [395, 11], [640, 15], [700, 17], [890, 13],
+  [-900, 12], [-150, 10], [-55, 10], [12, 19], [42, 14], [395, 11], [640, 15], [700, 17], [890, 13],
   [960, 15], [1060, 11], [1150, 9], [1300, 5], [1420, 2], [1560, 0.5]
 ];
 const Z0 = -900, Z1 = 2600, DZ = 0.5, NZ = Math.round((Z1 - Z0) / DZ) + 1;
@@ -57,20 +59,22 @@ export function ground(x, z) {
   if (mtn) return mtn.at(x, z) + 0.35 * fbm(x * 0.06, z * 0.06, 2) + 0.5 * Math.max(0, fbm(x * 0.11 + 4, z * 0.11, 2));
   const y0 = baseLine(z), W = runHalf(z), ax = Math.abs(x), d = ax - W;
   // gentle long undulations on the run, a slight crown, and the groomer's banks at its sides
-  let y = y0 + 0.22 * fbm(x * 0.018 + 11, z * 0.014, 2) - 0.00018 * x * x;
+  // (the crown stops a little past the run's sides: out in the open snowfield it would fall away for ever)
+  const xc = Math.min(ax, W + 30);
+  let y = y0 + 0.22 * fbm(x * 0.018 + 11, z * 0.014, 2) - 0.00018 * xc * xc;
   y += 0.38 * Math.exp(-(d - 0.6) * (d - 0.6) * 0.35);
   if (d > 0) {
     const s = smoothstep(0, 24, d);
     y += s * 1.6 * fbm(x * 0.03, z * 0.03, 3);           // drifts and pillows in the deep snow
-    y += 0.05 * d + 0.0011 * d * d;                     // the valley rising
-    y += smoothstep(80, 420, d) * 150 * ridged(x * 0.0032 + 3, z * 0.0032 - 7, 5);
+    // the snow rising a little from the run's sides, then a broad open snowfield (the ranges and valley walls are gone)
+    y += 0.05 * d - 0.03 * Math.max(0, d - 60) + 2.5 * smoothstep(40, 260, d) + 3 * fbm(x * 0.004 + 3, z * 0.004 - 7, 2) * smoothstep(60, 300, d);
   }
-  if (z < -150) y += smoothstep(-150, -600, z) * 90 * ridged(x * 0.004 - 2, z * 0.004, 4);
   return y;
 }
 
 let park = null;           // set by park.js: { height(x, z, g) -> y or -Infinity, visualDip(x, z) -> metres, surface(x, z) }
 export function setPark(p) { park = p; }
+export function getPark() { return park; }
 
 export function height(x, z) {
   const g = ground(x, z);
@@ -111,7 +115,10 @@ export function surface(x, z) {
 }
 
 // ---- patches --------------------------------------------------------------------------------------------------------
-const ROOT = { x0: -2048, z0: -1248, size: 4096 };
+// (big enough that there is snow at least 3.2 km out all round anywhere on the run: the snow material fades it into the
+// sky's horizon by then, so its edge never shows. The old 4096 m root is one of its quarters' quarters, so the patches
+// near the run are cut exactly as before)
+const ROOT = { x0: -6144, z0: -5344, size: 16384 };
 export class Terrain {
   constructor(scene, material, opts = {}) {
     this.scene = scene; this.mat = material;
@@ -123,6 +130,9 @@ export class Terrain {
     this.budget = opts.budget || 4;          // ms a frame for building
     this.index = this.makeIndex();
     this.root = opts.root || ROOT;
+    // patches wholly past this are not drawn: the snow material has faded the snow into the horizon's colour by then,
+    // and the sky dome shows that same colour below the horizon
+    this.cull = opts.root ? Infinity : opts.far || 3250;
     this.cam = new THREE.Vector3();
   }
   makeIndex() {
@@ -196,8 +206,11 @@ export class Terrain {
     this.cam.copy(cam);
     const want = [];
     const visit = (x0, z0, size, lvl) => {
+      if (lvl > 0 && this.dist(x0, z0, size) > this.cull) return;
       const key = lvl + ':' + x0 + ':' + z0;
-      const split = size > this.minLeaf && this.dist(x0, z0, size) < size * this.K;
+      // (the open snow well off the run and above the start is smooth: it is split at 0.6 of the distance)
+      const open = this.cull !== Infinity && (x0 > 120 || x0 + size < -120 || z0 + size < -250);
+      const split = size > this.minLeaf && this.dist(x0, z0, size) < size * this.K * (open ? 0.6 : 1);
       if (split) {
         const h = size / 2, kids = [[x0, z0], [x0 + h, z0], [x0, z0 + h], [x0 + h, z0 + h]];
         const ready = kids.every(([kx, kz]) => this.cache.has((lvl + 1) + ':' + kx + ':' + kz));

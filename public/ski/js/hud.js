@@ -1,6 +1,7 @@
 // The heads-up display: speed, score and the line's multiplier, trick names as they land, rail balance, a grab list.
-import { GRABS, guideOf } from './grabs.js?v=15';
-import { keyHelp } from './input.js?v=15';
+import { GRABS, guideOf } from './grabs.js?v=16';
+import { keyHelp } from './input.js?v=16';
+import { rideGrabDef, rideGuide } from './board.js?v=16';      // (B: a board's, scooter's... own grab names in the lists)
 
 const $ = id => document.getElementById(id);
 export class Hud {
@@ -13,13 +14,16 @@ export class Hud {
     setTimeout(() => this.hint.classList.add('hidden'), 25000);
   }
   show(on) { $('hud').classList.toggle('hidden', !on); }
+  // (B: what you ride, for the grab names in the lists)
+  setRide(kind) { this.kind = kind; if (this.scheme) this.setScheme(this.scheme); }
   setScheme(scheme) {
     this.scheme = scheme;
-    const h = keyHelp(scheme);
-    const gl = h.grabs.map(([k, id]) => `${k.padEnd(2)} ${GRABS[id].name}`).join('\n');
+    const h = keyHelp(scheme), other = this.kind && this.kind !== 'ski';
+    const nm = id => { const d = other && rideGrabDef(this.kind, id); return d ? d.name : GRABS[id].name; }, gd = id => other ? rideGuide(this.kind, id) : guideOf(id);
+    const gl = h.grabs.map(([k, id]) => `${k.padEnd(2)} ${nm(id)}`).join('\n');
     this.hint.textContent = gl + (scheme === 'shred' ? '\n+E / +R  tweak or vary it\n` hides this list' : '\nTab hides this list');
     const box = $('keys');
-    box.innerHTML = h.base.map(([k, d]) => `<div><kbd>${k}</kbd>${d}</div>`).join('') + '<div style="margin-top:6px"><b>Grabs and positions</b></div>' + h.grabs.map(([k, id]) => `<div><kbd>${k}</kbd>${GRABS[id].name}<span class="gg"> ${guideOf(id)}</span></div>`).join('');
+    box.innerHTML = h.base.map(([k, d]) => `<div><kbd>${k}</kbd>${d}</div>`).join('') + '<div style="margin-top:6px"><b>Grabs and positions</b></div>' + h.grabs.map(([k, id]) => `<div><kbd>${k}</kbd>${nm(id)}<span class="gg"> ${gd(id)}</span></div>`).join('');
   }
   trick(t) {
     if (t.banked) { this.score += t.points; this.pts.textContent = this.score.toLocaleString(); this.combo.textContent = ''; if (!t.name) return; }

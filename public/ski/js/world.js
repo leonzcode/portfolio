@@ -1,48 +1,19 @@
-// Sky, sun and the mountain around the park: a physical sky, the sun's light and shadow following the rider, a
-// reflection map from the sky, conifers (detailed near, flat cards far), the far ranges, a chairlift, park
-// fencing, flags and the start arch.
+// The world round the park: the sky (env.js), conifers (detailed near, flat cards far), a chairlift, park fencing,
+// flags and the start arch. (The far mountain ranges are gone: Leon, 2026-11-05, "remove the mountains in the
+// background and replace with just a blue sky for now".)
 import * as THREE from 'three';
-import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=15';
-import { fbm, ridged, rng, smoothstep } from './noise.js?v=15';
-import { snowUniforms } from './materials.js?v=15';
+import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=16';
+import { fbm, ridged, rng, smoothstep } from './noise.js?v=16';
+import { Env, buildPanel } from './env.js?v=16';
+import { snowUniforms } from './materials.js?v=16';
 
+// the sky, the sun and sky light, the fog and the reflections are env.js's (photographs of real skies, the time of
+// day and the weather chosen on the home screen); makeSky keeps its old shape for main.js: { sky, sun, hemi, sunDir, follow }
 export function makeSky(scene, renderer, q, wide) {
-  const sky = new Sky(); sky.scale.setScalar(45000); sky.name = 'sky';
-  const u = sky.material.uniforms;
-  u.turbidity.value = 3.2; u.rayleigh.value = 1.1; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.82;
-  const sunDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 30), THREE.MathUtils.degToRad(118));
-  u.sunPosition.value.copy(sunDir);
-  scene.add(sky);
-  snowUniforms.uSunDir.value.copy(sunDir);
-  // the sun: warm, with a shadow box that follows the rider
-  const sun = new THREE.DirectionalLight(0xfff1df, 3.1);
-  sun.position.copy(sunDir).multiplyScalar(120);
-  const shadowRes = q.tier === 'low' ? 1024 : 2048, box = q.tier === 'low' ? 26 : 34;
-  sun.castShadow = q.shadows;
-  sun.shadow.mapSize.set(shadowRes, shadowRes);
-  Object.assign(sun.shadow.camera, { left: -box, right: box, top: box, bottom: -box, near: 1, far: 300 });
-  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
-  scene.add(sun, sun.target);
-  // sky light: blue from above, bright bounce off the snow from below
-  const hemi = new THREE.HemisphereLight(0xa9c8ef, 0xf2f4f6, 1.05);
-  scene.add(hemi);
-  // reflections of the sky for helmets, goggles and rails
-  const pm = new THREE.PMREMGenerator(renderer);
-  const envScene = new THREE.Scene(); const sky2 = new Sky(); sky2.scale.setScalar(1000); sky2.material.uniforms.sunPosition.value.copy(sunDir);
-  for (const k of ['turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG']) sky2.material.uniforms[k].value = u[k].value;
-  envScene.add(sky2);
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(900, 24), new THREE.MeshBasicMaterial({ color: 0xdfe6ee })); floor.rotation.x = -Math.PI / 2; floor.position.y = -20; envScene.add(floor);
-  const env = pm.fromScene(envScene, 0.02, 1, 2000).texture;
-  scene.environment = env; scene.environmentIntensity = 0.55;
-  pm.dispose();
-  const fogCol = new THREE.Color(0xc6d7e8);
-  scene.fog = new THREE.FogExp2(fogCol, wide ? (q.tier === 'low' ? 0.00016 : 0.00011) : q.tier === 'low' ? 0.00042 : 0.00028);
-  return {
-    sky, sun, hemi, sunDir,
-    follow(p) { sun.position.copy(p).addScaledVector(sunDir, 120); sun.updateMatrixWorld(); sun.target.position.copy(p); sun.target.updateMatrixWorld(); sky.position.copy(p); sky.updateMatrixWorld(); },
-  };
+  const env = new Env(scene, renderer, q, wide);
+  buildPanel(env, document.getElementById('opt-scene'));
+  return { sky: env.dome, sun: env.sun, hemi: env.hemi, sunDir: env.sunDir, env, follow: p => env.follow(p) };
 }
 
 // ---- trees ----------------------------------------------------------------------------------------------------------
@@ -127,8 +98,11 @@ export class Forest {
     this.geo = coniferGeometry(r);
     const tm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
     // the undersides of the branches are in their own shade
-    tm.onBeforeCompile = s => { s.fragmentShader = s.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
- if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.045, 0.075, 0.055);`); };
+    // (by night the light that follows the rider is the park's floodlight: the trees keep only a little of it)
+    tm.onBeforeCompile = s => { s.uniforms.uNight = snowUniforms.uNight; s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+uniform float uNight;`).replace('#include <color_fragment>', `#include <color_fragment>
+ if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.045, 0.075, 0.055);`).replace('#include <opaque_fragment>', `outgoingLight -= (reflectedLight.directDiffuse + reflectedLight.directSpecular) * uNight * 0.7;
+#include <opaque_fragment>`); };
     tm.customProgramCacheKey = () => 'conifer';
     this.near = new THREE.InstancedMesh(this.geo, tm, near);
     this.near.castShadow = q.tier !== 'low'; this.near.receiveShadow = true; this.near.frustumCulled = false;
@@ -139,7 +113,12 @@ export class Forest {
     const cu = [...card.toNonIndexed().attributes.uv.array, ...card2.toNonIndexed().attributes.uv.array];
     cards.setAttribute('position', new THREE.Float32BufferAttribute(cp, 3)); cards.setAttribute('uv', new THREE.Float32BufferAttribute(cu, 2));
     cards.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(cp.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
-    this.far = new THREE.InstancedMesh(cards, new THREE.MeshLambertMaterial({ map: cardTexture(), alphaTest: 0.5, side: THREE.DoubleSide }), this.trees.length);
+    const cm = new THREE.MeshLambertMaterial({ map: cardTexture(), alphaTest: 0.5, side: THREE.DoubleSide });
+    cm.onBeforeCompile = s => { s.uniforms.uNight = snowUniforms.uNight; s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+uniform float uNight;`).replace('#include <opaque_fragment>', `outgoingLight -= reflectedLight.directDiffuse * uNight * 0.8;
+#include <opaque_fragment>`); };
+    cm.customProgramCacheKey = () => 'treecard';
+    this.far = new THREE.InstancedMesh(cards, cm, this.trees.length);
     this.far.frustumCulled = false;
     scene.add(this.near, this.far);
     this.at = new THREE.Vector3(1e9, 0, 0); this.nearR = q.tier === 'low' ? 70 : 110;
@@ -202,36 +181,8 @@ export function makeMountainRanges(scene, q, mtn) {
   return m;
 }
 
-export function makeRanges(scene, q, snowMat) {
-  const segA = q.tier === 'low' ? 160 : 280, segR = q.tier === 'low' ? 18 : 32;
-  const pos = [], col = [], idx = [];
-  const cx = 0, cz = 700, r0 = 2100, r1 = 11000;
-  for (let j = 0; j <= segR; j++) for (let i = 0; i <= segA; i++) {
-    const a = i / segA * Math.PI * 2, t = j / segR, r = r0 + (r1 - r0) * Math.pow(t, 1.7);
-    const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
-    // broad massifs with sharper summits: a smooth base and a ridged top
-    const base = 0.5 + 0.5 * fbm(x * 0.00018 + 9, z * 0.00018, 3);
-    const peak = Math.pow(ridged(x * 0.00036 + 5, z * 0.00036, 4), 1.6);
-    const h = baseLine(Math.max(-900, Math.min(2600, z))) * 0.3 + 150 + base * 700 + peak * (650 + 500 * smoothstep(0.05, 0.6, t)) - smoothstep(0.85, 1, t) * 600;
-    pos.push(x, h, z);
-  }
-  for (let j = 0; j < segR; j++) for (let i = 0; i < segA; i++) { const a = j * (segA + 1) + i, b = a + 1, c = a + segA + 1, d = c + 1; idx.push(a, c, b, b, c, d); }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-  const nn = g.attributes.normal;
-  const snow = new THREE.Color(0xf2f5f9), rockC = new THREE.Color(0x5b5d62), forestC = new THREE.Color(0x2a3d31);
-  for (let k = 0; k < nn.count; k++) {
-    const ny = nn.getY(k), y = pos[k * 3 + 1], x = pos[k * 3], z = pos[k * 3 + 2];
-    const n = fbm(x * 0.004, z * 0.004, 2);
-    const rock = smoothstep(0.66, 0.42, ny + n * 0.12);
-    const c = snow.clone().lerp(rockC, rock * 0.85);
-    if (y < 330) c.lerp(forestC, smoothstep(330, 160, y + n * 60) * 0.75);
-    col.push(c.r, c.g, c.b);
-  }
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true }));
-  m.name = 'ranges'; m.matrixAutoUpdate = false; scene.add(m);
-  return m;
-}
+// (no far ranges round the park for now: kept as a function so main.js's call stands)
+export function makeRanges() { return null; }
 
 // ---- lift, fences, flags, the start arch ----------------------------------------------------------------------------
 export function makeProps(scene, park, q) {
@@ -252,7 +203,7 @@ export function makeProps(scene, park, q) {
   };
   // chairlift up the right side of the run
   const lx = 64, towers = [];
-  for (let z = 1400; z >= -60; z -= 85) {
+  for (let z = 1400; z >= -60 && !park.hasLift; z -= 85) {   // (L: not where lift.js has built the real chairlift)
     const y = height(lx, z);
     add(new THREE.CylinderGeometry(0.35, 0.45, 12, 8), 'steel', lx, y + 6, z);
     add(new THREE.BoxGeometry(5.2, 0.4, 0.5), 'steel', lx, y + 12, z);
@@ -293,7 +244,8 @@ export function makeProps(scene, park, q) {
   // flags on the knuckles (not where a rail or tube runs past)
   const flagG = new THREE.PlaneGeometry(0.7, 0.45), poleG = new THREE.CylinderGeometry(0.025, 0.025, 2.2, 5), cl = {};
   for (const k of park.kickers) for (const s of [-1, 1]) {
-    const x = k.x + s * (k.wD + 1.2), z = k.K.z, y = height(x, z);
+    // (on the knuckle's shoulders, just outside its flat top: the Jump Line's takeoffs and tables are wider now, K)
+    const x = (k.cxT ?? k.x) + s * ((k.hwAt ? k.hwAt(k.K.z) : k.wD) + 1.2), z = k.K.z, y = height(x, z);
     if ((park.rails || []).some(r => { r.closest(new THREE.Vector3(x, y + 0.5, z), cl); return cl.dh < 1.8; })) continue;
     add(poleG, 'dark', x, y + 1.1, z); add(flagG, 'orange', x + 0.36, y + 1.95, z);
   }

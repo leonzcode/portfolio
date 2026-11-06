@@ -14,7 +14,7 @@
 // A press is only used within 0.3 s of being made, so an old one never fires later.
 // All: C changes the camera (Q in the shred scheme), Backspace goes back to the top, Esc pauses; R starts again a
 // little earlier (mouse and keys; in the shred scheme R is a tweak key and Enter does it).
-import { POSITIONS } from './grabs.js?v=15';
+import { POSITIONS } from './grabs.js?v=16';
 export { POSITIONS };
 
 const GRAB_KEYS = {
@@ -142,7 +142,8 @@ export class Input {
           I.steer = (R ? 1 : 0) - (L ? 1 : 0);
           I.mouse = this.stick;
           I.tuck = F && !I.butter; I.brake = this.rmb || (B && !I.butter);
-          if (onRail) I.steer = Math.max(-1, Math.min(1, I.steer + this.mdx * 0.05));
+          // (on a rail the mouse turns the skis freely; the keys turn them a quarter a press)
+          if (onRail && this.mdx) { I.steer = Math.max(-1, Math.min(1, I.steer + this.mdx * 0.05)); I.railFree = true; }
         } else {
           this.airDx += (this.mdx * 0.05 - this.airDx) * 0.5; this.airDy += (this.mdy * 0.05 - this.airDy) * 0.5;
           I.spin = Math.max(-1, Math.min(1, this.airDx + (I.shifty ? 0 : (R ? 1 : 0) - (L ? 1 : 0))));
