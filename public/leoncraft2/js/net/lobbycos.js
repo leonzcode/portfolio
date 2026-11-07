@@ -23,11 +23,11 @@
    Made by net/hub.js with its own pieces (makeLobbyCos(K)), as the Profile
    menus are, so this file imports nothing of hub.js.
 --------------------------------------------------------------------------- */
-import { COS, COSMETICS, HATS, AURAS, TRAILS, GADGETS, RARITY, CATS } from './cosdata.js?v=121';
-import { B, BLOCKS, SOLID } from '../blocks.js?v=121';
-import { Sound } from '../sound/sound.js?v=121';
-import { F } from './players.js?v=121';
-import { blockGeometry } from '../render/blockmesh.js?v=121';
+import { COS, COSMETICS, HATS, AURAS, TRAILS, GADGETS, RARITY, CATS } from './cosdata.js?v=122';
+import { B, BLOCKS, SOLID } from '../blocks.js?v=122';
+import { Sound } from '../sound/sound.js?v=122';
+import { F } from './players.js?v=122';
+import { blockGeometry } from '../render/blockmesh.js?v=122';
 
 const THREE = window.THREE;
 const FIXED = ['compass', 'temp', 'profile'];
@@ -595,10 +595,10 @@ export function makeLobbyCos(K) {
     /* The Grappling Hook, as Hypixel's: a right click casts the line (the game's own bobber, which the others see on the
        end of your rod), the next reels it in, and a hook that landed on a block flings you there in an arc, across
        towards it and always up, harder the further it is, worked out from the game's own drag and gravity so you come
-       down where the hook was. A hook still in the air, in water or on someone only comes back. Two seconds between
-       pulls. */
+       down where the hook was. A hook still in the air, in water or on someone only comes back. No wait between casts
+       or pulls (Leon, 2026-11-06: "remove all cooldowns from grappling hook"; it was two seconds after a pull). */
     grapple() {
-      const E = this.E, P = this.game.player, id = 'gad_grapple', t = this.t, b = E && E.bobber;
+      const E = this.E, P = this.game.player, id = 'gad_grapple', b = E && E.bobber;
       if (!E || !P) return;
       if (b && !b.removed) {
         const landed = b.stuckBlock && !b.hooked, bx = b.pos.x, by = b.pos.y, bz = b.pos.z;
@@ -615,13 +615,11 @@ export function makeLobbyCos(K) {
         P.vel.x = h > 1e-6 ? dx / h * Math.min(3.5, vh) : 0; P.vel.z = h > 1e-6 ? dz / h * Math.min(3.5, vh) : 0;
         P.vel.y = Math.max(0.1, Math.min(2.5, vy));
         P.onGround = false; P.fallDistance = 0;
-        this.cd[id] = t + 40;
         const to = [r3(bx), r3(by), r3(bz)];
         this.puff('poof', bx, by, bz, 6, 0.2);
         this.hub.send({ k: 'cosgad', id, to });
         return;
       }
-      if ((this.cd[id] || 0) > t) { const s = Math.ceil((this.cd[id] - t) / 20); this.say('§cYou can use this again in ' + s + ' second' + (s === 1 ? '' : 's')); return; }
       const eye = { x: P.pos.x, y: P.pos.y + 1.62, z: P.pos.z };
       const dx = -Math.sin(P.yaw) * Math.cos(P.pitch), dy = Math.sin(P.pitch), dz = -Math.cos(P.yaw) * Math.cos(P.pitch);
       const e = E.spawn('fishing_bobber', eye.x, eye.y - 0.1, eye.z, { natural: false });

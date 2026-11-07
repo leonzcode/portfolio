@@ -174,7 +174,7 @@ export const GADGETS = {
   gad_pig: { cd: 20, toggle: 'mount', mount: 'pig', h: 0.8, speed: 1.35 },
   gad_horse: { cd: 20, toggle: 'mount', mount: 'horse', h: 1.35, speed: 1.9 },
   gad_secret: { cd: 60, toggle: 'guards', time: 1200 },
-  gad_grapple: { cd: 40, how: 'Right Click to cast, again to pull' },
+  gad_grapple: { cd: 0, how: 'Right Click to cast, again to pull' },
   gad_boots: { cd: 10, toggle: 'boots' },
   gad_jetpack: { cd: 0, hold: true },
   gad_cannon: { cd: 60 },

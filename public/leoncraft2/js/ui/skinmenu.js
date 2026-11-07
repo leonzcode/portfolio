@@ -22,12 +22,12 @@
    so a file of your own carrying more than its pixels is drawn again
    (skinData).
 --------------------------------------------------------------------------- */
-import { Screen, Button, CycleButton, TextField, WHITE, GREY } from './gui.js?v=121';
-import { SkinGalleryScreen } from './skins.js?v=121';
-import { httpBase } from '../net/account.js?v=121';
-import { CAPES, capeDataUrl, paintCape } from '../capes.js?v=121';
+import { Screen, Button, CycleButton, TextField, WHITE, GREY } from './gui.js?v=122';
+import { SkinGalleryScreen } from './skins.js?v=122';
+import { httpBase } from '../net/account.js?v=122';
+import { CAPES, capeDataUrl, paintCape } from '../capes.js?v=122';
 
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=121', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=122', import.meta.url).href;
 const RED = 0xFF5555, GREEN = 0x55FF55;
 
 /* ------------------------------ pictures ------------------------------ */

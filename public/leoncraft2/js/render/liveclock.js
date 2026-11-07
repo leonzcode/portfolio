@@ -22,7 +22,7 @@
                        when the face changed, the array was replaced, or
                        every five seconds (a resource pack repaints items)
 --------------------------------------------------------------------------- */
-import { textureLayer, gpuLayer } from '../items.js?v=121';
+import { textureLayer, gpuLayer } from '../items.js?v=122';
 
 let R = null, ICONS = null, ALBEDO = null;
 let shown = null, shownOn = null, ticks = 0;
