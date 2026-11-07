@@ -26,7 +26,7 @@ export const LOOK = {
 export const FIT = { baggy: 1, regular: 0.7, slim: 0.45 };
 const _gear = new Map();
 export function gearModel(name) {
-  if (!_gear.has(name)) _gear.set(name, gltfLoader().loadAsync('./models/gear/' + name + '.glb?v=18').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));
+  if (!_gear.has(name)) _gear.set(name, gltfLoader().loadAsync('./models/gear/' + name + '.glb?v=19').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));
   return _gear.get(name);
 }
 // the model's meshes as plain meshes in the model's own frame (the node transforms baked into copies of their

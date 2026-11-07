@@ -12,8 +12,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { snowUniforms } from './materials.js?v=18';
-import { height, runHalf, getPark } from './terrain.js?v=18';
+import { snowUniforms } from './materials.js?v=19';
+import { height, runHalf, getPark } from './terrain.js?v=19';
 
 const KEY = 'ski_env';
 export const ENV = Object.assign({ time: 12.5, sky: 'clear', snow: 'groomed' },

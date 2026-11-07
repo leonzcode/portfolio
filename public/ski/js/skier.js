@@ -14,12 +14,13 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=18';
-import { clamp, smoothstep } from './noise.js?v=18';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=19';
+import { clamp, smoothstep } from './noise.js?v=19';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
 const COM = 0.92;            // feet to centre of mass, standing
+const CRASH_FALL = 9;        // in a crash on the snow, how hard the body topples onto it: x cos of its tilt off the snow (rad/s^2)
 // top rotation rates (rad/s) and how fast a held key builds them: a big jump's 1080 is about 1.1 turns a second
 // Spin and flip held together make a cork: the axis is set at the lip, tipped 55 degrees from the vertical towards the
 // flip (whatever the lean the kicker gave), so the rider goes head below feet once a turn, at about 1.15 turns a
@@ -137,10 +138,12 @@ export class Skier {
     this.railHitT = 9; this.railHit = ''; this.railHitDir = 0;
     // (X) the extra rides: a timed trick going round (RIDE_ACTS), and a sled's flat spin on the snow
     this.act = null; this.actT = 0; this.actDur = 1; this.actN = 0; this.actKey = null; this.actAt = 0; this.flatSpin = 0; this.flatSpinOn = false;
+    this.moved = 0;                           // how many times the skier was put somewhere new (spawn), for main.js
   }
   actStop() { this.act = null; this.actT = 0; this.actN = 0; this.actKey = null; this.actQ = false; this.actLet = false; this.actNext = false; }
   // put the skier at x, z facing down the fall line
   spawn(x, z, speed = 0, yaw = 0) {
+    this.moved = (this.moved || 0) + 1;       // (a jump to a new place: main.js never draws the rider between the two)
     this.p.set(x, height(x, z), z);
     normal(x, z, this.n);
     this.f.set(Math.sin(yaw), 0, Math.cos(yaw)); this.toTangent(this.f);
@@ -607,7 +610,19 @@ export class Skier {
       if (isWall(nn.y, surface(this.p.x, this.p.z), this.inPipe(this.p.x, this.p.z))) this.wallHit(h, nn);
       else this.land(h);
     }
+    else if (this.headDown()) this.crash('head');
     else if (this.tAir > 25) this.crash('lost');
+  }
+  /* (2026-11-07) upside down, the head (on a sled, the rider's back) meets the snow before the feet do: that is the
+     crash, then, and it slides from there. It used to fly on through the snow until the feet came down, the body drawn
+     in the snow up to the hips. Only with the head below the feet, where a landing would be a crash anyway. */
+  headDown() {
+    const up = _v.set(0, 1, 0).applyQuaternion(this.q);
+    if (up.y > -0.05) return false;
+    const d = (this.K || KIND.ski).com ? 0.12 : 0.75, hx = this.com.x + up.x * d, hz = this.com.z + up.z * d, gh = height(hx, hz);
+    if (this.com.y + up.y * d - 0.12 > gh) return false;
+    this.p.set(hx, gh, hz); this.moved++;    // (the crash slides from where the head met the snow; drawn from there, not between)
+    return true;
   }
   /* (X) the extra rides: a timed trick (RIDE_ACTS). A held key starts one; it goes round in actDur seconds, and round
      again if the same key is still held as a round ends (a double whip); a different trick's key held then starts that
@@ -995,10 +1010,21 @@ export class Skier {
 
   // ---- crashes ------------------------------------------------------------------------------------------------------
   crash(why) {
+    // (the body's middle as it goes down: the chase camera follows it through the crash; it was left wherever the last
+    // flight had put it, so after a crash on the snow the camera swung away towards an old jump)
+    const fromAir = this.state === 'air';
+    if (!fromAir) this.com.copy(this.p).addScaledVector(this.up, this.comH());
     this.state = 'crash'; this.tState = 0; this.grab = null; this.pose = null; this.rail = null; this.tweak = ''; this.actStop(); this.flatSpin = 0; this.flatSpinOn = false;
     this.crashSpin = new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 8);
+    // (out of the air the body goes on turning the way it was, a flip or a spin carried into the tumble, with a little of
+    // the random turn on it: a back flip that comes down on the head rolls on over onto the back)
+    if (fromAir && this.w.lengthSq() > 1) this.crashSpin.multiplyScalar(0.35).addScaledVector(this.w, 0.8);
     this.events.push({ type: 'crash', why, speed: this.v.length() });
   }
+  /* (p slides on the snow; q tumbles. The rig draws the body turning about its middle, its lowest part on the snow,
+     2026-11-07. On the snow the body also falls over until it lies along the snow, as a body does, on its back, front
+     or side: it used to settle at whatever turn the spin left it, often on its head or standing straight up, and drawn
+     on the snow that stood it on its head as it slid.) */
   stepCrash(dt) {
     const h = height(this.p.x, this.p.z);
     if (this.p.y > h + 0.05) { this.v.y -= G * dt; }
@@ -1009,11 +1035,23 @@ export class Skier {
       const a = new THREE.Vector3(0, -G, 0); a.addScaledVector(n, -a.dot(n));
       this.v.addScaledVector(a, dt * 0.6);
       this.v.multiplyScalar(Math.max(0, 1 - dt * 2.2));
-      this.crashSpin.multiplyScalar(Math.max(0, 1 - dt * 2.5));
+      // falling over: the body's long axis turned down onto the snow, about the snow's normal x the body's up, harder
+      // the nearer it stands on its feet or its head (none lying flat); stood straight up or down, it falls the way it
+      // slides; turning hard over the top already (a flip carried into the snow), on over the top rather than back.
+      // The tumble carries on until the body lies along the snow, and dies away there.
+      // (the body's long axis: its up, but on a sled, where the rider lies along it, its forward)
+      const up = _v.set(0, (this.K || KIND.ski).com ? 0 : 1, (this.K || KIND.ski).com ? 1 : 0).applyQuaternion(this.q), un = up.dot(n), ax = _w.crossVectors(n, up);
+      if (ax.lengthSq() < 4e-4) { ax.crossVectors(n, this.v); if (ax.lengthSq() < 1e-6) ax.set(1, 0, 0); }
+      ax.normalize().multiplyScalar(un * CRASH_FALL);
+      if (Math.abs(un) > 0.5 && ax.dot(this.crashSpin) < 0 && this.crashSpin.lengthSq() > 2.25) ax.negate();
+      this.crashSpin.multiplyScalar(Math.max(0, 1 - dt * (0.8 + 3.4 * (1 - Math.abs(un))))).addScaledVector(ax, dt);
     }
     this.p.addScaledVector(this.v, dt);
     const s = this.crashSpin.length();
     if (s > 1e-4) { _q.setFromAxisAngle(_w.copy(this.crashSpin).divideScalar(s), s * dt); this.q.premultiply(_q); }
+    // the middle (for the cameras): over the snow by about the body's half thickness lying down, more standing up
+    const sled = !!(this.K || KIND.ski).com, un = _v.set(0, sled ? 0 : 1, sled ? 1 : 0).applyQuaternion(this.q).dot(this.n);
+    this.com.copy(this.p).addScaledVector(this.n, 0.25 + (sled ? 0.3 : 0.6) * Math.abs(un));
     if (this.tState > 2.6) this.respawn();
   }
   respawn() {

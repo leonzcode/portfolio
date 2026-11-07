@@ -4,7 +4,7 @@
 // the room as the rider's look (net.js), and shown while the fold is open: the camera turns slowly round the rider
 // beside the menu (main.js calls preview()).
 import * as THREE from 'three';
-import { LOOK } from './gear.js?v=18';
+import { LOOK } from './gear.js?v=19';
 
 const KEY = 'ski_look';
 const BODIES = [['m_adult_10', 'Rider 1'], ['m_adult_18', 'Rider 2'], ['m_adult_17', 'Rider 3'], ['f_adult_13', 'Rider 4'], ['f_adult_14', 'Rider 5']];

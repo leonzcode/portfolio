@@ -4,7 +4,8 @@
 // (env.js: groomed, powder, packed, spring slush, ice), the floodlights' pools by night, and fog the colour of the sky's
 // own horizon in each direction.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=18';
+import { rng } from './noise.js?v=19';
+import { ground, onMountain } from './terrain.js?v=19';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
 function noiseTexture(size = 256, seed = 3) {
@@ -71,7 +72,91 @@ export const snowUniforms = {
   uTrackDepth: { value: 0.06 },     // metres of depth for a full groove in the track map (the snow kind's, env.js)
   uSnowLit: { value: new THREE.Vector3(0.95, 0.96, 0.98) },
   uFarFade: { value: new THREE.Vector2(2300, 3200) },     // the snow is all horizon colour by .y m (the terrain's last patches)   // how lit snow looks on the screen, for the unlit spray (env.js)
+  // the rock field (below): how steep the snow is, as a map over the world, a fine one round the map's middle and a coarse
+  // one round that; each window (x0, z0, 1 / size, 1 when it is ready)
+  uRockMap: { value: null },
+  uRockMap2: { value: null },
+  uRockWin: { value: new THREE.Vector4(0, 0, 1, 0) },
+  uRockWin2: { value: new THREE.Vector4(0, 0, 1, 0) },
 };
+
+/* ---- the rock field (2026-11-07, for "rock on steep snow blend naturally, with no patch-shaped edges"). Rock showed
+   through the snow where the terrain's own normals were steep, and those normals depend on the size of the patch they
+   are in (a coarse patch's are smoothed over its wider cells), so across a slope near the threshold whole patches came
+   out rocky or white beside each other, edges and all. The snow's steepness for the rock is now read from a map of the
+   world instead, worked out once from the height function itself at a fixed spacing: the same value at a place whatever
+   patch draws it. Two windows: 4 m a texel over 1.3 km round the map's middle, 32 m over 8 km round that (each slope over
+   two texels either way, so smooth at that scale; the rock's detail is the shader's own noise, as before). Baked a row
+   at a time in idle moments (4 ms at most a slice) from the first time the snow is compiled (the heights are all known
+   by then), or as soon as a map gives its own source, or in a module worker (Freeride: frfield.js, ready before a run
+   starts and never on the page's thread); until a window is ready the snow uses its normals as before. A
+   map's own source (freeride.js: its snow without its rock faces, which draw their own rock, so no grey halo round every
+   cliff) comes with its own middle and a say in how rocky each place is. Meshes with their own fine normals that are
+   not terrain patches (the kickers, vGroom 0.65) keep using those. */
+export const rockField = { height: null, center: null, adjust: null, state: 0 };
+// the two windows round a middle: texels a side, metres a texel, the corner
+const ROCK_LEVELS = [{ N: 320, r: 4 }, { N: 256, r: 32 }];
+export function rockLevels(c) { return ROCK_LEVELS.map(L => ({ N: L.N, r: L.r, x0: c[0] - L.N * L.r / 2, z0: c[1] - L.N * L.r / 2 })); }
+function setRockLevel(i, data, c) {
+  const L = rockLevels(c)[i], u = i ? snowUniforms.uRockWin2 : snowUniforms.uRockWin, m = i ? snowUniforms.uRockMap2 : snowUniforms.uRockMap;
+  m.value = rockTexture(data, L.N); u.value.set(L.x0, L.z0, 1 / (L.N * L.r), 1);
+}
+// (a map with its own source can start the bake at once: its heights do not wait for the rest of the world)
+export function setRockSource(height, center, adjust) { rockField.height = height; rockField.center = center; rockField.adjust = adjust || null; bakeRockField(); }
+/* (or have a module worker work it out, off the page's own thread: Freeride's land is plain JS a worker can load. The
+   worker is sent the windows and posts back each one's texels; if it cannot start, the page bakes it itself) */
+export function rockFieldWorker(url, center, fallback) {
+  let w = null;
+  try { w = new Worker(url, { type: 'module' }); } catch (e) { w = null; }
+  if (!w) { fallback(); return; }
+  rockField.state = 1; rockField.center = center;
+  w.onmessage = e => { setRockLevel(e.data.i, e.data.data, center); if (e.data.i === ROCK_LEVELS.length - 1) { rockField.state = 2; w.terminate(); } };
+  w.onerror = () => { w.terminate(); if (rockField.state < 2) { rockField.state = 0; fallback(); } };
+  w.postMessage({ levels: rockLevels(center) });
+}
+function rockTexture(data, N) {
+  const t = new THREE.DataTexture(data, N, N, THREE.RedFormat, THREE.UnsignedByteType);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true; t.colorSpace = THREE.NoColorSpace; t.needsUpdate = true;
+  return t;
+}
+function bakeRockField() {
+  if (rockField.state) return;
+  rockField.state = 1;
+  const H = rockField.height || ground;
+  const c = rockField.center || (onMountain() ? [0, 0] : [0, 620]);
+  const levels = rockLevels(c);
+  let li = 0, j = -1, hs = null, data = null;
+  const later = typeof requestIdleCallback === 'function' ? f => requestIdleCallback(f, { timeout: 120 }) : f => setTimeout(f, 0);
+  const slice = () => {
+    const t0 = performance.now(), A = rockField.adjust;
+    while (li < levels.length && performance.now() - t0 < 4) {
+      const L = levels[li], N = L.N, M = N + 2, x0 = L.x0, z0 = L.z0;
+      if (!hs) { hs = new Float32Array(M * M); data = new Uint8Array(N * N); j = 0; }
+      // the heights at the texels' middles and one ring round them, a row at a time
+      if (j < M) {
+        const z = z0 + (j - 0.5) * L.r;
+        for (let i = 0; i < M; i++) hs[j * M + i] = H(x0 + (i - 0.5) * L.r, z);
+        j++; continue;
+      }
+      // then the normal's y from the slope across two texels either way, a row at a time
+      if (j < M + N) {
+        const jj = j - M;
+        for (let i = 0; i < N; i++) {
+          const k = (jj + 1) * M + i + 1, gx = (hs[k + 1] - hs[k - 1]) / (2 * L.r), gz = (hs[k + M] - hs[k - M]) / (2 * L.r);
+          let ny = 1 / Math.sqrt(1 + gx * gx + gz * gz);
+          if (A) ny = A(x0 + (i + 0.5) * L.r, z0 + (jj + 0.5) * L.r, ny);      // (a map's own: more rock here, less there)
+          data[jj * N + i] = Math.round(255 * Math.max(0, Math.min(1, ny)));
+        }
+        j++; continue;
+      }
+      setRockLevel(li, data, c);
+      hs = null; li++;
+    }
+    if (li < levels.length) later(slice); else rockField.state = 2;
+  };
+  later(slice);
+}
 if (typeof window !== 'undefined') window.__snowU = snowUniforms;     // (a test handle)
 // the snow's grain and lumps: tangent-space normals in red and green, height in blue (512 px, tiling)
 function snowTexture(url, fallback) {
@@ -106,12 +191,14 @@ export function makeSnowMaterial(q) {
   snowUniforms.uNoise.value = snowUniforms.uNoise.value || noiseTexture(256, 3);
   snowUniforms.uGrain.value = snowUniforms.uGrain.value || snowTexture('./tex/snow_grain.jpg');
   snowUniforms.uLumps.value = snowUniforms.uLumps.value || snowTexture('./tex/snow_lumps.jpg');
+  if (!snowUniforms.uRockMap.value) { const one = rockTexture(new Uint8Array([255]), 1); one.generateMipmaps = false; one.minFilter = THREE.LinearFilter; snowUniforms.uRockMap.value = one; snowUniforms.uRockMap2.value = one; }
   if (!snowUniforms.uHorizon.value) { const h = new THREE.DataTexture(new Uint8Array([200, 215, 232, 255]), 1, 1); h.needsUpdate = true; snowUniforms.uHorizon.value = h; }
   const m = new THREE.MeshStandardMaterial({ color: 0xf3f6fa, roughness: 0.78, metalness: 0 });
   m.name = 'snow';
   const detail = q.tier !== 'low';
   if (!detail && LOW_SHADOW === undefined) LOW_SHADOW = lowShadowChunk();
   m.onBeforeCompile = (s) => {
+    bakeRockField();          // (the first compile: every height is known by now)
     Object.assign(s.uniforms, snowUniforms);
     if (!detail && LOW_SHADOW) s.fragmentShader = s.fragmentShader.replace('#include <shadowmap_pars_fragment>', LOW_SHADOW);
     const ibl = !detail && LOW_IBL(); if (ibl) s.fragmentShader = s.fragmentShader.replace('#include <lights_fragment_maps>', ibl);
@@ -172,19 +259,29 @@ uniform sampler2D uHorizon; uniform vec4 uSnowLook; uniform float uSnowRough; un
 uniform float uLamps; varying vec4 vLamp; uniform vec2 uFarFade; uniform sampler2D uGrain; uniform sampler2D uLumps; uniform float uTrackDepth;
 float hash13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
 vec3 hash33(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
-float gRock; float gTrackShadow; float gScrape; float gCover; float gTDep; float gBerm; vec2 gTN; vec4 gLump; vec3 gPN;`)
+float gRock; float gTrackShadow; float gScrape; float gCover; float gTDep; float gBerm; vec2 gTN; vec4 gLump; vec3 gPN;
+// the snow's steepness for the rock, from the rock field where it is ready (the same at a place whatever patch draws it)
+uniform sampler2D uRockMap; uniform sampler2D uRockMap2; uniform vec4 uRockWin; uniform vec4 uRockWin2;
+float rockNy(float ny) {
+  if (uRockWin2.w > 0.5) { vec2 u = (vWPos.xz - uRockWin2.xy) * uRockWin2.z; float e = min(min(u.x, 1.0 - u.x), min(u.y, 1.0 - u.y)); ny = mix(ny, texture2D(uRockMap2, u).r, smoothstep(0.0, 0.03, e)); }
+  if (uRockWin.w > 0.5) { vec2 u = (vWPos.xz - uRockWin.xy) * uRockWin.z; float e = min(min(u.x, 1.0 - u.x), min(u.y, 1.0 - u.y)); ny = mix(ny, texture2D(uRockMap, u).r, smoothstep(0.0, 0.06, e)); }
+  return ny;
+}`)
       // albedo: rock on steep faces, compacted grey-blue in tracks
       .replace('#include <color_fragment>', `#include <color_fragment>
 {
   vec3 wn = normalize(vWNor);
   float camD = length(vWPos - cameraPosition);
-  float steep = smoothstep(0.80, 0.62, wn.y);
+  // (2026-11-07: the terrain's steepness from the rock field, not its patch's normals: no patch-shaped edges. The
+  // kickers' own meshes (groomed 0.65) keep their normals)
+  float rny = vGroom < 0.5 ? rockNy(wn.y) : wn.y;
+  float steep = smoothstep(0.80, 0.62, rny);
   // (2026-11-06, the lag pass: rock only where the snow is steep enough for it, so most of the snow skips its three
   // lookups; the same picture)
   gRock = 0.0;
   if (steep > 0.0 && vGroom < 1.0) {
     float rn = texture2D(uNoise, vWPos.xz * 0.013).b + texture2D(uNoise, vWPos.xz * 0.05 + vWPos.y * 0.02).b * 0.5;
-    gRock = steep * smoothstep(0.45, 0.62, rn + (0.8 - wn.y) * 0.6) * (1.0 - vGroom);
+    gRock = steep * smoothstep(0.45, 0.62, rn + (0.8 - rny) * 0.6) * (1.0 - vGroom);
     if (gRock > 0.0) {
       vec3 rock = mix(vec3(0.20, 0.19, 0.18), vec3(0.34, 0.32, 0.30), texture2D(uNoise, vWPos.xz * 0.2).b);
       diffuseColor.rgb = mix(diffuseColor.rgb, rock, gRock);

@@ -22,7 +22,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { ground, height } from './terrain.js?v=18';
+import { ground, height } from './terrain.js?v=19';
 
 // ---- the model's numbers (metres, from models/lift/lift.glb) --------------------------------------------------------
 const HALF = 2.388;                  // half the gauge: each cable's distance from the line's middle (the chairs' grips)
@@ -237,7 +237,7 @@ export class Lift {
   async load() {
     const loader = new GLTFLoader();
     const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    const gltf = await loader.loadAsync('./models/lift/lift.glb?v=18');
+    const gltf = await loader.loadAsync('./models/lift/lift.glb?v=19');
     draco.dispose();
     const part = name => { let m = null; gltf.scene.traverse(o => { if (o.isMesh && o.name === name) m = o; }); if (!m) throw new Error('lift: no ' + name); return m; };
     const chair = part('chair'), chairLo = part('chair_lo'), tower = part('tower'), towerLo = part('tower_lo'), station = part('station'), bull = part('bull');

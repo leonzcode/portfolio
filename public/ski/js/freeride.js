@@ -2,14 +2,16 @@
    the game through the same hook a real mountain uses (terrain.js setMountain), with a park of its own: kickers built
    on the rock bands as Natural Selection's are (park.js Kickers on the land's own slope, their lips on the rock, the
    gap the rock band, the landing the steep apron under it), logs, a rock slab and stumps to slide (park.js Rails, drawn
-   here), the start pads on the summit ridge, the trees, and the chairlift's line from the bottom to the ridge
+   here), the starts at the summit's brink and down the face, the trees, the chairlift's line from the bottom to the ridge
    (lift.js planLift reads park.liftLine). The rock meshes are frrock.js's. */
-import { Land, LIFT_X } from './frland.js?v=18';
-import { Kicker, Rail, assemble } from './park.js?v=18';
-import { setMountain } from './terrain.js?v=18';
-import { simplex } from './noise.js?v=18';
+import { Land, LIFT_X, fallLines } from './frland.js?v=19';
+import { Kicker, Rail, assemble } from './park.js?v=19';
+import { setMountain } from './terrain.js?v=19';
+import { simplex, fbm, smoothstep } from './noise.js?v=19';
+import { setRockSource, rockFieldWorker } from './materials.js?v=19';
 
 const RAD = Math.PI / 180;
+export const FIELD_MID = [10, 380];     // (the rock field's middle: frfield.js is sent its windows round it)
 
 /* A kicker built on the rock (Natural Selection's way): a snow takeoff on the bench just above a rock band, its lip
    1.3 m short of the rock's edge; past the lip there is no table, the gap is the band's rock face, the landing the
@@ -78,7 +80,14 @@ export function makeFreeride(q) {
     // packed snow on the built features, deep snow everywhere else
     surface: (x, z) => park && park.surface(x, z) ? 2 : 1,
   };
+  /* (on the low tier the terrain's patches split a little later here: looking down a steep face fills the view with
+     near ground, about 56 patches from the summit against the Jump Line's 43, a draw call each) */
+  if (q && q.tier === 'low') mtn.lodK = 0.7;
   setMountain(mtn);
+  /* the snow shader's rock field: from the snow without the rock faces (they draw their own), the ribs' crests rocky.
+     Worked out in a worker (frfield.js), so it is ready before a run starts and never takes a frame's time: baked on
+     the page in idle moments it was still going ten seconds into a run on a slow machine */
+  rockFieldWorker(new URL('./frfield.js?v=19', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)));
 
   // ---- kickers on the rock: [band, x, lip deg, R, half width, gap m]
   const K = [];
@@ -121,22 +130,27 @@ export function makeFreeride(q) {
     rails.push(new Rail({ name: 'Rock slab', kind: 'ledge', top: 'flat', w: 1.5, abs: true, pts: [[x, za, ya], [x, zb, yb]], ownMesh: true, look: 'slab', ramp: 0.45 }));
   }
   // a pair of stumps to tap, side by side below the slab
-  for (const [x, z] of [[-109.5, 452], [-105, 453.5]]) {
-    const y = G(x, z) + 0.75;
+  // (each as tall as the snow 0.9 m above it stands over its foot, so a rider coming down the fall line slides onto it)
+  // (beside the Great Wall's lane A kicker's in-run, not in it)
+  for (const [x, z] of [[-118, 452], [-113.5, 453.5]]) {
+    const y = Math.max(G(x, z) + 0.45, G(x, z - 0.9) + 0.05);
     rails.push(new Rail({ name: 'Stump', kind: 'box', top: 'flat', w: 0.72, abs: true, pts: [[x, z - 0.36, y + 0.05], [x, z + 0.36, y - 0.05]], ownMesh: true, look: 'stump' }));
   }
 
-  // ---- the start pads on the summit ridge and the drop-ins further down (the pause menu's start points)
+  /* ---- the starts: on the summit ridge's brink, a few metres down the face, so the chase camera sits on the brink
+     and the face is in view below as a run starts (from the start pad behind it, a camera 4 m back and 2.5 m up only
+     sees the far valley over the brink: the face's 32 degrees overall are steeper than its line of sight), and the
+     drop-ins further down (the pause menu's start points) */
   const starts = [
-    { name: 'Summit: the centre line', x: 0, z: -30, v: 3 },
-    { name: 'Summit: the Couloirs', x: 100, z: -24, v: 3 },
+    { name: 'Summit: the centre line', x: 0, z: -7, v: 2.5 },
+    { name: 'Summit: the Couloirs (the dog-leg)', x: 90, z: 3, v: 2.5 },
     { name: 'Summit: the narrow chute (mandatory air)', x: 63.8, z: 4, v: 2 },
-    { name: 'Summit: the Spines', x: -96, z: -24, v: 3 },
-    { name: 'The Ledge: above the cliff bands', x: 8, z: 176, v: 6 },
-    { name: 'The Ledge: the Big Ones', x: 30, z: 240, v: 6 },
-    { name: 'The Ledge: Selection kickers', x: -102, z: 190, v: 6 },
-    { name: 'Lower bench: the pillow field', x: 6, z: 352, v: 6 },
-    { name: 'Lower bench: Selection kickers', x: -107, z: 352, v: 6 },
+    { name: 'Summit: the Spines', x: -96, z: 5, v: 2.5 },
+    { name: 'Mid-face: above Tier A', x: 8, z: 176, v: 6 },
+    { name: 'Mid-face: the Big Ones', x: 30, z: 240, v: 6 },
+    { name: 'Selection: the rock kickers', x: -102, z: 190, v: 6 },
+    { name: 'Lower face: the pillows', x: -26, z: 350, v: 6 },
+    { name: 'Lower face: Selection kickers', x: -107, z: 352, v: 6 },
     { name: 'Above the Great Wall', x: -30, z: 440, v: 7 },
     { name: 'Finish apron', x: 0, z: 600, v: 6 },
   ];
@@ -155,29 +169,47 @@ export function makeFreeride(q) {
     return Math.max(a, land.at(x, z) - t);
   };
 
-  // ---- trees: the lower face's sides, round the finish and down the valley; never on the lines, the features or rock
-  const keepOut = [];
-  for (const f of land.features) if (f.rock || f.kind === 'pillows' || f.kind === 'spines') keepOut.push([f.x0 - 5, f.x1 + 5, f.z0 - 4, f.z1 + 4]);
-  for (const k of K) keepOut.push([k.cxT - k.hwT - 7, k.cxT + k.hwT + 7, k.z0 - 50, k.zMeet + 6]);
-  for (const r of rails) { const xs = r.pts.map(p => p[0]), zs = r.pts.map(p => p[1]); keepOut.push([Math.min(...xs) - 6, Math.max(...xs) + 6, Math.min(...zs) - 14, Math.max(...zs) + 14]); }
-  // (the lift line, the finish corral, the runout over to the lift's bottom station, the summit ridge)
-  keepOut.push([LIFT_X - 14, LIFT_X + 14, -80, 1000], [-50, 50, 680, 990], [-70, 205, 730, 1010], [-160, 230, -90, 10]);
+  /* ---- trees (2026-11-07: in clumps and glades as a real treeline grows, not in blocks): none above a treeline that
+     wanders and is lower in the middle of the face than on the arms' lower slopes, thinning as it nears it (the top
+     ones smaller); more on the ribs, few in the gullies (avalanche paths, the couloirs' fan above all); in clumps with
+     glades between; never on a rock face, a feature or its bench and apron, a kicker's lane, a rail, the lift's line, the
+     finish corral or the runout's floor, and none on anything steeper than about 40 degrees */
+  const lanes = [];
+  for (const k of K) lanes.push([k.cxT ?? k.x, k.hwT + 6, k.z0 - 50, k.zMeet + 8]);
+  for (const r of rails) { const xs = r.pts.map(p => p[0]), zs = r.pts.map(p => p[1]); lanes.push([(Math.min(...xs) + Math.max(...xs)) / 2, (Math.max(...xs) - Math.min(...xs)) / 2 + 5, Math.min(...zs) - 14, Math.max(...zs) + 12]); }
   const trees = (max, r) => {
     const out = [];
-    for (let tries = 0; out.length < max && tries < max * 14; tries++) {
-      const x = -360 + r() * 760, z = 330 + r() * 1100;
-      // denser down the valley and off the sides, scattered in the middle of the lower face
-      const side = Math.abs(x) > 60 ? 1 : 0.18, low = z > 560 ? 1 : 0.6;
-      if (r() > side * low) continue;
-      if (simplex(x * 0.012, z * 0.012) < -0.25 + (Math.abs(x) < 60 ? 0.3 : 0)) continue;   // clumps and glades
-      if (keepOut.some(b => x > b[0] && x < b[1] && z > b[2] && z < b[3])) continue;
+    for (let tries = 0; out.length < max && tries < max * 16; tries++) {
+      const x = -400 + r() * 820, z = 200 + r() * 1250;
+      const ax = Math.abs(x), line = 360 + 45 * fbm(x * 0.007 + 2, 0.5, 2) - 120 * smoothstep(120, 190, ax) + 40 * smoothstep(-40, 40, -x) * smoothstep(60, 140, ax);
+      const up = smoothstep(line, line + 70, z);
+      if (up <= 0) continue;
+      // (the gullies' avalanche paths and the couloirs' fan stay open; the ribs carry the trees)
+      const fl = fallLines(x, z), path = x > 66 && x < 128 && z < 640 ? 0.12 : 1;
+      let d = up * path * (fl < 0 ? Math.max(0.1, 1 + fl * 0.22) : 1 + fl * 0.06);
+      d *= smoothstep(-0.18, 0.28, fbm(x * 0.021, z * 0.021, 3));               // clumps
+      d *= smoothstep(-0.3, 0.12, fbm(x * 0.0065 + 5, z * 0.0065 - 3, 2));     // glades
+      if (ax < 34 && z < 640) d *= z < 440 ? 0.15 : 0.45;                      // (the centre line stays open, but for a glade low down)
+      d *= 0.7;
+      // (the valley's floor below the face is an open meadow, a clump and a single tree here and there, the woods
+      // thick only up its sides; the finish corral stands in the open, not in a cut through trees)
+      if (z > 600) d *= 0.08 + 0.92 * smoothstep(90, 190, Math.abs(x - 50 * smoothstep(620, 940, z)));
+      if (r() > d) continue;
+      // (not in the finish corral, whose edge wanders a little, nor under the lift)
+      const jit = 4 * simplex(x * 0.08, z * 0.08);
+      if (Math.abs(x) < 80 + jit * 3 && z > 670 + jit && z < 950) continue;
+      if (Math.abs(x - LIFT_X) < 13 || (x > LIFT_X - 30 && z > 880)) continue;
+      if (lanes.some(([lx, hw, z0, z1]) => Math.abs(x - lx) < hw + jit && z > z0 && z < z1)) continue;
+      // (on a feature, its bench or its apron: the land there is not the bare slope)
+      if (Math.abs(land.at(x, z) - land.base(x, z)) > 0.25 || Math.abs(land.at(x + 2.5, z) - land.base(x + 2.5, z)) > 0.4 || Math.abs(land.at(x - 2.5, z) - land.base(x - 2.5, z)) > 0.4) continue;
       const e = 0.6, y = G(x, z), gx = (G(x + e, z) - G(x - e, z)) / (2 * e), gz = (G(x, z + e) - G(x, z - e)) / (2 * e);
-      if (Math.hypot(gx, gz) > 1.0) continue;                 // not on anything steeper than 45 degrees
-      out.push({ x, y: y - 0.3, z, s: 6 + r() * 11, rot: r() * 6.28 });
+      if (Math.hypot(gx, gz) > 0.84) continue;                 // not on anything steeper than about 40 degrees
+      out.push({ x, y: y - 0.3, z, s: (6 + r() * 11) * (0.55 + 0.45 * up), rot: r() * 6.28 });
     }
     return out;
   };
   mtn.trees = trees;
   mtn.spot = { treeline: -330 };
+  land.jibs = rails;     // (frrock.js draws the rock slab with the rock faces)
   return { mtn, park, land, kickers: K, rails };
 }

@@ -4,16 +4,16 @@
    height from 4 m behind the lip down the face to 2 m out on the snow below, a point every 0.45 m of the face's height
    (0.7 on the low tier) and few on the snow either side, the same number in every row of an element so rows always
    join. On the face the points are pushed out by broad bulges, rock noise and strata (each layer of rock jutting out a
-   little over the one below's top), which leaves small ledges where the rock material lays snow. The terrain's own fine patches are held down under them
+   little over the one below's top), which leaves small ledges where the rock material lays snow. A band's rows run at
+   right angles to its lip, a row every dr of its length. The terrain's own fine patches are held down under them
    (freeride.js visualDip), so the curtains draw the real surface there and nothing coarse stands in front of a face.
    Each quad goes to the rock mesh (steeper than about 53 degrees) or to a snow mesh drawn with the terrain's own snow
    material, lifted a few centimetres (and a little more for each element, so two curtains meeting at a corner never
-   fight over the same snow). All of it is in four zones (the Couloirs, the upper, middle and lower face), two meshes
-   each, so out of view is out of the draw. */
+   fight over the same snow). All of it is one rock mesh and one snow mesh, two draw calls (the rock slab of the jibs
+   goes in the rock mesh too). */
 import * as THREE from 'three';
-import { snowUniforms } from './materials.js?v=18';
-import { faceW } from './frland.js?v=18';
-import { simplex, clamp, smoothstep, rng } from './noise.js?v=18';
+import { snowUniforms } from './materials.js?v=19';
+import { simplex, clamp, smoothstep, rng } from './noise.js?v=19';
 
 // ---- the rock material: grey stone with strata, cracks and streaks, snow where it faces up -----------------------------
 let ROCK = null;
@@ -72,8 +72,11 @@ roughnessFactor = mix(0.93, 0.8, gSnowR);`)
 }
 
 // ---- curtains ------------------------------------------------------------------------------------------------------------
-const ZONES = ['couloirs', 'upper', 'middle', 'lower'];
-const zoneOf = (x, z) => x > 42 && z < 140 ? 0 : z < 168 ? 1 : z < 345 ? 2 : 3;
+/* (2026-11-07: one zone, two draw calls, the rock and its snow, for the whole mountain: it was four zones of two, eight
+   draw calls whenever the face was in view, which from the summit and most of the way down it always is; on a slow
+   machine a draw call costs more than drawing the triangles out of view) */
+const ZONES = ['face'];
+const zoneOf = () => 0;
 class Geo {
   constructor(snow) { this.p = []; this.n = []; this.i = []; this.snow = snow; this.c = snow ? null : []; }
   v(x, y, z, nx, ny, nz, c) { this.p.push(x, y, z); this.n.push(nx, ny, nz); if (this.c) this.c.push(c ? c[0] : 1, c ? c[1] : 1, c ? c[2] : 1); return this.p.length / 3 - 1; }
@@ -97,9 +100,13 @@ function stripsOf(f, dr) {
   let cur = null;
   const push = row => { if (!row) { if (cur && cur.length > 1) S.push(cur); cur = null; return; } (cur || (cur = [])).push(row); };
   if (f.kind === 'band') {
-    for (let x = f.xa + 0.3; x <= f.xb - 0.3; x += dr) {
-      const H = f.H(x);
-      push(H < 0.4 ? null : { ox: x, oz: f.zL(x), ux: 0, uz: 1, s0: -4, fw: faceW(H), s1: faceW(H) + 2.2, t: x });
+    // (along the lip by its own length, each row at right angles to it: a band slanting across the face or bending
+    // round a buttress keeps its rows dr apart and its face's points where the face is)
+    let t = 0;
+    for (let x = f.xa + 0.3; x <= f.xb - 0.3;) {
+      const H = f.H(x), [ux, uz] = f.out(x), fw = f.fwOf(H);
+      push(H < 0.4 ? null : { ox: x, oz: f.zL(x), ux, uz, s0: -4, fw, s1: fw + 2.2, t });
+      const step = dr * f.cs(x); x += step; t += dr;
     }
     push(null);
   } else if (f.kind === 'rib') {
@@ -109,14 +116,15 @@ function stripsOf(f, dr) {
       for (let z = zs; ; z += dr) {
         const l = f.L(z), r = f.R(z), ex = side < 0 ? l : r, ze = f.zE(ex);
         if (z > ze + 0.2) break;
-        const back = Math.min(4, (r - l) / 2 - 0.1);
-        push(f.Dz(z) < 0.5 ? null : { ox: ex, oz: z, ux: side, uz: 0, s0: -back, fw: f.ww, s1: f.ww + 1.8, t: z });
+        const back = Math.min(4, (r - l) / 2 - 0.1), fw = side < 0 ? f.wwL : f.wwR;
+        // (a side as gentle as an outer slope is the terrain's own: its rock is the snow shader's)
+        push(f.Dz(z) < 0.5 || fw > 4 ? null : { ox: ex, oz: z, ux: side, uz: 0, s0: -back, fw, s1: fw + 1.8, t: z });
       }
       push(null);
     }
     // the end cliff
     const zE = f.zEnd, l = f.L(zE), r = f.R(zE);
-    for (let x = l - f.ww * 0.6; x <= r + f.ww * 0.6; x += dr) push({ ox: x, oz: f.zE(x), ux: 0, uz: 1, s0: -4, fw: f.wEnd, s1: f.wEnd + 2.2, t: x });
+    for (let x = l - Math.min(f.wwL, 2) * 0.6; x <= r + Math.min(f.wwR, 2) * 0.6; x += dr) push({ ox: x, oz: f.zE(x), ux: 0, uz: 1, s0: -4, fw: f.wEnd, s1: f.wEnd + 2.2, t: x });
     push(null);
   } else if (f.kind === 'out') {
     // round the footprint, the way out straight from its middle
@@ -167,6 +175,7 @@ export function buildRock(scene, land, mats, q) {
     if (!strips.length) continue;
     nEl++;
     const lift = 0.04 + (nEl % 7) * 0.006;      // (the snow parts: a few cm up, a little more for each element)
+    const isBand = f.kind === 'band';
     const seed = (f.seed || nEl) * 1.37;
     // the points across a row: a few on the snow either side, the face a point every fineStep of its tallest height
     const Hmax = f.kind === 'band' ? f.Hmax : f.kind === 'rib' ? f.D * 1.2 + 4 : f.hDn;
@@ -216,7 +225,9 @@ export function buildRock(scene, land, mats, q) {
         const ax = p11[0] - p00[0], ay = p11[1] - p00[1], az = p11[2] - p00[2], bx = p01[0] - p10[0], by = p01[1] - p10[1], bz = p01[2] - p10[2];
         let ny = az * bx - ax * bz; const nl = Math.hypot(ay * bz - az * by, ny, ax * by - ay * bx) || 1; ny = Math.abs(ny / nl);
         // (the face's own quads are always rock, its ledges' snow the rock material's; only the snow either side can be snow)
-        const rock = (j >= nTop - 1 && j < nTop + nFace) || ny < 0.62;
+        // (and a band's lip is bare rock for a metre or two here and there: from above, a band shows as a dark edge)
+        const rim = isBand && j === nTop - 2 && simplex(st[i].t * 0.18 + seed, 3.1) > -0.2;
+        const rock = (j >= nTop - 1 && j < nTop + nFace) || rim || ny < 0.62;
         const G2 = rock ? RG : SG, ids = rock ? idR : idS, up = rock ? 0 : lift;
         const a = vid(G2, ids, i, j, up), b = vid(G2, ids, i + 1, j, up), c = vid(G2, ids, i, j + 1, up), d = vid(G2, ids, i + 1, j + 1, up);
         // wound so the front faces out
@@ -226,7 +237,28 @@ export function buildRock(scene, land, mats, q) {
       }
     });
   }
-  // the jibs' rock (the slab) goes into its zone's rock mesh
+  // the jibs' rock (the slab) goes into the rock mesh: a block of rock, its flat top along the top line, its sides down
+  // into the snow, a little uneven
+  for (const rl of land.jibs || []) {
+    if (rl.look !== 'slab') continue;
+    const a = rl.P[0], b = rl.P[1], t = b.clone().sub(a), L = t.length(); t.normalize();
+    const sx = -t.z, sz = t.x, sl = Math.hypot(sx, sz), hw = rl.w / 2, segs = Math.max(2, Math.round(L / 0.8)), cols = [-hw - 0.35, -hw, hw, hw + 0.35];
+    const P = [], I = [];
+    for (let k = 0; k <= segs; k++) {
+      const c = a.clone().addScaledVector(t, L * k / segs);
+      for (let j = 0; j < 4; j++) {
+        const edge = j === 0 || j === 3, x = c.x + sx / sl * cols[j], z = c.z + sz / sl * cols[j];
+        P.push(x, edge ? G(x, z) - 0.4 : c.y - (k === 0 || k === segs ? 0.05 : 0) + 0.03 * Math.sin(k * 2.1 + j), z);
+      }
+    }
+    for (let k = 0; k < segs; k++) for (let j = 0; j < 3; j++) { const A = k * 4 + j, B = A + 1, C = A + 4, D = C + 1; I.push(A, B, C, B, D, C); }
+    I.push(0, 3, 1, 1, 3, 2); { const A = segs * 4; I.push(A, A + 1, A + 3, A + 1, A + 2, A + 3); }
+    const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); tg.setIndex(I); tg.computeVertexNormals();
+    const RG = rockG[0], base = RG.p.length / 3, nn = tg.attributes.normal.array;
+    for (let v = 0; v < P.length / 3; v++) RG.v(P[v * 3], P[v * 3 + 1], P[v * 3 + 2], nn[v * 3], nn[v * 3 + 1], nn[v * 3 + 2]);
+    for (const i of I) RG.i.push(base + i);
+    tg.dispose();
+  }
   const group = new THREE.Group(); group.name = 'freeride rock';
   const rockM = rockMaterial(q);
   let tris = 0;
@@ -271,7 +303,6 @@ export function buildJibs(scene, fr, mats, q) {
       for (let j = 0; j < n; j++) { if (sg > 0) I.push(m, ring[j], ring[j + 1]); else I.push(m, ring[j + 1], ring[j]); }
     }
   };
-  const rockP = [], rockN = [], rockI = [];
   for (const rl of fr.rails) {
     if (rl.look === 'log') {
       const a = rl.P[0].clone(), b = rl.P[rl.P.length - 1].clone(), rad = rl.w / 2;
@@ -283,22 +314,6 @@ export function buildJibs(scene, fr, mats, q) {
     } else if (rl.look === 'stump') {
       const top = rl.P[0].clone().lerp(rl.P[1], 0.5), rad = rl.w / 2, y0 = G(top.x, top.z) - 0.3;
       cyl(new THREE.Vector3(top.x, y0, top.z), new THREE.Vector3(top.x, top.y, top.z), rad, 14, true, false);
-    } else if (rl.look === 'slab') {
-      // a block of rock: its flat top along the top line, its sides down into the snow, a little uneven
-      const a = rl.P[0], b = rl.P[1], t = b.clone().sub(a), L = t.length(); t.normalize();
-      const s = new THREE.Vector3(-t.z, 0, t.x).normalize(), hw = rl.w / 2, segs = Math.max(2, Math.round(L / 0.8));
-      const base = rockP.length / 3, cols = [-hw - 0.35, -hw, hw, hw + 0.35];
-      for (let k = 0; k <= segs; k++) {
-        const c = a.clone().addScaledVector(t, L * k / segs);
-        for (let j = 0; j < 4; j++) {
-          const edge = j === 0 || j === 3, x = c.x + s.x * cols[j], z = c.z + s.z * cols[j];
-          const y = edge ? G(x, z) - 0.4 : c.y - (k === 0 || k === segs ? 0.05 : 0) + 0.03 * Math.sin(k * 2.1 + j);
-          rockP.push(x, y, z); rockN.push(edge ? s.x * (j === 0 ? -1 : 1) : 0, edge ? 0.3 : 1, edge ? s.z * (j === 0 ? -1 : 1) : 0);
-        }
-      }
-      for (let k = 0; k < segs; k++) for (let j = 0; j < 3; j++) { const A = base + k * 4 + j, B = A + 1, Cc = A + 4, D = Cc + 1; rockI.push(A, B, Cc, B, D, Cc); }
-      // its two ends
-      for (const k of [0, segs]) { const A = base + k * 4; if (k === 0) rockI.push(A, A + 3, A + 1, A + 1, A + 3, A + 2); else rockI.push(A, A + 1, A + 3, A + 1, A + 2, A + 3); }
     }
   }
   // the start flags: a pair of orange-topped poles either side of each start on the summit ridge
@@ -308,7 +323,7 @@ export function buildJibs(scene, fr, mats, q) {
     const b = v(x, y + hgt - 0.05, z, 0, 0, 1, ORANGE), c = v(x + 0.65, y + hgt - 0.25, z, 0, 0, 1, ORANGE), d = v(x, y + hgt - 0.5, z, 0, 0, 1, ORANGE);
     I.push(b, d, c, b, c, d);
   };
-  for (const st of fr.park.starts) if (st.z < -10) { pole(st.x - 2.4, st.z + 4, 2.2); pole(st.x + 2.4, st.z + 4, 2.2); }
+  for (const st of fr.park.starts) if (/^Summit/.test(st.name)) { pole(st.x - 2.4, st.z + 4, 2.2); pole(st.x + 2.4, st.z + 4, 2.2); }
   // the finish: two posts and a banner across the corral's top
   const fz = 700, fy = Math.max(G(-10, fz), G(10, fz));
   for (const x of [-10, 10]) cyl(new THREE.Vector3(x, G(x, fz) - 0.4, fz), new THREE.Vector3(x, fy + 5.6, fz), 0.18, 8, true, false);
@@ -322,10 +337,6 @@ uniform float uNight;`).replace('#include <opaque_fragment>', `outgoingLight -= 
 #include <opaque_fragment>`); };
   wood.customProgramCacheKey = () => 'frwood';
   const m = new THREE.Mesh(g, wood); m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false; m.name = 'freeride logs'; group.add(m);
-  if (rockI.length) {
-    const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(rockP, 3)); rg.setAttribute('normal', new THREE.Float32BufferAttribute(rockN, 3)); rg.setIndex(rockI); rg.computeVertexNormals(); rg.computeBoundingSphere();
-    const rm = new THREE.Mesh(rg, rockMaterial(q)); rm.castShadow = true; rm.receiveShadow = true; rm.matrixAutoUpdate = false; rm.name = 'freeride slab'; group.add(rm);
-  }
   // the finish banner
   const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 128; const bx = cv.getContext('2d');
   bx.fillStyle = '#0d1b2a'; bx.fillRect(0, 0, 1024, 128); bx.fillStyle = '#ff6a13'; bx.fillRect(0, 108, 1024, 20);

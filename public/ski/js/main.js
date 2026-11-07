@@ -1,29 +1,29 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=18';
-import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=18';
-import { makeMaterials, snowUniforms } from './materials.js?v=18';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=18';
-import { Mountain, SPOTS } from './dem.js?v=18';
-import { Skier } from './skier.js?v=18';
-import { Rig } from './rig.js?v=18';
-import './board.js?v=18';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
-import './scoot.js?v=18';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
-import './sled.js?v=18';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
-import { Tricks } from './tricks.js?v=18';
-import { Input } from './input.js?v=18';
-import { Cams } from './camera.js?v=18';
-import { Tracks, Spray } from './snow.js?v=18';
-import { Hud } from './hud.js?v=18';
-import { Sound } from './sound.js?v=18';
-import { Net } from './net.js?v=18';
-import { mergeGear } from './gear.js?v=18';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=19';
+import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=19';
+import { makeMaterials, snowUniforms } from './materials.js?v=19';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=19';
+import { Mountain, SPOTS } from './dem.js?v=19';
+import { Skier } from './skier.js?v=19';
+import { Rig } from './rig.js?v=19';
+import './board.js?v=19';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
+import './scoot.js?v=19';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
+import './sled.js?v=19';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
+import { Tricks } from './tricks.js?v=19';
+import { Input } from './input.js?v=19';
+import { Cams } from './camera.js?v=19';
+import { Tracks, Spray } from './snow.js?v=19';
+import { Hud } from './hud.js?v=19';
+import { Sound } from './sound.js?v=19';
+import { Net } from './net.js?v=19';
+import { mergeGear } from './gear.js?v=19';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Touch, TOUCH_GRABS } from './touch.js?v=18';
-import { Locker, loadLook, cleanLook } from './locker.js?v=18';
-import { planLift, Lift } from './lift.js?v=18';      // (L: the chairlift)
-import { makeFreeride } from './freeride.js?v=18';    // (F: the Freeride mountain)
-import { buildRock, buildJibs } from './frrock.js?v=18';
+import { Touch, TOUCH_GRABS } from './touch.js?v=19';
+import { Locker, loadLook, cleanLook } from './locker.js?v=19';
+import { planLift, Lift } from './lift.js?v=19';      // (L: the chairlift)
+import { makeFreeride } from './freeride.js?v=19';    // (F: the Freeride mountain)
+import { buildRock, buildJibs } from './frrock.js?v=19';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
@@ -165,6 +165,28 @@ const START = mtn ? (() => {
   return { x, z, v: 2, yaw: Math.atan2(dx, dz) };
 })() : { x: park.starts[0].x, z: park.starts[0].z, v: park.starts[0].v, yaw: 0 };
 const toStart = () => { skier.spawn(START.x, START.z, START.v, START.yaw); skier.safe.length = 0; cams.first = true; };
+/* ---- what is drawn: the physics between its last two steps (2026-11-07, for "random frames where it like blinks" and
+   "not glitchy for all"). The physics runs in fixed steps of 1/120 s, as many a frame as the frame's time holds: two
+   at 60 frames a second, but one or none at 144, and three to six on a slow machine, unevenly. Drawn as it stood after
+   the last step, the rider and everything placed from them (every camera, the shadows' box, the snow's tracks) moved on
+   a whole step one frame and less or none the next: the rider was up to 12 cm off where the velocity put them, in every
+   view. Now the state before each step is kept and each frame is drawn between the two, by how far the clock has run
+   into the next step (the usual fixed-step way: one step behind, every frame in its place). The physics is unchanged.
+   A jump to a new place (a spawn: the start, a respawn, back to a marker or a crash, off the chairlift) is never drawn
+   between, and on the chairlift, where lift.js moves the rider each frame by the wall clock, the rider is drawn as is.
+   view is the skier as drawn: its own p, q, v and com, everything else read through from the skier. */
+const view = Object.create(skier);
+view.p = new THREE.Vector3(); view.q = new THREE.Quaternion(); view.v = new THREE.Vector3(); view.com = new THREE.Vector3();
+const was = { p: new THREE.Vector3(), q: new THREE.Quaternion(), v: new THREE.Vector3(), com: new THREE.Vector3(), moved: -1 }, _com = new THREE.Vector3();
+// the body's middle (what the cameras follow): the physics' own in the air and in a crash, over the feet on the snow
+const comOf = (sk, out) => sk.state === 'air' || sk.state === 'crash' ? out.copy(sk.com) : out.set(sk.p.x, sk.p.y + sk.comH(), sk.p.z);
+function keepWas() { was.p.copy(skier.p); was.q.copy(skier.q); was.v.copy(skier.v); comOf(skier, was.com); was.moved = skier.moved; }
+function drawn(alpha) {
+  if (was.moved !== skier.moved || skier.state === 'lift') keepWas();
+  view.p.lerpVectors(was.p, skier.p, alpha); view.q.slerpQuaternions(was.q, skier.q, alpha); view.v.lerpVectors(was.v, skier.v, alpha);
+  view.com.lerpVectors(was.com, comOf(skier, _com), alpha);
+  return view;
+}
 // the end of a run: the bottom of the park, or far down or away on the mountain
 const runOver = () => mtn ? (Math.hypot(skier.p.x, skier.p.z) > 4000 || skier.p.y < -900) : lift ? lift.pastBottom(skier.p) : skier.p.z > 1470;   // (L: past the lift's bottom station)
 toStart();
@@ -225,13 +247,30 @@ function poseState(sk, t) {
     kind: sk.kind || 'ski', goofy: !!sk.goofy, sink: sk.sink || 0, railHitT: sk.railHitT ?? 9, railHit: sk.railHit || '', railHitDir: sk.railHitDir || 0, railKind: sk.rail ? sk.rail.kind : '',
     // (X: the extra rides' timed tricks going round: the trick's id or null, seconds into this round; and a sled's flat spin)
     act: sk.act || null, actT: sk.actT || 0, actN: sk.actN || 0, actNext: !!sk.actNext, flatSpin: sk.flatSpinOn ? 1 : 0,
+    // (the snow's normal under the rider, from the physics: the rig keeps a crash on the snow with it)
+    n: sk.n,
     // (L: on the chairlift, 0 standing at the load or unload line to 1 seated, and the snow under the feet while standing)
     liftSit: lift ? lift.sit : 0, liftFeet: lift && lift.feetOn ? lift.feet : null };
 }
+// (each frame as it was drawn, so the replay is as smooth as the riding was; moved: a jump to a new place, never
+// played between)
 function record(t) {
-  const s = poseState(skier, t);
-  rec.push(Object.assign(s, { p: skier.p.clone(), q: skier.q.clone(), v: skier.v.clone(), vel: skier.v.clone() }));
+  const s = poseState(view, t);
+  rec.push(Object.assign(s, { p: view.p.clone(), q: view.q.clone(), v: view.v.clone(), vel: view.v.clone(), com: view.com.clone(), n: skier.n.clone(), moved: skier.moved }));
   while (rec.length && rec[0].t < t - 15) rec.shift();
+}
+/* the replay at time rt: between the two recorded frames either side of it (in slow motion each recorded frame used to
+   be shown three or four frames running, then the rider jumped on: a stutter all through the slow replay). Scalars
+   come from the nearer frame; the rider's place, turn and velocity are worked out between them. */
+const _rp = { p: new THREE.Vector3(), q: new THREE.Quaternion(), v: new THREE.Vector3(), com: new THREE.Vector3() };
+function replayAt(rt) {
+  let i = rec.findIndex(r => r.t >= rt);
+  if (i < 0) return null;
+  const b = rec[i], a = i > 0 ? rec[i - 1] : b;
+  const k = a !== b && a.moved === b.moved && b.t > a.t ? Math.min(1, Math.max(0, (rt - a.t) / (b.t - a.t))) : 1;
+  const r = Object.assign({}, k < 0.5 ? a : b);
+  r.p = _rp.p.lerpVectors(a.p, b.p, k); r.q = _rp.q.slerpQuaternions(a.q, b.q, k); r.v = _rp.v.lerpVectors(a.v, b.v, k); r.com = _rp.com.lerpVectors(a.com, b.com, k);
+  return r;
 }
 function startReplay() {
   if (rec.length < 30) { hud.flash('Ride a little first'); return; }
@@ -276,6 +315,7 @@ async function loadRider() {
   await r2.load(opts.rider, { poles: opts.poles === '1', outfit: OUTFITS[opts.rider], look: locker.look, kind: opts.ride || 'ski', goofy: opts.stance === 'goofy' });   // (kind: R, for B's board; look: R's locker)
   r2.update({ p: skier.p, q: skier.q, state: 'ground', edge: 0, crouch: 0.3, tuck: 0, brake: 0, press: 0, sw: false, speed: 0, vel: skier.v, balance: 0, t: 0 }, 0.016);
   mergeGear(r2);
+  r2._cp = null; r2.crashPts();                                 // (the parts the snow may not reach in a crash, from the merged gear)
   // (B: its shaders built before it is drawn: a board, or skis again, compiled inside a draw held that frame)
   try { await renderer.compileAsync(r2.root, camera, scene); } catch (e) {}
   if (gen !== loadRider.gen) { r2.dispose(); return; }        // (R: a rider asked for and then not used is freed)
@@ -288,7 +328,7 @@ async function loadRider() {
 const net = new Net({
   scene, camera,
   // (B: another rider's look says what they ride and their stance: look.ride 'ski' | 'board', look.stance)
-  makeRig: async (id, look) => { const r = new Rig(); await r.load(id, { poles: true, outfit: OUTFITS[id], look: cleanLook(look), kind: look && Rig.loader[look.ride] ? look.ride : 'ski', goofy: !!(look && look.stance === 'goofy') }); mergeGear(r);
+  makeRig: async (id, look) => { const r = new Rig(); await r.load(id, { poles: true, outfit: OUTFITS[id], look: cleanLook(look), kind: look && Rig.loader[look.ride] ? look.ride : 'ski', goofy: !!(look && look.stance === 'goofy') }); mergeGear(r); r._cp = null; r.crashPts();
     try { await renderer.compileAsync(r.root, camera, scene); } catch (e) {}   // (R: another rider's gear may need shaders of its own: built before it is drawn)
     return r; },
   // (R: and what they wear, from the locker)
@@ -364,6 +404,7 @@ function tick() {
     acc += dt;
     let n = 0;
     while (acc >= STEP && n < 8) {
+      keepWas();                                         // (the state before this step: the frame is drawn between)
       skier.step(STEP, I);
       for (const e of skier.events) {
         if (e.type === 'land') { sound.thump(e.vn); if (e.vn > 4 || skier.surf === 1) spray.burst(skier.p, Math.min(60, Math.round(e.vn * 6)), 1.2 + e.vn * 0.15); }
@@ -393,37 +434,43 @@ function tick() {
   }
   // (L) the chairlift: the chairs going round, and the rider on one (it sets skier.p, q and v while riding)
   if (lift) lift.update(dt, { skier, input, I, live, paused, solo: !net.inRoom, camera, cams, hud, sound, mouse: opts.scheme === 'mouse', camKey: opts.scheme === 'shred' ? 'KeyQ' : 'KeyC' });   // (camKey: the one key that does not send the chair up)
-  let S, camSk = skier;
-  if (replay) {
-    replay.t += dt * (replay.slow ? 0.3 : 1);
-    let i = rec.findIndex(r => r.t >= replay.t); if (i < 0) { endReplay(); i = rec.length - 1; }
-    const r = rec[Math.max(0, i)];
-    S = Object.assign({}, r, { speed: r.v.length(), vel: r.v, t: time });
-    camSk = { p: r.p, v: r.v, state: r.state, crouch: r.crouch, com: r.p.clone().add(new THREE.Vector3(0, 0.92 * (1 - r.crouch * 0.35), 0)) };
+  let S, camSk, rdt = dt;
+  const r = replay ? replayAt(replay.t += dt * (replay.slow ? 0.3 : 1)) : null;
+  if (replay && !r) endReplay();                         // (the end of the recording: back to riding)
+  if (r) {
+    S = Object.assign(r, { speed: r.v.length(), vel: r.v, t: replay.t });
+    camSk = { p: r.p, v: r.v, state: r.state, crouch: r.crouch, com: r.com };
+    rdt = dt * (replay.slow ? 0.3 : 1);                  // (the rider's own motion in slow motion too)
   } else {
-    S = poseState(skier, time);
+    // the rider between the physics' last two steps (alpha: how far into the next one the clock has run)
+    camSk = drawn(Math.min(1, acc / STEP));
+    S = poseState(camSk, time);
     if (live) record(time);
   }
-  rig.update(S, dt);
-  // the scene's matrices are not walked every frame (most of it never moves): what moves is updated here
-  for (const o of rig.root.children) if (o !== rig.body) o.updateMatrixWorld(true);
+  rig.update(S, rdt);
+  // the scene's matrices are not walked every frame (most of it never moves): what moves is updated here (unless the
+  // rig did it itself this frame, measuring its gear against the snow)
+  if (rig._gearW !== rig._frame) for (const o of rig.root.children) if (o !== rig.body) o.updateMatrixWorld(true);
   // (P) on the chairlift the turn keys look round; let go, the camera swings back behind the chair
   // (L: in the mouse scheme the mouse looks round on the chair instead, lift.js lookMouse)
   if (lift && live && skier.state === 'lift' && opts.scheme === 'mouse') lift.lookMouse(cams, input, I, dt);
   else if (skier.state === 'lift' || cams.orbit) cams.lookRound(live && skier.state === 'lift' ? I.steer : 0, dt);
   cams.update(dt, camSk, rig);
-  if (lift && !replay) lift.camera(dt, camera, cams, skier);   // (L: beside the stations a tripod takes over from the chase camera)
+  if (lift && !replay) lift.camera(dt, camera, cams, camSk);   // (L: beside the stations a tripod takes over from the chase camera)
   // (R) the locker open on the menu: the camera turns round the rider beside the card
   if (!live && !replay && locker.open && !$('menu').classList.contains('hidden')) locker.preview(camera, rig, dt);
-  if (live) { tracks.follow(skier.p); tracks.fromSkier(skier, rig); spray.fromSkier(skier, rig, dt); }
+  if (live) { tracks.follow(view.p); tracks.fromSkier(view, rig); spray.fromSkier(view, rig, dt); }
   tracks.flush();
   spray.update(dt, time);
   lodJumps(camera.position);
-  sky.follow(skier.p);
+  sky.follow(camSk.p);                                   // (the shadows' box round the rider as drawn)
   terrain.update(camera.position, frames);
   forest.update(camera.position);
   snowUniforms.uTime.value = time;
   sound.frame(skier);
+  // (the others' name tags are put on the screen through this frame's camera: they were a frame behind it, and slid
+  // against their riders whenever the camera moved)
+  camera.updateMatrixWorld();
   net.update(dt, skier, time);
   hud.frame(skier, opts.showfps ? fps : null);
   /* (2026-11-06, for "random frames where it like blinks": a change of resolution resizes the canvas, which empties it.
@@ -477,13 +524,14 @@ function tick() {
     filmHold = true;
     const n = Math.max(1, Math.round(dt / STEP)), J = Object.assign({ steer: 0, crouch: false, spin: 0, flip: 0, tilt: 0 }, I || {});
     for (let i = 0; i < n; i++) { skier.step(STEP, J); tricks.step(skier, STEP); skier.events.length = 0; }
+    keepWas();                                           // (whole steps: drawn where the physics is)
     time += dt; rig.update(poseState(skier, time), dt);
-    for (const o of rig.root.children) if (o !== rig.body) o.updateMatrixWorld(true);
+    if (rig._gearW !== rig._frame) for (const o of rig.root.children) if (o !== rig.body) o.updateMatrixWorld(true);
     if (camAt) camAt(camera, skier); else cams.update(dt, skier, rig);
     lodJumps(camera.position);
     renderer.render(scene, camera);
   };
-  window.__ski = { THREE, renderer, scene, camera, skier, film, release: () => { filmHold = false; }, get rig() { return rig; }, park, terrain, tricks, net, input, cams, tracks, spray, q, opts, height, normal, baseLine, play, step: (n, I) => { for (let i = 0; i < n; i++) { skier.step(STEP, Object.assign({ steer: 0, crouch: false, spin: 0, flip: 0, tilt: 0 }, I)); tricks.step(skier, STEP); } } };
+  window.__ski = { THREE, renderer, scene, camera, skier, film, release: () => { filmHold = false; }, get rig() { return rig; }, park, terrain, tricks, net, input, cams, tracks, spray, q, opts, height, normal, baseLine, play, step: (n, I) => { for (let i = 0; i < n; i++) { skier.step(STEP, Object.assign({ steer: 0, crouch: false, spin: 0, flip: 0, tilt: 0 }, I)); tricks.step(skier, STEP); } keepWas(); }, view };
   window.__ski.lift = lift; window.__ski.net = net;   // (L: test handles)
   clock.getDelta();
   frame();

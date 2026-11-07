@@ -1,8 +1,8 @@
 // Cameras: chase (behind the travel, held steady through spins), far chase, first person (a helmet camera at the
 // rider's eyes, turning with the head) and filmer (tripod spots beside the features, panning and zooming to follow).
 import * as THREE from 'three';
-import { height } from './terrain.js?v=18';
-import { FollowQ } from './rig.js?v=18';
+import { height } from './terrain.js?v=19';
+import { FollowQ } from './rig.js?v=19';
 
 const MODES = ['chase', 'far', 'pov', 'film'];
 const _lf = new THREE.Vector3(), _Y = new THREE.Vector3(0, 1, 0);   // (L: the chairlift's look round)
@@ -45,7 +45,8 @@ export class Cams {
     // the body's middle: in the air the centre of mass, on the snow the same height over the feet, so takeoffs and
     // landings do not jolt the camera (the crouch it follows is already eased)
     const comH = sk.comH ? sk.comH() : 0.92 * (1 - (sk.crouch ?? 0.3) * 0.35);
-    const body = sk.state === 'crash' || sk.state === 'air' ? sk.com.clone() : sk.p.clone().add(new THREE.Vector3(0, comH, 0));
+    // (in a crash: the body's middle as the rig drew it, tumbling on the snow)
+    const body = sk.state === 'crash' && rig && rig.midOk ? rig.mid.clone() : sk.state === 'crash' || sk.state === 'air' ? sk.com.clone() : sk.p.clone().add(new THREE.Vector3(0, comH, 0));
     if (rig && rig.setFirstPerson) rig.setFirstPerson(this.mode === 'pov' && !!rig.eye);
     if (this.mode === 'pov' && rig.eye) {
       this.pov(dt, sk, rig);
@@ -226,7 +227,7 @@ export class Cams {
     if (st === 'lift' && rig.eyeOff && rig.headPos) t.copy(rig.eyeOff).applyQuaternion(rig.body.quaternion).add(rig.headPos).addScaledVector(_pf.set(0, 0, 1).applyQuaternion(rig.body.quaternion), R.fwd + 0.02);
     if (cw > 0.001) {
       // out of the body in a crash: 2.6 m back and 1.5 m up from your middle, looking at it
-      const mid = _pl.set(sk.p.x, sk.p.y + 0.6, sk.p.z);
+      const mid = rig.midOk ? _pl.copy(rig.mid) : _pl.set(sk.p.x, sk.p.y + 0.6, sk.p.z);
       const out = _pc.copy(mid).addScaledVector(F.cd, -2.6); out.y += 1.5;
       const gy = height(out.x, out.z) + 1.2; if (out.y < gy) out.y = gy;
       _m4.lookAt(out, mid, _Y); _pq.setFromRotationMatrix(_m4).multiply(_FLIP);

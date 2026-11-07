@@ -8,7 +8,7 @@
 // frame, with skirts hiding the seams between sizes. Features with their own meshes (kickers, the pipe) are left out
 // of the patches (the ground under them is lowered a little) and drawn by park.js at finer spacing.
 import * as THREE from 'three';
-import { fbm, ridged, smoothstep, clamp } from './noise.js?v=18';
+import { fbm, ridged, smoothstep, clamp } from './noise.js?v=19';
 
 // ---- the run's long profile ----------------------------------------------------------------------------------------
 // [z where it starts, pitch in degrees] (above the start the slope behind is a gentle 12 degrees, not the old 26: with
@@ -222,7 +222,8 @@ export class Terrain {
       const key = lvl + ':' + x0 + ':' + z0;
       // (the open snow well off the run and above the start is smooth: it is split at 0.6 of the distance)
       const open = this.cull !== Infinity && (x0 > 120 || x0 + size < -120 || z0 + size < -250);
-      const split = size > this.minLeaf && d < size * this.K * (open ? 0.6 : 1);
+      // (a made-up mountain may ask for coarser patches: mtn.lodK, Freeride's steep face on the low tier, 2026-11-07)
+      const split = size > this.minLeaf && d < size * this.K * (open ? 0.6 : 1) * (mtn && mtn.lodK || 1);
       if (split) {
         const h = size / 2, kids = [[x0, z0], [x0 + h, z0], [x0, z0 + h], [x0 + h, z0 + h]];
         const ready = kids.every(([kx, kz]) => this.cache.has((lvl + 1) + ':' + kx + ':' + kz));

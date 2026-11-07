@@ -1,7 +1,7 @@
 // The heads-up display: speed, score and the line's multiplier, trick names as they land, rail balance, a grab list.
-import { GRABS, guideOf } from './grabs.js?v=18';
-import { keyHelp } from './input.js?v=18';
-import { rideGrabDef, rideGuide } from './board.js?v=18';      // (B: a board's, scooter's... own grab names in the lists)
+import { GRABS, guideOf } from './grabs.js?v=19';
+import { keyHelp } from './input.js?v=19';
+import { rideGrabDef, rideGuide } from './board.js?v=19';      // (B: a board's, scooter's... own grab names in the lists)
 
 const $ = id => document.getElementById(id);
 export class Hud {

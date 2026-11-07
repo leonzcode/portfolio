@@ -26,12 +26,12 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { Rig, springBank, smooth01, softReach, wob, wrapPi } from './rig.js?v=18';
-import { RIDE_GRABS, RIDE_GUIDES, seatRider, holdOnLift } from './board.js?v=18';
-import { clamp, smoothstep } from './noise.js?v=18';
-import { RIDE_SPIN } from './tricks.js?v=18';
-import { rideSpin } from './scoot.js?v=18';
-import { RIDE_ACTS } from './skier.js?v=18';
+import { Rig, springBank, smooth01, softReach, wob, wrapPi } from './rig.js?v=19';
+import { RIDE_GRABS, RIDE_GUIDES, seatRider, holdOnLift } from './board.js?v=19';
+import { clamp, smoothstep } from './noise.js?v=19';
+import { RIDE_SPIN } from './tricks.js?v=19';
+import { rideSpin } from './scoot.js?v=19';
+import { RIDE_ACTS } from './skier.js?v=19';
 
 // the slats' top (m over the snow), where the hands hold (each side, up, forward), where the hips lie
 export const SLED = { top: 0.213, hand: [0.2, 0.24, 0.22], hips: -0.32 };
@@ -87,7 +87,7 @@ let _gltf = null;
 Rig.loader.sled = async (rig) => {
   if (!_gltf) {
     const loader = new GLTFLoader(), draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    _gltf = loader.loadAsync('./models/sled/sled.glb?v=18').catch(e => { _gltf = null; throw e; });
+    _gltf = loader.loadAsync('./models/sled/sled.glb?v=19').catch(e => { _gltf = null; throw e; });
   }
   const gl = await _gltf;
   let mesh = null; gl.scene.traverse(o => { if (o.isMesh && !mesh) mesh = o; });

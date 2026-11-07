@@ -10,10 +10,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=18';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=18';
-import { height } from './terrain.js?v=18';
-import { gltfLoader, gearParts, LOOK, FIT } from './gear.js?v=18';
+import { clamp, smoothstep } from './noise.js?v=19';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=19';
+import { height, normal } from './terrain.js?v=19';
+import { gltfLoader, gearParts, LOOK, FIT } from './gear.js?v=19';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -128,9 +128,40 @@ export class FollowQ {
   }
 }
 
+/* ---- a crash on the snow, not in it (2026-11-07). The physics tumbles the body (S.q) and slides its contact point
+   (S.p) along the snow; drawn with the feet at S.p, the body turned about the feet and went into the snow head and
+   shoulders first (and, upside down off a jump, all of it, before the feet came down). Now in a crash the body turns
+   about its middle (the pelvis), with the middle over the sliding point and as high as puts the body's lowest part on
+   the snow there (from where its parts were last frame, under this frame's turn); then, after the pose, every part is
+   checked against the snow itself and anything still under lifts the whole rider out. In the air the same check keeps
+   the body's own parts out of the snow, and upside down the gear too. For every ride: the parts are the skeleton's
+   joints, each with a radius for the body round it, and points on each piece of gear's own outline (skis, poles, a
+   board, a scooter, a bike, a sled, the helmet). */
+const CRASH_BONES = [['head', 0.12], ['neck', 0.09], ['chest', 0.16], ['spine1', 0.15], ['spine', 0.15], ['pelvis', 0.16], ['clL', 0.08], ['clR', 0.08], ['uaL', 0.09], ['uaR', 0.09],
+  ['faL', 0.07], ['faR', 0.07], ['haL', 0.07], ['haR', 0.07], ['thL', 0.12], ['thR', 0.12], ['caL', 0.09], ['caR', 0.09], ['ftL', 0.09], ['ftR', 0.09], ['toL', 0.07], ['toR', 0.07]];
+const CRASH_EXTRA = [['Bip01_L_Finger21', 0.045], ['Bip01_R_Finger21', 0.045], ['Bip01_MNose', 0.05], ['Bip01_MJaw', 0.06]];
+/* a piece of gear's outline: its furthest vertex each of 80 ways round (worked out once, kept on the geometry), from
+   which the few lowest are found each frame for the way down. (26 ways missed a curved sled's lowest point by up to
+   7 cm in some turns.) */
+const SUP_N = 80, SUP_DIRS = [];
+for (let i = 0; i < SUP_N; i++) { const y = 1 - 2 * (i + 0.5) / SUP_N, r = Math.sqrt(1 - y * y), a = i * 2.399963; SUP_DIRS.push(new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r)); }
+function outline(g) {
+  if (g.userData.outline) return g.userData.outline;
+  const P = g.attributes.position, best = new Float64Array(SUP_N).fill(-Infinity), at = new Int32Array(SUP_N).fill(-1);
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+    for (let k = 0; k < SUP_N; k++) { const d = SUP_DIRS[k], s = x * d.x + y * d.y + z * d.z; if (s > best[k]) { best[k] = s; at[k] = i; } }
+  }
+  const seen = [...new Set(at)].filter(i => i >= 0), out = new Float32Array(seen.length * 3);
+  seen.forEach((i, k) => { out[k * 3] = P.getX(i); out[k * 3 + 1] = P.getY(i); out[k * 3 + 2] = P.getZ(i); });
+  return (g.userData.outline = out);
+}
+const GEAR_K = 3;                    // the lowest few of each piece of gear's outline are checked against the snow
+const _cx = V(), _cu = V(), _cn = V(), _cn2 = V(), _cb2 = V(), _cs = V(), _pb = V(), _pd = V(), _pn = V(), _cdn = V(), _cbest = new Float64Array(8), _cbi = new Int32Array(8), _ck = new Float64Array(10), _cki = new Int32Array(10);
+
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=18';
-import { grabDef } from './grabs.js?v=18';
+export { GRABS } from './grabs.js?v=19';
+import { grabDef } from './grabs.js?v=19';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -425,7 +456,7 @@ export class Rig {
     const kind = opts.kind || 'ski';
     const want = { goggles: gearParts('goggles'), head: look.head === 'beanie' ? gearParts('beanie') : look.head === 'painted' ? null : gearParts('helmet_c'),
       ski: kind === 'ski' && look.ski !== 'park' ? gearParts(look.ski === 'pow' ? 'ski_b' : 'ski_a') : null, pole: kind === 'ski' ? gearParts('pole') : null, plate: kind === 'ski' ? gearParts('binding') : null };
-    const gl = await gltfLoader().loadAsync('./models/' + id + '.glb?v=18');
+    const gl = await gltfLoader().loadAsync('./models/' + id + '.glb?v=19');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     if (opts.look) for (const k of ['jacket', 'pants', 'gloves', 'helmet', 'lens', 'boots', 'skiA', 'skiB']) if (opts.look[k]) this.outfit[k] = opts.look[k];
@@ -509,7 +540,7 @@ export class Rig {
   }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=18';
+    const maskUrl = './models/' + id + '_m.png?v=19';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -760,7 +791,7 @@ if (uFpNear > 0.0) {
     // another ride poses its own way (Rig.poser[kind](rig, S, dt), registered by its module, e.g. board.js); it can use
     // placeBody, setWorldQ, aim, twoBone, blendBone, curl, placeHead and flushTree like the skier's pose below
     const pf = this.kind !== 'ski' ? Rig.poser[this.kind] : null;
-    if (pf) { pf(this, S, dt); return; }
+    if (pf) { pf(this, S, dt); this.afterPose(S); return; }
     const P = this.p, sp = springBank(P, dt);
     let st = S.state || 'ground';
     const t = S.t !== undefined ? S.t : (this._t = (this._t || 0) + dt);
@@ -1308,6 +1339,7 @@ if (uFpNear > 0.0) {
         if (dragW > 0.01) { tx += (s * 0.35 - tx) * dragW; ty += (-0.1 - ty) * dragW; tz += (-1 - tz) * dragW; }   // trailing behind the hand drag
         const tip = _tip.set(tx, ty, tz).normalize().applyQuaternion(R);
         pole.position.copy(_v2.setFromMatrixPosition(ha.matrixWorld)).addScaledVector(fd, 0.06).addScaledVector(pa, 0.025);
+        this.clearPole(pole.position, tip, R, ground);
         pole.quaternion.setFromUnitVectors(Y, tip.negate());
       }
     }
@@ -1315,6 +1347,7 @@ if (uFpNear > 0.0) {
     this.placeHead(hdQ);
     this._wasRail = rail; this._pra = ra;
     this.flushTree(body);
+    this.afterPose(S);
   }
   /* sitting on the chairlift (2026-11-05, with lift.js): S.p is the seat under the hips, S.q faces the way the chair
      goes. Hips on the seat, the thighs level, the shins hanging a little forward with the skis on them (tips a little
@@ -1388,6 +1421,21 @@ if (uFpNear > 0.0) {
     this.placeHead(hdQ);
     this.flushTree(this.body);
   }
+  /* a pole's tip kept out of the snow (2026-11-07): swung back about the hand, towards trailing level behind, until the
+     basket is just over the snow (riding along low the tips went 15 to 35 cm into it, and further at a landing). dir is
+     the pole's way from the grip (changed in place); 1.1 m long. On the snow the snow is taken as the plane under the
+     skis (the body's own up through its feet), so nothing is looked up; elsewhere the snow's own height at the tip. */
+  clearPole(grip, dir, R, flat) {
+    const L = 1.1, BP = this.body.position, n = flat ? _pn.set(0, 1, 0).applyQuaternion(R) : null;
+    const ok = flat ? d => (grip.x + d.x * L - BP.x) * n.x + (grip.y + d.y * L - BP.y) * n.y + (grip.z + d.z * L - BP.z) * n.z > 0.03
+      : d => grip.y + d.y * L > height(grip.x + d.x * L, grip.z + d.z * L) + 0.03;
+    if (ok(dir)) return;
+    const back = _pb.set(0, 0, -1).applyQuaternion(R); back.y = Math.max(back.y, 0) + 0.05; back.normalize();
+    if (!ok(back)) { dir.copy(back); return; }        // (the hand itself at the snow: lying back along it)
+    let lo = 0, hi = 1;
+    for (let i = 0; i < (flat ? 7 : 4); i++) { const mid = (lo + hi) / 2; if (ok(_pd.copy(dir).lerp(back, mid).normalize())) hi = mid; else lo = mid; }
+    dir.lerp(back, hi).normalize();
+  }
   // a jolt for the pose: 'railOn' (locking onto a rail or box), 'railSwap' (a change of direction on it), 'railOff';
   // main.js passes the physics' rail events here (power about 0.5 to 1.2); the pose also finds them itself (own)
   react(type, power = 1, own = false) {
@@ -1401,6 +1449,13 @@ if (uFpNear > 0.0) {
     const body = this.body;
     body.position.copy(S.p); body.quaternion.copy(S.q);
     if (this.fp) this.fpEase(S);
+    if (S.state === 'crash') this.crashPlace(S); else if (this._cr) this._cr.on = false;
+    // (lifted out of the snow in the air and then landed: let down over a few hundredths of a second, not dropped; put
+    // in before the pose, so nothing is worked out twice)
+    if (this._carry > 0.003 && (S.state === 'ground' || S.state === 'rail')) {
+      if (this._carryF !== this._frame) { this._carryF = this._frame; this._carry *= Math.exp(-this._dt / 0.05); }
+      body.position.y += this._carry;
+    }
     body.updateWorldMatrix(false, false);
     for (const o of this.chain) o.updateWorldMatrix(false, false);
     return (this.rootQ = body.quaternion);
@@ -1409,11 +1464,11 @@ if (uFpNear > 0.0) {
      in one frame after a flip or a spin) and onto a rail as it locks on (about 9 degrees and 15 cm sideways), and in
      first person what you ride and your own legs and hands jumped with it under your eyes. Here those jumps are eased
      out (the turn over about a sixth of a second, the place over about a third; the followers above); smooth motion,
-     turning and travel at the physics' own velocity, is passed straight through. That also takes out the physics'
-     stepping: it moves in 1/120 s steps, one to three a frame against the frame's clock, so the place it hands over
-     runs up to a step (10 cm at 12 m/s) ahead or behind, and the camera at the eyes shook the whole view with it. A
-     jump of more than 3 m (a respawn, back to the start) and the chairlift are taken as they are. Once a frame (a
-     ride's pose may ask for the body twice). */
+     turning and travel at the physics' own velocity, is passed straight through. (It also took out the physics'
+     stepping, one to three 1/120 s steps a frame against the frame's clock; since 2026-11-07 main.js hands every
+     camera the state between the last two steps, so what is left for this is the snaps.) A jump of more than 3 m (a
+     respawn, back to the start) and the chairlift are taken as they are, and a crash's place too (crashPlace carries
+     the body on). Once a frame (a ride's pose may ask for the body twice). */
   fpEase(S) {
     const E = this._fpE || (this._fpE = { q: new FollowQ(), p: new FollowV(), f: -1, bq: Q(), bp: V(), st: '' });
     const body = this.body;
@@ -1421,7 +1476,9 @@ if (uFpNear > 0.0) {
     E.f = this._frame;
     const dt = this._dt, lift = S.state === 'lift' || E.st === 'lift';
     E.st = S.state;
+    // (in a crash the place is taken as it is: crashPlace carries the body on from where it was drawn)
     if (!E.p.ok || lift || E.p.t.distanceToSquared(S.p) > 9) { E.p.reset(S.p); E.q.reset(S.q); }
+    else if (S.state === 'crash') { E.p.reset(S.p); E.q.to(S.q, dt, 30, 140); }
     else {
       // the place: against the physics' own velocity (a landing's change of speed is real motion; only a jump away from
       // where that velocity goes is eased out)
@@ -1431,6 +1488,185 @@ if (uFpNear > 0.0) {
     }
     body.position.copy(E.p.x); body.quaternion.copy(E.q.q);
     E.bp.copy(body.position); E.bq.copy(body.quaternion);
+  }
+  /* ---- a crash on the snow (the notes at CRASH_BONES). The points the snow may not reach: the joints, then the gear's
+     outlines (built when first wanted; main.js clears _cp when the gear is merged or changed). */
+  crashPts() {
+    if (this._cp && this._cpN === this.root.children.length) return this._cp;
+    const L = [], b = this.b, G = [];
+    // (the feet and toes go with the gear: in the air they meet the snow with the skis or the board at a landing)
+    for (const [k, r] of CRASH_BONES) if (b[k]) L.push({ o: b[k], r, gear: false, foot: /^(ft|to)/.test(k) });
+    for (const [k, r] of CRASH_EXTRA) if (this.bones && this.bones[k]) L.push({ o: this.bones[k], r, gear: false });
+    for (const c of this.root.children) if (c !== this.body) c.traverse(o => {
+      if (!o.isMesh || o.isSkinnedMesh || !o.geometry || !o.geometry.attributes.position) return;
+      if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+      const g = { o, c: outline(o.geometry), at: L.length, sc: o.geometry.boundingSphere.center, sr: o.geometry.boundingSphere.radius, lc: V(), r: 0 };
+      G.push(g); for (let k = 0; k < GEAR_K; k++) L.push({ o, r: 0.004, gear: true });
+    });
+    this._cp = L; this._cg = G; this._cpN = this.root.children.length; this._pelI = Math.max(0, L.findIndex(e => e.o === b.pelvis));
+    this._cl = new Float32Array(L.length * 3);           // each point in the body's frame, as last posed
+    this._cw = new Float32Array(L.length * 4);           // each point in the world now, and 1 if it counts (0: hidden gear)
+    this._clOk = false;
+    return L;
+  }
+  /* where each point is now: the joints, and for each piece of gear (if withGear) the GEAR_K points of its outline
+     furthest the way down (d, a unit vector) */
+  crashMeasure(withGear, d) {
+    const L = this.crashPts(), W = this._cw, best = _cbest, bi = _cbi;
+    for (let i = 0; i < L.length; i++) if (!L[i].gear) { const j = i * 4; _cx.setFromMatrixPosition(L[i].o.matrixWorld); W[j] = _cx.x; W[j + 1] = _cx.y; W[j + 2] = _cx.z; W[j + 3] = 1; }
+    for (const g of this._cg) {
+      let vis = withGear; for (let o = g.o; o && vis && o !== this.root; o = o.parent) if (!o.visible) vis = false;
+      if (!vis) { g.vis = false; for (let k = 0; k < GEAR_K; k++) W[(g.at + k) * 4 + 3] = 0; continue; }
+      // the way down in the piece's own frame (the transpose of its turn: an outline point v goes furthest along d where
+      // v . (M^T d) is largest)
+      const e = g.o.matrixWorld.elements, c = g.c;
+      const dx = e[0] * d.x + e[1] * d.y + e[2] * d.z, dy = e[4] * d.x + e[5] * d.y + e[6] * d.z, dz = e[8] * d.x + e[9] * d.y + e[10] * d.z;
+      for (let k = 0; k < GEAR_K; k++) { best[k] = -Infinity; bi[k] = 0; }
+      for (let i = 0; i < c.length; i += 3) {
+        const s = c[i] * dx + c[i + 1] * dy + c[i + 2] * dz;
+        if (s <= best[GEAR_K - 1]) continue;
+        let k = GEAR_K - 1; while (k > 0 && s > best[k - 1]) { best[k] = best[k - 1]; bi[k] = bi[k - 1]; k--; }
+        best[k] = s; bi[k] = i;
+      }
+      // (and the piece's round bounds, for a quick test while it is clear of the snow: any turn of it stays inside)
+      g.lc.copy(g.sc).applyMatrix4(g.o.matrixWorld); g.r = g.sr * Math.sqrt(Math.max(e[0] * e[0] + e[1] * e[1] + e[2] * e[2], e[4] * e[4] + e[5] * e[5] + e[6] * e[6], e[8] * e[8] + e[9] * e[9] + e[10] * e[10])); g.vis = true;
+      for (let k = 0; k < GEAR_K; k++) {
+        const j = (g.at + k) * 4, i = bi[k];
+        _cx.set(c[i], c[i + 1], c[i + 2]).applyMatrix4(g.o.matrixWorld);
+        W[j] = _cx.x; W[j + 1] = _cx.y; W[j + 2] = _cx.z; W[j + 3] = 1;
+      }
+    }
+  }
+  /* before the pose, in a crash: the body turned about its middle (the pelvis), the middle over the sliding point, as
+     high as puts the lowest point on the snow's plane there. The middle as drawn follows that place with the slide's
+     own velocity fed forward (rig.js FollowV): the slide is followed exactly, and a jump in it (the crash starting from
+     where the middle was drawn, a head-first crash moving the sliding point under the head, another rider's copy
+     catching up with a snapshot) is eased out over about a third of a second. Once a frame (a ride may ask twice). */
+  crashPlace(S) {
+    const body = this.body, C = this._cr || (this._cr = { f: -1, fv: new FollowV(), M: V(), bp: V(), on: false });
+    if (C.f === this._frame) { body.position.copy(C.bp); return; }
+    C.f = this._frame;
+    // (the snow's normal: the physics' own where it is passed (S.n), else last frame's once the crash is going)
+    const R = body.quaternion, base = _cb2.copy(body.position), n = S.n ? _cn2.copy(S.n) : C.on && this._crN ? _cn2.copy(this._crN) : normal(base.x, base.z, _cn2);
+    const L = this.crashPts(), ok = this._clOk;
+    if (ok) C.M.fromArray(this._cl, this._pelI * 3); else if (this._pelLOk) C.M.copy(this._pelL); else C.M.set(0, (this.pelvisY || 0.95), 0);
+    let h = -Infinity;
+    if (ok) {
+      // (each point's height over the plane is its place less the middle's, along the snow's normal turned into the
+      // body's frame: one dot product a point)
+      const W = this._cw, Lc = this._cl, nl = _cx.copy(n).applyQuaternion(_qi2.copy(R).invert()), mx = C.M.x, my = C.M.y, mz = C.M.z;
+      for (let i = 0; i < L.length; i++) {
+        if (!W[i * 4 + 3] && L[i].gear) continue;
+        const need = L[i].r - ((Lc[i * 3] - mx) * nl.x + (Lc[i * 3 + 1] - my) * nl.y + (Lc[i * 3 + 2] - mz) * nl.z);
+        if (need > h) h = need;
+      }
+    } else h = C.M.y;                                    // (nothing measured yet: standing, the feet on the snow)
+    // (and what the check after the pose had to lift the rider by lately, so it is mostly in before the pose: lifting
+    // after it works the whole skeleton out again)
+    if (!C.on) C.extra = 0;
+    h += C.extra || 0; C.extra = (C.extra || 0) * 0.85;
+    const mid = _cs.copy(base).addScaledVector(n, h);
+    // (started where the middle was drawn last frame, already moving with the slide: to() carries it on by the velocity)
+    if (!C.on) { C.on = true; C.fv.reset(this._midLastOk ? this._midLast : mid); C.fv.v.copy(S.vel || ZERO); }
+    C.fv.u.copy(S.vel || ZERO);
+    body.position.copy(C.fv.to(mid, this._dt, 12, 0)).sub(_cx.copy(C.M).applyQuaternion(R));
+    C.bp.copy(body.position);
+  }
+  /* after the pose: in a crash, and in the air near the snow, every part checked against the snow itself; anything under
+     lifts the whole rider straight up out of it (the body's own parts always; the gear in a crash, and in the air only
+     tipped well past a clean landing, below). Then each part's place in the body's frame is kept for the next frame,
+     and the middle as drawn (the cameras follow it in a crash). */
+  afterPose(S) {
+    const st = S.state, crash = st === 'crash';
+    if (this.b && this.b.pelvis) { (this._midLast || (this._midLast = V())).setFromMatrixPosition(this.b.pelvis.matrixWorld); this._midLastOk = true; }
+    this.midOk = false; this.lifted = 0;
+    if (!crash && st !== 'air') {
+      this._clOk = false; this._crAirT = 0;
+      if (!(this._carry > 0.003) || st === 'lift') this._carry = 0;     // (the let-down after a landing: placeBody)
+      // (the pelvis's place in the body's frame, for a crash that starts on the snow)
+      if (this._midLastOk) { (this._pelL || (this._pelL = V())).copy(this._midLast).sub(this.body.position).applyQuaternion(_qi2.copy(this.body.quaternion).invert()); this._pelLOk = true; }
+      return;
+    }
+    const p = S.p, gy = height(p.x, p.z), R = this.body.quaternion, BP = this.body.position;
+    this._crAirT = crash ? 0 : (this._crAirT || 0) + this._dt;
+    // (high in the air nothing of the rider reaches the snow: only the pelvis's place is kept, for a crash that starts
+    // up there)
+    if (!crash && p.y - gy > 2.4) { this._clOk = false; this._carry = 0; (this._pelL || (this._pelL = V())).copy(this._midLast).sub(BP).applyQuaternion(_qi2.copy(R).invert()); this._pelLOk = true; return; }
+    // (nearer: the joints as last measured and each piece of gear's round bounds, under this frame's turn; the three
+    // lowest over the slope under the rider (its plane through the snow under the feet) well clear of the snow under
+    // each (half a metre: the legs reach for a landing that fast), nothing more is done this frame; measured again
+    // every fourth frame)
+    if (!crash && this._clOk && (this._clAge = (this._clAge || 0) + 1) < 4) {
+      // (the slope: the one measured with the parts, a few frames old at most)
+      const L = this._cp, Lc = this._cl, K = _ck, KI = _cki, G = this._cg, n = this._clN || normal(p.x, p.z, _cn); let kn = 0;
+      const gap = c => (c.x + BP.x - p.x) * n.x + (c.y + BP.y - gy) * n.y + (c.z + BP.z - p.z) * n.z;
+      const take = (y, i) => { if (kn < 3) { K[kn] = y; KI[kn++] = i; return; } let w = 0; for (let k = 1; k < 3; k++) if (K[k] > K[w]) w = k; if (y < K[w]) { K[w] = y; KI[w] = i; } };
+      for (let i = 0; i < L.length; i++) if (!L[i].gear) take(gap(_cx.fromArray(Lc, i * 3).applyQuaternion(R)) - L[i].r, i);
+      for (let k = 0; k < G.length; k++) if (G[k].vis) take(gap(_cx.copy(G[k].bl).applyQuaternion(R)) - G[k].r, -1 - k);
+      let clear = kn > 0;
+      for (let k = 0; k < kn && clear; k++) {
+        const i = KI[k], r = i >= 0 ? L[i].r : G[-1 - i].r;
+        if (i >= 0) _cx.fromArray(Lc, i * 3).applyQuaternion(R).add(BP); else _cx.copy(G[-1 - i].bl).applyQuaternion(R).add(BP);
+        if (_cx.y - r < height(_cx.x, _cx.z) + 0.5) clear = false;
+      }
+      if (clear) { this._carry = 0; return; }
+    }
+    this._clAge = 0;
+    // (the snow's normal under the rider: each piece of gear's lowest points are its furthest into the snow's slope, not
+    // straight down: a pole held back up a landing's slope meets it first at its tip, which is not its lowest point)
+    const n = crash && S.n ? _cn.copy(S.n) : normal(p.x, p.z, _cn);   // (S.n: the physics' own in a crash, where it is passed)
+    if (crash) (this._crN || (this._crN = V())).copy(n);
+    (this._clN || (this._clN = V())).copy(n);
+    // (the gear's places worked out here, so main.js need not do it again this frame)
+    for (const c of this.root.children) if (c !== this.body) c.updateMatrixWorld(true);
+    this._gearW = this._frame;
+    this.crashMeasure(true, _cdn.copy(n).negate());
+    const L = this._cp, W = this._cw;
+    {
+      /* (the gear counts in the air with the body more than 41 degrees over from the slope under its middle, past what
+         lands clean, or 70 degrees from upright: a ski tip set down a little early on a good landing is left as it is,
+         rather than the rider lifted for it and dropped back as the feet come down. The slope is taken 1.5 m either way,
+         so a lip's back face or a kicker's edge under the rider does not count as the slope; and not in the first tenth
+         of a second off a lip.) */
+      const up = _cu.set(0, 1, 0).applyQuaternion(R), m = this.b.pelvis.matrixWorld.elements;
+      let gear = crash || up.y < 0.35, low = Infinity; const ny = Math.max(0.5, n.y);
+      // (first the rider's lowest point, gear and all, against the highest snow under their box (its corners and the
+      // middle): in the air mostly clear, and then nothing more is looked up; part by part, only the parts that low)
+      let y0 = Infinity, x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (let i = 0; i < L.length; i++) {
+        const j = i * 4; if (!W[j + 3]) continue;
+        y0 = Math.min(y0, W[j + 1] - L[i].r / ny); x0 = Math.min(x0, W[j]); x1 = Math.max(x1, W[j]); z0 = Math.min(z0, W[j + 2]); z1 = Math.max(z1, W[j + 2]);
+      }
+      const top = Math.max(gy, height(x0, z0), height(x0, z1), height(x1, z0), height(x1, z1)) + 0.15;
+      if (y0 < top) {
+        if (!gear && this._crAirT > 0.1) {
+          const x = m[12], z = m[14], sx = (height(x + 1.5, z) - height(x - 1.5, z)) / 3, sz = (height(x, z + 1.5) - height(x, z - 1.5)) / 3;
+          gear = (up.y - up.x * sx - up.z * sz) / Math.sqrt(1 + sx * sx + sz * sz) < 0.75;
+        }
+        for (let i = 0; i < L.length; i++) {
+          const j = i * 4; if (!W[j + 3] || ((L[i].gear || L[i].foot) && !gear)) continue;
+          const r = L[i].r / ny; if (W[j + 1] - r > top) continue;
+          const g = W[j + 1] - r - height(W[j], W[j + 2]);
+          if (g < low) { low = g; this._lowI = i; }
+        }
+      }
+      if (low < -0.002) { this.shiftAll(_cs.set(0, -low, 0)); this.lifted = -low; for (let i = 0; i < L.length; i++) W[i * 4 + 1] -= low; for (const g of this._cg) g.lc.y -= low; if (crash && this._cr) this._cr.extra = (this._cr.extra || 0) - low; }
+    }
+    this._carry = crash ? 0 : this.lifted;
+    const qi = _qi2.copy(R).invert(), Lc = this._cl;
+    for (let i = 0; i < L.length; i++) { const j = i * 4; _cx.set(W[j], W[j + 1], W[j + 2]).sub(BP).applyQuaternion(qi); Lc[i * 3] = _cx.x; Lc[i * 3 + 1] = _cx.y; Lc[i * 3 + 2] = _cx.z; }
+    for (const g of this._cg) (g.bl || (g.bl = V())).copy(g.lc).sub(BP).applyQuaternion(qi);
+    this._clOk = true;
+    (this.mid || (this.mid = V())).setFromMatrixPosition(this.b.pelvis.matrixWorld); this.midOk = true;
+    this._midLast.copy(this.mid);
+  }
+  // the whole rider moved by d (the body and every piece of gear: they are all placed in the world, the root at the origin)
+  shiftAll(d) {
+    for (const c of this.root.children) c.position.add(d);
+    this.body.updateMatrixWorld(true);
+    for (const c of this.root.children) if (c !== this.body) c.updateMatrixWorld(true);
+    this.eye.add(d); this.headPos.add(d);
+    if (this._cr && this._cr.f === this._frame) this._cr.bp.add(d);
   }
   // first person on or off (camera.js, each frame): the easing above, and the body's fade close to the lens
   setFirstPerson(on) {
