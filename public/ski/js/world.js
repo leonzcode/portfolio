@@ -3,10 +3,10 @@
 // background and replace with just a blue sky for now".)
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=17';
-import { fbm, ridged, rng, smoothstep } from './noise.js?v=17';
-import { Env, buildPanel } from './env.js?v=17';
-import { snowUniforms } from './materials.js?v=17';
+import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=18';
+import { fbm, ridged, rng, smoothstep } from './noise.js?v=18';
+import { Env, buildPanel } from './env.js?v=18';
+import { snowUniforms } from './materials.js?v=18';
 
 // the sky, the sun and sky light, the fog and the reflections are env.js's (photographs of real skies, the time of
 // day and the weather chosen on the home screen); makeSky keeps its old shape for main.js: { sky, sun, hemi, sunDir, follow }
@@ -71,7 +71,9 @@ export class Forest {
     this.trees = [];
     const max = q.tier === 'low' ? 2600 : q.tier === 'medium' ? 5000 : 8000;
     // on a real mountain: below the treeline, thinning as it nears, on ground not too steep
-    if (mtn) for (let tries = 0; this.trees.length < max && tries < max * 12; tries++) {
+    // (a made-up mountain places its own: mtn.trees(max, random), Freeride's)
+    if (mtn && mtn.trees) this.trees.push(...mtn.trees(max, r));
+    else if (mtn) for (let tries = 0; this.trees.length < max && tries < max * 12; tries++) {
       const a = r() * Math.PI * 2, d = 30 + Math.sqrt(r()) * 2600, x = Math.cos(a) * d, z = Math.sin(a) * d;
       const y = height(x, z), line = mtn.spot.treeline + 60 * fbm(x * 0.004, z * 0.004, 2);
       if (y > line || r() < smoothstep(line - 150, line, y) * 0.9) continue;
@@ -94,18 +96,56 @@ export class Forest {
     // a grid of the trees for collisions (8 m cells)
     this.grid = new Map();
     for (const t of this.trees) { const k = Math.floor(t.x / 8) + ',' + Math.floor(t.z / 8); if (!this.grid.has(k)) this.grid.set(k, []); this.grid.get(k).push(t); }
-    const near = q.tier === 'low' ? 260 : 520;
+    /* (2026-11-06, for smoother distance changes: a tree near the camera is a 3D conifer, further off a flat card, and
+       they used to swap in batches every 15 m of camera movement, a row of trees popping from one to the other at once.
+       Now each tree fades from one to the other over the last few metres of the near radius, worked out every frame
+       from the camera on the graphics card (a fine dither: the near tree's pixels and the card's take turns, so
+       together they always make one whole tree). Every card is in one buffer sent once (the ones near the camera are
+       dropped at their corners, so they cost nothing to fill); only the short list of near trees changes, every 6 m.) */
+    this.nearR = q.tier === 'low' ? 70 : 110; this.band = q.tier === 'low' ? 16 : 20; this.move = 6;
+    const nearMax = q.tier === 'low' ? 320 : 640;
     this.geo = coniferGeometry(r);
+    const uFade = { value: new THREE.Vector2(this.nearR - this.band, this.nearR) };
+    // the fade worked out at each corner from its tree's place; fully faded, its triangles go out of view
+    const fade = (far) => s => {
+      s.uniforms.uTreeFade = uFade;
+      s.vertexShader = s.vertexShader.replace('#include <common>', `#include <common>
+uniform vec2 uTreeFade; varying float vTreeK;${far ? '\nattribute float aNear;' : ''}`).replace('#include <project_vertex>', `#include <project_vertex>
+{
+  float f = smoothstep(uTreeFade.x, uTreeFade.y, length(instanceMatrix[3].xz - cameraPosition.xz));
+  vTreeK = ${far ? 'aNear > 0.5 ? f : 1.0' : '1.0 - f'};
+  if (vTreeK < 0.002) gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+}`);
+      s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+varying float vTreeK;
+// (a 4 x 4 ordered dither: the card keeps the pixels the near tree leaves)
+float tb2(vec2 p) { return 2.0 * abs(p.x - p.y) + p.y; }
+float treeDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * tb2(mod(p, 2.0)) + tb2(floor(p * 0.5)) + 0.5) / 16.0; }`)
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+  if (vTreeK < 0.999 && ${far ? 'treeDither() >= vTreeK' : 'treeDither() < 1.0 - vTreeK'}) discard;`);
+    };
     const tm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
     // the undersides of the branches are in their own shade
     // (by night the light that follows the rider is the park's floodlight: the trees keep only a little of it)
-    tm.onBeforeCompile = s => { s.uniforms.uNight = snowUniforms.uNight; s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+    const nearFade = fade(false), farFade = fade(true);
+    tm.onBeforeCompile = s => { s.uniforms.uNight = snowUniforms.uNight; nearFade(s); s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
 uniform float uNight;`).replace('#include <color_fragment>', `#include <color_fragment>
  if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.045, 0.075, 0.055);`).replace('#include <opaque_fragment>', `outgoingLight -= (reflectedLight.directDiffuse + reflectedLight.directSpecular) * uNight * 0.7;
 #include <opaque_fragment>`); };
-    tm.customProgramCacheKey = () => 'conifer';
-    this.near = new THREE.InstancedMesh(this.geo, tm, near);
-    this.near.castShadow = q.tier !== 'low'; this.near.receiveShadow = true; this.near.frustumCulled = false;
+    tm.customProgramCacheKey = () => 'conifer2';
+    this.near = new THREE.InstancedMesh(this.geo, tm, nearMax);
+    this.near.castShadow = false; this.near.receiveShadow = true; this.near.frustumCulled = false;
+    /* (the lag pass: the near trees' shadows come from a copy holding only the trees that can shade the snow round the
+       rider, those in the column of sunlight through the shadow map's box, drawn only into the shadow map (layer 5,
+       env.js): all the near trees went into it before, about 34 000 triangles on the high tier, most of them outside
+       the box. No tree shadows on the low tier, as before.) */
+    if (q.tier !== 'low') {
+      this.shade = new THREE.InstancedMesh(this.geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, colorWrite: false }), nearMax);
+      this.shade.layers.set(5); this.shade.castShadow = true; this.shade.frustumCulled = false; this.shade.count = 0; this.shade.name = 'trees shadow';
+      this.shade.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.shade.matrixAutoUpdate = false;
+      this.sunAt = new THREE.Vector3();
+    }
+    this.near.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.near.count = 0;
     const card = new THREE.PlaneGeometry(1, 1); card.translate(0, 0.5, 0);
     const card2 = card.clone().rotateY(Math.PI / 2);
     const cards = new THREE.BufferGeometry();
@@ -113,34 +153,59 @@ uniform float uNight;`).replace('#include <color_fragment>', `#include <color_fr
     const cu = [...card.toNonIndexed().attributes.uv.array, ...card2.toNonIndexed().attributes.uv.array];
     cards.setAttribute('position', new THREE.Float32BufferAttribute(cp, 3)); cards.setAttribute('uv', new THREE.Float32BufferAttribute(cu, 2));
     cards.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(cp.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    // which trees are on the near list now (the others' cards always show whole)
+    this.aNear = new Float32Array(this.trees.length);
+    const an = new THREE.InstancedBufferAttribute(this.aNear, 1); an.setUsage(THREE.DynamicDrawUsage); cards.setAttribute('aNear', an);
     const cm = new THREE.MeshLambertMaterial({ map: cardTexture(), alphaTest: 0.5, side: THREE.DoubleSide });
-    cm.onBeforeCompile = s => { s.uniforms.uNight = snowUniforms.uNight; s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+    cm.onBeforeCompile = s => { s.uniforms.uNight = snowUniforms.uNight; farFade(s); s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
 uniform float uNight;`).replace('#include <opaque_fragment>', `outgoingLight -= reflectedLight.directDiffuse * uNight * 0.8;
 #include <opaque_fragment>`); };
-    cm.customProgramCacheKey = () => 'treecard';
+    cm.customProgramCacheKey = () => 'treecard2';
     this.far = new THREE.InstancedMesh(cards, cm, this.trees.length);
     this.far.frustumCulled = false;
-    scene.add(this.near, this.far);
-    this.at = new THREE.Vector3(1e9, 0, 0); this.nearR = q.tier === 'low' ? 70 : 110;
-    this.m = new THREE.Matrix4(); this.qq = new THREE.Quaternion(); this.sc = new THREE.Vector3(); this.pp = new THREE.Vector3();
+    // each tree's two matrices, worked out once: its card's straight into the card buffer, its near one kept for when it
+    // is near
+    this.mNear = new Float32Array(this.trees.length * 16);
+    {
+      const m = new THREE.Matrix4(), qq = new THREE.Quaternion(), sc = new THREE.Vector3(), pp = new THREE.Vector3(), fa = this.far.instanceMatrix.array;
+      this.trees.forEach((t, i) => {
+        qq.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, t.rot); pp.set(t.x, t.y, t.z);
+        m.compose(pp, qq, sc.set(t.s * 0.9, t.s, t.s * 0.9)); m.toArray(this.mNear, i * 16);
+        m.compose(pp, qq, sc.set(t.s * 0.75, t.s, t.s * 0.75)); m.toArray(fa, i * 16);
+      });
+      this.far.instanceMatrix.needsUpdate = true;
+    }
+    this.tx = Float32Array.from(this.trees, t => t.x); this.tz = Float32Array.from(this.trees, t => t.z);
+    for (const o of [this.near, this.far]) o.matrixAutoUpdate = false;
+    scene.add(this.near, this.far); if (this.shade) scene.add(this.shade);
+    this.at = new THREE.Vector3(1e9, 0, 0);
   }
   update(cam) {
-    if (cam.distanceTo(this.at) < 15) return;
+    const L = snowUniforms.uSunDir.value, sunMoved = this.shade && this.sunAt.distanceToSquared(L) > 4e-4;
+    if (cam.distanceTo(this.at) < this.move && !sunMoved) return;
     this.at.copy(cam);
-    let ni = 0, fi = 0;
-    const R2 = this.nearR * this.nearR, nMax = this.near.count;
-    this.near.count = nMax;
-    for (const t of this.trees) {
-      const d2 = (t.x - cam.x) ** 2 + (t.z - cam.z) ** 2;
-      this.qq.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, t.rot); this.pp.set(t.x, t.y, t.z);
-      if (d2 < R2 && ni < this.nearCap()) {
-        this.sc.set(t.s * 0.9, t.s, t.s * 0.9); this.m.compose(this.pp, this.qq, this.sc); this.near.setMatrixAt(ni++, this.m);
-      } else {
-        this.sc.set(t.s * 0.75, t.s, t.s * 0.75); this.m.compose(this.pp, this.qq, this.sc); this.far.setMatrixAt(fi++, this.m);
-      }
+    if (this.shade) this.sunAt.copy(L);
+    // the near list: every tree that can come inside the near radius before the next update (the fade does the rest)
+    const R = this.nearR + this.move + 1, R2 = R * R, cap = this.near.instanceMatrix.count, src = this.mNear, dst = this.near.instanceMatrix.array, aN = this.aNear;
+    const cx = cam.x, cz = cam.z, X = this.tx, Z = this.tz;
+    let ni = 0, si = 0;
+    // (the shadow copy: a tree within about 60 m of the column of light through the shadow box, which reaches up towards
+    // the sun from the rider; the box is 34 m each way, and 6 m more for a tree's own spread and for the camera moving)
+    const sh = this.shade, sd = sh ? sh.instanceMatrix.array : null, cy = cam.y, P2 = 60 * 60;
+    for (let i = 0, n = X.length; i < n; i++) {
+      const dx = X[i] - cx, dz = Z[i] - cz;
+      if (dx * dx + dz * dz < R2 && ni < cap) {
+        const o = ni * 16, k = i * 16; for (let j = 0; j < 16; j++) dst[o + j] = src[k + j]; ni++; aN[i] = 1;
+        if (sh) {
+          const dy = src[k + 13] + src[k + 5] * 0.5 - cy, along = dx * L.x + dy * L.y + dz * L.z;
+          if (along > -50 && dx * dx + dy * dy + dz * dz - along * along < P2) { const so = si * 16; for (let j = 0; j < 16; j++) sd[so + j] = src[k + j]; si++; }
+        }
+      } else aN[i] = 0;
     }
-    this.near.count = ni; this.far.count = fi;
-    this.near.instanceMatrix.needsUpdate = true; this.far.instanceMatrix.needsUpdate = true;
+    this.near.count = ni;
+    const im = this.near.instanceMatrix; im.clearUpdateRanges(); im.addUpdateRange(0, Math.max(16, ni * 16)); im.needsUpdate = true;
+    if (sh) { sh.count = si; const sm = sh.instanceMatrix; sm.clearUpdateRanges(); sm.addUpdateRange(0, Math.max(16, si * 16)); sm.needsUpdate = true; }
+    this.far.geometry.attributes.aNear.needsUpdate = true;
   }
   nearCap() { return this.near.instanceMatrix.count; }
   // the tree whose trunk (and lower branches) a body of radius r at x, z touches, or null
@@ -249,10 +314,26 @@ export function makeProps(scene, park, q) {
     if ((park.rails || []).some(r => { r.closest(new THREE.Vector3(x, y + 0.5, z), cl); return cl.dh < 1.8; })) continue;
     add(poleG, 'dark', x, y + 1.1, z); add(flagG, 'orange', x + 0.36, y + 1.95, z);
   }
+  /* (2026-11-06, the lag pass: the fences, posts and flags cast their shadows from copies in 100 m pieces along the
+     park, drawn only into the shadow map (layer 5, env.js): merged, all 8 400 triangles of them went into the shadow
+     map every frame, which only covers the snow round the rider) */
+  const pieces = new Map(), _c = new THREE.Vector3();
   for (const key in buckets) {
     if (!buckets[key].length) continue;
+    for (const g0 of buckets[key]) {
+      g0.computeBoundingBox(); const k = Math.floor(g0.boundingBox.getCenter(_c).z / 100);
+      const h = new THREE.BufferGeometry(); h.setAttribute('position', g0.attributes.position);
+      if (!pieces.has(k)) pieces.set(k, []); pieces.get(k).push(h);
+    }
     const g = mergeGeometries(buckets[key], false); if (!g) continue;
-    const m = new THREE.Mesh(g, M[key]); m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false; group.add(m);
+    const m = new THREE.Mesh(g, M[key]); m.castShadow = false; m.receiveShadow = true; m.matrixAutoUpdate = false; group.add(m);
+  }
+  const shadowMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, colorWrite: false });
+  for (const list of pieces.values()) {
+    const g = mergeGeometries(list, false); if (!g) continue;
+    g.computeBoundingSphere();
+    const sm = new THREE.Mesh(g, shadowMat); sm.layers.set(5); sm.castShadow = true; sm.matrixAutoUpdate = false; sm.name = 'props shadow';
+    group.add(sm);
   }
   scene.add(group);
   return group;

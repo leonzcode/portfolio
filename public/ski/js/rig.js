@@ -10,10 +10,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=17';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=17';
-import { height } from './terrain.js?v=17';
-import { gltfLoader, gearParts, LOOK, FIT } from './gear.js?v=17';
+import { clamp, smoothstep } from './noise.js?v=18';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=18';
+import { height } from './terrain.js?v=18';
+import { gltfLoader, gearParts, LOOK, FIT } from './gear.js?v=18';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -61,10 +61,76 @@ export { segSeg };
 const gpOut = () => ({ pt: V(), palm: V(), fingers: V() });
 
 export const SKI = { len: 1.78, waist: 0.092, tip: 0.118, thick: 0.017, stack: 0.03 };
+// seen in first person on the snow (2026-11-06): how much more upright the chest is (rad), how far further back the
+// hips sit (m), and how much further out, up and forward the hands ride (m), so the ski tips and the hands are in view from the eyes (Rig.FP, for tests)
+const FP = { lean: 0.3, hips: 0.1, lat: 0.04, up: 0.14, fwd: 0.32 };
+
+/* ---- followers for the first-person view (2026-11-06, for "make it so that first person looks more realistic and
+   you can see the deck move and it is not glitchy for all"). Each follows a moving target with a critically damped
+   spring whose own velocity is fed forward, so while the target moves smoothly (a carve, a spin, a flip) it is followed
+   exactly, with no lag; but the fed-forward velocity may change only so fast (amax, per second squared), so a jump in
+   one frame (the body set onto the snow at a landing, onto a rail as it locks on) is not passed through: it is eased
+   out over about 4.7 / k seconds instead. Nothing allocated per frame. -------------------------------------------- */
+const _fa = V(), _fb = V(), _fc = V(), _ff = V(), _fe = V(), _gq1 = Q(), _gq2 = Q(), _gq3 = Q();
+// the rotation taking a to b, as a rotation vector in the world (b = d a)
+export function rotVec(a, b, out) {
+  const d = _gq3.copy(a).invert().premultiply(b);
+  if (d.w < 0) { d.x = -d.x; d.y = -d.y; d.z = -d.z; d.w = -d.w; }
+  const s = Math.hypot(d.x, d.y, d.z);
+  if (s < 1e-9) return out.set(0, 0, 0);
+  const ang = 2 * Math.atan2(s, d.w);
+  return out.set(d.x / s * ang, d.y / s * ang, d.z / s * ang);
+}
+export function expRot(v, out) {
+  const a = v.length();
+  if (a < 1e-9) return out.identity();
+  const s = Math.sin(a / 2) / a;
+  return out.set(v.x * s, v.y * s, v.z * s, Math.cos(a / 2));
+}
+// one critically damped step of an error e and its rate r (both vectors, changed in place) over dt at rate k
+function damp(e, r, k, dt) {
+  const E = Math.exp(-k * dt), j = _fe.copy(r).addScaledVector(e, k);
+  e.addScaledVector(j, dt).multiplyScalar(E);
+  r.addScaledVector(j, -k * dt).multiplyScalar(E);
+}
+export class FollowV {
+  constructor() { this.x = V(); this.v = V(); this.u = V(); this.t = V(); this.ok = false; }
+  reset(t) { this.x.copy(t); this.t.copy(t); this.v.set(0, 0, 0); this.u.set(0, 0, 0); this.ok = true; return this.x; }
+  to(t, dt, k, amax) {
+    if (!this.ok || !(dt > 0)) return this.ok ? this.x : this.reset(t);
+    const du = _fa.subVectors(t, this.t).divideScalar(dt).sub(this.u), m = du.length(), cap = amax * dt;
+    if (m > cap) du.multiplyScalar(cap / m);
+    this.u.add(du);
+    const e = _fb.subVectors(this.x, this.t), r = _fc.subVectors(this.v, this.u);
+    damp(e, r, k, dt);
+    this.x.copy(this.t).addScaledVector(this.u, dt).add(e);
+    this.v.copy(this.u).add(r);
+    this.t.copy(t);
+    return this.x;
+  }
+}
+export class FollowQ {
+  constructor() { this.q = Q(); this.t = Q(); this.w = V(); this.u = V(); this.ok = false; }
+  reset(t) { this.q.copy(t); this.t.copy(t); this.w.set(0, 0, 0); this.u.set(0, 0, 0); this.ok = true; return this.q; }
+  to(t, dt, k, amax) {
+    if (!this.ok || !(dt > 0)) return this.ok ? this.q : this.reset(t);
+    const du = rotVec(this.t, t, _fa).divideScalar(dt).sub(this.u), m = du.length(), cap = amax * dt;
+    if (m > cap) du.multiplyScalar(cap / m);
+    this.u.add(du);
+    const e = rotVec(this.t, this.q, _fb), r = _fc.subVectors(this.w, this.u);
+    damp(e, r, k, dt);
+    // shown: the error left, on the old target carried on at the fed-forward rate
+    expRot(_ff.copy(this.u).multiplyScalar(dt), _gq1).multiply(this.t);
+    this.q.copy(expRot(e, _gq2).multiply(_gq1)).normalize();
+    this.w.copy(this.u).add(r);
+    this.t.copy(t);
+    return this.q;
+  }
+}
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=17';
-import { grabDef } from './grabs.js?v=17';
+export { GRABS } from './grabs.js?v=18';
+import { grabDef } from './grabs.js?v=18';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -351,6 +417,7 @@ export class Rig {
     this.pull = [V(), V()]; this._pt = [V(), V()]; this._hold = [0, 0];                     // a grabbed ski brought up to the hand
     this._flex = [0, 0];
     this.eye = V(); this.headPos = V(); this.headQ = Q();
+    this.fp = false; this._dt = 0;                                     // seen in first person (camera.js sets it)
   }
   async load(id, opts = {}) {
     // (the look: what the locker chose; its colours win over the outfit's)
@@ -358,7 +425,7 @@ export class Rig {
     const kind = opts.kind || 'ski';
     const want = { goggles: gearParts('goggles'), head: look.head === 'beanie' ? gearParts('beanie') : look.head === 'painted' ? null : gearParts('helmet_c'),
       ski: kind === 'ski' && look.ski !== 'park' ? gearParts(look.ski === 'pow' ? 'ski_b' : 'ski_a') : null, pole: kind === 'ski' ? gearParts('pole') : null, plate: kind === 'ski' ? gearParts('binding') : null };
-    const gl = await gltfLoader().loadAsync('./models/' + id + '.glb?v=17');
+    const gl = await gltfLoader().loadAsync('./models/' + id + '.glb?v=18');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     if (opts.look) for (const k of ['jacket', 'pants', 'gloves', 'helmet', 'lens', 'boots', 'skiA', 'skiB']) if (opts.look[k]) this.outfit[k] = opts.look[k];
@@ -442,7 +509,7 @@ export class Rig {
   }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=17';
+    const maskUrl = './models/' + id + '_m.png?v=18';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -453,7 +520,7 @@ export class Rig {
       uMask: { value: mask }, uMeans: { value: new THREE.Vector3(...means) },
       uTop: { value: col(this.outfit.jacket) }, uBottom: { value: col(this.outfit.pants) }, uShoe: { value: col('#202227') }, uGlove: { value: col(this.outfit.gloves) },
       uHandA: { value: new THREE.Vector4(-1, -1, -1, -1) }, uHandB: { value: new THREE.Vector4(-1, -1, -1, -1) },
-      uMaskV: { value: mask }, uPuff: { value: 0 }, uLeg: { value: new THREE.Vector2(0, 1.75) }, uLegMid: { value: new THREE.Vector3() }, uLegLat: { value: new THREE.Vector3(1, 0, 0) }, uLegHalf: { value: 0 },
+      uMaskV: { value: mask }, uPuff: { value: 0 }, uFpNear: { value: 0 }, uLeg: { value: new THREE.Vector2(0, 1.75) }, uLegMid: { value: new THREE.Vector3() }, uLegLat: { value: new THREE.Vector3(1, 0, 0) }, uLegHalf: { value: 0 },
     };
     this.dressU = U;
     mat.onBeforeCompile = (s) => {
@@ -493,7 +560,18 @@ vGlove = 0.0;
 vHN = 0.0;
 #endif`);
       s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
-uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uBottom; uniform vec3 uShoe; uniform vec3 uGlove; varying float vGlove; varying float vHN;`)
+uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uBottom; uniform vec3 uShoe; uniform vec3 uGlove; varying float vGlove; varying float vHN;
+uniform float uFpNear;
+float fpBayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }`)
+        /* (2026-11-06) seen in first person, the rider's own body closer to the lens than uFpNear fades out through a
+           fine screen door (an arm swung past the face, the collar at the bottom edge), instead of filling the view
+           or being cut open by the near plane. 0 (every other camera, every other rider): nothing changes. */
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+if (uFpNear > 0.0) {
+  float fpA = smoothstep(uFpNear * 0.55, uFpNear, length(vViewPosition));
+  vec2 fpC = gl_FragCoord.xy;
+  if (fpA < fpBayer2(0.5 * fpC) * 0.25 + fpBayer2(fpC) + 0.03) discard;
+}`)
         .replace('#include <map_fragment>', `#include <map_fragment>
 { vec4 mk = texture2D(uMask, vMapUv);
   // (the model's jeans come up over the hips at the back: above the jacket's hem it is the jacket)
@@ -678,6 +756,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     if (!this.ready) return;
     this._frame = (this._frame || 0) + 1;
     dt = dt > 0 ? Math.min(dt, 0.05) : 0;
+    this._dt = dt;
     // another ride poses its own way (Rig.poser[kind](rig, S, dt), registered by its module, e.g. board.js); it can use
     // placeBody, setWorldQ, aim, twoBone, blendBone, curl, placeHead and flushTree like the skier's pose below
     const pf = this.kind !== 'ski' ? Rig.poser[this.kind] : null;
@@ -827,6 +906,9 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     const prep = air ? 1 - smoothstep(0.09, 0.36, this.timeToGround(S.p, vel)) : 0;
     const ext = sp('ext', air ? 1 - prep : 0, air ? 28 : 32);
     const airW = sp('airW', air ? 1 : 0, air ? 10 : 9), railW = sp('railW', rail ? 1 : 0, 12), crashW = sp('crash', crash ? 1 : 0, 6);
+    // (seen in first person the hands ride a little further forward and up, where a skier keeps them and can see them
+    // at the bottom of the view; only this rider's own eyes see it, 2026-11-06)
+    const fpW = sp('fpW', this.fp ? 1 : 0, 6);
     // a shifty: the lower body turned across under the body, the chest the other way (unwound before the landing)
     const lowYaw = sp('lowYaw', air ? -(S.shift || 0) * 1.3 : 0, air ? 15 : 20, air ? 0.8 : 1) * smooth01(ext * 1.6);
     // the air shape of each ski: the grab's or position's, or loose straight-air skis
@@ -914,7 +996,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     // skating: the hips ride over each gliding ski in turn; riding and on rails the weight never quite stops moving
     let pelX = -Math.sin(phi) * colL - pushS * 0.14 * strk + (0.016 + 0.014 * railW) * wob(tt * (1.7 + 0.9 * railW), 4.4) * (1 - airW);
     let pelY = A0 + colL * Math.cos(phi) * Math.cos(psi);
-    const pelZ = -0.08 - 0.12 * crouch + (press > 0 ? 0.42 : 0.28) * press * (1 - lazy) - 0.05 * tuck + Math.sin(psi) * colL * 0.8 - 0.8 * lazy;    // (a lazy boy: the hips back over the tails, the legs reaching forward to the boots)
+    const pelZ = -0.08 - 0.12 * crouch + (press > 0 ? 0.42 : 0.28) * press * (1 - lazy) - 0.05 * tuck + Math.sin(psi) * colL * 0.8 - 0.8 * lazy - FP.hips * fpW * (1 - airW);    // (a lazy boy: the hips back over the tails, the legs reaching forward to the boots)
     // ---- where the upper body and head go
     let face = 0;
     if (ground && speed > 0.8) face = clamp(S.sw ? Math.atan2(-vb.x, -vb.z) : Math.atan2(vb.x, vb.z), -1.5, 1.5) * smoothstep(0.8, 2.5, speed);
@@ -971,7 +1053,10 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     /* one body moving together (2026-11-05, for "more jibbery ... flow as 1 whole body"): the chest follows what the
        hips and legs do through a loose spring of its own (a little behind, swinging a little past), and the head follows
        the chest the same way, so a change runs up the body as one motion instead of every part turning at once */
-    const lean = sp('leanF', ln - sp('lf', this._lfT || 0, 14) + 0.2 * rk + (0.42 * crouch * (1 - gW) - 0.42 * (landX + absorb) + 0.1 * absorb + 0.45 * crunch + 1.4 * Math.max(0, comp)) * onSnow, air ? 16 : 11, 0.68) + 0.02 * wob(tt * 1.1, 9.1);
+    /* (seen in first person, 2026-11-06: the chest a little more upright on the snow, so the eyes are over the boots'
+       toes rather than over the ski tips, as a skier's are; leaning as the rest of the pose has it, the eyes were half a
+       metre ahead of the boots, right over the tips and the hands, and none of them could be seen from the eyes) */
+    const lean = sp('leanF', ln - sp('lf', this._lfT || 0, 14) + 0.2 * rk + (0.42 * crouch * (1 - gW) - 0.42 * (landX + absorb) + 0.1 * absorb + 0.45 * crunch + 1.4 * Math.max(0, comp) - FP.lean * fpW) * onSnow, air ? 16 : 11, 0.68) + 0.02 * wob(tt * 1.1, 9.1);
     const idleY = 0.035 * wob(tt * 0.9, 3.7) * onSnow * (1 - railW);      // the shoulders turn a little, riding along
     // (in a grab the hips turn with it too, the grab's own share or a third: not the chest alone, 2026-11-03)
     const hipK = sp('hipK', gd ? (gd.hips ?? 0.35) : 0.3, 10);
@@ -1137,6 +1222,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
       } else {
         // forward and a little wide of the hips, elbows soft
         lat = 0.12 - 0.04 * tuck; up = -0.41 + 0.15 * tuck; fwd = 0.2 + 0.1 * tuck;
+        lat += FP.lat * fpW; up += FP.up * fpW; fwd += FP.fwd * fpW;
         const load = (S.loading ? 1 : smoothstep(0.55, 0.85, S.crouch || 0)) * (1 - tuck);   // crouched to pop: the arms load back
         fwd -= 0.16 * load; up += 0.03 * load; lat += 0.03 * load;
         lat += 0.08 * btK; up += 0.08 * btK; fwd -= 0.03 * btK;
@@ -1313,9 +1399,45 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
   // the body's frame at the feet (S.p, S.q) and the nodes above the skeleton's root; returns the body's rotation
   placeBody(S) {
     const body = this.body;
-    body.position.copy(S.p); body.quaternion.copy(S.q); body.updateWorldMatrix(false, false);
+    body.position.copy(S.p); body.quaternion.copy(S.q);
+    if (this.fp) this.fpEase(S);
+    body.updateWorldMatrix(false, false);
     for (const o of this.chain) o.updateWorldMatrix(false, false);
     return (this.rootQ = body.quaternion);
+  }
+  /* seen in first person (2026-11-06): the physics sets the body straight onto the snow as it lands (15 to 45 degrees
+     in one frame after a flip or a spin) and onto a rail as it locks on (about 9 degrees and 15 cm sideways), and in
+     first person what you ride and your own legs and hands jumped with it under your eyes. Here those jumps are eased
+     out (the turn over about a sixth of a second, the place over about a third; the followers above); smooth motion,
+     turning and travel at the physics' own velocity, is passed straight through. That also takes out the physics'
+     stepping: it moves in 1/120 s steps, one to three a frame against the frame's clock, so the place it hands over
+     runs up to a step (10 cm at 12 m/s) ahead or behind, and the camera at the eyes shook the whole view with it. A
+     jump of more than 3 m (a respawn, back to the start) and the chairlift are taken as they are. Once a frame (a
+     ride's pose may ask for the body twice). */
+  fpEase(S) {
+    const E = this._fpE || (this._fpE = { q: new FollowQ(), p: new FollowV(), f: -1, bq: Q(), bp: V(), st: '' });
+    const body = this.body;
+    if (E.f === this._frame) { body.position.copy(E.bp); body.quaternion.copy(E.bq); return; }
+    E.f = this._frame;
+    const dt = this._dt, lift = S.state === 'lift' || E.st === 'lift';
+    E.st = S.state;
+    if (!E.p.ok || lift || E.p.t.distanceToSquared(S.p) > 9) { E.p.reset(S.p); E.q.reset(S.q); }
+    else {
+      // the place: against the physics' own velocity (a landing's change of speed is real motion; only a jump away from
+      // where that velocity goes is eased out)
+      if (S.vel) E.p.u.copy(S.vel);
+      E.p.to(S.p, dt, 14, S.vel ? 0 : 60);
+      E.q.to(S.q, dt, 30, 140);
+    }
+    body.position.copy(E.p.x); body.quaternion.copy(E.q.q);
+    E.bp.copy(body.position); E.bq.copy(body.quaternion);
+  }
+  // first person on or off (camera.js, each frame): the easing above, and the body's fade close to the lens
+  setFirstPerson(on) {
+    on = !!on;
+    if (on === this.fp) return;
+    this.fp = on; this._fpE = null;
+    if (this.dressU) this.dressU.uFpNear.value = on ? 0.17 : 0;
   }
   // the helmet on the head (hdQ: the head's world rotation, as posed), and the eyes for the first-person camera
   placeHead(hdQ) {
@@ -1429,7 +1551,6 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
     for (const s of [this.skiL, this.skiR]) { if (!s) continue; s.updateMatrixWorld(); pts.push(V().set(0, 0, SKI.len / 2 - 0.05).applyMatrix4(s.matrixWorld), V().set(0, 0, -SKI.len / 2 + 0.05).applyMatrix4(s.matrixWorld)); }
     return pts;
   }
-  setFirstPerson(on) { /* the head, hair and helmet are on layer 1; the first-person camera leaves that layer out */ }
   /* free what this rider put on the graphics card (2026-11-05: the locker builds the rider again on a change, and a
      rider in a room is built again when their look changes; the old ones were only taken out of the scene). The
      downloaded gear's pictures are shared by every rider and stay. */
@@ -1455,6 +1576,7 @@ uniform sampler2D uMask; uniform vec3 uMeans; uniform vec3 uTop; uniform vec3 uB
 // every frame instead of the skier's pose (rig._frame is already counted for the frame)
 Rig.loader = {};
 Rig.poser = {};
+Rig.FP = FP;
 // the IK helpers as plain functions, for another ride's pose (they are the rig's own methods)
 export const twoBone = (rig, upper, lower, ku, kl, target, pole, restUp) => rig.twoBone(upper, lower, ku, kl, target, pole, restUp);
 export const aim = (rig, bone, restQ, restD, restUp, dir, up) => rig.aim(bone, restQ, restD, restUp, dir, up);

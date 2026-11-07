@@ -8,11 +8,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,800;1,700;1,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/ski.css?v=17">
+<link rel="stylesheet" href="./css/ski.css?v=18">
 <script type="importmap">
 {
   "imports": {
-    "three": "/car/vendor/three/three.module.js?v=ski17",
+    "three": "/car/vendor/three/three.module.js?v=ski18",
     "three/addons/": "/car/vendor/three/addons/"
   }
 }
@@ -40,11 +40,15 @@
       <h1>Leon Freeski</h1>
       <p class="tag">Pick a run, then ride.</p>
     </div>
+    <div class="maps runs" role="radiogroup" aria-label="Mountain">
+      <button class="map" data-map="jumpline" role="radio"><span class="sign park" aria-hidden="true">Park</span><b>Jump Line</b><small>Seven jumps, three sizes each</small></button>
+      <button class="map" data-map="freeride" role="radio"><span class="sign diamond" aria-hidden="true"><i></i><i></i></span><b>Freeride</b><small>Cliffs, chutes and a big face</small></button>
+    </div>
     <div class="maps rides" role="radiogroup" aria-label="Ride">
       <button class="map" data-ride="ski" role="radio"><span class="sign park" aria-hidden="true">Ski</span><b>Skis</b><small>Twin tips, two poles</small></button>
       <button class="map" data-ride="board" role="radio"><span class="sign park" aria-hidden="true">Board</span><b>Snowboard</b><small>One board, sideways</small></button>
       <button class="map" data-ride="scoot" role="radio"><span class="sign park" aria-hidden="true">Scoot</span><b>Snow scooter</b><small>Bars and two short boards</small></button>
-      <button class="map" data-ride="bike" role="radio"><span class="sign park" aria-hidden="true">Bike</span><b>Snowbike</b><small>Seated, skis and foot skis</small></button>
+      <button class="map" data-ride="bike" role="radio"><span class="sign park" aria-hidden="true">Bike</span><b>Snowbike</b><small>Seated, feet on pegs, two skis</small></button>
       <button class="map" data-ride="sled" role="radio"><span class="sign park" aria-hidden="true">Sled</span><b>Sled</b><small>Head first, on your stomach</small></button>
     </div>
     <div class="seg" role="radiogroup" aria-label="Stance" id="stanceseg">
@@ -67,7 +71,7 @@
     <details class="fold">
       <summary>Settings</summary>
       <div class="opts">
-        <select id="map" hidden><option value="jumpline">Jump Line</option></select>
+        <select id="map" hidden><option value="jumpline">Jump Line</option><option value="freeride">Freeride</option></select>
         <select id="scheme" hidden><option value="mouse">Mouse steer</option><option value="keys">Keyboard</option><option value="shred">Shredsauce Controls</option></select>
         <label>Camera
           <select id="cammode"><option value="chase">Chase</option><option value="far">Far chase</option><option value="pov">First person</option><option value="film">Filmer</option></select>
@@ -119,6 +123,6 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=17"></script>
+<script type="module" src="./js/main.js?v=18"></script>
 </body>
 </html>

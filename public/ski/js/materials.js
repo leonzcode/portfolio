@@ -4,7 +4,7 @@
 // (env.js: groomed, powder, packed, spring slush, ice), the floodlights' pools by night, and fog the colour of the sky's
 // own horizon in each direction.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=17';
+import { rng } from './noise.js?v=18';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
 function noiseTexture(size = 256, seed = 3) {
@@ -59,8 +59,13 @@ export const snowUniforms = {
   uSnowLook: { value: new THREE.Vector4(1, 0.15, 0, 0) },
   uSnowRough: { value: 0.78 },
   uNight: { value: 0 },
-  uLights: { value: new THREE.Vector4(-40, 40, 0, 45) },
-  uLightsN: { value: 1 },
+  // the park's lamps (env.js makeLightTowers): how far on they are, and up to six rows of them: (first lamp x, z, step to
+  // the next x, z), (count, the way they point x, z, height over the snow), (how bright, -, -, -)
+  uLamps: { value: 0 },
+  uLRowA: { value: Array.from({ length: 6 }, () => new THREE.Vector4()) },
+  uLRowB: { value: Array.from({ length: 6 }, () => new THREE.Vector4()) },
+  uLRowC: { value: Array.from({ length: 6 }, () => new THREE.Vector4()) },
+  uLRowN: { value: 0 },
   uGrain: { value: null },
   uLumps: { value: null },
   uTrackDepth: { value: 0.06 },     // metres of depth for a full groove in the track map (the snow kind's, env.js)
@@ -75,6 +80,28 @@ function snowTexture(url, fallback) {
   return t;
 }
 
+/* (2026-11-06, the lag pass) three's PCF shadow reads the shadow map 17 times for every pixel of snow in the shadow
+   box round the rider, about half the picture; on the low tier the snow reads it 4 times instead and blends between
+   them (the same soft edge, a texel narrower). The other materials keep three's own. */
+function lowShadowChunk() {
+  const src = THREE.ShaderChunk.shadowmap_pars_fragment, a = src.indexOf('#if defined( SHADOWMAP_TYPE_PCF )'), b = src.indexOf('( 1.0 / 17.0 );', a);
+  if (a < 0 || b < 0) return null;
+  return src.slice(0, a) + `#if defined( SHADOWMAP_TYPE_PCF )
+			vec2 texelSize = vec2( 1.0 ) / shadowMapSize;
+			vec2 st = shadowCoord.xy * shadowMapSize - 0.5, f = fract( st );
+			vec2 uv = ( floor( st ) + 0.5 ) * texelSize;
+			shadow = mix( mix( texture2DCompare( shadowMap, uv, shadowCoord.z ), texture2DCompare( shadowMap, uv + vec2( texelSize.x, 0.0 ), shadowCoord.z ), f.x ),
+				mix( texture2DCompare( shadowMap, uv + vec2( 0.0, texelSize.y ), shadowCoord.z ), texture2DCompare( shadowMap, uv + texelSize, shadowCoord.z ), f.x ), f.y );` + src.slice(b + '( 1.0 / 17.0 );'.length);
+}
+let LOW_SHADOW;
+/* (and on the low tier the sky's reflection off the snow is the sky's light on it, not a second look into the sky's
+   picture: snow is so rough that its blurred reflection is nearly the same colour, and it saves about a tenth of the
+   snow's cost on the graphics card) */
+const LOW_IBL = () => {
+  const src = THREE.ShaderChunk.lights_fragment_maps, a = 'radiance += getIBLRadiance( geometryViewDir, geometryNormal, material.roughness );';
+  return src.includes(a) ? src.replace(a, 'radiance += iblIrradiance * RECIPROCAL_PI;') : null;
+};
+
 export function makeSnowMaterial(q) {
   snowUniforms.uNoise.value = snowUniforms.uNoise.value || noiseTexture(256, 3);
   snowUniforms.uGrain.value = snowUniforms.uGrain.value || snowTexture('./tex/snow_grain.jpg');
@@ -83,16 +110,47 @@ export function makeSnowMaterial(q) {
   const m = new THREE.MeshStandardMaterial({ color: 0xf3f6fa, roughness: 0.78, metalness: 0 });
   m.name = 'snow';
   const detail = q.tier !== 'low';
+  if (!detail && LOW_SHADOW === undefined) LOW_SHADOW = lowShadowChunk();
   m.onBeforeCompile = (s) => {
     Object.assign(s.uniforms, snowUniforms);
+    if (!detail && LOW_SHADOW) s.fragmentShader = s.fragmentShader.replace('#include <shadowmap_pars_fragment>', LOW_SHADOW);
+    const ibl = !detail && LOW_IBL(); if (ibl) s.fragmentShader = s.fragmentShader.replace('#include <lights_fragment_maps>', ibl);
     s.vertexShader = s.vertexShader
       .replace('#include <common>', `#include <common>
 attribute float aGroom; attribute float aDye;
-varying vec3 vWPos; varying vec3 vWNor; varying float vGroom; varying float vDye;`)
+varying vec3 vWPos; varying vec3 vWNor; varying float vGroom; varying float vDye;
+uniform float uLamps; uniform vec4 uLRowA[6]; uniform vec4 uLRowB[6]; uniform vec4 uLRowC[6]; uniform float uLRowN;
+varying vec4 vLamp;     // the lamps' pool here (w) and the way their light comes from (xyz, weighted)`)
       .replace('#include <project_vertex>', `#include <project_vertex>
 vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
 vWNor = normalize(mat3(modelMatrix) * objectNormal);
-vGroom = aGroom; vDye = aDye;`);
+vGroom = aGroom; vDye = aDye;
+// the park's lamps (env.js makeLightTowers, 2026-11-06): pools of light from rows of evenly spaced lamps, each lamp
+// aimed one way across its row; on from a little before sunset (uLamps). Each row lights a point from its two nearest
+// lamps, so a row costs the same however long it is. Worked out at the corners (the pools are metres across) and only
+// scaled at each pixel by the snow's own relief: per pixel it cost a third of the snow's drawing.
+vLamp = vec4(0.0);
+if (uLamps > 0.001) {
+  for (int r = 0; r < 6; r++) {
+    if (float(r) >= uLRowN) break;
+    vec4 A = uLRowA[r], B = uLRowB[r];
+    float dl2 = dot(A.zw, A.zw), fz = dl2 > 1e-6 ? dot(vWPos.xz - A.xy, A.zw) / dl2 : 0.0, k = floor(fz);
+    for (int j = 0; j <= 1; j++) {
+      float kz = k + float(j);
+      if (kz < 0.0 || kz > B.x - 1.0) continue;     // (past the last lamp: none, not the end one again)
+      vec2 lp = A.xy + A.zw * kz;
+      vec3 d = vec3(lp.x - vWPos.x, B.w, lp.y - vWPos.z);
+      float r2 = dot(d, d);
+      if (r2 > 6400.0) continue;                    // (80 m off a lamp's light is a few thousandths)
+      vec3 l = d * inversesqrt(r2);
+      float aim = 0.25 + 0.75 * smoothstep(-6.0, 18.0, -dot(d.xz, B.yz));
+      // (the two lamps either side, the further one fading out as it gets a whole step away, so there is no seam
+      // where the pair changes, and the pools stand out between the towers)
+      float w = uLRowC[r].x * aim / r2 * (1.0 - smoothstep(0.5, 1.0, abs(fz - kz)));
+      vLamp.w += w * max(0.0, dot(vWNor, l)); vLamp.xyz += w * l;
+    }
+  }
+}`);
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', `#include <common>
 varying vec3 vWPos; varying vec3 vWNor; varying float vGroom; varying float vDye;
@@ -111,7 +169,7 @@ vec4 trTap(vec2 p, float wf, float wc) {
 }
 uniform vec3 uSunDir; uniform float uSparkle; uniform float uTime;
 uniform sampler2D uHorizon; uniform vec4 uSnowLook; uniform float uSnowRough; uniform float uNight;
-uniform vec4 uLights; uniform float uLightsN; uniform vec2 uFarFade; uniform sampler2D uGrain; uniform sampler2D uLumps; uniform float uTrackDepth;
+uniform float uLamps; varying vec4 vLamp; uniform vec2 uFarFade; uniform sampler2D uGrain; uniform sampler2D uLumps; uniform float uTrackDepth;
 float hash13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
 vec3 hash33(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
 float gRock; float gTrackShadow; float gScrape; float gCover; float gTDep; float gBerm; vec2 gTN; vec4 gLump; vec3 gPN;`)
@@ -121,10 +179,17 @@ float gRock; float gTrackShadow; float gScrape; float gCover; float gTDep; float
   vec3 wn = normalize(vWNor);
   float camD = length(vWPos - cameraPosition);
   float steep = smoothstep(0.80, 0.62, wn.y);
-  float rn = texture2D(uNoise, vWPos.xz * 0.013).b + texture2D(uNoise, vWPos.xz * 0.05 + vWPos.y * 0.02).b * 0.5;
-  gRock = steep * smoothstep(0.45, 0.62, rn + (0.8 - wn.y) * 0.6) * (1.0 - vGroom);
-  vec3 rock = mix(vec3(0.20, 0.19, 0.18), vec3(0.34, 0.32, 0.30), texture2D(uNoise, vWPos.xz * 0.2).b);
-  diffuseColor.rgb = mix(diffuseColor.rgb, rock, gRock);
+  // (2026-11-06, the lag pass: rock only where the snow is steep enough for it, so most of the snow skips its three
+  // lookups; the same picture)
+  gRock = 0.0;
+  if (steep > 0.0 && vGroom < 1.0) {
+    float rn = texture2D(uNoise, vWPos.xz * 0.013).b + texture2D(uNoise, vWPos.xz * 0.05 + vWPos.y * 0.02).b * 0.5;
+    gRock = steep * smoothstep(0.45, 0.62, rn + (0.8 - wn.y) * 0.6) * (1.0 - vGroom);
+    if (gRock > 0.0) {
+      vec3 rock = mix(vec3(0.20, 0.19, 0.18), vec3(0.34, 0.32, 0.30), texture2D(uNoise, vWPos.xz * 0.2).b);
+      diffuseColor.rgb = mix(diffuseColor.rgb, rock, gRock);
+    }
+  }
   // the crews' blue dye on lips and knuckles, soaked into the snow unevenly
   if (vDye > 0.01) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.12, 0.3, 0.78), vDye * (0.65 + 0.3 * texture2D(uNoise, vWPos.xz * 1.7).b));
   // big soft variation so the snow is never one flat white
@@ -220,14 +285,17 @@ roughnessFactor = mix(roughnessFactor, 0.9, gRock);`)
   vec2 g1 = near > 0.0 ? texture2D(uGrain, vWPos.xz * 1.15).rg * 2.0 - 1.0 : vec2(0.0);
   vec2 g2 = texture2D(uNoise, vWPos.xz * 0.11 + 0.37).rg * 2.0 - 1.0;
   vec2 gl = gLump.rg * 2.0 - 1.0;
-  vec2 g3 = texture2D(uNoise, vWPos.xy * 0.45).rg * 2.0 - 1.0;
   vec3 pn = wn;
   float side = 1.0 - abs(wn.y);
+  // (the side projection's grain only where it shows: on gentle snow it moved the normal by under half a degree;
+  // brought in smoothly from there, so no line where it starts)
+  float sideK = smoothstep(0.04, 0.09, side);
+  vec2 g3 = sideK > 0.0 ? texture2D(uNoise, vWPos.xy * 0.45).rg * 2.0 - 1.0 : vec2(0.0);
   float fine = (0.32 + uSnowLook.z * 0.35) * (1.0 - uSnowLook.w * 0.75);
   // (a track flattens the grain: a skid smooths it away, a groove's floor is pressed)
   float flat_ = 1.0 - max(gScrape * 0.8, gCover * 0.5);
   pn.xz += (g1 * fine * near * flat_ + g2 * 0.16 * (1.0 - uSnowLook.w * 0.6) + gl * (0.06 + max(uSnowLook.y, 0.55 * (1.0 - vGroom)) * 0.38) * (1.0 - vGroom * uSnowLook.x * 0.6) * (1.0 - gScrape * 0.6)) * (1.0 - side * 0.6);
-  pn.xy += g3 * 0.12 * side;
+  pn.xy += g3 * 0.12 * side * sideK;
   // corduroy: ridges about 3 cm apart along the fall line on groomed snow, faded before they alias; a track cuts
   // through them (crisply, with the groove's edge) and a skid wipes them out
   float fw = fwidth(vWPos.x);
@@ -249,43 +317,31 @@ roughnessFactor = mix(roughnessFactor, 0.9, gRock);`)
 {
   float camD = length(vWPos - cameraPosition);
   vec3 V = normalize(cameraPosition - vWPos);
-  ${detail ? `vec3 cell = floor(vWPos * 70.0);
+  ${detail ? `if (camD < 40.0) {     // (they have faded out by 40 m: nothing worked out further off)
+  vec3 cell = floor(vWPos * 70.0);
   float r = hash13(cell);
   vec3 fn = normalize(vec3(hash33(cell) * 2.0 - 1.0) + vec3(0.0, 1.2, 0.0));
   float gl = pow(max(0.0, dot(reflect(-uSunDir, fn), V)), 120.0) * step(0.84, r);
   float sunlit = smoothstep(0.08, 0.5, dot(reflectedLight.directDiffuse, vec3(0.33)));
   float fade = 1.0 - smoothstep(6.0, 40.0, camD);
-  outgoingLight += vec3(1.0, 0.97, 0.92) * gl * 7.0 * sunlit * fade * uSparkle * (1.0 - gRock) * (1.0 - uNight);` : ''}   // (no glints on the low tier: they cost about 0.35 ms a frame up close on the test machine)
+  outgoingLight += vec3(1.0, 0.97, 0.92) * gl * 7.0 * sunlit * fade * uSparkle * (1.0 - gRock) * (1.0 - uNight);
+  }` : ''}   // (no glints on the low tier: they cost about 0.35 ms a frame up close on the test machine)
   float lit = dot(reflectedLight.directDiffuse, vec3(0.33));
   outgoingLight -= reflectedLight.directDiffuse * gTrackShadow * 0.75;
   // (a deep trench sees less of the sky)
   outgoingLight -= reflectedLight.indirectDiffuse * gCover * gTDep * clamp(uTrackDepth * 2.5, 0.0, 0.55);
-  // by night: pools of light under the park's floodlight towers (two rows, evenly spaced; lamps aimed at the run)
-  if (uNight > 0.001) {
-    // (the snow's own relief, tracks and all, catches the towers' light; only half of it: the light from the towers is
-    // spread wide and bounced about the white slope, so a wall turned away from them is shaded, not black)
-    vec3 wn = normalize(normalize(vWNor) + (gPN - normalize(vWNor)) * 0.5);
-    float pool = 0.0;
-    float fz = (vWPos.z - uLights.z) / uLights.w, k = floor(fz + 0.5);
-    for (int s = 0; s < 2; s++) {
-      float lx = s == 0 ? uLights.x : uLights.y, inward = s == 0 ? 1.0 : -1.0;
-      for (int j = -1; j <= 1; j++) {
-        float kz = k + float(j);
-        if (kz < 0.0 || kz > uLightsN - 1.0) continue;     // (past the last tower: none, not the end one again)
-        vec3 d = vec3(vWPos.x - lx, 11.0, vWPos.z - uLights.z - kz * uLights.w);
-        float r2 = dot(d, d);
-        float aim = 0.25 + 0.75 * smoothstep(-6.0, 18.0, d.x * inward);
-        // (the three nearest towers each side, the outer ones faded out before they drop from the three, so no seam)
-        pool += aim * max(0.0, dot(wn, normalize(vec3(-d.x, d.y, -d.z)))) / r2 * (1.0 - smoothstep(1.0, 1.5, abs(fz - kz)));
-      }
-    }
-    pool *= 150.0;
-    // the light that follows the rider is the floodlight by night: the snow keeps only a little of it (enough for the
-    // rider's shadow) and is lit by the pools instead
-    // (less what a track's shadow already took, or a shaded groove would go below black)
-    outgoingLight -= (reflectedLight.directDiffuse * (1.0 - gTrackShadow * 0.75) + reflectedLight.directSpecular) * uNight * 0.85;
-    outgoingLight += diffuseColor.rgb * vec3(1.0, 0.9, 0.76) * pool * uNight * (1.0 - gTrackShadow * 0.15);
+  // the park's lamps' pools (worked out at the corners, the vertex shader): the snow's own relief, tracks and all,
+  // catches their light; only half of it: their light is spread wide and bounced about the white slope, so a wall
+  // turned away from them is shaded, not black
+  if (uLamps > 0.001 && vLamp.w > 1e-5) {
+    vec3 n0 = normalize(vWNor), wn = normalize(n0 + (gPN - n0) * 0.5), l = normalize(vLamp.xyz);
+    float relief = clamp(max(0.0, dot(wn, l)) / max(dot(n0, l), 0.15), 0.0, 2.0);
+    outgoingLight += diffuseColor.rgb * vec3(1.0, 0.88, 0.72) * vLamp.w * relief * uLamps * (1.0 - gTrackShadow * 0.15);
   }
+  // by night the light that lights the rider comes from the nearest lamps (env.js follow): the snow keeps only a little
+  // of it (enough for the rider's shadow) and is lit by the pools instead (less what a track's shadow already took, or
+  // a shaded groove would go below black)
+  if (uNight > 0.001) outgoingLight -= (reflectedLight.directDiffuse * (1.0 - gTrackShadow * 0.75) + reflectedLight.directSpecular) * uNight * 0.85;
   outgoingLight *= mix(vec3(0.93, 0.97, 1.06), vec3(1.0), smoothstep(0.05, 0.4, lit) * (1.0 - gTrackShadow * 0.7));
 }
 #include <opaque_fragment>`)

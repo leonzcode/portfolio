@@ -142,6 +142,7 @@ select { font: 500 15px var(--body); padding: 6px 8px; border: 1px solid #b8c4cf
 .home .fine { border-top: 1px solid #d4dce4; padding-top: 8px; margin-top: 0; }
 @media (max-width: 420px) { .card.home { padding: 18px 16px 12px; } .maps .map b { font-size: 16px; } .maps .map small { font-size: 11px; } }
 .maps.rides { grid-template-columns: repeat(2, 1fr); }
+.maps.runs { grid-template-columns: repeat(2, 1fr); margin-bottom: 8px; }   /* (F: the mountain, the Jump Line or Freeride) */
 .maps.rides:has(> :nth-child(3)) { grid-template-columns: repeat(3, 1fr); }   /* (B: five rides, the snow scooter, snowbike and sled added) */
 .maps.rides:has(> :nth-child(3)) .map { padding: 8px 8px 7px; } .maps.rides:has(> :nth-child(3)) .map b { font-size: 16px; } .maps.rides:has(> :nth-child(3)) .map small { font-size: 11px; }
 /* time, sky and snow (env.js fills #opt-scene) */

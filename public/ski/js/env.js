@@ -12,8 +12,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { snowUniforms } from './materials.js?v=17';
-import { height, runHalf, getPark } from './terrain.js?v=17';
+import { snowUniforms } from './materials.js?v=18';
+import { height, runHalf, getPark } from './terrain.js?v=18';
 
 const KEY = 'ski_env';
 export const ENV = Object.assign({ time: 12.5, sky: 'clear', snow: 'groomed' },
@@ -145,6 +145,9 @@ export class Env {
     sun.shadow.mapSize.set(shadowRes, shadowRes);
     Object.assign(sun.shadow.camera, { left: -box, right: box, top: box, bottom: -box, near: 1, far: 300 });
     sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
+    // (layer 5: things drawn only into the shadow map, cut into pieces so only those near the rider are: the lift's
+    // stations and towers, the park's fences, the trees near the rider; lift.js, world.js. The view's camera keeps to 0)
+    sun.shadow.camera.layers.enable(5);
     scene.add(sun, sun.target);
     // sky light from above, the snow's bounce from below
     this.hemi = new THREE.HemisphereLight(0xa9c8ef, 0xf2f4f6, 1.05);
@@ -230,6 +233,8 @@ export class Env {
     // brightness
     const domeB = table(DOME_B, el) * kind.dome;
     const night = this.night = 1 - ss(-9, -1.5, el);
+    // the park's lamps: on from a little before sunset (earlier under a grey sky), full on by dusk (makeLightTowers)
+    const lampOn = this.lampOn = Math.max(night, 1 - ss(-3, ENV.sky === 'overcast' ? 10 : 3, el));
     this.u.uTint.value.setScalar(domeB * (ENV.sky === 'overcast' ? 1 : lerp(0.78, 1, night)));
     if (night > 0) this.u.uTint.value.multiply(new THREE.Vector3(lerp(1, 0.75, night), lerp(1, 0.85, night), 1));
     // the sun's disc (hidden by overcast; the night sky's photo keeps its own moon)
@@ -240,7 +245,9 @@ export class Env {
     // lights: by day the sun; by night the floodlight over the rider, warm white and high
     const sunI = table(SUN_I, el) * kind.sun;
     const flood = night * 1.15;
+    this.flood = flood > sunI ? flood : 0;
     if (flood > sunI) {
+      // (the light's way and strength are the nearest lamps', worked out in follow() as the rider moves)
       this.lightDir = FLOOD_DIR; this.sun.color.setRGB(1, 0.92, 0.8); this.sun.intensity = flood;
       this.sun.shadow.intensity = 0.85;
     } else {
@@ -285,7 +292,8 @@ export class Env {
     { const L = lerp(0.95 * (sunI * Math.max(0.15, dir.y) * 0.3 + hemiI * 0.7), 0.3, night); _v[0] = L * 0.97; _v[1] = L * 0.99; _v[2] = L; acesSRGB(_v, expo); snowUniforms.uSnowLit.value.set(_v[0], _v[1], _v[2]); }
     // the park's lights
     snowUniforms.uNight.value = night;
-    if (this.lights) this.lights.lamps.material.emissiveIntensity = night * 3.5;
+    snowUniforms.uLamps.value = lampOn;
+    if (this.lights && this.lights.lamps) this.lights.lamps.material.emissiveIntensity = lampOn * 3.5;
     this.envDirty = true;
   }
   makeEnvMap() {
@@ -297,6 +305,27 @@ export class Env {
   }
   follow(p) {
     const s = this.sun;
+    // by night the light on the rider (and the rails, the trees) comes from the nearest lamps: their way, and as strong
+    // as their pools are where the rider is (the snow material's own sum, for a flat patch of snow)
+    if (this.flood && this.lights && this.lights.rows.length) {
+      _ld.set(0, 0, 0); let pool = 0;
+      for (const R of this.lights.rows) {
+        const d2 = R.dx * R.dx + R.dz * R.dz, fz = d2 > 1e-6 ? ((p.x - R.x0) * R.dx + (p.z - R.z0) * R.dz) / d2 : 0, k = Math.floor(fz);
+        for (let j = 0; j <= 1; j++) {
+          const kz = k + j; if (kz < 0 || kz > R.n - 1) continue;
+          const dx = p.x - (R.x0 + R.dx * kz), dz = p.z - (R.z0 + R.dz * kz), r2 = dx * dx + R.h * R.h + dz * dz, r = Math.sqrt(r2);
+          const aim = 0.25 + 0.75 * ss(-6, 18, dx * R.ax + dz * R.az);
+          const w = R.power * aim * (R.h / r) / r2 * (1 - ss(0.5, 1, Math.abs(fz - kz)));
+          _ld.x -= dx / r * w; _ld.y += R.h / r * w; _ld.z -= dz / r * w; pool += w;
+        }
+      }
+      if (pool > 1e-4) {
+        _ld.normalize(); if (_ld.y < 0.25) { _ld.y = 0.25; _ld.normalize(); }
+        (this.lampDir || (this.lampDir = new THREE.Vector3())).copy(_ld);
+        this.lightDir = this.lampDir; snowUniforms.uSunDir.value.copy(_ld);
+        s.intensity = this.flood * Math.min(1.5, Math.max(0.3, pool * 1.1));
+      }
+    }
     s.position.copy(p).addScaledVector(this.lightDir || this.sunDir, 120); s.updateMatrixWorld();
     s.target.position.copy(p); s.target.updateMatrixWorld();
     this.dome.position.copy(p); this.dome.updateMatrixWorld();
@@ -304,7 +333,7 @@ export class Env {
     if (this.envDirty && performance.now() - this.envAt > 250) this.makeEnvMap();
   }
 }
-const _c = new THREE.Color(), _v = new Float32Array(6);
+const _c = new THREE.Color(), _v = new Float32Array(6), _ld = new THREE.Vector3();
 // three's ACES filmic tone curve (the same numbers as its shader) and the sRGB encoding: v[0..2] in, the encoded colour
 // out in v[0..2] and the tone-mapped linear colour in v[3..5]
 function acesSRGB(v, expo) {
@@ -323,24 +352,86 @@ function sampleRow(hz, u, c) {
 }
 
 // ---- floodlight towers ---------------------------------------------------------------------------------------------------
-// towers along the park's two fences (or the run's sides), every 45 m; by night their lamps glow and the snow under them
-// is lit (the snow material works the pools out from the same spacing, so nothing per tower is sent). The tower is
-// Quaternius's "Streetlight" (CC0, models/env/floodlight.glb) made 13.5 m tall, its lamp arm turned out over the run;
-// simple shapes of the same kind stand in until it has loaded (same materials, so no shader is built for the swap).
-function makeLightTowers(scene, q) {
-  const park = getPark();
-  const f = park && park.fences && park.fences.length >= 2 ? park.fences : null;
-  let xa, xb, z0, z1;
-  if (f) { xa = Math.min(f[0][0], f[1][0]) - 2.5; xb = Math.max(f[0][0], f[1][0]) + 2.5; z0 = Math.min(f[0][1], f[1][1]) + 10; z1 = Math.max(f[0][3], f[1][3]); }
-  else { xa = -runHalf(200) + 2; xb = runHalf(200) - 2; z0 = 0; z1 = 1400; }
-  const S = 45, n = Math.max(1, Math.floor((z1 - z0) / S) + 1);
-  snowUniforms.uLights.value.set(xa, xb, z0, S); snowUniforms.uLightsN.value = n;
-  // every tower's place and turn (its lamp towards the run)
-  const at = [], m = new THREE.Matrix4(), qn = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0);
-  for (const [x, side] of [[xa, 1], [xb, -1]]) for (let i = 0; i < n; i++) {
-    const z = z0 + i * S;
-    at.push(m.clone().compose(new THREE.Vector3(x, height(x, z), z), qn.setFromAxisAngle(up, side > 0 ? Math.PI / 2 : -Math.PI / 2).clone(), one));
+/* (2026-11-06, Leon: "add lights so that in night time mode or others the lights turn on and they actually work".)
+   The park's lamps come in rows: a row is lamps evenly spaced along a line, each aimed one way across it,
+     { x0, z0, dx, dz, n, ax, az, h, power }
+   x0, z0 the first lamp, dx, dz the step to the next, n how many, ax, az the way they point (flat, a unit vector), h the
+   lamp's height over the snow, power how bright its pool is. Rows of towers come from the map (park.lightTowers; a map
+   without them gets two rows along its fences, or the run's sides, every 45 m); lamps on buildings, the lift's stations
+   (park.stationLamps, lift.js planLift), have no tower drawn. Up to six rows go to the snow material (snowUniforms
+   uLRowA/B/C), which lights each pixel from the two nearest lamps of each row: so however many lamps a row has, it
+   costs the same, and nothing is sent per lamp. As it gets dark (from a little before sunset, earlier under cloud) the
+   lamps come on (uLamps): their heads glow (one draw of points, Glow below), their pools light the snow and the
+   features, and the light that lights the rider, the rails and the trees by night comes from the nearest lamps
+   (Env.follow), so the rider's shadow turns as they pass a tower. Nothing is built when they come on or go off: the
+   shaders have it all already and only uniforms change. */
+const ROWS_MAX = 6;
+function lampRows() {
+  const park = getPark(), towers = [];
+  if (park && park.lightTowers && park.lightTowers.length) for (const r of park.lightTowers) towers.push(Object.assign({ h: 11, power: 150 }, r, { tower: true }));
+  else {
+    const f = park && park.fences && park.fences.length >= 2 ? park.fences : null;
+    let xa, xb, z0, z1;
+    if (f) { xa = Math.min(f[0][0], f[1][0]) - 2.5; xb = Math.max(f[0][0], f[1][0]) + 2.5; z0 = Math.min(f[0][1], f[1][1]) + 10; z1 = Math.max(f[0][3], f[1][3]); }
+    else { xa = -runHalf(200) + 2; xb = runHalf(200) - 2; z0 = 0; z1 = 1400; }
+    const S = 45, n = Math.max(1, Math.floor((z1 - z0) / S) + 1);
+    towers.push({ x0: xa, z0, dx: 0, dz: S, n, ax: 1, az: 0, h: 11, power: 150, tower: true }, { x0: xb, z0, dx: 0, dz: S, n, ax: -1, az: 0, h: 11, power: 150, tower: true });
   }
+  const extra = (park && park.stationLamps || []).map(r => Object.assign({ h: 4.5, power: 40, dx: 0, dz: 0, n: 1 }, r, { tower: false }));
+  return towers.concat(extra).slice(0, ROWS_MAX);
+}
+// every lamp of a row: its place on the snow
+function* lampsOf(R) { for (let k = 0; k < R.n; k++) yield [R.x0 + R.dx * k, R.z0 + R.dz * k]; }
+
+// the lamps' glow: a soft bright core and a wide faint halo round each head, added to what is behind, the size of a
+// few metres at the lamp (never under a few pixels, so a far row of lamps still shows), fading into the fog
+const GLOW_VS = `
+uniform float uLamps; uniform float uScale;
+varying float vK;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  float d = -mv.z;
+  vK = uLamps * (1.0 - smoothstep(1400.0, 2400.0, d));
+  if (vK < 0.01 || d < 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+  gl_PointSize = clamp(5.0 * uScale / d, 4.0, 160.0);
+  gl_Position = projectionMatrix * mv;
+}`;
+const GLOW_FS = `
+varying float vK;
+void main() {
+  vec2 c = (gl_PointCoord - 0.5) * 2.0; float r2 = dot(c, c);
+  if (r2 > 1.0) discard;
+  float a = exp(-r2 * 30.0) * 1.6 + exp(-r2 * 6.0) * 0.28 + (1.0 - r2) * 0.04;
+  gl_FragColor = vec4(vec3(1.0, 0.86, 0.64) * a * vK, 1.0);
+}`;
+const _db2 = new THREE.Vector2();
+
+function makeLightTowers(scene, q) {
+  const rows = lampRows();
+  // the rows into the snow material
+  const U = snowUniforms;
+  U.uLRowN.value = rows.length;
+  rows.forEach((R, i) => { U.uLRowA.value[i].set(R.x0, R.z0, R.dx, R.dz); U.uLRowB.value[i].set(R.n, R.ax, R.az, R.h); U.uLRowC.value[i].set(R.power, 0, 0, 0); });
+  // every tower's place and turn (its lamp towards the run), and every lamp head's place (for the glow)
+  const at = [], heads = [], m = new THREE.Matrix4(), qn = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0);
+  const headAt = new THREE.Vector3(0, 13.3, 0.6);       // (the stand-in's lamp in the tower's own frame; the model's once it is in)
+  for (const R of rows) for (const [x, z] of lampsOf(R)) {
+    if (R.tower) at.push(m.clone().compose(new THREE.Vector3(x, height(x, z), z), qn.setFromAxisAngle(up, Math.atan2(R.ax, R.az)).clone(), one));
+    else heads.push(x, height(x, z) + R.h, z);
+  }
+  const towerHeads = () => { const a = []; for (const t of at) { const v = headAt.clone().applyMatrix4(t); a.push(v.x, v.y, v.z); } return a; };
+  const glowG = new THREE.BufferGeometry();
+  const setHeads = () => { glowG.setAttribute('position', new THREE.Float32BufferAttribute(towerHeads().concat(heads), 3)); glowG.computeBoundingSphere(); };
+  setHeads();
+  const glowM = new THREE.ShaderMaterial({ uniforms: { uLamps: U.uLamps, uScale: { value: 300 } }, vertexShader: GLOW_VS, fragmentShader: GLOW_FS,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+  const glow = new THREE.Points(glowG, glowM);
+  glow.name = 'lamp glow'; glow.frustumCulled = false; glow.renderOrder = 6; glow.matrixAutoUpdate = false;
+  // (sized by the picture's height and the lens, as the spray is; drawn by day too, every point dropped at its corner
+  // when the lamps are off, so its program is built with the rest at boot, not when the lamps first come on)
+  glow.onBeforeRender = (r, sc, cam) => { glowM.uniforms.uScale.value = 0.5 * r.getDrawingBufferSize(_db2).y * cam.projectionMatrix.elements[5]; };
+  scene.add(glow);
+  if (!at.length) return { pole: null, lamps: null, glow, rows };
   const build = (pole1, lamp1) => [mergeGeometries(at.map(t => pole1.clone().applyMatrix4(t))), mergeGeometries(at.map(t => lamp1.clone().applyMatrix4(t)))];
   // the stand-in: a pole and a lamp box leaning out (+z is towards the run)
   const poleG = new THREE.CylinderGeometry(0.11, 0.16, 13.5, 6); poleG.translate(0, 6.75, 0); poleG.deleteAttribute('uv');
@@ -369,8 +460,10 @@ function makeLightTowers(scene, q) {
     B.applyMatrix4(fit); L.applyMatrix4(fit);
     const [pg2, lg2] = build(B, L);
     pole.geometry.dispose(); lamps.geometry.dispose(); pole.geometry = pg2; lamps.geometry = lg2;
+    // (the glow on the model's own lamp, just under it)
+    L.computeBoundingBox(); L.boundingBox.getCenter(headAt); headAt.y = L.boundingBox.min.y - 0.05; setHeads();
   }, undefined, e => console.warn('floodlight model', e));
-  return { pole, lamps };
+  return { pole, lamps, glow, rows };
 }
 
 // ---- the settings panel ---------------------------------------------------------------------------------------------------

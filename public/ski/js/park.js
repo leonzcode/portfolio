@@ -3,8 +3,8 @@
 // function the physics reads directly; kickers and the pipe also get meshes of their own, much finer at the lips,
 // knuckles and coping than the terrain's patches.
 import * as THREE from 'three';
-import { baseLine, pitchAt, ground } from './terrain.js?v=17';
-import { smoothstep, clamp, smax } from './noise.js?v=17';
+import { baseLine, pitchAt, ground } from './terrain.js?v=18';
+import { smoothstep, clamp, smax } from './noise.js?v=18';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -21,7 +21,10 @@ const RAD = Math.PI / 180;
 // (a soft max(v, 0) over +-t; t shrinks with the centre line's own height, so where that is 0, at the takeoff's foot and
 // the landing's run-out, nothing is added and the kicker ends flush with the snow)
 const toe = (v, t) => t < 1e-4 ? Math.max(v, 0) : v >= t ? v : v <= -t ? 0 : (v + t) * (v + t) / (4 * t);
-class Kicker {
+export class Kicker {
+  // (the slope it stands on: the run's own, or a map's: o.base(z) -> y and o.pitch(z) -> radians, Freeride's rock kickers)
+  bl(z) { return this.base ? this.base(z) : baseLine(z); }
+  pa(z) { return this.pitch ? this.pitch(z) : pitchAt(z); }
   constructor(o) {
     Object.assign(this, { lip: 27, R: 10, drop: 0.5, table: 10, Rk: 3.5, land: 31, wT: 2.6, wD: 4.5, wL: 7.5, name: 'kicker',
       side: 1, wF: 0, sideS: 0.62, landS: 0.5, shoulder: 0.8, toe: 0.35 }, o);
@@ -31,7 +34,7 @@ class Kicker {
     this.splay = Math.max(0, (this.wD - this.wT) * 0.5);          // the table widens a little towards the knuckle
     this.hwLand = Math.max(this.wL + this.wF / 2, this.hwT + this.splay + 0.5);
     this.ents = [];                                               // snow ramps up to the features' starts (Jump Line)
-    const p = pitchAt(this.z0), A = { z: this.z0, y: baseLine(this.z0) };
+    const p = this.pa(this.z0), A = { z: this.z0, y: this.bl(this.z0) };
     const C = { z: A.z + this.R * Math.sin(p), y: A.y + this.R * Math.cos(p) };
     const lip = this.lip * RAD, land = this.land * RAD;
     this.L = { z: C.z + this.R * Math.sin(lip), y: C.y - this.R * Math.cos(lip) };
@@ -43,9 +46,9 @@ class Kicker {
     this.tl = Math.tan(land);
     // where the landing meets the slope
     let z = this.Kend.z;
-    while (z < this.Kend.z + 200 && this.Kend.y - (z - this.Kend.z) * this.tl > baseLine(z)) z += 0.25;
+    while (z < this.Kend.z + 200 && this.Kend.y - (z - this.Kend.z) * this.tl > this.bl(z)) z += 0.25;
     this.zMeet = z; this.z1 = z + 14;
-    this.lipH = this.L.y - baseLine(this.L.z);
+    this.lipH = this.L.y - this.bl(this.L.z);
     /* the speed off the lip that lands about 45% of the way down the landing, with the air's drag the skier feels in flight
        (left out, the big jumps' riders landed on the knuckle: 2026-11-03) */
     // (aimed deeper for a higher lip: the riders' flights come out a little shorter than this one, more so on the big
@@ -58,7 +61,7 @@ class Kicker {
       let vz = v * Math.cos(lip), vy = v * Math.sin(lip), z = this.L.z, y = this.L.y, zl = Infinity;
       for (let t = 0; t < 8; t += dt) {
         const sp = Math.hypot(vz, vy); vz -= kd * sp * vz * dt; vy -= (9.81 + kd * sp * vy) * dt; z += vz * dt; y += vy * dt;
-        const d = this.deckY(z), gy = d > -Infinity ? d : baseLine(z);
+        const d = this.deckY(z), gy = d > -Infinity ? d : this.bl(z);
         if (z > this.L.z + 0.5 && y <= gy) { zl = z; break; }
       }
       if (zl < target) lo = v; else hi = v;
@@ -66,9 +69,9 @@ class Kicker {
     this.vLip = (lo + hi) / 2;
     // the speed at the foot of the takeoff that leaves the lip at vLip (climbing the ramp costs g x its rise, and the
     // snow and the air take more on a long ramp)
-    const rise = this.L.y - baseLine(this.z0);
+    const rise = this.L.y - this.bl(this.z0);
     this.vDesign = Math.sqrt(this.vLip * this.vLip + 2 * 9.81 * rise * (1.12 + 0.02 * rise)) + 0.5;
-    this.knuckleH = this.yT - baseLine(this.K.z);
+    this.knuckleH = this.yT - this.bl(this.K.z);
     // how far out the sides reach: the highest point over the slope down the gentler side slope, the shoulder and the toe
     const hMax = Math.max(this.lipH, this.knuckleH) + 0.3;
     const reach = Math.max(this.hwT + this.splay, this.hwLand) + hMax / Math.min(this.sideS, this.landS) + this.shoulder + this.toe + 0.5;
@@ -90,12 +93,12 @@ class Kicker {
     if (z < this.K.z) return this.yT;
     if (z < this.Kend.z) { const s = (z - this.K.z) / this.Rk; return this.yT - this.Rk * (1 - Math.sqrt(Math.max(0, 1 - s * s))); }
     const lineY = this.Kend.y - (z - this.Kend.z) * this.tl;
-    return smax(lineY, baseLine(z), this.blend());
+    return smax(lineY, this.bl(z), this.blend());
   }
   /* how gently the landing rounds into the slope: 2.2 m, less on a landing so short that the rounding would have reached
      back up to the knuckle's end and left a step there (the small lanes of jumps 5 to 7 threw riders off it at walking
      pace, 2026-11-05) */
-  blend() { return this._bl ?? (this._bl = clamp((this.Kend.y - baseLine(this.Kend.z)) * 0.9, 0.3, 2.2)); }
+  blend() { return this._bl ?? (this._bl = clamp((this.Kend.y - this.bl(this.Kend.z)) * 0.9, 0.3, 2.2)); }
   // the core's half width along the kicker: the takeoff's, splaying a little along the table, then out to the landing's
   hwAt(z) {
     if (z <= this.L.z) return this.hwT;
@@ -108,11 +111,11 @@ class Kicker {
   // the centre line's height over the run's base line, d metres outside the core (the lip's back face eases off there)
   rel(z, d) {
     if (z < this.z0 || z > this.z1) return -Infinity;
-    if (z <= this.L.z) return this.takeY(z) - baseLine(z);
+    if (z <= this.L.z) return this.takeY(z) - this.bl(z);
     const t = clamp(d / 1.6, 0, 1), k = t * t * (3 - 2 * t);
     const back = this.drop / (Math.tan(65 * RAD) + (Math.tan(30 * RAD) - Math.tan(65 * RAD)) * k);
-    if (z < this.L.z + back) return this.L.y - (z - this.L.z) * (this.drop / back) - baseLine(z);
-    return this.tableY(z) - baseLine(z);
+    if (z < this.L.z + back) return this.L.y - (z - this.L.z) * (this.drop / back) - this.bl(z);
+    return this.tableY(z) - this.bl(z);
   }
   sideDrop(d, s) { const r = this.shoulder; return d <= 0 ? 0 : d < r ? s * d * d / (2 * r) : s * (d - r / 2); }
   // height over the ground of the kicker's own snow (no entry ramps), or <= 0
@@ -370,7 +373,7 @@ export function makePark() {
   ] });
 }
 // a layout's features made into a park: the lookup grid and the height functions the terrain and physics ask
-function assemble({ kickers, pipe = null, qp = null, ground2 = [], rails = [], starts, fences = [], banner = null }) {
+export function assemble({ kickers, pipe = null, qp = null, ground2 = [], rails = [], starts, fences = [], banner = null }) {
   const ramps = rails.filter(r => r.ramp).map(r => new Wedge({ x: r.pts[0][0], zEnd: r.pts[0][1] - 0.7, h: r.ramp, hw: r.kind === 'box' ? 1.4 : 1.2 }));
   const all = [...kickers, pipe, qp, ...ground2, ...ramps].filter(Boolean);
   // a 32 m bucket grid over x and z
@@ -583,8 +586,12 @@ function rainbow(x, z0, len, h0, rise) {
 
 // ---- meshes ----------------------------------------------------------------------------------------------------------
 // a feature with its own mesh: a grid on its rows and columns, heights from the full height function
-export function featureMesh(f, heightFn, material, fine = true) {
-  const rows = f.rows(fine), cols = f.cols(fine), nx = cols.length, nz = rows.length;
+/* thin: 0 for the full mesh; else the far copy (2026-11-06, the lag pass): rows and columns at least thin and 1.4 x thin
+   metres apart, about a third of the triangles, drawn once a jump is far enough off that the difference is about a
+   pixel (main.js) */
+const thinOut = (a, step) => { if (!step || a.length < 3) return a; const o = [a[0]]; for (let i = 1; i < a.length - 1; i++) if (a[i] - o[o.length - 1] >= step) o.push(a[i]); o.push(a[a.length - 1]); return o; };
+export function featureMesh(f, heightFn, material, fine = true, thin = 0) {
+  const rows = thinOut(f.rows(fine), thin), cols = thinOut(f.cols(fine), thin * 1.4), nx = cols.length, nz = rows.length;
   const pos = new Float32Array(nx * nz * 3), nor = new Float32Array(nx * nz * 3), grm = new Float32Array(nx * nz), dye = new Float32Array(nx * nz);
   const n = new THREE.Vector3();
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
@@ -767,7 +774,7 @@ function legsUnder(G, r, every, w, from) {
 }
 let benchSrc = null;
 function loadBench() {
-  if (!benchSrc) benchSrc = new GLTFLoader().loadAsync('models/park/bench.glb?v=17').then(g => { let m = null; g.scene.traverse(o => { if (o.isMesh && !m) m = o; }); return m; });
+  if (!benchSrc) benchSrc = new GLTFLoader().loadAsync('models/park/bench.glb?v=18').then(g => { let m = null; g.scene.traverse(o => { if (o.isMesh && !m) m = o; }); return m; });
   return benchSrc;
 }
 // the bench model stretched along a rail's two points: the ends (with their legs) kept, the seat between stretched, the
@@ -814,7 +821,7 @@ export function railMeshes(rails, mats) {
   for (const r of rails) {
     col.set(r.colour ?? 0xff6a13).convertSRGBToLinear();
     const look = r.look || (r.top === 'flat' ? 'box' : r.kind === 'tube' ? 'tube' : 'steel');
-    if (look === 'bench') continue;
+    if (look === 'bench' || r.ownMesh) continue;
     paint.cur = TOP;
     if (look === 'box') sweepBox(paint, paint, r.P, r.w, r.under, col, r.legs ? 0.24 : 0);
     else if (look === 'dd') sweepTube(paint, r.P, r.w / 2, 18, col);
@@ -828,7 +835,7 @@ export function railMeshes(rails, mats) {
   const add = (G, mat) => { const g = G.geometry(); if (!g) return; const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false; out.add(m); };
   /* scuffed plastic and scratched steel: roughness maps from ambientCG's CC0 "Plastic 010" (its roughness) and "Scratches
      005" (its scratches made into roughness), 512 px */
-  const tl = new THREE.TextureLoader(), rough = f => new Promise(res => tl.load('models/park/' + f + '?v=17', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
+  const tl = new THREE.TextureLoader(), rough = f => new Promise(res => tl.load('models/park/' + f + '?v=18', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
   const plRough = rough('plastic_rough.webp'), stRough = rough('steel_rough.webp');
   const paintM = mats.paint || (mats.paint = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.48, metalness: 0.05 }));
   const steelM = mats.railSteel || (mats.railSteel = new THREE.MeshStandardMaterial({ color: 0xb8bdc2, metalness: 0.9, roughness: 0.32 }));
@@ -839,7 +846,7 @@ export function railMeshes(rails, mats) {
     if (b) { steelM.roughnessMap = b; steelM.roughness = 1; steelM.needsUpdate = true; }
   });
   // the benches arrive with their model (ready resolves once they are in, so they can be compiled before the first frame)
-  const benches = rails.filter(r => r.look === 'bench');
+  const benches = rails.filter(r => r.look === 'bench' && !r.ownMesh);
   const benchesIn = !benches.length ? Promise.resolve() : loadBench().then(src => {
     if (!src) return;
     const g = mergeGeometries(benches.map(r => benchGeometry(src, r)), false);

@@ -14,8 +14,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=17';
-import { clamp, smoothstep } from './noise.js?v=17';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=18';
+import { clamp, smoothstep } from './noise.js?v=18';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -138,7 +138,7 @@ export class Skier {
     // (X) the extra rides: a timed trick going round (RIDE_ACTS), and a sled's flat spin on the snow
     this.act = null; this.actT = 0; this.actDur = 1; this.actN = 0; this.actKey = null; this.actAt = 0; this.flatSpin = 0; this.flatSpinOn = false;
   }
-  actStop() { this.act = null; this.actT = 0; this.actN = 0; this.actKey = null; }
+  actStop() { this.act = null; this.actT = 0; this.actN = 0; this.actKey = null; this.actQ = false; this.actLet = false; this.actNext = false; }
   // put the skier at x, z facing down the fall line
   spawn(x, z, speed = 0, yaw = 0) {
     this.p.set(x, height(x, z), z);
@@ -615,15 +615,21 @@ export class Skier {
   stepAct(dt, AF) {
     const def = this.held ? AF(this.held) : null;
     if (this.act) {
+      // (2026-11-06, for "after each tailwhip if you do another one the feet dont have to stay back onto the board":
+      // the same trick's key pressed again during a round queues one more round straight on; actNext says another
+      // round follows, so the poses carry through the round's end instead of going back to the deck)
+      if (!this.held) this.actLet = true;
+      else if (this.actLet && def && def.id === this.act && def.loop !== false) { this.actQ = true; this.actLet = false; }
       this.actT += dt;
       if (this.actT >= this.actDur) {
         this.actN++;
-        if (def && def.id === this.act && def.loop !== false && this.held === this.actKey) this.actT -= this.actDur;
+        if (def && def.id === this.act && def.loop !== false && this.held === this.actKey || this.actQ) { this.actT -= this.actDur; this.actQ = false; if (this.held) this.actKey = this.held; }
         else { const was = this.act; this.events.push({ type: 'act', id: was, n: this.actN, at: this.actAt }); this.actStop(); this.actKey = def && def.id === was ? this.held : null; }
       }
     }
-    if (!this.act && def && this.held !== this.actKey) { this.act = def.id; this.actDur = def.T; this.actT = 0; this.actN = 0; this.actKey = this.held; this.actAt = this.tAir; }
+    if (!this.act && def && this.held !== this.actKey) { this.act = def.id; this.actDur = def.T; this.actT = 0; this.actN = 0; this.actKey = this.held; this.actAt = this.tAir; this.actQ = false; this.actLet = false; }
     if (!this.held) this.actKey = null;
+    this.actNext = !!(this.act && (this.actQ || def && def.id === this.act && def.loop !== false && this.held === this.actKey));
   }
   // a face too steep to land on: the skis bounce off it and slide down it, hard into it is a crash
   wallHit(h, nn) {

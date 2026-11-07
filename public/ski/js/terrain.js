@@ -8,7 +8,7 @@
 // frame, with skirts hiding the seams between sizes. Features with their own meshes (kickers, the pipe) are left out
 // of the patches (the ground under them is lowered a little) and drawn by park.js at finer spacing.
 import * as THREE from 'three';
-import { fbm, ridged, smoothstep, clamp } from './noise.js?v=17';
+import { fbm, ridged, smoothstep, clamp } from './noise.js?v=18';
 
 // ---- the run's long profile ----------------------------------------------------------------------------------------
 // [z where it starts, pitch in degrees] (above the start the slope behind is a gentle 12 degrees, not the old 26: with
@@ -56,7 +56,7 @@ export function onMountain() { return !!mtn; }
 
 // the ground without features
 export function ground(x, z) {
-  if (mtn) return mtn.at(x, z) + 0.35 * fbm(x * 0.06, z * 0.06, 2) + 0.5 * Math.max(0, fbm(x * 0.11 + 4, z * 0.11, 2));
+  if (mtn) return mtn.bare ? mtn.at(x, z) : mtn.at(x, z) + 0.35 * fbm(x * 0.06, z * 0.06, 2) + 0.5 * Math.max(0, fbm(x * 0.11 + 4, z * 0.11, 2));   // (bare: Freeride's own land, no noise added)
   const y0 = baseLine(z), W = runHalf(z), ax = Math.abs(x), d = ax - W;
   // gentle long undulations on the run, a slight crown, and the groomer's banks at its sides
   // (the crown stops a little past the run's sides: out in the open snowfield it would fall away for ever)
@@ -72,6 +72,12 @@ export function ground(x, z) {
   return y;
 }
 
+// ground() less its noise (a few metres at most): for working out distances, not for drawing
+function roughGround(x, z) {
+  const d = Math.abs(x) - runHalf(z);
+  return baseLine(z) - 0.00018 * Math.min(Math.abs(x), runHalf(z) + 30) ** 2 + (d > 0 ? 0.05 * d - 0.03 * Math.max(0, d - 60) + 2.5 * smoothstep(40, 260, d) : 0);
+}
+
 let park = null;           // set by park.js: { height(x, z, g) -> y or -Infinity, visualDip(x, z) -> metres, surface(x, z) }
 export function setPark(p) { park = p; }
 export function getPark() { return park; }
@@ -83,11 +89,11 @@ export function height(x, z) {
   return f > g ? f : g;
 }
 // the height the terrain patches use: features with their own meshes left out, the ground under them lowered
-export function visualHeight(x, z) {
+export function visualHeight(x, z, st) {   // (st: the patch's cell size, for Freeride's rock: freeride.js)
   const g = ground(x, z);
   if (!park) return g;
   const f = park.heightTerrainOnly(x, z, g);
-  return Math.max(g, f) - park.visualDip(x, z);
+  return Math.max(g, f) - park.visualDip(x, z, st);
 }
 const E = 0.04;
 export function normal(x, z, out = new THREE.Vector3()) {
@@ -109,7 +115,7 @@ export function normalBehind(x, z, dx, dz, out = new THREE.Vector3()) {
   return out.normalize();
 }
 export function surface(x, z) {
-  if (mtn) return 1;
+  if (mtn) return mtn.surface ? mtn.surface(x, z) : 1;
   if (park && park.surface(x, z)) return 2;
   return Math.abs(x) - runHalf(z) > 1.2 ? 1 : 0;
 }
@@ -162,7 +168,7 @@ export class Terrain {
     const SEG = this.SEG, n = SEG + 1, st = size / SEG, N = n + 2;
     // heights on the grid and one ring round it, for normals
     const H = new Float32Array(N * N);
-    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) H[j * N + i] = visualHeight(x0 + (i - 1) * st, z0 + (j - 1) * st);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) H[j * N + i] = visualHeight(x0 + (i - 1) * st, z0 + (j - 1) * st, st);
     const skirtN = 4 * n, vN = n * n + skirtN;
     const pos = new Float32Array(vN * 3), nor = new Float32Array(vN * 3), grm = new Float32Array(vN);
     let ymin = Infinity, ymax = -Infinity;
@@ -223,8 +229,19 @@ export class Terrain {
         if (ready || !this.cache.has(key)) { for (const [kx, kz] of kids) visit(kx, kz, h, lvl + 1); return; }
         for (const [kx, kz] of kids) { const kk = (lvl + 1) + ':' + kx + ':' + kz; if (!this.cache.has(kk)) this.queue.push([kk, kx, kz, h, this.dist(kx, kz, h)]); }
       }
-      if (!this.cache.has(key)) this.queue.push([key, x0, z0, size, this.dist(x0, z0, size)]);
+      if (!this.cache.has(key)) { this.queue.push([key, x0, z0, size, this.dist(x0, z0, size)]); cover(x0, z0, size, lvl, 2); }
       else want.push(key);
+    };
+    /* (2026-11-06, for "random frames where it like blinks": a patch wanted but not built yet, as when the camera moves
+       away and four small patches should give way to one bigger one, left its ground out until it was built, a frame
+       or more of sky showing through the snow. Its smaller patches already built (up to two sizes down) stay meanwhile.) */
+    const cover = (x0, z0, size, lvl, depth) => {
+      const h = size / 2;
+      for (const [kx, kz] of [[x0, z0], [x0 + h, z0], [x0, z0 + h], [x0 + h, z0 + h]]) {
+        const kk = (lvl + 1) + ':' + kx + ':' + kz;
+        if (this.cache.has(kk)) want.push(kk);
+        else if (depth > 1 && h > this.minLeaf) cover(kx, kz, h, lvl + 1, depth - 1);
+      }
     };
     this.queue.length = 0;
     visit(this.root.x0, this.root.z0, this.root.size, 0);
@@ -250,7 +267,10 @@ export class Terrain {
   dist(x0, z0, size) {
     const c = this.cam;
     const dx = Math.max(x0 - c.x, 0, c.x - (x0 + size)), dz = Math.max(z0 - c.z, 0, c.z - (z0 + size));
-    const gy = ground(clamp(c.x, x0, x0 + size), clamp(c.z, z0, z0 + size));
+    // (2026-11-06, the lag pass: the ground's height here only counts when the camera is 30 m over it, so off the real
+    // mountain the run's long profile and the snowfield's rise do, without the noise: ground() was most of each walk)
+    const qx = clamp(c.x, x0, x0 + size), qz = clamp(c.z, z0, z0 + size);
+    const gy = mtn ? ground(qx, qz) : roughGround(qx, qz);
     return Math.hypot(dx, dz, Math.max(0, Math.abs(c.y - gy) - 30) * 0.6);
   }
   trim(frame) {

@@ -1,7 +1,7 @@
 // The snow scooter (a snowscoot): a stunt scooter's deck, neck, fork and bars on two short boards, ridden standing,
 // both hands on the bars (models/scoot/scoot.glb: "street scooter" by JamesFowler and the snowboard's board, both CC BY;
 // see CREDITS.md), and the snowbike (a ski bike, models/bike/bike.glb: "BMX Bike" by erdmdgdln and the board, CC BY),
-// sat on the saddle with the feet on two short foot skis. Registered with the rig like the board (Rig.loader.scoot,
+// sat on the saddle with the feet on footpegs on the frame. Registered with the rig like the board (Rig.loader.scoot,
 // Rig.poser.scoot, and the same for bike).
 //   Frames: the physics' body frame (skier.q) is the vehicle's: +Z forward, +Y up, +X the rider's left; the rider faces
 //   forward, on the scooter the left foot in front on the deck, the back foot turned out behind it.
@@ -33,20 +33,25 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { Rig, springBank, smooth01, softReach, wob } from './rig.js?v=17';
-import { RIDE_GRABS, RIDE_GUIDES, seatRider, holdOnLift, liftStand } from './board.js?v=17';
-import { clamp, smoothstep } from './noise.js?v=17';
-import { RIDE_SPIN } from './tricks.js?v=17';
-import { RIDE_ACTS } from './skier.js?v=17';
-import { height } from './terrain.js?v=17';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Rig, springBank, smooth01, softReach, wob } from './rig.js?v=18';
+import { RIDE_GRABS, RIDE_GUIDES, seatRider, holdOnLift, liftStand } from './board.js?v=18';
+import { clamp, smoothstep } from './noise.js?v=18';
+import { RIDE_SPIN } from './tricks.js?v=18';
+import { RIDE_ACTS } from './skier.js?v=18';
+import { height } from './terrain.js?v=18';
 
 // where things are on the model (from tools/makescoot.py's printout): the deck's top, the feet on it, the grips on the
 // bars (in the steering part's own frame, up its axis), how far the boards' bases sit under the feet's frame
 export const SCOOT = { half: 0.45, file: 'scoot/scoot.glb', base: 'deck', name: 'scooter', feet: 'deck', deckTop: 0.045, footF: [0.0, 0.12], footB: [-0.03, -0.2], grip: 0.255, gripUp: 0.925, gripZ: 0,
   tail: [0, 0.075, -0.4], trR: [0, 0.004, -0.11], trF: [0, -0.058, 0.06], trW: [0.12, 0.095] };
-// the snowbike: seated on the saddle, the hands on the bars, the feet on two short foot skis on the snow beside it (in
-// the air low beside the frame, as ski bikers ride)
-export const BIKE = { half: 0.75, file: 'bike/bike.glb', base: 'frame', name: 'snowbike', feet: 'skis', seat: { y: 0.5, z: -0.15 }, snowFoot: [0.23, 0.08], peg: [0.2, 0.06, 0.02],
+/* the snowbike: seated on the saddle, the hands on the bars, the feet on footpegs on the frame (2026-11-06, for "make it
+   so that the feet on snow bike in leonski stay on the bike rather than touching the floor": they rode on two short foot
+   skis on the snow beside it; ski bikes ridden without foot skis have pegs low on the frame, and so does this one now,
+   made here since the model has none). peg: each peg's middle [out, up, along] in the frame's own frame, just under the
+   bottom bracket; pegLen its length; the feet stand on them riding, carving, braking, in the air and on rails, and go
+   back to them after any trick that takes them off */
+export const BIKE = { half: 0.75, file: 'bike/bike.glb', base: 'frame', name: 'snowbike', feet: 'pegs', seat: { y: 0.5, z: -0.15 }, peg: [0.108, 0.135, 0.0], pegLen: 0.105,
   grip: 0.36, gripUp: 0.76, gripZ: 0.05, trR: [0, 0, -0.42], trF: [0, -0.204, 0.03], trW: [0.085, 0.075] };
 
 // ---- the tricks ---------------------------------------------------------------------------------------------------------
@@ -134,7 +139,7 @@ function loadModel(file) {
   if (_gltf[file]) return _gltf[file];
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  _gltf[file] = loader.loadAsync('./models/' + file + '?v=17').catch(e => { _gltf[file] = null; throw e; });
+  _gltf[file] = loader.loadAsync('./models/' + file + '?v=18').catch(e => { _gltf[file] = null; throw e; });
   return _gltf[file];
 }
 const frameLoader = cfg => async (rig) => {
@@ -144,20 +149,39 @@ const frameLoader = cfg => async (rig) => {
   sc.root.name = cfg.name;
   const part = n => { const o = src[n].clone(true); o.traverse(m => { if (m.isMesh) m.castShadow = true; }); return o; };
   sc.deck = part(cfg.base); sc.steer = part('steer');
-  // the rider's foot skis (the snowbike): one under each boot, placed every frame
-  if (cfg.feet === 'skis') { sc.feet = [part('footski'), part('footski')]; for (const f of sc.feet) { f.position.set(0, 0, 0); rig.root.add(f); } }
+  // (the snowbike's footpegs, on the frame so they go round with it in a tailwhip; its foot skis are left off now)
+  if (cfg.peg) sc.deck.add(makePegs(cfg));
   sc.steerPos = sc.steer.position.clone(); sc.steerQ = sc.steer.quaternion.clone();         // the steering axis's place and tilt
   sc.axis = new THREE.Vector3(0, 1, 0).applyQuaternion(sc.steerQ);
   sc.root.add(sc.deck, sc.steer);
   rig.root.add(sc.root);
   rig.board = sc.root;
-  // (snow.js: tracks where the boards (the bike's two skis, and the foot skis) meet the snow, rig.tracks)
+  // (snow.js: tracks where the boards (the bike's two skis) meet the snow, rig.tracks)
   const mk = hw => { const o = new THREE.Object3D(); o.userData.hw = hw; rig.root.add(o); return o; };
   sc.tr = [mk(cfg.trW[0]), mk(cfg.trW[1])];
-  if (sc.feet) for (const f of sc.feet) { f.userData.hw = 0.05; sc.tr.push(f); }
   rig.tracks = sc.tr; rig.skiL = sc.tr[0]; rig.skiR = sc.tr[1];
-  sc.pAct = null; sc.pU = 0;
+  sc.pAct = null; sc.pU = 0; sc.jA = null; sc.jU = 0; sc.jRound = 0; sc.lookK = 'deck'; sc.kickK = 1;
+  sc.kickV = [0, -0.6, -0.2]; sc.hOff = [[0, 0.2, 0], [0, 0.2, 0]];
 };
+/* the snowbike's footpegs (2026-11-06): a short mount off the bottom bracket and a flat motocross style peg each side,
+   teeth across its top, all one mesh in the frame's frame (one draw) */
+let _pegGeo = null, _pegMat = null;
+function makePegs(cfg) {
+  if (!_pegGeo) {
+    const parts = [], [px, py, pz] = cfg.peg, L = cfg.pegLen;
+    const add = (g, x, y, z) => { g.translate(x, y, z); parts.push(g); };
+    for (const s of [1, -1]) {
+      add(new THREE.BoxGeometry(0.05, 0.03, 0.036), s * 0.048, py + 0.004, pz);                      // the mount, on the frame
+      add(new THREE.BoxGeometry(L, 0.014, 0.05), s * px, py, pz);                                    // the peg
+      for (let i = 0; i < 4; i++) add(new THREE.BoxGeometry(L * 0.92, 0.008, 0.005), s * px, py + 0.01, pz - 0.0195 + i * 0.013);   // its teeth
+      add(new THREE.BoxGeometry(0.006, 0.02, 0.052), s * (px + L / 2), py + 0.003, pz);              // the end lip
+    }
+    _pegGeo = mergeGeometries(parts); for (const g of parts) g.dispose();
+    _pegMat = new THREE.MeshStandardMaterial({ color: 0x55585e, metalness: 0.7, roughness: 0.42 });
+  }
+  const m = new THREE.Mesh(_pegGeo, _pegMat); m.name = 'pegs'; m.castShadow = true;
+  return m;
+}
 Rig.loader.scoot = frameLoader(SCOOT);
 Rig.loader.bike = frameLoader(BIKE);
 
@@ -169,8 +193,6 @@ const _v1 = V(), _v2 = V(), _v3 = V(), _v4 = V(), _v5 = V(), _v6 = V(), _v7 = V(
 const TAU = Math.PI * 2;
 // a track point: at pt in the part's frame, turned as the part is
 function mark(o, part, pt) { o.position.set(pt[0], pt[1], pt[2]).applyMatrix4(part.matrixWorld); part.getWorldQuaternion(o.quaternion); }
-// the eased turn of a whip: slow off the foot, quick in the middle, slowing to be caught
-const whipE = u => u - 0.55 * Math.sin(TAU * u) / TAU;
 // 0 -> 1 over [a, b] then back to 0 over [c, d]
 const bump = (u, a, b, c, d) => smooth01((u - a) / (b - a)) * (1 - smooth01((u - c) / (d - c)));
 
@@ -181,10 +203,10 @@ const C = {
   R: null, BP: null, fw: V(), up: V(), lf: V(), s: 1,
   pel: V(), pp: 0, py: 0, pr: 0, cl: 0, ct: 0, cs: 0, hp: 0, hy: 0,
   pq: Q(), cq: Q(), hq: Q(),
-  hip: [V(), V()], sh: [V(), V()], grip: [V(), V()], spot: [V(), V()], seat: V(), tail: V(), nose: V(), barMid: V(),
+  hip: [V(), V()], sh: [V(), V()], grip: [V(), V()], grip0: [V(), V()], spot: [V(), V()], seat: V(), tail: V(), nose: V(), barMid: V(), dk: V(), look: V(), wf: 0,
   foot: [V(), V()], kp: [V(), V()], ffree: [0, 0], fyaw: [0, 0], fpit: [0, 0],
   hand: [V(), V()], hoff: [0, 0], ep: [V(), V()], curl: [0, 0], hgrab: [0, 0], hgD: [V(), V()], hgP: [V(), V()],
-  legLen: 0.8, armL: 0.55, u: 0, t: 0, tt: 0,
+  legLen: 0.8, armL: 0.55, u: 0, t: 0, tt: 0, lean: 0,
 };
 // helpers on C: a point in the body frame, in the pelvis frame from the pelvis, in the chest frame from a shoulder
 const bpt = (out, x, y, z) => out.set(x, y, z).applyQuaternion(C.R).add(C.BP);
@@ -280,76 +302,307 @@ HELD.tucknhB = { v: [0, 0.12, -0.05, 0.1, 0, 0], crouch: 0.6,
 HELD.supermanB = Object.assign({}, HELD.superman, { v: [0, 0.04, 0.12, 0.1, 0, 0] });
 const heldOf = (def, bike) => !def || def.act ? null : bike && HELD[def.id + 'B'] ? HELD[def.id + 'B'] : HELD[def.id];
 
-/* The timed tricks: what the vehicle's parts do at u (0 -> 1 through the round), and the rider with it. part(u) sets
-   C.whipA (the deck round the bars' axis), C.barA (the bars round), C.flip (the whole vehicle round the grips' line),
-   C.v* (the vehicle moved); body(u) pulls the targets. */
+/* The timed tricks, thrown with the whole body (2026-11-06, for "make it so that the wips/barspins/other tricks similar
+   are not like roboticy and are more jibbery with the whole body moving in response to like the direction of movement
+   to throw the object around more exaggerated", then "get the entire body to move for the tailwhip and other motions to
+   make it seem more like real life"). Each round goes through the beats riders describe for a whip or a barspin (B
+   below): a wind-up the other way (the hips coiled against the throw, the shoulders against the hips, the knees loaded,
+   the part dipped back a little), the throw (the hips and legs scooping the deck round and the back foot kicking it on,
+   or the shoulders and arms pushing and pulling the bars round, the body popping up, the chest and shoulders turning
+   against whatever throws), the quick middle (the part at its fastest, the knees tucked up out of its way, the arms
+   pushing the bars out to let it by, the head spotting it), the catch (the back foot first, then the front, or the
+   hands, the knees and elbows taking it) and a settle. The part follows those beats exactly (spinE); the body's moves
+   are targets (J) for underdamped springs in rig.p (throwPose), so the body lags the throw a touch, swings past it,
+   carries on a little after the round and settles, and one trick runs into the next. A round keeps its length (skier.js
+   actDur), so landings and scoring are as they were.
+   Chains (2026-11-06, for "make it so that like tailwhips briflips barspins etc can all be continuable like after each
+   tailwhip if you do another one the feet dont have to stay back onto the board"): skier.js says when another round of
+   the same trick follows (S.actNext: the key held, or pressed again in the round) and how many are done (S.actN). A round
+   that goes on into another has no catch (k.outK 0: the part keeps its speed, the feet stay tucked, a barspin's hands
+   stay off), and one that follows another starts from the middle of the trick (k.inK 0: no wind-up, the feet still up),
+   with a smaller drive of the hips and arms again (B.r), so a double or a triple reads as one motion and the feet only
+   come back on the last.
+   part(u, k) sets C.whipA (the deck round the bars' axis), C.barA (the bars round), C.flip (the whole vehicle round the
+   grips' line), C.v* (the vehicle moved); j(u, f, k) adds the body's targets to J (u the round, f how far the part is
+   round, k the round's flags inK, outK, bike). */
+const sigm = (x, p) => { const a = Math.pow(x, p), b = Math.pow(1 - x, p); return a / (a + b); };
+// the part's turn through a round, in turns (0 -> 1): back the other way a little first (wd, the wind-up), slow off the
+// foot or hand, quickest through the middle, a touch past at the catch (ov) and back; between the rounds of a chain it
+// goes on at a steady 1.25 turns a round instead of stopping. q under 1 brings the quickest part earlier (a part thrown
+// hard, a barspin's bars, is at its fastest just after the hand lets go)
+function spinE(u, wd, ov, inK, outK, q = 1) {
+  q = 1 - (1 - q) * inK;     // (a round carried on from the last goes round evenly, not thrown again)
+  const a = 0.08 * inK, b = 1 - 0.16 * outK, x = clamp((u - a) / (b - a), 0, 1), v = 1.25 * (b - a);
+  let f = sigm(q === 1 ? x : Math.pow(x, q), 1.9) + (1 - inK) * v * x * (1 - x) * (1 - x) + (1 - outK) * v * x * x * (x - 1);
+  if (u < 0.2) f -= wd * inK * Math.sin(Math.PI * u / 0.2) ** 2;
+  if (u > 0.74) f += ov * outK * Math.sin(Math.PI * (u - 0.74) / 0.26) ** 2;
+  return f;
+}
+// how much of a vehicle move a round has on: in over [a, a + b] from the start and out by the end, or held through a chain
+const envK = (u, k, a, b) => (1 - k.inK * (1 - smooth01((u - a) / b))) * (1 - k.outK * (1 - smooth01((1 - u - a) / b)));
+// the beats of a round, each 0 -> 1 -> 0 (w to 1.8): w the wind-up, t the throw, m the quick middle, c the catch, on the whole of it,
+// r the drive again at the start of a round that follows another in a chain
+const B = { w: 0, t: 0, m: 0, c: 0, on: 0, r: 0 };
+// (uw: the round as it is, for the wind-up, which starts with the round; u: a little ahead, for the rest)
+function beats(u, inK, outK, uw = u) {
+  B.w = 1.8 * bump(uw, 0, 0.06, 0.08, 0.22) * inK;     // (taller than the others: it is short, and the springs only get part way)
+  B.t = bump(u, 0.1, 0.2, 0.26, 0.44) * inK;
+  B.m = (1 - inK * (1 - smooth01((u - 0.2) / 0.16))) * (1 - outK * smooth01((u - 0.6) / 0.16));
+  B.c = bump(u, 0.64, 0.78, 0.86, 1) * outK;
+  B.on = (1 - inK * (1 - smooth01((u - 0.02) / 0.12))) * (1 - outK * smooth01((u - 0.8) / 0.16));
+  B.r = bump(u, 0, 0.14, 0.22, 0.5) * (1 - inK);
+}
+// a foot off the deck (or pegs) from u0 on, and back down from c0 for the catch: how much it is off (the catch late in the
+// round, so another press up to about four fifths of the way round still finds the feet up)
+const footOff = (u, k, u0, c0 = 0.76) => (1 - k.inK * (1 - smooth01((u - u0) / 0.08))) * (1 - k.outK * smooth01((u - c0) / 0.1));
+
+/* The body's targets and their springs: [rest value, natural frequency rad/s, damping ratio]. The trunk loose and quick
+   (under half damped, so it swings past and comes back), the feet and hands quicker and firmer, the head's look slower.
+   py/ct/cl/cs/pr/pp: the pelvis's yaw, the chest's twist from it, lean and side bend, the pelvis's roll and pitch (as on
+   C); ph/px/pz the pelvis moved up, left, forward (m); tk0/tk1 each foot tucked up off the deck, tUp/tOut/tFwd where to
+   (from its hip, body frame); kick the kicking foot flicked out (sc.kickK, sc.kickV); ef the elbows out; v* the vehicle
+   moved as C.v* (the arms pulling, pushing and twisting the bars); look how much the head follows the part (sc.lookK);
+   rel the hands off the bars (sc.hOff); fh the right hand down on the deck; kw the knees opened out wide */
+const JF = {
+  py: [0, 34, 0.42], ct: [0, 36, 0.42], cl: [0, 32, 0.45], cs: [0, 32, 0.45], pr: [0, 32, 0.45], pp: [0, 26, 0.5],
+  ph: [0, 32, 0.45], px: [0, 28, 0.5], pz: [0, 28, 0.5],
+  tk0: [0, 30, 0.7], tk1: [0, 30, 0.7], tUp: [-0.3, 26, 0.8], tOut: [0.16, 26, 0.8], tFwd: [-0.1, 26, 0.8],
+  kick: [0, 34, 0.6], ef: [0, 22, 0.55],
+  vx: [0, 30, 0.5], vy: [0, 30, 0.5], vz: [0, 30, 0.5], vyaw: [0, 30, 0.5], vroll: [0, 30, 0.5], vpit: [0, 30, 0.5],
+  look: [0, 14, 0.9], rel: [0, 30, 0.85], fh: [0, 30, 0.8], kw: [0, 28, 0.7],
+};
+const JK = Object.keys(JF), J = {}, JS = {}, SPN = {};
+for (const k of JK) { J[k] = 0; JS[k] = 0; SPN[k] = 'xj_' + k; }
+const KF = { inK: 1, outK: 1, wd: 1, ov: 1, bike: false };
+// the body's lead on the round, in seconds: its springs lag a few hundredths, so it is asked a little ahead of the part
+const LEAD = 0.035;
+// the rig being posed (the tricks' j set where its head looks, which foot kicks and where the hands go)
+let sc_ = null;
+// the chest's turn in the world (the pelvis's plus its own twist) asked of the trunk: py the hips, cw the shoulders
+const trunkYaw = (py, cw) => { J.py += py; J.ct += cw - py; };
+
 const ACT = {
   tailwhip: {
-    part(u) { C.whipA += TAU * whipE(u); C.vy += 0.1 * Math.sin(Math.PI * u); },
-    trunk(u) { const e = bump(u, 0, 0.12, 0.8, 0.97); C.hp += 0.38 * e; C.cl += 0.22 * e; if (C.bike) C.pel.addScaledVector(C.up, 0.16 * e); },
-    limbs(u) { feetUp(bump(u, 0, 0.12, 0.8, 0.97), -0.34, -0.16); },
+    part(u, k) { C.whipA += TAU * (C.wf = spinE(u, 0.035 * k.wd, 0.02 * k.ov, k.inK, k.outK, 0.8)); C.vy += 0.1 * envK(u, k, 0, 0.5); },
+    j(u, f, k) {
+      // the deck goes round anticlockwise seen from above, its tail out to the rider's right first. The hips and legs
+      // coil the other way, then scoop it round (the back foot rides the tail round and kicks it on) and swing back a
+      // little as it flies round under them; the shoulders turn against the hips all the way, and against the deck
+      trunkYaw(-0.42 * B.w + 0.66 * B.t - 0.24 * B.m + 0.3 * B.r, 0.16 * B.w - 0.32 * B.t + 0.1 * B.m - 0.16 * B.r);
+      J.cl += 0.34 * B.w - 0.2 * B.t + 0.24 * B.m + 0.4 * B.c + 0.06 * B.r;
+      J.cs += 0.12 * B.w - 0.28 * B.t + 0.08 * B.m - 0.12 * B.r;
+      J.pr += 0.06 * B.w - 0.12 * B.t - 0.05 * B.r;
+      // the body bobs: down to load, up with the pop, a little up in the middle, down to take the catch; the weight
+      // over the front foot to load, then away from the kick
+      J.ph += -0.1 * B.w + 0.12 * B.t + 0.05 * B.m - 0.13 * B.c + 0.05 * B.r;
+      J.px += 0.06 * B.t - 0.02 * B.m + 0.03 * B.r;
+      J.pz += 0.03 * B.w - 0.03 * B.t;
+      // the front foot up at the throw; the back one rides the tail round until the deck is well on its way, kicks out
+      // after it and tucks; at the catch the back foot comes down first, then the front
+      J.tk0 += footOff(u, k, 0.06, 0.8);
+      J.tk1 += (1 - k.inK * (1 - smoothstep(0.08, 0.17, f))) * (1 - k.outK * smooth01((u - 0.77) / 0.1));
+      J.kick += k.inK * k.wd * bump(f, 0.07, 0.14, 0.2, 0.42); sc_.kickK = 1; sc_.kickV = k.bike ? KICK_B : KICK_S;
+      // the arms: the bars pulled in and down to load, lifted at the pop and twisted with the shoulders, pushed out and
+      // down to let the deck by, pulled back to meet the feet at the catch
+      J.ef += 0.7 * B.t + 0.4 * B.m + 0.3 * B.r;
+      J.vy += -0.03 * B.w + 0.08 * B.t - 0.02 * B.m - 0.05 * B.c + 0.03 * B.r;
+      J.vz += -0.04 * B.w + 0.06 * B.m - 0.03 * B.c;
+      J.vpit += -0.06 * B.w + 0.1 * B.t + 0.02 * B.m - 0.06 * B.c + 0.05 * B.r;
+      J.vyaw += 0.08 * B.w - 0.16 * B.t + 0.05 * B.m - 0.08 * B.r;
+      J.vroll += -0.1 * B.t + 0.07 * B.m;
+      J.tUp = -0.27; J.tOut = 0.17; J.tFwd = -0.12;
+      if (k.bike) {
+        // (the snowbike's frame sweeps round under the seat: up off the saddle, knees up high and wide, the bike pushed
+        // down away under the bars)
+        J.ph += 0.14 * B.w + 0.22 * B.t + 0.24 * B.m - 0.05 * B.c + 0.04 * B.r;
+        J.cl += 0.12 * B.t + 0.1 * B.m; J.vy += -0.12 * B.t - 0.14 * B.m;
+        J.tUp = -0.14; J.tOut = 0.3; J.tFwd = 0.02;
+      }
+      J.look += 0.85 * B.on; sc_.lookK = 'deck';
+    },
   },
   kickless: {
     // the deck pushed out in front the other way round, and the bars swung in a circle so the arms carry it round
-    part(u) { C.whipA -= TAU * smooth01(u); const e = Math.sin(Math.PI * u); C.circ = 0.26 * e; C.circA = -TAU * u; C.vy += 0.12 * e; },
-    trunk(u) { const e = bump(u, 0, 0.1, 0.84, 0.98); C.hp += 0.55 * e; C.cl -= 0.18 * e; },
-    limbs(u) { const e = bump(u, 0, 0.1, 0.84, 0.98); feetUp(e, -0.16, 0.22); for (let k = 0; k < 2; k++) elbowTo(k, bdir(_v2, (k ? -1 : 1), 0.1, 0), 0.6 * e); },
+    // (the circle leans the bars less on its way back past the chest)
+    part(u, k) { C.whipA -= TAU * (C.wf = spinE(u, 0.03, 0.02, k.inK, k.outK)); const e = envK(u, k, 0, 0.45); C.circA = -TAU * u; C.circ = 0.32 * e * (1 - 0.55 * Math.max(0, -Math.cos(C.circA))); C.vy += 0.12 * e; },
+    j(u, f, k) {
+      // clockwise seen from above (its tail out to the left first): the body coils the other way, both feet shove the
+      // deck out in front and come off it, then the shoulders and chest go round with the bars the arms are swinging in
+      // a circle, the hips against them
+      const e = envK(u, k, 0, 0.45), A = -TAU * u, sx = -Math.sin(A), cz = Math.cos(A);
+      trunkYaw(0.3 * B.w - 0.42 * B.t + 0.12 * B.m - 0.14 * sx * e * B.m - 0.2 * B.r, 0.12 * B.w - 0.2 * B.t + 0.22 * sx * e * B.m + 0.1 * B.r);
+      J.cl += 0.3 * B.w - 0.3 * B.t + 0.28 * cz * e * B.m + 0.42 * B.c + 0.08 * B.r;
+      J.cs += -0.3 * sx * e * B.m;
+      J.ph += -0.09 * B.w + 0.1 * B.t + 0.05 * B.m - 0.12 * B.c + 0.04 * B.r;
+      J.pz += 0.03 * B.w - 0.07 * B.t; J.px += -0.05 * sx * e * B.m;
+      J.tk0 += (1 - k.inK * (1 - smoothstep(0.06, 0.14, f))) * (1 - k.outK * smooth01((u - 0.74) / 0.1));
+      J.tk1 += (1 - k.inK * (1 - smoothstep(0.05, 0.12, f))) * (1 - k.outK * smooth01((u - 0.76) / 0.1));
+      J.tUp = -0.24; J.tOut = 0.17; J.tFwd = -0.14;
+      J.ef += 0.45 * B.w + 0.85 * (B.t + B.m);
+      J.vz += -0.04 * B.w + 0.08 * B.t - 0.04 * B.c;
+      J.vy += -0.03 * B.w - 0.04 * B.c;
+      J.look += 0.85 * B.on; sc_.lookK = 'deck';
+    },
   },
   barspin: {
-    part(u) { C.barA += TAU * whipE(u); C.vy += 0.05 * Math.sin(Math.PI * u); },
-    trunk(u) { C.hp += 0.4 * bump(u, 0.02, 0.1, 0.86, 0.97); },
-    limbs(u) {
-      const e = bump(u, 0.02, 0.1, 0.86, 0.97);
-      for (let k = 0; k < 2; k++) { const s = k ? -1 : 1; handTo(k, _v1.copy(C.grip[k]).addScaledVector(C.up, 0.17).addScaledVector(C.lf, s * 0.2).addScaledVector(C.fw, -0.06), e); C.curl[k] += (0.15 - C.curl[k]) * e; elbowTo(k, bdir(_v2, s * 1, -0.3, -0.3), e); }
+    part(u, k) { C.barA += TAU * (C.wf = spinE(u, 0.045, 0.025, k.inK, k.outK, 0.6)); C.vy += 0.05 * envK(u, k, 0, 0.5); },
+    j(u, f, k) {
+      // the bars thrown round anticlockwise seen from above (the right hand pushes its grip forward, the left pulls it
+      // back), let go, spun and caught: the shoulders coil, throw them with the arms and turn back as they spin, the
+      // hips against the shoulders, the head watching the bars round
+      trunkYaw(0.14 * B.w - 0.2 * B.t + 0.08 * B.m - 0.08 * B.r, -0.3 * B.w + 0.42 * B.t - 0.14 * B.m + 0.14 * B.r);
+      J.cl += 0.3 * B.w - 0.18 * B.t + 0.08 * B.m + 0.38 * B.c + 0.06 * B.r;
+      J.cs += 0.12 * B.w - 0.18 * B.t + 0.05 * B.m;
+      J.ph += -0.08 * B.w + 0.08 * B.t + 0.04 * B.m - 0.1 * B.c + 0.04 * B.r + (k.bike ? 0.04 * B.m : 0);
+      // the hands go round with the grips for the first part of the turn, are let go and fly on the way they were going,
+      // out and up, open, and come back to take the grips again as they come round (not between the rounds of a chain)
+      J.rel += (1 - k.inK * (1 - smoothstep(0.03, 0.1, f))) * (1 - k.outK * smoothstep(0.74, 0.86, u));
+      sc_.hOff[0] = HOFF_L; sc_.hOff[1] = HOFF_R;
+      J.ef += 0.5 * B.t + 0.35 * B.m;
+      // the scooter pulled up to the feet as the knees bring it up (the bike: the knees grip the frame), then pushed down
+      // again for the catch
+      J.vy += 0.03 * B.w + 0.11 * B.t + 0.07 * B.m - 0.04 * B.c + 0.03 * B.r;
+      J.vpit += (k.bike ? 0.1 : -0.12) * B.t + (k.bike ? 0.04 : -0.06) * B.m;
+      // (the snowbike's knees are up by the bars, on its pegs: they open out wide while the bars spin, so the bar ends go
+      // round between them)
+      if (k.bike) J.kw += Math.max(B.t, B.m) + B.r;
+      // (the scooter's bars are low and close: pushed out in front as they go, the hips back and the chest up, so the
+      // grip coming back past the rider clears the belly)
+      else { J.vz += 0.12 * B.on + 0.04 * B.r; J.pz -= 0.04 * B.on; J.cl -= 0.28 * (B.t + B.m) + 0.1 * B.r; J.vy -= 0.05 * (B.t + B.m); }
+      J.look += 0.75 * B.on; sc_.lookK = 'bars';
     },
   },
-  briflip: { part(u) { briPart(u, 1); }, trunk(u) { briTrunk(u, 1); }, limbs(u) { briLimbs(u, 1); } },
-  inward: { part(u) { briPart(u, -1); }, trunk(u) { briTrunk(u, -1); }, limbs(u) { briLimbs(u, -1); } },
+  briflip: { part(u, k) { briPart(u, 1, k); }, j(u, f, k) { briJ(u, f, 1, k); } },
+  inward: { part(u, k) { briPart(u, -1, k); }, j(u, f, k) { briJ(u, f, -1, k); } },
   fingerwhip: {
-    part(u) { const e = bump(u, 0, 0.15, 0.8, 1); C.whipA += TAU * smooth01(u * 1.08); C.vy += 0.46 * e; C.vz -= 0.06 * e; },
-    trunk(u) { const e = bump(u, 0, 0.14, 0.8, 0.97); C.cl += 0.7 * e; C.ct -= 0.25 * e; C.hp += 0.45 * e; },
-    limbs(u) {
-      feetUp(bump(u, 0, 0.14, 0.8, 0.97), -0.22, -0.02);
-      // the right hand down on the deck's tail, going round with it, then let go and back to the bars
-      const h = bump(u, 0.02, 0.12, 0.45, 0.82);
-      handTo(1, C.nose, h, 0.4); C.hgrab[1] += (1 - C.hgrab[1]) * h; elbowTo(1, bdir(_v2, -1, 0.3, -0.2), h);
+    // (the scooter pulled up high so the deck comes up to the hand, as it always was, and down again under the feet
+    // before they come back onto it)
+    part(u, k) { const e = envK(u, k, 0, 0.15) * (1 - k.outK * smooth01((u - 0.7) / 0.2)); C.whipA += TAU * (C.wf = spinE(u, 0.03, 0.02, k.inK, k.outK)); C.vy += 0.46 * e; C.vz -= 0.06 * e; },
+    j(u, f, k) {
+      // the right hand down to the deck and the deck spun round by it: the right shoulder drops into the reach, the chest
+      // folds over and turns with the deck as the hand drives it round (the hips against it), then comes back up to the
+      // bars; in a chain the hand stays on it, driving it round again
+      J.fh += (1 - k.inK * (1 - smooth01((u - 0.02) / 0.1))) * (1 - k.outK * smooth01((u - 0.5) / 0.3));
+      const sw = 0.3 * Math.sin(TAU * f) * B.m;
+      trunkYaw(-0.2 * B.w + 0.24 * B.t - 0.1 * B.m - 0.5 * sw - 0.1 * B.r, -0.06 * B.w - 0.06 * B.t + sw + 0.1 * B.r);
+      // (the chest held back while the scooter comes up past it, then folded down to the deck; the feet tucked high and
+      // wide, out of the way of the deck going round under them up at that height)
+      J.cl += -0.06 * B.w + 0.62 * B.t + 0.66 * B.m + 0.3 * B.c;
+      J.cs += -0.08 * B.w + 0.3 * B.t + 0.22 * B.m;
+      J.ph += -0.04 * B.w + 0.03 * B.t - 0.1 * B.c + 0.03 * B.r;
+      J.vz += 0.05 * B.w;
+      J.tk0 += footOff(u, k, 0.02, 0.86); J.tk1 += footOff(u, k, 0.04, 0.84);
+      J.tUp = -0.12; J.tOut = 0.24; J.tFwd = -0.18;
+      J.look += 0.85 * B.on; sc_.lookK = 'deck';
     },
   },
-  // a tailwhip, a briflip and a tailwhip, one after the other
+  // a tailwhip, a briflip and a tailwhip, one after the other, the feet off from the first kick to the last catch
   buttercup: {
-    part(u) { if (u < 0.27) ACT.tailwhip.part(u / 0.27); else if (u < 0.73) briPart((u - 0.27) / 0.46, 1); else ACT.tailwhip.part((u - 0.73) / 0.27); },
-    trunk(u) { C.hp += 0.3 * bump(u, 0, 0.06, 0.92, 0.99); if (u >= 0.27 && u < 0.73) briTrunk((u - 0.27) / 0.46, 1); },
-    limbs(u) { feetUp(bump(u, 0, 0.06, 0.92, 0.99), -0.34, 0.02); if (u >= 0.27 && u < 0.73) briLimbs((u - 0.27) / 0.46, 1, true); },
+    part(u, k) {
+      if (u < 0.27) ACT.tailwhip.part(u / 0.27, subK(k.inK, 1, 1, 0, k.bike));
+      else if (u < 0.73) briPart((u - 0.27) / 0.46, 1, subK(1, 1, 0, 0, k.bike));
+      else ACT.tailwhip.part((u - 0.73) / 0.27, subK(1, k.outK, 0, 1, k.bike));
+    },
+    j(u, f, k) {
+      if (u < 0.27) { const v = u / 0.27, kk = subK(k.inK, 0, 1, 0, k.bike); beats(v, kk.inK, kk.outK); ACT.tailwhip.j(v, f, kk); }
+      else if (u < 0.73) { const v = (u - 0.27) / 0.46, kk = subK(0, 0, 0, 0, k.bike); beats(v, 0.35, 0.35); briJ(v, f, 1, kk, true); }
+      else { const v = (u - 0.73) / 0.27, kk = subK(0, k.outK, 0, 1, k.bike); beats(v, kk.inK, kk.outK); ACT.tailwhip.j(v, f, kk); }
+    },
   },
 };
-// both feet off the deck and tucked up under the rider (e how much; up: how far under the hips; fwd)
-function feetUp(e, up, fwd) {
-  if (e < 0.001) return;
-  for (let k = 0; k < 2; k++) { const s = k ? -1 : 1; footTo(k, hpt(_v1, k, s * 0.16, up, fwd), e); kneeTo(k, bdir(_v2, s * 0.1, 0.5, 1), e); C.fpit[k] += (-0.5 - C.fpit[k]) * e; }
-}
+const _sk = { inK: 1, outK: 1, wd: 1, ov: 1, bike: false };
+const subK = (inK, outK, wd, ov, bike) => { _sk.inK = inK; _sk.outK = outK; _sk.wd = wd; _sk.ov = ov; _sk.bike = bike; return _sk; };
+// where a tailwhip's kicking foot flicks to, from its hip [left, up, forward] (body frame): out after the tail, back
+const KICK_S = [-0.56, -0.5, -0.22], KICK_B = [-0.5, -0.4, -0.26];
+// where the hands go in a barspin once let go [out, up, forward] from where their grip would be: the left hand back and
+// out, the right one on forward and up (the way each was going when it let go)
+const HOFF_L = [0.3, 0.26, -0.12], HOFF_R = [0.04, 0.32, 0.14];
 /* a briflip: the scooter pushed out to the rider's right and turned a quarter (the deck pointing out to the right, the
    bars still across), flipped a whole turn round the line through the grips (dir 1: the deck forwards and up first, a
    backflip of the scooter; -1: backwards and up first, the inward), then straightened back under the feet */
-function briPart(u, dir) {
-  const e = Math.min(smooth01(u / 0.16), smooth01((1 - u) / 0.16));
+function briPart(u, dir, k) {
+  const e = envK(u, k, 0, 0.16);
   C.vx -= 0.38 * e; C.vy += 0.1 * e; C.byaw += Math.PI / 2 * e; C.steerX -= Math.PI / 2 * e;
-  C.flip -= dir * TAU * smooth01((u - 0.1) / 0.78);
+  C.flip -= dir * TAU * (C.wf = spinE(u, 0.03 * k.wd, 0.02 * k.ov, k.inK, k.outK));
 }
-function briTrunk(u, dir) {
-  const e = bump(u, 0, 0.12, 0.86, 0.98);
-  C.pel.addScaledVector(C.lf, 0.07 * e);
-  C.ct -= 0.3 * e; C.hy -= (dir > 0 ? 0.4 : 0.65) * e; C.hp += (dir > 0 ? -0.05 : 0.1) * e; C.cl += (dir > 0 ? 0.25 : -0.05) * e;
+// the body in a briflip: the arms throw the scooter out to the right and over, the chest and shoulders turn to it and
+// lean back with it (an inward: over it), the hips go the other way, the legs tuck up and away, the head follows it round
+function briJ(u, f, dir, k, inner) {
+  const back = dir > 0;
+  trunkYaw(0.12 * B.w - 0.18 * B.t - 0.1 * B.m + 0.1 * B.r, 0.32 * B.w - 0.6 * B.t - 0.4 * B.m - 0.12 * B.r);
+  J.cl += 0.3 * B.w + (back ? -0.34 : 0.26) * B.t + (back ? -0.2 : 0.3) * B.m + 0.42 * B.c + (back ? -0.08 : 0.08) * B.r;
+  J.cs += -0.1 * B.w + 0.22 * B.t + 0.14 * B.m + 0.06 * B.r;
+  J.pr += -0.1 * B.t - 0.06 * B.m;
+  J.px += 0.04 * B.w + 0.1 * B.t + 0.09 * B.m;
+  J.ph += -0.09 * B.w + 0.1 * B.t + 0.05 * B.m - 0.12 * B.c + 0.04 * B.r;
+  if (inner) { J.tk0 += 1; J.tk1 += 1; } else { J.tk0 += footOff(u, k, 0.08); J.tk1 += footOff(u, k, 0.1, 0.73); }
+  J.tUp = -0.28; J.tOut = 0.17; J.tFwd = back ? 0.02 : -0.16;
+  J.ef += 0.3 * B.t + 0.3 * B.m;
+  J.vz += -0.04 * B.w - 0.04 * B.c;
+  J.look += 0.85 * B.on; sc_.lookK = 'scoot';
 }
-function briLimbs(u, dir, inner) {
-  const e = bump(u, 0, 0.12, 0.86, 0.98);
-  if (!inner) feetUp(e, -0.32, dir > 0 ? 0.08 : 0.16);
-  for (let k = 0; k < 2; k++) elbowTo(k, bdir(_v2, (k ? -1 : 1) * 0.5, -1, -0.3), 0.7 * e);
+
+/* this frame's round: whether it follows another of the same trick (KF.inK 0: skier.js's actN, or the round seen to wrap
+   for a replay or test that does not say), whether another follows it (KF.outK 0: skier.js's actNext, else the same
+   trick's key still held; a spring, so a press late in a round eases the catch out and letting go late eases it in) */
+function actFlags(sc, A, u, td, sp, bike) {
+  sc_ = sc;
+  if (A) {
+    if (sc.jA !== A) sc.jRound = 0; else if (u < sc.jU - 0.5) sc.jRound++;
+    sc.jA = A; sc.jU = u;
+    const next = sc.pNext !== undefined ? sc.pNext : A.loop !== false && !!td && td.id === A.id;
+    KF.inK = (sc.pN !== undefined ? sc.pN > 0 : sc.jRound > 0) ? 0 : 1;
+    KF.outK = clamp(sp('xj_out', next ? 0 : 1, 60), 0, 1);
+  } else { sc.jA = null; sp('xj_out', 1, 60); KF.inK = 1; KF.outK = 1; }
+  KF.bike = bike; KF.wd = 1; KF.ov = 1;
+}
+// the body's targets for this frame's round (from its beats, a little ahead of the part) through the springs; with nothing
+// going round they are at rest, and the springs settle the last throw
+function throwPose(sc, A, u, sp) {
+  for (let i = 0; i < JK.length; i++) J[JK[i]] = JF[JK[i]][0];
+  if (A) {
+    const uB = Math.min(1, u + LEAD / A.act);
+    beats(uB, KF.inK, KF.outK, u);
+    ACT[A.id].j(uB, C.wf, KF);
+  }
+  for (let i = 0; i < JK.length; i++) { const k = JK[i], f = JF[k]; JS[k] = sp(SPN[k], J[k], f[1], f[2]); }
+}
+// (test handle: the targets, the sprung values and the beats, for tests that trace a round)
+export const throwState = { J, JS, B, KF };
+// the legs, elbows and hands the timed trick moves (after the base pose and any held trick)
+function throwLimbs(sc) {
+  // the legs tucked up out of the part's way (each foot on its own: the back one leaves a whip last), knees up and out
+  for (let k = 0; k < 2; k++) {
+    const w = clamp(k ? JS.tk1 : JS.tk0, 0, 1); if (w < 0.002) continue;
+    const s = k ? -1 : 1;
+    footTo(k, hpt(_v1, k, s * JS.tOut, JS.tUp, JS.tFwd), w);
+    kneeTo(k, bdir(_v2, s * 0.32, 0.8, 1), w); C.fpit[k] += (-0.55 - C.fpit[k]) * w;
+  }
+  // the knees opened out wide, the feet where they are (out of the way of the bike's bars going round)
+  const kn = clamp(JS.kw, 0, 1);
+  if (kn > 0.002) for (let k = 0; k < 2; k++) kneeTo(k, bdir(_v2, k ? -1 : 1, 0.25, 0.45), 0.8 * kn);
+  // the kick: one foot flicked out after the part, the way it was sent
+  const kw = clamp(JS.kick, 0, 1);
+  if (kw > 0.002) { const k = sc.kickK, s = k ? -1 : 1, K = sc.kickV; footTo(k, hpt(_v1, k, K[0], K[1], K[2]), kw); kneeTo(k, bdir(_v2, s * 0.3 + K[0], 0.3, 0.5), kw); C.fpit[k] += (-1.0 - C.fpit[k]) * kw; }
+  // the elbows out to the sides and a little down, driving the bars
+  const ew = clamp(JS.ef, 0, 1);
+  if (ew > 0.002) for (let k = 0; k < 2; k++) elbowTo(k, bdir(_v2, k ? -1 : 1, -0.15, -0.25), 0.7 * ew);
+  // the hands let go of the bars (a barspin), flying on the way they went, open, then back to take the grips again
+  const rw = clamp(JS.rel, 0, 1);
+  if (rw > 0.002) for (let k = 0; k < 2; k++) {
+    const H = sc.hOff[k], s = k ? -1 : 1;
+    handTo(k, _v1.copy(C.grip0[k]).addScaledVector(C.lf, s * H[0]).addScaledVector(C.up, H[1]).addScaledVector(C.fw, H[2]), rw, 0.85);
+    C.curl[k] += (0.2 - C.curl[k]) * rw; elbowTo(k, bdir(_v2, s, -0.2, -0.3), 0.5 * rw);
+  }
+  // the right hand down on the deck (a finger whip), going round with it, then back to the bars
+  const hw = clamp(JS.fh, 0, 1);
+  if (hw > 0.002) { handTo(1, C.nose, hw, 0.4); C.hgrab[1] += (1 - C.hgrab[1]) * hw; elbowTo(1, bdir(_v2, -1, 0.3, -0.2), hw); }
 }
 
 Rig.poser.scoot = Rig.poser.bike = (rig, S0, dt) => {
   const sc = rig.sc; if (!sc) return;
   const S = liftStand(S0);
-  const cfg = sc.cfg, seat = cfg.seat, bike = cfg.feet === 'skis', TR = bike ? BIKE_TRICKS : SCOOT_TRICKS, trDef = bike ? bikeTrickDef : scootTrickDef;
+  const cfg = sc.cfg, seat = cfg.seat, bike = cfg === BIKE, TR = bike ? BIKE_TRICKS : SCOOT_TRICKS, trDef = bike ? bikeTrickDef : scootTrickDef;
   const P = rig.p, sp = springBank(P, dt), b = rig.b;
   const st = S.state || 'ground', air = st === 'air', crash = st === 'crash', ground = st === 'ground', lift = st === 'lift';
   const t = S.t !== undefined ? S.t : (rig._t = (rig._t || 0) + dt);
@@ -359,8 +612,7 @@ Rig.poser.scoot = Rig.poser.bike = (rig, S0, dt) => {
   if (lift) {
     seatRider(rig, S, t); sc.steer.position.copy(sc.steerPos); sc.steer.quaternion.copy(sc.steerQ); sc.deck.position.set(0, 0, 0); sc.deck.quaternion.identity();
     holdOnLift(rig, sc.root, cfg.half || 0.5);
-    if (sc.feet) for (let k = 0; k < 2; k++) { const ft = k ? rig.b.ftR : rig.b.ftL, fs = sc.feet[k]; ft.matrixWorld.decompose(_v1, _q2, _v5); fs.quaternion.copy(_q2).multiply(_q3.copy(rig.rest[k ? 'ftR' : 'ftL'].q).invert()); fs.position.copy(_v1).addScaledVector(_v5.set(0, 1, 0).applyQuaternion(fs.quaternion), -(rig.ankleH + 0.035)); }
-    rig._pst = st; sc.pAct = null; return;
+    rig._pst = st; sc.pAct = null; sc.jA = null; return;
   }
   const changed = rig._pst !== st;
   // how the body turns, and the snow's push sideways (for the lean into a turn)
@@ -379,9 +631,15 @@ Rig.poser.scoot = Rig.poser.bike = (rig, S0, dt) => {
   const popK = air ? smooth01(rig._airT / 0.05) * (1 - smoothstep(0.12, 0.34, rig._airT)) : 0;
   // ---- the timed trick going round (from the physics, or a network rider's), finished off quickly if the state
   // stopped telling it before it was round (a landing at the very end of one)
+  // (in a chain, skier.js's actN rounds are done and actNext says another follows; another rider's actT is carried on
+  // past the round's length while one follows, so it is wrapped into the next round here)
   const ad = S.act ? TR[S.act] : null;
-  if (ad && ad.act) { sc.pAct = ad; sc.pU = clamp((S.actT || 0) / ad.act, 0, 1); }
-  else if (sc.pAct) { sc.pU += dt / (sc.pAct.act * 0.5); if (sc.pU >= 1 || crash) sc.pAct = null; }
+  if (ad && ad.act) {
+    let aT = S.actT || 0, n = S.actN;
+    if (aT >= ad.act && S.actNext) { const w = Math.floor(aT / ad.act); aT -= w * ad.act; if (n !== undefined) n += w; }
+    sc.pAct = ad; sc.pU = clamp(aT / ad.act, 0, 1); sc.pN = n; sc.pNext = S.actNext;
+  }
+  else if (sc.pAct) { sc.pNext = false; sc.pU += dt / (sc.pAct.act * 0.5); if (sc.pU >= 1 || crash) sc.pAct = null; }
   const A = sc.pAct, u = A ? Math.min(1, sc.pU) : 0, actOn = A ? 1 : 0;
   // ---- the held trick, and how much of each (springs, so one fades into the next); none while a part goes round
   const gid = air ? (S.grab || S.pose || null) : null, td = gid ? trDef(gid) : null;
@@ -399,7 +657,11 @@ Rig.poser.scoot = Rig.poser.bike = (rig, S0, dt) => {
   // the rider, tipped back a little at the pop; moved and turned by the trick held and by a part going round
   const crouchA = air ? (actOn ? 0.5 : 0.36 + 0.25 * popK) * (1 - Math.min(1, sumW)) + crouchT : 0;
   const crouch = sp('scrouch', clamp(air ? crouchA : (S.crouch ?? 0.3) + 0.05 + absorb * 0.7, 0, 1), 18);
-  C.vx = 0; C.vy = -(S.sink || 0); C.vz = 0; C.vpit = 0; C.vyaw = 0; C.vroll = 0; C.byaw = 0; C.steerX = 0; C.whipA = 0; C.barA = 0; C.flip = 0; C.circ = 0; C.circA = 0;
+  C.vx = 0; C.vy = -(S.sink || 0); C.vz = 0; C.vpit = 0; C.vyaw = 0; C.vroll = 0; C.byaw = 0; C.steerX = 0; C.whipA = 0; C.barA = 0; C.flip = 0; C.circ = 0; C.circA = 0; C.wf = 0;
+  // the timed trick: the round's flags, what the part does, then the body's targets through their springs
+  actFlags(sc, A, u, td, sp, bike);
+  if (A) ACT[A.id].part(u, KF);
+  throwPose(sc, A, u, sp);
   const lift_ = sp('slift', air ? 0.03 + 0.05 * crouch : 0, 12, air ? 0.8 : 1);
   C.vy += lift_; C.vroll += phi * 0.9;
   C.vpit += 0.25 * popK - 0.06 * Math.sin(tt * 1.1) * airW;
@@ -408,12 +670,13 @@ Rig.poser.scoot = Rig.poser.bike = (rig, S0, dt) => {
     if (v) { C.vx += v[0] * w; C.vy += v[1] * w; C.vz += v[2] * w; C.vpit += v[3] * w; C.vyaw += v[4] * w; C.vroll += v[5] * w; }
     const stw = bike && h.bikeSt !== undefined ? h.bikeSt : h.st; if (stw) C.steerX += stw * w;
   }
+  // (the arms throwing the vehicle about in a timed trick, and settling after)
+  C.vx += JS.vx; C.vy += JS.vy; C.vz += JS.vz; C.vpit += JS.vpit; C.vyaw += JS.vyaw; C.vroll += JS.vroll;
   // (a trick that drops the vehicle under the rider, a cliffhanger's, only as far as the snow under it allows)
   if (C.vy < 0) C.vy *= air ? smoothstep(0.15, 1.1, S.p.y - height(S.p.x, S.p.z)) : 1;
   // a shifty: the vehicle turned across under the body (Shift or A / D in the air, skier.shift)
   const shift = S.shift || 0;
   C.vyaw -= 0.85 * shift;
-  if (A) ACT[A.id].part(u);
   if (crashW > 0.01) { C.vy += 0.15 * crashW; C.vyaw += 0.6 * crashW * Math.sin(t * 2.1); }
   const root = sc.root;
   // (the saddle where it is before a whip turns the bike away under the rider, who stays sat facing the way they go)
@@ -448,44 +711,59 @@ Rig.poser.scoot = Rig.poser.bike = (rig, S0, dt) => {
   if (sc.tr) { mark(sc.tr[0], sc.deck, cfg.trR); mark(sc.tr[1], sc.steer, cfg.trF); }
   // ---- the points the rider uses: the feet's spots on the deck, the grips, the saddle, the tail
   const deckW = sc.deck.matrixWorld, steerW = sc.steer.matrixWorld;
-  C.R = R; C.BP = BP; C.t = t; C.tt = tt; C.bike = bike; C.legLen = rig.legLen; C.armL = rig.len.ua + rig.len.fa;
+  C.R = R; C.BP = BP; C.t = t; C.tt = tt; C.bike = bike; C.lean = phi * 0.9; C.legLen = rig.legLen; C.armL = rig.len.ua + rig.len.fa;
   const fw = C.fw.set(0, 0, 1).applyQuaternion(R), ub = C.up.set(0, 1, 0).applyQuaternion(R), lf = C.lf.set(1, 0, 0).applyQuaternion(R);
   C.grip[0].set(cfg.grip, cfg.gripUp, cfg.gripZ).applyMatrix4(steerW); C.grip[1].set(-cfg.grip, cfg.gripUp, cfg.gripZ).applyMatrix4(steerW);
   C.barMid.addVectors(C.grip[0], C.grip[1]).multiplyScalar(0.5);
+  // (where the grips would be without a bar spin: a barspin's let-go hands fly from there, not round with the bars)
+  if (JS.rel > 0.002) {
+    _q2.copy(sc.steerQ).multiply(_q1.setFromAxisAngle(Y, steerA - C.barA));
+    for (let k = 0; k < 2; k++) C.grip0[k].set(k ? -cfg.grip : cfg.grip, cfg.gripUp, cfg.gripZ).applyQuaternion(_q2).add(sc.steerPos).applyMatrix4(root.matrixWorld);
+  }
   if (!bike) {
     C.spot[0].set(cfg.footF[0], cfg.deckTop + 0.03 + rig.ankleH, cfg.footF[1] - 0.05).applyMatrix4(deckW);
     C.spot[1].set(cfg.footB[0], cfg.deckTop + 0.03 + rig.ankleH, cfg.footB[1] - 0.04).applyMatrix4(deckW);
     C.tail.set(cfg.tail[0], cfg.tail[1] + 0.04, cfg.tail[2]).applyMatrix4(deckW);
     C.nose.set(-0.1, cfg.deckTop + 0.07, 0.16).applyMatrix4(deckW);
+    C.dk.set(0, cfg.deckTop, -0.05).applyMatrix4(deckW);
   } else {
-    // the snowbike: the feet on their foot skis on the snow beside the frame; in the air low beside the frame
-    const pegK = sp('speg', air ? 1 : 0, air ? 9 : 14);
+    // the snowbike: the feet on the pegs in every state (the arch of the boot over the peg, the sole on its teeth), so
+    // they go where the frame goes, round with it in a tailwhip and back onto them after any trick that takes them off
     for (let k = 0; k < 2; k++) {
       const s = k ? -1 : 1;
-      _v5.set(s * cfg.snowFoot[0], 0.03 + rig.ankleH - (S.sink || 0), cfg.snowFoot[1] - 0.05).applyQuaternion(R).add(BP);
-      _v6.set(s * cfg.peg[0], cfg.peg[1] + 0.03 + rig.ankleH, cfg.peg[2]).applyMatrix4(deckW);
-      C.spot[k].lerpVectors(_v5, _v6, pegK);
+      C.spot[k].set(s * (cfg.peg[0] + 0.012), cfg.peg[1] + 0.014 + rig.ankleH, cfg.peg[2] - 0.06).applyMatrix4(deckW);
     }
     // (the saddle from the bike as a whole, not the frame part: in a tailwhip the frame goes round, the rider does not)
     C.seat.set(0, seat.y, seat.z).applyMatrix4(root.matrixWorld);
     C.tail.set(0, seat.y + 0.06, seat.z + 0.1).applyMatrix4(deckW);
+    C.dk.set(0, 0.28, -0.3).applyMatrix4(deckW);
   }
+  // what the head follows in a timed trick: the deck (the bike's frame), the bars, or the whole of it in a briflip
+  if (sc.lookK === 'bars') C.look.copy(C.barMid); else if (sc.lookK === 'scoot') C.look.addVectors(C.dk, C.barMid).multiplyScalar(0.5); else C.look.copy(C.dk);
+  // (seen in first person, 2026-11-06: on the snow the hips further back and the chest more upright, so the bars, the
+  // hands on the grips and the deck are ahead of and below the eyes, as a rider sees them; only this rider's own eyes)
+  const fpS = sp('sfpW', rig.fp ? 1 : 0, 6) * (1 - airW);
   // ---- the trunk: over the deck, crouched to the bars (the scooter); on the saddle (the bike)
   const A0 = rig.ankleH + (cfg.deckTop || 0) + 0.03;
   if (!bike) {
     const H = A0 + lift_ + rig.legLen * 0.97 * (0.95 - 0.45 * crouch) + (rig.pelvisY - rig.hipY);
-    bpt(C.pel, -Math.sin(phi) * 0.5 + 0.015 * wob(tt * 1.7, 4.4) * (1 - airW), H, -0.06 - 0.1 * crouch);
+    bpt(C.pel, -Math.sin(phi) * 0.5 + 0.015 * wob(tt * 1.7, 4.4) * (1 - airW), H, -0.06 - 0.1 * crouch - 0.2 * fpS);
   } else {
     // (in a whip the rider stays where the saddle was before the bike went round under them)
     let keep = 0; for (let i = 0; i < ws.length; i += 2) keep += (ws[i].keepSeat || 0) * ws[i + 1];
     if (keep > 0.001) { _lq.setFromAxisAngle(Z, phi * 0.9); _v5.set(0, seat.y, seat.z).applyQuaternion(_lq).add(_v6.set(0, lift_, 0)).applyQuaternion(R).add(BP); C.seat.lerp(_v5, Math.min(1, keep)); }
     C.pel.copy(C.seat).addScaledVector(ub, 0.09 + (rig.pelvisY - rig.hipY)).addScaledVector(fw, -0.04);
   }
-  const lean = sp('slean', (air ? 0.3 : 0.3 + 0.2 * crouch) - 0.3 * absorb + 0.15 * popK, air ? 12 : 9, air ? 0.8 : 1);
+  const lean = sp('slean', (air ? 0.3 : 0.3 + 0.2 * crouch) - 0.3 * absorb + 0.15 * popK - 0.22 * fpS, air ? 12 : 9, air ? 0.8 : 1);
   const twist = sp('stw', clamp(-Wy * 0.04, -0.2, 0.2) + 0.05 * wob(tt * 0.9, 3.7) * (1 - airW), 9);
   C.pp = 0; C.py = twist * 0.4 - 0.3 * shift; C.pr = -phi * 0.6; C.cl = lean; C.ct = twist * 0.6 + 0.55 * shift; C.cs = phi * 0.35; C.hp = 0; C.hy = clamp(-twist + Wy * 0.06, -1, 1) - 0.25 * shift;
   for (let i = 0; i < ws.length; i += 2) if (ws[i].trunk) ws[i].trunk(ws[i + 1]);
-  if (A) ACT[A.id].trunk(u);
+  // (a timed trick's throw through the trunk: the hips and chest wound up, thrown round and settling, the pelvis popped up
+  // off the deck or saddle and down again for the catch)
+  C.py += JS.py; C.ct += JS.ct; C.cl += JS.cl; C.cs += JS.cs; C.pr += JS.pr; C.pp += JS.pp;
+  // (on the bike the saddle is under the pelvis: it rises off it, but never sinks into it; the catch is taken by the chest
+  // and arms there)
+  C.pel.addScaledVector(ub, bike ? Math.max(JS.ph, -0.01) : JS.ph).addScaledVector(lf, JS.px).addScaledVector(fw, JS.pz);
   if (crashW > 0.01) C.cl += Math.sin(t * 3.1) * 0.5 * crashW;
   const pelQ = C.pq.copy(R).multiply(_q1.setFromAxisAngle(Y, C.py)).multiply(_q1.setFromAxisAngle(X, C.pp)).multiply(_q1.setFromAxisAngle(Z, C.pr));
   rig.setWorldQ(b.root, _q2.copy(pelQ).multiply(rig.rest.root.q));
@@ -504,7 +782,19 @@ function finishPose(rig, S, dt, sp, A, u, ws, crashW, air, ground, bike, steerW,
   rig.blendBone(b.pelvis, 'pelvis', pelQ, chQ, 0);
   rig.blendBone(b.spine, 'spine', pelQ, chQ, 0.35); rig.blendBone(b.spine1, 'spine1', pelQ, chQ, 0.7); rig.blendBone(b.chest, 'chest', pelQ, chQ, 1);
   // the head: forward, a little over the bars, looking where it goes; the chest's lean taken back off it
-  const hdQ = C.hq.copy(chQ).multiply(_q1.setFromAxisAngle(Y, C.hy)).multiply(_q1.setFromAxisAngle(X, 0.15 - (C.cl + C.pp) * 0.75 + C.hp));
+  let hy = C.hy, hx = 0.15 - (C.cl + C.pp) * 0.75 + C.hp;
+  // (in a timed trick it follows the deck or the bars round, eyes on it to spot the catch: turned towards it from the
+  // chest, as far as a neck goes, letting go as it passes behind; through a spring, so it chases it a little behind)
+  let dy = 0, dx = 0;
+  if (JS.look > 0.01) {
+    b.neck.updateWorldMatrix(false, false);
+    const d = _v5.copy(C.look).sub(_v6.setFromMatrixPosition(b.neck.matrixWorld)).applyQuaternion(_q2.copy(chQ).invert());
+    const yaw = Math.atan2(d.x, d.z), pit = Math.atan2(-d.y, Math.hypot(d.x, d.z));
+    const w = clamp(JS.look, 0, 1) * (1 - smoothstep(1.7, 2.6, Math.abs(yaw)));
+    dy = w * (clamp(yaw, -1.2, 1.2) - hy); dx = w * (clamp(pit, -0.7, 1.05) - hx);
+  }
+  hy += sp('xlook_y', dy, 18, 0.75); hx += sp('xlook_x', dx, 18, 0.75);
+  const hdQ = C.hq.copy(chQ).multiply(_q1.setFromAxisAngle(Y, hy)).multiply(_q1.setFromAxisAngle(X, hx));
   rig.blendBone(b.neck, 'neck', chQ, hdQ, 0.5); rig.blendBone(b.head, 'head', hdQ, hdQ, 0);
   rig.blendBone(b.clL, 'clL', chQ, chQ, 0); rig.blendBone(b.clR, 'clR', chQ, chQ, 0);
   b.uaL.updateWorldMatrix(false, false); b.uaR.updateWorldMatrix(false, false);
@@ -519,24 +809,23 @@ function finishPose(rig, S, dt, sp, A, u, ws, crashW, air, ground, bike, steerW,
     C.ep[k].set(0, 0, 0);
   }
   for (let i = 0; i < ws.length; i += 2) if (ws[i].limbs) ws[i].limbs(ws[i + 1]);
-  if (A) ACT[A.id].limbs(u);
+  throwLimbs(sc);
   // ---- legs: knees forward over the feet
   for (let k = 0; k < 2; k++) {
     const th = k ? b.thR : b.thL, ca = k ? b.caR : b.caL, ft = k ? b.ftR : b.ftL;
     const hip = C.hip[k], an = C.foot[k];
     const d = an.distanceTo(hip), m = softReach(d, rig.legLen, 0.88, 0.975); if (m < d) an.sub(hip).multiplyScalar(m / d).add(hip);
     rig.twoBone(th, ca, k ? 'thR' : 'thL', k ? 'caR' : 'caL', an, C.kp[k].normalize(), Z);
-    // on the deck: the front foot points forward, the back one turned out across it (as riders stand); off it, along
-    // the body, pointed as the trick asks
-    const yaw = (bike ? 0 : k ? -0.55 : -0.1) * (1 - C.ffree[k]) + C.fyaw[k];
-    _q3.copy(bike ? sc.root.quaternion : sc.deck.getWorldQuaternion(_wq)).slerp(_q2.copy(C.pq), C.ffree[k]).multiply(_q1.setFromAxisAngle(Y, yaw)).multiply(_q2.setFromAxisAngle(X, C.fpit[k]));
+    // on the deck: the front foot points forward, the back one turned out across it (as riders stand); on the bike's
+    // pegs along the frame, toes turned out a little; off them, along the body, pointed as the trick asks
+    const yaw = (bike ? (k ? -0.12 : 0.12) : k ? -0.55 : -0.1) * (1 - C.ffree[k]) + C.fyaw[k];
+    // (leant over in a carve, a foot on a bike peg rolls back a little towards level, the inside one's toes lifted, so
+    // they stay off the snow at full lean)
+    let fr = 0, fp = C.fpit[k];
+    if (bike) { const on = 1 - C.ffree[k]; fr = -0.45 * C.lean * on; fp -= 0.35 * clamp((k ? 1 : -1) * C.lean / 0.63, 0, 1) * on; }
+    _q3.copy(sc.deck.getWorldQuaternion(_wq)).slerp(_q2.copy(C.pq), C.ffree[k]).multiply(_q1.setFromAxisAngle(Y, yaw)).multiply(_q2.setFromAxisAngle(X, fp));
+    if (fr) _q3.multiply(_q1.setFromAxisAngle(Z, fr));
     rig.setWorldQ(ft, _q3.multiply(rig.rest[k ? 'ftR' : 'ftL'].q));
-    // a foot ski under the boot (the snowbike)
-    if (sc.feet) {
-      const fs = sc.feet[k]; ft.updateWorldMatrix(false, false); ft.matrixWorld.decompose(_v1, _q2, _v5);
-      fs.quaternion.copy(_q2).multiply(_q3.copy(rig.rest[k ? 'ftR' : 'ftL'].q).invert());
-      fs.position.copy(_v1).addScaledVector(_v5.set(0, 1, 0).applyQuaternion(fs.quaternion), -(rig.ankleH + 0.035)).addScaledVector(_v6.set(0, 0, 1).applyQuaternion(fs.quaternion), 0.04);
-    }
   }
   // ---- arms: to the grips (fingers round them, palms down), or where the trick puts them
   const chQ2 = C.cq, cF = _cF.set(0, 0, 1).applyQuaternion(chQ2), cL = _cL.set(1, 0, 0).applyQuaternion(chQ2), cU = _cU.set(0, 1, 0).applyQuaternion(chQ2);

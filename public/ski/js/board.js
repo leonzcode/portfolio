@@ -13,10 +13,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Rig, springBank, smooth01, wrapPi, softReach, wob } from './rig.js?v=17';
-import { clamp, smoothstep } from './noise.js?v=17';
-import { height } from './terrain.js?v=17';
-import { LOOK } from './gear.js?v=17';
+import { Rig, springBank, smooth01, wrapPi, softReach, wob } from './rig.js?v=18';
+import { clamp, smoothstep } from './noise.js?v=18';
+import { height } from './terrain.js?v=18';
+import { LOOK } from './gear.js?v=18';
 
 const D = Math.PI / 180;
 // the board's size (the model is scaled to it), where the bindings are, and their angles (a mild duck stance)
@@ -141,7 +141,7 @@ function loadModel() {
   if (_gltf) return _gltf;
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  _gltf = loader.loadAsync('./models/board/board.glb?v=17').catch(e => { _gltf = null; throw e; });
+  _gltf = loader.loadAsync('./models/board/board.glb?v=18').catch(e => { _gltf = null; throw e; });
   return _gltf;
 }
 // the board's half width along it (at -1 tail .. +1 nose), measured from the model once
@@ -239,6 +239,10 @@ const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new TH
 const _q1 = Q(), _q2 = Q(), _q3 = Q(), _qi = Q(), _Rr = Q(), _bq = Q(), _bw = Q(), _pelQ = Q(), _chQ = Q(), _hdQ = Q(), _ry = Q(), _ryi = Q(), _qr = Q(), _lq = Q();
 const _v1 = V(), _v2 = V(), _v3 = V(), _v4 = V(), _v5 = V(), _v6 = V(), _acc = V(), _vb = V(), _ub = V(), _bp = V(), _bpw = V(), _pull = V(), _hip = V(), _ank = [V(), V()], _toe = [V(), V()];
 const _pf = V(), _cF = V(), _cL = V(), _cFl = V(), _sh = V(), _wr = V(), _fd = V(), _pa = V(), _el = V(), _gpt = V(), _gpa = V(), _gfi = V(), _kp = V();
+// first person on the snow (2026-11-06): how much more upright the chest is (rad), how far the hips sit towards the
+// trailing end (m), and how much further towards the nose, up and towards the toes the front hand rides (m)
+const BFP = { lean: 0.25, hips: 0.3, lat: 0.14, up: 0, fwd: -0.04 };
+Rig.BFP = BFP;
 const _eu = new THREE.Euler(), _m4 = new THREE.Matrix4();
 const gp = { pt: V(), palm: V(), fingers: V() }, gp2 = { pt: V(), palm: V(), fingers: V() };
 const HAND_W = ['bhL', 'bhR'], ARMN = [['baLx', 'baLy', 'baLz'], ['baRx', 'baRy', 'baRz']], BSH = ['bs0', 'bs1', 'bs2', 'bs3', 'bs4', 'bs5'];
@@ -411,6 +415,8 @@ Rig.poser.board = (rig, S0, dt) => {
   let pelX = -Math.sin(phi) * colL + (0.016 + 0.014 * railW) * wob(tt * (1.7 + 0.9 * railW), 4.4) * (1 - airW);
   let pelY = A0 + colL * Math.cos(phi);
   let pelZ = 0.14 * pr + (ground && S.loading ? (bd.lastPress > 0.3 ? 0.06 : -0.06) : 0) + 0.12 * skate;
+  // (first person: the hips a little towards the trailing end, the head over the middle of the board, 2026-11-06)
+  pelZ -= BFP.hips * (S.sw ? -1 : 1) * sp('bfpW0', rig.fp ? 1 : 0, 6) * (1 - airW);
   // heel side: hips back over the heels (sitting down a little); toe side: knees and hips forward
   pelX += fb * (0.05 * toeK - 0.03 - 0.16 * lazy) * (1 - airW);      // (a hand drag sits down low over the heel edge)
   pelY -= 0.22 * lazy;
@@ -449,7 +455,11 @@ Rig.poser.board = (rig, S0, dt) => {
   const wB = air && gd ? 13 : 9, zA = air ? 0.75 : 1;
   const tw = sp('btw', twT, air && gd ? 13 : 8, zA), sd = sp('bsd', sdT, wB, zA), ln = sp('bln', lnT, air ? (popK > 0.1 ? 20 : wB + 2) : 9, zA), hy = sp('bhy', hyT, rail ? 7 : 8), hp = sp('bhp', hpT, 7, air ? 0.8 : 1);
   const onSnow = 1 - airW;
-  const lean = ln + (0.38 * crouch * (1 - gW) - 0.4 * (landX + absorb) + 0.1 * absorb + 1.2 * Math.max(0, comp)) * onSnow + 0.02 * wob(tt * 1.1, 9.1);
+  /* (seen in first person, 2026-11-06: on the snow the chest a little more upright and the front hand out over the nose,
+     so the nose and the front hand are in view from the eyes as a rider sees them; leaning as the rest of the pose has
+     it, the eyes were over the nose and the hands under the chin. Only this rider's own eyes see it.) */
+  const fpW = sp('bfpW', rig.fp ? 1 : 0, 6);
+  const lean = ln + (0.38 * crouch * (1 - gW) - 0.4 * (landX + absorb) + 0.1 * absorb + 1.2 * Math.max(0, comp) - BFP.lean * fpW) * onSnow + 0.02 * wob(tt * 1.1, 9.1);
   const idleY = 0.03 * wob(tt * 0.9, 3.7) * onSnow * (1 - railW);
   const hipK = gd ? (gd.hips ?? 0.4) : 0.45;
   const chYaw = tw + spinLead + idleY - lowYaw * 0.4, pelYaw = tw * hipK - spinLead * 0.15 + lowYaw * 0.5;
@@ -583,6 +593,7 @@ Rig.poser.board = (rig, S0, dt) => {
       fwd += 0.15 * lazy; up += 0.1 * lazy;
       const land = clamp(absorb * 2.2, 0, 1); fwd += 0.14 * land; lat += 0.06 * land;
       if (skate > 0.05) { const ph = Math.sin((S.skateT || t) * 2 * Math.PI); fwd += 0.12 * skate * ph * s * noseX; }
+      if (front) { lat += BFP.lat * fpW; up += BFP.up * fpW; fwd += BFP.fwd * fpW; }
     }
     if (crashW > 0.5) { lat = 0.36; up = 0.2; fwd = 0; }
     const AN = ARMN[k], zArm = air ? 0.6 : 0.72;

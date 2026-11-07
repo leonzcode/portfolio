@@ -17,9 +17,9 @@
 // powder takes a deep soft-walled trench with lumps heaped beside it; ice only a fine white scratch; a landing presses a
 // short flat patch; a fall leaves a hollow.
 import * as THREE from 'three';
-import { snowUniforms } from './materials.js?v=17';
-import { height, surface, getPark } from './terrain.js?v=17';
-import { snowKind, SNOW } from './env.js?v=17';
+import { snowUniforms } from './materials.js?v=18';
+import { height, surface, getPark } from './terrain.js?v=18';
+import { snowKind, SNOW } from './env.js?v=18';
 const SNOW_POWDER = SNOW.powder, SNOW_SPRING = SNOW.spring, SNOW_ICE = SNOW.ice;
 
 const FINE = { W: 1024, H: 2048, SX: 64, SZ: 128, back: 0.72, step: 0.5, bx: -32, bz: 0 };   // (bx, bz: where its tiles start, so no tile edge runs down the Jump Line's middle lane)
@@ -405,31 +405,48 @@ export class Tracks {
 }
 
 // ---- spray -------------------------------------------------------------------------------------------------------------
+/* (2026-11-06, for "it is too laggy especially powder snow": in powder the grains were thrown back at about half the
+   rider's speed, so they flew back through the chase camera, and a grain was drawn as big as 300 / its distance, up to
+   1024 pixels across a moment before it passed the lens. Riding powder on the low tier the grains covered the screen
+   1.8 times over on an average frame (up to 5 times), every pixel blended, and a grain at the lens was a white disc over
+   most of the picture for a frame: a blink. Now a grain fades out over the last couple of metres to the camera and is
+   never drawn bigger than a tenth of the picture's height (one that has faded out is not drawn at all), its size follows
+   the picture's own size and the lens, and powder throws soft puffs of snow dust that hang in the air and spread,
+   brighter with the sun behind them, instead of hard white discs.) */
 const SPRAY_VS = `
-attribute vec4 aLife;   // age, life, size, sparkle seed
-varying float vA; varying float vS;
-uniform float uScale;
+attribute vec4 aLife;   // age, life, size (m), and the kind (whole part: 0 a grain, 1 a powder puff) + a random fraction
+varying float vA; varying float vS; varying float vK;
+uniform float uScale; uniform float uMaxPx;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  float t = aLife.x / max(aLife.y, 0.001);
-  vA = (1.0 - t) * smoothstep(0.0, 0.08, t) * step(aLife.x, aLife.y);
-  vS = aLife.w;
-  gl_PointSize = aLife.z * (0.6 + t * 1.4) * uScale / max(0.3, -mv.z);
+  float t = aLife.x / max(aLife.y, 0.001), kind = floor(aLife.w), d = -mv.z;
+  // a puff spreads as it hangs; a grain grows a little as it breaks up
+  float grow = kind > 0.5 ? 0.7 + t * 2.3 : 0.6 + t * 1.4;
+  float a = (1.0 - t) * smoothstep(0.0, 0.08, t) * step(aLife.x, aLife.y) * smoothstep(0.7, 2.4, d);
+  float px = min(aLife.z * grow * uScale / max(d, 0.3), uMaxPx);
+  vA = a; vS = fract(aLife.w); vK = kind;
+  // (gone, faded out at the lens or too small to see: nothing to draw, so not a fragment of it)
+  if (a < 0.012 || px < 0.6) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+  gl_PointSize = px;
   gl_Position = projectionMatrix * mv;
 }`;
 const SPRAY_FS = `
-varying float vA; varying float vS;
-uniform vec3 uSun; uniform float uTime; uniform vec3 uSnowLit;
+varying float vA; varying float vS; varying float vK;
+uniform vec3 uSunV; uniform float uTime; uniform vec3 uSnowLit;
 void main() {
-  vec2 c = gl_PointCoord - 0.5; float r = length(c);
-  float a = smoothstep(0.5, 0.15, r) * vA * 0.75;
-  if (a < 0.01) discard;
-  float glint = step(0.93, fract(vS * 13.7 + uTime * 3.1)) * smoothstep(0.2, 0.0, r);
-  // (as bright as the lit snow on the screen: env.js works it out for the time of day)
-  vec3 col = vec3(0.94, 0.96, 1.0) * uSnowLit * (1.0 + glint * 0.6);
-  gl_FragColor = vec4(col, a);
+  vec2 c = (gl_PointCoord - 0.5) * vec2(2.0, -2.0); float r2 = dot(c, c);    // 0 in the middle, 1 at the rim
+  if (r2 > 1.0) discard;
+  // a puff: snow dust, densest in the middle and thinning out with no edge; a grain: a small chip, a softer rim
+  float a = vK > 0.5 ? exp(-r2 * 3.0) * (1.0 - r2) * 0.42 : smoothstep(1.0, 0.3, r2) * 0.78;
+  a *= vA;
+  if (a < 0.008) discard;
+  // as bright as lit snow on the screen (env.js works that out), a touch brighter so it shows against the snow, and
+  // brighter again with the sun ahead: fine snow in the air lets the light through (a grain glints now and then)
+  float lit = 1.04 + 0.3 * pow(max(0.0, -uSunV.z), 3.0) * (1.0 - r2);
+  float glint = vK > 0.5 ? 0.0 : step(0.93, fract(vS * 13.7 + uTime * 3.1)) * step(r2, 0.16);
+  gl_FragColor = vec4(vec3(0.95, 0.97, 1.0) * uSnowLit * lit * (1.0 + glint * 0.6), a);
 }`;
-const _fw = new THREE.Vector3(), _sd = new THREE.Vector3(), _sp = new THREE.Vector3();
+const _fw = new THREE.Vector3(), _sd = new THREE.Vector3(), _sp = new THREE.Vector3(), _db = new THREE.Vector2();
 export class Spray {
   constructor(scene, q) {
     this.N = q.tier === 'low' ? 260 : q.tier === 'medium' ? 600 : 1000;
@@ -437,17 +454,30 @@ export class Spray {
     this.p = new Float32Array(this.N * 3); this.v = new Float32Array(this.N * 3); this.life = new Float32Array(this.N * 4);
     for (let i = 0; i < this.N; i++) this.life[i * 4] = 99;
     g.setAttribute('position', new THREE.BufferAttribute(this.p, 3)); g.setAttribute('aLife', new THREE.BufferAttribute(this.life, 4));
-    this.mat = new THREE.ShaderMaterial({ uniforms: { uScale: { value: 300 }, uSun: { value: new THREE.Vector3(0, 1, 0) }, uTime: { value: 0 }, uSnowLit: snowUniforms.uSnowLit },
+    for (const k of ['position', 'aLife']) g.attributes[k].setUsage(THREE.DynamicDrawUsage);
+    this.mat = new THREE.ShaderMaterial({ uniforms: { uScale: { value: 300 }, uMaxPx: { value: 60 }, uSunV: { value: new THREE.Vector3(0, 0, 1) }, uTime: { value: 0 }, uSnowLit: snowUniforms.uSnowLit },
       vertexShader: SPRAY_VS, fragmentShader: SPRAY_FS, transparent: true, depthWrite: false });
     this.points = new THREE.Points(g, this.mat); this.points.frustumCulled = false; this.points.renderOrder = 5;
+    this.points.matrixAutoUpdate = false;
+    // the size on the screen from the picture's height and the lens (0.68 of a grain's size in metres at its distance:
+    // what the old fixed 300 gave on the low tier's usual 614 pixel high picture), and the light's way in the camera's view
+    const U = this.mat.uniforms;
+    this.points.onBeforeRender = (r, sc, cam) => {
+      const h = r.getDrawingBufferSize(_db).y;
+      U.uScale.value = 0.342 * h * cam.projectionMatrix.elements[5];
+      U.uMaxPx.value = Math.max(24, h * 0.1);
+      U.uSunV.value.copy(snowUniforms.uSunDir.value).transformDirection(cam.matrixWorldInverse);
+    };
     scene.add(this.points);
-    this.k = 0; this.acc = 0;
+    this.k = 0; this.acc = 0; this.live = 0;
   }
-  emit(x, y, z, vx, vy, vz, size, life) {
+  // kind: 0 a grain, 1 a powder puff
+  emit(x, y, z, vx, vy, vz, size, life, kind = 0) {
     const i = this.k; this.k = (this.k + 1) % this.N;
     this.p[i * 3] = x; this.p[i * 3 + 1] = y; this.p[i * 3 + 2] = z;
     this.v[i * 3] = vx; this.v[i * 3 + 1] = vy; this.v[i * 3 + 2] = vz;
-    this.life[i * 4] = 0; this.life[i * 4 + 1] = life; this.life[i * 4 + 2] = size; this.life[i * 4 + 3] = Math.random();
+    this.life[i * 4] = 0; this.life[i * 4 + 1] = life; this.life[i * 4 + 2] = size; this.life[i * 4 + 3] = kind + Math.random() * 0.999;
+    this.live = 2;
   }
   fromSkier(sk, rig, dt) {
     if (!rig.ready) return;
@@ -465,6 +495,7 @@ export class Spray {
     while (this.acc > 1) {
       this.acc--;
       const ski = Math.random() < 0.5 ? rig.skiL : rig.skiR;
+      if (!ski) { this.acc = 0; break; }
       const t = (Math.random() - 0.3) * 0.8;
       // (scratch vectors: nothing is made per grain)
       const fwd = _fw.set(0, 0, 1).applyQuaternion(ski.quaternion);
@@ -473,11 +504,14 @@ export class Spray {
       const out = Math.sign(side.dot(sk.v)) || 1;
       const p = _sp.copy(ski.position).addScaledVector(fwd, t).addScaledVector(side, out * 0.06);
       const k = 0.35 + Math.random() * 0.5;
+      // (in powder most of it is dust: puffs that hang in the air behind; the rest grains)
+      const puff = powder && Math.random() < 0.7;
       this.emit(p.x, p.y + 0.03, p.z,
         sk.v.x * k + side.x * out * (1 + Math.random() * 2.5) + (Math.random() - 0.5),
         1.2 + Math.random() * (powder ? 3.2 : 2.0),
         sk.v.z * k + side.z * out * (1 + Math.random() * 2.5) + (Math.random() - 0.5),
-        powder ? 0.28 + Math.random() * 0.3 : wet ? 0.18 + Math.random() * 0.2 : ice ? 0.06 + Math.random() * 0.08 : 0.12 + Math.random() * 0.16, wet ? 0.35 + Math.random() * 0.35 : 0.5 + Math.random() * (powder ? 1.1 : 0.6));
+        powder ? (puff ? 0.42 + Math.random() * 0.42 : 0.12 + Math.random() * 0.14) : wet ? 0.18 + Math.random() * 0.2 : ice ? 0.06 + Math.random() * 0.08 : 0.12 + Math.random() * 0.16,
+        wet ? 0.35 + Math.random() * 0.35 : puff ? 0.7 + Math.random() * 1.0 : 0.5 + Math.random() * (powder ? 0.8 : 0.6), puff ? 1 : 0);
     }
   }
   // the "schat": the snow packed on the bases flicking off as the skis meet a rail or swap on it, a short fan of fine
@@ -492,17 +526,31 @@ export class Spray {
     }
   }
   burst(p, n, power) {
-    for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = power * (0.4 + Math.random()); this.emit(p.x, p.y + 0.05, p.z, Math.cos(a) * s, 0.8 + Math.random() * power * 0.9, Math.sin(a) * s, 0.25 + Math.random() * 0.35, 0.7 + Math.random() * 0.9); }
+    const powder = snowKind() === SNOW_POWDER;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, s = power * (0.4 + Math.random()), puff = powder && (i & 1) === 1;
+      this.emit(p.x, p.y + 0.05, p.z, Math.cos(a) * s, 0.8 + Math.random() * power * 0.9, Math.sin(a) * s,
+        puff ? 0.35 + Math.random() * 0.35 : 0.25 + Math.random() * 0.35, puff ? 0.9 + Math.random() * 0.9 : 0.7 + Math.random() * 0.9, puff ? 1 : 0);
+    }
   }
   update(dt, time) {
+    // (nothing in the air, now or last frame: nothing to move, send or draw)
+    if (!this.live) { this.points.visible = false; return; }
+    let alive = 0;
+    const L = this.life, V = this.v, P = this.p;
     for (let i = 0; i < this.N; i++) {
-      const l = this.life[i * 4]; if (l > this.life[i * 4 + 1]) continue;
-      this.life[i * 4] = l + dt;
+      const l = L[i * 4]; if (l > L[i * 4 + 1]) continue;
+      L[i * 4] = l + dt; alive++;
       const o = i * 3;
-      this.v[o + 1] -= 9.81 * dt * 0.55;
-      const d = Math.max(0, 1 - dt * 2.2); this.v[o] *= d; this.v[o + 1] *= d; this.v[o + 2] *= d;
-      this.p[o] += this.v[o] * dt; this.p[o + 1] += this.v[o + 1] * dt; this.p[o + 2] += this.v[o + 2] * dt;
+      // (a puff of dust is light: the air slows it sooner and it falls slower, so it hangs behind the rider)
+      const puff = L[i * 4 + 3] >= 1;
+      V[o + 1] -= 9.81 * dt * (puff ? 0.3 : 0.55);
+      const d = Math.max(0, 1 - dt * (puff ? 3.4 : 2.2)); V[o] *= d; V[o + 1] *= d; V[o + 2] *= d;
+      P[o] += V[o] * dt; P[o + 1] += V[o + 1] * dt; P[o + 2] += V[o + 2] * dt;
     }
+    // (one more frame sent after the last grain goes, so the buffer holds it gone)
+    this.live = alive ? 2 : this.live - 1;
+    this.points.visible = true;
     this.points.geometry.attributes.position.needsUpdate = true; this.points.geometry.attributes.aLife.needsUpdate = true;
     this.mat.uniforms.uTime.value = time;
   }

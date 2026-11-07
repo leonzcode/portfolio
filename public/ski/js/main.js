@@ -1,27 +1,29 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=17';
-import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=17';
-import { makeMaterials, snowUniforms } from './materials.js?v=17';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=17';
-import { Mountain, SPOTS } from './dem.js?v=17';
-import { Skier } from './skier.js?v=17';
-import { Rig } from './rig.js?v=17';
-import './board.js?v=17';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
-import './scoot.js?v=17';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
-import './sled.js?v=17';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
-import { Tricks } from './tricks.js?v=17';
-import { Input } from './input.js?v=17';
-import { Cams } from './camera.js?v=17';
-import { Tracks, Spray } from './snow.js?v=17';
-import { Hud } from './hud.js?v=17';
-import { Sound } from './sound.js?v=17';
-import { Net } from './net.js?v=17';
-import { mergeGear } from './gear.js?v=17';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=18';
+import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=18';
+import { makeMaterials, snowUniforms } from './materials.js?v=18';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=18';
+import { Mountain, SPOTS } from './dem.js?v=18';
+import { Skier } from './skier.js?v=18';
+import { Rig } from './rig.js?v=18';
+import './board.js?v=18';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
+import './scoot.js?v=18';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
+import './sled.js?v=18';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
+import { Tricks } from './tricks.js?v=18';
+import { Input } from './input.js?v=18';
+import { Cams } from './camera.js?v=18';
+import { Tracks, Spray } from './snow.js?v=18';
+import { Hud } from './hud.js?v=18';
+import { Sound } from './sound.js?v=18';
+import { Net } from './net.js?v=18';
+import { mergeGear } from './gear.js?v=18';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Touch, TOUCH_GRABS } from './touch.js?v=17';
-import { Locker, loadLook, cleanLook } from './locker.js?v=17';
-import { planLift, Lift } from './lift.js?v=17';      // (L: the chairlift)
+import { Touch, TOUCH_GRABS } from './touch.js?v=18';
+import { Locker, loadLook, cleanLook } from './locker.js?v=18';
+import { planLift, Lift } from './lift.js?v=18';      // (L: the chairlift)
+import { makeFreeride } from './freeride.js?v=18';    // (F: the Freeride mountain)
+import { buildRock, buildJibs } from './frrock.js?v=18';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
@@ -31,7 +33,8 @@ const saved = (() => { try { return JSON.parse(localStorage.getItem('ski_opts') 
 const opts = Object.assign({ scheme: 'mouse', cam: 'chase', gfx: 'auto', poles: '1', rider: 'm_adult_10', showfps: false, map: 'jumpline', ride: 'ski', stance: 'regular' }, saved);
 // only the Jump Line is offered for now (Leon, 2026-11-05: "Remove mamoth map for now and also remove the other map as well
 // just keep jump line for now"); the other maps stay in the code and open with ?map= for tests
-opts.map = 'jumpline';
+// (F, 2026-11-06: and Freeride, the made-up big-mountain face, picked on the home screen)
+if (opts.map !== 'freeride') opts.map = 'jumpline';
 const qs = new URLSearchParams(location.search);
 if (qs.get('gfx')) opts.gfx = qs.get('gfx');
 function detectTier() {
@@ -75,18 +78,21 @@ if (SPOTS[opts.map]) {
   catch (e) { console.warn('mountain', e); mtn = null; opts.map = 'park'; }
 }
 const mats = makeMaterials(q);
-const park = mtn ? emptyPark() : opts.map === 'jumpline' ? makeJumpLine() : makePark(); setPark(park);
+// (F) Freeride: its land through the mountain hook (setMountain, inside makeFreeride) and a park of its own
+const fr = !mtn && opts.map === 'freeride' ? makeFreeride(q) : null;
+const park = fr ? fr.park : mtn ? emptyPark() : opts.map === 'jumpline' ? makeJumpLine() : makePark(); setPark(park);
 // (L) the chairlift beside the Jump Line: where it goes, and the flat snow under its stations (added to the park's height
 // before the terrain is built)
-const liftPlan = !mtn && opts.map === 'jumpline' && !qs.has('nolift') ? planLift(park) : null;   // (?nolift: without it, for tests)
+const liftPlan = (fr || !mtn && opts.map === 'jumpline') && !qs.has('nolift') ? planLift(park) : null;   // (F: Freeride's runs from its base to the ridge, park.liftLine)   // (?nolift: without it, for tests)
 const sky = makeSky(scene, renderer, q, !!mtn);
 const terrain = new Terrain(scene, mats.snow, { minLeaf: q.minLeaf, K: q.K, seg: q.seg, budget: q.tier === 'low' ? 3 : 4, far: q.tier === 'low' ? 2000 : 2600, root: mtn ? { x0: -4096, z0: -4096, size: 8192 } : null });
+const jumpLods = [], JUMP_FAR = q.tier === 'low' ? 110 : 150;
 {
   /* (2026-11-06, the lag pass: a jump's three takeoffs side by side are one mesh and one draw call; they were one each,
      21 on the Jump Line. Each jump is still left out when it is out of view.) */
   const groups = new Map();
   for (const f of [...park.kickers, park.pipe, park.qp]) if (f) {
-    const m = featureMesh(f, height, mats.snow, q.fine), key = (/^Jump \d+/.exec(f.name || '') || [m.uuid])[0];
+    const m = featureMesh(f, height, mats.snow, q.fine), key = (/^Jump \d+/.exec(f.name || '') || [f.group || m.uuid])[0];   // (F: Freeride's kickers are one group)
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(m);
   }
@@ -97,11 +103,32 @@ const terrain = new Terrain(scene, mats.snow, { minLeaf: q.minLeaf, K: q.K, seg:
     const m = new THREE.Mesh(g, mats.snow);
     m.receiveShadow = true; m.castShadow = false; m.matrixAutoUpdate = false; m.name = key;
     scene.add(m);
+    /* (2026-11-06, the lag pass: looking down the Jump Line every jump was drawn in full, about 23 000 triangles each on
+       the low tier, 55 000 on the others. Past jumpLods' distance a jump is drawn from a copy with its rows and columns
+       thinned out (park.js featureMesh), a third of the triangles; out there the two differ by a pixel or so.) */
+    const fs = park.kickers.filter(f => (/^Jump \d+/.exec(f.name || '') || [])[0] === key);
+    const fg = fs.length ? mergeGeometries(fs.map(f => { const mm = featureMesh(f, height, mats.snow, q.fine, q.fine ? 0.3 : 0.35); return mm.geometry; }), false) : null;
+    if (fg) {
+      const far = new THREE.Mesh(fg, mats.snow);
+      far.receiveShadow = true; far.castShadow = false; far.matrixAutoUpdate = false; far.name = key + ' far'; far.visible = false;
+      scene.add(far);
+      g.computeBoundingBox();
+      jumpLods.push({ near: m, far, box: g.boundingBox, isFar: false });
+    }
+  }
+}
+// which copy of each jump is drawn: the far one past JUMP_FAR metres from the camera (5 m more to go back, so it never
+// flickers between them at the edge)
+function lodJumps(cam) {
+  for (const J of jumpLods) {
+    const d = J.box.distanceToPoint(cam), far = J.isFar ? d > JUMP_FAR - 5 : d > JUMP_FAR;
+    if (far !== J.isFar) { J.isFar = far; J.near.visible = !far; J.far.visible = far; }
   }
 }
 // (the park's rails and boxes; the benches' model loads, and is in before the shaders are compiled at boot: K)
 const railsG = park.rails.length ? railMeshes(park.rails, mats) : null; if (railsG) scene.add(railsG);
-const forest = new Forest(scene, q, mtn);
+if (fr) { buildRock(scene, fr.land, mats, q); buildJibs(scene, fr, mats, q); }   // (F: the rock faces, logs, slab, stumps, flags and finish arch)
+const forest = new Forest(scene, q, mtn || (fr && fr.mtn));   // (F: Freeride's trees from its own list)
 if (mtn) makeMountainRanges(scene, q, mtn); else makeRanges(scene, q, mats.snow);
 if (!mtn) makeProps(scene, park, q);
 const tracks = new Tracks(renderer, q);
@@ -159,6 +186,9 @@ $('showfps').onchange = e => { opts.showfps = e.target.checked; save(); if (!opt
 // the home screen's run tiles and controls switch stand for the map and scheme selects (kept, hidden, for the wiring above)
 const mark = (sel_, attr, v) => document.querySelectorAll(`[${attr}]`).forEach(b => b.setAttribute('aria-checked', String(b.getAttribute(attr) === v)));
 mark(null, 'data-scheme', opts.scheme);
+// (F) the mountain, from the home screen's tiles: the Jump Line or Freeride (a change builds the world again)
+mark(null, 'data-map', opts.map);
+document.querySelectorAll('[data-map]').forEach(b => b.onclick = () => { if (b.dataset.map === opts.map) return; opts.map = b.dataset.map; save(); location.reload(); });
 /* What you ride (skis or a snowboard) and, on a board, your stance (regular: left foot forward; goofy: right foot
    forward). applyRide() hands both to the physics and loads the rider for them. */
 const stanceSeg = $('stanceseg');
@@ -194,7 +224,7 @@ function poseState(sk, t) {
     // (P: what you ride, how deep the skis ride in the snow, and the last rail contact: seconds since, 'on' or 'swap', the side it turned to)
     kind: sk.kind || 'ski', goofy: !!sk.goofy, sink: sk.sink || 0, railHitT: sk.railHitT ?? 9, railHit: sk.railHit || '', railHitDir: sk.railHitDir || 0, railKind: sk.rail ? sk.rail.kind : '',
     // (X: the extra rides' timed tricks going round: the trick's id or null, seconds into this round; and a sled's flat spin)
-    act: sk.act || null, actT: sk.actT || 0, flatSpin: sk.flatSpinOn ? 1 : 0,
+    act: sk.act || null, actT: sk.actT || 0, actN: sk.actN || 0, actNext: !!sk.actNext, flatSpin: sk.flatSpinOn ? 1 : 0,
     // (L: on the chairlift, 0 standing at the load or unload line to 1 seated, and the snow under the feet while standing)
     liftSit: lift ? lift.sit : 0, liftFeet: lift && lift.feetOn ? lift.feet : null };
 }
@@ -290,7 +320,7 @@ chatIn.addEventListener('keydown', e => { if (e.code === 'Escape') { e.stopPropa
 
 // ---- the loop --------------------------------------------------------------------------------------------------------
 const clock = new THREE.Clock();
-let acc = 0, time = 0, frames = 0, fpsT = 0, fps = 60, prAdj = 0, runStart = 0;
+let acc = 0, time = 0, frames = 0, fpsT = 0, fps = 60, prAdj = 0, prSlow = 0, wantPr = 0, prAt = -9, runStart = 0;
 const fallLine = new THREE.Vector3();
 function frame() {
   requestAnimationFrame(frame);
@@ -362,7 +392,7 @@ function tick() {
     }
   }
   // (L) the chairlift: the chairs going round, and the rider on one (it sets skier.p, q and v while riding)
-  if (lift) lift.update(dt, { skier, input, I, live, paused, solo: !net.inRoom, camera, cams, hud, sound, mouse: opts.scheme === 'mouse' });
+  if (lift) lift.update(dt, { skier, input, I, live, paused, solo: !net.inRoom, camera, cams, hud, sound, mouse: opts.scheme === 'mouse', camKey: opts.scheme === 'shred' ? 'KeyQ' : 'KeyC' });   // (camKey: the one key that does not send the chair up)
   let S, camSk = skier;
   if (replay) {
     replay.t += dt * (replay.slow ? 0.3 : 1);
@@ -388,6 +418,7 @@ function tick() {
   if (live) { tracks.follow(skier.p); tracks.fromSkier(skier, rig); spray.fromSkier(skier, rig, dt); }
   tracks.flush();
   spray.update(dt, time);
+  lodJumps(camera.position);
   sky.follow(skier.p);
   terrain.update(camera.position, frames);
   forest.update(camera.position);
@@ -395,14 +426,22 @@ function tick() {
   sound.frame(skier);
   net.update(dt, skier, time);
   hud.frame(skier, opts.showfps ? fps : null);
+  /* (2026-11-06, for "random frames where it like blinks": a change of resolution resizes the canvas, which empties it.
+     It was made just after the frame was drawn, so that frame went to the screen empty, a black flash about once a
+     second while the frame rate sat under 48 or over 58. It is made here, before the draw, and less often: two slow
+     seconds in a row to step down, five quick ones in a row to step up, never twice within four seconds.) */
+  if (wantPr && time - prAt > 4) { renderer.setPixelRatio(wantPr); prAt = time; }
+  wantPr = 0;
   renderer.render(scene, camera);
   // frame rate and resolution
   frames++; fpsT += dt;
   if (fpsT > 1) {
     fps = Math.round(frames / fpsT); frames = 0; fpsT = 0;
     const pr = renderer.getPixelRatio();
-    if (live && fps < 48 && pr > q.pr[0] + 0.01) renderer.setPixelRatio(Math.max(q.pr[0], pr - 0.1));
-    else if (live && fps > 58 && pr < q.pr[1] - 0.01 && ++prAdj > 4) { renderer.setPixelRatio(Math.min(q.pr[1], pr + 0.05)); prAdj = 0; }
+    prSlow = live && fps < 48 ? prSlow + 1 : 0;
+    prAdj = live && fps > 58 ? prAdj + 1 : 0;
+    if (prSlow >= 2 && pr > q.pr[0] + 0.01) { wantPr = Math.max(q.pr[0], pr - 0.1); prSlow = 0; }
+    else if (prAdj > 4 && pr < q.pr[1] - 0.01) { wantPr = Math.min(q.pr[1], pr + 0.05); prAdj = 0; }
   }
 }
 
@@ -419,6 +458,16 @@ function tick() {
     if (railsG) await railsG.ready;
     if (liftReady) await liftReady;      // (L)
     await renderer.compileAsync(scene, camera);
+    /* (2026-11-06: compileAsync builds the programs things are drawn with, not the shadow pass's own; those were built
+       the first time a thing came near enough to cast a shadow on the rider's patch of snow, inside that frame's draw:
+       on the high tier the start arch's banner, half way down the first run. Every shadow caster is drawn into the
+       shadow map once here, behind the menu, so its shadow program is built now.) */
+    {
+      const casters = [];
+      scene.traverse(o => { if (o.castShadow && o.frustumCulled) { casters.push(o); o.frustumCulled = false; } });
+      renderer.render(scene, camera);
+      for (const o of casters) o.frustumCulled = true;
+    }
     $('play').disabled = false; $('play').textContent = 'Ride';
   } catch (e) {
     console.error(e); $('play').textContent = 'Could not load';
@@ -431,6 +480,7 @@ function tick() {
     time += dt; rig.update(poseState(skier, time), dt);
     for (const o of rig.root.children) if (o !== rig.body) o.updateMatrixWorld(true);
     if (camAt) camAt(camera, skier); else cams.update(dt, skier, rig);
+    lodJumps(camera.position);
     renderer.render(scene, camera);
   };
   window.__ski = { THREE, renderer, scene, camera, skier, film, release: () => { filmHold = false; }, get rig() { return rig; }, park, terrain, tricks, net, input, cams, tracks, spray, q, opts, height, normal, baseLine, play, step: (n, I) => { for (let i = 0; i < n; i++) { skier.step(STEP, Object.assign({ steer: 0, crouch: false, spin: 0, flip: 0, tilt: 0 }, I)); tricks.step(skier, STEP); } } };
