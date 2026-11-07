@@ -101,7 +101,6 @@ const keyOf = (p: Project) => p.socialKey ?? (p.detailHref ? p.detailHref.replac
             const s = j && j[c.dataset.socialKey!];
             if (!s) continue;
             const bits = [s.views + (s.views === 1 ? " view" : " views"), s.likes + (s.likes === 1 ? " like" : " likes")];
-            if (s.comments) bits.push(s.comments + (s.comments === 1 ? " comment" : " comments"));
             c.textContent = bits.join(" · ");
             c.hidden = false;
           }
