@@ -4,7 +4,7 @@
 // the room as the rider's look (net.js), and shown while the fold is open: the camera turns slowly round the rider
 // beside the menu (main.js calls preview()).
 import * as THREE from 'three';
-import { LOOK } from './gear.js?v=19';
+import { LOOK } from './gear.js?v=20';
 
 const KEY = 'ski_look';
 const BODIES = [['m_adult_10', 'Rider 1'], ['m_adult_18', 'Rider 2'], ['m_adult_17', 'Rider 3'], ['f_adult_13', 'Rider 4'], ['f_adult_14', 'Rider 5']];
@@ -12,11 +12,14 @@ const CHOICES = {
   head: [['lid', 'Helmet'], ['painted', 'Painted helmet'], ['beanie', 'Beanie']],
   fit: [['baggy', 'Baggy'], ['regular', 'Regular'], ['slim', 'Slim']],
   ski: [['park', 'Park'], ['twin', 'Twin'], ['pow', 'Pow']],
+  top: [['hoodie', 'Hoodie'], ['long', 'Long jacket'], ['jacket', 'Jacket']],
+  gaiter: [['on', 'Gaiter'], ['off', 'None']],
+  gog: [['on', 'Goggles on'], ['up', 'Goggles up']],
 };
-const WELLS = [['jacket', 'Jacket'], ['pants', 'Trousers'], ['gloves', 'Gloves'], ['helmet', 'Helmet or hat'], ['lens', 'Lens'], ['frame', 'Goggle frame'],
-  ['boots', 'Boots'], ['skiA', 'Ski top'], ['skiB', 'Ski tips'], ['poleCol', 'Poles']];
+const WELLS = [['jacket', 'Jacket'], ['jacket2', 'Sleeves'], ['pants', 'Trousers'], ['gloves', 'Gloves'], ['helmet', 'Helmet or hat'], ['lens', 'Lens'], ['frame', 'Goggle frame'],
+  ['boots', 'Boots'], ['skiA', 'Ski top'], ['skiB', 'Ski tips'], ['poleCol', 'Poles'], ['gaiterCol', 'Gaiter']];
 // colours that change on the rider at once; the rest rebuild it (a moment later, so dragging a colour is smooth)
-const LIVE = new Set(['jacket', 'pants', 'gloves', 'helmet', 'lens', 'fit']);
+const LIVE = new Set(['jacket', 'jacket2', 'pants', 'gloves', 'helmet', 'lens', 'fit', 'top']);
 const HEX = /^#[0-9a-f]{6}$/i;
 // a look from storage or the room, with anything unknown or malformed dropped
 export function cleanLook(l) {
@@ -26,6 +29,7 @@ export function cleanLook(l) {
   for (const k of Object.keys(CHOICES)) if (CHOICES[k].some(c => c[0] === l[k])) out[k] = l[k];
   for (const [k] of WELLS) if (HEX.test(l[k] || '')) out[k] = l[k].toLowerCase();
   if (l.poles === 'off' || l.poles === 'on') out.poles = l.poles;
+  if (!HEX.test(l.jacket2 || '')) out.jacket2 = out.jacket;          // (sleeves not chosen: the jacket's own colour)
   return out;
 }
 export function loadLook(start) {
@@ -54,7 +58,7 @@ export class Locker {
     row('Rider', sel);
     // the choices, as the menu's switches
     this.segs = {};
-    for (const [k, lab] of [['head', 'Head'], ['fit', 'Fit'], ['ski', 'Skis']]) {
+    for (const [k, lab] of [['head', 'Head'], ['top', 'Top'], ['fit', 'Fit'], ['gaiter', 'Face'], ['gog', 'Goggles'], ['ski', 'Skis']]) {
       const seg = document.createElement('div'); seg.className = 'seg lk-seg'; seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', lab);
       for (const [v, t] of CHOICES[k]) { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.v = v; b.textContent = t; b.onclick = () => this.set(k, v); seg.appendChild(b); }
       this.segs[k] = seg; row(lab, seg);

@@ -3,68 +3,102 @@
 // background and replace with just a blue sky for now".)
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=19';
-import { fbm, ridged, rng, smoothstep } from './noise.js?v=19';
-import { Env, buildPanel } from './env.js?v=19';
-import { snowUniforms } from './materials.js?v=19';
+import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=20';
+import { fbm, ridged, rng, smoothstep } from './noise.js?v=20';
+import { Env, buildPanel } from './env.js?v=20';
+import { snowUniforms } from './materials.js?v=20';
 
 // the sky, the sun and sky light, the fog and the reflections are env.js's (photographs of real skies, the time of
 // day and the weather chosen on the home screen); makeSky keeps its old shape for main.js: { sky, sun, hemi, sunDir, follow }
 export function makeSky(scene, renderer, q, wide) {
   const env = new Env(scene, renderer, q, wide);
+  RENDERER = renderer;
   buildPanel(env, document.getElementById('opt-scene'));
   return { sky: env.dome, sun: env.sun, hemi: env.hemi, sunDir: env.sunDir, env, follow: p => env.follow(p) };
 }
 
 // ---- trees ----------------------------------------------------------------------------------------------------------
-function coniferGeometry(r) {
-  // tiers of drooping, ragged cones, snow lying on their upper faces (vertex colours)
-  const parts = [];
-  const tiers = 9;
-  for (let i = 0; i < tiers; i++) {
-    const t = i / tiers, y0 = 0.1 + t * 0.8, rad = 0.34 * (1 - t * 0.85) * (0.9 + r() * 0.2) + 0.03, h = 0.22 * (1 - t * 0.35);
-    const seg = 11;
-    const g = new THREE.ConeGeometry(rad, h, seg, 1, true);
-    const pos = g.attributes.position;
-    for (let k = 0; k < pos.count; k++) {
-      if (pos.getY(k) < 0) { const a = Math.atan2(pos.getZ(k), pos.getX(k)); const j = 1 + (r() - 0.5) * 0.6; pos.setX(k, Math.cos(a) * rad * j); pos.setZ(k, Math.sin(a) * rad * j); pos.setY(k, pos.getY(k) - r() * 0.07 - (j - 1) * 0.05); }
+/* (2026-11-08, for "trees: see-through leaves, more realistic". The conifers were solid cones of flat green.) A tree is
+   now a trunk, a dark core and whorls of branches, each branch a card with a photographed fir twig on it, its needles
+   cut out of the card by their own outline (an alpha test: the sky and the snow show between them), drooping more
+   towards the tip, snow lying on the upper sides in clumps and the sun shining through the needles from behind. The
+   pictures are Poly Haven's "Fir Tree 01" (CC0): four of its twig sprays, a strip of its bark and a strip of its
+   sprays heaped up dark (the crown's middle) in one 512 px picture, tex/fir_atlas.webp. Far off a tree is a pair of
+   crossed cards with a picture of the same tree taken once at load (an impostor), so near and far match where one
+   fades into the other. All the near trees are still one draw, all the
+   far ones another. */
+// the four twig sprays in the picture (u0, v0, u1, v1: the stem at v0, the tip at v1), and the bark strip's width in u
+// (the crown's dark middle is the next strip, as wide)
+const FIR_RECTS = [[0.1309, 0.5059, 0.5566, 0.9746], [0.5742, 0.5059, 0.9863, 0.9941], [0.1309, 0.0059, 0.5566, 0.4785], [0.5703, 0.0059, 0.9902, 0.4922]];
+const BARK_U = 0.0625;
+// a conifer one unit tall (scaled by each tree's size): segs, the cards along each branch (1 on the low tier: a flat
+// card from the trunk to the tip; 2: bending down from half way)
+function coniferGeometry(r, segs) {
+  const P = [], N = [], U = [], C = [], S = [], I = [];
+  const vert = (x, y, z, nx, ny, nz, u, v, cr, cg, cb, sn) => { const l = Math.hypot(nx, ny, nz) || 1; P.push(x, y, z); N.push(nx / l, ny / l, nz / l); U.push(u, v); C.push(cr, cg, cb); S.push(sn); return P.length / 3 - 1; };
+  // the trunk: a tapering post with the bark on it
+  const ring = (n, y0, r0, y1, r1, u0, u1, col, ny) => {
+    const base = P.length / 3;
+    for (let k = 0; k <= n; k++) {
+      const a = k / n * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), u = u0 + (u1 - u0) * k / n;
+      vert(ca * r0, y0, sa * r0, ca, ny, sa, u, 0.02, col[0], col[1], col[2], 0);
+      vert(ca * r1, y1, sa * r1, ca, ny, sa, u, 0.98, col[0] * 1.1, col[1] * 1.1, col[2] * 1.1, 0.15);
     }
-    g.translate(0, y0 + h / 2, 0); g.rotateY(r() * 6);
-    parts.push(g);
-  }
-  const trunk = new THREE.CylinderGeometry(0.018, 0.03, 0.3, 5); trunk.translate(0, 0.15, 0); parts.push(trunk);
-  let n = 0; for (const g of parts) n += g.index ? g.index.count : g.attributes.position.count;
-  const pos = [], col = [];
-  const green = new THREE.Color(0x1f3a28), dark = new THREE.Color(0x10201a), snow = new THREE.Color(0xeef3f8), bark = new THREE.Color(0x3a2a1e);
-  parts.forEach((g, gi) => {
-    const ng = g.toNonIndexed(); ng.computeVertexNormals();
-    const p = ng.attributes.position, nn = ng.attributes.normal;
-    for (let k = 0; k < p.count; k++) {
-      pos.push(p.getX(k), p.getY(k), p.getZ(k));
-      const isTrunk = gi === parts.length - 1;
-      let c = isTrunk ? bark : green.clone().lerp(dark, r() * 0.6);
-      // snow lies in patches on the branches' tops; the tips and the rest stay dark green
-      if (!isTrunk) { const up = nn.getY(k), tip = p.getY(k) < (gi + 0.5) / parts.length - 0.02 ? 1 : 0; const lay = r() < 0.6 && up > 0.45 ? smoothstep(0.45, 0.8, up) : 0; c = c.clone().lerp(snow, lay * (0.85 - tip * 0.35)); }
-      col.push(c.r, c.g, c.b);
+    for (let k = 0; k < n; k++) { const q = base + k * 2; I.push(q, q + 1, q + 2, q + 2, q + 1, q + 3); }
+  };
+  ring(6, -0.02, 0.024, 0.96, 0.004, 0, BARK_U, [0.85, 0.85, 0.85], 0);
+  // the dark core inside the branches (needles heaped in shade: what shows between the branches deep in a crown)
+  ring(6, 0.08, 0.06, 0.8, 0.008, BARK_U + 0.004, BARK_U * 2 - 0.004, [0.95, 1, 0.95], 0.5);
+  // the branches, in whorls up the trunk: longest at the bottom, more of them low down, drooping more there
+  const T = segs > 1 ? 13 : 11;
+  for (let i = 0; i < T; i++) {
+    const t = i / (T - 1), y = 0.1 + t * 0.83;
+    const R = (0.27 * Math.pow(1 - t, 0.85) + 0.045) * (0.88 + r() * 0.24);
+    const nb = Math.max(3, Math.round((segs > 1 ? 6.6 : 6) - t * 2.4 + r() * 0.8)), rot = r() * 6.283;
+    for (let j = 0; j < nb; j++) {
+      const ang = rot + j / nb * Math.PI * 2 + (r() - 0.5) * 0.6, dx = Math.cos(ang), dz = Math.sin(ang), tx = -dz, tz = dx;
+      const L = R * (0.85 + r() * 0.3), W = L * 0.46, rect = FIR_RECTS[(r() * 4) | 0], roll = (r() - 0.5) * 0.5;
+      const sag = L * (0.3 + 0.28 * (1 - t)) * (0.8 + r() * 0.4), lift = L * 0.05;
+      // (the lower branches are sheltered by the ones above: less snow, more shade)
+      const bright = (0.82 + r() * 0.3) * (0.82 + 0.18 * t), snow = (0.4 + r() * 0.5) * (0.72 + 0.45 * t);
+      // rows from the trunk out: [how far along, how far down, how bright, how much snow]
+      const rows = segs > 1 ? [[0.02, -lift, 0.5, 0.95], [0.5, sag * 0.32, 0.82, 1], [1, sag, 1.02, 0.6]] : [[0.02, -lift, 0.55, 0.95], [1, sag * 0.8, 1, 0.75]];
+      const base = P.length / 3;
+      for (const [f, dn, br, sn] of rows) {
+        const cx = dx * (0.012 + f * L), cy = y - dn, cz = dz * (0.012 + f * L), v = rect[1] + (rect[3] - rect[1]) * f;
+        // (the light falls on a branch as on a round crown: up at the trunk, out and up at the tip)
+        const nx = dx * (0.25 + 0.6 * f), ny = 0.85, nz = dz * (0.25 + 0.6 * f), c = bright * br;
+        vert(cx - tx * W, cy + W * roll, cz - tz * W, nx, ny, nz, rect[0], v, c * 0.93, c, c * 0.9, snow * sn);
+        vert(cx + tx * W, cy - W * roll, cz + tz * W, nx, ny, nz, rect[2], v, c * 0.93, c, c * 0.9, snow * sn);
+      }
+      // (wound so the upper side is the front: the snow lies on the front)
+      for (let k = 0; k < rows.length - 1; k++) { const q = base + k * 2; I.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); }
     }
-  });
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  out.computeVertexNormals();
-  return out;
-}
-function cardTexture() {
-  const c = document.createElement('canvas'); c.width = 128; c.height = 256; const x = c.getContext('2d');
-  const r = rng(11);
-  for (let i = 0; i < 9; i++) {
-    const t = i / 9, y = 240 - (0.12 + t * 0.78) * 230, w = 52 * (1 - t * 0.82) + 4;
-    x.fillStyle = '#1a2e21'; x.beginPath(); x.moveTo(64 - w, y); x.lineTo(64, y - 46); x.lineTo(64 + w, y); x.closePath(); x.fill();
-    x.fillStyle = 'rgba(232,238,245,0.85)'; x.beginPath(); x.moveTo(64 - w * 0.7, y - 10); x.lineTo(64, y - 44); x.lineTo(64 + w * 0.5, y - 14); x.closePath(); x.fill();
-    for (let k = 0; k < 6; k++) { x.fillStyle = r() < 0.5 ? '#15261b' : '#e6ecf3'; x.fillRect(64 - w + r() * w * 2, y - r() * 30, 3, 3); }
   }
-  x.fillStyle = '#3a2a1e'; x.fillRect(61, 230, 6, 26);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  // the leader: two crossed sprays standing up at the top
+  for (const [dx, dz] of [[1, 0], [0, 1]]) {
+    const rect = FIR_RECTS[1], w = 0.045, y0 = 0.84, y1 = 1.0, base = P.length / 3;
+    vert(-dx * w, y0, -dz * w, 0, 1, 0, rect[0], rect[1], 0.8, 0.86, 0.78, 0.3); vert(dx * w, y0, dz * w, 0, 1, 0, rect[2], rect[1], 0.8, 0.86, 0.78, 0.3);
+    vert(-dx * w, y1, -dz * w, 0, 1, 0, rect[0], rect[3], 1, 1, 0.95, 0.2); vert(dx * w, y1, dz * w, 0, 1, 0, rect[2], rect[3], 1, 1, 0.95, 0.2);
+    I.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+  g.setAttribute('aSnow', new THREE.Float32BufferAttribute(S, 1)); g.setIndex(I);
+  return g;
 }
+// fog the colour of the sky's horizon the way the camera looks (as the snow has it), not the one colour all round: far
+// trees at sunset fade into the bright sky by the sun and the dark one opposite (vTW: the world place)
+const TREE_FOG = `#ifdef USE_FOG
+  float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
+  vec3 fdir = normalize(vTW - cameraPosition);
+  gl_FragColor.rgb = mix( gl_FragColor.rgb, texture2D(uHorizon, vec2(atan(fdir.z, fdir.x) * 0.1591549 + 0.5, 0.5)).rgb, fogFactor );
+#endif`;
+// the renderer, for taking the far trees' picture (makeSky is handed it first)
+let RENDERER = null;
+const FAR_W = 0.42;      // (the far card's half width, one unit tall: the longest branches reach about 0.42 either side)
+const frac = x => ((x % 1) + 1) % 1;
 export class Forest {
   constructor(scene, q, mtn) {
     const r = rng(5);
@@ -102,9 +136,11 @@ export class Forest {
        from the camera on the graphics card (a fine dither: the near tree's pixels and the card's take turns, so
        together they always make one whole tree). Every card is in one buffer sent once (the ones near the camera are
        dropped at their corners, so they cost nothing to fill); only the short list of near trees changes, every 6 m.) */
-    this.nearR = q.tier === 'low' ? 70 : 110; this.band = q.tier === 'low' ? 16 : 20; this.move = 6;
+    // (2026-11-08: the near trees are cards of needles now, each cut out pixel by pixel, which costs the graphics card more
+    // than the solid cones did; on the low tier they give way to their far picture sooner, 50 m out, not 70)
+    this.nearR = q.tier === 'low' ? 50 : 110; this.band = q.tier === 'low' ? 12 : 20; this.move = 6;
     const nearMax = q.tier === 'low' ? 320 : 640;
-    this.geo = coniferGeometry(r);
+    this.geo = coniferGeometry(r, q.tier === 'low' ? 1 : 2);
     const uFade = { value: new THREE.Vector2(this.nearR - this.band, this.nearR) };
     // the fade worked out at each corner from its tree's place; fully faded, its triangles go out of view
     const fade = (far) => s => {
@@ -124,29 +160,62 @@ float treeDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * tb
         .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
   if (vTreeK < 0.999 && ${far ? 'treeDither() >= vTreeK' : 'treeDither() < 1.0 - vTreeK'}) discard;`);
     };
-    const tm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
-    // the undersides of the branches are in their own shade
+    const tex = this.tex = new THREE.TextureLoader().load('./tex/fir_atlas.webp', () => this.bake());
+    tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+    this.uImp = { value: 0 };
+    const tm = new THREE.MeshLambertMaterial({ map: tex, vertexColors: true, alphaTest: 0.42, side: THREE.DoubleSide });
     // (by night the light that follows the rider is the park's floodlight: the trees keep only a little of it)
     const nearFade = fade(false), farFade = fade(true);
-    tm.onBeforeCompile = s => { s.uniforms.uNight = snowUniforms.uNight; nearFade(s); s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
-uniform float uNight;`).replace('#include <color_fragment>', `#include <color_fragment>
- if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.045, 0.075, 0.055);`).replace('#include <opaque_fragment>', `outgoingLight -= (reflectedLight.directDiffuse + reflectedLight.directSpecular) * uNight * 0.7;
-#include <opaque_fragment>`); };
-    tm.customProgramCacheKey = () => 'conifer2';
+    tm.onBeforeCompile = s => {
+      Object.assign(s.uniforms, { uNight: snowUniforms.uNight, uNoise: snowUniforms.uNoise, uSunDir: snowUniforms.uSunDir, uImp: this.uImp, uHorizon: snowUniforms.uHorizon, uSnowLook: snowUniforms.uSnowLook });
+      nearFade(s);
+      s.vertexShader = s.vertexShader.replace('#include <common>', `#include <common>
+attribute float aSnow; varying float vSnow; varying vec3 vTW;`).replace('#include <project_vertex>', `#include <project_vertex>
+vSnow = aSnow;
+vTW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;`);
+      s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+uniform float uNight; uniform sampler2D uNoise; uniform vec3 uSunDir; uniform float uImp; uniform sampler2D uHorizon; uniform vec4 uSnowLook;
+varying float vSnow; varying vec3 vTW; float gSn;`)
+        .replace('#include <fog_fragment>', TREE_FOG)
+        // snow in clumps on the upper sides (filling the gaps between the needles near the stem), the undersides darker
+        .replace('#include <alphatest_fragment>', `{
+  float n = texture2D(uNoise, vTW.xz * 1.3 + vTW.y * 0.7).b${q.tier === 'low' ? ' * 1.5' : ' + texture2D(uNoise, vTW.xz * 4.1 - vTW.y * 1.9).b * 0.5'};
+  // (as much snow on the branches as the snow kind has had: more after powder, less in spring slush or on ice; env.js)
+  float amt = clamp(1.0 + 0.25 * uSnowLook.y - 0.7 * uSnowLook.z - 0.45 * uSnowLook.w, 0.2, 1.25);
+  gSn = gl_FrontFacing ? smoothstep(0.64, 0.95, n * 0.7 + vSnow * 0.6 * amt - (1.0 - amt) * 0.25) : 0.0;
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.93, 0.97), gSn);
+  diffuseColor.a = max(diffuseColor.a, gSn * smoothstep(0.02, 0.2, diffuseColor.a) * 0.8);
+  if (!gl_FrontFacing) diffuseColor.rgb *= 0.62;
+}
+#include <alphatest_fragment>`)
+        // (lit as the round crown, both sides: not the card's own side, which would light a branch's underside from inside)
+        .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+normal = normalize(vNormal);`)
+        .replace('#include <opaque_fragment>', `outgoingLight -= (reflectedLight.directDiffuse + reflectedLight.directSpecular) * uNight * 0.7;
+{
+  // the sun through the needles, looking towards it (not through the snow on them)
+  vec3 V = normalize(cameraPosition - vTW);
+  float tr = pow(max(0.0, dot(-V, uSunDir)), 5.0) * (1.0 - uNight) * (1.0 - gSn);
+  outgoingLight += diffuseColor.rgb * vec3(1.0, 0.95, 0.72) * tr * 1.1;
+}
+if (uImp > 0.5) outgoingLight = diffuseColor.rgb;      // (taking the far trees' picture: the colour alone)
+#include <opaque_fragment>`);
+    };
+    tm.customProgramCacheKey = () => 'conifer3';
     this.near = new THREE.InstancedMesh(this.geo, tm, nearMax);
-    this.near.castShadow = false; this.near.receiveShadow = true; this.near.frustumCulled = false;
+    this.near.castShadow = false; this.near.receiveShadow = q.tier !== 'low'; this.near.frustumCulled = false;   // (low: no shadows on the needles)
     /* (the lag pass: the near trees' shadows come from a copy holding only the trees that can shade the snow round the
        rider, those in the column of sunlight through the shadow map's box, drawn only into the shadow map (layer 5,
        env.js): all the near trees went into it before, about 34 000 triangles on the high tier, most of them outside
        the box. No tree shadows on the low tier, as before.) */
     if (q.tier !== 'low') {
-      this.shade = new THREE.InstancedMesh(this.geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, colorWrite: false }), nearMax);
+      this.shade = new THREE.InstancedMesh(this.geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, colorWrite: false, map: tex, alphaTest: 0.42 }), nearMax);
       this.shade.layers.set(5); this.shade.castShadow = true; this.shade.frustumCulled = false; this.shade.count = 0; this.shade.name = 'trees shadow';
       this.shade.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.shade.matrixAutoUpdate = false;
       this.sunAt = new THREE.Vector3();
     }
     this.near.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.near.count = 0;
-    const card = new THREE.PlaneGeometry(1, 1); card.translate(0, 0.5, 0);
+    const card = new THREE.PlaneGeometry(FAR_W * 2, 1); card.translate(0, 0.5, 0);
     const card2 = card.clone().rotateY(Math.PI / 2);
     const cards = new THREE.BufferGeometry();
     const cp = [...card.toNonIndexed().attributes.position.array, ...card2.toNonIndexed().attributes.position.array];
@@ -156,11 +225,20 @@ uniform float uNight;`).replace('#include <color_fragment>', `#include <color_fr
     // which trees are on the near list now (the others' cards always show whole)
     this.aNear = new Float32Array(this.trees.length);
     const an = new THREE.InstancedBufferAttribute(this.aNear, 1); an.setUsage(THREE.DynamicDrawUsage); cards.setAttribute('aNear', an);
-    const cm = new THREE.MeshLambertMaterial({ map: cardTexture(), alphaTest: 0.5, side: THREE.DoubleSide });
-    cm.onBeforeCompile = s => { s.uniforms.uNight = snowUniforms.uNight; farFade(s); s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
-uniform float uNight;`).replace('#include <opaque_fragment>', `outgoingLight -= reflectedLight.directDiffuse * uNight * 0.8;
-#include <opaque_fragment>`); };
-    cm.customProgramCacheKey = () => 'treecard2';
+    // (the picture of the near tree, taken in bake() once its picture has loaded; mipmapped, so far trees do not sparkle)
+    const lowT = q.tier === 'low';
+    this.impRT = new THREE.WebGLRenderTarget(lowT ? 112 : 184, lowT ? 136 : 224, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, depthBuffer: true });
+    const cm = new THREE.MeshLambertMaterial({ map: this.impRT.texture, alphaTest: 0.38, side: THREE.DoubleSide });
+    cm.onBeforeCompile = s => {
+      s.uniforms.uNight = snowUniforms.uNight; s.uniforms.uHorizon = snowUniforms.uHorizon; farFade(s);
+      s.vertexShader = s.vertexShader.replace('#include <common>', `#include <common>
+varying vec3 vTW;`).replace('#include <project_vertex>', `#include <project_vertex>
+vTW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;`);
+      s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+uniform float uNight; uniform sampler2D uHorizon; varying vec3 vTW;`).replace('#include <opaque_fragment>', `outgoingLight -= reflectedLight.directDiffuse * uNight * 0.8;
+#include <opaque_fragment>`).replace('#include <fog_fragment>', TREE_FOG);
+    };
+    cm.customProgramCacheKey = () => 'treecard3';
     this.far = new THREE.InstancedMesh(cards, cm, this.trees.length);
     this.far.frustumCulled = false;
     // each tree's two matrices, worked out once: its card's straight into the card buffer, its near one kept for when it
@@ -170,24 +248,36 @@ uniform float uNight;`).replace('#include <opaque_fragment>', `outgoingLight -= 
       const m = new THREE.Matrix4(), qq = new THREE.Quaternion(), sc = new THREE.Vector3(), pp = new THREE.Vector3(), fa = this.far.instanceMatrix.array;
       this.trees.forEach((t, i) => {
         qq.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, t.rot); pp.set(t.x, t.y, t.z);
-        m.compose(pp, qq, sc.set(t.s * 0.9, t.s, t.s * 0.9)); m.toArray(this.mNear, i * 16);
-        m.compose(pp, qq, sc.set(t.s * 0.75, t.s, t.s * 0.75)); m.toArray(fa, i * 16);
+        const w = t.s * (0.8 + 0.22 * frac(t.rot * 7.31));
+        m.compose(pp, qq, sc.set(w, t.s, w)); m.toArray(this.mNear, i * 16); m.toArray(fa, i * 16);
       });
       this.far.instanceMatrix.needsUpdate = true;
     }
+    // (each tree its own shade of green, a little darker or lighter, bluer or more yellow, as a real forest is; the far
+    // card the same as its near tree)
+    this.cols = new Float32Array(this.trees.length * 3);
+    this.trees.forEach((t, i) => {
+      const h = frac(t.rot * 13.7), b = 0.9 + 0.2 * frac(t.rot * 5.3), w = (h - 0.5) * 0.12;
+      this.cols[i * 3] = b * (1 + w * 0.6); this.cols[i * 3 + 1] = b; this.cols[i * 3 + 2] = b * (1 - w);
+    });
+    this.far.instanceColor = new THREE.InstancedBufferAttribute(this.cols.slice(), 3);
+    this.near.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.near.instanceMatrix.count * 3).fill(1), 3);
+    this.near.instanceColor.setUsage(THREE.DynamicDrawUsage);
     this.tx = Float32Array.from(this.trees, t => t.x); this.tz = Float32Array.from(this.trees, t => t.z);
     for (const o of [this.near, this.far]) o.matrixAutoUpdate = false;
     scene.add(this.near, this.far); if (this.shade) scene.add(this.shade);
     this.at = new THREE.Vector3(1e9, 0, 0);
+    if (typeof window !== 'undefined') window.__skiForest = this;     // (a test handle)
   }
   update(cam) {
+    if (this.bakedLook && !this.bakedLook.equals(snowUniforms.uSnowLook.value)) { this.baked = false; this.bake(); }
     const L = snowUniforms.uSunDir.value, sunMoved = this.shade && this.sunAt.distanceToSquared(L) > 4e-4;
     if (cam.distanceTo(this.at) < this.move && !sunMoved) return;
     this.at.copy(cam);
     if (this.shade) this.sunAt.copy(L);
     // the near list: every tree that can come inside the near radius before the next update (the fade does the rest)
     const R = this.nearR + this.move + 1, R2 = R * R, cap = this.near.instanceMatrix.count, src = this.mNear, dst = this.near.instanceMatrix.array, aN = this.aNear;
-    const cx = cam.x, cz = cam.z, X = this.tx, Z = this.tz;
+    const cx = cam.x, cz = cam.z, X = this.tx, Z = this.tz, cs = this.cols, nc = this.near.instanceColor.array;
     let ni = 0, si = 0;
     // (the shadow copy: a tree within about 60 m of the column of light through the shadow box, which reaches up towards
     // the sun from the rider; the box is 34 m each way, and 6 m more for a tree's own spread and for the camera moving)
@@ -195,7 +285,8 @@ uniform float uNight;`).replace('#include <opaque_fragment>', `outgoingLight -= 
     for (let i = 0, n = X.length; i < n; i++) {
       const dx = X[i] - cx, dz = Z[i] - cz;
       if (dx * dx + dz * dz < R2 && ni < cap) {
-        const o = ni * 16, k = i * 16; for (let j = 0; j < 16; j++) dst[o + j] = src[k + j]; ni++; aN[i] = 1;
+        const o = ni * 16, k = i * 16; for (let j = 0; j < 16; j++) dst[o + j] = src[k + j];
+        nc[ni * 3] = cs[i * 3]; nc[ni * 3 + 1] = cs[i * 3 + 1]; nc[ni * 3 + 2] = cs[i * 3 + 2]; ni++; aN[i] = 1;
         if (sh) {
           const dy = src[k + 13] + src[k + 5] * 0.5 - cy, along = dx * L.x + dy * L.y + dz * L.z;
           if (along > -50 && dx * dx + dy * dy + dz * dz - along * along < P2) { const so = si * 16; for (let j = 0; j < 16; j++) sd[so + j] = src[k + j]; si++; }
@@ -204,8 +295,26 @@ uniform float uNight;`).replace('#include <opaque_fragment>', `outgoingLight -= 
     }
     this.near.count = ni;
     const im = this.near.instanceMatrix; im.clearUpdateRanges(); im.addUpdateRange(0, Math.max(16, ni * 16)); im.needsUpdate = true;
+    const ic = this.near.instanceColor; ic.clearUpdateRanges(); ic.addUpdateRange(0, Math.max(3, ni * 3)); ic.needsUpdate = true;
     if (sh) { sh.count = si; const sm = sh.instanceMatrix; sm.clearUpdateRanges(); sm.addUpdateRange(0, Math.max(16, si * 16)); sm.needsUpdate = true; }
     this.far.geometry.attributes.aNear.needsUpdate = true;
+  }
+  /* the far cards' picture: one near tree drawn once into a small picture from the side, its colour alone (uImp), with
+     a clear background, so a far tree is the same tree as near. Done as the twig picture comes, between frames. */
+  bake() {
+    const R = RENDERER; if (!R || this.baked) return;
+    this.baked = true;
+    const sc = new THREE.Scene(), one = new THREE.InstancedMesh(this.geo, this.near.material, 1);
+    one.setMatrixAt(0, new THREE.Matrix4()); one.frustumCulled = false; sc.add(one);
+    const cam = new THREE.OrthographicCamera(-FAR_W, FAR_W, 1.01, -0.01, 0.1, 10); cam.position.set(0, 0, 4); cam.lookAt(0, 0, 0); cam.updateMatrixWorld();
+    const was = R.getRenderTarget(), cc = R.getClearColor(new THREE.Color()), ca = R.getClearAlpha();
+    this.uImp.value = 1;
+    R.setRenderTarget(this.impRT); R.setClearColor(0x16251b, 0); R.clear(true, true, false);
+    R.render(sc, cam);
+    R.setRenderTarget(was); R.setClearColor(cc, ca);
+    this.uImp.value = 0;
+    one.dispose();
+    this.bakedLook = snowUniforms.uSnowLook.value.clone();      // (taken again when the snow kind changes: update)
   }
   nearCap() { return this.near.instanceMatrix.count; }
   // the tree whose trunk (and lower branches) a body of radius r at x, z touches, or null

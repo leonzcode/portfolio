@@ -18,15 +18,23 @@ export function gltfLoader() {
 }
 /* what a rider looks like (the locker, locker.js; saved as ski_look, sent to the room as the rider's look). Body: one
    of the five Rocketbox riders. head: 'lid' (the downloaded helmet), 'painted' (our own painted helmet) or 'beanie'.
-   fit: how baggy the clothes are. ski: 'park' (our own twin tip), 'twin' or 'pow' (downloaded). */
+   fit: how baggy the clothes are (baggy also wears the trousers low). ski: 'park' (our own twin tip), 'twin' or 'pow'
+   (downloaded). (2026-11-08, for "steezier clothing") top: 'jacket', 'long' (an oversized jacket down over the seat) or
+   'hoodie' (long, with its hood up over the helmet); jacket2 the sleeves' colour; gaiter: 'on' (a neck gaiter pulled up
+   over the nose, in gaiterCol) or 'off'; gog: the goggles 'on' over the eyes or pushed 'up' onto the helmet. */
 export const LOOK = {
   body: 'm_adult_10', head: 'lid', helmet: '#f2f2ef', lens: '#ff8a2a', frame: '#16181c', jacket: '#c8392b', pants: '#232b36', gloves: '#16181c',
   fit: 'baggy', boots: '#e9eaec', ski: 'park', skiA: '#0d1b2a', skiB: '#ff6a13', poles: 'on', poleCol: '#c9ccd1',
+  top: 'hoodie', jacket2: '#c8392b', gaiter: 'on', gaiterCol: '#22252b', gog: 'on',
 };
+// the tops: how far down the jacket comes (its hem, as a share of the body's height up from the soles) and the hood
+export const TOPS = { jacket: { hem: 0.545, hood: false }, long: { hem: 0.49, hood: false }, hoodie: { hem: 0.5, hood: true } };
+// trousers worn low (a dropped crotch) by fit
+export const LOW = { baggy: 1, regular: 0.4, slim: 0 };
 export const FIT = { baggy: 1, regular: 0.7, slim: 0.45 };
 const _gear = new Map();
 export function gearModel(name) {
-  if (!_gear.has(name)) _gear.set(name, gltfLoader().loadAsync('./models/gear/' + name + '.glb?v=19').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));
+  if (!_gear.has(name)) _gear.set(name, gltfLoader().loadAsync('./models/gear/' + name + '.glb?v=20').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));
   return _gear.get(name);
 }
 // the model's meshes as plain meshes in the model's own frame (the node transforms baked into copies of their
@@ -96,5 +104,5 @@ export function mergeGear(rig) {
   const lens = [];
   rig.helmet.traverse(o => { if (o.isMesh && o.material && o.material.metalness >= 0.99) lens.push(o); });
   // (and the shell, which wears its painted picture: merged, it came out plain white)
-  mergeInto(rig.helmet, o => lens.includes(o) || !!(o.material && o.material.map));
+  mergeInto(rig.helmet, o => lens.includes(o) || !!(o.material && o.material.map) || !!o.userData.keep);   // (keep: the hood, recoloured live)
 }

@@ -10,7 +10,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe0ee; color: var(--shade); font-family: var(--body); }
-canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; touch-action: none; }   /* (R: a finger dragged on the view looks round in first person) */
 .hidden { display: none !important; }
 
 /* ---- HUD ---- */
@@ -78,6 +78,9 @@ select { font: 500 15px var(--body); padding: 6px 8px; border: 1px solid #b8c4cf
 #touch button.down { background: var(--signal); }
 #touch .pick { grid-column: span 2; height: 44px; font-size: 15px; }
 #touch .pop { background: rgba(255,106,19,.7); }
+/* (P, 2026-11-08) one ski and together: small, over the picker, only on the snow or a rail (kept in place in the air) */
+#touch .one, #touch .tog { height: 38px; font-size: 13px; border-radius: 10px; }
+#touch .snowonly.off { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) { .trick { animation: none; } }
 
 /* ---- riding with others ---- */

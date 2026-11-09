@@ -1,4 +1,6 @@
-/* The chairlift beside the Jump Line: a detachable quad chair from the bottom of the line up to the top.
+/* The chairlifts: a detachable quad chair from the bottom of a run up to its top (2026-11-08: Freeride's three, the Face
+   Chair and one up each side bowl, all behind the one interface main.js uses, Lifts at the end; the Jump Line has a
+   T-bar now, tbar.js). It began as the chairlift beside the Jump Line.
    The chair, the towers and the stations are Kagelok's "Chair Lift" (Sketchfab, CC BY 4.0): cut into its parts, made
    lighter and baked into one small texture (models/lift/lift.glb, see CREDITS.md). The cable is drawn here along the
    loop the chairs run round: up the park side, round the top bull wheel, down the other side and round the bottom one.
@@ -22,7 +24,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { ground, height } from './terrain.js?v=19';
+import { ground, height } from './terrain.js?v=20';
 
 // ---- the model's numbers (metres, from models/lift/lift.glb) --------------------------------------------------------
 const HALF = 2.388;                  // half the gauge: each cable's distance from the line's middle (the chairs' grips)
@@ -34,27 +36,37 @@ const HC = 9.2;                      // the cable over a tower's foot (on its sh
 const ST = { back: 4.09, front: 13.29, base: -4.42, half: 3.79, roof: 4.79 };   // a station round its bull wheel (+z towards the line)
 const LOAD = 3.26;                   // the cable over the snow at the load and unload lines (the seat half a metre up)
 // ---- the lift's running -----------------------------------------------------------------------------------------------
-let XL = 36;                         // the line's middle, on the run's right-hand side riding down (planLift sets it)
 const V = 9;                         // line speed (m/s; a real detachable runs at 5, a game wants it quicker)
 const V0 = 1.3;                      // through the stations
 const RAMP = 26;                     // metres to slow down or speed up between the two
 const GAP = 5;                       // seconds between chairs (about) at any point of the loop
 const SPAN = 78;                     // longest span between towers
 const SAG = 0.00022;                 // cable sag: metres per metre squared of span (a 70 m span sags about a metre)
+const TALL = 24;                     // the tallest tower (the cable over its foot), its column stretched (tallTower)
 const PAD_SLOPE = 0.36, PAD_ROUND = 3;   // the station pads' sides
-let xU = XL - HALF, xD = XL + HALF;      // the up line (on the park side) and the down line
+// (each lift's line middle XL, its up line xU on the park side and its down line xD are its plan's own: a map may have
+// several lifts, 2026-11-08)
 
 /* ---- the plan: where everything goes, and the station pads ------------------------------------------------------
    Called with the park before the terrain is built (main.js). The pads are flat snow under the stations: the top one at
    the height of its uphill end (so the chairs clear the snow going round the bull wheel), which leaves a raised
    unloading platform at its downhill end with a ramp off it; the bottom one at its uphill end's height. */
 export function planLift(park) {
+  /* (2026-11-08, for Leon's "add more ski lifts": a map with park.liftLines, an array of { x, top, bot, name }, gets
+     every one of them; the plan is then { multi: true, plans }, and new Lift() with it gives a Lifts, which holds them all
+     behind the one lift interface main.js uses) */
+  if (park.liftLines && park.liftLines.length) {
+    const plans = park.liftLines.map((LL, i) => Object.assign(planOne(park, LL), { index: i, name: LL.name || 'Chairlift', ends: LL.ends !== false }));
+    return plans.length === 1 ? plans[0] : { multi: true, plans };
+  }
+  return planOne(park, park.liftLine || null);
+}
+function planOne(park, LL) {
   // the line's place: clear of the park's right-hand fence and the floodlight towers 2.5 m outside it (env.js), the up
   // line's chairs at least 2.6 m from them, and the stations inside the groomed run
   const fR = park.fences && park.fences.length ? Math.max(...park.fences.map(f => Math.max(f[0], f[2]))) : 16.5;
   // (a map can give its own line: park.liftLine { x, top, bot }, the line's x and its two stations' line ends; Freeride's)
-  const LL = park.liftLine || null;
-  XL = LL ? LL.x : Math.max(36, Math.min(41, fR + 7.5)); xU = XL - HALF; xD = XL + HALF;
+  const XL = LL ? LL.x : Math.max(36, Math.min(41, fR + 7.5)), xU = XL - HALF, xD = XL + HALF;
   // the floodlight poles on the lift's side of the park, where env.js makeLightTowers puts them (2.5 m outside the
   // right-hand fence, every 45 m from 10 m below the fences' top end): the chase camera keeps off them riding up
   const fz = park.fences && park.fences.length >= 2 ? park.fences : null;
@@ -78,7 +90,10 @@ export function planLift(park) {
       const dx = x < p.x0 ? p.x0 - x : x > p.x1 ? x - p.x1 : 0, dz = z < p.z0 ? p.z0 - z : z > p.z1 ? z - p.z1 : 0;
       if (dx > 40 || dz > 40) continue;
       const d = Math.hypot(dx, dz);
-      const y = d < PAD_ROUND ? p.y - PAD_SLOPE * d * d / (2 * PAD_ROUND) : p.y - PAD_SLOPE * (d - PAD_ROUND / 2);
+      /* (past 10 m from the pad its side steepens smoothly, 45 degrees by 20 m out, 2026-11-08: at 20 degrees all the
+         way, below a pad on a shoulder above a steep face, Freeride's, it stood over the face's top 40 m on and ended
+         there in a 3 m step) */
+      const y = d < PAD_ROUND ? p.y - PAD_SLOPE * d * d / (2 * PAD_ROUND) : p.y - PAD_SLOPE * (d - PAD_ROUND / 2) - (d > 10 ? 0.032 * (d - 10) * (d - 10) : 0);
       if (y > best) best = y;
     }
     return best;
@@ -107,17 +122,46 @@ export function planLift(park) {
     return true;
   };
   let a = sup[0];
-  for (let guard = 0; guard < 40; guard++) {
+  // (a map may say where a tower may stand, park.towerOk: Freeride's are kept off rock, chutes, features and their
+  // aprons; then the spans are tried every 2 m)
+  const ok = park.towerOk, dSpan = ok ? 2 : 4;
+  for (let guard = 0; guard < 60; guard++) {
     const endS = { z: top.front, y: top.y };
     if (a.z - endS.z <= SPAN && clear(a, endS) && a !== sup[0]) { sup.push(endS); break; }
+    /* the next tower: the longest span whose chairs clear the snow with a tower of the usual height; where the hill is
+       convex under the line (a cliff band's lip, a roll: 2026-11-08, Freeride's lift goes up over its face) none may,
+       and then the span that needs the shortest tall tower (its column stretched, up to TALL over its foot). Before,
+       a line that found no clear span ran straight on to the top station, through the mountain. */
     let placed = null;
-    for (let span = a === sup[0] ? 22 : SPAN; span >= 20; span -= 4) {
+    const spans = [];
+    for (let span = a === sup[0] ? 22 : SPAN; span >= 20; span -= dSpan) {
       const z = a.z - span; if (z < top.front + 18) continue;
-      const c = { z, y: height(XL, z) + HC };
-      if (clear(a, c) || span <= 20) { placed = c; break; }
+      if (ok && !ok(XL, z)) continue;
+      const g = height(XL, z); spans.push([z, g]);
+      if (clear(a, { z, y: g + HC })) { placed = { z, y: g + HC, h: HC }; break; }
     }
-    if (!placed) { sup.push(endS); break; }
-    towers.push({ x: XL, z: placed.z, y: height(XL, placed.z) });
+    if (!placed) for (const [z, g] of spans) {
+      let h = HC + 2; while (h <= TALL && !clear(a, { z, y: g + h })) h += 2;
+      if (h <= TALL && (!placed || h < placed.h)) placed = { z, y: g + h, h };
+    }
+    // (nowhere a tower may stand within a span: a longer one, up to 120 m, to the next place one may)
+    if (!placed && ok) for (let span = SPAN + 2; span <= 120; span += 2) {
+      const z = a.z - span; if (z < top.front + 18) break;
+      if (!ok(XL, z)) continue;
+      const g = height(XL, z); let h = HC; while (h <= TALL && !clear(a, { z, y: g + h })) h += 2;
+      if (h <= TALL) { placed = { z, y: g + h, h }; break; }
+    }
+    // (still nowhere: the map's looser rule, ok(x, z, false), within a span, the shortest tower that clears)
+    if (!placed && ok) for (let span = SPAN; span >= 20; span -= 2) {
+      const z = a.z - span; if (z < top.front + 18 || !ok(XL, z, false)) continue;
+      const g = height(XL, z); let h = HC; while (h <= TALL && !clear(a, { z, y: g + h })) h += 2;
+      if (h <= TALL && (!placed || h < placed.h)) placed = { z, y: g + h, h };
+    }
+    if (!placed) {            // (nothing clears: a short span with the tallest tower)
+      const z = a.z - 20; if (z < top.front + 18) { sup.push(endS); break; }
+      placed = { z, y: height(XL, z) + TALL, h: TALL };
+    }
+    towers.push({ x: XL, z: placed.z, y: height(XL, placed.z), h: placed.h });
     sup.push(placed); a = placed;
   }
   // the cable between supports: straight, less the sag of the span
@@ -177,7 +221,7 @@ export function planLift(park) {
   // (a chair going up faces -z: its +x is the world's -x, its +z the world's -z)
   const load = { x: xU - SEATS[seat], z: bot.front + 4.5 - SEAT_Z, y: bot.pad.y };
   const unload = { x: xU - SEATS[seat], z: top.front - 4 - SEAT_Z, y: top.pad.y };
-  const colliders = towers.map(t => ({ x: t.x, z: t.z, r: 0.55, y: t.y, s: 11 }));
+  const colliders = towers.map(t => ({ x: t.x, z: t.z, r: t.h > HC ? 0.7 : 0.55, y: t.y, s: t.h + 2 }));
   // the stations' piers: the big one under the middle, the thin one at the line end
   for (const st of [top, bot]) {
     const dir = st === top ? 1 : -1;            // +1: the station's line end is down the hill (+z)
@@ -185,8 +229,16 @@ export function planLift(park) {
   }
   // (2026-11-06) a lamp under each station's eave on the park side, over the load and unload lines, lit with the park's
   // lamps (env.js makeLightTowers reads park.stationLamps: rows of one)
-  park.stationLamps = [top, bot].map(st => ({ x0: XL - ST.half - 0.3, z0: st.front + (st === top ? -2 : 2), dx: 0, dz: 0, n: 1, ax: -1, az: 0, h: 4.2, power: 35 }));
-  return { XL, top, bot, pads, towers, sup, cableY, px, py, pz, S, vel, tau, n, len, T, N, sLoad, sUnload, load, unload, seat, colliders, lights };
+  park.stationLamps = (park.stationLamps || []).concat([top, bot].map(st => ({ x0: XL - ST.half - 0.3, z0: st.front + (st === top ? -2 : 2), dx: 0, dz: 0, n: 1, ax: -1, az: 0, h: 4.2, power: 35 })));
+  return { XL, xU, xD, top, bot, pads, towers, sup, cableY, px, py, pz, S, vel, tau, n, len, T, N, sLoad, sUnload, load, unload, seat, colliders, lights };
+}
+
+// a tower whose cable runs h m over its foot: the model's own (HC) with its column stretched, the head kept as it is
+function tallTower(g0, h) {
+  const g = g0.clone(); if (h <= HC + 0.01) return g;
+  const e = h - HC, cut = 6.5, k = (cut + e) / cut, a = g.attributes.position.array;
+  for (let i = 1; i < a.length; i += 3) a[i] = a[i] < cut ? a[i] * k : a[i] + e;
+  return g;
 }
 
 // ---- the lift: meshes, the chairs' motion, and riding ---------------------------------------------------------------
@@ -199,6 +251,8 @@ const _xg = new THREE.Vector3();      // (the express: another rider's chair's g
 
 export class Lift {
   constructor(scene, plan, q) {
+    // (a plan of several lifts: all of them, behind this same interface)
+    if (plan && plan.multi) return new Lifts(scene, plan, q);
     this.scene = scene; this.plan = plan; this.q = q;
     const low = q.tier === 'low';
     this.nearR = low ? 75 : 170; this.farR = low ? 520 : 900;
@@ -234,107 +288,29 @@ export class Lift {
   // the clock every page shares
   clock() { return Date.now() / 1000 + this.offset; }
 
-  async load() {
-    const loader = new GLTFLoader();
-    const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    const gltf = await loader.loadAsync('./models/lift/lift.glb?v=19');
-    draco.dispose();
-    const part = name => { let m = null; gltf.scene.traverse(o => { if (o.isMesh && o.name === name) m = o; }); if (!m) throw new Error('lift: no ' + name); return m; };
-    const chair = part('chair'), chairLo = part('chair_lo'), tower = part('tower'), towerLo = part('tower_lo'), station = part('station'), bull = part('bull');
-    const map = chair.material.map;
-    if (map) { map.anisotropy = this.q.tier === 'low' ? 1 : 4; map.colorSpace = THREE.SRGBColorSpace; }
-    // one material for every part (the cable too: its uvs sit on a dark grey spot of the texture)
-    const mat = this.mat = new THREE.MeshStandardMaterial({ map, roughness: 0.62, metalness: 0.25 });
-    const geo = m => { const g = m.geometry; g.applyMatrix4(m.matrixWorld); return g; };
-    gltf.scene.updateMatrixWorld(true);
-    const P = this.plan, N = P.N, low = this.q.tier === 'low';
-    const group = this.group = new THREE.Group(); group.name = 'lift';
-    // chairs
-    /* (2026-11-06, for smoother distance changes: a chair swapped from the detailed model to the coarse one in one frame
-       as it passed the near radius. Each now fades from one to the other over the last few metres, worked out from the
-       camera on the graphics card: a fine dither, the two models taking turns at the pixels, so together they are
-       always one whole chair. Each has its own copy of the material (the same program), which also stopped three.js
-       looking the program up again on every draw where the two differed in taking shadows.) */
-    this.band = low ? 12 : 20;
-    const uChairFade = { value: new THREE.Vector2(this.nearR - this.band, this.nearR) };
-    const fadeMat = far => {
-      const m2 = mat.clone();
-      m2.onBeforeCompile = s => {
-        s.uniforms.uChairFade = uChairFade; s.uniforms.uChairFar = { value: far ? 1 : 0 };
-        s.vertexShader = s.vertexShader.replace('#include <common>', `#include <common>
-uniform vec2 uChairFade; uniform float uChairFar; varying float vChairK;`)
-          .replace('#include <project_vertex>', `#include <project_vertex>
-{
-  float f = smoothstep(uChairFade.x, uChairFade.y, length(instanceMatrix[3].xyz - cameraPosition));
-  vChairK = uChairFar > 0.5 ? f : 1.0 - f;
-  if (vChairK < 0.002) gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-}`);
-        s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
-uniform float uChairFar; varying float vChairK;
-float cb2(vec2 p) { return 2.0 * abs(p.x - p.y) + p.y; }
-float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * cb2(mod(p, 2.0)) + cb2(floor(p * 0.5)) + 0.5) / 16.0; }`)
-          .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-  if (vChairK < 0.999 && (uChairFar > 0.5 ? chairDither() >= vChairK : chairDither() < 1.0 - vChairK)) discard;`);
-      };
-      m2.customProgramCacheKey = () => 'chairfade';
-      return m2;
-    };
-    this.chNear = new THREE.InstancedMesh(geo(chair), fadeMat(false), N + 8);
-    this.chFar = new THREE.InstancedMesh(geo(chairLo), fadeMat(true), N + 8);
-    for (const m of [this.chNear, this.chFar]) { m.frustumCulled = false; m.count = 0; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.matrixAutoUpdate = false; }
-    this.chNear.castShadow = true; this.chNear.receiveShadow = !low;
-    // everything that never moves in one mesh (one draw call, one more for its shadow): the stations, the towers and
-    // the cable's tube
-    const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
-    // (the towers: on the low tier a lighter copy, the same but for the ladder's rungs)
-    const stG = geo(station), bw = geo(bull), twG = geo(low ? towerLo : tower), parts = [];
+  /* (2026-11-08) the meshes: built into a kit (liftKit) that may be shared by several lifts (Lifts), so all the lifts on
+     a map are still four draw calls: the chairs' two instanced meshes, the bull wheels, everything that never moves
+     merged into one mesh, and the cables one line. A lift on its own makes its own kit. */
+  async load(kit) {
+    const own = !kit;
+    if (own) { kit = await liftKit(this.q); kit.make(this.plan.N + 8, 2); kit.owner = this; }
+    this.kit = kit; this.mat = kit.mat; this.band = kit.band;
+    this.chNear = kit.chNear; this.chFar = kit.chFar; this.wheels = kit.wheels; this.wheelR = kit.wheelR;
+    const P = this.plan, XL = P.XL;
     for (const st of [P.top, P.bot]) {
       // the station on its pad, the base under the snow, the up line on the park side (the model mirrored across);
       // the model's line end is +z: the top station faces down the hill as it is, the bottom one is turned round
       const m4 = new THREE.Matrix4().compose(_p.set(XL, st.y, st.z), _q.setFromAxisAngle(Y, st === P.top ? 0 : Math.PI), _v.set(-1, 1, 1));
-      const g1 = stG.clone().applyMatrix4(m4);
+      const g1 = kit.stG.clone().applyMatrix4(m4);
       // (mirrored, so each triangle's corners go the other way round to keep its front face outward)
       const ix = g1.index.array; for (let k = 0; k < ix.length; k += 3) { const t = ix[k + 1]; ix[k + 1] = ix[k + 2]; ix[k + 2] = t; }
-      parts.push(g1);
+      kit.parts.push(g1);
     }
-    /* the two bull wheels turn with the cable, so they are not in the merged mesh: one instanced mesh of two (one draw
-       call, the chairs' own program, so no shader of its own), drawn only near the camera and in view. No shadow of
-       their own: they turn under the housings' roofs, which shade them. (Not mirrored as the stations are: the wheel is
-       round, and an instance turned inside out would show its back faces.) */
-    this.wheels = new THREE.InstancedMesh(bw, mat, 2);
-    this.wheels.frustumCulled = false; this.wheels.count = 0; this.wheels.visible = false; this.wheels.matrixAutoUpdate = false;
-    this.wheels.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.wheels.castShadow = false; this.wheels.receiveShadow = !low;   // (as the chairs: one material, one program variant)
-    this.wheelR = low ? 110 : 190;
-    for (const t of P.towers) parts.push(twG.clone().translate(t.x, t.y, t.z));
+    for (const t of P.towers) kit.parts.push(tallTower(kit.twG, t.h || HC).translate(t.x, t.y, t.z));
     const cable = this.cableMeshes();
-    parts.push(cable.tube);
-    // (its own copy of the material: a plain mesh sharing the instanced chairs' material made three.js look its program
-    // up again on every draw, twice a frame)
-    /* (2026-11-06, the lag pass: the stations and towers cast their shadows from copies cut along the line in 150 m
-       pieces, drawn only into the sun's shadow map (layer 5, which only its camera sees; env.js): the merged mesh's
-       bounds took in the whole line, so every frame all of it, 12 000 to 19 000 triangles, went into a shadow map that
-       only covers the snow round the rider. Now only the piece or two near the rider does. The thin cable casts none:
-       its shadow was narrower than the shadow map's texels.) */
-    const pieces = new Map();
-    parts.forEach((g0, k) => {
-      if (g0 === cable.tube) return;
-      g0.computeBoundingBox(); const key = Math.floor(g0.boundingBox.getCenter(_v).z / 150);
-      const h = new THREE.BufferGeometry(); h.setAttribute('position', g0.attributes.position); if (g0.index) h.setIndex(g0.index);
-      if (!pieces.has(key)) pieces.set(key, []); pieces.get(key).push(h);
-    });
-    const shadowMat = new THREE.MeshBasicMaterial({ colorWrite: false });
-    for (const list of pieces.values()) {
-      const g = mergeGeometries(list, false) || mergeGeometries(list.map(h => h.index ? h.toNonIndexed() : h), false); if (!g) continue;
-      const sm = new THREE.Mesh(g, shadowMat); sm.layers.set(5); sm.castShadow = true; sm.matrixAutoUpdate = false; sm.name = 'lift shadow';
-      g.computeBoundingSphere(); group.add(sm);
-    }
-    const still = this.still = new THREE.Mesh(mergeGeometries(parts, false), mat.clone());
-    still.castShadow = false; still.receiveShadow = true; still.matrixAutoUpdate = false; still.updateMatrixWorld(true);
-    this.stillTris = still.geometry.index.count / 3;
-    group.add(still, cable.line);
-    group.add(this.chNear, this.chFar, this.wheels);
-    for (const m of [this.chNear, this.chFar, this.wheels, cable.line]) m.updateMatrixWorld(true);
-    this.scene.add(group);
+    kit.tubes.push(cable.tube); kit.lines.push(cable.pts);
+    if (own) kit.finish(this.scene);
+    this.stillTris = kit.stillTris;
     this.place(0, null);
     this.ready = true;
     return this;
@@ -368,11 +344,8 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
     const tg = new THREE.BufferGeometry();
     tg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); tg.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
     tg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); tg.setIndex(idx);
-    const lg = new THREE.BufferGeometry().setFromPoints(pts);
-    const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0x23262b }));
-    line.matrixAutoUpdate = false;
     this.tubeTris = idx.length / 3;
-    return { tube: tg, line };
+    return { tube: tg, pts };
   }
 
   // the place of a chair's grip at loop time tau (seconds into the loop), into the chair's slot i
@@ -472,7 +445,11 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
     const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
     const nr2 = this.nearR * this.nearR, fr2 = this.farR * this.farR, bn2 = (this.nearR - this.band) ** 2;
     const an = this.chNear.instanceMatrix.array, af = this.chFar.instanceMatrix.array;
-    let nn = 0, nf = 0;
+    // (the kit's counts: several lifts write their chairs into the same two instanced meshes, one after another; the
+    // kit's owner starts and ends the frame, kit.begin and kit.end)
+    const K = this.kit, own = K.owner === this;
+    if (own) K.begin();
+    let nn = K.nn, nf = K.nf;
     for (let i = 0, n = X ? N + 1 : N; i < n; i++) {
       const x = this.gx[i], y = this.gy[i], z = this.gz[i];
       const d2 = (x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2;
@@ -486,15 +463,13 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
     }
     // other riders' chairs are their own chairs here too, so nothing more to draw for them (but for one on an express
     // ride: remoteSeat adds theirs after this)
-    this.chNear.count = nn; this.chFar.count = nf; this.camAt = camera.position;
-    if (nn) this.chNear.instanceMatrix.needsUpdate = true;
-    if (nf) this.chFar.instanceMatrix.needsUpdate = true;
+    K.nn = nn; K.nf = nf; this.camAt = camera.position;
     // the bull wheels: the haul rope runs round them at line speed all the time (only the chairs let go of it and slow
     // down in the stations), so a wheel turns at V / HALF, about 36 turns a minute, on the lift's own clock (quicker
     // with Space held, stopped by a pause); the cable goes round both the same way seen from above
-    const W = this.wheels;
+    const W = this.wheels, XL = P.XL;
     if (W) {
-      let nw = 0;
+      let nw = K.nw;
       const a = -((c * V / HALF) % (Math.PI * 2)), wr2 = this.wheelR * this.wheelR, aw = W.instanceMatrix.array;
       for (const st of [P.top, P.bot]) {
         if ((XL - cx) ** 2 + (st.y - cy) ** 2 + (st.z - cz) ** 2 > wr2) continue;
@@ -503,9 +478,9 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
         _q.setFromAxisAngle(Y, a + (st === P.top ? 0 : Math.PI)); _p.set(XL, st.y, st.z); _m.compose(_p, _q, _s);
         _m.toArray(aw, nw * 16); nw++;
       }
-      W.count = nw; W.visible = nw > 0;
-      if (nw) W.instanceMatrix.needsUpdate = true;
+      K.nw = nw;
     }
+    if (own) K.end();
   }
   // the chair that will next reach loop place s at least `lead` seconds from now: its slot and how long until then
   nextTo(s, lead) {
@@ -528,7 +503,7 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
   // the loading area: the flat pad round the load line, on the park side and in front of the station's piers
   inLoadArea(sk) {
     const L = this.plan.load, pad = this.plan.bot.pad;
-    return sk.p.x > pad.x0 && sk.p.x < XL - 0.6 && sk.p.z > this.plan.bot.front - 16 && sk.p.z < L.z + 7 && sk.p.y < pad.y + 6;
+    return sk.p.x > pad.x0 && sk.p.x < this.plan.XL - 0.6 && sk.p.z > this.plan.bot.front - 16 && sk.p.z < L.z + 7 && sk.p.y < pad.y + 6;
   }
   pastBottom(p) { return p.z > this.plan.bot.z + ST.back + 22; }
   board(sk, fromWhere) {
@@ -584,9 +559,10 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
       this.sit = 0; this.feetOn = false;
       if (g.live && sk.state === 'ground') {
         const near = this.nearLoad(sk, 34);
-        if (near && this.hint <= 0) { g.hud && g.hud.flash('The chairlift: ski into the lift line (or press E)', 2600); this.hint = 30; }
+        if (near && this.hint <= 0) { g.hud && g.hud.flash((this.plan.name ? 'The ' + this.plan.name : 'The chairlift') + (this.plan.ends === false ? ': press E to ride it' : ': ski into the lift line (or press E)'), 2600); this.hint = 30; }
         this.hint -= dt;
-        if (this.inLoadArea(sk) && sk.v.length() < 16) this.board(sk);
+        // (a lift whose bottom is half way down a run, ends false: only E takes it, so riders going past are not caught)
+        if (this.plan.ends !== false && this.inLoadArea(sk) && sk.v.length() < 16) this.board(sk);
         else if (near && g.input && g.input.took && g.input.took('KeyE')) this.board(sk);
         if (this.ride && g.hud) g.hud.flash('Chairlift: press any key to go straight up', 2800);
       }
@@ -679,7 +655,7 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
      from the line's middle) it stays 1 m on the lift's side of them. The camera is swung from about 16 m before the
      tower to 13 m after it (the chair 12 m before to 8 m after, and the ease back). */
   swings() {
-    const P = this.plan, Lt = P.lights, wide = -1.15, near = -Math.asin(Math.min(0.95, Math.max(0, P.load.x - (XL - 3.9)) / 4.2));
+    const P = this.plan, XL = P.XL, Lt = P.lights, wide = -1.15, near = -Math.asin(Math.min(0.95, Math.max(0, P.load.x - (XL - 3.9)) / 4.2));
     this.towerSwing = P.towers.map(t => {
       if (!Lt || Math.abs(XL - 2.4 - Lt.x) > 6) return wide;
       for (let z = Lt.z0; z <= Lt.z1 + 1; z += Lt.S) if (z > t.z - 15 && z < t.z + 18) return near;
@@ -690,7 +666,7 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
   // the drive's hum near the stations and on a chair, and the clack of a grip running over a tower's sheaves near you
   sounds(dt, g) {
     const snd = g.sound; if (!snd || !snd.liftHum) return;
-    const c = g.camera ? g.camera.position : g.skier.p, P = this.plan;
+    const c = g.camera ? g.camera.position : g.skier.p, P = this.plan, XL = P.XL;
     const dTop = Math.hypot(c.x - XL, c.z - P.top.z), dBot = Math.hypot(c.x - XL, c.z - P.bot.z);
     const hum = Math.max(this.ride && this.ride.phase === 'ride' ? 0.22 : 0, 1 - Math.min(dTop, dBot) / 70);
     if (Math.abs(hum - (this._hum ?? -1)) > 0.02) { snd.liftHum(hum); this._hum = hum; }
@@ -718,6 +694,7 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
   // a point in or within m of a station's housing, anywhere from the snow up to its roof (the piers, the chairs going
   // round under it and the housing itself): 'top', 'bot' or ''
   inStation(p, m) {
+    const XL = this.plan.XL;
     if (p.x < XL - ST.half - m || p.x > XL + ST.half + m) return '';
     const P = this.plan;
     if (p.z > P.top.z - ST.back - m && p.z < P.top.z + ST.front + m && p.y < P.top.y + ST.roof + m) return 'top';
@@ -794,11 +771,12 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
     };
     // (from each tower's own place, whichever way its line runs: a new map's lift lays them out its own way)
     for (const t of P.towers) {
-      const tx = t.x ?? XL, h = Math.hypot(p.x - tx, p.z - t.z);
+      const tx = t.x ?? P.XL, h = Math.hypot(p.x - tx, p.z - t.z);
       if (h > 6) continue;
-      post(tx, t.z, t.y, t.y + 10.7, 0.5);
+      const up = (t.h || HC) - HC;      // (a tall tower: its head that much higher)
+      post(tx, t.z, t.y, t.y + 10.7 + up, 0.5);
       // (the head: the crossarm, the sheave trains and the gantry, within about 3.5 m of the tower, round the cable)
-      const eh = Math.max(0, h - 3.5), ey = Math.max(0, t.y + HC - 0.5 - p.y, p.y - t.y - 10.9);
+      const eh = Math.max(0, h - 3.5), ey = Math.max(0, t.y + up + HC - 0.5 - p.y, p.y - t.y - up - 10.9);
       // (the camera rides under it, a metre or so below the sheaves, as the chair's hanger does: it is left out within
       // 2.4 m while it goes over)
       const e = Math.hypot(eh, ey); if (e < 1.4) need = Math.max(need, 2.4);
@@ -885,8 +863,7 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
   }
 
   // ---- collisions: towers and the stations' piers, as trees are (skier.trees) ------------------------------------------
-  withTowers(forest) {
-    const C = this.plan.colliders;
+  withTowers(forest, C = this.plan.colliders) {
     const hit = (x, z, r) => {
       for (const c of C) {
         const d = Math.hypot(c.x - x, c.z - z), R = c.r + r;
@@ -899,4 +876,166 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
   stats() {
     return { chairs: this.plan.N, towers: this.plan.towers.length, loop: Math.round(this.plan.len), T: Math.round(this.plan.T), near: this.chNear.count, far: this.chFar.count, stillTris: this.stillTris, tubeTris: this.tubeTris };
   }
+}
+
+/* ---- the kit: the model and the meshes every lift on a map shares (2026-11-08) ----------------------------------------
+   The model loaded once; the chairs of every lift in the same two instanced meshes (detailed and coarse), the bull wheels
+   in one more, everything that never moves (stations, towers, the cables' tubes) merged into one mesh, the cables far
+   off one set of line segments, the shadow copies cut in 150 m squares. Each frame the owner (a Lift on its own, or
+   Lifts) starts the counts (begin), every lift writes its chairs and wheels in view after the last (Lift.place), and the
+   owner hands the counts to the meshes (end). */
+async function liftKit(q) {
+  const loader = new GLTFLoader();
+  const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
+  const gltf = await loader.loadAsync('./models/lift/lift.glb?v=20');
+  draco.dispose();
+  const part = name => { let m = null; gltf.scene.traverse(o => { if (o.isMesh && o.name === name) m = o; }); if (!m) throw new Error('lift: no ' + name); return m; };
+  const chair = part('chair'), chairLo = part('chair_lo'), tower = part('tower'), towerLo = part('tower_lo'), station = part('station'), bull = part('bull');
+  const map = chair.material.map, low = q.tier === 'low';
+  if (map) { map.anisotropy = low ? 1 : 4; map.colorSpace = THREE.SRGBColorSpace; }
+  // one material for every part (the cable too: its uvs sit on a dark grey spot of the texture)
+  const mat = new THREE.MeshStandardMaterial({ map, roughness: 0.62, metalness: 0.25 });
+  const geo = m => { const g = m.geometry; g.applyMatrix4(m.matrixWorld); return g; };
+  gltf.scene.updateMatrixWorld(true);
+  const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
+  const nearR = low ? 75 : 170, band = low ? 12 : 20;
+  /* (2026-11-06, for smoother distance changes: a chair swapped from the detailed model to the coarse one in one frame
+     as it passed the near radius. Each now fades from one to the other over the last few metres, worked out from the
+     camera on the graphics card: a fine dither, the two models taking turns at the pixels, so together they are
+     always one whole chair. Each has its own copy of the material (the same program), which also stopped three.js
+     looking the program up again on every draw where the two differed in taking shadows.) */
+  const uChairFade = { value: new THREE.Vector2(nearR - band, nearR) };
+  const fadeMat = far => {
+    const m2 = mat.clone();
+    m2.onBeforeCompile = s => {
+      s.uniforms.uChairFade = uChairFade; s.uniforms.uChairFar = { value: far ? 1 : 0 };
+      s.vertexShader = s.vertexShader.replace('#include <common>', `#include <common>
+uniform vec2 uChairFade; uniform float uChairFar; varying float vChairK;`)
+        .replace('#include <project_vertex>', `#include <project_vertex>
+{
+  float f = smoothstep(uChairFade.x, uChairFade.y, length(instanceMatrix[3].xyz - cameraPosition));
+  vChairK = uChairFar > 0.5 ? f : 1.0 - f;
+  if (vChairK < 0.002) gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+}`);
+      s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+uniform float uChairFar; varying float vChairK;
+float cb2(vec2 p) { return 2.0 * abs(p.x - p.y) + p.y; }
+float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * cb2(mod(p, 2.0)) + cb2(floor(p * 0.5)) + 0.5) / 16.0; }`)
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+  if (vChairK < 0.999 && (uChairFar > 0.5 ? chairDither() >= vChairK : chairDither() < 1.0 - vChairK)) discard;`);
+    };
+    m2.customProgramCacheKey = () => 'chairfade';
+    return m2;
+  };
+  const kit = {
+    mat, band, nearR, owner: null, parts: [], tubes: [], lines: [], nn: 0, nf: 0, nw: 0, stillTris: 0,
+    // (the towers: on the low tier a lighter copy, the same but for the ladder's rungs)
+    stG: geo(station), twG: geo(low ? towerLo : tower), wheelR: low ? 110 : 190,
+    // the instanced meshes, for n chairs and w bull wheels in all
+    make(n, w) {
+      this.chNear = new THREE.InstancedMesh(geo(chair), fadeMat(false), n);
+      this.chFar = new THREE.InstancedMesh(geo(chairLo), fadeMat(true), n);
+      for (const m of [this.chNear, this.chFar]) { m.frustumCulled = false; m.count = 0; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.matrixAutoUpdate = false; }
+      this.chNear.castShadow = true; this.chNear.receiveShadow = !low;
+      /* the bull wheels turn with the cable, so they are not in the merged mesh: one instanced mesh (one draw call, the
+         chairs' own program, so no shader of its own), drawn only near the camera and in view. No shadow of their own:
+         they turn under the housings' roofs, which shade them. (Not mirrored as the stations are: the wheel is round,
+         and an instance turned inside out would show its back faces.) */
+      this.wheels = new THREE.InstancedMesh(geo(bull), mat, w);
+      this.wheels.frustumCulled = false; this.wheels.count = 0; this.wheels.visible = false; this.wheels.matrixAutoUpdate = false;
+      this.wheels.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.wheels.castShadow = false; this.wheels.receiveShadow = !low;
+    },
+    begin() { this.nn = this.nf = this.nw = 0; },
+    end() {
+      this.chNear.count = this.nn; this.chFar.count = this.nf;
+      if (this.nn) this.chNear.instanceMatrix.needsUpdate = true;
+      if (this.nf) this.chFar.instanceMatrix.needsUpdate = true;
+      this.wheels.count = this.nw; this.wheels.visible = this.nw > 0;
+      if (this.nw) this.wheels.instanceMatrix.needsUpdate = true;
+    },
+    // everything that never moves into one mesh, its shadow copies, the cables' lines; into the scene
+    finish(scene) {
+      const group = this.group = new THREE.Group(); group.name = 'lift';
+      /* (2026-11-06, the lag pass: the stations and towers cast their shadows from copies cut in 150 m pieces, drawn
+         only into the sun's shadow map (layer 5, which only its camera sees; env.js): the merged mesh's bounds took in
+         the whole line, so every frame all of it, 12 000 to 19 000 triangles, went into a shadow map that only covers
+         the snow round the rider. Now only the piece or two near the rider does. The thin cable casts none: its shadow
+         was narrower than the shadow map's texels.) */
+      const pieces = new Map();
+      for (const g0 of this.parts) {
+        g0.computeBoundingBox(); const c = g0.boundingBox.getCenter(_v), key = Math.floor(c.x / 150) * 4096 + Math.floor(c.z / 150);
+        const h = new THREE.BufferGeometry(); h.setAttribute('position', g0.attributes.position); if (g0.index) h.setIndex(g0.index);
+        if (!pieces.has(key)) pieces.set(key, []); pieces.get(key).push(h);
+      }
+      const shadowMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+      for (const list of pieces.values()) {
+        const g = mergeGeometries(list, false) || mergeGeometries(list.map(h => h.index ? h.toNonIndexed() : h), false); if (!g) continue;
+        const sm = new THREE.Mesh(g, shadowMat); sm.layers.set(5); sm.castShadow = true; sm.matrixAutoUpdate = false; sm.name = 'lift shadow';
+        g.computeBoundingSphere(); group.add(sm);
+      }
+      // (its own copy of the material: a plain mesh sharing the instanced chairs' material made three.js look its
+      // program up again on every draw, twice a frame)
+      const still = this.still = new THREE.Mesh(mergeGeometries([...this.parts, ...this.tubes], false), mat.clone());
+      still.castShadow = false; still.receiveShadow = true; still.matrixAutoUpdate = false;
+      this.stillTris = still.geometry.index.count / 3;
+      // the cables far off: one set of segments for all of them (one draw call)
+      const seg = [];
+      for (const pts of this.lines) for (let i = 0; i < pts.length - 1; i++) seg.push(pts[i], pts[i + 1]);
+      const line = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(seg), new THREE.LineBasicMaterial({ color: 0x23262b }));
+      line.matrixAutoUpdate = false;
+      group.add(still, line, this.chNear, this.chFar, this.wheels);
+      for (const m of [still, line, this.chNear, this.chFar, this.wheels]) m.updateMatrixWorld(true);
+      scene.add(group);
+      this.parts.length = 0; this.tubes.length = 0;
+    },
+  };
+  return kit;
+}
+
+/* ---- several chairlifts behind the one lift interface (2026-11-08, for Leon's "add more ski lifts") ---------------------
+   main.js calls load, ready, withTowers, pastBottom, boardNow, update, camera, lookMouse, netX, remoteSeat, sit, feet,
+   feetOn on whatever its lift is; here each goes to the lift that has the rider (or to every lift, for the chairs going
+   round and the cameras by the stations). The lifts share one kit, so three lifts are still four draw calls. In a room
+   the state's x carries which lift (li) when it is not the first. */
+export class Lifts {
+  constructor(scene, plan, q) {
+    this.scene = scene; this.q = q; this.plan = plan;
+    this.lifts = plan.plans.map(p => new Lift(scene, p, q));
+    this.ready = false;
+  }
+  async load() {
+    const kit = await liftKit(this.q);
+    kit.make(this.lifts.reduce((s, l) => s + l.plan.N + 8, 0), 2 * this.lifts.length);
+    kit.owner = this;
+    for (const l of this.lifts) await l.load(kit);
+    kit.finish(this.scene);
+    for (const l of this.lifts) l.stillTris = kit.stillTris;
+    this.kit = kit; this.ready = true;
+    return this;
+  }
+  // the lift with the rider on it (or walking to its load line), if any
+  get active() { for (const l of this.lifts) if (l.ride) return l; return null; }
+  get riding() { return !!this.active; }
+  get sit() { const a = this.active; return a ? a.sit : 0; }
+  get feet() { const a = this.active; return a ? a.feet : this.lifts[0].feet; }
+  get feetOn() { const a = this.active; return a ? a.feetOn : false; }
+  // the lift whose line is nearest a point (across the hill; below a lift's bottom, less so), and the one whose load
+  // line is nearest
+  // (only lifts whose bottom is where a run ends: the Peak Chair's is half way down a run, on the shoulder, ends false)
+  nearestLine(p) { let b = this.lifts[0], d = Infinity; for (const l of this.lifts) { if (!l.plan.ends) continue; const e = Math.abs(p.x - l.plan.XL) + Math.max(0, p.z - l.plan.bot.z - 60) * 0.2; if (e < d) { d = e; b = l; } } return b; }
+  nearestLoad(p) { let b = this.lifts[0], d = Infinity; for (const l of this.lifts) { if (!l.plan.ends) continue; const L = l.plan.load, e = Math.hypot(p.x - L.x, p.z - L.z); if (e < d) { d = e; b = l; } } return b; }
+  pastBottom(p) { return this.nearestLine(p).pastBottom(p); }
+  boardNow(sk) { return this.nearestLoad(sk.p).boardNow(sk); }
+  update(dt, g) {
+    if (!this.ready) return;
+    this.kit.begin();
+    for (const l of this.lifts) l.update(dt, g);
+    this.kit.end();
+  }
+  camera(dt, cam, cams, sk) { for (const l of this.lifts) l.camera(dt, cam, cams, sk); }
+  lookMouse(cams, input, I, dt) { (this.active || this.lifts[0]).lookMouse(cams, input, I, dt); }
+  netX(x) { const a = this.active; if (!a) return; a.netX(x); const i = this.lifts.indexOf(a); if (i > 0) x.li = i; }
+  remoteSeat(x, p, q, out) { const l = this.lifts[x ? x.li | 0 : 0]; return l ? l.remoteSeat(x, p, q, out) : null; }
+  withTowers(forest) { return this.lifts[0].withTowers(forest, this.lifts.flatMap(l => l.plan.colliders)); }
+  stats() { return this.lifts.map(l => Object.assign(l.stats(), { name: l.plan.name, x: l.plan.XL, top: l.plan.top.front, bot: l.plan.bot.front })); }
 }

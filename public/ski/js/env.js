@@ -12,8 +12,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { snowUniforms } from './materials.js?v=19';
-import { height, runHalf, getPark } from './terrain.js?v=19';
+import { snowUniforms } from './materials.js?v=20';
+import { height, runHalf, getPark } from './terrain.js?v=20';
 
 const KEY = 'ski_env';
 export const ENV = Object.assign({ time: 12.5, sky: 'clear', snow: 'groomed' },
@@ -97,6 +97,7 @@ void main() {
 const DOME_FS = `
 uniform sampler2D uA; uniform sampler2D uB; uniform float uMix; uniform float uRotA; uniform float uRotB;
 uniform vec3 uTint; uniform float uSat; uniform vec3 uSunDir; uniform vec3 uSunCol; uniform float uSunVis;
+uniform sampler2D uHz;
 varying vec3 vDir;
 vec3 dec(vec3 s) { s = min(s, vec3(0.93)); return s / (1.0 - s); }    // the photos were stored as x / (1 + x) (capped: past 0.93 one step of 8 bits is a big jump)
 void main() {
@@ -113,6 +114,13 @@ void main() {
   gl_FragColor = vec4(c, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
+  /* (2026-11-08, for "the sky has like a weird glitchy block in it ... for all the skies": the terrain is drawn out to
+     2 or 2.6 km, which straight down the run ends a little under the true horizon, and in that gap the dome showed its
+     part under the horizon: one row of the photo stretched down, every column of pixels its own colour, a block of
+     grey-blue stripes, darker or lighter than the far snow and fog round it. Now under the horizon, and over its first
+     few degrees above, the dome is the horizon's own colour round the compass, the same colour (already on the
+     screen's scale) the far snow and the fog fade into, so the gap and the far snow are one colour.) */
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, texture2D(uHz, vec2(az, 0.5)).rgb, 1.0 - smoothstep(-0.5, 3.0, el));
 }`;
 
 const sRGBtoLin = s => (s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4));
@@ -131,7 +139,7 @@ export class Env {
     this.u = {
       uA: { value: blank }, uB: { value: blank }, uMix: { value: 0 }, uRotA: { value: 0 }, uRotB: { value: 0 }, uTint: { value: new THREE.Vector3(1, 1, 1) },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 1, 1) }, uSunVis: { value: 1 },
-      uSat: { value: 1.4 },
+      uSat: { value: 1.4 }, uHz: { value: blank },
     };
     this.domeMat = new THREE.ShaderMaterial({ uniforms: this.u, vertexShader: DOME_VS, fragmentShader: DOME_FS, side: THREE.BackSide, depthWrite: false });
     this.dome = new THREE.Mesh(new THREE.SphereGeometry(9000, 48, 24), this.domeMat);
@@ -157,7 +165,7 @@ export class Env {
     // shown on the screen: the dome's colour put through the same tone curve and encoding in acesSRGB)
     this.hzTex = new THREE.DataTexture(new Uint8Array(NH * 4), NH, 1, THREE.RGBAFormat, THREE.UnsignedByteType);
     this.hzTex.wrapS = THREE.RepeatWrapping; this.hzTex.magFilter = this.hzTex.minFilter = THREE.LinearFilter; this.hzTex.needsUpdate = true;
-    snowUniforms.uHorizon.value = this.hzTex;
+    snowUniforms.uHorizon.value = this.hzTex; this.u.uHz.value = this.hzTex;    // (and the dome under the horizon)
     scene.fog = new THREE.FogExp2(0xc6d7e8, 0.0003);
     this.fogBase = wide ? (q.tier === 'low' ? 0.00016 : 0.00011) : q.tier === 'low' ? 0.00042 : 0.00028;
     // the snow fades into the horizon's colour by the distance the terrain stops being drawn (main.js: Terrain far)
@@ -183,7 +191,8 @@ export class Env {
     if (e) return e;
     e = { tex: null, hz: null, ready: false };
     this.tex.set(key, e);
-    const url = `./sky/${PHOTOS[key].f}_${this.res}.jpg`;
+    // (?r=2: the photos with their old suns' patches painted out smoothly, 2026-11-08; a browser may keep the old ones)
+    const url = `./sky/${PHOTOS[key].f}_${this.res}.jpg?r=2`;
     new THREE.ImageLoader().load(url, img => {
       const t = new THREE.Texture(img); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping;
       t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.needsUpdate = true;

@@ -19,11 +19,16 @@
      - skier's right (-x): spines and flutes up high, wind lips on the convex breaks, and the Selection zone: kickers
        built on rock bands (park.js Kickers whose lips sit on the rock), a log laid off a rock ledge, a rock slab, stumps
      - pillows in clusters over rock: a stacked line down a steep roll, a garden of mixed sizes, two smaller groups
+   Third pass (2026-11-08, for "expand the mountain make it bigger add more ski lifts" and "every kind of feature a
+   Freeride World Tour venue has"): two more bowls over the arms, the West Glades and the Spine Wall (SIDES, sideLayout),
+   rocks and drops under the Face Chair, and a natural halfpipe (HalfPipe). Where a rock face is (cliff) is the
+   physics' wall; all else is snow to ride, kept under about 55 degrees. What is drawn is what is ridden: a band's face
+   bulges in the land itself (Band.h), not only in the drawn rock.
    Everything is a height function over x (across, + skier's left looking down) and z (down the fall line), y up,
    with y = 0 at the main start. The physics reads it directly (terrain.js ground through setMountain); rock faces are
    steeper than skier.js's walls (about 53 degrees), so they are walls to ride into and drops to ride off.
    This module is plain JS (no three.js) so it can be checked in Node. */
-import { simplex, fbm, ridged, smoothstep, clamp, smax } from './noise.js?v=19';
+import { simplex, fbm, ridged, smoothstep, clamp, smax } from './noise.js?v=20';
 
 const RAD = Math.PI / 180;
 
@@ -57,11 +62,9 @@ export function baseZ(z) {
 
 // ---- across the face ----------------------------------------------------------------------------------------------
 /* The bowl in plan: the face's contours swing forward towards its sides by zs(x), so at the same z the sides stand
-   higher than the middle (the rim a horseshoe), up to 16 m forward at 150 m out (and no more past it: the chairlift's
-   top station stands on the summit's shoulder out there). Past 150 m the arms: side ridges that
-   rise A(z) over the bowl's edge on steep rocky walls, with crests from 195 m out (the chairlift runs up the east one)
-   and their outer sides falling away; low on the face they sink into the valley. */
-export const LIFT_X = 208;
+   higher than the middle (the rim a horseshoe), up to 16 m forward at 150 m out (and no more past it). Past 150 m the
+   arms: side ridges that rise A(z) over the bowl's edge on steep rocky walls, with crests from 195 m out, and their
+   outer sides falling away into the side bowls (sideY); low on the face they sink into the valley. */
 const zs = x => { const a = Math.min(150, Math.abs(x)); return 0.0007 * a * a; };
 /* (each arm's wall foot, crest and height along the face tabulated every metre of z: a few noises a sample before) */
 const AZ0 = -600, AN = 2200, ARM = [0, 1].map(e => {
@@ -78,27 +81,66 @@ function arms(x, z) {
   const a = Math.abs(x);
   if (a < 128) return 0;
   /* the inner wall's foot wanders in and out along the face (bays and spurs); the east arm's crest stays at 200 to 216
-     m out all the way down (the chairlift runs up it), the west one wanders too. Their height along the face: low at
+     m out all the way down (the old chairlift ran up it), the west one wanders too. Their height along the face: low at
      the summit ridge's ends, highest over the middle of the face, gone by the apron */
   const T = ARM[x > 0 ? 1 : 0], q = clamp(z - AZ0, 0, AN - 1.001), i = q | 0, t = q - i;
   const foot = T.foot[i] + (T.foot[i + 1] - T.foot[i]) * t;
   if (a < foot - 1) return 0;
   const crest = T.crest[i] + (T.crest[i + 1] - T.crest[i]) * t, A = T.A[i] + (T.A[i + 1] - T.A[i]) * t;
   const u = clamp((a - foot) / (crest - foot), 0, 1), up = u * u * (2.2 - 1.2 * u);       // (concave at its foot, rounding over at the top)
-  const out = a > crest + 14 ? 0.3 * (a - crest - 14) * smoothstep(crest + 14, crest + 50, a) : 0;    // over the crest, falling away outside
+  // (over the crest, falling away outside into the side bowl beyond (sideY), steeply up high, gently where the arms fade
+  // out low down, so the three runouts join in one valley)
+  // (from a fixed line, not the wandering crest: following it, the flank's height swung up and down along the face, as
+  // steep as 63 degrees down the fall line in places)
+  const fo = 0.25 + 0.4 * smoothstep(-70, 60, z) * (1 - smoothstep(470, 720, z)), fl = x > 0 ? 216 : 222;
+  const out = a > fl ? fo * (a - fl) * smoothstep(fl, fl + 40, a) : 0;
   return A * up - out + 1.8 * simplex(x * 0.03 + 9, z * 0.02) * smoothstep(foot, foot + 25, a);
 }
-// the runout: the valley's floor swings east to the chairlift's bottom station
+/* the runout: one valley under all three bowls, a shallow channel down to each chairlift's bottom station (2026-11-08:
+   it swung east to the old lift's bottom, 200 m out on the east arm) */
+export const LIFT_XS = [28, -392, 406];
 function runout(x, z) {
   const k = smoothstep(620, 820, z);
-  return k > 0 ? k * (-0.06 * Math.max(0, x - 60) * smoothstep(700, 900, z) + 0.0004 * Math.min(Math.abs(x - 80), 220) ** 2 * 0.25) : 0;
+  if (k <= 0) return 0;
+  let d = Infinity; for (const lx of LIFT_XS) d = Math.min(d, Math.abs(x - lx));
+  return k * 0.00008 * Math.min(d, 190) ** 2;
 }
-// the far mountains: grow from about 300 m out of the venue
+// the far mountains: grow from about 540 m out, past the side bowls' outer ridges (2026-11-08: from 300 m, which put
+// rough peaks where the side bowls are now)
 function far(x, z) {
-  const dx = Math.max(0, Math.abs(x - 20) - 280), dz = Math.max(0, -500 - z, z - 1150), d = Math.hypot(dx, dz);
+  const dx = Math.max(0, Math.abs(x) - 540), dz = Math.max(0, -500 - z, z - 1150), d = Math.hypot(dx, dz);
   if (d < 1) return 0;
-  const k = smoothstep(0, 700, d);
+  const k = smoothstep(0, 600, d);
   return k * (280 * ridged(x * 0.0011 + 7.7, z * 0.0011 - 2.3, 4) - 60);
+}
+/* ---- the side bowls (2026-11-08, for Leon's "for freeride expand the mountain make it bigger add more ski lifts as
+   well"): over each arm another bowl down the same long profile (the summit's shoulder, the brink, the face easing all the
+   way down, the apron), between the main bowl's arm and an outer ridge of its own, each with its own chairlift and its
+   own kind of riding: the West Glades (skier's right: rollers, a natural halfpipe, hips, pillows, step-downs, gaps,
+   logs, glades of trees low down) and the Spine Wall (skier's left: Alaska spines, a couloir, big cliffs and cornices).
+   Its floor hw m either side of xc, its walls wall m wide rising A m (as the arms do: highest over the face, gone by the
+   apron), and past its ridges falling away, so the arm's own surface (or the far mountains) takes over there. */
+export const SIDES = [
+  { name: 'West Glades', xc: -352, hw: 84, wall: 62, A: 34, seed: 5 },
+  { name: 'Spine Wall', xc: 352, hw: 80, wall: 62, A: 38, seed: 9 },
+];
+// (each side's wall height along the face tabulated every metre, as the arms' are)
+for (const S of SIDES) {
+  S.tA = new Float32Array(AN);
+  for (let i = 0; i < AN; i++) { const z = AZ0 + i; S.tA[i] = S.A * (1 + 0.15 * simplex(z * 0.011, S.seed)) * smoothstep(-70, 60, z) * (1 - smoothstep(470, 720, z)) + 12 * (1 - smoothstep(-40, 60, z)); }
+}
+function sideY(S, x, z) {
+  const s = Math.abs(x - S.xc);
+  let y = baseZ(z - 0.0006 * Math.min(s, 120) ** 2);
+  if (s > S.hw) {
+    const q = clamp(z - AZ0, 0, AN - 1.001), i = q | 0, A = S.tA[i] + (S.tA[i + 1] - S.tA[i]) * (q - i);
+    const u = Math.min(1, (s - S.hw) / S.wall), up = u * u * (2.2 - 1.2 * u);
+    y += A * up + 1.6 * simplex(x * 0.03 + S.seed, z * 0.02) * smoothstep(S.hw, S.hw + 25, s);
+    // (past its ridge falling away: fast towards the main bowl, where the arm's own surface takes over; gently on the
+    // outside, towards the far mountains)
+    const past = s - S.hw - S.wall - 6; if (past > 0) y -= ((x - S.xc) * S.xc < 0 ? 1.2 : 0.5) * past;
+  }
+  return y;
 }
 /* Ribs and gullies down the fall line: broad, wandering, a few metres high (each its cross-section a cosine bump,
    half width w; its middle wanders down the face). The couloirs' gullies run on down the face as avalanche paths. */
@@ -112,6 +154,13 @@ const FALL = [
   { x: -142, a: -3.6, w: 18, z0: 120, z1: 520, ph: 0.9 },  // a gully along the west wall's foot
   { x: 62, a: 3.4, w: 18, z0: 330, z1: 560, ph: 6.0 },     // a low rib under the Fan cliffs
   { x: -10, a: -3.2, w: 26, z0: 360, z1: 600, ph: 1.4 },   // the lower centre gully, out to the apron
+  // (2026-11-08) the side bowls' own ribs and gullies: the West Glades
+  { x: -296, a: 4.0, w: 24, z0: 40, z1: 520, ph: 0.7 }, { x: -372, a: 4.6, w: 26, z0: 200, z1: 520, ph: 3.7 },
+  { x: -420, a: -3.6, w: 18, z0: 80, z1: 560, ph: 5.1 },
+  // and the Spine Wall: a gully under the spines and a rib under the lift
+  { x: 312, a: -4.2, w: 24, z0: 280, z1: 560, ph: 1.1 }, { x: 420, a: 3.8, w: 20, z0: 60, z1: 520, ph: 4.3 },
+  // and the Peak's face
+  { x: -96, a: 3.4, w: 22, z0: -300, z1: -230, ph: 2.0 }, { x: -24, a: -3.0, w: 20, z0: -300, z1: -240, ph: 4.1 }, { x: 108, a: 3.0, w: 20, z0: -300, z1: -240, ph: 0.4 },
 ];
 /* the lanes of the kickers built on the rock and of the logs (freeride.js puts them there): across each the fall lines are levelled to
    their height on its middle line (blended back over 8 to 24 m out), so each kicker stands square on its slope with no
@@ -172,7 +221,9 @@ function fallCrest(x, z) {
 }
 // the small rolls of a natural face (a metre or so, 40 to 90 m across): none on the start pads, the finish, the lift
 function rolls(x, z) {
-  const k = smoothstep(-10, 30, z) * (1 - smoothstep(560, 660, z)) * (1 - smoothstep(170, 190, Math.abs(x)));
+  // (and on the side bowls' floors, 2026-11-08)
+  const ax = Math.abs(x), sd = ax > 200 ? 1 - smoothstep(76, 96, Math.abs(ax - 352)) : 0;
+  const k = (smoothstep(-10, 30, z) * (1 - smoothstep(560, 660, z)) + smoothstep(-330, -305, z) * (1 - smoothstep(-205, -180, z))) * Math.max(1 - smoothstep(170, 190, ax), sd);
   return k > 0 ? (0.8 * simplex(x * 0.013 + 3.1, z * 0.011 - 1.7) + 0.45 * simplex(x * 0.036 - 4, z * 0.03)) * k : 0;
 }
 
@@ -239,6 +290,12 @@ export class Band {
       const r = this.rough ? 1 + this.rough * (simplex(x * 0.11, this.seed * 2.3) * 0.7 + 0.3 * simplex(x * 0.37, this.seed + 8)) : 1;
       this.tH[i] = x <= this.xa || x >= this.xb ? 0 : Math.max(0, Hs(x) * r);
     }
+    /* (2026-11-08) how far the face bulges out at mid-height, as a share of its width: broad swells along the band and
+       smaller ones. They were pushed out on the drawn rock only (frrock.js), which stood rock over the snow at a face's
+       foot and in front of where the rider met the face; now the land has them, so the drawing and the riding agree.
+       At most 0.28 of the width, so the face never folds over (it still drops all the way down) */
+    this.tB = new Float32Array(n);
+    if (this.rock && this.look !== 'snow') for (let i = 0; i < n; i++) { const x = this.tX + i * S; this.tB[i] = 0.2 * (0.5 + 0.5 * simplex(x * 0.085 + this.seed, this.seed * 1.3)) + 0.06 * (0.5 + 0.5 * simplex(x * 0.33 + this.seed, 2.7)); }
     this.tC = new Float32Array(n);      // 1 / sqrt(1 + z'(x)^2): z distance to distance at right angles
     for (let i = 0; i < n; i++) { const a = this.tZ[Math.max(0, i - 1)], b = this.tZ[Math.min(n - 1, i + 1)], dz = (b - a) / (S * (i > 0 && i < n - 1 ? 2 : 1)); this.tC[i] = 1 / Math.sqrt(1 + dz * dz); }
     this.Hmax = Math.max(...this.tH);
@@ -262,12 +319,21 @@ export class Band {
     const f = (x - this.tX) / this.tS, i = Math.max(0, Math.min(this.tH.length - 2, Math.floor(f))), t = f - i;
     const H = this.tH[i] + (this.tH[i + 1] - this.tH[i]) * t; if (H < 0.02) return 0;
     const zl = this.tZ[i] + (this.tZ[i + 1] - this.tZ[i]) * t, c = this.tC[i] + (this.tC[i + 1] - this.tC[i]) * t;
-    const d = (z - zl) * c, w = this.fwOf(H);
-    if (d < -this.Rup || d > w + this.Rdn) return 0;
+    /* (the face's own width at right angles to the lip, d; the bench above and the apron below by plain z distance from
+       the lip and the foot, 2026-11-08: at right angles there too, a wiggle of the lip turned into a fold across a
+       58 m bench, 63 degrees steep) */
+    const dz = z - zl, d = dz * c, w = this.fwOf(H), wz = w / c;
+    if (dz < -this.Rup || dz > wz + this.Rdn) return 0;
     const up = this.a * H;
-    if (d <= 0) { const t = 1 + d / this.Rup; return up * t * t; }
-    if (d < w) return up - H * face(d, w);
-    return (up - H) * (1 - smoothstep(0, this.Rdn, d - w));
+    if (dz <= 0) { const t = 1 + dz / this.Rup; return up * t * t; }
+    if (d < w) { const B = this.tB[i] + (this.tB[i + 1] - this.tB[i]) * t; return up - H * face(d - B * w * Math.sin(Math.PI * d / w), w); }
+    return (up - H) * (1 - smoothstep(0, this.Rdn, dz - wz));
+  }
+  // on its rock face (from the lip to the foot, m metres either side): what the physics may treat as a cliff
+  onFace(x, z, m) {
+    if (!this.rock || x <= this.xa || x >= this.xb) return false;
+    const H = this.H(x); if (H < 0.45) return false;
+    const d = (z - this.zL(x)) * this.cs(x); return d > -m && d < this.fwOf(H) + m;
   }
   // the visual target (terrain.js visualHeight on fine patches, st m a cell): from st + 0.3 above the lip to the
   // foot, the terrain is held under the foot so its coarse triangles never stand in front of the face (the rock meshes
@@ -311,6 +377,16 @@ export class Rib {
     const top = 1 - this.crest * u * u + 0.025 * simplex(x * 0.21 + this.seed, z * 0.17) + 0.012 * simplex(x * 0.6, z * 0.5 - this.seed);
     return D * mx * top * (1 - face(z - ze, this.wEnd));
   }
+  // on its rock: a steep side wall or the end cliff (an outer slope as gentle as the face is snow to ride)
+  onFace(x, z, m) {
+    if (z < this.zTop + 2 || x < this.x0 || x > this.x1 || this.Dz(z) < 0.55) return false;
+    const l = this.L(z), r = this.R(z), wl = this.wwL, wr = this.wwR, ze = this.zE(x);
+    // (a chute's floor drops from 1.5 m in on the rib's top, Gully: the wall's rock reaches that far in, mi; an outer
+    // slope is rock too, as it is drawn: only where it is steep does the physics treat it as a wall)
+    const mi = Math.max(m, 1.8);
+    if (z < ze + 0.3 && ((x > l - wl - m && x < l + mi) || (x < r + wr + m && x > r - mi))) return true;
+    return x > l - wl && x < r + wr && z > ze - m && z < ze + this.wEnd + m;
+  }
   dip(x, z, st, G, y) {
     if (z < this.zTop + 2 || x < this.x0 || x > this.x1) return Infinity;
     const D = this.Dz(z); if (D < 0.55) return Infinity;
@@ -335,6 +411,8 @@ export class Rib {
 export class Outcrop {
   constructor(o) {
     Object.assign(this, { kind: 'out', hUp: 0.2, w: 1.0, round: 0.45, seed: 3, rot: 0, wob: 0, name: 'Rock outcrop', rock: true }, o);
+    // (no rougher than a quarter of its half size, 2026-11-08: a small rock's rough corners crossed its drawn rows)
+    this.wob = Math.min(this.wob, 0.25 * Math.min(this.hw, this.len / 2));
     this.za = this.z - this.len / 2; this.zb = this.z + this.len / 2;
     this.cr = Math.cos(this.rot); this.sr = Math.sin(this.rot);
     const R = Math.hypot(this.hw, this.len / 2) + this.wob + this.w + 1;
@@ -351,16 +429,24 @@ export class Outcrop {
     return d;
   }
   raise(z) { return this.hUp + (this.hDn - this.hUp) * clamp((z - this.za) / this.len, 0, 1); }
+  // on its rock faces (its sides and lip)
+  onFace(x, z, m) {
+    if (x < this.x0 || x > this.x1 || z < this.z0 || z > this.z1 || this.raise(z) < 0.45) return false;
+    const d = this.out(x, z); return d > -m && d < this.w + m;
+  }
+  // how far in from its edge its drawn rock reaches (frrock.js), and so how far in the terrain is held down under it
+  back() { return Math.min(2.6, Math.min(this.hw, this.len / 2) * 0.9); }
   h(x, z) {
     if (x < this.x0 || x > this.x1 || z < this.z0 || z > this.z1) return 0;
     const d = this.out(x, z); if (d > this.w * 1.2) return 0;
-    // (a little rough on top: snow over rock)
-    return this.raise(z) * (1 - face(d, this.w)) + (d < 0 ? 0.12 * simplex(x * 0.7 + this.seed, z * 0.7) * smoothstep(0, -1.5, d) : 0);
+    // (a little rough on top: snow over rock; broad lumps, 2026-11-08, so the drawn rock's points, 0.75 m apart, follow
+    // them: at 1.4 m across they stood the drawn top up to 0.3 m off where the skis ride)
+    return this.raise(z) * (1 - face(d, this.w)) + (d < 0 ? 0.1 * simplex(x * 0.3 + this.seed, z * 0.3) * smoothstep(0, -1.5, d) : 0);
   }
   dip(x, z, st, G, y) {
     if (x < this.x0 || x > this.x1 || z < this.z0 || z > this.z1) return Infinity;
     const d = this.out(x, z), Hh = this.raise(z);
-    if (Hh < 0.5 || d < -(st + 0.3) || d > this.w + 0.3) return Infinity;
+    if (Hh < 0.5 || d < -Math.min(st + 0.3, this.back()) || d > this.w + 0.3) return Infinity;
     // (the ground just outside the face, straight out from the footprint's edge)
     const e = 0.05, gx = this.out(x + e, z) - this.out(x - e, z), gz = this.out(x, z + e) - this.out(x, z - e), gl = Math.hypot(gx, gz) || 1, k = this.w + 0.4 - d;
     return fade(y, G(x + gx / gl * k, z + gz / gl * k) - 0.5, smoothstep(0.5, 1.3, Hh));
@@ -389,6 +475,7 @@ export class Gully {
   }
 }
 
+const SPINE0 = smax(smax(0, 0, 1.6), 0, 2.5);
 /* spines and flutes: snow ridges down the fall line, crests 2 to 3 m across, flanks of about 36 degrees across the
    slope (with the slope's own 37, about 47 degrees at the steepest: steep enough to slip on, not a wall), the flutes
    between them rounded gullies */
@@ -411,8 +498,13 @@ export class Spines {
       const v = hz - this.cross * dd;
       if (v > a) { b = a; a = v; } else if (v > b) b = v;
     }
-    // (the flute between two spines rounded, and the field never under the slope)
-    return Math.max(0, smax(smax(a, b, 1.6), 0, 1.0) - 0.4) ;
+    // (the flute between two spines rounded, and the field never under the slope; faded in and out at its ends,
+    // 2026-11-08: the roundings left it 0.2 m up where it began and ended, a step right across the field that took up
+    // to 5 m/s off a rider in one step)
+    // (less the field's own value with no spine near, SPINE0: it was 0.09 m everywhere in the field's box and a step at
+    // its sides; and the flanks' feet rounded over 2.5 m, where a flank met the slope beside the field in a crease that
+    // took up to 8 m/s off a rider crossing it)
+    return Math.max(0, smax(smax(a, b, 1.6), 0, 2.5) - SPINE0) * smoothstep(this.za, this.za + 10, z) * (1 - smoothstep(this.zb - 10, this.zb, z));
   }
 }
 
@@ -430,6 +522,12 @@ export class Pillows {
       const k = i * 4096 + j; if (!this.grid.has(k)) this.grid.set(k, []); this.grid.get(k).push(p);
     } }
   }
+  // (2026-11-08) a pillow's steep downhill front, over about 52 degrees on its own: a drop, as a rock's face is (it is
+  // snow over a boulder); the rest of it is snow to ride
+  onFace(x, z) {
+    const e = 0.15, gx = this.h(x + e, z) - this.h(x - e, z), gz = this.h(x, z + e) - this.h(x, z - e);
+    return gx * gx + gz * gz > (2 * e * 1.28) ** 2;
+  }
   h(x, z) {
     const l = this.grid.get(Math.floor(x / 8) * 4096 + Math.floor(z / 8)); if (!l) return 0;
     let best = 0;
@@ -444,6 +542,22 @@ export class Pillows {
   }
 }
 
+/* a natural halfpipe (2026-11-08): a gully worn into the slope down the fall line, a flat floor F m either side of its
+   wandering middle and banked walls W m wide rising D m to the slope's own height (at most about 40 degrees across,
+   50 with the slope's own fall), fading in and out at its ends */
+export class HalfPipe {
+  constructor(o) {
+    Object.assign(this, { kind: 'hpipe', rock: false, name: 'Natural halfpipe', D: 5, F: 4, W: 9, seed: 6 }, o);
+    this.x0 = this.x - this.F - this.W - 9; this.x1 = this.x + this.F + this.W + 9; this.z0 = this.za; this.z1 = this.zb;
+  }
+  cx(z) { return this.x + 5 * Math.sin(z * 0.012 + this.seed) + 2 * simplex(z * 0.02, this.seed); }
+  h(x, z) {
+    if (z <= this.za || z >= this.zb || x < this.x0 || x > this.x1) return 0;
+    const d = Math.abs(x - this.cx(z)); if (d >= this.F + this.W) return 0;
+    const e = smoothstep(this.za, this.za + 40, z) * (1 - smoothstep(this.zb - 50, this.zb, z));
+    return -this.D * e * (1 - smoothstep(this.F, this.F + this.W, d));
+  }
+}
 // a wind lip: a curl of snow along a convex break or a ridge, rising gently over `up` m to h and dropping over dn m
 export class Lip {
   constructor(o) {
@@ -453,6 +567,11 @@ export class Lip {
     this.z0 = this.z - this.up - 3 - zr; this.z1 = this.z + this.dn + 3 + zr;
   }
   zAt(x) { return this.z + wig(x, this.seed, 1.2) + this.slant * (x - (this.xa + this.xb) / 2); }
+  // (2026-11-08) its curl's steep front, over about 52 degrees on its own: a drop, as a cornice's is
+  onFace(x, z) {
+    const e = 0.1, gx = this.h(x + e, z) - this.h(x - e, z), gz = this.h(x, z + e) - this.h(x, z - e);
+    return gx * gx + gz * gz > (2 * e * 1.28) ** 2;
+  }
   h(x, z) {
     if (x <= this.xa || x >= this.xb) return 0;
     const e = smoothstep(this.xa, this.xa + 4, x) * (1 - smoothstep(this.xb - 4, this.xb, x));
@@ -502,8 +621,10 @@ function layout() {
   F.push(new Band({ name: 'Summit cliffs (east)', lip: [[13, 9], [26, 8], [40, 12]], wig: 1, seed: 16, a: 0.5, Rup: 9, Rdn: 20, rough: 0.2, pts: [[13, 0], [19, 4.5], [30, 6], [37, 3], [42, 0]] }));
   // ---- the bowl's walls: buttresses of rock standing out of them, unridden (they frame the face)
   for (const [x, z, len, hw, h, rot, sd] of [[-168, 70, 46, 9, 12, 0.32, 161], [-176, 190, 60, 10, 16, 0.18, 162], [-170, 320, 44, 8, 11, 0.12, 163], [-160, 430, 30, 7, 7, 0.05, 164],
-    [162, 110, 40, 8, 10, -0.3, 165], [170, 260, 52, 9, 13, -0.2, 166], [160, 380, 34, 7, 8, -0.1, 167]])
-    F.push(new Outcrop({ name: 'Wall buttress', x, z, len, hw, hUp: h, hDn: h * 0.8, w: 1.6, round: 0.4, rot, wob: hw * 0.28, seed: sd }));
+    [176, 120, 40, 8, 10, -0.3, 165], [170, 260, 52, 9, 13, -0.2, 166], [160, 380, 34, 7, 8, -0.1, 167]])
+    // (rounder and less rough than they were, 2026-11-08: round a sharp, rough corner the drawn rock's rows crossed over
+    // and stood rock up to 3 m off where the land had it)
+    F.push(new Outcrop({ name: 'Wall buttress', x, z, len, hw, hUp: h, hDn: h * 0.8, w: 1.6, round: 0.65, rot, wob: hw * 0.12, seed: sd }));
   // ---- the centre, upper face: the Teeth, broken in three, curving down to the east
   F.push(new Band({ name: 'The Teeth', lip: [[-48, 66], [-20, 63], [8, 66], [30, 69], [46, 74]], wig: 1.3, seed: 3, a: 0.55, Rup: 13, Rdn: 16, rough: 0.25,
     pts: [[-46, 0], [-40, 2.5], [-30, 3.5], [-24, 0.2], [-15, 0.2], [-8, 3.2], [2, 4], [10, 2.6], [16, 0.2], [22, 0.2], [28, 3], [37, 3.8], [44, 0]] }));
@@ -529,16 +650,19 @@ function layout() {
   // ---- the centre, middle face: Tier A curving down to the east into the Fan cliffs (one band system, broken)
   // (its west end, over the step-down, is 5 m; the middle 6.5 to 8 m)
   F.push(new Band({ name: 'Tier A', lip: [[-50, 203], [-24, 201], [-4, 204], [20, 208], [48, 215]], wig: 1.4, seed: 7, a: 0.42, Rup: 15, Rdn: 26, rough: 0.12,
-    pts: [[-50, 0], [-44, 5], [-24, 5], [-18, 0.3], [-10, 0.3], [-2, 6.5], [10, 8], [22, 6], [28, 0.3], [33, 0.3], [40, 7], [48, 0]] }));
+    pts: [[-58, 0], [-46, 5], [-24, 5], [-18, 0.3], [-10, 0.3], [-2, 6.5], [10, 8], [22, 6], [28, 0.3], [33, 0.3], [40, 7], [48, 0]] }));
   // the step-down's second 5 m drop, 14 m below the first: its ledge between is about 30 degrees, steep enough to land on
   F.push(new Band({ name: 'The step-down', lip: [[-52, 217], [-36, 216], [-23, 217]], wig: 0.8, seed: 8, a: 0.3, Rup: 9, Rdn: 18, pts: [[-52, 0], [-45, 5], [-30, 5], [-23, 0]] }));
   F.push(new Band({ name: 'Fan cliffs', lip: [[56, 252], [76, 255], [100, 261], [120, 268], [140, 277]], wig: 1.8, seed: 13, a: 0.6, Rup: 18, Rdn: 24, rough: 0.12,
     pts: [[56, 0], [63, 5], [76, 7], [84, 1], [90, 1], [98, 6], [106, 8], [112, 7.5], [120, 1], [125, 1], [131, 5], [140, 0]] }));
   // the Big Ones: 9 to 19 m wrapped round a buttress that stands out over the face (the lip bulging down round it)
-  F.push(new Band({ name: 'The Big Ones', lip: [[-44, 296], [-22, 290], [0, 287], [12, 290], [22, 296], [32, 291], [46, 286], [60, 290], [74, 300]], wig: 1.5, seed: 11, a: 0.85, Rup: 58, Rdn: 60, rough: 0.06,
+  // (its lip's bulge round the buttress rounded off, 2026-11-08: its sharp point folded the 58 m bench above it into a
+  // crease 63 degrees steep across)
+  F.push(new Band({ name: 'The Big Ones', lip: [[-44, 296], [-22, 291], [0, 288], [14, 290], [24, 293], [36, 290.5], [48, 287], [60, 290], [74, 300]], wig: 1.5, seed: 11, a: 0.85, Rup: 58, Rdn: 60, rough: 0.06,
     pts: [[-44, 0], [-30, 7], [-16, 10], [-6, 8], [4, 11], [12, 16], [20, 17], [28, 12], [34, 12], [41, 18], [49, 19], [58, 12], [74, 0]] }));
   // the buttress: a prow of rock under the Big Ones' middle, standing out of the apron
-  F.push(new Outcrop({ name: 'The buttress', x: 19, z: 304, len: 12, hw: 4.5, hUp: 7, hDn: 3.5, w: 1.6, round: 0.55, rot: 0.1, wob: 1.0, seed: 142 }));
+  // (on the apron clear of the band's face, 2026-11-08: standing in the face's foot the two drawn rocks crossed)
+  F.push(new Outcrop({ name: 'The buttress', x: 19, z: 318, len: 12, hw: 4.5, hUp: 4.5, hDn: 3, w: 1.6, round: 0.55, rot: 0.1, wob: 1.0, seed: 142 }));
   // ---- below the Couloirs: rock kickers and outcrops over the fan
   F.push(new Outcrop({ name: 'Rock kicker (fan)', x: 74, z: 214, len: 5.5, hw: 3.4, hUp: 0.15, hDn: 5.4, rot: 0.1, wob: 0.4, seed: 81 }));
   F.push(new Outcrop({ name: 'Rock drop (fan)', x: 114, z: 228, len: 7, hw: 4, hUp: 0.2, hDn: 4.0, rot: -0.3, wob: 0.8, seed: 82 }));
@@ -571,12 +695,12 @@ function layout() {
     // [x, z, len, hw, height at the downhill end, rot, wob]
     [-44, 92, 4, 3, 2.4, 0.3, 0.6], [42, 16, 4.5, 3.4, 2.6, -0.2, 0.7], [-22, 262, 5, 3.6, 2.8, 0.5, 0.8], [-2, 150, 4, 3, 2.2, -0.4, 0.6],
     [84, 392, 5, 3.4, 3, 0.2, 0.7], [104, 520, 4.5, 3.2, 2.6, -0.3, 0.7], [-136, 168, 4.5, 3.2, 2.6, 0.4, 0.6], [-118, 330, 4, 3, 2.4, -0.2, 0.6],
-    [6, 238, 3, 2.2, 1.6, 0.8, 0.5], [-66, 248, 3.2, 2.4, 1.8, -0.6, 0.5], [56, 358, 3.6, 2.6, 2.0, 0.4, 0.6], [-30, 340, 2.6, 2, 1.4, 1.1, 0.4],
+    [6, 238, 3, 2.2, 1.6, 0.8, 0.5], [-66, 248, 3.2, 2.4, 1.8, -0.6, 0.5], [60, 376, 3.6, 2.6, 2.0, 0.4, 0.6], [-30, 340, 2.6, 2, 1.4, 1.1, 0.4],
     [140, 340, 4, 3, 2.2, 0.2, 0.6], [-150, 300, 3.4, 2.4, 2.0, -0.5, 0.5], [30, 452, 2.8, 2, 1.5, 0.6, 0.4], [-60, 520, 3, 2.2, 1.7, -0.2, 0.4],
     [74, 300, 3, 2.4, 1.8, 0.9, 0.5], [-90, 172, 2.6, 2, 1.4, 0.3, 0.4], [128, 160, 3, 2.2, 1.8, -0.7, 0.5], [-14, 556, 3.4, 2.4, 1.6, 0.4, 0.5],
     // (bigger islands between the lines: something to ride round, drop or look at)
     // (off the lines below the drops and kickers: a rider coming off one has the run-out clear)
-    [118, 382, 9, 5, 5, -0.2, 1.4], [-128, 222, 7, 4, 4, 0.5, 1.1], [-146, 262, 8, 4.5, 4.5, 0.3, 1.2], [142, 300, 9, 5, 5, -0.4, 1.3],
+    [118, 382, 9, 5, 5, -0.2, 1.4], [-128, 222, 7, 4, 4, 0.5, 1.1], [-146, 262, 8, 4.5, 4.5, 0.3, 1.2], [148, 314, 9, 5, 5, -0.4, 1.3],
   ];
   rocks.forEach(([x, z, len, hw, h, rot, wob], i) => F.push(new Outcrop({ name: 'Rock island', x, z, len, hw, hUp: 0.4, hDn: h, w: 0.9, round: 0.6, rot, wob, seed: 131 + i })));
   // small rock steps on the walls of the bowl (rock bands showing through, 1.5 to 3 m)
@@ -586,7 +710,75 @@ function layout() {
   F.push(new Outcrop({ name: 'Boulder', x: -126, z: 548, len: 5, hw: 3, hUp: 0.4, hDn: 2.6, w: 1.2, round: 0.8, rot: 0.4, wob: 0.6, seed: 104 }));
   F.push(new Outcrop({ name: 'Boulder', x: -86, z: 562, len: 4.5, hw: 2.6, hUp: 0.4, hDn: 2.2, w: 1.1, round: 0.8, rot: -0.3, wob: 0.5, seed: 105 }));
   F.push(new Outcrop({ name: 'Boulder', x: -58, z: 552, len: 5, hw: 3.2, hUp: 0.3, hDn: 2.8, w: 1.2, round: 0.75, rot: 0.7, wob: 0.6, seed: 106 }));
+  sideLayout(F);
   return F;
+}
+/* ---- more to ride (2026-11-08, for Leon's "more rocks and drops under the lift" and "expand Freeride a lot: every kind
+   of feature a Freeride World Tour venue has"): under the Face Chair's line (x 28), and the two side bowls */
+function sideLayout(F) {
+  // ---- under the Face Chair: a rock step, a cluster of small drops with gaps between them, a drop, a low band
+  F.push(new Band({ name: 'Lift line step', lip: [[14, 170], [30, 172], [46, 176]], wig: 0.8, seed: 171, a: 0.5, Rup: 12, Rdn: 14, rough: 0.2, pts: [[13, 0], [19, 2.6], [30, 3.4], [40, 2.8], [46, 0]] }));
+  // (either side of the line, so its towers have room between them)
+  for (const [x, z, len, hw, h, rot, sd] of [[16, 334, 4.5, 3, 2.6, 0.2, 172], [40, 343, 4, 2.8, 3.2, -0.3, 173], [18, 354, 4.5, 3.2, 2.4, 0.5, 174]])
+    F.push(new Outcrop({ name: 'Lift line rocks', x, z, len, hw, hUp: 0.4, hDn: h, w: 0.9, round: 0.6, rot, wob: 0.5, seed: sd }));
+  F.push(new Outcrop({ name: 'Lift line drop', x: 40, z: 374, len: 6, hw: 3.6, hUp: 0.2, hDn: 3.6, rot: 0.1, wob: 0.6, seed: 175 }));
+  F.push(new Band({ name: 'Lift line band', lip: [[10, 545], [28, 548], [46, 546]], wig: 0.7, seed: 176, a: 0.55, Rup: 12, Rdn: 16, rough: 0.15, pts: [[9, 0], [16, 3], [28, 3.8], [38, 3.2], [46, 0]] }));
+
+  // ---- the West Glades (x -268 to -436): a snow cornice along the brink with a way in, rollers, a natural halfpipe, hips,
+  // a step-down, a gap between rocks, a rock rail and logs (freeride.js), pillows; glades of trees lower down
+  F.push(new Band({ name: 'West cornice', look: 'snow', lip: [[-430, 9], [-400, 6], [-370, 8], [-340, 7], [-310, 10]], wig: 1.0, seed: 181, a: 0.3, Rup: 7, Rdn: 14, rough: 0.15,
+    pts: [[-432, 0], [-424, 2.4], [-404, 3.4], [-384, 2.8], [-372, 0.2], [-360, 0.2], [-350, 2.6], [-326, 3.2], [-310, 0]] }));
+  F.push(new Lip({ xa: -428, xb: -312, z: 5.6, h0: 0.6, up: 3, dn: 0.5, seed: 182, slant: 0.01, name: 'Cornice' }));
+  for (const [z, a0] of [[70, 0], [122, 1], [178, 2]])
+    F.push(new Band({ name: 'The rollers', lip: [[-440, z + 4], [-410, z], [-372, z + 3]], wig: 1.4, seed: 183 + a0, a: 0.45, Rup: 16, Rdn: 22, rock: false, fw: 14, pts: [[-444, 0], [-430, 2.6], [-396, 3.2], [-374, 2.4], [-366, 0]] }));
+  F.push(new HalfPipe({ name: 'The natural halfpipe', x: -320, za: 40, zb: 330, D: 6, F: 3.5, W: 9, seed: 6 }));
+  F.push(new Pillows({ name: 'The hips', list: [{ x: -348, z: 210, r: 7, h: 3.2, e: 1.7, a: 0.7 }, { x: -404, z: 262, r: 6.5, h: 3.0, e: 1.6, a: -0.7 }, { x: -296, z: 372, r: 6, h: 2.8, e: 1.5, a: 0.6 }] }));
+  F.push(new Band({ name: 'West step-down', lip: [[-428, 300], [-406, 297], [-384, 300]], wig: 0.6, seed: 186, a: 0.4, Rup: 12, Rdn: 12, rough: 0.12, pts: [[-430, 0], [-424, 4], [-392, 4], [-384, 0]] }));
+  F.push(new Band({ name: 'West step-down', lip: [[-424, 315], [-406, 313], [-388, 316]], wig: 0.6, seed: 187, a: 0.3, Rup: 9, Rdn: 20, rough: 0.12, pts: [[-426, 0], [-420, 4], [-394, 4], [-388, 0]] }));
+  F.push(new Outcrop({ name: 'Gap rock (takeoff)', x: -352, z: 344, len: 5.5, hw: 3.4, hUp: 0.15, hDn: 3.6, rot: 0.05, wob: 0.4, seed: 188 }));
+  F.push(new Outcrop({ name: 'Gap rock', x: -352, z: 356, len: 6, hw: 4, hUp: 1.2, hDn: 2.2, w: 1.0, round: 0.6, rot: -0.1, wob: 0.6, seed: 189 }));
+  F.push(new Pillows({ name: 'Glade pillows', list: pillowGarden(-300, 440, 24, 18, 16, 11) }));
+  for (const [x, z, len, hw, h, rot] of [[-420, 380, 5, 3.4, 2.6, 0.3], [-336, 500, 4.5, 3, 2.2, -0.4], [-410, 470, 6, 4, 3.0, 0.5], [-280, 300, 4, 3, 2.0, 0.8]])
+    F.push(new Outcrop({ name: 'Rock island', x, z, len, hw, hUp: 0.4, hDn: h, w: 0.9, round: 0.6, rot, wob: 0.6, seed: 190 + x + z }));
+
+  // ---- the Spine Wall (x 272 to 432): snow cornices along the brink, Alaska-style spines, a couloir between two rock ribs
+  // ending in cliffs, a big band of rock with a step-down under it, cliffs under the lift, wind lips, rock islands
+  F.push(new Band({ name: 'East cornices', look: 'snow', lip: [[276, 8], [300, 5], [326, 7], [346, 6]], wig: 0.9, seed: 201, a: 0.3, Rup: 7, Rdn: 14, rough: 0.2,
+    pts: [[274, 0], [282, 3.0], [300, 4.0], [314, 2.6], [322, 0.2], [330, 0.2], [336, 2.2], [346, 0]] }));
+  F.push(new Lip({ xa: 276, xb: 346, z: 4.6, h0: 0.7, up: 3, dn: 0.5, seed: 202, name: 'Cornice' }));
+  F.push(new Spines({ name: 'The Spine Wall', za: 18, zb: 270, cross: 0.78, list: [{ x: 292, h: 7, ph: 0.9, za: 24, zb: 230 }, { x: 306, h: 9, ph: 2.6 }, { x: 320, h: 8.5, ph: 4.4, zb: 250 }, { x: 334, h: 6, ph: 1.7, za: 30, zb: 210 }] }));
+  const E0 = new Rib({ name: 'East couloir rib', wigL: 1.2, wigR: 1.0, wwL: 9, xl: [[0, 350], [60, 352], [130, 351]], xr: [[0, 361], [40, 362], [70, 366], [130, 365]], zTop: 4, grow: 16, D: 11, Dpts: [[4, 8], [40, 12], [90, 10], [128, 12]], zEnd: 128, seed: 203, crest: 0.1 });
+  // (its choke 7 m between the walls' tops, about 3 m of floor, as Corbet's)
+  const E1 = new Rib({ name: 'East couloir rib', wigL: 1.0, wigR: 1.4, wwR: 9, xl: [[0, 372], [40, 372.5], [70, 373], [130, 375]], xr: [[0, 384], [130, 387]], zTop: 6, grow: 16, D: 12, Dpts: [[6, 9], [50, 13], [100, 11], [134, 12]], zEnd: 134, seed: 204, crest: 0.12 });
+  F.push(E0, E1);
+  F.push(new Gully({ name: 'The east couloir', ribs: [E0, E1], left: { L: z => E0.R(z), ww: E0.ww }, right: { L: z => E1.L(z), ww: E1.ww }, xa: 356, xb: 378, za: 12, zb: 70, zc: 140, E: 3.2 }));
+  F.push(new Band({ name: 'East couloir cornice', look: 'snow', z: 10, wig: 0.25, seed: 205, a: 0.2, Rup: 6, Rdn: 12, pts: [[362, 0], [363.4, 3.2], [369.6, 3.2], [371, 0]] }));
+  F.push(new Lip({ name: 'Wind lip', xa: 280, xb: 342, z: 292, h0: 0.85, up: 4.5, dn: 1.0, seed: 206, slant: 0.05 }));
+  F.push(new Band({ name: 'East big band', lip: [[292, 352], [318, 346], [346, 350], [372, 357], [398, 352]], wig: 1.4, seed: 207, a: 0.75, Rup: 30, Rdn: 36, rough: 0.1,
+    pts: [[290, 0], [298, 6], [314, 9], [326, 12], [338, 8], [346, 0.4], [352, 0.4], [358, 7], [372, 10], [390, 6], [398, 0]] }));
+  F.push(new Band({ name: 'East step-down', lip: [[300, 400], [320, 397], [340, 399]], wig: 0.6, seed: 208, a: 0.35, Rup: 10, Rdn: 18, pts: [[300, 0], [306, 4.5], [334, 4.5], [340, 0]] }));
+  F.push(new Band({ name: 'Lift cliffs', lip: [[392, 214], [408, 210], [426, 215], [436, 220]], wig: 1.2, seed: 209, a: 0.7, Rup: 22, Rdn: 28, rough: 0.12, pts: [[390, 0], [398, 7], [410, 11], [422, 9], [434, 0]] }));
+  F.push(new Outcrop({ name: 'Rock kicker (east)', x: 300, z: 470, len: 5.5, hw: 3.4, hUp: 0.15, hDn: 4.8, rot: -0.08, wob: 0.4, seed: 210 }));
+  for (const [x, z, len, hw, h, rot] of [[402, 300, 5, 3.4, 2.8, 0.3], [424, 420, 5.5, 3.6, 3.2, -0.4], [360, 450, 4.5, 3, 2.4, 0.6], [293, 130, 4, 3, 2.0, -0.2], [396, 520, 5, 3.4, 2.6, 0.4]])
+    F.push(new Outcrop({ name: 'Rock island', x, z, len, hw, hUp: 0.4, hDn: h, w: 0.9, round: 0.6, rot, wob: 0.6, seed: 211 + x + z }));
+  F.push(new Pillows({ name: 'East pillows', list: pillowGarden(366, 500, 16, 12, 10, 13) }));
+
+  // ---- the Peak (2026-11-08): the 34 degree face from the true summit (z -350) down to the shoulder (z -185), its own
+  // chairlift up from the shoulder (freeride.js): a snow cornice along the crest with a way in under the lift, a cliff band
+  // on its west side, a couloir between two rock ribs, a band on its east side, rock islands
+  F.push(new Band({ name: 'Peak cornice', look: 'snow', lip: [[-136, -334], [-100, -338], [-60, -337], [-20, -336], [8, -333]], wig: 1.0, seed: 221, a: 0.3, Rup: 7, Rdn: 14, rough: 0.15,
+    pts: [[-138, 0], [-128, 3], [-100, 4], [-80, 3.4], [-74, 0.2], [-48, 0.2], [-42, 3], [-14, 3.6], [8, 0]] }));
+  F.push(new Lip({ xa: -134, xb: -76, z: -338.6, h0: 0.6, up: 3, dn: 0.5, seed: 222, slant: 0.02, name: 'Cornice' }));
+  F.push(new Lip({ xa: -46, xb: 6, z: -337.4, h0: 0.6, up: 3, dn: 0.5, seed: 227, slant: 0.02, name: 'Cornice' }));
+  F.push(new Band({ name: 'Peak cliffs', lip: [[-146, -284], [-118, -287], [-90, -283]], wig: 1.2, seed: 223, a: 0.5, Rup: 14, Rdn: 20, rough: 0.15,
+    pts: [[-148, 0], [-138, 5], [-118, 8], [-102, 6.5], [-90, 0]] }));
+  const P0 = new Rib({ name: 'Peak couloir rib', wigL: 1.4, wigR: 0.9, wwL: 9, xl: [[-340, 28], [-260, 30], [-230, 29]], xr: [[-340, 42], [-300, 43], [-260, 45], [-230, 44]], zTop: -340, grow: 14, D: 10, Dpts: [[-340, 7], [-300, 11], [-260, 9], [-236, 10]], zEnd: -236, seed: 224, crest: 0.1 });
+  const P1 = new Rib({ name: 'Peak couloir rib', wigL: 0.9, wigR: 1.4, wwR: 9, xl: [[-340, 55], [-300, 54], [-260, 56], [-230, 56]], xr: [[-340, 68], [-230, 72]], zTop: -338, grow: 14, D: 10, Dpts: [[-338, 7], [-300, 10], [-260, 11], [-232, 9]], zEnd: -232, seed: 225, crest: 0.12 });
+  F.push(P0, P1);
+  F.push(new Gully({ name: 'The Peak couloir', ribs: [P0, P1], left: { L: z => P0.R(z), ww: P0.ww }, right: { L: z => P1.L(z), ww: P1.ww }, xa: 40, xb: 58, za: -334, zb: -290, zc: -226, E: 2.6 }));
+  F.push(new Band({ name: 'Peak band (east)', lip: [[80, -263], [104, -259], [130, -263]], wig: 1.0, seed: 226, a: 0.55, Rup: 12, Rdn: 18, rough: 0.15, pts: [[78, 0], [86, 4], [104, 6], [122, 5], [132, 0]] }));
+  for (const [x, z, len, hw, h, rot] of [[-20, -300, 4, 3, 2.4, 0.3], [-104, -232, 5, 3.4, 2.8, -0.4], [100, -302, 4.5, 3, 2.6, 0.5], [2, -246, 4, 3, 2.2, -0.2], [-30, -214, 5, 3.4, 3.0, 0.2]])
+    F.push(new Outcrop({ name: 'Rock island', x, z, len, hw, hUp: 0.4, hDn: h, w: 0.9, round: 0.6, rot, wob: 0.6, seed: 230 + x + z }));
 }
 /* the pillow line: pillows stacked down the roll's steep fall line (x about -48 to -32), each a step under the last,
    getting bigger as it goes, with a few beside the line */
@@ -629,13 +821,31 @@ export class Land {
         if (!f.rock) { if (!this.snowCells.has(k)) this.snowCells.set(k, []); this.snowCells.get(k).push(f); }
       }
     }
+    this.rockCells = new Map();
+    for (const [k, l] of this.cells) { const r = l.filter(f => (f.rock || f.kind === 'pillows' || f.kind === 'lip') && f.onFace); if (r.length) this.rockCells.set(k, r); }
     this.G = (x, z) => this.at(x, z);
     this.ribs = this.features.filter(f => f.kind === 'rib');
     this.gullies = this.features.filter(f => f.kind === 'gully');
     this.spines = this.features.find(f => f.kind === 'spines');
+    this.snowy = this.features.filter(f => f.kind === 'hpipe' || f.look === 'snow');
+  }
+  /* (2026-11-08, with P: what counts as a cliff) true on a rock face: a band's face from its lip to its foot, a rib's
+     steep side wall or its end cliff, an outcrop's sides and lip, 0.3 m either side. Everything else is snow, however
+     steep: you stand on it, turn on it and ride it; a rock face is a wall to fall off or bounce off (skier.js). */
+  cliff(x, z) {
+    const l = this.rockCells.get(Math.floor(x / this.B) * 8192 + Math.floor(z / this.B)); if (!l) return false;
+    for (let i = 0; i < l.length; i++) if (l[i].onFace(x, z, 0.3)) return true;
+    return false;
   }
   // the ground with nothing on it but the long profile, the bowl, its arms and the fall lines
-  base(x, z) { return baseZ(z - zs(x)) + arms(x, z) + fallLines(x, z) + rolls(x, z) + runout(x, z) + far(x, z); }
+  base(x, z) {
+    let y = baseZ(z - zs(x)) + arms(x, z);
+    /* (the side bowls: the higher of the surfaces, the ridge between rounded. Past 120 m out on each side only: nearer
+       the middle a side's surface is so far under the main one, past its ridge, that it adds nothing) */
+    if (x < -120) y = smax(y, sideY(SIDES[0], x, z), 8);
+    else if (x > 120) y = smax(y, sideY(SIDES[1], x, z), 8);
+    return y + fallLines(x, z) + rolls(x, z) + runout(x, z) + far(x, z);
+  }
   at(x, z) {
     let y = this.base(x, z);
     const l = this.cells.get(Math.floor(x / this.B) * 8192 + Math.floor(z / this.B));
@@ -662,19 +872,28 @@ export class Land {
       if (x > l + (r.wwL > 4 ? -r.wwL : 1) && x < rr - (r.wwR > 4 ? -r.wwR : 1)) return Math.min(ny, 0.56 + 0.3 * smoothstep(0.1, 0.55, simplex(x * 0.16 + r.seed, z * 0.09) * 0.7 + 0.3 * simplex(x * 0.5, z * 0.4)));
     }
     for (const g of this.gullies) if (x > g.xa && x < g.xb && z > g.za && z < g.zc) return Math.max(ny, 0.8);
+    // (2026-11-08) the natural halfpipe is a snow gully (its walls are steep only for snow), the cornices are snow
+    for (const h of this.snowy) if (x > h.x0 && x < h.x1 && z > h.z0 && z < h.z1) return Math.max(ny, 0.8);
     const s = this.spines; if (s && x > s.x0 && x < s.x1 && z > s.za && z < s.zb) return ny + (Math.max(ny, 0.8) - ny) * 0.7;
     // the ribs down the face: rock in streaks along their crests (the shader's noise breaks it up)
     const c = fallCrest(x, z); if (c > 0) ny -= 0.15 * c * c;
     // thin snow over rock in streaks down the fall line here and there on the open face (wind-scoured, rock just under)
-    if (z > 10 && z < 560 && a0(x) < 150) ny -= 0.09 * smoothstep(0.25, 0.6, fbm(x * 0.034 + 7, z * 0.009 - 2, 2)) * (1 - smoothstep(470, 560, z));
-    // the bowl's side walls, their upper parts most, and the peak behind the summit
-    const a = Math.abs(x); if (a > 150) ny -= 0.07 * smoothstep(150, 200, a) * smoothstep(-40, 40, z) * (1 - smoothstep(420, 620, z));
+    // (and on the side bowls' faces, 2026-11-08)
+    const a = Math.abs(x), sd = a > 200 ? Math.abs(a - 352) : 1e9;
+    if (z > 10 && z < 560 && (a0(x) < 150 || sd < 84)) ny -= 0.09 * smoothstep(0.25, 0.6, fbm(x * 0.034 + 7, z * 0.009 - 2, 2)) * (1 - smoothstep(470, 560, z));
+    // the bowls' side walls (the main bowl's arms, the side bowls' outer walls), their upper parts most, and the peak
+    // behind the summit (2026-11-08: past 200 m out the side bowls' faces are not walls)
+    const wall = a < 230 ? smoothstep(150, 200, a) : smoothstep(84, 124, sd);
+    if (wall > 0) ny -= 0.07 * wall * smoothstep(-40, 40, z) * (1 - smoothstep(420, 620, z));
     if (z < -150) ny -= 0.12 * smoothstep(-150, -230, z) * (1 - smoothstep(-330, -360, z));
     return ny;
   }
   // where the terrain's fine patches (st m a cell) must sit under the rock meshes: their visual height, or Infinity
   dipTarget(x, z, st) {
     if (st > 1.75) return Infinity;
+    // (only where the drawn rock covers the snow, frrock.js markCover: anywhere else the lowered terrain was a hole)
+    const C = this.cover;
+    if (C) { const i = Math.floor((x - C.x0) / C.r), j = Math.floor((z - C.z0) / C.r); if (i < 0 || j < 0 || i >= C.W || j >= C.H || !C.a[j * C.W + i]) return Infinity; }
     const l = this.dipCells.get(Math.floor(x / this.B) * 8192 + Math.floor(z / this.B)); if (!l) return Infinity;
     let t = Infinity, y = null;
     for (const f of l) { const v = f.dip(x, z, st, this.G, y ?? (y = this.at(x, z))); if (v < t) t = v; }

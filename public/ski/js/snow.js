@@ -17,9 +17,9 @@
 // powder takes a deep soft-walled trench with lumps heaped beside it; ice only a fine white scratch; a landing presses a
 // short flat patch; a fall leaves a hollow.
 import * as THREE from 'three';
-import { snowUniforms } from './materials.js?v=19';
-import { height, surface, getPark } from './terrain.js?v=19';
-import { snowKind, SNOW } from './env.js?v=19';
+import { snowUniforms } from './materials.js?v=20';
+import { height, surface, getPark } from './terrain.js?v=20';
+import { snowKind, SNOW } from './env.js?v=20';
 const SNOW_POWDER = SNOW.powder, SNOW_SPRING = SNOW.spring, SNOW_ICE = SNOW.ice;
 
 const FINE = { W: 1024, H: 2048, SX: 64, SZ: 128, back: 0.72, step: 0.5, bx: -32, bz: 0 };   // (bx, bz: where its tiles start, so no tile edge runs down the Jump Line's middle lane)
@@ -289,7 +289,9 @@ export class Tracks {
     const T = snowKind().track, K = sk.K || {};
     const one = K.tracks === 1 || rig.skiL === rig.skiR;
     const list = rig.tracks || null, nT = Math.min(8, list ? list.length : one ? 1 : 2);
-    const onSnow = sk.state === 'ground' || (sk.state === 'crash' && sk.p.y < height(sk.p.x, sk.p.z) + 0.3);
+    // (towed up a T-bar, tbar.js, the skis run on the snow of its track too; not on a chairlift)
+    const towed = sk.state === 'lift' && sk.liftKind === 'tbar';
+    const onSnow = sk.state === 'ground' || towed || (sk.state === 'crash' && sk.p.y < height(sk.p.x, sk.p.z) + 0.3);
     const crash = sk.state === 'crash';
     const turn = sk.turnRate || 0, edge = Math.min(1, Math.abs(sk.edge || 0)), sink = sk.sink || 0;
     const speed = Math.hypot(sk.v.x, sk.v.z), brake = sk.brake || 0;

@@ -1,29 +1,30 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=19';
-import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=19';
-import { makeMaterials, snowUniforms } from './materials.js?v=19';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=19';
-import { Mountain, SPOTS } from './dem.js?v=19';
-import { Skier } from './skier.js?v=19';
-import { Rig } from './rig.js?v=19';
-import './board.js?v=19';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
-import './scoot.js?v=19';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
-import './sled.js?v=19';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
-import { Tricks } from './tricks.js?v=19';
-import { Input } from './input.js?v=19';
-import { Cams } from './camera.js?v=19';
-import { Tracks, Spray } from './snow.js?v=19';
-import { Hud } from './hud.js?v=19';
-import { Sound } from './sound.js?v=19';
-import { Net } from './net.js?v=19';
-import { mergeGear } from './gear.js?v=19';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=20';
+import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=20';
+import { makeMaterials, snowUniforms } from './materials.js?v=20';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=20';
+import { Mountain, SPOTS } from './dem.js?v=20';
+import { Skier } from './skier.js?v=20';
+import { Rig } from './rig.js?v=20';
+import './board.js?v=20';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
+import './scoot.js?v=20';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
+import './sled.js?v=20';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
+import { Tricks } from './tricks.js?v=20';
+import { Input } from './input.js?v=20';
+import { Cams } from './camera.js?v=20';
+import { Tracks, Spray } from './snow.js?v=20';
+import { Hud } from './hud.js?v=20';
+import { Sound } from './sound.js?v=20';
+import { Net } from './net.js?v=20';
+import { mergeGear } from './gear.js?v=20';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Touch, TOUCH_GRABS } from './touch.js?v=19';
-import { Locker, loadLook, cleanLook } from './locker.js?v=19';
-import { planLift, Lift } from './lift.js?v=19';      // (L: the chairlift)
-import { makeFreeride } from './freeride.js?v=19';    // (F: the Freeride mountain)
-import { buildRock, buildJibs } from './frrock.js?v=19';
+import { Touch, TOUCH_GRABS } from './touch.js?v=20';
+import { Locker, loadLook, cleanLook } from './locker.js?v=20';
+import { planLift, Lift } from './lift.js?v=20';      // (L: the chairlift)
+import { planTbar, Tbar } from './tbar.js?v=20';      // (J: the Jump Line's T-bar)
+import { makeFreeride } from './freeride.js?v=20';    // (F: the Freeride mountain)
+import { buildRock, buildJibs } from './frrock.js?v=20';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
@@ -50,8 +51,10 @@ function detectTier() {
 const det = detectTier();
 const tier = opts.gfx === 'auto' ? det.tier : opts.gfx;
 const Q = {
-  low: { tier: 'low', pr: [0.55, 0.9], start: 0.8, shadows: true, minLeaf: 32, K: 0.9, seg: 20, aa: false, fine: false },
-  medium: { tier: 'medium', pr: [0.7, 1.0], start: 1.0, shadows: true, minLeaf: 16, K: 1.2, seg: 20, aa: false, fine: true },
+  // (E, 2026-11-08, the lag pass: bigger terrain patches split later, the same detail on the screen in about a third
+  // fewer draws; mtnLeaf: the smallest patch on a mountain map, Freeride's, never coarser near the rider than before)
+  low: { tier: 'low', pr: [0.55, 0.9], start: 0.8, shadows: true, minLeaf: 64, mtnLeaf: 32, K: 0.56, seg: 32, aa: false, fine: false },
+  medium: { tier: 'medium', pr: [0.7, 1.0], start: 1.0, shadows: true, minLeaf: 32, mtnLeaf: 16, K: 0.75, seg: 32, aa: false, fine: true },
   high: { tier: 'high', pr: [0.8, Math.min(1.5, devicePixelRatio || 1)], start: Math.min(1.25, devicePixelRatio || 1), shadows: true, minLeaf: 16, K: 1.4, seg: 28, aa: true, fine: true },
 }[tier] || null;
 const q = Q || { tier: 'medium', pr: [0.7, 1], start: 1, shadows: true, minLeaf: 16, K: 1.6, aa: false, fine: true };
@@ -83,9 +86,9 @@ const fr = !mtn && opts.map === 'freeride' ? makeFreeride(q) : null;
 const park = fr ? fr.park : mtn ? emptyPark() : opts.map === 'jumpline' ? makeJumpLine() : makePark(); setPark(park);
 // (L) the chairlift beside the Jump Line: where it goes, and the flat snow under its stations (added to the park's height
 // before the terrain is built)
-const liftPlan = (fr || !mtn && opts.map === 'jumpline') && !qs.has('nolift') ? planLift(park) : null;   // (F: Freeride's runs from its base to the ridge, park.liftLine)   // (?nolift: without it, for tests)
+const liftPlan = (fr || !mtn && opts.map === 'jumpline') && !qs.has('nolift') ? (fr ? planLift : planTbar)(park) : null;   // (F: Freeride's runs from its base to the ridge, park.liftLine)   // (?nolift: without it, for tests)   // (J: the Jump Line's is a T-bar, tbar.js)
 const sky = makeSky(scene, renderer, q, !!mtn);
-const terrain = new Terrain(scene, mats.snow, { minLeaf: q.minLeaf, K: q.K, seg: q.seg, budget: q.tier === 'low' ? 3 : 4, far: q.tier === 'low' ? 2000 : 2600, root: mtn ? { x0: -4096, z0: -4096, size: 8192 } : null });
+const terrain = new Terrain(scene, mats.snow, { minLeaf: q.minLeaf, mtnLeaf: q.mtnLeaf, K: q.K, seg: q.seg, budget: q.tier === 'low' ? 3 : 4, far: q.tier === 'low' ? 2000 : 2600, root: mtn ? { x0: -4096, z0: -4096, size: 8192 } : null });
 const jumpLods = [], JUMP_FAR = q.tier === 'low' ? 110 : 150;
 {
   /* (2026-11-06, the lag pass: a jump's three takeoffs side by side are one mesh and one draw call; they were one each,
@@ -138,7 +141,7 @@ const skier = new Skier(park);
 skier.trees = forest;
 // (L) the chairlift (its model loads in the background, in before the shaders are compiled at boot); its towers and the
 // stations' piers are hit as trees are
-const lift = liftPlan ? new Lift(scene, liftPlan, q) : null;
+const lift = liftPlan ? (liftPlan.tbar ? new Tbar(scene, liftPlan, q) : new Lift(scene, liftPlan, q)) : null;   // (J: tbar.js has the same interface)
 const liftReady = lift ? lift.load().catch(e => console.warn('lift', e)) : null;
 if (lift) skier.trees = lift.withTowers(forest);
 sky.env.attach(skier);       // the snow kind's riding (skier.snowK) and look, from the home screen's 'Time, sky and snow' (env.js)
@@ -147,6 +150,7 @@ const hud = new Hud();
 const tricks = new Tricks(t => { hud.trick(t); if (t.name && !t.banked && t.quality !== 'bail') net.trick(t.name, t.points); });
 const input = new Input(canvas);
 const cams = new Cams(camera, park);
+cams.attachLook(canvas, input);                          // (R: dragging looks round in first person)
 const touch = new Touch(input, () => { opts.cam = cams.next(); hud.flash({ chase: 'Chase camera', far: 'Far chase', pov: 'First person', film: 'Filmer' }[opts.cam], 900); });
 Object.defineProperty(input.touch, 'grabId', { get: () => TOUCH_GRABS[input.touch.sel] });
 const sound = new Sound();
@@ -163,7 +167,7 @@ const START = mtn ? (() => {
     x += dx * 2; z += dz * 2;
   }
   return { x, z, v: 2, yaw: Math.atan2(dx, dz) };
-})() : { x: park.starts[0].x, z: park.starts[0].z, v: park.starts[0].v, yaw: 0 };
+})() : { x: park.starts[0].x, z: park.starts[0].z, v: park.starts[0].v, yaw: park.starts[0].yaw || 0 };   // (F: a start may face its own way, Freeride's lift tops)
 const toStart = () => { skier.spawn(START.x, START.z, START.v, START.yaw); skier.safe.length = 0; cams.first = true; };
 /* ---- what is drawn: the physics between its last two steps (2026-11-07, for "random frames where it like blinks" and
    "not glitchy for all"). The physics runs in fixed steps of 1/120 s, as many a frame as the frame's time holds: two
@@ -218,6 +222,7 @@ function applyRide() {
   mark(null, 'data-ride', opts.ride); mark(null, 'data-stance', opts.stance);
   stanceSeg.classList.toggle('hidden', opts.ride !== 'board');
   skier.kind = opts.ride; skier.goofy = opts.stance === 'goofy';
+  input.setKind(opts.ride);                            // (P: the ride's own trick keys, input.js RIDE_KEYS)
   if (hud.setRide) hud.setRide(opts.ride);            // (B: the grab lists name what you ride's grabs)
   if (touch.setRide) touch.setRide(opts.ride);
 }
@@ -247,16 +252,28 @@ function poseState(sk, t) {
     kind: sk.kind || 'ski', goofy: !!sk.goofy, sink: sk.sink || 0, railHitT: sk.railHitT ?? 9, railHit: sk.railHit || '', railHitDir: sk.railHitDir || 0, railKind: sk.rail ? sk.rail.kind : '',
     // (X: the extra rides' timed tricks going round: the trick's id or null, seconds into this round; and a sled's flat spin)
     act: sk.act || null, actT: sk.actT || 0, actN: sk.actN || 0, actNext: !!sk.actNext, flatSpin: sk.flatSpinOn ? 1 : 0,
+    // (P, 2026-11-08: one foot or feet together (R / E held), the push stroke, the last takeoff and landing, the crash, the
+    // order of tricks (the line's and this air's) and what S or N held will land you into; see scratchpad ski8/P/NOTES.md)
+    oneFoot: sk.oneFoot || 0, oneSide: sk.oneSide || 1, together: sk.together || 0, pushT: sk.pushT || 0, pushing: sk.pushing || 0, takeoff: sk.lastTakeoff || null,
+    landHit: sk.landHit || 0, landOff: sk.landOff || 0, landUp: sk.landUp || 0, fallT: sk.fallT || 0, fallKind: sk.fallKind || '', trickSeq: sk.trickSeq || [], airSeq: sk.airSeq || [], landInto: sk.landInto || null,
     // (the snow's normal under the rider, from the physics: the rig keeps a crash on the snow with it)
     n: sk.n,
     // (L: on the chairlift, 0 standing at the load or unload line to 1 seated, and the snow under the feet while standing)
-    liftSit: lift ? lift.sit : 0, liftFeet: lift && lift.feetOn ? lift.feet : null };
+    liftSit: lift ? lift.sit : 0, liftFeet: lift && lift.feetOn ? lift.feet : null,
+    // (J: which lift, 'chair' or 'tbar' ('' off a lift), and on the T-bar the bar's place: tbar { bar, axis, stem, hand,
+    // on, phase }, world Vector3s, see tbar.js. On a T-bar liftSit stays 0 and liftFeet is the snow under the feet.)
+    liftKind: sk.state === 'lift' ? sk.liftKind || 'chair' : '', tbar: sk.state === 'lift' && sk.liftKind === 'tbar' && lift && lift.pose ? lift.pose : null };
 }
 // (each frame as it was drawn, so the replay is as smooth as the riding was; moved: a jump to a new place, never
 // played between)
 function record(t) {
   const s = poseState(view, t);
   rec.push(Object.assign(s, { p: view.p.clone(), q: view.q.clone(), v: view.v.clone(), vel: view.v.clone(), com: view.com.clone(), n: skier.n.clone(), moved: skier.moved }));
+  // (J: the lift's vectors are the lift's own, changed every frame: copies, so a replay shows them as they were)
+  if (s.liftFeet) s.liftFeet = s.liftFeet.clone();
+  if (s.takeoff) s.takeoff = Object.assign({}, s.takeoff);   // (P: the skier's own, changed in place: copies too)
+  if (s.trickSeq.length) s.trickSeq = s.trickSeq.slice(); if (s.airSeq.length) s.airSeq = s.airSeq.slice();
+  if (s.tbar) s.tbar = { bar: s.tbar.bar.clone(), axis: s.tbar.axis.clone(), stem: s.tbar.stem.clone(), hand: s.tbar.hand, on: s.tbar.on, phase: s.tbar.phase };
   while (rec.length && rec[0].t < t - 15) rec.shift();
 }
 /* the replay at time rt: between the two recorded frames either side of it (in slow motion each recorded frame used to
@@ -286,7 +303,7 @@ $('totop').onclick = () => { toStart(); play(); };
   const box = $('starts');
   for (const s of park.starts) {
     const b = document.createElement('button'); b.textContent = s.name;
-    b.onclick = () => { if (s.here) toStart(); else { skier.spawn(s.x, s.z, s.v, 0); skier.safe.length = 0; cams.first = true; } play(); };
+    b.onclick = () => { if (s.here) toStart(); else { skier.spawn(s.x, s.z, s.v, s.yaw || 0); skier.safe.length = 0; cams.first = true; } play(); };   // (F: s.yaw)
     box.appendChild(b);
   }
 }
@@ -332,11 +349,12 @@ const net = new Net({
     try { await renderer.compileAsync(r.root, camera, scene); } catch (e) {}   // (R: another rider's gear may need shaders of its own: built before it is drawn)
     return r; },
   // (R: and what they wear, from the locker)
-  getLook: () => Object.assign({}, locker.look, { ride: opts.ride || 'ski', stance: opts.stance || 'regular' }),
+  getLook: () => Object.assign({}, locker.look, { ride: opts.ride || 'ski', stance: opts.stance || 'regular', map: opts.map || 'jumpline' }),   // (map: riders on another map are not drawn here)
   onTrick: (who, name, pts) => hud.remoteTrick(who, name, pts),
   onChat: m => hud.chat(m),
   onStatus: t => { $('mpstatus').textContent = t; $('mpleave').classList.toggle('hidden', !net.inRoom && !t.startsWith('Connecting')); },
 });
+net.map = opts.map || 'jumpline';
 if (lift) { net.lift = lift; net.xFns.push(x => lift.netX(x)); }   // (L: riders on the chairlift, in the state's x)
 $('mpname').value = opts.name || '';
 const mpName = () => { opts.name = $('mpname').value.trim(); save(); return opts.name || 'Rider'; };

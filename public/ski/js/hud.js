@@ -1,7 +1,7 @@
 // The heads-up display: speed, score and the line's multiplier, trick names as they land, rail balance, a grab list.
-import { GRABS, guideOf } from './grabs.js?v=19';
-import { keyHelp } from './input.js?v=19';
-import { rideGrabDef, rideGuide } from './board.js?v=19';      // (B: a board's, scooter's... own grab names in the lists)
+import { GRABS, guideOf } from './grabs.js?v=20';
+import { keyHelp } from './input.js?v=20';
+import { rideGrabDef, rideGuide } from './board.js?v=20';      // (B: a board's, scooter's... own grab names in the lists)
 
 const $ = id => document.getElementById(id);
 export class Hud {
@@ -18,11 +18,10 @@ export class Hud {
   setRide(kind) { this.kind = kind; if (this.scheme) this.setScheme(this.scheme); }
   setScheme(scheme) {
     this.scheme = scheme;
-    const h = keyHelp(scheme), other = this.kind && this.kind !== 'ski';
-    const nm = id => { const d = other && rideGrabDef(this.kind, id); return d ? d.name : GRABS[id].name; }, gd = id => other ? rideGuide(this.kind, id) : guideOf(id);
+    const h = keyHelp(scheme, this.kind || 'ski'), other = this.kind && this.kind !== 'ski';   // (P: the ride's own trick keys first)
+    const nm = id => { const d = other && rideGrabDef(this.kind, id); return d ? d.name : GRABS[id] ? GRABS[id].name : id; }, gd = id => other ? rideGuide(this.kind, id) : guideOf(id);
     const gl = h.grabs.map(([k, id]) => `${k.padEnd(2)} ${nm(id)}`).join('\n');
-    // (X: the scooter's, snowbike's and sled's tricks have no variations, so no E / R line for them)
-    const vary = !other || this.kind === 'board' ? '\n+E / +R  tweak or vary it' : '';
+    const vary = '\n+E / +R  another version of it';   // (P, 2026-11-08: every ride's tricks have their own E and R versions now)
     this.hint.textContent = gl + (scheme === 'shred' ? vary + '\n` hides this list' : '\nTab hides this list');
     const box = $('keys');
     // (X: on a scooter, snowbike or sled the grab keys are its tricks; on a sled the butter keys spin it flat on the snow)
@@ -46,10 +45,12 @@ export class Hud {
   frame(sk, fps) {
     const k = Math.round(sk.v.length() * 3.6);
     if (k !== this.lastK) { this.kmh.textContent = k; this.lastK = k; }
+    // (the page's words are only touched when they change: a write every frame makes the browser lay the page out again)
     const onRail = sk.state === 'rail';
-    this.rail.classList.toggle('on', onRail);
-    if (onRail) this.railI.style.left = (50 + Math.max(-1, Math.min(1, sk.balance)) * 48) + '%';
-    if (fps != null) this.fps.textContent = fps;
+    if (onRail !== this.wasRail) { this.rail.classList.toggle('on', onRail); this.wasRail = onRail; }
+    if (onRail) { const l = Math.round((50 + Math.max(-1, Math.min(1, sk.balance)) * 48) * 10) / 10; if (l !== this.railL) { this.railI.style.left = l + '%'; this.railL = l; } }
+    if (fps == null) this.lastFps = null;
+    else if (fps !== this.lastFps) { this.fps.textContent = fps; this.lastFps = fps; }
   }
   remoteTrick(who, name, pts) {
     const el = document.createElement('div'); el.className = 'trick remote';

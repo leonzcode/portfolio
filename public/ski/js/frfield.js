@@ -2,7 +2,7 @@
    shader's rock map (materials.js), from Freeride's snow without its rock faces, with the land's own say in how rocky
    each place is (frland.js rockNy). Sent the windows ({ N, r, x0, z0 } each), it posts back each one's texels as it
    finishes it: { i, data }. The same sums as materials.js bakeRockField, which the page falls back on. */
-import { Land } from './frland.js?v=19';
+import { Land } from './frland.js?v=20';
 
 onmessage = e => {
   const land = new Land();

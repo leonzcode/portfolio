@@ -3,7 +3,7 @@
 // park, the chairlift's drive) run all the time at the level the riding asks for; one-shots for the pop, landings, a
 // crash, meeting a rail or box, the "schat" of a swap and the chairlift's clack. The files load when you first ride;
 // until they have come the old sounds made on the fly stand in.
-import { ENV } from './env.js?v=19';
+import { ENV } from './env.js?v=20';
 
 const LOOPS = ['wind', 'carve', 'skid', 'powder', 'rail_grind', 'box_slide', 'ambience', 'lift_hum'];
 const SHOTS = ['pop', 'land', 'land_soft', 'crash', 'rail_hit', 'box_hit', 'schat', 'lift_clack'];
@@ -120,6 +120,9 @@ export class Sound {
     if (!this.ctx) return;
     const t = this.ctx.currentTime, sp = sk.v.length(), on = this.on ? 1 : 0;
     const ground = sk.state === 'ground', rail = sk.state === 'rail';
+    // (towed up a T-bar, tbar.js, the skis glide on the snow of its track at the tow's speed: the run's hiss and powder's
+    // hush follow them; a chairlift's seat has none)
+    const glide = ground || (sk.state === 'lift' && sk.liftKind === 'tbar');
     const powderSnow = ENV.snow === 'powder' || sk.surf === 1, ice = ENV.snow === 'ice', spring = ENV.snow === 'spring';
     const slide = (sk.slide || 0), brake = sk.brake || 0, edge = Math.abs(sk.edge || 0);
     const carve = ground ? Math.min(1, edge * sp * 0.07) * (powderSnow ? 0.35 : 1) : 0;
@@ -128,7 +131,7 @@ export class Sound {
       const set = (n, v) => n.g.gain.setTargetAtTime(v, t, 0.06);
       set(this.syn.wind, Math.min(0.5, sp * sp * 0.0009) * on);
       this.syn.wind.fl.frequency.setTargetAtTime(300 + sp * 30, t, 0.1);
-      set(this.syn.carve, Math.min(0.18, carve * 0.18) * on);
+      set(this.syn.carve, Math.min(0.18, carve * 0.18 + (glide && !ground ? sp * 0.01 : 0)) * on);
       set(this.syn.skid, Math.min(0.35, skid * 0.35 + (ground && sk.surf === 1 ? sp * 0.01 : 0)) * on);
       set(this.syn.grind, rail ? (0.12 + sp * 0.008) * on : 0);
       return;
@@ -138,9 +141,9 @@ export class Sound {
     const want = this._want || (this._want = {}), rate = this._rate || (this._rate = {});
     want.wind = Math.min(1, sp * sp * 0.0022 + (sk.state === 'air' ? 0.08 : 0));
     // the run's hiss: a steady glide sound that grows with speed, more with the edges set; quieter in powder
-    want.carve = ground ? Math.min(1, sp * 0.035 + carve * 0.6) * (powderSnow ? 0.25 : spring ? 0.7 : 1) : 0;
+    want.carve = glide ? Math.min(1, sp * 0.035 + carve * 0.6) * (powderSnow ? 0.25 : spring ? 0.7 : 1) : 0;
     want.skid = Math.min(1.2, skid * (ice ? 1.4 : 1));
-    want.powder = ground && powderSnow ? Math.min(1, sp * 0.07 + slide * 0.1) : 0;
+    want.powder = glide && powderSnow ? Math.min(1, sp * 0.07 + slide * 0.1) : 0;
     want.rail_grind = rail && metal ? Math.min(1, 0.35 + sp * 0.06) : 0;
     want.box_slide = rail && !metal ? Math.min(1, 0.4 + sp * 0.06) : 0;
     want.ambience = 1; want.lift_hum = this.lift;

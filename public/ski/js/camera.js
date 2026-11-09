@@ -1,8 +1,8 @@
 // Cameras: chase (behind the travel, held steady through spins), far chase, first person (a helmet camera at the
 // rider's eyes, turning with the head) and filmer (tripod spots beside the features, panning and zooming to follow).
 import * as THREE from 'three';
-import { height } from './terrain.js?v=19';
-import { FollowQ } from './rig.js?v=19';
+import { height } from './terrain.js?v=20';
+import { FollowQ } from './rig.js?v=20';
 
 const MODES = ['chase', 'far', 'pov', 'film'];
 const _lf = new THREE.Vector3(), _Y = new THREE.Vector3(0, 1, 0);   // (L: the chairlift's look round)
@@ -36,6 +36,31 @@ export class Cams {
     if (!this.onLift) this.orbit = Math.max(-2.6, Math.min(2.6, this.orbit));
   }
   next() { this.set(MODES[(MODES.indexOf(this.mode) + 1) % MODES.length]); return this.mode; }
+  /* looking round in first person (2026-11-08, for "still room to look around"): a drag turns the view from where the
+     ride aims it, up to about 100 degrees either way and 55 up or down, and it eases back a moment after it is let go.
+     The left button drags in the keys and Shredsauce schemes (the mouse is free there), the middle button in any (with
+     the pointer locked in the mouse scheme, input.js stops steering while it is held: input.lookDrag), a finger on the
+     screen away from the buttons on a touch screen. main.js calls it once. */
+  attachLook(canvas, input) {
+    const L = this.lk = { yaw: 0, pitch: 0, dx: 0, dy: 0, on: false, idle: 9, id: -1, x: 0, y: 0 };
+    const locked = () => document.pointerLockElement === canvas;
+    canvas.addEventListener('pointerdown', e => {
+      if (this.mode !== 'pov') return;
+      const ok = e.pointerType === 'touch' || e.button === 1 || (e.button === 0 && !locked() && input.scheme !== 'mouse');
+      if (!ok) return;
+      L.on = true; L.id = e.pointerId; L.x = e.clientX; L.y = e.clientY;
+      if (e.button === 1) { e.preventDefault(); input.lookDrag = true; }
+    });
+    addEventListener('pointermove', e => {
+      if (!L.on || e.pointerId !== L.id) return;
+      const lk = locked(), dx = lk ? e.movementX : e.clientX - L.x, dy = lk ? e.movementY : e.clientY - L.y;
+      L.x = e.clientX; L.y = e.clientY;
+      const k = e.pointerType === 'touch' ? 0.006 : 0.004;
+      L.dx -= dx * k; L.dy += dy * k;
+    });
+    const up = e => { if (e.pointerId === L.id) { L.on = false; L.id = -1; input.lookDrag = false; } };
+    addEventListener('pointerup', up); addEventListener('pointercancel', up);
+  }
   update(dt, sk, rig) {
     if (this.mode === 'fixed') return;
     this.n = (this.n || 0) + 1;                      // (frames: the chair's and the first-person camera's state is fresh)
@@ -173,8 +198,10 @@ export class Cams {
     // (started again when the camera was not in first person last frame, or the eyes jumped more than 3 m: a respawn, back
     // to the start; not on this.first alone, which lift.js sets every frame of the chairlift's express)
     const stale = F.n !== this.n - 1; F.n = this.n;
-    const reset = stale || !F.ok || F.at.distanceToSquared(rig.eye) > 9;
-    F.at.copy(rig.eye); F.ok = true;
+    // (the eyes as the ride's pose gives them: rig.fpEye, and rig.fpLook if it aims them; ski8/R/NOTES.md)
+    const EYE = rig.fpEye || rig.eye, LOOK = st === 'crash' ? null : rig.fpLook;
+    const reset = stale || !F.ok || F.at.distanceToSquared(EYE) > 9;
+    F.at.copy(EYE); F.ok = true;
     const ease = (x, to, rate) => reset ? to : x + (to - x) * (1 - Math.exp(-dt * rate));
     const snow = st === 'ground' || st === 'rail' || st === 'lift';
     F.lvl = ease(F.lvl, snow ? 1 : 0, snow ? 5 : 9);
@@ -199,7 +226,10 @@ export class Cams {
     if (reset || !F.rel) (F.rel || (F.rel = new THREE.Quaternion())).copy(rel);
     else F.rel.slerp(rel, 1 - Math.exp(-dt * (st === 'air' ? 3.5 : 8)));
     const G = _G.copy(B);
-    if (st !== 'lift') G.multiply(F.rel);
+    if (LOOK) {
+      // the ride's own aim: along fpLook, its up the ride's (fpUp) or the body's
+      _m4.lookAt(_O, LOOK, rig.fpUp || _pu.set(0, 1, 0).applyQuaternion(B)); G.setFromRotationMatrix(_m4).multiply(_FLIP);
+    } else if (st !== 'lift') G.multiply(F.rel);
     // the horizon held on the snow
     const f = _pf.set(0, 0, 1).applyQuaternion(G), u = _pu.set(0, 1, 0).applyQuaternion(G);
     const wl = Math.max(F.lvl, F.crash) * 0.85 * (1 - THREE.MathUtils.smoothstep(Math.abs(f.y), 0.85, 0.97));
@@ -217,14 +247,25 @@ export class Cams {
     const bf = _pu.set(0, 0, 1).applyQuaternion(rig.body.quaternion), slope = st === 'lift' ? 0 : Math.asin(THREE.MathUtils.clamp(bf.y, -0.9, 0.9));
     F.hp0 = reset ? hp : F.hp0 + (hp - F.hp0) * (1 - Math.exp(-dt * 1.5));    // (the head's usual pitch, slowly)
     const onSnow = hp - ((st === 'lift' ? -0.2 : R.pitch) + 0.35 * Math.min(0, slope) + 0.2 * (hp - F.hp0));
-    G.multiply(_pq.setFromAxisAngle(_X, (R.down + R.trick * F.trick) * (1 - F.lvl) + onSnow * F.lvl));
+    if (!LOOK) G.multiply(_pq.setFromAxisAngle(_X, (R.down + R.trick * F.trick) * (1 - F.lvl) + onSnow * F.lvl));
+    // looking round by a drag (attachLook): about the world's up on the snow, the view's own in the air, then up or down
+    const lk = this.lk;
+    if (lk) {
+      lk.yaw += lk.dx; lk.pitch += lk.dy; lk.dx = lk.dy = 0;
+      // (down only so far: straight down from the eyes the view went into the jacket's collar)
+      lk.yaw = THREE.MathUtils.clamp(lk.yaw, -1.75, 1.75); lk.pitch = THREE.MathUtils.clamp(lk.pitch, -0.95, 0.42);
+      lk.idle = lk.on ? 0 : lk.idle + dt;
+      if (lk.idle > 0.8) { const e = Math.exp(-dt * 3); lk.yaw *= e; lk.pitch *= e; }
+      if (Math.abs(lk.yaw) > 1e-4) { if (F.lvl > 0.5) G.premultiply(_pq.setFromAxisAngle(_Y, lk.yaw)); else G.multiply(_pq.setFromAxisAngle(_Y, lk.yaw)); }
+      if (Math.abs(lk.pitch) > 1e-4) G.multiply(_pq.setFromAxisAngle(_X, lk.pitch));
+    }
     // (L) on the chairlift the look keys and the mouse turn it (the same orbit as the chase camera's)
     if (st === 'lift' && this.orbit) G.premultiply(_pq.setFromAxisAngle(_Y, this.orbit));
     // the place: the eyes (a little forward, as a helmet camera sits)
-    const t = _pt.copy(rig.eye).addScaledVector(_pf.set(0, 0, 1).applyQuaternion(rig.headQ), R.fwd);
+    const t = _pt.copy(EYE).addScaledVector(_pf.set(0, 0, 1).applyQuaternion(rig.headQ), R.fwd);
     // (on the chair, the eyes where they are with the head facing the way the chair goes: its glances round do not
     // carry the view about)
-    if (st === 'lift' && rig.eyeOff && rig.headPos) t.copy(rig.eyeOff).applyQuaternion(rig.body.quaternion).add(rig.headPos).addScaledVector(_pf.set(0, 0, 1).applyQuaternion(rig.body.quaternion), R.fwd + 0.02);
+    if (st === 'lift' && rig.eyeOff && rig.headPos && !(rig.fpEye && rig.fpEye.distanceToSquared(rig.eye) > 1e-6)) t.copy(rig.eyeOff).applyQuaternion(rig.body.quaternion).add(rig.headPos).addScaledVector(_pf.set(0, 0, 1).applyQuaternion(rig.body.quaternion), R.fwd + 0.02);
     if (cw > 0.001) {
       // out of the body in a crash: 2.6 m back and 1.5 m up from your middle, looking at it
       const mid = rig.midOk ? _pl.copy(rig.mid) : _pl.set(sk.p.x, sk.p.y + 0.6, sk.p.z);
@@ -248,7 +289,7 @@ export class Cams {
 // eyeballs' middle, placeHead puts the eye 2 cm in front of it); its lowest
 // over the snow (m)
 const POV = {
-  ski: { pitch: -0.57, down: 0.36, trick: 0.3, fwd: -0.02, low: 0.25 },
+  ski: { pitch: -0.7, down: 0.4, trick: 0.3, fwd: -0.02, low: 0.25 },   // (2026-11-08: further down, more of the skis and both pole grips in view with the way ahead)
   board: { pitch: -0.64, down: 0.38, trick: 0.3, fwd: -0.02, low: 0.25 },
   scoot: { pitch: -0.62, down: 0.26, trick: 0.12, fwd: -0.02, low: 0.25 },
   bike: { pitch: -0.56, down: 0.24, trick: 0.12, fwd: -0.02, low: 0.25 },
@@ -256,4 +297,4 @@ const POV = {
 };
 Cams.POV = POV;   // (for tests)
 const _G = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _pf = new THREE.Vector3(), _pu = new THREE.Vector3(), _pl = new THREE.Vector3(), _pc = new THREE.Vector3(), _pt = new THREE.Vector3();
-const _cv = new THREE.Vector3(), _m4 = new THREE.Matrix4(), _X = new THREE.Vector3(1, 0, 0), _FLIP = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);   // (the head looks along +Z, a camera along -Z)
+const _O = new THREE.Vector3(), _cv = new THREE.Vector3(), _m4 = new THREE.Matrix4(), _X = new THREE.Vector3(1, 0, 0), _FLIP = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);   // (the head looks along +Z, a camera along -Z)

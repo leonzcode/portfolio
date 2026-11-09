@@ -4,14 +4,17 @@
 //   [Switch] [Left|Right] [Double] Cork|Rodeo|Bio|Misty 1080 [Mute to Tail]   or   Back Flip, Lincoln Loop, 360...
 // Rails: entry spin, 50-50 or slide, swaps and presses, exit spin ("Left 270 On, Slide, Back Swap, 270 Out").
 import * as THREE from 'three';
-import { GRABS, grabDef } from './grabs.js?v=19';
+import { GRABS, grabDef } from './grabs.js?v=20';
 // (B: on a snowboard the grabs, spins and slides have the board's own names, board.js)
-import { rideGrabDef, boardSpinParts, boardRailName } from './board.js?v=19';
+import { rideGrabDef, boardSpinParts, boardRailName } from './board.js?v=20';
 
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3();
 // (P: the extra rides name their own spins and flips: RIDE_SPIN[kind](A) gives the parts for a rotation, or null for
 // none; scoot.js and sled.js register theirs. A ride with one rides backwards 'Fakie', not 'Switch'.)
 export const RIDE_SPIN = {};
+// (S, 2026-11-08: a ride's own words for the snow moves, RIDE_WORDS[kind] = { lazy, nose, tail }: on the scooter and the
+// snowbike S is a manual and N a nose manual, not a lazy boy and a butter; scoot.js registers them)
+export const RIDE_WORDS = {};
 const MULT = ['', 'Double ', 'Triple ', 'Quad ', 'Quint '];
 const round180 = d => Math.round(d / 180) * 180;
 const round90 = d => Math.round(d / 90) * 90;
@@ -86,11 +89,11 @@ export class Tricks {
         R.swaps.push(half ? (e.mode === 'slide' ? (e.front ? 'Front Swap' : 'Back Swap') : '180 Switch-Up')
           : e.mode === 'slide' ? (flat ? 'to Boardslide' : 'to Lip Slide') : Math.cos(e.to) < 0 ? 'to Switch 50-50' : 'to 50-50');
       } break;
-      case 'railOff': if (this.railT) { this.railT.done = true; this.railT.press = e.press || 0; this.railT.how = e.how; } break;
+      case 'railOff': if (this.railT) { this.railT.done = true; this.railT.press = e.press || 0; this.railT.how = e.how; this.railT.one = this.railT.one || !!e.one; } break;
       case 'railFall': this.railT = null; break;
-      case 'butter': this.award(`${e.nose ? 'Nose' : 'Tail'} Butter ${round180(e.deg)}`, 100 + round180(e.deg) / 180 * 110, 'clean'); break;
+      case 'butter': { const W = RIDE_WORDS[sk.kind]; this.award(`${(W && (e.nose ? W.nose : W.tail)) || (e.nose ? 'Nose Butter' : 'Tail Butter')} ${round180(e.deg)}`, 100 + round180(e.deg) / 180 * 110, 'clean'); break; }   // (S: RIDE_WORDS)
       case 'revert': if (this.combo) this.award('Revert', 60, 'clean'); break;
-      case 'lazyboy': this.award(sk.kind === 'board' ? 'Hand Drag' : 'Lazy Boy', Math.round(80 + 60 * Math.min(3, e.t)), 'clean'); break;   // (B: on a board it is a hand drag)
+      case 'lazyboy': this.award((RIDE_WORDS[sk.kind] && RIDE_WORDS[sk.kind].lazy) || (sk.kind === 'board' ? 'Hand Drag' : 'Lazy Boy'), Math.round(80 + 60 * Math.min(3, e.t)), 'clean'); break;   // (B: on a board it is a hand drag)
       case 'crash': this.bail(); break;
       case 'respawn': case 'lift': this.air = null; this.railT = null; break;
     }
@@ -114,6 +117,8 @@ export class Tricks {
       if (R.entry >= 90) name.push(onBoard ? `${((R.dir === 'Left') !== !!sk.goofy) !== !!R.preSw ? 'Frontside' : 'Backside'} ${R.entry} On` : `${R.dir} ${R.entry} On`);
       else if (R.preSw) name.push('Switch');
       const flat = R.top ? R.top === 'flat' : /^(box|bench|ledge|table|picnic)$/.test(R.kind || '');
+      // (P, 2026-11-08: ridden on one ski or foot, R held, for 0.4 s or more)
+      if (R.one) name.push((RIDE_WORDS[sk.kind] && RIDE_WORDS[sk.kind].oneFoot) || (sk.kind && sk.kind !== 'ski' ? 'One-Footed' : 'One-Ski'));
       name.push((onBoard && boardRailName(R.mode, sk.railLock || 0, sk.goofy)) || (R.mode === 'slide' ? (flat ? 'Boardslide' : 'Lip Slide') : (R.sw ? 'Switch 50-50' : '50-50')));
       if (Math.abs(R.press) > 0.35) name.push(R.press > 0 ? 'Nose Press' : 'Tail Press');
       name.push(...R.swaps);
@@ -122,7 +127,7 @@ export class Tricks {
       if (exit >= 90) name.push(`${exit} Out`);
       else if (e.sw !== R.preSw && R.mode === '5050') name.push('to Fakie');
       for (const g of grabs) name.push(gDef(g.id) ? gDef(g.id).name : g.id);
-      pts = 160 + R.t * 140 + R.entry / 90 * 70 + exit / 90 * 70 + R.swaps.length * 130 + (Math.abs(R.press) > 0.35 ? 100 : 0) + (R.mode === 'slide' ? 60 : 0);
+      pts = 160 + R.t * 140 + R.entry / 90 * 70 + exit / 90 * 70 + R.swaps.length * 130 + (Math.abs(R.press) > 0.35 ? 100 : 0) + (R.mode === 'slide' ? 60 : 0) + (R.one ? 110 : 0);
       this.award(name.join(', '), pts, e.q);
       return;
     }

@@ -3,8 +3,8 @@
 // function the physics reads directly; kickers and the pipe also get meshes of their own, much finer at the lips,
 // knuckles and coping than the terrain's patches.
 import * as THREE from 'three';
-import { baseLine, pitchAt, ground } from './terrain.js?v=19';
-import { smoothstep, clamp, smax } from './noise.js?v=19';
+import { baseLine, pitchAt, ground } from './terrain.js?v=20';
+import { smoothstep, clamp, smax } from './noise.js?v=20';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -54,23 +54,30 @@ export class Kicker {
     // (aimed deeper for a higher lip: the riders' flights come out a little shorter than this one, more so on the big
     // jumps, measured: a 1.6 m lip landed where it was aimed, a 4.3 m one 23% of the landing short)
     const frac = clamp(0.45 + 0.08 * (this.lipH - 1.6), 0.4, 0.75);
-    const target = this.Kend.z + frac * (this.zMeet - this.Kend.z), kd = 0.5 * 1.2 * 0.5 / 78, dt = 0.01;
-    let lo = 4, hi = 34;
-    for (let it = 0; it < 30; it++) {
-      const v = (lo + hi) / 2;
-      let vz = v * Math.cos(lip), vy = v * Math.sin(lip), z = this.L.z, y = this.L.y, zl = Infinity;
-      for (let t = 0; t < 8; t += dt) {
-        const sp = Math.hypot(vz, vy); vz -= kd * sp * vz * dt; vy -= (9.81 + kd * sp * vy) * dt; z += vz * dt; y += vy * dt;
-        const d = this.deckY(z), gy = d > -Infinity ? d : this.bl(z);
-        if (z > this.L.z + 0.5 && y <= gy) { zl = z; break; }
+    const kd = 0.5 * 1.2 * 0.5 / 78, dt = 0.01;
+    const lipFor = target => {
+      let lo = 4, hi = 34;
+      for (let it = 0; it < 30; it++) {
+        const v = (lo + hi) / 2;
+        let vz = v * Math.cos(lip), vy = v * Math.sin(lip), z = this.L.z, y = this.L.y, zl = Infinity;
+        for (let t = 0; t < 8; t += dt) {
+          const sp = Math.hypot(vz, vy); vz -= kd * sp * vz * dt; vy -= (9.81 + kd * sp * vy) * dt; z += vz * dt; y += vy * dt;
+          const d = this.deckY(z), gy = d > -Infinity ? d : this.bl(z);
+          if (z > this.L.z + 0.5 && y <= gy) { zl = z; break; }
+        }
+        if (zl < target) lo = v; else hi = v;
       }
-      if (zl < target) lo = v; else hi = v;
-    }
-    this.vLip = (lo + hi) / 2;
+      return (lo + hi) / 2;
+    };
+    this.vLip = lipFor(this.Kend.z + frac * (this.zMeet - this.Kend.z));
     // the speed at the foot of the takeoff that leaves the lip at vLip (climbing the ramp costs g x its rise, and the
     // snow and the air take more on a long ramp)
     const rise = this.L.y - this.bl(this.z0);
     this.vDesign = Math.sqrt(this.vLip * this.vLip + 2 * 9.81 * rise * (1.12 + 0.02 * rise)) + 0.5;
+    // (J, 2026-11-08) and the least speed at the foot that still clears the knuckle well: the flight aimed at 30% of the
+    // landing (riders' flights come out somewhat shorter, more so off a big lip): what the Jump Line spaces its jumps by
+    const vClearLip = lipFor(this.Kend.z + 0.3 * (this.zMeet - this.Kend.z));
+    this.vClear = Math.sqrt(vClearLip * vClearLip + 2 * 9.81 * rise * (1.12 + 0.02 * rise)) + 0.5;
     this.knuckleH = this.yT - this.bl(this.K.z);
     // how far out the sides reach: the highest point over the slope down the gentler side slope, the shoulder and the toe
     const hMax = Math.max(this.lipH, this.knuckleH) + 0.3;
@@ -291,7 +298,7 @@ class Wedge {            // a short ramp up to a rail or box
    rails wider in size"): steel rails 0.12 or more, tubes 0.34 to 0.5, boxes 0.6 to 0.8, benches 0.5 to 0.6. h: the top's
    height over the snow under its start (hAt(s) anywhere along it); under(x, z): that snow. */
 const FLAT_KINDS = new Set(['box', 'bench', 'ledge', 'picnic']);
-const WIDTH = { rail: 0.12, tube: 0.4, box: 0.6, bench: 0.5, rainbow: 0.12, dd: 0.36, kink: 0.12, down: 0.12 };
+const WIDTH = { rail: 0.16, tube: 0.55, box: 0.9, bench: 0.6, rainbow: 0.16, dd: 0.45, kink: 0.16, down: 0.16 };   // (J, 2026-11-08: fatter, "rails fatter")
 const _hv = new THREE.Vector3();
 export class Rail {
   constructor(o) {
@@ -427,20 +434,29 @@ export function assemble({ kickers, pipe = null, qp = null, ground2 = [], rails 
   return park;
 }
 /* ---- the Jump Line (2026-11-03) ------------------------------------------------------------------------------------
-   Seven jumps down the run, each one three takeoffs side by side, Large, Medium and Small, landing on one shared
-   landing: the Large lane's table and landing are built first, and each smaller lane is placed up the hill so that its
-   own (lower) table meets that same landing plane, just further down it, with the table length asked for (found by
+   Jumps down the run, each one three takeoffs side by side, Large, Medium and Small, landing on one shared landing:
+   the Large lane's table and landing are built first, and each smaller lane is placed up the hill so that its own
+   (lower) table meets that same landing plane, just further down it, with the table length asked for (found by
    bisection: further down the hill, the table comes out shorter). So you can choose a size at each jump and change
    lanes between them.
-   Every takeoff is wider than its jump and carries a feature on the rider's left, on the same ramp (2026-11-05, from
-   Leon's picture: a fat tube running up the left part of a kicker's ramp to its lip, the jump on the right part), so
-   at each takeoff you pick the jump or the feature. The features change from jump to jump and lane to lane and are
-   sized to their jump: tubes, boxes, a bench, donkey dicks, rainbows off the lip and up-flat-down rails. The lanes sit
-   further apart than before so that the bigger lanes' sides (now about 32 degrees) clear the next lane's takeoff. */
+   (2026-11-08, J, for "make the large jumps even larger and upscale all the jumps respectively" and "make the jumps in
+   jump line more transitionable and easier to jump from one line to the other without casing":)
+   - every jump is about a third bigger, after real slopestyle and park jumps: the Large table 23 m (a 75 ft pro jump),
+     the Medium 15 m (50 ft), the Small 9 m (30 ft);
+   - each next jump is placed where a rider coming off the slowest of this jump's landings has the next Large
+     takeoff's design speed (rollTo, with the physics' own drag and snow friction), so off any lane's landing you can
+     take any lane of the next jump; a rider with more than a takeoff wants is checked down on its in-run (skier.js);
+   - the lanes are closer together, so crossing from one to another is shorter;
+   - the gentle middle of the run (11 degrees), where nobody can hold a Large lane's speed, is a jib line instead
+     (jibLine): rails, tubes and boxes in three columns, row after row, each with its own snow ramp in.
+   The features that stood on the takeoffs beside the jumps (2026-11-05, from Leon's picture: a fat tube up the left
+   part of a kicker's ramp) are off (TAKEOFF_FEATURES): the rails are the jib line's now, and without them the lanes
+   can sit closer. Set it true to have them back (the lanes then move apart again). */
+const TAKEOFF_FEATURES = false;
 const LANES = {
-  L: { lip: 30, R: 15, drop: 0.8, table: 17, land: 34, wT: 3.2, wD: 5.6, wL: 9.5, Rk: 4.5 },
-  M: { lip: 27, R: 11, drop: 0.6, table: 11, land: 34, wT: 2.8, wD: 4.8, wL: 9, Rk: 4.5 },
-  S: { lip: 24, R: 7.5, drop: 0.4, table: 6, land: 34, wT: 2.4, wD: 4.2, wL: 8, Rk: 4.5 },
+  L: { lip: 31, R: 19, drop: 1.0, table: 23, land: 35, wT: 3.6, wD: 6.2, wL: 11, Rk: 6 },
+  M: { lip: 29, R: 15, drop: 0.8, table: 17, land: 35, wT: 3.2, wD: 5.6, wL: 10, Rk: 6 },
+  S: { lip: 27, R: 11, drop: 0.6, table: 12, land: 35, wT: 2.8, wD: 4.8, wL: 9, Rk: 6 },
 };
 // the features' sizes by lane: widths of each kind's top (m), heights of their tops over the ramp, the strip they need,
 // and the rainbows' reach past the lip (arcR) and top over it (arcRise)
@@ -549,28 +565,120 @@ function takeoffFeature(k, kind, sz, j, lane) {
   }
   return null;
 }
+// ---- speeds down the snow: a point riding straight, with the physics' own air drag (standing tall) and snow friction
+// (skier.js), for placing the jumps
+const G = 9.81, KD = 0.5 * 1.2 * 0.55 / 78, MU = 0.036;
+const accel = (th, v) => G * Math.sin(th) - MU * G * Math.cos(th) - KD * v * v;
+// down the base line from z at speed v, to z1 or until the speed reaches vWant: { z, v }
+function rollTo(z, v, z1, vWant = Infinity) {
+  for (; z < z1 && v < vWant; z += 0.25) { const th = pitchAt(z); v = Math.sqrt(Math.max(0.25, v * v + 2 * accel(th, v) * 0.25 / Math.cos(th))); }
+  return { z, v };
+}
+// a straight air off kicker k leaving its lip at its own design speed: the flight, the speed along the landing where it
+// comes down, and down the rest of the landing to where it meets the slope: the speed there
+function exitSpeed(k) {
+  const lip = k.lip * RAD, land = k.land * RAD, dt = 0.01;
+  let vz = k.vLip * Math.cos(lip), vy = k.vLip * Math.sin(lip), z = k.L.z, y = k.L.y;
+  for (let t = 0; t < 8; t += dt) {
+    const sp = Math.hypot(vz, vy); vz -= KD * sp * vz * dt; vy -= (G + KD * sp * vy) * dt; z += vz * dt; y += vy * dt;
+    const d = k.deckY(z), gy = d > -Infinity ? d : k.bl(z);
+    if (z > k.L.z + 0.5 && y <= gy) break;
+  }
+  // (what is left along the landing: the part across it is taken by the legs)
+  let v = Math.max(1, vz * Math.cos(land) - vy * Math.sin(land));
+  for (let zz = Math.max(z, k.Kend.z); zz < k.zMeet; zz += 0.25) v = Math.sqrt(Math.max(0.25, v * v + 2 * accel(land, v) * 0.25 / Math.cos(land)));
+  return v;
+}
 export function makeJumpLine() {
   const kickers = [], rails = [], starts = [{ name: 'Top of the Jump Line', x: 0, z: -30, v: 5 }];
-  const X = { L: -20, M: 2, S: 18 };
-  let z0 = 58;
-  for (let j = 0; j < 7; j++) {
-    const big = new Kicker(Object.assign({ name: `Jump ${j + 1} Large`, x: X.L, z0, side: 1, wF: FEAT.L.wF }, LANES.L));
-    const med = laneOn(big, Object.assign({ name: `Jump ${j + 1} Medium`, x: X.M, side: 1, wF: FEAT.M.wF }, LANES.M));
-    const sml = laneOn(big, Object.assign({ name: `Jump ${j + 1} Small`, x: X.S, side: 1, wF: FEAT.S.wF }, LANES.S));
-    kickers.push(big, med, sml);
-    [big, med, sml].forEach((k, i) => { const r = takeoffFeature(k, PLAN[j][i], 'LMS'[i], j, i); if (r) rails.push(r); });
-    starts.push({ name: `Jump ${j + 1} (in-run)`, x: X.M, z: big.z0 - 40, v: 10 });
-    // the next jump: room after this landing to set up again
-    z0 = big.zMeet + 34;
+  const X = TAKEOFF_FEATURES ? { L: -20, M: 2, S: 18 } : { L: -18, M: 1, S: 17 }, wF = sz => TAKEOFF_FEATURES ? FEAT[sz].wF : 0;
+  // a jump's three lanes, sc the size (1: the full sizes in LANES; the tables, transitions and drops shrink with it)
+  const scaled = (o, sc) => Object.assign({}, o, { table: o.table * sc, R: o.R * (0.6 + 0.4 * sc), drop: o.drop * (0.5 + 0.5 * sc) });
+  const lanes = (j, z0, sc) => {
+    const big = new Kicker(Object.assign({ name: `Jump ${j + 1} Large`, x: X.L, z0, side: 1, wF: wF('L') }, scaled(LANES.L, sc)));
+    const med = laneOn(big, Object.assign({ name: `Jump ${j + 1} Medium`, x: X.M, side: 1, wF: wF('M') }, scaled(LANES.M, sc)));
+    const sml = laneOn(big, Object.assign({ name: `Jump ${j + 1} Small`, x: X.S, side: 1, wF: wF('S') }, scaled(LANES.S, sc)));
+    return [big, med, sml];
+  };
+  /* where the next jump's Large takeoff starts, from where the last landings meet the slope (z), riders leaving the
+     Medium lane at vM and the Small lane at vS: where the Medium lane's riders have the Large takeoff's design speed and
+     a little more, and the Small lane's are within 0.5 m/s of it (measured: about 1 m/s under the design speed lands on
+     the knuckle, and crossing the line from the Small lane to the Large costs about half a metre a second more than the
+     sum says), and at least GAP0 m on (the room to cross from one side of the line to the other and line up). The design speed changes with the slope the takeoff stands on: placed, measured, placed again. */
+  const GAP0 = 75;
+  const nextAt = (z, vM, vS, sc) => {
+    let z0 = z + GAP0;
+    for (let it = 0; it < 5; it++) {
+      const k = new Kicker(Object.assign({ x: X.L, z0 }, scaled(LANES.L, sc)));
+      z0 = Math.max(z + GAP0, rollTo(z, vM, z + 400, k.vDesign + 0.3).z, rollTo(z, vS, z + 400, k.vDesign - 0.5).z);
+    }
+    return z0;
+  };
+  /* the jumps, each as big as the slope lets riders carry the speed for (the full size where the run is steep; smaller
+     where it is gentle, rather than a long empty run-out: at most 115 m from one landing to the next takeoff, 200 m from
+     the start), until the run flattens; then the jib line on the gentler run below them */
+  let z = -30, vM = 5, vS = 5, j = 0;
+  while (j < 7) {
+    const most = j ? 115 : 200;
+    let sc = 1, z0 = nextAt(z, vM, vS, 1);
+    while (z0 - z > most && sc > 0.56) { sc -= 0.05; z0 = nextAt(z, vM, vS, sc); }
+    if (z0 > 1040) break;
+    const ks = lanes(j, z0, sc);
+    for (const k of ks) { k.size = sc; k.vExit = exitSpeed(k); }
+    kickers.push(...ks);
+    if (TAKEOFF_FEATURES) ks.forEach((k, i) => { const r = takeoffFeature(k, PLAN[j % PLAN.length][i], 'LMS'[i], j, i); if (r) rails.push(r); });
+    starts.push({ name: `Jump ${j + 1} (in-run)`, x: X.M, z: ks[0].z0 - 40, v: 10 });
+    z = Math.max(...ks.map(k => k.zMeet)); vM = ks[1].vExit; vS = ks[2].vExit;
+    j++;
   }
-  const zEnd = kickers[kickers.length - 3].zMeet + 10;
-  // fences just outside where the outer lanes' sides meet the snow
+  const jb = jibLine(z + 32, rails), jibAt = [jb];
+  starts.push({ name: 'Jib line', x: 1, z: z + 12, v: 8 });
+  const zEnd = Math.max(...kickers.map(k => k.zMeet), ...rails.map(r => r.P[r.P.length - 1].z)) + 10;
+  // fences just outside where the outer lanes' sides meet the snow (and the jib line's columns)
   let fl = Infinity, fr = -Infinity;
   for (const k of kickers) for (let z = k.z0; z < k.zMeet; z += 2) {
     for (let x = k.x0; x < k.cxT; x += 0.5) if (k.bareRel(x, z) > 0) { fl = Math.min(fl, x); break; }
     for (let x = k.x1; x > k.cxT; x -= 0.5) if (k.bareRel(x, z) > 0) { fr = Math.max(fr, x); break; }
   }
-  return assemble({ kickers, rails, starts, banner: 'JUMP  LINE', fences: [[fl - 2.5, 30, fl - 2.5, zEnd], [fr + 2.5, 30, fr + 2.5, zEnd]] });
+  for (const r of rails) for (const p of r.P) { fl = Math.min(fl, p.x - 4); fr = Math.max(fr, p.x + 4); }
+  const park = assemble({ kickers, rails, starts, banner: 'JUMP  LINE', fences: [[fl - 2.5, 30, fl - 2.5, zEnd], [fr + 2.5, 30, fr + 2.5, zEnd]] });
+  park.jib = jibAt[0] || null;
+  return park;
+}
+/* ---- the Jump Line's jib line (2026-11-08, J) ------------------------------------------------------------------------
+   As a real park's jib line: features one after another down the hill, each with its own snow ramp in and a clean run
+   out, in three columns (left, middle, right) so you pick one each row, from flat and down boxes to tubes, rainbows,
+   kinks and a down-flat-down rail. Fatter than before ("Jump Line rails fatter"): round rails 0.16 m, tubes 0.55 m,
+   boxes 0.9 to 1 m wide. Rows 38 m apart on the 11 degree middle of the run, so a rider has time to set up for the next
+   one. Each item: [kind, name, length (m), top over the snow at its start, at its end, { w, rise }]. */
+const JIB_ROWS = [
+  [['box', 'Flat box', 10, 0.45, 0.45], ['tube', 'Flat tube', 10, 0.5, 0.5], ['box', 'Wide flat box', 12, 0.4, 0.4, { w: 1.05 }]],
+  [['box', 'Down box', 12, 0.9, 0.35], ['rainbow', 'Rainbow rail', 11, 0.55, 0.55, { rise: 0.6 }], ['rail', 'Flat rail', 12, 0.65, 0.65]],
+  [['kink', 'Kinked rail', 14, 0.9, 0.3], ['flatdown', 'Flat-down box', 14, 0.6, 0.25], ['tube', 'Down tube', 12, 0.9, 0.4]],
+  [['rainbowBox', 'Rainbow box', 12, 0.5, 0.5, { rise: 0.55 }], ['rail', 'Long flat rail', 18, 0.6, 0.6], ['dfd', 'Down-flat-down rail', 15, 1.0, 0.3]],
+];
+function jibLine(z0, rails) {
+  const COL = [-13, 1, 15], GAP = 38;
+  let zEnd = z0;
+  JIB_ROWS.forEach((row, i) => {
+    const zr = z0 + i * GAP;
+    row.forEach(([kind, name, len, h0, h1, o = {}], c) => {
+      const x = COL[c], za = zr + (c === 1 ? 4 : 0), zb = za + len, colour = PAINT[(i * 3 + c) % PAINT.length];
+      let pts, k = kind, extra = {};
+      if (kind === 'rainbow' || kind === 'rainbowBox') {
+        pts = rainbow(x, za, len, h0, o.rise);
+        k = 'rainbow'; extra = kind === 'rainbowBox' ? { top: 'flat', look: 'box', w: 0.85 } : {};
+      } else if (kind === 'kink') pts = [[x, za, h0], [x, za + len * 0.4, h0], [x, za + len * 0.75, h1 + 0.1], [x, zb, h1]];
+      else if (kind === 'flatdown') { pts = [[x, za, h0], [x, za + len * 0.5, h0], [x, zb, h1]]; k = 'box'; }
+      else if (kind === 'dfd') { pts = [[x, za, h0], [x, za + len * 0.3, 0.6], [x, za + len * 0.7, 0.6], [x, zb, h1]]; k = 'rail'; }
+      else pts = [[x, za, h0], [x, zb, h1]];
+      rails.push(new Rail(Object.assign({ name, kind: k, pts, colour, ramp: Math.max(0.2, h0 - 0.08), legs: kind !== 'box' && kind !== 'flatdown' }, extra, o.w ? { w: o.w } : {})));
+      zEnd = Math.max(zEnd, zb);
+    });
+  });
+  // the run out after the last row, and the speed a rider leaves the jib line with (riding them about 9 m/s)
+  zEnd += 20;
+  return { z0, zEnd, v: rollTo(zEnd - 20, 9, zEnd).v };
 }
 
 // the backcountry map has no built features
@@ -774,7 +882,7 @@ function legsUnder(G, r, every, w, from) {
 }
 let benchSrc = null;
 function loadBench() {
-  if (!benchSrc) benchSrc = new GLTFLoader().loadAsync('models/park/bench.glb?v=19').then(g => { let m = null; g.scene.traverse(o => { if (o.isMesh && !m) m = o; }); return m; });
+  if (!benchSrc) benchSrc = new GLTFLoader().loadAsync('models/park/bench.glb?v=20').then(g => { let m = null; g.scene.traverse(o => { if (o.isMesh && !m) m = o; }); return m; });
   return benchSrc;
 }
 // the bench model stretched along a rail's two points: the ends (with their legs) kept, the seat between stretched, the
@@ -835,7 +943,7 @@ export function railMeshes(rails, mats) {
   const add = (G, mat) => { const g = G.geometry(); if (!g) return; const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false; out.add(m); };
   /* scuffed plastic and scratched steel: roughness maps from ambientCG's CC0 "Plastic 010" (its roughness) and "Scratches
      005" (its scratches made into roughness), 512 px */
-  const tl = new THREE.TextureLoader(), rough = f => new Promise(res => tl.load('models/park/' + f + '?v=19', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
+  const tl = new THREE.TextureLoader(), rough = f => new Promise(res => tl.load('models/park/' + f + '?v=20', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
   const plRough = rough('plastic_rough.webp'), stRough = rough('steel_rough.webp');
   const paintM = mats.paint || (mats.paint = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.48, metalness: 0.05 }));
   const steelM = mats.railSteel || (mats.railSteel = new THREE.MeshStandardMaterial({ color: 0xb8bdc2, metalness: 0.9, roughness: 0.32 }));

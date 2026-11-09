@@ -3,15 +3,19 @@
    on the rock bands as Natural Selection's are (park.js Kickers on the land's own slope, their lips on the rock, the
    gap the rock band, the landing the steep apron under it), logs, a rock slab and stumps to slide (park.js Rails, drawn
    here), the starts at the summit's brink and down the face, the trees, the chairlift's line from the bottom to the ridge
-   (lift.js planLift reads park.liftLine). The rock meshes are frrock.js's. */
-import { Land, LIFT_X, fallLines } from './frland.js?v=19';
-import { Kicker, Rail, assemble } from './park.js?v=19';
-import { setMountain } from './terrain.js?v=19';
-import { simplex, fbm, smoothstep } from './noise.js?v=19';
-import { setRockSource, rockFieldWorker } from './materials.js?v=19';
+   (lift.js planLift reads park.liftLine). The rock meshes are frrock.js's.
+   (2026-11-08) Four chairlifts now (park.liftLines: the Face Chair from the finish corral up the main face, one up each
+   side bowl, the Peak Chair from the shoulder to the true summit), the first start at the top of the Face Chair, where a lift's towers may stand (park.towerOk), and where
+   the physics meets a rock face (park.cliff). */
+import { Land, LIFT_XS, fallLines } from './frland.js?v=20';
+import { Kicker, Rail, assemble } from './park.js?v=20';
+import { setMountain } from './terrain.js?v=20';
+import { simplex, fbm, smoothstep } from './noise.js?v=20';
+import { setRockSource, rockFieldWorker } from './materials.js?v=20';
 
 const RAD = Math.PI / 180;
-export const FIELD_MID = [10, 380];     // (the rock field's middle: frfield.js is sent its windows round it)
+export const FIELD_MID = [10, 225];     // (the rock field's middle: frfield.js is sent its windows round it; 1280 m of fine
+                                         // field from the Peak, z -415, to the lifts' bottoms, z 865)
 
 /* A kicker built on the rock (Natural Selection's way): a snow takeoff on the bench just above a rock band, its lip
    1.3 m short of the rock's edge; past the lip there is no table, the gap is the band's rock face, the landing the
@@ -53,14 +57,16 @@ class RockKicker extends Kicker {
     this.K = { z: target - 4, y: G(x, target - 4) }; this.Kend = { z: target, y: yl }; this.zMeet = target + 12;
     this.landDeg = Math.atan((G(x, target - 1) - G(x, target + 1)) / 2) / RAD;
   }
-  // nothing past the back face of the lip: no table, no knuckle, no landing of its own (they would bridge the gap)
-  rel(z, d) { return z > this.L.z + 2 ? -Infinity : super.rel(z, d); }
+  /* nothing past the lip: no back face, no table, no knuckle, no landing of its own (they would bridge the gap). The
+     lip stands straight up from the rock's bench, as a natural kicker's does (2026-11-08: its back face ran 2 m on,
+     over the band's own lip where that curved in, and its mesh drew snow up to 4 m above the rock that was there) */
+  rel(z, d) { return z > this.L.z + 0.02 ? -Infinity : super.rel(z, d); }
   // only the takeoff and its lip have snow above the ground: no rows over the sunk deck
   rows(fine) {
     const r = [], st = fine ? 0.6 : 1.0;
     for (let z = this.z0 - 0.5; z < this.L.z; z += st) r.push(z);
-    for (let z = this.L.z - 0.6; z < this.L.z + 1.4; z += fine ? 0.06 : 0.1) r.push(z);
-    r.push(this.L.z, this.L.z - 0.005, this.L.z - 0.2, this.L.z - 0.17, this.L.z + 0.03, this.zBack, this.L.z + 2);
+    for (let z = this.L.z - 0.6; z < this.L.z; z += fine ? 0.06 : 0.1) r.push(z);
+    r.push(this.L.z, this.L.z - 0.005, this.L.z - 0.2, this.L.z - 0.17, this.L.z + 0.02, this.L.z + 0.06);
     return [...new Set(r.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
   }
   // the dye line along the lip only (the knuckle is the rock's edge)
@@ -87,7 +93,7 @@ export function makeFreeride(q) {
   /* the snow shader's rock field: from the snow without the rock faces (they draw their own), the ribs' crests rocky.
      Worked out in a worker (frfield.js), so it is ready before a run starts and never takes a frame's time: baked on
      the page in idle moments it was still going ten seconds into a run on a slow machine */
-  rockFieldWorker(new URL('./frfield.js?v=19', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)));
+  rockFieldWorker(new URL('./frfield.js?v=20', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)));
 
   // ---- kickers on the rock: [band, x, lip deg, R, half width, gap m]
   const K = [];
@@ -132,16 +138,39 @@ export function makeFreeride(q) {
   // a pair of stumps to tap, side by side below the slab
   // (each as tall as the snow 0.9 m above it stands over its foot, so a rider coming down the fall line slides onto it)
   // (beside the Great Wall's lane A kicker's in-run, not in it)
-  for (const [x, z] of [[-118, 452], [-113.5, 453.5]]) {
+  // (2026-11-08: and in the side bowls, below)
+  const stump = (x, z) => {
     const y = Math.max(G(x, z) + 0.45, G(x, z - 0.9) + 0.05);
     rails.push(new Rail({ name: 'Stump', kind: 'box', top: 'flat', w: 0.72, abs: true, pts: [[x, z - 0.36, y + 0.05], [x, z + 0.36, y - 0.05]], ownMesh: true, look: 'stump' }));
+  };
+  for (const [x, z] of [[-118, 452], [-113.5, 453.5]]) stump(x, z);
+  // ---- the side bowls' natural jibs (2026-11-08): in the West Glades a fallen log down the slope by the pillows, a rock
+  // rail (a long narrow slab of rock standing out of the snow) and a pair of stumps; on the Spine Wall a log off the big
+  // band's lip and a fallen log
+  log('Glade log', -338, 452, 466, 0.1, 0, 0.5, 0.6, 0);
+  {
+    const x = -372, za = 398, zb = 410, ya = G(x, za) + 0.55, yb = ya - (zb - za) * Math.tan(25 * RAD);
+    rails.push(new Rail({ name: 'Rock rail', kind: 'ledge', top: 'flat', w: 0.6, abs: true, pts: [[x, za, ya], [x, zb, yb]], ownMesh: true, look: 'slab', ramp: 0.4 }));
   }
+  for (const [x, z] of [[-360, 486], [-355.5, 487.5]]) stump(x, z);
+  { const b = bandOf(land, 'East big band'); log('East band log', 384, b.zL(384) - 11, b.zL(384) + 2.2, 0.5, 2.3); }
+  log('Fallen log', 410, 470, 484, 0.1, 0, 0.5, 0.6, 0);
 
   /* ---- the starts: on the summit ridge's brink, a few metres down the face, so the chase camera sits on the brink
      and the face is in view below as a run starts (from the start pad behind it, a camera 4 m back and 2.5 m up only
      sees the far valley over the brink: the face's 32 degrees overall are steeper than its line of sight), and the
      drop-ins further down (the pause menu's start points) */
+  /* (2026-11-08, for Leon's "spawn at the top of the lift, not beside it") the first start is the top of the Face
+     Chair, on the ramp just off its unloading platform, turned towards the centre line: where the lift leaves you. The
+     other lifts' tops are starts too. (yaw: the way the start faces, radians from +z; main.js reads it) */
+  // (and the Peak Chair from the shoulder to the true summit: its bottom is not where a run ends, ends: false)
+  const lifts = [{ name: 'Face Chair', x: LIFT_XS[0], top: -46, bot: 760 }, { name: 'West Glades Chair', x: LIFT_XS[1], top: -46, bot: 742 }, { name: 'Spine Wall Chair', x: LIFT_XS[2], top: -46, bot: 742 },
+    { name: 'Peak Chair', x: -60, top: -338, bot: -78, ends: false }];
+  // (8 m to the side of the top station and 10 m down from its end, on the ramp off the unloading platform, where a rider
+  // is a second after getting off: the chase camera behind is clear of the station there)
+  const liftTop = (L, yaw) => ({ name: 'Top of the ' + L.name, x: L.x - 8, z: L.top + 10, v: 2, yaw });
   const starts = [
+    liftTop(lifts[0], -0.6),
     { name: 'Summit: the centre line', x: 0, z: -7, v: 2.5 },
     { name: 'Summit: the Couloirs (the dog-leg)', x: 90, z: 3, v: 2.5 },
     { name: 'Summit: the narrow chute (mandatory air)', x: 63.8, z: 4, v: 2 },
@@ -153,12 +182,49 @@ export function makeFreeride(q) {
     { name: 'Lower face: Selection kickers', x: -107, z: 352, v: 6 },
     { name: 'Above the Great Wall', x: -30, z: 440, v: 7 },
     { name: 'Finish apron', x: 0, z: 600, v: 6 },
+    liftTop(lifts[1], 0.7),     // (towards the cornice's way in, clear of the line's last tower)
+    { name: 'West Glades: the cornice', x: -366, z: -4, v: 2.5 },
+    { name: 'West Glades: the natural halfpipe', x: -318, z: 30, v: 4 },
+    { name: 'West Glades: the step-down', x: -406, z: 270, v: 5 },
+    liftTop(lifts[2], -0.4),
+    { name: 'Spine Wall: the spines', x: 306, z: 6, v: 2.5 },
+    { name: 'Spine Wall: the couloir', x: 367, z: 2, v: 2 },
+    { name: 'Spine Wall: the big band', x: 330, z: 310, v: 5 },
+    liftTop(lifts[3], 0.1),
+    { name: 'The Peak: the couloir', x: 49, z: -336, v: 2 },
+    { name: 'The Peak: the cliffs', x: -118, z: -318, v: 3 },
   ];
-  // the finish corral's fences (the floodlights stand along them: env.js)
-  const fences = [[-46, 700, -46, 930], [46, 700, 46, 930]];
+  // the finish corral's fences (the floodlights stand along them: env.js), round the Face Chair's bottom station
+  const fences = [[-46, 700, -46, 820], [46, 700, 46, 820]];
   park = assemble({ kickers: K, rails, starts, fences, banner: 'FREERIDE' });
   park.land = land; park.freeride = true;
-  park.liftLine = { x: LIFT_X, top: -46, bot: 935 };
+  // (2026-11-08, with P) on a rock face: the physics' wall; everywhere else on Freeride is snow to ride (frland.js cliff)
+  park.cliff = (x, z) => land.cliff(x, z);
+  /* (2026-11-08, for Leon's "add more ski lifts" and "move the lift's bottom to where the run flattens by the finish
+     arch") four chairlifts (lift.js holds them all): three from where a run flattens out to the summit's shoulder, the
+     Face Chair from the finish corral straight up the main face (riders on it look down on the cliffs, drops and rocks
+     under it) and one up each side bowl, and the Peak Chair from the shoulder to the true summit */
+  park.liftLines = lifts;
+  /* where a lift's tower may stand (lift.js): not on or by rock (no cliff within 5 m), not on anything steeper than about
+     46 degrees or lumpy (a pillow, a roll's knee: the snow within 2.5 m more than 0.7 m off a plane), not in a
+     kicker's or a jib's lane */
+  const lanesT = [];
+  for (const k of K) lanesT.push([k.cxT ?? k.x, k.hwT + 5, k.z0 - 20, k.zMeet + 4]);
+  for (const r of rails) { const xs = r.pts.map(p => p[0]), zs = r.pts.map(p => p[1]); lanesT.push([(Math.min(...xs) + Math.max(...xs)) / 2, (Math.max(...xs) - Math.min(...xs)) / 2 + 3, Math.min(...zs) - 8, Math.max(...zs) + 8]); }
+  park.towerOk = (x, z, strict = true) => {
+    const y0 = G(x, z), gx = (G(x + 5, z) - G(x - 5, z)) / 10, gz = (G(x, z + 5) - G(x, z - 5)) / 10;
+    if (gx * gx + gz * gz > 1.04 * 1.04) return false;
+    // (the looser rule, where the strict one leaves nowhere within a span: only off rock, 3 m round)
+    if (!strict) { for (const dx of [-3, -1.5, 0, 1.5, 3]) for (const dz of [-3, -1.5, 0, 1.5, 3]) if (land.cliff(x + dx, z + dz)) return false; return true; }
+    // (and not right in a drop's landing or its run-up: no rock face within 16 m up the hill of it or 10 m below, 2 m
+    // either side)
+    for (let dz = 6; dz <= 16; dz += 2) for (const dx of [-2, 0, 2]) if (land.cliff(x + dx, z - dz) || (dz <= 10 && land.cliff(x + dx, z + dz))) return false;
+    for (const dx of [-5, -2.5, 0, 2.5, 5]) for (const dz of [-5, -2.5, 0, 2.5, 5]) {
+      if (land.cliff(x + dx, z + dz)) return false;
+      if (Math.abs(dx) < 3 && Math.abs(dz) < 3 && Math.abs(G(x + dx, z + dz) - (y0 + gx * dx + gz * dz)) > 0.7) return false;
+    }
+    return !lanesT.some(([lx, hw, z0, z1]) => Math.abs(x - lx) < hw && z > z0 && z < z1);
+  };
   // the terrain's fine patches sink under the rock meshes (terrain.js visualHeight, st: the patch's cell size)
   const dipK = park.visualDip.bind(park);
   park.visualDip = (x, z, st) => {
@@ -176,12 +242,18 @@ export function makeFreeride(q) {
      finish corral or the runout's floor, and none on anything steeper than about 40 degrees */
   const lanes = [];
   for (const k of K) lanes.push([k.cxT ?? k.x, k.hwT + 6, k.z0 - 50, k.zMeet + 8]);
-  for (const r of rails) { const xs = r.pts.map(p => p[0]), zs = r.pts.map(p => p[1]); lanes.push([(Math.min(...xs) + Math.max(...xs)) / 2, (Math.max(...xs) - Math.min(...xs)) / 2 + 5, Math.min(...zs) - 14, Math.max(...zs) + 12]); }
+  for (const r of rails) { const xs = r.pts.map(p => p[0]), zs = r.pts.map(p => p[1]); lanes.push([(Math.min(...xs) + Math.max(...xs)) / 2, (Math.max(...xs) - Math.min(...xs)) / 2 + 5, Math.min(...zs) - 14, Math.max(...zs) + 28]); }
+  // (2026-11-08: and the natural halfpipe, rim to rim and a little more)
+  for (const f of land.features) if (f.kind === 'hpipe') lanes.push([f.x, (f.x1 - f.x0) / 2 + 4, f.z0 - 10, f.z1 + 20]);
   const trees = (max, r) => {
     const out = [];
     for (let tries = 0; out.length < max && tries < max * 16; tries++) {
-      const x = -400 + r() * 820, z = 200 + r() * 1250;
-      const ax = Math.abs(x), line = 360 + 45 * fbm(x * 0.007 + 2, 0.5, 2) - 120 * smoothstep(120, 190, ax) + 40 * smoothstep(-40, 40, -x) * smoothstep(60, 140, ax);
+      const x = -480 + r() * 960, z = 130 + r() * 1320;
+      /* (2026-11-08: over the side bowls too: the West Glades wooded from about 150 m down the face, glades and
+         clumps; the Spine Wall bare but for its lowest slopes, as Alaska is) */
+      const ax = Math.abs(x), side = ax > 230 ? (x < 0 ? -1 : 1) : 0;
+      const line = side < 0 ? 150 + 40 * fbm(x * 0.01 + 4, 1.5, 2) : side > 0 ? 430 + 40 * fbm(x * 0.01 - 4, 2.5, 2) :
+        360 + 45 * fbm(x * 0.007 + 2, 0.5, 2) - 120 * smoothstep(120, 190, ax) + 40 * smoothstep(-40, 40, -x) * smoothstep(60, 140, ax);
       const up = smoothstep(line, line + 70, z);
       if (up <= 0) continue;
       // (the gullies' avalanche paths and the couloirs' fan stay open; the ribs carry the trees)
@@ -191,6 +263,8 @@ export function makeFreeride(q) {
       d *= smoothstep(-0.3, 0.12, fbm(x * 0.0065 + 5, z * 0.0065 - 3, 2));     // glades
       if (ax < 34 && z < 640) d *= z < 440 ? 0.15 : 0.45;                      // (the centre line stays open, but for a glade low down)
       d *= 0.7;
+      // (the West Glades: glades, not a forest, open lanes down its features and between its clumps)
+      if (side < 0) d *= 0.55 * smoothstep(-0.05, 0.3, fbm(x * 0.018 - 9, z * 0.012 + 4, 2));
       // (the valley's floor below the face is an open meadow, a clump and a single tree here and there, the woods
       // thick only up its sides; the finish corral stands in the open, not in a cut through trees)
       if (z > 600) d *= 0.08 + 0.92 * smoothstep(90, 190, Math.abs(x - 50 * smoothstep(620, 940, z)));
@@ -198,7 +272,7 @@ export function makeFreeride(q) {
       // (not in the finish corral, whose edge wanders a little, nor under the lift)
       const jit = 4 * simplex(x * 0.08, z * 0.08);
       if (Math.abs(x) < 80 + jit * 3 && z > 670 + jit && z < 950) continue;
-      if (Math.abs(x - LIFT_X) < 13 || (x > LIFT_X - 30 && z > 880)) continue;
+      if (lifts.some(L => (Math.abs(x - L.x) < 13 && z > L.top - 20 && z < L.bot + 45) || (Math.abs(x - L.x) < 40 && z > L.bot - 20 && z < L.bot + 45))) continue;
       if (lanes.some(([lx, hw, z0, z1]) => Math.abs(x - lx) < hw + jit && z > z0 && z < z1)) continue;
       // (on a feature, its bench or its apron: the land there is not the bare slope)
       if (Math.abs(land.at(x, z) - land.base(x, z)) > 0.25 || Math.abs(land.at(x + 2.5, z) - land.base(x + 2.5, z)) > 0.4 || Math.abs(land.at(x - 2.5, z) - land.base(x - 2.5, z)) > 0.4) continue;

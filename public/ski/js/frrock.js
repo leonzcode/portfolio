@@ -1,19 +1,21 @@
 /* Freeride's meshes: the rock faces, the jibs, the start flags and the finish arch.
    Rock faces. A heightfield cliff draws as long thin triangles, so every cliff band, chute wall, rib end and outcrop
-   gets a curtain of its own: rows along its lip (every 0.75 m, 1.2 on the low tier), each a cross-section of the real
-   height from 4 m behind the lip down the face to 2 m out on the snow below, a point every 0.45 m of the face's height
-   (0.7 on the low tier) and few on the snow either side, the same number in every row of an element so rows always
-   join. On the face the points are pushed out by broad bulges, rock noise and strata (each layer of rock jutting out a
-   little over the one below's top), which leaves small ledges where the rock material lays snow. A band's rows run at
-   right angles to its lip, a row every dr of its length. The terrain's own fine patches are held down under them
-   (freeride.js visualDip), so the curtains draw the real surface there and nothing coarse stands in front of a face.
+   gets a curtain of its own: rows along its lip (every 0.9 m, 1.35 on the low tier), each a cross-section of the real
+   height from 4 m behind the lip down the face to 2 m out on the snow below, a point every 0.6 m of the face's height
+   (0.85 on the low tier) and few on the snow either side, the same number in every row of an element so rows always
+   join. Every point is on the land itself, so what is drawn is what is ridden (2026-11-08: the points were pushed out
+   by up to 0.9 m for bulges and strata, rock standing where the rider was not stopped; the bulges are the land's own
+   now, and the strata the rock material's). A band's rows run straight down the fall line, a row every dr across it;
+   an outcrop's go round its outline at right angles to it. The terrain's own fine patches are held down under them
+   (freeride.js visualDip), only where they cover it (markCover), so the curtains draw the real surface there and
+   nothing coarse stands in front of a face.
    Each quad goes to the rock mesh (steeper than about 53 degrees) or to a snow mesh drawn with the terrain's own snow
    material, lifted a few centimetres (and a little more for each element, so two curtains meeting at a corner never
    fight over the same snow). All of it is one rock mesh and one snow mesh, two draw calls (the rock slab of the jibs
    goes in the rock mesh too). */
 import * as THREE from 'three';
-import { snowUniforms } from './materials.js?v=19';
-import { simplex, clamp, smoothstep, rng } from './noise.js?v=19';
+import { snowUniforms } from './materials.js?v=20';
+import { simplex, clamp, smoothstep, rng } from './noise.js?v=20';
 
 // ---- the rock material: grey stone with strata, cracks and streaks, snow where it faces up -----------------------------
 let ROCK = null;
@@ -95,18 +97,18 @@ class Geo {
 
 /* the rows of one element: each { ox, oz, ux, uz, s0, s1, t } (a point on the lip, the way out from the rock, how far
    back and out the section runs, the position along the lip for the noise); runs of rows that join are one strip */
-function stripsOf(f, dr) {
+export function stripsOf(f, dr) {
   const S = [];
   let cur = null;
   const push = row => { if (!row) { if (cur && cur.length > 1) S.push(cur); cur = null; return; } (cur || (cur = [])).push(row); };
   if (f.kind === 'band') {
-    // (along the lip by its own length, each row at right angles to it: a band slanting across the face or bending
-    // round a buttress keeps its rows dr apart and its face's points where the face is)
-    let t = 0;
-    for (let x = f.xa + 0.3; x <= f.xb - 0.3;) {
-      const H = f.H(x), [ux, uz] = f.out(x), fw = f.fwOf(H);
-      push(H < 0.4 ? null : { ox: x, oz: f.zL(x), ux, uz, s0: -4, fw, s1: fw + 2.2, t });
-      const step = dr * f.cs(x); x += step; t += dr;
+    /* (each row straight down the fall line, dr apart across it, 2026-11-08: they were at right angles to the lip, and
+       where the lip bends round a buttress (the Big Ones) the rows crossed each other, their quads folding over and
+       drawing rock up to 3 m above the snow that was there. Down the fall line they never cross; the face's points are
+       spread over its width along the row, the land's own face width over the lip's slant) */
+    for (let x = f.xa + 0.3; x <= f.xb - 0.3; x += dr) {
+      const H = f.H(x), c = Math.max(0.25, f.cs(x)), fw = f.fwOf(H) / c;
+      push(H < 0.4 ? null : { ox: x, oz: f.zL(x), ux: 0, uz: 1, s0: -4, fw, s1: fw + 2.2, t: x });
     }
     push(null);
   } else if (f.kind === 'rib') {
@@ -124,22 +126,53 @@ function stripsOf(f, dr) {
     }
     // the end cliff
     const zE = f.zEnd, l = f.L(zE), r = f.R(zE);
-    for (let x = l - Math.min(f.wwL, 2) * 0.6; x <= r + Math.min(f.wwR, 2) * 0.6; x += dr) push({ ox: x, oz: f.zE(x), ux: 0, uz: 1, s0: -4, fw: f.wEnd, s1: f.wEnd + 2.2, t: x });
+    // (across the rib's whole width, its outer slopes too: they end in the same cliff, and the terrain is held down
+    // under all of it, freeride.js; 2026-11-08, it stopped short of an outer slope and left a hole up to 12 m deep)
+    for (let x = l - f.wwL; x <= r + f.wwR; x += dr) push({ ox: x, oz: f.zE(x), ux: 0, uz: 1, s0: -4, fw: f.wEnd, s1: f.wEnd + 2.2, t: x });
     push(null);
   } else if (f.kind === 'out') {
-    // round the footprint, the way out straight from its middle
-    const per = 2 * (f.hw * 2 + f.len), n = Math.max(12, Math.round(per / dr));
-    const rows = [];
-    for (let i = 0; i < n; i++) {
-      const a = i / n * Math.PI * 2, dx = Math.sin(a), dz = Math.cos(a);
-      let lo = 0, hi = Math.max(f.hw, f.len) * 1.5;
-      for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; if (f.out(f.x + dx * m, f.z + dz * m) < 0) lo = m; else hi = m; }
-      const ox = f.x + dx * lo, oz = f.z + dz * lo, Hh = f.raise(oz);
-      rows.push(Hh < 0.45 ? null : { ox, oz, ux: dx, uz: dz, s0: -Math.min(2.6, lo * 0.7), fw: f.w, s1: f.w + 1.8, t: i * dr });
+    /* round its outline at even steps of its own length, each row at right angles to the outline (2026-11-08: the rows
+       went out from its middle at even angles, which on a long, rough outcrop left them metres apart along its long
+       sides, cutting across its rough outline, and the lowered terrain showed through there as holes up to 9 m deep).
+       The outline is found along 720 rays from the middle, then walked at steps of dr. */
+    const M = 720, ring = [];
+    for (let i = 0; i < M; i++) {
+      const a = i / M * Math.PI * 2, dx = Math.sin(a), dz = Math.cos(a);
+      let lo = 0, hi = Math.max(f.hw, f.len) * 1.5 + f.wob + 1;
+      for (let k = 0; k < 26; k++) { const m = (lo + hi) / 2; if (f.out(f.x + dx * m, f.z + dz * m) < 0) lo = m; else hi = m; }
+      ring.push([f.x + dx * lo, f.z + dz * lo]);
     }
+    const cum = [0];
+    for (let i = 1; i <= M; i++) { const a = ring[i - 1], b = ring[i % M]; cum.push(cum[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
+    const per = cum[M], n = Math.max(12, Math.round(per / dr)), back = f.back();
+    const pts = [];
+    for (let i = 0, j = 0; i < n; i++) {
+      const s = per * i / n; while (j < M - 1 && cum[j + 1] < s) j++;
+      const t = (s - cum[j]) / ((cum[j + 1] - cum[j]) || 1), a = ring[j], b = ring[(j + 1) % M];
+      const ox = a[0] + (b[0] - a[0]) * t, oz = a[1] + (b[1] - a[1]) * t;
+      // (the way out: across the outline, from out()'s slope)
+      const e = 0.05, gx = f.out(ox + e, oz) - f.out(ox - e, oz), gz = f.out(ox, oz + e) - f.out(ox, oz - e), gl = Math.hypot(gx, gz) || 1;
+      pts.push({ ox, oz, ux: gx / gl, uz: gz / gl, s });
+    }
+    /* (where the outline turns sharply the rows either side close in on each other, inwards round a corner, outwards in
+       a notch: outwards each reaches no further than about the outline's own radius there (at least 0.45 m, past the
+       face's foot), so neighbours never cross and fold their quads over the face. Inwards every one reaches back in,
+       as far as the terrain is held down under it: there they may cross round a corner, on the top) */
+    const turns = pts.map((r, i) => { const a = pts[(i + n - 1) % n], b = pts[(i + 1) % n], da = Math.atan2(b.uz, b.ux) - Math.atan2(a.uz, a.ux); return Math.atan2(Math.sin(da), Math.cos(da)) / 2; });
+    const sense = Math.sign(turns.reduce((s, v) => s + v, 0)) || 1;
+    const rows = pts.map((r, i) => {
+      // (the smallest radius over this row and its neighbours: a corner's rows all shortened alike)
+      let R = 1e9;
+      for (let k = -2; k <= 2; k++) { const tn = Math.abs(turns[(i + k + n) % n]); if (tn > 1e-4) R = Math.min(R, (per / n) / tn); }
+      const notch = turns[i] * sense < 0;
+      return f.raise(r.oz) < 0.45 ? null : { ox: r.ox, oz: r.oz, ux: r.ux, uz: r.uz, s0: -back, fw: f.w, s1: f.w + (notch ? Math.min(1.8, Math.max(0.45, 0.85 * R)) : 1.8), t: r.s };
+    });
     // (a closed loop when no row is left out: the first row again at the end)
     const all = rows.every(Boolean);
-    for (const r of rows) push(r);
+    // (walked from just after a gap, so the strip running round the start joins up: 2026-11-08, it began at the downhill
+    // end's middle and left one quad out there, a hole right at a natural kicker's lip)
+    const k0 = all ? 0 : rows.indexOf(null);
+    for (let i = 0; i < rows.length; i++) push(rows[(k0 + i) % rows.length]);
     if (all) push(rows[0]);
     push(null);
   }
@@ -163,9 +196,23 @@ function rowPoints(G, row, nTop, nFace, nBot) {
   return pts;
 }
 
+/* one triangle of a curtain's quad into G2, wound so its front faces out. Every point of it lies on the land, a height
+   over the ground with nothing hanging over, so anything but a wall faces up: wound so its normal points up; only one
+   standing nearly upright goes by its corners' normals (out from the rock) */
+function tri(G2, nrm, grid, a, b, c, ia, ja, ib, jb, ic, jc) {
+  const A = grid[ia][ja], B = grid[ib][jb], C = grid[ic][jc];
+  const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2], wx = C[0] - A[0], wy = C[1] - A[1], wz = C[2] - A[2];
+  const cx = uy * wz - uz * wy, cy = uz * wx - ux * wz, cz = ux * wy - uy * wx;
+  let f = cy;
+  if (cy * cy < 0.04 * (cx * cx + cy * cy + cz * cz)) { const na = nrm[ia][ja], nb = nrm[ib][jb], nc = nrm[ic][jc]; f = cx * (na[0] + nb[0] + nc[0]) + cy * (na[1] + nb[1] + nc[1]) + cz * (na[2] + nb[2] + nc[2]); }
+  if (f >= 0) G2.i.push(a, b, c); else G2.i.push(a, c, b);
+}
 export function buildRock(scene, land, mats, q) {
   const low = q.tier === 'low';
-  const dr = low ? 1.2 : 0.75, fineStep = low ? 0.7 : 0.45, coarseStep = low ? 1.7 : 1.1;
+  /* (2026-11-08: a little coarser than before, now that there are twice as many rock features over three bowls and the
+     faces' bulges are the land's own, smooth enough to follow at these steps: 111 000 and 264 000 triangles on the low
+     and other tiers at the old steps) */
+  const dr = low ? 1.35 : 0.9, fineStep = low ? 0.85 : 0.6, coarseStep = low ? 1.8 : 1.3;
   const G = land.G;
   const rockG = ZONES.map(() => new Geo(false)), snowG = ZONES.map(() => new Geo(true));
   let nEl = 0, rows = 0;
@@ -175,26 +222,19 @@ export function buildRock(scene, land, mats, q) {
     if (!strips.length) continue;
     nEl++;
     const lift = 0.04 + (nEl % 7) * 0.006;      // (the snow parts: a few cm up, a little more for each element)
-    const isBand = f.kind === 'band';
+    const isBand = f.kind === 'band', snowLook = f.look === 'snow';
     const seed = (f.seed || nEl) * 1.37;
     // the points across a row: a few on the snow either side, the face a point every fineStep of its tallest height
     const Hmax = f.kind === 'band' ? f.Hmax : f.kind === 'rib' ? f.D * 1.2 + 4 : f.hDn;
-    const nTop = Math.max(2, Math.ceil(4 / coarseStep)), nBot = Math.max(2, Math.ceil(2.2 / coarseStep)), nFace = Math.min(low ? 20 : 34, Math.max(3, Math.ceil(Hmax / fineStep)));
+    const nTop = Math.max(2, Math.ceil(4 / coarseStep)), nBot = Math.max(2, Math.ceil(2.2 / coarseStep)), nFace = Math.min(low ? 16 : 26, Math.max(3, Math.ceil(Hmax / fineStep)));
     const N = nTop + nFace + nBot + 1;
     strips.forEach((st, si) => {
       const grid = st.map(row => {
-        return rowPoints(G, row, nTop, nFace, nBot).map(([s, y, sl]) => {
-          // the face pushed out: broad bulges along it, rock noise, and the strata (each layer jutting out a little more
-          // towards its top, which leaves a small ledge where the next one starts)
-          const k = smoothstep(1.1, 2.8, sl);
-          let d = 0;
-          if (k > 0) {
-            const n0 = simplex(row.t * 0.085 + seed, y * 0.05), n1 = simplex(row.t * 0.33 + seed, y * 0.31), n2 = simplex(row.t * 1.3 - seed, y * 1.2);
-            const lay = y / (1.5 + 0.6 * (0.5 + 0.5 * simplex(row.t * 0.05, seed))) + 0.8 * simplex(row.t * 0.07, seed + 3);
-            d = k * (0.06 + 0.55 * (0.5 + 0.5 * n0) + 0.14 * (0.5 + 0.5 * n1) + 0.12 * (lay - Math.floor(lay)) + 0.05 * n2);
-          }
-          return [row.ox + row.ux * (s + d), y, row.oz + row.uz * (s + d)];
-        });
+        /* (2026-11-08, for "never phase through a rock when riding on or over it": the face is drawn exactly where the
+           physics has it. Its points used to be pushed out by up to 0.9 m (bulges, noise, strata), which stood rock
+           over the snow at a face's foot and up to 4 m above where a rider was; the bulges are the land's own now,
+           frland.js Band.h, so the rider meets them too) */
+        return rowPoints(G, row, nTop, nFace, nBot).map(([s, y]) => [row.ox + row.ux * s, y, row.oz + row.uz * s]);
       });
       rows += grid.length;
       // normals from the grid, turned to face out and up
@@ -227,13 +267,16 @@ export function buildRock(scene, land, mats, q) {
         // (the face's own quads are always rock, its ledges' snow the rock material's; only the snow either side can be snow)
         // (and a band's lip is bare rock for a metre or two here and there: from above, a band shows as a dark edge)
         const rim = isBand && j === nTop - 2 && simplex(st[i].t * 0.18 + seed, 3.1) > -0.2;
-        const rock = (j >= nTop - 1 && j < nTop + nFace) || rim || ny < 0.62;
+        // (a cornice, look 'snow', 2026-11-08: a drop of snow, drawn all in the snow; it is still a cliff to the physics)
+        const rock = !snowLook && ((j >= nTop - 1 && j < nTop + nFace) || rim || ny < 0.62);
         const G2 = rock ? RG : SG, ids = rock ? idR : idS, up = rock ? 0 : lift;
         const a = vid(G2, ids, i, j, up), b = vid(G2, ids, i + 1, j, up), c = vid(G2, ids, i, j + 1, up), d = vid(G2, ids, i + 1, j + 1, up);
-        // wound so the front faces out
-        const n = nrm[i][j], ux = p10[0] - p00[0], uy = p10[1] - p00[1], uz = p10[2] - p00[2], wx = p01[0] - p00[0], wy = p01[1] - p00[1], wz = p01[2] - p00[2];
-        const f = (uy * wz - uz * wy) * n[0] + (uz * wx - ux * wz) * n[1] + (ux * wy - uy * wx) * n[2];
-        if (f >= 0) G2.i.push(a, b, c, c, b, d); else G2.i.push(a, c, b, c, d, b);
+        /* each triangle wound so its front faces out by its own facing (tri: up, as all the land's surface does)
+           (2026-11-08: the quad's first triangle decided for both by a corner's normal, and where a quad is twisted, its
+           rows closing in round a corner or its corners either side of a lip, one faced into the rock: drawn one-sided,
+           it was not there from outside, the see-through rock and the holes through it) */
+        tri(G2, nrm, grid, a, b, c, i, j, i + 1, j, i, j + 1);
+        tri(G2, nrm, grid, c, b, d, i, j + 1, i + 1, j, i + 1, j + 1);
       }
     });
   }
@@ -269,7 +312,40 @@ export function buildRock(scene, land, mats, q) {
   });
   scene.add(group); group.updateMatrixWorld(true);
   group.userData = { elements: nEl, rows, tris };
+  markCover(land, [...rockG, ...snowG]);
   return group;
+}
+/* (2026-11-08, for "no invisible gaps, holes or see-through rock") where the drawn rock covers the snow, seen from above,
+   on a 0.5 m grid (land.cover): the terrain's fine patches are held down under the rock only there (frland.js
+   dipTarget). They were held down wherever a rock feature's face was, whether or not its drawn rock reached that far,
+   and where it did not (round a rough outline, where two features overlap) the lowered terrain showed as holes up to
+   9 m deep. A cell counts when any of its corners or its middle is inside a triangle. */
+function markCover(land, geos) {
+  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+  for (const g of geos) for (let i = 0; i < g.p.length; i += 3) { const x = g.p[i], z = g.p[i + 2]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; }
+  if (!(x1 > x0)) return;
+  const r = 0.5; x0 = Math.floor(x0) - 1; z0 = Math.floor(z0) - 1;
+  const W = Math.ceil((x1 - x0) / r) + 3, H = Math.ceil((z1 - z0) / r) + 3, a = new Uint8Array(W * H);
+  const inside = (px, pz, ax, az, bx, bz, cx, cz) => {
+    const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz); if (Math.abs(d) < 1e-12) return false;
+    const l1 = ((bz - cz) * (px - cx) + (cx - bx) * (pz - cz)) / d, l2 = ((cz - az) * (px - cx) + (ax - cx) * (pz - cz)) / d;
+    return l1 >= -1e-6 && l2 >= -1e-6 && l1 + l2 <= 1 + 1e-6;
+  };
+  for (const g of geos) {
+    const P = g.p, I = g.i;
+    for (let t = 0; t < I.length; t += 3) {
+      const A = I[t] * 3, B = I[t + 1] * 3, C = I[t + 2] * 3, ax = P[A], az = P[A + 2], bx = P[B], bz = P[B + 2], cx = P[C], cz = P[C + 2];
+      const i0 = Math.floor((Math.min(ax, bx, cx) - x0) / r), i1 = Math.floor((Math.max(ax, bx, cx) - x0) / r);
+      const j0 = Math.floor((Math.min(az, bz, cz) - z0) / r), j1 = Math.floor((Math.max(az, bz, cz) - z0) / r);
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const k = j * W + i; if (a[k]) continue;
+        const qx = x0 + i * r, qz = z0 + j * r;
+        if (inside(qx + r / 2, qz + r / 2, ax, az, bx, bz, cx, cz) || inside(qx, qz, ax, az, bx, bz, cx, cz) || inside(qx + r, qz, ax, az, bx, bz, cx, cz) ||
+          inside(qx, qz + r, ax, az, bx, bz, cx, cz) || inside(qx + r, qz + r, ax, az, bx, bz, cx, cz)) a[k] = 1;
+      }
+    }
+  }
+  land.cover = { x0, z0, r, W, H, a };
 }
 
 // ---- the jibs: logs, the rock slab, stumps; and the start flags and the finish arch ---------------------------------------
