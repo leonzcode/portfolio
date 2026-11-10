@@ -24,7 +24,7 @@
    the two bull wheels one more. The stations and towers cast their shadows from copies cut in 150 m pieces drawn only
    into the sun's shadow map (layer 5), as the chairlift does. */
 import * as THREE from 'three';
-import { ground, height, normal } from './terrain.js?v=20';
+import { ground, height, normal } from './terrain.js?v=21';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // ---- sizes (metres) ---------------------------------------------------------------------------------------------------
@@ -338,7 +338,7 @@ float tbDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); float a = 2.0 * ab
        its windows to the line; merged into this mesh, so no draw call of its own. Should it not load, a plain hut built
        here stands in. */
     let hutG = null;
-    try { const gl = await new GLTFLoader().loadAsync('./models/tbar/hut.glb?v=20'); gl.scene.traverse(o => { if (o.isMesh && !hutG) hutG = o.geometry; }); }
+    try { const gl = await new GLTFLoader().loadAsync('./models/tbar/hut.glb?v=21'); gl.scene.traverse(o => { if (o.isMesh && !hutG) hutG = o.geometry; }); }
     catch (e) { console.warn('tbar hut', e); }
     const extra = [];
     for (const [h, w, d, wall] of [[P.hut, 1.3, 1.6, C.wood], [P.motor, 1.5, 2.0, C.white]]) {
@@ -377,6 +377,8 @@ float tbDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); float a = 2.0 * ab
     line.matrixAutoUpdate = false;
     const group = this.group = new THREE.Group(); group.name = 'tbar';
     // (the shadow copies: 150 m pieces, layer 5)
+    // (from their backs only, unlike the chairlifts' stations: the huts are closed boxes, which cast whole that way,
+    // and from both sides their own sunny walls fell into their own shadow)
     const pieces = new Map(), shadowMat = new THREE.MeshBasicMaterial({ colorWrite: false });
     for (const { z, g } of sh) { const k = Math.floor(z / 150); if (!pieces.has(k)) pieces.set(k, []); pieces.get(k).push(g.geometry()); }
     for (const list of pieces.values()) {
@@ -406,6 +408,22 @@ float tbDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); float a = 2.0 * ab
     let lo = 0, hi = P.n;
     while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (P.S[mid] <= s) lo = mid; else hi = mid; }
     const k = lo, k1 = k + 1, f = (s - P.S[k]) / Math.max(1e-6, P.S[k1] - P.S[k]);
+    out.set(P.px[k] + (P.px[k1] - P.px[k]) * f, P.py[k] + (P.py[k1] - P.py[k]) * f, P.pz[k] + (P.pz[k1] - P.pz[k]) * f);
+    if (dir) { dir.set(P.px[k1] - P.px[k], 0, P.pz[k1] - P.pz[k]); if (dir.lengthSq() < 1e-10) dir.set(0, 0, -1); dir.normalize(); }
+    return out;
+  }
+  /* (E, 2026-11-09, the lag pass: every hanger's place on the rope every frame was a search of the whole rope, two
+     hundred a frame; each hanger now starts from the stretch of rope it was on last frame and steps on from there,
+     a search only when it has come round the loop) */
+  ropeAtI(i, s, out, dir) {
+    const P = this.plan, seg = this._seg || (this._seg = new Int32Array(P.N));
+    let k = seg[i];
+    if (!(P.S[k] <= s && s < P.S[k + 1])) {
+      for (let n = 0; n < 6 && k < P.n - 1 && P.S[k + 1] <= s; n++) k++;
+      if (!(P.S[k] <= s && s < P.S[k + 1])) { let lo = 0, hi = P.n; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (P.S[mid] <= s) lo = mid; else hi = mid; } k = lo; }
+      seg[i] = k;
+    }
+    const k1 = k + 1, f = (s - P.S[k]) / Math.max(1e-6, P.S[k1] - P.S[k]);
     out.set(P.px[k] + (P.px[k1] - P.px[k]) * f, P.py[k] + (P.py[k1] - P.py[k]) * f, P.pz[k] + (P.pz[k1] - P.pz[k]) * f);
     if (dir) { dir.set(P.px[k1] - P.px[k], 0, P.pz[k1] - P.pz[k]); if (dir.lengthSq() < 1e-10) dir.set(0, 0, -1); dir.normalize(); }
     return out;
@@ -454,7 +472,7 @@ float tbDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); float a = 2.0 * ab
     for (let i = 0; i < N; i++) {
       if (i === mine) continue;
       const s = this.sOf(i, c);
-      this.ropeAt(s, _hc, _c);
+      this.ropeAtI(i, s, _hc, _c);
       if (_hc.distanceToSquared(cp) > r2) continue;
       _sph.center.set(_hc.x, _hc.y - 1.5, _hc.z); _sph.radius = 1.9;
       if (!_f.intersectsSphere(_sph)) continue;
@@ -463,7 +481,8 @@ float tbDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); float a = 2.0 * ab
     // the rider's own hanger, as the ride put it (update)
     if (mine >= 0 || (R && R.x)) { const H = this.pose; this.putHanger(k++, this.rideClamp, H.bar, H.axisBar, this.rideU); }
     this.rb.count = this.cd.count = this.tt.count = k;
-    if (k) for (const m of [this.rb, this.cd, this.tt]) m.instanceMatrix.needsUpdate = true;
+    // (E: only the hangers drawn go to the graphics card, not the whole buffer of 228 every frame)
+    if (k) for (const m of [this.rb, this.cd, this.tt]) { const im = m.instanceMatrix; im.clearUpdateRanges(); im.addUpdateRange(0, k * 16); im.needsUpdate = true; }
     // the bull wheels, turning with the rope (V / G2 radians a second), near the camera and in view
     let nw = 0;
     const a = -((c * V / G2) % (Math.PI * 2));
@@ -752,7 +771,7 @@ float tbDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); float a = 2.0 * ab
     const k = this.rb.count; if (k >= this.rb.instanceMatrix.count) return;
     this.putHanger(k, Cl, B, ax, u);
     this.rb.count = this.cd.count = this.tt.count = k + 1;
-    for (const m of [this.rb, this.cd, this.tt]) m.instanceMatrix.needsUpdate = true;
+    for (const m of [this.rb, this.cd, this.tt]) { const im = m.instanceMatrix; im.clearUpdateRanges(); im.addUpdateRange(0, (k + 1) * 16); im.needsUpdate = true; }
     // (its empty copy, if drawn where the clamp is, is pushed up out of sight: found by its clamp's place)
     const A = this.rb.instanceMatrix.array;
     for (let j = 0; j < k; j++) if (Math.abs(A[j * 16 + 12] - Cl.x) < 0.05 && Math.abs(A[j * 16 + 14] - Cl.z) < 0.05 && Math.abs(A[j * 16 + 13] - Cl.y) < 0.05) {
@@ -764,7 +783,12 @@ float tbDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); float a = 2.0 * ab
   // ---- collisions: the columns, the masts and the huts, as trees are (skier.trees) --------------------------------------
   withTowers(forest) {
     const C2 = this.plan.colliders;
+    // (E, 2026-11-09: the box round them all first: the rider is nearly always nowhere near the line, and this is asked
+    // several times every physics step)
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, rm = 0;
+    for (const c of C2) { x0 = Math.min(x0, c.x); x1 = Math.max(x1, c.x); z0 = Math.min(z0, c.z); z1 = Math.max(z1, c.z); rm = Math.max(rm, c.r); }
     const hit = (x, z, r) => {
+      const m = rm + r; if (x < x0 - m || x > x1 + m || z < z0 - m || z > z1 + m) return null;
       for (const c of C2) {
         const d = Math.hypot(c.x - x, c.z - z), R = c.r + r;
         if (d < R) return { t: { x: c.x, y: c.y, z: c.z, s: c.s }, d, R, nx: (x - c.x) / (d || 1), nz: (z - c.z) / (d || 1) };

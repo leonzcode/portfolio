@@ -10,10 +10,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=20';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=20';
-import { height, normal } from './terrain.js?v=20';
-import { gltfLoader, gearParts, LOOK, FIT, TOPS, LOW } from './gear.js?v=20';
+import { clamp, smoothstep } from './noise.js?v=21';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=21';
+import { height, normal } from './terrain.js?v=21';
+import { gltfLoader, gearParts, LOOK, FIT, TOPS, LOW } from './gear.js?v=21';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -161,8 +161,8 @@ const GEAR_K = 3;                    // the lowest few of each piece of gear's o
 const _cx = V(), _cu = V(), _cn = V(), _cn2 = V(), _cb2 = V(), _cs = V(), _pb = V(), _pd = V(), _pn = V(), _cdn = V(), _cbest = new Float64Array(8), _cbi = new Int32Array(8), _ck = new Float64Array(10), _cki = new Int32Array(10);
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=20';
-import { grabDef } from './grabs.js?v=20';
+export { GRABS } from './grabs.js?v=21';
+import { grabDef } from './grabs.js?v=21';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -462,7 +462,7 @@ export class Rig {
     const kind = opts.kind || 'ski';
     const want = { goggles: gearParts('goggles'), head: look.head === 'beanie' ? gearParts('beanie') : look.head === 'painted' ? null : gearParts('helmet_c'),
       ski: kind === 'ski' && look.ski !== 'park' ? gearParts(look.ski === 'pow' ? 'ski_b' : 'ski_a') : null, pole: kind === 'ski' ? gearParts('pole') : null, plate: kind === 'ski' ? gearParts('binding') : null };
-    const gl = await gltfLoader().loadAsync('./models/' + id + '.glb?v=20');
+    const gl = await gltfLoader().loadAsync('./models/' + id + '.glb?v=21');
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     if (opts.look) for (const k of ['jacket', 'jacket2', 'pants', 'gloves', 'helmet', 'lens', 'boots', 'skiA', 'skiB']) if (opts.look[k]) this.outfit[k] = opts.look[k];
@@ -590,7 +590,7 @@ export class Rig {
   }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=20';
+    const maskUrl = './models/' + id + '_m.png?v=21';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;

@@ -28,7 +28,7 @@
    with y = 0 at the main start. The physics reads it directly (terrain.js ground through setMountain); rock faces are
    steeper than skier.js's walls (about 53 degrees), so they are walls to ride into and drops to ride off.
    This module is plain JS (no three.js) so it can be checked in Node. */
-import { simplex, fbm, ridged, smoothstep, clamp, smax } from './noise.js?v=20';
+import { simplex, fbm, ridged, smoothstep, clamp, smax } from './noise.js?v=21';
 
 const RAD = Math.PI / 180;
 
@@ -67,33 +67,49 @@ export function baseZ(z) {
    outer sides falling away into the side bowls (sideY); low on the face they sink into the valley. */
 const zs = x => { const a = Math.min(150, Math.abs(x)); return 0.0007 * a * a; };
 /* (each arm's wall foot, crest and height along the face tabulated every metre of z: a few noises a sample before) */
-const AZ0 = -600, AN = 2200, ARM = [0, 1].map(e => {
-  const foot = new Float32Array(AN), crest = new Float32Array(AN), A = new Float32Array(AN);
+const AZ0 = -600, AN = 2200;
+/* (2026-11-08, second pass: the ridges between the bowls read as ridges, not straight lines) a col in each arm, a low
+   place where its ridge dips to a few metres over the bowls either side, mid-face: ridden through, a rider crosses from
+   one bowl to the next (towards the side bowls it is downhill). The east one between the wall buttresses at z 260 and
+   380, the west one between those at 190 and 320. And the arms are gone by z 640 (they were by 720), so the runouts
+   join in one valley you can cross anywhere. */
+export const COLS = [{ z: 256, w: 52 }, { z: 322, w: 52 }];
+const colDip = (e, z) => { const c = COLS[e], u = (z - c.z) / c.w; return 0.8 * Math.exp(-u * u); };
+const armFade = z => smoothstep(-70, 60, z) * (1 - smoothstep(430, 640, z));
+const ARM = [0, 1].map(e => {
+  const foot = new Float32Array(AN), crest = new Float32Array(AN), A = new Float32Array(AN), fl = new Float32Array(AN);
   for (let i = 0; i < AN; i++) {
     const z = AZ0 + i;
     foot[i] = 146 + 11 * Math.sin(z * 0.013 + (e ? 0.7 : 2.9)) + 6 * simplex(z * 0.025, e ? 3.3 : -3.3);
-    crest[i] = e ? 202 : foot[i] + 58 + 12 * Math.sin(z * 0.009 + 1.3) + 6 * simplex(z * 0.02 + 7, 1.1);
-    A[i] = (e ? 28 : 34) * (1 + 0.18 * simplex(z * 0.011, e ? 5 : -5)) * smoothstep(-70, 60, z) * (1 - smoothstep(470, 720, z)) + (e ? 8 : 14) * (1 - smoothstep(-40, 60, z));
+    // (the east crest wanders as the west one does now: it was held at 202 m out for the old chairlift, a ruler-straight
+    // line the whole length of the mountain)
+    // (and never under 58 m from the wall's foot, or the wall is steeper than snow should be: over 55 degrees with the face's)
+    crest[i] = foot[i] + Math.max(58, (e ? 60 : 58) + (e ? 8 : 12) * Math.sin(z * 0.009 + (e ? 4.1 : 1.3)) + (e ? 4 : 6) * simplex(z * 0.02 + 7, e ? -1.7 : 1.1));
+    A[i] = ((e ? 28 : 34) * (1 + 0.18 * simplex(z * 0.011, e ? 5 : -5)) * armFade(z) + (e ? 8 : 14) * (1 - smoothstep(-40, 60, z))) * (1 - colDip(e, z));
+    // (where the outer side starts to fall away: wandering gently along the face, never as fast as the crest, which made
+    // 63 degree creases down the fall line when the flank followed it)
+    fl[i] = (e ? 216 : 222) + 9 * Math.sin(z * 0.012 + (e ? 1.7 : 4.4)) + 4 * simplex(z * 0.02, e ? 6 : -6);
   }
-  return { foot, crest, A };
+  return { foot, crest, A, fl };
 });
 function arms(x, z) {
   const a = Math.abs(x);
   if (a < 128) return 0;
-  /* the inner wall's foot wanders in and out along the face (bays and spurs); the east arm's crest stays at 200 to 216
-     m out all the way down (the old chairlift ran up it), the west one wanders too. Their height along the face: low at
-     the summit ridge's ends, highest over the middle of the face, gone by the apron */
+  /* the inner wall's foot wanders in and out along the face (bays and spurs), and so do both arms' crests (2026-11-08,
+     second pass: the east one stayed 202 m out, where the old chairlift ran up it). Their height along the face: low at
+     the summit ridge's ends, highest over the middle of the face, dipping at each arm's col, gone by the apron */
   const T = ARM[x > 0 ? 1 : 0], q = clamp(z - AZ0, 0, AN - 1.001), i = q | 0, t = q - i;
   const foot = T.foot[i] + (T.foot[i + 1] - T.foot[i]) * t;
   if (a < foot - 1) return 0;
-  const crest = T.crest[i] + (T.crest[i + 1] - T.crest[i]) * t, A = T.A[i] + (T.A[i + 1] - T.A[i]) * t;
+  const crest = T.crest[i] + (T.crest[i + 1] - T.crest[i]) * t, A = T.A[i] + (T.A[i + 1] - T.A[i]) * t, fl = T.fl[i] + (T.fl[i + 1] - T.fl[i]) * t;
   const u = clamp((a - foot) / (crest - foot), 0, 1), up = u * u * (2.2 - 1.2 * u);       // (concave at its foot, rounding over at the top)
   // (over the crest, falling away outside into the side bowl beyond (sideY), steeply up high, gently where the arms fade
   // out low down, so the three runouts join in one valley)
-  // (from a fixed line, not the wandering crest: following it, the flank's height swung up and down along the face, as
-  // steep as 63 degrees down the fall line in places)
-  const fo = 0.25 + 0.4 * smoothstep(-70, 60, z) * (1 - smoothstep(470, 720, z)), fl = x > 0 ? 216 : 222;
-  const out = a > fl ? fo * (a - fl) * smoothstep(fl, fl + 40, a) : 0;
+  // (from its own line, fl, wandering gently: see ARM)
+  // (none in the valley below z 680, where the arms have gone: there it left a crease down the runout)
+  // (rounding over into a steady fall over 20 m: the old ramp, (a - fl) x smoothstep, overshot to 1.7 times its slope
+  // half way, 50 degrees across a ridge's flank)
+  const fo = (0.25 + 0.4 * armFade(z)) * (1 - smoothstep(560, 680, z)), dO = a - fl, out = dO <= 0 ? 0 : dO < 20 ? fo * dO * dO / 40 : fo * (dO - 10);
   return A * up - out + 1.8 * simplex(x * 0.03 + 9, z * 0.02) * smoothstep(foot, foot + 25, a);
 }
 /* the runout: one valley under all three bowls, a shallow channel down to each chairlift's bottom station (2026-11-08:
@@ -110,8 +126,10 @@ function runout(x, z) {
 function far(x, z) {
   const dx = Math.max(0, Math.abs(x) - 540), dz = Math.max(0, -500 - z, z - 1150), d = Math.hypot(dx, dz);
   if (d < 1) return 0;
-  const k = smoothstep(0, 600, d);
-  return k * (280 * ridged(x * 0.0011 + 7.7, z * 0.0011 - 2.3, 4) - 60);
+  // (lower than they were, 2026-11-08 second pass: their ridged creases stood 70 to 77 degree faces in view from the
+  // side bowls, bright streaked walls on the skyline)
+  const k = smoothstep(0, 700, d);
+  return k * (190 * ridged(x * 0.0011 + 7.7, z * 0.0011 - 2.3, 4) - 40);
 }
 /* ---- the side bowls (2026-11-08, for Leon's "for freeride expand the mountain make it bigger add more ski lifts as
    well"): over each arm another bowl down the same long profile (the summit's shoulder, the brink, the face easing all the
@@ -125,20 +143,44 @@ export const SIDES = [
   { name: 'Spine Wall', xc: 352, hw: 80, wall: 62, A: 38, seed: 9 },
 ];
 // (each side's wall height along the face tabulated every metre, as the arms' are)
-for (const S of SIDES) {
-  S.tA = new Float32Array(AN);
-  for (let i = 0; i < AN; i++) { const z = AZ0 + i; S.tA[i] = S.A * (1 + 0.15 * simplex(z * 0.011, S.seed)) * smoothstep(-70, 60, z) * (1 - smoothstep(470, 720, z)) + 12 * (1 - smoothstep(-40, 60, z)); }
-}
+/* (2026-11-08, second pass) each wall its own height along the face (the inner one, towards the main bowl, with the
+   arm's col in it) and its own foot, wandering in and out as the main bowl's do, so the ridges between the bowls and
+   the outer ones are not straight lines down the whole mountain */
+SIDES.forEach((S, k) => {
+  const e = S.xc > 0 ? 1 : 0;
+  S.tA = new Float32Array(AN); S.tAi = new Float32Array(AN); S.tHw = new Float32Array(AN); S.tHi = new Float32Array(AN);
+  for (let i = 0; i < AN; i++) {
+    const z = AZ0 + i, A0 = S.A * (1 + 0.15 * simplex(z * 0.011, S.seed)), top = 12 * (1 - smoothstep(-40, 60, z)), A = A0 * armFade(z) + top;
+    /* (the outer wall stands on to the lift's bottom, fading from z 600 to 800, 2026-11-08 second pass: gone by 640 as
+       the inner one is, a rider drifting out of the West Glades low down crossed a 15 m ridge into the side valley and
+       came out on the valley floor 400 m from the chairlift) */
+    S.tA[i] = A0 * smoothstep(-70, 60, z) * (1 - smoothstep(600, 800, z)) + top; S.tAi[i] = A * (1 - colDip(e, z));
+    S.tHw[i] = S.hw + 9 * Math.sin(z * 0.011 + S.seed) + 5 * simplex(z * 0.022, S.seed + 2);           // (the outer foot)
+    // (the inner foot wanders in only, towards the side bowl's middle: further out, its ridge and the fall past it stood
+    // into the main bowl's wall beyond the arm and steepened it to 55 to 58 degrees)
+    S.tHi[i] = S.hw - 6 + 6 * Math.sin(z * 0.012 + S.seed * 2.3) + 4 * simplex(z * 0.024, S.seed - 2);     // (the inner foot)
+  }
+});
 function sideY(S, x, z) {
-  const s = Math.abs(x - S.xc);
+  const s = Math.abs(x - S.xc), inner = (x - S.xc) * S.xc < 0;
   let y = baseZ(z - 0.0006 * Math.min(s, 120) ** 2);
-  if (s > S.hw) {
-    const q = clamp(z - AZ0, 0, AN - 1.001), i = q | 0, A = S.tA[i] + (S.tA[i + 1] - S.tA[i]) * (q - i);
-    const u = Math.min(1, (s - S.hw) / S.wall), up = u * u * (2.2 - 1.2 * u);
-    y += A * up + 1.6 * simplex(x * 0.03 + S.seed, z * 0.02) * smoothstep(S.hw, S.hw + 25, s);
+  const q = clamp(z - AZ0, 0, AN - 1.001), i = q | 0, f = q - i, H = inner ? S.tHi : S.tHw, hw = H[i] + (H[i + 1] - H[i]) * f;
+  if (s > hw) {
+    // (the outer wall 10 m wider than the inner: with its foot wandering, at the inner one's width it stood at 55 to 56
+    // degrees in places, a few more than when its foot was a straight line)
+    const T = inner ? S.tAi : S.tA, A = T[i] + (T[i + 1] - T[i]) * f, wall = inner ? S.wall : S.wall + 10;
+    const u = Math.min(1, (s - hw) / wall), up = u * u * (2.2 - 1.2 * u);
+    y += A * up + 1.6 * simplex(x * 0.03 + S.seed, z * 0.02) * smoothstep(hw, hw + 25, s);
     // (past its ridge falling away: fast towards the main bowl, where the arm's own surface takes over; gently on the
     // outside, towards the far mountains)
-    const past = s - S.hw - S.wall - 6; if (past > 0) y -= ((x - S.xc) * S.xc < 0 ? 1.2 : 0.5) * past;
+    // (rounding over into the fall across 16 m: its slope stepping straight to the fall made a ripple where the two
+    // bowls' surfaces met, a crease down the valley)
+    /* (the outside, 2026-11-08 second pass: down 30 m at most, a side valley along the bowl that joins the runout. It
+       fell on and on, 300 m by 1100 m out, a long face leading riders off the mountain, and where it was eased back up
+       to the runout's level it stood a 230 m wall across the valley at z 600) */
+    // (the inner side's rounding starts 8 m sooner, so past it the fall is where it was before it was rounded)
+    const past = s - hw - wall - (inner ? -2 : 6);
+    if (past > 0) { const r = past < 16 ? past * past / 32 : past - 8; y -= inner ? 1.2 * r : 0.5 * (1 - smoothstep(560, 680, z)) * 60 * (1 - Math.exp(-r / 60)); }
   }
   return y;
 }
@@ -748,8 +790,9 @@ function sideLayout(F) {
   F.push(new Lip({ xa: 276, xb: 346, z: 4.6, h0: 0.7, up: 3, dn: 0.5, seed: 202, name: 'Cornice' }));
   F.push(new Spines({ name: 'The Spine Wall', za: 18, zb: 270, cross: 0.78, list: [{ x: 292, h: 7, ph: 0.9, za: 24, zb: 230 }, { x: 306, h: 9, ph: 2.6 }, { x: 320, h: 8.5, ph: 4.4, zb: 250 }, { x: 334, h: 6, ph: 1.7, za: 30, zb: 210 }] }));
   const E0 = new Rib({ name: 'East couloir rib', wigL: 1.2, wigR: 1.0, wwL: 9, xl: [[0, 350], [60, 352], [130, 351]], xr: [[0, 361], [40, 362], [70, 366], [130, 365]], zTop: 4, grow: 16, D: 11, Dpts: [[4, 8], [40, 12], [90, 10], [128, 12]], zEnd: 128, seed: 203, crest: 0.1 });
-  // (its choke 7 m between the walls' tops, about 3 m of floor, as Corbet's)
-  const E1 = new Rib({ name: 'East couloir rib', wigL: 1.0, wigR: 1.4, wwR: 9, xl: [[0, 372], [40, 372.5], [70, 373], [130, 375]], xr: [[0, 384], [130, 387]], zTop: 6, grow: 16, D: 12, Dpts: [[6, 9], [50, 13], [100, 11], [134, 12]], zEnd: 134, seed: 204, crest: 0.12 });
+  // (its choke 8 m between the walls' tops, about 3 m of floor, as Corbet's; 2026-11-08 second pass: a metre wider, the
+  // floor had narrowed to 2 m at z 90 where the walls wander in)
+  const E1 = new Rib({ name: 'East couloir rib', wigL: 1.0, wigR: 1.4, wwR: 9, xl: [[0, 372], [40, 373.2], [70, 374.2], [130, 376]], xr: [[0, 384], [130, 387]], zTop: 6, grow: 16, D: 12, Dpts: [[6, 9], [50, 13], [100, 11], [134, 12]], zEnd: 134, seed: 204, crest: 0.12 });
   F.push(E0, E1);
   F.push(new Gully({ name: 'The east couloir', ribs: [E0, E1], left: { L: z => E0.R(z), ww: E0.ww }, right: { L: z => E1.L(z), ww: E1.ww }, xa: 356, xb: 378, za: 12, zb: 70, zc: 140, E: 3.2 }));
   F.push(new Band({ name: 'East couloir cornice', look: 'snow', z: 10, wig: 0.25, seed: 205, a: 0.2, Rup: 6, Rdn: 12, pts: [[362, 0], [363.4, 3.2], [369.6, 3.2], [371, 0]] }));

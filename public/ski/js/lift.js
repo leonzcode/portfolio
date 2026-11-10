@@ -24,7 +24,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { ground, height } from './terrain.js?v=20';
+import { ground, height } from './terrain.js?v=21';
 
 // ---- the model's numbers (metres, from models/lift/lift.glb) --------------------------------------------------------
 const HALF = 2.388;                  // half the gauge: each cable's distance from the line's middle (the chairs' grips)
@@ -81,7 +81,10 @@ function planOne(park, LL) {
     for (let x = x0; x <= x1; x += 1) for (let z = z0; z <= z1; z += 1) lvl = Math.max(lvl, ground(x, z));
     return { x0, x1, z0, z1, y: lvl + 0.05 };
   };
-  top.pad = padOf(top.z - ST.back - 3, top.front + 3);
+  /* (a map's own line, Freeride's, 2026-11-08 second pass: the top pad ends a metre inside the station's front, so the
+     snow falls away as the cable does leaving it; held level 3 m past it, the chairs went 0.2 to 0.4 m into the snow
+     4 m out) */
+  top.pad = padOf(top.z - ST.back - 3, top.front + (LL ? -1 : 3));
   bot.pad = padOf(bot.front - 2, bot.z + ST.back + 3);
   const pads = [top.pad, bot.pad];
   const padY = (x, z) => {
@@ -887,7 +890,7 @@ export class Lift {
 async function liftKit(q) {
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  const gltf = await loader.loadAsync('./models/lift/lift.glb?v=20');
+  const gltf = await loader.loadAsync('./models/lift/lift.glb?v=21');
   draco.dispose();
   const part = name => { let m = null; gltf.scene.traverse(o => { if (o.isMesh && o.name === name) m = o; }); if (!m) throw new Error('lift: no ' + name); return m; };
   const chair = part('chair'), chairLo = part('chair_lo'), tower = part('tower'), towerLo = part('tower_lo'), station = part('station'), bull = part('bull');
@@ -967,7 +970,10 @@ float chairDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * c
         const h = new THREE.BufferGeometry(); h.setAttribute('position', g0.attributes.position); if (g0.index) h.setIndex(g0.index);
         if (!pieces.has(key)) pieces.set(key, []); pieces.get(key).push(h);
       }
-      const shadowMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+      // (E, 2026-11-09: drawn from both sides into the shadow map: the stations have open one-sided panels, which from
+      // their backs alone left bright stripes through the shadow on the pad. Their sunny walls do not shade themselves
+      // this way; the T-bar's huts did, so tbar.js keeps the backs)
+      const shadowMat = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });
       for (const list of pieces.values()) {
         const g = mergeGeometries(list, false) || mergeGeometries(list.map(h => h.index ? h.toNonIndexed() : h), false); if (!g) continue;
         const sm = new THREE.Mesh(g, shadowMat); sm.layers.set(5); sm.castShadow = true; sm.matrixAutoUpdate = false; sm.name = 'lift shadow';

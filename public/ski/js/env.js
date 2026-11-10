@@ -12,8 +12,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { snowUniforms } from './materials.js?v=20';
-import { height, runHalf, getPark } from './terrain.js?v=20';
+import { snowUniforms } from './materials.js?v=21';
+import { height, runHalf, getPark } from './terrain.js?v=21';
+import { installShadowOnly } from './shadowproxy.js?v=21';
 
 const KEY = 'ski_env';
 export const ENV = Object.assign({ time: 12.5, sky: 'clear', snow: 'groomed' },
@@ -154,9 +155,12 @@ export class Env {
     Object.assign(sun.shadow.camera, { left: -box, right: box, top: box, bottom: -box, near: 1, far: 300 });
     sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
     // (layer 5: things drawn only into the shadow map, cut into pieces so only those near the rider are: the lift's
-    // stations and towers, the park's fences, the trees near the rider; lift.js, world.js. The view's camera keeps to 0)
+    // stations and towers, the park's fences, the trees near the rider; lift.js, world.js. three r180 tests the view
+    // camera's layers in the shadow pass, not this camera's, so they are moved to layer 0 and kept out of the view's own
+    // draws by shadowproxy.js, at the first shadow map: 2026-11-09)
     sun.shadow.camera.layers.enable(5);
     scene.add(sun, sun.target);
+    installShadowOnly(scene, sun);       // (stand-ins drawn into the shadow map only: shadowproxy.js)
     // sky light from above, the snow's bounce from below
     this.hemi = new THREE.HemisphereLight(0xa9c8ef, 0xf2f4f6, 1.05);
     scene.add(this.hemi);

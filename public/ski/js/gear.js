@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { riderShadow } from './shadowproxy.js?v=21';   // (E: the rider's shadow in a few draws)
 
 /* Downloaded gear (2026-11-05, models/gear/, credits in CREDITS.md): goggles, a beanie, a bike lid, two skis and a pole,
    loaded once each and shared by every rider (each rider gets its own copies of the materials, for its colours).
@@ -34,7 +35,7 @@ export const LOW = { baggy: 1, regular: 0.4, slim: 0 };
 export const FIT = { baggy: 1, regular: 0.7, slim: 0.45 };
 const _gear = new Map();
 export function gearModel(name) {
-  if (!_gear.has(name)) _gear.set(name, gltfLoader().loadAsync('./models/gear/' + name + '.glb?v=20').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));
+  if (!_gear.has(name)) _gear.set(name, gltfLoader().loadAsync('./models/gear/' + name + '.glb?v=21').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));
   return _gear.get(name);
 }
 // the model's meshes as plain meshes in the model's own frame (the node transforms baked into copies of their
@@ -105,4 +106,6 @@ export function mergeGear(rig) {
   rig.helmet.traverse(o => { if (o.isMesh && o.material && o.material.metalness >= 0.99) lens.push(o); });
   // (and the shell, which wears its painted picture: merged, it came out plain white)
   mergeInto(rig.helmet, o => lens.includes(o) || !!(o.material && o.material.map) || !!o.userData.keep);   // (keep: the hood, recoloured live)
+  // (E, 2026-11-09: every rigid piece's shadow, skis, boots, poles, helmet, a board or a scooter..., in one draw)
+  riderShadow(rig);
 }

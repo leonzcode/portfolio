@@ -8,7 +8,7 @@
 // frame, with skirts hiding the seams between sizes. Features with their own meshes (kickers, the pipe) are left out
 // of the patches (the ground under them is lowered a little) and drawn by park.js at finer spacing.
 import * as THREE from 'three';
-import { fbm, ridged, smoothstep, clamp } from './noise.js?v=20';
+import { fbm, ridged, smoothstep, clamp } from './noise.js?v=21';
 
 // ---- the run's long profile ----------------------------------------------------------------------------------------
 // [z where it starts, pitch in degrees] (above the start the slope behind is a gentle 12 degrees, not the old 26: with
@@ -140,17 +140,24 @@ export class Terrain {
     // patches wholly past this are not drawn: the snow material has faded the snow into the horizon's colour by then,
     // and the sky dome shows that same colour below the horizon
     this.cull = opts.root ? Infinity : opts.far || 3250;
+    /* (E, 2026-11-09, for the walls on Freeride's skyline at x = 2048: where patches past the far distance are left
+       out, none is bigger than 1024 m. A 4096 m patch is 128 m a cell on the low tier, and on Freeride's mountains its
+       surface fell up to 66 m under the ground's true height, so the 1024 m patch beside it showed its skirt as a wall
+       that tall. Kept to 1024 m, no far seam steps more than about 11 m; it is 1 to 10 patches more, and no more triangles
+       in view, since the big squares reached far past the far distance) */
+    this.maxLeaf = this.cull === Infinity ? Infinity : 1024;
     this.cam = new THREE.Vector3();
-    /* (2026-11-08, the lag pass: the big far patches, 256 m and up, are drawn merged, one mesh for those in each 2 km
-       square of the world, so the far snow is a handful of draws, not a dozen or two; each square is still left out
-       when it is out of view. When a square's patches change (the camera crossing a big patch's distance, every few
-       seconds riding fast) they are drawn one by one meanwhile and its new mesh is put together a little a frame
-       (mergeStep: copying them all at once held a frame 2 to 6 ms here, 20 on the medium tier now and then). Near
-       patches are drawn one by one, as before.) */
-    this.farSize = opts.farSize || 256; this.farCell = opts.farCell || 2048;
-    this.groups = new Map();                 // square -> { sig, mesh } (sig: its patches' keys)
-    this.merges = new Map();                 // square -> a merge being put together
+    /* (2026-11-09, the second lag pass: every patch is drawn by one BatchedMesh, one draw for all the snow, each patch
+       still left out on its own when it is out of view, and drawn nearest first. Each patch shown is copied into a
+       slot of the batch's buffers once; a patch hidden keeps its slot (shown again with no copy) until a new patch
+       needs one, which then takes the slot hidden longest. In v20 the near patches were a draw each and the big far
+       ones merged into one mesh per 2 km square, which drew the patches behind the camera too.) */
     this.inUse = new Set();
+    this.slots = new Map();                  // patch key -> { geom, inst, vis, used }
+    // (slots: about twice the most patches seen at once, 77 on the low tier, 131 on medium, on Freeride; the low tier's
+    // build budget is 3 ms, main.js. 160 slots of 32 x 32 quads are about 9 MB on the graphics card)
+    this.cap = this.budget <= 3 ? 160 : 260;
+    this.batch = null;
   }
   makeIndex() {
     const SEG = this.SEG, n = SEG + 1, idx = [];
@@ -241,7 +248,6 @@ export class Terrain {
     /* (2026-11-06, the lag pass: the walk sampled the noise twice at every node, every frame, about 5% of a frame on a
        slow machine. Nothing waiting to be built and the camera within 1.5 m of where it last chose: the same patches
        stand, so the walk is skipped; a camera moved that little never changes a patch's detail.) */
-    if (this.merges.size) this.mergeStep(performance.now() + Math.max(0.75, this.budget * 0.35));
     if (!this.queue.length && this._at && this._at.distanceToSquared(cam) < 2.25) return 0;
     (this._at || (this._at = cam.clone())).copy(cam);
     this.cam.copy(cam);
@@ -253,7 +259,7 @@ export class Terrain {
       // (the open snow well off the run and above the start is smooth: it is split at 0.6 of the distance)
       const open = this.cull !== Infinity && (x0 > 120 || x0 + size < -120 || z0 + size < -250);
       // (a made-up mountain may ask for coarser patches: mtn.lodK, Freeride's steep face on the low tier, 2026-11-07)
-      const split = size > this.minLeaf && d < size * this.K * (open ? 0.6 : 1) * (mtn && mtn.lodK || 1);
+      const split = size > this.minLeaf && (size > this.maxLeaf || d < size * this.K * (open ? 0.6 : 1) * (mtn && mtn.lodK || 1));
       if (split) {
         const h = size / 2, kids = [[x0, z0], [x0 + h, z0], [x0, z0 + h], [x0 + h, z0 + h]];
         const ready = kids.every(([kx, kz]) => this.cache.has((lvl + 1) + ':' + kx + ':' + kz));
@@ -291,76 +297,71 @@ export class Terrain {
       // (a patch no longer wanted is dropped half built)
       if (jobs.size > 8) for (const k of jobs.keys()) if (!seen.has(k)) jobs.delete(k);
     }
-    const now = new Set(want), single = new Set(), far = new Map();
-    for (const k of now) {
-      const m = this.cache.get(k), u = m.userData; u.used = frame;
-      if (u.size >= this.farSize) { const c = Math.floor(u.x0 / this.farCell) + ',' + Math.floor(u.z0 / this.farCell); let l = far.get(c); if (!l) far.set(c, l = []); l.push(k); }
-      else single.add(k);
-    }
-    // a far square whose merged mesh matches its patches is drawn merged; one that changed, patch by patch until its
-    // new mesh is ready
-    const merged = new Set();
-    for (const [c, keys] of far) {
-      keys.sort();
-      const sig = keys.join('|'), G = this.groups.get(c);
-      if (G && G.sig === sig) { merged.add(c); continue; }
-      for (const k of keys) single.add(k);
-      const J = this.merges.get(c);
-      if (!J || J.sig !== sig) this.merges.set(c, { c, sig, ms: keys.map(k => this.cache.get(k)), i: -1 });
-    }
-    for (const [c, G] of this.groups) {
-      if (!far.has(c)) { if (G.mesh.parent) this.group.remove(G.mesh); G.mesh.geometry.dispose(); this.groups.delete(c); continue; }
-      if (merged.has(c) && !G.mesh.parent) this.group.add(G.mesh);
-      else if (!merged.has(c) && G.mesh.parent) this.group.remove(G.mesh);
-    }
-    for (const c of [...this.merges.keys()]) if (!far.has(c)) this.merges.delete(c);
-    for (const k of this.shown) if (!single.has(k)) { const m = this.cache.get(k); if (m) this.group.remove(m); }
-    for (const k of single) if (!this.shown.has(k)) { const m = this.cache.get(k); m.updateMatrix(); this.group.add(m); m.updateMatrixWorld(); }
-    this.shown = single; this.inUse = now;
+    const now = new Set(want);
+    for (const k of now) this.cache.get(k).userData.used = frame;
+    this.show(now, frame);
+    this.inUse = now;
     if (this.cache.size > 900) this.trim(frame);
     return this.queue.length;
   }
-  // put the waiting far squares' meshes together, a patch at a time, until the clock passes `until`; a finished one is
-  // swapped in at the next walk
-  mergeStep(until) {
-    for (const [c, J] of this.merges) {
-      if (J.i < 0) {
-        let nv = 0, ni = 0;
-        for (const m of J.ms) { nv += m.geometry.attributes.position.count; ni += m.geometry.index.count; }
-        J.pos = new Float32Array(nv * 3); J.nor = new Float32Array(nv * 3); J.grm = new Float32Array(nv); J.idx = new Uint32Array(ni);
-        J.box = new THREE.Box3(); J.vo = 0; J.io = 0; J.i = 0;
-      }
-      while (J.i < J.ms.length) {
-        const g = J.ms[J.i].geometry, n = g.attributes.position.count, I = g.index.array, vo = J.vo, io = J.io, idx = J.idx;
-        J.pos.set(g.attributes.position.array, vo * 3); J.nor.set(g.attributes.normal.array, vo * 3); J.grm.set(g.attributes.aGroom.array, vo);
-        for (let i = 0; i < I.length; i++) idx[io + i] = I[i] + vo;
-        J.vo += n; J.io += I.length; J.box.union(g.boundingBox); J.i++;
-        if (performance.now() > until) return;
-      }
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(J.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(J.nor, 3));
-      g.setAttribute('aGroom', new THREE.BufferAttribute(J.grm, 1)); g.setIndex(new THREE.BufferAttribute(J.idx, 1));
-      g.boundingBox = J.box; g.boundingSphere = J.box.getBoundingSphere(new THREE.Sphere());
-      const G = this.groups.get(c);
-      if (G) { if (G.mesh.parent) this.group.remove(G.mesh); G.mesh.geometry.dispose(); G.mesh.geometry = g; G.sig = J.sig; }
-      else {
-        const mesh = new THREE.Mesh(g, this.mat);
-        mesh.receiveShadow = true; mesh.matrixAutoUpdate = false; mesh.name = 'far snow'; mesh.updateMatrixWorld();
-        mesh.renderOrder = 1;                // (after everything nearer: what is in front is drawn first, so its pixels are not shaded twice)
-        this.groups.set(c, { sig: J.sig, mesh });
-      }
-      this.merges.delete(c);
-      this._at = null;                       // (the next update walks again, and swaps it in)
-      if (performance.now() > until) return;
+  // the patches in `now` shown in the batch, the others hidden; a patch with no slot yet is given one
+  show(now, frame) {
+    if (!this.batch) {
+      const n = this.SEG + 1, vp = n * n + 4 * n, ip = this.index.length;
+      const cap = this.cap;
+      this.vp = vp; this.ip = ip;
+      // (its own copy of the snow material, the same shader: shared with the kickers and the rock, three looked its
+      // program up again every frame at each change between the batch and them)
+      const bm = this.mat.clone(); bm.onBeforeCompile = this.mat.onBeforeCompile; bm.customProgramCacheKey = this.mat.customProgramCacheKey;
+      const b = this.batch = new THREE.BatchedMesh(cap, cap * vp, cap * ip, bm);
+      b.name = 'snow patches'; b.receiveShadow = true; b.castShadow = false; b.frustumCulled = false; b.matrixAutoUpdate = false;
+      b.renderOrder = 1;                     // (after the things standing on the snow: what is in front is drawn first)
+      b.colorTexture = null;                 // (three r180 asks a batch for colorTexture, which it calls _colorsTexture: undefined made it look the program up again every frame)
+      this.group.add(b); b.updateMatrixWorld();
     }
+    const B = this.batch;
+    for (const [k, S] of this.slots) {
+      const vis = now.has(k);
+      if (vis !== S.vis) { B.setVisibleAt(S.inst, vis); S.vis = vis; }
+      if (vis) S.used = frame;
+    }
+    for (const k of now) {
+      if (this.slots.has(k)) continue;
+      const g = this.cache.get(k).geometry;
+      let S = null;
+      if (B.instanceCount < this.cap) {
+        const geom = B.addGeometry(g, this.vp, this.ip);
+        S = { geom, inst: B.addInstance(geom), vis: true, used: frame };
+      } else {
+        // (the slot hidden longest; its old patch keeps nothing in the batch)
+        let old = null;
+        for (const [k2, S2] of this.slots) if (!S2.vis && (!old || S2.used < old[1].used)) old = [k2, S2];
+        if (!old) { this.single(k); continue; }
+        this.slots.delete(old[0]); S = old[1];
+        B.setGeometryAt(S.geom, g); B.setVisibleAt(S.inst, true); S.vis = true; S.used = frame;
+      }
+      this.slots.set(k, S);
+    }
+    // (more patches at once than the batch holds, which no ride has asked for: the rest drawn one by one)
+    for (const k of this.shown) if (!now.has(k) || this.slots.has(k)) { const m = this.cache.get(k); if (m) this.group.remove(m); this.shown.delete(k); }
   }
+  single(k) { const m = this.cache.get(k); if (!m.parent) { m.updateMatrix(); this.group.add(m); m.updateMatrixWorld(); } this.shown.add(k); }
   dist(x0, z0, size) {
     const c = this.cam;
     const dx = Math.max(x0 - c.x, 0, c.x - (x0 + size)), dz = Math.max(z0 - c.z, 0, c.z - (z0 + size));
     // (2026-11-06, the lag pass: the ground's height here only counts when the camera is 30 m over it, so off the real
     // mountain the run's long profile and the snowfield's rise do, without the noise: ground() was most of each walk)
     const qx = clamp(c.x, x0, x0 + size), qz = clamp(c.z, z0, z0 + size);
-    const gy = mtn ? ground(qx, qz) : roughGround(qx, qz);
+    /* (2026-11-09: on a mountain the ground there is the mountain's own, dear to work out (Freeride's), and the walk
+       asked for it at every node every time the camera moved 1.5 m: kept on an 8 m grid; it only weighs the camera's
+       height over the ground, with 30 m to spare, so 8 m across changes nothing) */
+    let gy;
+    if (mtn) {
+      const gx = Math.round(qx * 0.125), gz = Math.round(qz * 0.125), k = (gx + 32768) * 65536 + gz + 32768;
+      const G = this.gmemo || (this.gmemo = new Map());
+      gy = G.get(k);
+      if (gy === undefined) { if (G.size > 40000) G.clear(); gy = ground(gx * 8, gz * 8); G.set(k, gy); }
+    } else gy = roughGround(qx, qz);
     return Math.hypot(dx, dz, Math.max(0, Math.abs(c.y - gy) - 30) * 0.6);
   }
   trim(frame) {
@@ -368,5 +369,5 @@ export class Terrain {
     for (let i = 0; i < list.length - 600; i++) { list[i][1].geometry.dispose(); this.cache.delete(list[i][0]); }
   }
   // build everything the camera at p needs now (behind the loading screen)
-  warm(p) { const b = this.budget; this.budget = 1e9; for (let i = 0; i < 12; i++) if (!this.update(p, 0) && !this.merges.size) break; this.update(p, 0); this.budget = b; }
+  warm(p) { const b = this.budget; this.budget = 1e9; for (let i = 0; i < 12; i++) if (!this.update(p, 0)) break; this.budget = b; }
 }

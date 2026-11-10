@@ -14,8 +14,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=20';
-import { clamp, smoothstep } from './noise.js?v=20';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=21';
+import { clamp, smoothstep } from './noise.js?v=21';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -187,7 +187,7 @@ export class Skier {
     this.state = 'ground'; this.sw = false; this.w.set(0, 0, 0); this.grab = null; this.pose = null; this.rail = null; this.tweak = ''; this.shift = 0;
     this.edge = 0; this.edgeV = 0; this.crouch = 0; this.crouchT = 0; this.tState = 0; this.butter = 0; this.press = 0; this.brake = 0; this.brakeHead = null; this.absorb = 0; this.skate = 0;
     this.windup = 0; this.turnRate = 0; this.lateCharge = false; this.revertLeft = 0; this.wNat.set(0, 0, 0); this.wKeys.set(0, 0, 0); this.wCork = false; this.landT = 9; this.unbrakeT = 9; this.corkAx = null;
-    this.landSkid = false; this.unbutter = false; this.wasButter = false; this.wasBrake = false; this.wallOff = false; this.pullPr = null; this.unslide = 0; this.tapLeft = 0; this.turnDir = 0; this.railCooldown = 0; this.brakeRef = null; this.lazy = 0; this.lazyT = 0; this.tuck = 0; this.held = null;
+    this.landSkid = false; this.unbutter = false; this.unbTurn = 0; this.wasButter = false; this.wasBrake = false; this.wallOff = false; this.pullPr = null; this.unslide = 0; this.tapLeft = 0; this.turnDir = 0; this.railCooldown = 0; this.brakeRef = null; this.lazy = 0; this.lazyT = 0; this.tuck = 0; this.held = null;
     this.actStop(); this.flatSpin = 0; this.flatSpinOn = false;
     this.oneFoot = 0; this.together = 0; this.pushT = 0; this.pushing = 0; this.lastTakeoff.t = 9; this.landHit = 0; this.landOff = 0; this.landUp = 0;
     this.fallT = 0; this.fallKind = ''; this.trickSeq.length = 0; this.airSeq.length = 0; this.landInto = null;
@@ -234,7 +234,21 @@ export class Skier {
     const n = this.v.lengthSq() > 1 ? normalBehind(this.p.x, this.p.z, this.v.x, this.v.z, this.n) : normal(this.p.x, this.p.z, this.n);
     this.surf = surface(this.p.x, this.p.z);
     // a face too steep to stand on (a kicker's side, the back of a lip): the edges cannot hold it, so off it you go
-    if (isWall(n.y, this.surf, this.inPipe(this.p.x, this.p.z), this.p.x, this.p.z)) { this.takeoff(dt, 0, 0, 'wall'); const nh = new THREE.Vector3(n.x, 0, n.z).normalize(); this.v.addScaledVector(nh, 0.3); return; }
+    if (isWall(n.y, this.surf, this.inPipe(this.p.x, this.p.z), this.p.x, this.p.z)) {
+      /* (F, 2026-11-08: going out over a rock face's top edge, not into it, is riding off a lip. The step before had
+         put the skis on the lip's rounded edge, already steeper than a wall, and off they went as off a wall, pushed
+         away from it: at Tier A and the Big Ones at 10 to 13 m/s) */
+      // (a lip: the rock falls away 0.2 m or more within 0.4 m ahead along the travel)
+      const vh = Math.hypot(this.v.x, this.v.z);
+      if (curPark && curPark.cliff && vh > 3 && height(this.p.x + this.v.x / vh * 0.4, this.p.z + this.v.z / vh * 0.4) < this.p.y - 0.2 && curPark.cliff(this.p.x, this.p.z)) {
+        // (the body leaves as it stood on the snow a metre back, not lying along the rounded edge's own normal, which
+        // can face sideways where a lip turns: the rider flew on their side and landed on it)
+        const nb = normal(this.p.x - this.v.x / vh, this.p.z - this.v.z / vh, _n2);
+        this.n.copy(nb.y > 0.5 ? nb : UP); this.toTangent(this.f); this.groundQ();
+        this.takeoff(dt, 0, 0, 'lip'); return;
+      }
+      this.takeoff(dt, 0, 0, 'wall'); const nh = new THREE.Vector3(n.x, 0, n.z).normalize(); this.v.addScaledVector(nh, 0.3); return;
+    }
     const f = this.toTangent(this.f);
     const right = _w.crossVectors(f, n).normalize().clone();
     const speed = this.v.length();
@@ -267,19 +281,22 @@ export class Skier {
     this.lazy += ((I.lazy ? 1 : 0) - this.lazy) * Math.min(1, dt * 6);
     if (I.lazy && speed > 2) { if (this.lazyT === 0) this.seq('lazy'); this.lazyT += dt; }
     else { if (this.lazyT >= 0.5) this.events.push({ type: 'lazyboy', t: this.lazyT }); this.lazyT = 0; }
-    const buttering = Math.abs(this.press) > 0.35;
+    // (the butter key let go ends the butter at once, though the press eases off for the pose: a turn asked for then
+    // turns at once, P 2026-11-08; it went on pivoting for about 0.13 s)
+    const buttering = Math.abs(this.press) > 0.35 && !!I.butter;
     /* (P, 2026-11-08, for "butters smooth, no jerk to one side after a butter; come out of it like a sideways landing"):
        let go of a butter with the skis at an angle to the way you go, and the travel is kept while the skis skid round
        to it over a moment (unbutter), the edges biting a little as they come; before, the travel was put along the skis
        in one step (a 50 to 90 degree jerk) and the pivot stopped dead. */
-    if (!buttering && this.wasButter && speed > 1.5 && !this.K.flatSpin) this.unbutter = true;
+    if (!buttering && this.wasButter && speed > 1 && !this.K.flatSpin) this.unbutter = true;
     this.wasButter = buttering;
     let angU = 0;
     if (this.unbutter) {
       const vd = _fs.copy(this.v).addScaledVector(n, -this.v.dot(n)), sk2 = _f.copy(f).multiplyScalar(travel);
       angU = speed > 0.5 ? cwAngle(vd, sk2, n) : 0;
       if (Math.abs(angU) > Math.PI / 2) angU = wrapPi(angU + Math.PI);      // (the nearer end leads)
-      if (Math.abs(angU) < 0.02 || speed < 1 || buttering) this.unbutter = false;
+      // (ended once the skis are on the travel to within 0.2 degrees, so nothing is left for the no-drift to snap round)
+      if (Math.abs(angU) < 0.003 || speed < 1 || buttering) { this.unbutter = false; this.unbTurn = 0; }
     }
     /* the edge rolls on and off as a body does: eased in and out (a critically damped spring, not a fixed rate), so a
        quick tap tips the skis a little and lets them back, holding rolls them over through about half a second, and a
@@ -299,9 +316,10 @@ export class Skier {
     this.edge = clamp(this.edge + this.edgeV * dt, -1.1, 1.1);
     // the brake builds over about half a second (a tap is a speed check, a hold a hockey stop) and eases off when let go
     this.brake += ((I.brake ? 1 : 0) - this.brake) * Math.min(1, dt * (I.brake ? 3.4 : 3.4));
-    // (P: the brake let go with the skis still across the travel: they skid round to it, the travel kept, as off a butter)
-    if (this.wasBrake && this.brake <= 0.03 && speed > 1.5 && !this.K.footBrake) this.unbutter = true;
-    this.wasBrake = this.brake > 0.03;
+    // (P: the brake let go with the skis still across the travel: they skid round to it, the travel kept, as off a butter.
+    // From the moment the key is let go, not once the brake has faded: a turn asked for then turns at once, F's bot, 2026-11-08)
+    if (this.wasBrake && !I.brake && speed > 1 && !this.K.footBrake) this.unbutter = true;
+    this.wasBrake = !!I.brake && this.brake > 0.03;
     // forward: a tuck at speed, a skate and a pole push on the flat; Shift (Shredsauce Controls) skates hard, and keeps
     // helping to about 70 km/h (2026-11-03, for "make pressing shift make you go faster more")
     const skateWant = !I.brake && !I.crouch && !buttering ? Math.max(I.push ? 1 - smoothstep(15, 20, speed) : 0, I.tuck ? 1 - smoothstep(5.5, 9, speed) : 0) : 0;
@@ -324,7 +342,8 @@ export class Skier {
     const STILL = 1.2;
     if (speed < STILL * 0.8) this.brakeHead = null;
     // (a sled brakes with the rider's feet dragging behind it, not by swinging it across: K.footBrake)
-    if (this.brake > 0.03 && !(speed < STILL && !this.brakeHead) && !Kd.footBrake) {
+    // (only while the brake key is held: let go, the skis are the rider's to steer at once, P 2026-11-08)
+    if (I.brake && this.brake > 0.03 && !(speed < STILL && !this.brakeHead) && !Kd.footBrake) {
       // the skis swing across the way you are going, as far as the brake is held (square across at full), so the
       // skid slows you along your line instead of turning you; once stopped they stay put, and as the brake eases
       // off at speed (a speed check) they come back round to the way you were going when it started
@@ -359,9 +378,14 @@ export class Skier {
       let target = 0, slew = Kd.turn / Kd.build;
       if (buttering) { target = Kd.butter * u; slew = Kd.butterSlew || 14; this.tapLeft = 0; }
       else if (this.unbutter) {
-        // (round to the travel at up to 3.5 rad/s, easing in the last 25 degrees but never slower than 0.25, stopping on it)
+        /* (round to the travel at up to 3.5 rad/s, easing in the last 25 degrees but never slower than 0.25, stopping on it.
+           A turn asked for meanwhile turns the travel itself at once, at the same rate and build as on the snow any
+           other time (unbTurn, put on the travel after the forces), and the skis with it as they come round: before, the
+           travel followed only the edges' bite, and a turn straight after a brake tap turned it 0 degrees in 0.8 s) */
+        const tw = dir ? dir * Kd.turn * Math.min(1, Math.abs(u) * 1.25) : mouseErr !== null && Math.abs(mouseErr) > 0.004 ? clamp(mouseErr * 4.5, -Kd.turn, Kd.turn) : 0;
+        this.unbTurn = !tw ? (Kd.release ? (this.unbTurn || 0) * Math.exp(-dt / Kd.release) : 0) : (this.unbTurn || 0) + clamp(tw - (this.unbTurn || 0), -Kd.turn / Kd.build * dt, Kd.turn / Kd.build * dt);
         const w = Math.max(0.25, Math.min(3.5, Math.abs(angU) * 8)), wEnd = Math.abs(angU) / dt;
-        target = -Math.sign(angU) * Math.min(w, wEnd) + (dir ? dir * Kd.turn * 0.6 : 0); slew = 30; this.tapLeft = 0;
+        target = -Math.sign(angU) * Math.min(w, wEnd) + this.unbTurn; slew = 30; this.tapLeft = 0;
       }
       else if (mouseErr !== null && !dir) { target = Math.abs(mouseErr) < 0.004 ? 0 : clamp(mouseErr * 4.5, -Kd.turn, Kd.turn); this.tapLeft = 0; }
       else if (dir) target = dir * Kd.turn * Math.min(1, Math.abs(u) * 1.25);
@@ -425,7 +449,7 @@ export class Skier {
        back round to the travel after a brake or a butter (unless you steer), take speed off along the way you are going
        and nothing else: the edges' push across it and the slope's pull across it are held. (It was the edges' push only,
        and only as much as the brake was on: the travel turned 5 to 30 degrees braking, 12 to 29 after a tap.) */
-    if (!Kd.footBrake && speed > 0.5 && (this.brake > 0.03 || (this.unbutter && !(Math.abs(u) > 0.05)))) {
+    if (!Kd.footBrake && speed > 0.5 && ((I.brake && this.brake > 0.03) || this.unbutter)) {
       const vd = _fs.copy(this.v).addScaledVector(n, -this.v.dot(n)).normalize();
       a.copy(vd.multiplyScalar(a.dot(vd)));
     }
@@ -474,13 +498,15 @@ export class Skier {
     if ((speed < 0.4 && this.skate < 0.05 && !buttering && !this.revertLeft && Math.abs(gAlong) < 0.08 * N) || (this.brake > 0.5 && speed < 0.6 && !Kd.footBrake)) { a.multiplyScalar(0); this.v.multiplyScalar(Math.exp(-dt * 12)); }
     this.v.addScaledVector(a, dt);
     this.v.addScaledVector(n, -this.v.dot(n));
+    if (this.unbutter && this.unbTurn) this.v.applyAxisAngle(n, -this.unbTurn * dt);     // (P: a turn asked for while the skis come round)
     /* no drift (2026-11-03, for "remove it completely except for on landings"): on the snow the skis go where they point,
        a turn taking the travel round with them at the speed it had. A slide is left only after a landing that came
        down across the skis (until it has skidded out), braking and just after, buttering, on a face too steep for the
        edges, in a revert, and nearly stopped. */
     const sp2 = this.v.length();
     if (this.landSkid && Math.abs(this.v.dot(right)) < 0.6) this.landSkid = false;
-    if (sp2 > 1 && !buttering && !this.unbutter && !this.flatSpinOn && (this.brake < 0.03 && this.unbrakeT > 0.9 || Kd.footBrake) && steep > 0.95 && !this.landSkid && !this.revertLeft) {
+    // (P, 2026-11-08: from the moment the skis are back on the travel after a brake, not 0.9 s after it faded)
+    if (sp2 > 1 && !buttering && !this.unbutter && !this.flatSpinOn && (!I.brake || Kd.footBrake) && steep > 0.95 && !this.landSkid && !this.revertLeft) {
       const al = this.v.dot(f);
       this.v.copy(f).multiplyScalar((al < 0 ? -1 : al > 0 ? 1 : travel) * sp2);
     }
@@ -498,6 +524,18 @@ export class Skier {
     const ny = this.p.y + this.v.y * dt;
     const by = ny - 0.5 * G * dt * dt;
     const h1 = height(nx, nz);
+    /* (F, 2026-11-08: the step would put the skis inside a face too steep to stand on, a rock face met at speed: stay
+       where we are and meet it as a wall, as in the air, rather than going 0.6 m into it and being pushed out) */
+    if (h1 > by + 0.25) {
+      const nw = normal(nx, nz, _n2);
+      if (isWall(nw.y, surface(nx, nz), this.inPipe(nx, nz), nx, nz)) {
+        const nh = _v.set(nw.x, 0, nw.z); if (nh.lengthSq() < 1e-8) nh.set(0, 0, -1); nh.normalize();
+        const vn = this.v.dot(nh);
+        if (vn < -10) { this.crash('wall'); return; }
+        if (vn < 0) this.v.addScaledVector(nh, -vn * 1.1);
+        this.takeoff(dt, 0, 0, 'wall'); return;
+      }
+    }
     if (by > h1 + (this.landT < 0.3 ? 0.03 : 0.004) && speed > 2) {
       // rolled off a lip: a crouch held through it still winds the spin, and letting go just after still pops
       const crouched = I.crouch && this.crouchT > 0.06;
@@ -700,9 +738,10 @@ export class Skier {
     if (this.railBump()) return;
     if (this.treeHit()) return;
     const h = height(this.p.x, this.p.z);
-    if (this.p.y <= h && this.tAir > 0.03) {
+    // (F, 2026-11-08: deep in the snow counts at once, even in the first 0.03 s after a takeoff off a wall)
+    if (this.p.y <= h && (this.tAir > 0.03 || this.p.y < h - 0.25)) {
       const nn = normal(this.p.x, this.p.z, _n2);
-      if (isWall(nn.y, surface(this.p.x, this.p.z), this.inPipe(this.p.x, this.p.z), this.p.x, this.p.z)) this.wallHit(h, nn);
+      if (isWall(nn.y, surface(this.p.x, this.p.z), this.inPipe(this.p.x, this.p.z), this.p.x, this.p.z)) this.wallHit(h, nn, dt);
       else this.land(h);
     }
     else if (this.headDown()) this.crash('head');
@@ -742,12 +781,16 @@ export class Skier {
     this.actNext = !!(this.act && (this.actQ || def && def.id === this.act && def.loop !== false && this.held === this.actKey));
   }
   // a face too steep to land on: the skis bounce off it and slide down it, hard into it is a crash
-  wallHit(h, nn) {
+  wallHit(h, nn, dt = 0) {
     // the face pushes back sideways only (pushed along its normal the rider was thrown up it and rode onto the deck)
     const nh = new THREE.Vector3(nn.x, 0, nn.z); if (nh.lengthSq() < 1e-6) nh.set(0, 0, -1); nh.normalize();
     const vn = this.v.dot(nh);
     if (vn < -10) { this.crash('wall'); return; }
-    const dy = h + 0.004 - this.p.y; this.p.y += dy; this.com.y += dy;
+    /* (F, 2026-11-08: met deep in a steep face, the rider is put back where this step began across it, outside the
+       face, rather than lifted up the face to the height above where they ended: into an 80 degree rock face at 14 m/s
+       that was 0.6 m inside it, then 0.6 m up it) */
+    if (dt && h - this.p.y > 0.25) { this.com.x -= this.v.x * dt; this.com.z -= this.v.z * dt; this.p.x -= this.v.x * dt; this.p.z -= this.v.z * dt; h = Math.min(h, height(this.p.x, this.p.z)); }
+    const dy = Math.max(0, h + 0.004 - this.p.y); this.p.y += dy; this.com.y += dy;
     if (this.v.y < 0) this.v.y *= 0.6;
     if (vn < 0) this.v.addScaledVector(nh, -vn * 1.1);
     // (the rotation the takeoff gave stops against the face, and the rider rights themselves: it kept turning them on

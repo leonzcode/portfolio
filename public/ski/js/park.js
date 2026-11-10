@@ -3,8 +3,8 @@
 // function the physics reads directly; kickers and the pipe also get meshes of their own, much finer at the lips,
 // knuckles and coping than the terrain's patches.
 import * as THREE from 'three';
-import { baseLine, pitchAt, ground } from './terrain.js?v=20';
-import { smoothstep, clamp, smax } from './noise.js?v=20';
+import { baseLine, pitchAt, ground } from './terrain.js?v=21';
+import { smoothstep, clamp, smax } from './noise.js?v=21';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -441,14 +441,16 @@ export function assemble({ kickers, pipe = null, qp = null, ground2 = [], rails 
    lanes between them.
    (2026-11-08, J, for "make the large jumps even larger and upscale all the jumps respectively" and "make the jumps in
    jump line more transitionable and easier to jump from one line to the other without casing":)
-   - every jump is about a third bigger, after real slopestyle and park jumps: the Large table 23 m (a 75 ft pro jump),
-     the Medium 15 m (50 ft), the Small 9 m (30 ft);
-   - each next jump is placed where a rider coming off the slowest of this jump's landings has the next Large
-     takeoff's design speed (rollTo, with the physics' own drag and snow friction), so off any lane's landing you can
-     take any lane of the next jump; a rider with more than a takeoff wants is checked down on its in-run (skier.js);
+   - every jump is bigger, after real slopestyle and park jumps: at full size the Large table 23 m (a 75 ft pro jump),
+     the Medium 17 m, the Small 12 m; each jump is as big as the slope there can feed with speed (a smaller size where
+     the run is gentle, rather than a long empty run-out);
+   - each next jump is placed where riders coming off this jump's Medium and Small landings have the next Large
+     takeoff's design speed (rollTo, with the physics' own drag and snow friction), with room to cross the line, so off
+     any lane's landing you can take any lane of the next jump; a rider with more than a takeoff wants is checked down
+     on its in-run (skier.js);
    - the lanes are closer together, so crossing from one to another is shorter;
-   - the gentle middle of the run (11 degrees), where nobody can hold a Large lane's speed, is a jib line instead
-     (jibLine): rails, tubes and boxes in three columns, row after row, each with its own snow ramp in.
+   - below the last jump, on the gentler run, is a jib line (jibLine): rails, tubes and boxes in three columns, row
+     after row, each with its own snow ramp in.
    The features that stood on the takeoffs beside the jumps (2026-11-05, from Leon's picture: a fat tube up the left
    part of a kicker's ramp) are off (TAKEOFF_FEATURES): the rails are the jib line's now, and without them the lanes
    can sit closer. Set it true to have them back (the lanes then move apart again). */
@@ -601,28 +603,35 @@ export function makeJumpLine() {
     return [big, med, sml];
   };
   /* where the next jump's Large takeoff starts, from where the last landings meet the slope (z), riders leaving the
-     Medium lane at vM and the Small lane at vS: where the Medium lane's riders have the Large takeoff's design speed and
-     a little more, and the Small lane's are within 0.5 m/s of it (measured: about 1 m/s under the design speed lands on
-     the knuckle, and crossing the line from the Small lane to the Large costs about half a metre a second more than the
-     sum says), and at least GAP0 m on (the room to cross from one side of the line to the other and line up). The design speed changes with the slope the takeoff stands on: placed, measured, placed again. */
-  const GAP0 = 75;
+     Medium lane at vM and the Small lane at vS: where both have the Large takeoff's design speed and a little more, and at
+     least GAP0 m on. (2026-11-09, J, for "crossing lanes to work without casing": the Small lane's riders used to be
+     allowed 0.5 m/s under the design speed, with the takeoffs at least 75 m on; going from a Small landing to the next
+     Large, which means crossing 35 m of the line, they came in about 1 m/s short and landed on the knuckle, 4 times in
+     54. Crossing costs speed (0.4 to 1 m/s, measured, against riding straight), the sum here is a little hopeful (about
+     0.3 m/s), and a crossing of 35 m in a 75 m run-out did not line up in time. So now: the design speed + 0.3 for both,
+     and 100 m to cross and line up. One jump fewer fits on the run (six), each a little further apart.) The design speed
+     changes with the slope the takeoff stands on: placed, measured, placed again. */
+  const GAP0 = 100;
   const nextAt = (z, vM, vS, sc) => {
     let z0 = z + GAP0;
     for (let it = 0; it < 5; it++) {
       const k = new Kicker(Object.assign({ x: X.L, z0 }, scaled(LANES.L, sc)));
-      z0 = Math.max(z + GAP0, rollTo(z, vM, z + 400, k.vDesign + 0.3).z, rollTo(z, vS, z + 400, k.vDesign - 0.5).z);
+      // (a takeoff on a gentle slope, where the speed hardly builds, wants a little more from the Small lane: there 0.2 m/s
+      // short was the knuckle, measured)
+      const more = 0.6 * smoothstep(13 * RAD, 11 * RAD, pitchAt(z0));
+      z0 = Math.max(z + GAP0, rollTo(z, vM, z + 400, k.vDesign + 0.3).z, rollTo(z, vS, z + 400, k.vDesign + 0.3 + more).z);
     }
     return z0;
   };
   /* the jumps, each as big as the slope lets riders carry the speed for (the full size where the run is steep; smaller
-     where it is gentle, rather than a long empty run-out: at most 115 m from one landing to the next takeoff, 200 m from
-     the start), until the run flattens; then the jib line on the gentler run below them */
+     where it is gentle, rather than a long empty run-out: at most 130 m from one landing to the next takeoff, 200 m from
+     the start), until the run flattens (no takeoff below z 1120); then the jib line on the gentler run below them */
   let z = -30, vM = 5, vS = 5, j = 0;
   while (j < 7) {
-    const most = j ? 115 : 200;
+    const most = j ? 130 : 200;
     let sc = 1, z0 = nextAt(z, vM, vS, 1);
     while (z0 - z > most && sc > 0.56) { sc -= 0.05; z0 = nextAt(z, vM, vS, sc); }
-    if (z0 > 1040) break;
+    if (z0 > 1120) break;
     const ks = lanes(j, z0, sc);
     for (const k of ks) { k.size = sc; k.vExit = exitSpeed(k); }
     kickers.push(...ks);
@@ -882,7 +891,7 @@ function legsUnder(G, r, every, w, from) {
 }
 let benchSrc = null;
 function loadBench() {
-  if (!benchSrc) benchSrc = new GLTFLoader().loadAsync('models/park/bench.glb?v=20').then(g => { let m = null; g.scene.traverse(o => { if (o.isMesh && !m) m = o; }); return m; });
+  if (!benchSrc) benchSrc = new GLTFLoader().loadAsync('models/park/bench.glb?v=21').then(g => { let m = null; g.scene.traverse(o => { if (o.isMesh && !m) m = o; }); return m; });
   return benchSrc;
 }
 // the bench model stretched along a rail's two points: the ends (with their legs) kept, the seat between stretched, the
@@ -943,7 +952,7 @@ export function railMeshes(rails, mats) {
   const add = (G, mat) => { const g = G.geometry(); if (!g) return; const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false; out.add(m); };
   /* scuffed plastic and scratched steel: roughness maps from ambientCG's CC0 "Plastic 010" (its roughness) and "Scratches
      005" (its scratches made into roughness), 512 px */
-  const tl = new THREE.TextureLoader(), rough = f => new Promise(res => tl.load('models/park/' + f + '?v=20', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
+  const tl = new THREE.TextureLoader(), rough = f => new Promise(res => tl.load('models/park/' + f + '?v=21', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
   const plRough = rough('plastic_rough.webp'), stRough = rough('steel_rough.webp');
   const paintM = mats.paint || (mats.paint = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.48, metalness: 0.05 }));
   const steelM = mats.railSteel || (mats.railSteel = new THREE.MeshStandardMaterial({ color: 0xb8bdc2, metalness: 0.9, roughness: 0.32 }));

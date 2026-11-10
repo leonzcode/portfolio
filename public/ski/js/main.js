@@ -1,30 +1,30 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=20';
-import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=20';
-import { makeMaterials, snowUniforms } from './materials.js?v=20';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=20';
-import { Mountain, SPOTS } from './dem.js?v=20';
-import { Skier } from './skier.js?v=20';
-import { Rig } from './rig.js?v=20';
-import './board.js?v=20';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
-import './scoot.js?v=20';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
-import './sled.js?v=20';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
-import { Tricks } from './tricks.js?v=20';
-import { Input } from './input.js?v=20';
-import { Cams } from './camera.js?v=20';
-import { Tracks, Spray } from './snow.js?v=20';
-import { Hud } from './hud.js?v=20';
-import { Sound } from './sound.js?v=20';
-import { Net } from './net.js?v=20';
-import { mergeGear } from './gear.js?v=20';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=21';
+import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=21';
+import { makeMaterials, snowUniforms } from './materials.js?v=21';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=21';
+import { Mountain, SPOTS } from './dem.js?v=21';
+import { Skier } from './skier.js?v=21';
+import { Rig } from './rig.js?v=21';
+import './board.js?v=21';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
+import './scoot.js?v=21';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
+import './sled.js?v=21';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
+import { Tricks } from './tricks.js?v=21';
+import { Input } from './input.js?v=21';
+import { Cams } from './camera.js?v=21';
+import { Tracks, Spray } from './snow.js?v=21';
+import { Hud } from './hud.js?v=21';
+import { Sound } from './sound.js?v=21';
+import { Net } from './net.js?v=21';
+import { mergeGear } from './gear.js?v=21';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Touch, TOUCH_GRABS } from './touch.js?v=20';
-import { Locker, loadLook, cleanLook } from './locker.js?v=20';
-import { planLift, Lift } from './lift.js?v=20';      // (L: the chairlift)
-import { planTbar, Tbar } from './tbar.js?v=20';      // (J: the Jump Line's T-bar)
-import { makeFreeride } from './freeride.js?v=20';    // (F: the Freeride mountain)
-import { buildRock, buildJibs } from './frrock.js?v=20';
+import { Touch, TOUCH_GRABS } from './touch.js?v=21';
+import { Locker, loadLook, cleanLook } from './locker.js?v=21';
+import { planLift, Lift } from './lift.js?v=21';      // (L: the chairlift)
+import { planTbar, Tbar } from './tbar.js?v=21';      // (J: the Jump Line's T-bar)
+import { makeFreeride } from './freeride.js?v=21';    // (F: the Freeride mountain)
+import { buildRock, buildJibs } from './frrock.js?v=21';
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;

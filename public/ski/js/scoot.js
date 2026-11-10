@@ -34,13 +34,13 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Rig, springBank, smooth01, softReach, wob } from './rig.js?v=20';
-import { RIDE_GRABS, RIDE_GUIDES, seatRider, holdOnLift, liftStand } from './board.js?v=20';
-import { clamp, smoothstep } from './noise.js?v=20';
-import { RIDE_SPIN, RIDE_WORDS } from './tricks.js?v=20';
-import { RIDE_ACTS } from './skier.js?v=20';
-import { height } from './terrain.js?v=20';
-import * as INPUT from './input.js?v=20';      // (P: RIDE_KEYS, the rides' own key tables)
+import { Rig, springBank, smooth01, softReach, wob } from './rig.js?v=21';
+import { RIDE_GRABS, RIDE_GUIDES, seatRider, holdOnLift, liftStand } from './board.js?v=21';
+import { clamp, smoothstep } from './noise.js?v=21';
+import { RIDE_SPIN, RIDE_WORDS } from './tricks.js?v=21';
+import { RIDE_ACTS } from './skier.js?v=21';
+import { height } from './terrain.js?v=21';
+import * as INPUT from './input.js?v=21';      // (P: RIDE_KEYS, the rides' own key tables)
 
 // where things are on the model (from tools/makescoot.py's printout): the deck's top, the feet on it, the grips on the
 // bars (in the steering part's own frame, up its axis), how far the boards' bases sit under the feet's frame
@@ -265,7 +265,7 @@ function loadModel(file) {
   if (_gltf[file]) return _gltf[file];
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  _gltf[file] = loader.loadAsync('./models/' + file + '?v=20').catch(e => { _gltf[file] = null; throw e; });
+  _gltf[file] = loader.loadAsync('./models/' + file + '?v=21').catch(e => { _gltf[file] = null; throw e; });
   return _gltf[file];
 }
 const frameLoader = cfg => async (rig) => {
