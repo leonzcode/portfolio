@@ -4,8 +4,8 @@
 // (env.js: groomed, powder, packed, spring slush, ice), the floodlights' pools by night, and fog the colour of the sky's
 // own horizon in each direction.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=21';
-import { ground, onMountain } from './terrain.js?v=21';
+import { rng } from './noise.js?v=22';
+import { ground, onMountain } from './terrain.js?v=22';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
 function noiseTexture(size = 256, seed = 3) {

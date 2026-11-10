@@ -28,7 +28,7 @@
    with y = 0 at the main start. The physics reads it directly (terrain.js ground through setMountain); rock faces are
    steeper than skier.js's walls (about 53 degrees), so they are walls to ride into and drops to ride off.
    This module is plain JS (no three.js) so it can be checked in Node. */
-import { simplex, fbm, ridged, smoothstep, clamp, smax } from './noise.js?v=21';
+import { simplex, fbm, ridged, smoothstep, clamp, smax } from './noise.js?v=22';
 
 const RAD = Math.PI / 180;
 
@@ -85,7 +85,9 @@ const ARM = [0, 1].map(e => {
     // line the whole length of the mountain)
     // (and never under 58 m from the wall's foot, or the wall is steeper than snow should be: over 55 degrees with the face's)
     crest[i] = foot[i] + Math.max(58, (e ? 60 : 58) + (e ? 8 : 12) * Math.sin(z * 0.009 + (e ? 4.1 : 1.3)) + (e ? 4 : 6) * simplex(z * 0.02 + 7, e ? -1.7 : 1.1));
-    A[i] = ((e ? 28 : 34) * (1 + 0.18 * simplex(z * 0.011, e ? 5 : -5)) * armFade(z) + (e ? 8 : 14) * (1 - smoothstep(-40, 60, z))) * (1 - colDip(e, z));
+    // (above the shoulder, on the Peak, none, 2026-11-10: the arms ran on up the Peak as spurs 10 to 14 m high, higher
+    // than its summit, which the chairlift's top could not reach)
+    A[i] = ((e ? 28 : 34) * (1 + 0.18 * simplex(z * 0.011, e ? 5 : -5)) * armFade(z) + (e ? 8 : 14) * (1 - smoothstep(-40, 60, z)) * smoothstep(-270, -190, z)) * (1 - colDip(e, z));
     // (where the outer side starts to fall away: wandering gently along the face, never as fast as the crest, which made
     // 63 degree creases down the fall line when the flank followed it)
     fl[i] = (e ? 216 : 222) + 9 * Math.sin(z * 0.012 + (e ? 1.7 : 4.4)) + 4 * simplex(z * 0.02, e ? 6 : -6);
@@ -109,22 +111,45 @@ function arms(x, z) {
   // (none in the valley below z 680, where the arms have gone: there it left a crease down the runout)
   // (rounding over into a steady fall over 20 m: the old ramp, (a - fl) x smoothstep, overshot to 1.7 times its slope
   // half way, 50 degrees across a ridge's flank)
-  const fo = (0.25 + 0.4 * armFade(z)) * (1 - smoothstep(560, 680, z)), dO = a - fl, out = dO <= 0 ? 0 : dO < 20 ? fo * dO * dO / 40 : fo * (dO - 10);
+  // (2026-11-10: but far out, past the side bowls' middles, it goes on down the valley: eased away there too, the main
+  // surface came back up over the side valleys in a step and left a level bench across them at z 660 to 680)
+  const fo = (0.25 + 0.4 * armFade(z)) * (1 - smoothstep(560, 680, z) * (1 - smoothstep(250, 320, a))) * smoothstep(-270, -190, z), dO = a - fl, out = dO <= 0 ? 0 : dO < 20 ? fo * dO * dO / 40 : fo * (dO - 10);
   return A * up - out + 1.8 * simplex(x * 0.03 + 9, z * 0.02) * smoothstep(foot, foot + 25, a);
+}
+/* (2026-11-10) the Peak a summit, not a level crest: from the chairlift's top (x 28) its crest falls away east and west,
+   about 9% past 50 m out, so a rider off the chair rides down to the lines across its face (it was level, and its face's
+   sides stood 3 to 10 m over the middle where the chair arrives: 400 m of climbing to the far lines). Faded out down the
+   face to nothing at the shoulder (z -185). */
+function peakFall(x, z) {
+  if (z > -185) return 0;
+  const d = Math.abs(x - 28), s = d < 50 ? 0 : d < 110 ? (d - 50) * (d - 50) / 120 : d - 80;
+  return -0.09 * s * smoothstep(-185, -300, z);
 }
 /* the runout: one valley under all three bowls, a shallow channel down to each chairlift's bottom station (2026-11-08:
    it swung east to the old lift's bottom, 200 m out on the east arm) */
-export const LIFT_XS = [28, -392, 406];
+/* (2026-11-10: one chairlift, x 28. Out of the corral's channel the valley floor drains home, so a rider let go anywhere
+   down there slides back to the chair's bottom or past z 799, where the game ends a run and puts them on it: past 100 m
+   out it rises 6% outwards to 350 m out (from z 540, eased in over 160 m), then back down by 500 m out (far out, where
+   the valley's own fall takes them home, its rise along the valley left them stopped). Snow holds a ski still under about 8% and a sled under about 10%: at 4.5%
+   across, riders out of the side bowls stopped there, 0.1 to 2 m/s, and had to skate home. And the whole valley floor
+   falls 5% more from z 600 to 840 (eased in and out over 40 m), as the valley's own fall is about 10% there, too little
+   for a sled. The faces above z 540 are as they were) */
+export const LIFT_XS = [28];
 function runout(x, z) {
-  const k = smoothstep(620, 820, z);
-  if (k <= 0) return 0;
-  let d = Infinity; for (const lx of LIFT_XS) d = Math.min(d, Math.abs(x - lx));
-  return k * 0.00008 * Math.min(d, 190) ** 2;
+  if (z <= 540) return 0;
+  const d = Math.abs(x - LIFT_XS[0]), k = smoothstep(620, 820, z);
+  const R = z < 600 ? 0 : z < 640 ? (z - 600) * (z - 600) / 80 : z < 800 ? z - 620 : z < 840 ? 200 - (840 - z) * (840 - z) / 80 : 200;
+  // (the corral's own channel, 1.3 m deep at 130 m out: to 190 m out, as it was, its depth growing down the valley held
+  // the floor out there near level)
+  return k * 0.00008 * Math.min(d, 130) ** 2 + 0.06 * Math.min(Math.max(0, d - 100), 250) * smoothstep(540, 700, z) * (1 - smoothstep(350, 500, d)) - 0.05 * R;
 }
 // the far mountains: grow from about 540 m out, past the side bowls' outer ridges (2026-11-08: from 300 m, which put
 // rough peaks where the side bowls are now)
 function far(x, z) {
-  const dx = Math.max(0, Math.abs(x) - 540), dz = Math.max(0, -500 - z, z - 1150), d = Math.hypot(dx, dz);
+  // (2026-11-10: beside the valley, from z 440 to 1100, they start 460 m further out, past 1000 m: riders drifting out of
+  // the side bowls stopped in the hollows of their foothills, a long skate from home)
+  const vb = smoothstep(440, 560, z) * (1 - smoothstep(950, 1100, z));
+  const dx = Math.max(0, Math.abs(x) - 540 - 460 * vb), dz = Math.max(0, -500 - z, z - 1150), d = Math.hypot(dx, dz);
   if (d < 1) return 0;
   // (lower than they were, 2026-11-08 second pass: their ridged creases stood 70 to 77 degree faces in view from the
   // side bowls, bright streaked walls on the skyline)
@@ -150,7 +175,7 @@ SIDES.forEach((S, k) => {
   const e = S.xc > 0 ? 1 : 0;
   S.tA = new Float32Array(AN); S.tAi = new Float32Array(AN); S.tHw = new Float32Array(AN); S.tHi = new Float32Array(AN);
   for (let i = 0; i < AN; i++) {
-    const z = AZ0 + i, A0 = S.A * (1 + 0.15 * simplex(z * 0.011, S.seed)), top = 12 * (1 - smoothstep(-40, 60, z)), A = A0 * armFade(z) + top;
+    const z = AZ0 + i, A0 = S.A * (1 + 0.15 * simplex(z * 0.011, S.seed)), top = 12 * (1 - smoothstep(-40, 60, z)) * smoothstep(-270, -190, z), A = A0 * armFade(z) + top;
     /* (the outer wall stands on to the lift's bottom, fading from z 600 to 800, 2026-11-08 second pass: gone by 640 as
        the inner one is, a rider drifting out of the West Glades low down crossed a 15 m ridge into the side valley and
        came out on the valley floor 400 m from the chairlift) */
@@ -180,7 +205,9 @@ function sideY(S, x, z) {
        to the runout's level it stood a 230 m wall across the valley at z 600) */
     // (the inner side's rounding starts 8 m sooner, so past it the fall is where it was before it was rounded)
     const past = s - hw - wall - (inner ? -2 : 6);
-    if (past > 0) { const r = past < 16 ? past * past / 32 : past - 8; y -= inner ? 1.2 * r : 0.5 * (1 - smoothstep(560, 680, z)) * 60 * (1 - Math.exp(-r / 60)); }
+    // (2026-11-10: and on down the valley, a side valley falling with it past the chair's bottom: eased back up to the
+    // runout's level from z 560, it left closed basins riders could not get out of)
+    if (past > 0) { const r = past < 16 ? past * past / 32 : past - 8; y -= inner ? 1.2 * r : 0.5 * 60 * (1 - Math.exp(-r / 60)); }
   }
   return y;
 }
@@ -800,28 +827,84 @@ function sideLayout(F) {
   F.push(new Band({ name: 'East big band', lip: [[292, 352], [318, 346], [346, 350], [372, 357], [398, 352]], wig: 1.4, seed: 207, a: 0.75, Rup: 30, Rdn: 36, rough: 0.1,
     pts: [[290, 0], [298, 6], [314, 9], [326, 12], [338, 8], [346, 0.4], [352, 0.4], [358, 7], [372, 10], [390, 6], [398, 0]] }));
   F.push(new Band({ name: 'East step-down', lip: [[300, 400], [320, 397], [340, 399]], wig: 0.6, seed: 208, a: 0.35, Rup: 10, Rdn: 18, pts: [[300, 0], [306, 4.5], [334, 4.5], [340, 0]] }));
-  F.push(new Band({ name: 'Lift cliffs', lip: [[392, 214], [408, 210], [426, 215], [436, 220]], wig: 1.2, seed: 209, a: 0.7, Rup: 22, Rdn: 28, rough: 0.12, pts: [[390, 0], [398, 7], [410, 11], [422, 9], [434, 0]] }));
+  F.push(new Band({ name: 'Far cliffs', lip: [[392, 214], [408, 210], [426, 215], [436, 220]], wig: 1.2, seed: 209, a: 0.7, Rup: 22, Rdn: 28, rough: 0.12, pts: [[390, 0], [398, 7], [410, 11], [422, 9], [434, 0]] }));
   F.push(new Outcrop({ name: 'Rock kicker (east)', x: 300, z: 470, len: 5.5, hw: 3.4, hUp: 0.15, hDn: 4.8, rot: -0.08, wob: 0.4, seed: 210 }));
   for (const [x, z, len, hw, h, rot] of [[402, 300, 5, 3.4, 2.8, 0.3], [424, 420, 5.5, 3.6, 3.2, -0.4], [360, 450, 4.5, 3, 2.4, 0.6], [293, 130, 4, 3, 2.0, -0.2], [396, 520, 5, 3.4, 2.6, 0.4]])
     F.push(new Outcrop({ name: 'Rock island', x, z, len, hw, hUp: 0.4, hDn: h, w: 0.9, round: 0.6, rot, wob: 0.6, seed: 211 + x + z }));
   F.push(new Pillows({ name: 'East pillows', list: pillowGarden(366, 500, 16, 12, 10, 13) }));
 
-  // ---- the Peak (2026-11-08): the 34 degree face from the true summit (z -350) down to the shoulder (z -185), its own
-  // chairlift up from the shoulder (freeride.js): a snow cornice along the crest with a way in under the lift, a cliff band
-  // on its west side, a couloir between two rock ribs, a band on its east side, rock islands
+  // ---- the Peak (2026-11-08): the 34 degree face from the true summit (z -350) down to the shoulder (z -185), the
+  // chairlift's top on it (freeride.js): a snow cornice along the crest with a way in, a cliff band on its west side, a
+  // couloir between two rock ribs, a band on its east side, rock islands
+  // (2026-11-10: the couloir and the east band 40 m further east, clear of the chairlift's line at x 28)
   F.push(new Band({ name: 'Peak cornice', look: 'snow', lip: [[-136, -334], [-100, -338], [-60, -337], [-20, -336], [8, -333]], wig: 1.0, seed: 221, a: 0.3, Rup: 7, Rdn: 14, rough: 0.15,
     pts: [[-138, 0], [-128, 3], [-100, 4], [-80, 3.4], [-74, 0.2], [-48, 0.2], [-42, 3], [-14, 3.6], [8, 0]] }));
   F.push(new Lip({ xa: -134, xb: -76, z: -338.6, h0: 0.6, up: 3, dn: 0.5, seed: 222, slant: 0.02, name: 'Cornice' }));
   F.push(new Lip({ xa: -46, xb: 6, z: -337.4, h0: 0.6, up: 3, dn: 0.5, seed: 227, slant: 0.02, name: 'Cornice' }));
   F.push(new Band({ name: 'Peak cliffs', lip: [[-146, -284], [-118, -287], [-90, -283]], wig: 1.2, seed: 223, a: 0.5, Rup: 14, Rdn: 20, rough: 0.15,
     pts: [[-148, 0], [-138, 5], [-118, 8], [-102, 6.5], [-90, 0]] }));
-  const P0 = new Rib({ name: 'Peak couloir rib', wigL: 1.4, wigR: 0.9, wwL: 9, xl: [[-340, 28], [-260, 30], [-230, 29]], xr: [[-340, 42], [-300, 43], [-260, 45], [-230, 44]], zTop: -340, grow: 14, D: 10, Dpts: [[-340, 7], [-300, 11], [-260, 9], [-236, 10]], zEnd: -236, seed: 224, crest: 0.1 });
-  const P1 = new Rib({ name: 'Peak couloir rib', wigL: 0.9, wigR: 1.4, wwR: 9, xl: [[-340, 55], [-300, 54], [-260, 56], [-230, 56]], xr: [[-340, 68], [-230, 72]], zTop: -338, grow: 14, D: 10, Dpts: [[-338, 7], [-300, 10], [-260, 11], [-232, 9]], zEnd: -232, seed: 225, crest: 0.12 });
+  const P0 = new Rib({ name: 'Peak couloir rib', wigL: 1.4, wigR: 0.9, wwL: 9, xl: [[-340, 68], [-260, 70], [-230, 69]], xr: [[-340, 82], [-300, 83], [-260, 85], [-230, 84]], zTop: -340, grow: 14, D: 10, Dpts: [[-340, 7], [-300, 11], [-260, 9], [-236, 10]], zEnd: -236, seed: 224, crest: 0.1 });
+  const P1 = new Rib({ name: 'Peak couloir rib', wigL: 0.9, wigR: 1.4, wwR: 9, xl: [[-340, 95], [-300, 94], [-260, 96], [-230, 96]], xr: [[-340, 108], [-230, 112]], zTop: -338, grow: 14, D: 10, Dpts: [[-338, 7], [-300, 10], [-260, 11], [-232, 9]], zEnd: -232, seed: 225, crest: 0.12 });
   F.push(P0, P1);
-  F.push(new Gully({ name: 'The Peak couloir', ribs: [P0, P1], left: { L: z => P0.R(z), ww: P0.ww }, right: { L: z => P1.L(z), ww: P1.ww }, xa: 40, xb: 58, za: -334, zb: -290, zc: -226, E: 2.6 }));
-  F.push(new Band({ name: 'Peak band (east)', lip: [[80, -263], [104, -259], [130, -263]], wig: 1.0, seed: 226, a: 0.55, Rup: 12, Rdn: 18, rough: 0.15, pts: [[78, 0], [86, 4], [104, 6], [122, 5], [132, 0]] }));
-  for (const [x, z, len, hw, h, rot] of [[-20, -300, 4, 3, 2.4, 0.3], [-104, -232, 5, 3.4, 2.8, -0.4], [100, -302, 4.5, 3, 2.6, 0.5], [2, -246, 4, 3, 2.2, -0.2], [-30, -214, 5, 3.4, 3.0, 0.2]])
+  F.push(new Gully({ name: 'The Peak couloir', ribs: [P0, P1], left: { L: z => P0.R(z), ww: P0.ww }, right: { L: z => P1.L(z), ww: P1.ww }, xa: 80, xb: 98, za: -334, zb: -290, zc: -226, E: 2.6 }));
+  F.push(new Band({ name: 'Peak band (east)', lip: [[120, -263], [144, -259], [170, -263]], wig: 1.0, seed: 226, a: 0.55, Rup: 12, Rdn: 18, rough: 0.15, pts: [[118, 0], [126, 4], [144, 6], [162, 5], [172, 0]] }));
+  for (const [x, z, len, hw, h, rot] of [[-20, -300, 4, 3, 2.4, 0.3], [-104, -232, 5, 3.4, 2.8, -0.4], [140, -305, 4.5, 3, 2.6, 0.5], [2, -246, 4, 3, 2.2, -0.2], [-30, -214, 5, 3.4, 3.0, 0.2]])
     F.push(new Outcrop({ name: 'Rock island', x, z, len, hw, hUp: 0.4, hDn: h, w: 0.9, round: 0.6, rot, wob: 0.6, seed: 230 + x + z }));
+  peakLines(F);
+}
+/* ---- the Peak's lines (2026-11-10, for Leon's "add more features along the way that are unique and different from each
+   other creating unique lines which one could ride and pick a new line each time they drop"): the chairlift leaves you on
+   the summit, and across the Peak's face from west to east are lines that each ride their own way, each with a flag and
+   a sign at its top (frrock.js) and a start of its own (freeride.js):
+     the Wave        a big wind-formed snow wave to boost off, and a smaller one below it: a natural double
+     the Boulder Garden  a fan of rounded boulders, 1 to 3 m, to weave through and pop off
+     the Staircase   five short cliffs one under another, 2 to 4.6 m, each landing the run-in to the next
+     (the cliffs, the cornice's way in, the couloir and the east band, from before)
+     the Fin         a thin rock fin standing 4 to 6 m down the fall line, with a hip of snow off its side
+     the Pillow Stack  big pillows stacked down the fall line, each a drop onto the next
+     the Gate        two rock towers to ride between, then a 5 m band below them, or round its ends
+   Their own random numbers (not the layout's R), so nothing else moves. */
+function peakLines(F) {
+  const r = (s => () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; })(20261110);
+  // the Wave
+  F.push(new Lip({ name: 'The Wave', xa: -414, xb: -346, z: -292, h0: 2.4, up: 9, dn: 2.2, seed: 241, slant: 0.08 }));
+  F.push(new Lip({ name: 'The Little Wave', xa: -404, xb: -356, z: -238, h0: 1.2, up: 5, dn: 1.2, seed: 242, slant: -0.06 }));
+  // the Boulder Garden: rounded boulders standing out of the slope on both sides (hUp), at least 9 m apart
+  const bs = [];
+  for (let tries = 0; bs.length < 16 && tries < 400; tries++) {
+    const x = -308 + r() * 46, z = -312 + r() * 108;
+    if (bs.some(b => Math.hypot(b[0] - x, b[1] - z) < 9)) continue;
+    bs.push([x, z]);
+  }
+  bs.forEach(([x, z], i) => {
+    const hD = 1.4 + r() * 1.6, len = 3 + r() * 2.5, hw = 1.8 + r() * 1.3;
+    F.push(new Outcrop({ name: 'Boulder garden', x, z, len, hw, hUp: 0.7 + r() * 0.8, hDn: hD, w: 1.1, round: 0.75, rot: (r() - 0.5) * 2, wob: 0.4, seed: 270 + i }));
+  });
+  // the Staircase: steps zigzagging a little, each taller than the last
+  // (from z -306: above that, by the crest, the face is too gentle for a bench, and a sled stopped on the first one)
+  [[-306, -241, -219, 2.2], [-284, -233, -211, 2.8], [-262, -243, -221, 3.2], [-240, -231, -209, 3.8], [-216, -241, -217, 4.6]].forEach(([z, xa, xb, H], i) =>
+    F.push(new Band({ name: 'The Staircase', z, wig: 0.4, seed: 281 + i, a: 0.5, Rup: 7, Rdn: 10, rough: 0.12, pts: [[xa, 0], [xa + 4, H], [xb - 4, H * 0.95], [xb, 0]] })));
+  // the Fin, and its hip
+  F.push(new Outcrop({ name: 'The Fin', x: 206, z: -298, len: 30, hw: 1.7, hUp: 3.5, hDn: 6, w: 1.0, round: 0.5, rot: 0.05, wob: 0.4, seed: 251 }));
+  F.push(new Lip({ name: 'The Fin hip', xa: 214, xb: 232, z: -296, h0: 1.4, up: 5, dn: 1.4, seed: 252, slant: -0.5 }));
+  // the Pillow Stack: down a line that wanders a little, each bigger than the last, a few beside it
+  const L = [];
+  // (from z -302, 20 m below its start: from closer, a snowboard at walking pace could not get over the first one)
+  for (let k = 0, z = -302; z < -200; k++) {
+    const x = 283 + 5 * Math.sin(k * 1.1) + (r() - 0.5) * 2;
+    L.push({ x, z, r: 3.6 + k * 0.16 + r() * 0.8, h: 1.8 + k * 0.17 + r() * 0.5, e: 1.1, a: (r() - 0.5) * 0.8 });
+    if (r() < 0.45) L.push({ x: x + (r() < 0.5 ? -1 : 1) * (8 + r() * 2), z: z + 2 + r() * 3, r: 2.6 + r(), h: 1.2 + r() * 0.6, e: 1, a: r() * 3 });
+    z += 8.5 + r() * 2;
+  }
+  F.push(new Pillows({ name: 'The Pillow Stack', list: L }));
+  // the Gate: two towers, about 14 m of snow between their faces, and the band below
+  F.push(new Outcrop({ name: 'Gate tower', x: 368, z: -300, len: 7, hw: 3.6, hUp: 5.5, hDn: 6.5, w: 1.4, round: 0.6, wob: 0.5, rot: 0.15, seed: 261 }));
+  F.push(new Outcrop({ name: 'Gate tower', x: 396, z: -301, len: 7, hw: 3.6, hUp: 5.5, hDn: 6.5, w: 1.4, round: 0.6, wob: 0.5, rot: -0.2, seed: 262 }));
+  // the shoulder between the Peak and the main summit, where every line from the Peak runs out: two wind lips to boost
+  // off on the way across, either side of the chairlift's line
+  F.push(new Lip({ name: 'Shoulder lip (west)', xa: -112, xb: -40, z: -162, h0: 1.1, up: 5, dn: 1.1, seed: 291, slant: 0.06 }));
+  F.push(new Lip({ name: 'Shoulder lip (east)', xa: 62, xb: 132, z: -146, h0: 1.1, up: 5, dn: 1.1, seed: 292, slant: -0.08 }));
+  F.push(new Band({ name: 'Gate drop', lip: [[356, -262], [382, -259], [408, -263]], wig: 0.8, seed: 263, a: 0.55, Rup: 10, Rdn: 16, rough: 0.12, pts: [[356, 0], [362, 4.8], [382, 5.0], [402, 5.2], [408, 0]] }));
 }
 /* the pillow line: pillows stacked down the roll's steep fall line (x about -48 to -32), each a step under the last,
    getting bigger as it goes, with a few beside the line */
@@ -887,7 +970,7 @@ export class Land {
        the middle a side's surface is so far under the main one, past its ridge, that it adds nothing) */
     if (x < -120) y = smax(y, sideY(SIDES[0], x, z), 8);
     else if (x > 120) y = smax(y, sideY(SIDES[1], x, z), 8);
-    return y + fallLines(x, z) + rolls(x, z) + runout(x, z) + far(x, z);
+    return y + fallLines(x, z) + rolls(x, z) + runout(x, z) + far(x, z) + peakFall(x, z);
   }
   at(x, z) {
     let y = this.base(x, z);

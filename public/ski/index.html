@@ -8,11 +8,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,800;1,700;1,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/ski.css?v=21">
+<link rel="stylesheet" href="./css/ski.css?v=22">
 <script type="importmap">
 {
   "imports": {
-    "three": "/car/vendor/three/three.module.js?v=ski21",
+    "three": "/car/vendor/three/three.module.js?v=ski22",
     "three/addons/": "/car/vendor/three/addons/"
   }
 }
@@ -32,6 +32,14 @@
   <div id="tags"></div>
   <div id="chat"></div>
   <input id="chatin" class="hidden" maxlength="160" placeholder="Say something to the park, Enter sends" autocomplete="off">
+  <!-- (M) watching the others ride: online.js -->
+  <div id="watchbar" class="hidden" role="region" aria-label="Watching other riders">
+    <button id="wbprev" class="wbnav" aria-label="Previous rider">&#9664;</button>
+    <div class="wbwho"><span class="wblab">Watching</span><b id="wbname">Joining the park&hellip;</b><span id="wbmeta"></span></div>
+    <button id="wbnext" class="wbnav" aria-label="Next rider">&#9654;</button>
+    <div class="wbacts"><button id="wbcam" title="Camera (C)">Chase</button><button id="wbride" class="ride" title="Ride (R)">Ride</button><button id="wbleave" title="Leave (Esc)">Leave</button></div>
+    <div class="wbkeys"><kbd>&larr;</kbd><kbd>&rarr;</kbd> riders <kbd>C</kbd> camera <kbd>R</kbd> ride <kbd>Esc</kbd> leave</div>
+  </div>
 </div>
 
 <div id="menu">
@@ -41,7 +49,7 @@
       <p class="tag">Pick a run, then ride.</p>
     </div>
     <div class="maps runs" role="radiogroup" aria-label="Mountain">
-      <button class="map" data-map="jumpline" role="radio"><span class="sign park" aria-hidden="true">Park</span><b>Jump Line</b><small>Seven jumps, three sizes each</small></button>
+      <button class="map" data-map="jumpline" role="radio"><span class="sign park" aria-hidden="true">Park</span><b>Jump Line</b><small>Six jumps, three sizes each</small></button>
       <button class="map" data-map="freeride" role="radio"><span class="sign diamond" aria-hidden="true"><i></i><i></i></span><b>Freeride</b><small>Cliffs, chutes and a big face</small></button>
     </div>
     <div class="maps rides" role="radiogroup" aria-label="Ride">
@@ -56,6 +64,26 @@
       <button data-stance="regular" role="radio">Regular</button><button data-stance="goofy" role="radio">Goofy</button>
     </div>
     <button id="play" class="big" disabled>Loading&hellip;</button>
+    <!-- (M) riding online: each map's public park, with how many ride and watch there now (online.js) -->
+    <section class="online" id="online" aria-labelledby="onlab">
+      <div class="onhead">
+        <span class="live" aria-hidden="true"></span><span class="onlab" id="onlab">Online</span>
+        <span id="ontotal" class="ontotal" aria-live="polite">Asking the park server&hellip;</span>
+      </div>
+      <div class="onmaps">
+        <div class="onmap" data-online="jumpline">
+          <div class="ontitle"><span class="sign park" aria-hidden="true">Park</span><b>Jump Line</b></div>
+          <div class="oncount">Counting&hellip;</div>
+          <div class="onacts"><button class="onride" data-act="ride">Ride online</button><button class="onwatch" data-act="watch">Watch</button></div>
+        </div>
+        <div class="onmap" data-online="freeride">
+          <div class="ontitle"><span class="sign diamond" aria-hidden="true"><i></i><i></i></span><b>Freeride</b></div>
+          <div class="oncount">Counting&hellip;</div>
+          <div class="onacts"><button class="onride" data-act="ride">Ride online</button><button class="onwatch" data-act="watch">Watch</button></div>
+        </div>
+      </div>
+      <label class="onme"><span>Your name</span><input id="mpname" maxlength="16" placeholder="Rider" autocomplete="off"></label>
+    </section>
     <div class="seg" role="radiogroup" aria-label="Controls">
       <span class="seglab">Controls</span>
       <button data-scheme="mouse" role="radio">Mouse</button><button data-scheme="keys" role="radio">Keyboard</button><button data-scheme="shred" role="radio">Shredsauce</button>
@@ -90,12 +118,10 @@
       </div>
     </details>
     <details class="fold">
-      <summary>Ride with others</summary>
+      <summary>Private rooms</summary>
       <div class="mp">
         <div class="mprow">
-          <input id="mpname" maxlength="16" placeholder="Your name" autocomplete="off">
-          <button id="mppublic">Join the park</button>
-          <button id="mpprivate">Private room</button>
+          <button id="mpprivate">New private room</button>
         </div>
         <div class="mprow">
           <input id="mpcode" maxlength="4" placeholder="Code" autocomplete="off" class="code">
@@ -117,12 +143,12 @@
   <div class="card slim">
     <h2>Paused</h2>
     <div class="row"><button id="resume" class="big">Keep riding</button></div>
-    <div class="row"><button id="totop">Back to the top</button><button id="tomenu">Settings and controls</button><button id="toreplay">Watch the last 15 seconds</button></div>
+    <div class="row"><button id="totop">Back to the top</button><button id="tomenu">Settings and controls</button><button id="towatch" class="hidden">Watch the others</button><button id="toreplay">Watch the last 15 seconds</button></div>
     <div class="startlab">Start somewhere else</div>
     <div class="row starts" id="starts"></div>
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=21"></script>
+<script type="module" src="./js/main.js?v=22"></script>
 </body>
 </html>

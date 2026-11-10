@@ -4,14 +4,15 @@
    gap the rock band, the landing the steep apron under it), logs, a rock slab and stumps to slide (park.js Rails, drawn
    here), the starts at the summit's brink and down the face, the trees, the chairlift's line from the bottom to the ridge
    (lift.js planLift reads park.liftLine). The rock meshes are frrock.js's.
-   (2026-11-08) Four chairlifts now (park.liftLines: the Face Chair from the finish corral up the main face, one up each
-   side bowl, the Peak Chair from the shoulder to the true summit), the first start at the top of the Face Chair, where a lift's towers may stand (park.towerOk), and where
-   the physics meets a rock face (park.cliff). */
-import { Land, LIFT_XS, fallLines } from './frland.js?v=21';
-import { Kicker, Rail, assemble } from './park.js?v=21';
-import { setMountain } from './terrain.js?v=21';
-import { simplex, fbm, smoothstep } from './noise.js?v=21';
-import { setRockSource, rockFieldWorker } from './materials.js?v=21';
+   (2026-11-10, for Leon's "just have 1 chairlift that goes from bottom to top") one chairlift (park.liftLines), the
+   Summit Chair from the finish corral by the arch straight up the main face, over the shoulder and up the Peak to the
+   true summit; the first start at its top; where its towers may stand (park.towerOk), and where the physics meets a
+   rock face (park.cliff). */
+import { Land, LIFT_XS, fallLines } from './frland.js?v=22';
+import { Kicker, Rail, assemble } from './park.js?v=22';
+import { setMountain } from './terrain.js?v=22';
+import { simplex, fbm, smoothstep } from './noise.js?v=22';
+import { setRockSource, rockFieldWorker } from './materials.js?v=22';
 
 const RAD = Math.PI / 180;
 export const FIELD_MID = [10, 225];     // (the rock field's middle: frfield.js is sent its windows round it; 1280 m of fine
@@ -93,7 +94,7 @@ export function makeFreeride(q) {
   /* the snow shader's rock field: from the snow without the rock faces (they draw their own), the ribs' crests rocky.
      Worked out in a worker (frfield.js), so it is ready before a run starts and never takes a frame's time: baked on
      the page in idle moments it was still going ten seconds into a run on a slow machine */
-  rockFieldWorker(new URL('./frfield.js?v=21', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)));
+  rockFieldWorker(new URL('./frfield.js?v=22', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)));
 
   // ---- kickers on the rock: [band, x, lip deg, R, half width, gap m]
   const K = [];
@@ -163,17 +164,17 @@ export function makeFreeride(q) {
      and the face is in view below as a run starts (from the start pad behind it, a camera 4 m back and 2.5 m up only
      sees the far valley over the brink: the face's 32 degrees overall are steeper than its line of sight), and the
      drop-ins further down (the pause menu's start points) */
-  /* (2026-11-08, for Leon's "spawn at the top of the lift, not beside it") the first start is the top of the Face
-     Chair, on the ramp just off its unloading platform, turned towards the centre line: where the lift leaves you. The
-     other lifts' tops are starts too. (yaw: the way the start faces, radians from +z; main.js reads it) */
-  // (and the Peak Chair from the shoulder to the true summit: its bottom is not where a run ends, ends: false)
-  const lifts = [{ name: 'Face Chair', x: LIFT_XS[0], top: -46, bot: 760 }, { name: 'West Glades Chair', x: LIFT_XS[1], top: -46, bot: 742 }, { name: 'Spine Wall Chair', x: LIFT_XS[2], top: -46, bot: 742 },
-    { name: 'Peak Chair', x: -60, top: -338, bot: -78, ends: false }];
+  /* (2026-11-08, for Leon's "spawn at the top of the lift, not beside it") the first start is the top of the chairlift,
+     on the ramp just off its unloading platform: where the lift leaves you. (yaw: the way the start faces, radians from
+     +z; main.js reads it)
+     (2026-11-10: one chairlift, from the finish corral by the arch to the true summit, 1100 m and 540 m up; the three
+     others are gone, and every run comes back down to its bottom: frland.js runout) */
+  const lifts = [{ name: 'Summit Chair', x: LIFT_XS[0], top: -338, bot: 760 }];
   // (8 m to the side of the top station and 10 m down from its end, on the ramp off the unloading platform, where a rider
   // is a second after getting off: the chase camera behind is clear of the station there)
   const liftTop = (L, yaw) => ({ name: 'Top of the ' + L.name, x: L.x - 8, z: L.top + 10, v: 2, yaw });
   const starts = [
-    liftTop(lifts[0], -0.6),
+    liftTop(lifts[0], -0.25),   // (on the summit, turned a little away from the line's towers below)
     { name: 'Summit: the centre line', x: 0, z: -7, v: 2.5 },
     { name: 'Summit: the Couloirs (the dog-leg)', x: 90, z: 3, v: 2.5 },
     { name: 'Summit: the narrow chute (mandatory air)', x: 63.8, z: 4, v: 2 },
@@ -185,28 +186,32 @@ export function makeFreeride(q) {
     { name: 'Lower face: Selection kickers', x: -107, z: 352, v: 6 },
     { name: 'Above the Great Wall', x: -30, z: 440, v: 7 },
     { name: 'Finish apron', x: 0, z: 600, v: 6 },
-    liftTop(lifts[1], 0.7),     // (towards the cornice's way in, clear of the line's last tower)
     { name: 'West Glades: the cornice', x: -366, z: -4, v: 2.5 },
     { name: 'West Glades: the natural halfpipe', x: -318, z: 30, v: 4 },
     { name: 'West Glades: the step-down', x: -406, z: 270, v: 5 },
-    liftTop(lifts[2], -0.4),
     { name: 'Spine Wall: the spines', x: 306, z: 0, v: 2.5 },          // (6 m above the cornice: at z 6 it stood on its lip)
     { name: 'Spine Wall: the couloir', x: 367, z: 2, v: 2 },
     { name: 'Spine Wall: the big band', x: 330, z: 310, v: 5 },
-    liftTop(lifts[3], -0.25),   // (away from its own line: at 0.1 a rider let go ran into its third tower, 1 m off)
-    { name: 'The Peak: the couloir', x: 49, z: -336, v: 2 },
-    { name: 'The Peak: the cliffs', x: -118, z: -318, v: 3 },
+    // (2026-11-10: the Peak's lines, west to east, each start just above its top, a flag and its sign there: frrock.js)
+    // (just past the crest, which is further down the face out at the sides than in the middle)
+    { name: 'Peak: the Wave', x: -380, z: -322, v: 2.5 },
+    { name: 'Peak: the Boulder Garden', x: -286, z: -322, v: 2.5 },
+    { name: 'Peak: the Staircase', x: -230, z: -322, v: 2.5 },
+    { name: 'Peak: the cliffs', x: -118, z: -318, v: 3 },
+    { name: 'Peak: the couloir', x: 89, z: -336, v: 2 },
+    { name: 'Peak: the Fin', x: 214, z: -322, v: 2.5 },
+    { name: 'Peak: the Pillow Stack', x: 283, z: -324, v: 2.5 },
+    { name: 'Peak: the Gate', x: 382, z: -322, v: 2.5 },
   ];
-  // the finish corral's fences (the floodlights stand along them: env.js), round the Face Chair's bottom station
-  const fences = [[-46, 700, -46, 820], [46, 700, 46, 820]];
+  // the finish corral's fences (the floodlights stand along them: env.js), round the chairlift's bottom station
+  // (from z 735, not 700: the side bowls' riders come into the corral from either side above them)
+  const fences = [[-46, 735, -46, 820], [46, 735, 46, 820]];
   park = assemble({ kickers: K, rails, starts, fences, banner: 'FREERIDE' });
   park.land = land; park.freeride = true;
   // (2026-11-08, with P) on a rock face: the physics' wall; everywhere else on Freeride is snow to ride (frland.js cliff)
   park.cliff = (x, z) => land.cliff(x, z);
-  /* (2026-11-08, for Leon's "add more ski lifts" and "move the lift's bottom to where the run flattens by the finish
-     arch") four chairlifts (lift.js holds them all): three from where a run flattens out to the summit's shoulder, the
-     Face Chair from the finish corral straight up the main face (riders on it look down on the cliffs, drops and rocks
-     under it) and one up each side bowl, and the Peak Chair from the shoulder to the true summit */
+  /* (2026-11-10) the one chairlift, its bottom where the run flattens by the finish arch, straight up the main face
+     (riders on it look down on the cliffs, drops and rocks under it), over the shoulder and up the Peak (lift.js) */
   park.liftLines = lifts;
   /* where a lift's tower may stand (lift.js): not on or by rock (no cliff within 5 m), not on anything steeper than about
      46 degrees or lumpy (a pillow, a roll's knee: the snow within 2.5 m more than 0.7 m off a plane), not in a
@@ -286,9 +291,9 @@ export function makeFreeride(q) {
       if (side > 0) d *= 0.6;
       // (the valley's floor below the face is an open meadow, a clump and a single tree here and there, the woods
       // thick only up its sides; the finish corral stands in the open, not in a cut through trees)
-      // (and each side bowl's runout to its chairlift is open too, 2026-11-08 second pass: the Spine Wall's way to its
-      // lift ran through the thickest woods on the mountain)
-      if (z > 600) d *= 0.08 + 0.92 * smoothstep(90, 190, Math.min(Math.abs(x - 50 * smoothstep(620, 940, z)), Math.abs(x - LIFT_XS[1]) + 40, Math.abs(x - LIFT_XS[2]) + 40));
+      // (and the valley floor between z 660 and 780 is open right across, 2026-11-10: the side bowls' riders cross it
+      // to the one chairlift's bottom)
+      if (z > 600) d *= 0.08 + 0.92 * smoothstep(90, 190, Math.abs(x - 50 * smoothstep(620, 940, z))) * (1 - smoothstep(620, 660, z) * (1 - smoothstep(780, 840, z)));
       if (r() > d) continue;
       // (not in the finish corral, whose edge wanders a little, nor under the lift)
       const jit = 4 * simplex(x * 0.08, z * 0.08);

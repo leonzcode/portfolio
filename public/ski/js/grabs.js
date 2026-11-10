@@ -19,16 +19,19 @@ export const GRABS = {
      hanging low and out. What tells the grabs apart is which hand holds which ski where, and how the body turns to
      it. They had skis crossed wide or turned 66 degrees sideways, nearly vertical, and free arms held up stiff.) */
   safety:    { name: 'Right Safety', hand: 'R', hands: [['R', 'R', 0, 'out']], arms: 'wide', ski: { L: [-0.02, 0.03, 0.06, 0.03, -0.12, 0], R: [0.02, 0.02, 0.06, -0.03, -0.12, 0] }, tuck: 0.55, lean: 1.2, twist: 0.12, side: 0.3 },
-  // a mute: the other hand reaches across the front of the body to the other ski, in front of the binding; that ski
-  // pulled up and right across the first (a big X, as in photos of real ones), the knees tucked up, the body turned
-  // and the reaching shoulder dropped into it, the free arm thrown up high with its pole (2026-11-03: it read as a
-  // safety; 2026-11-05, for "make the mute grab look more like mute exaggerated": the X was small and the arm low)
-  mute:      { name: 'Left Mute', hand: 'L', hands: [['L', 'R', 0.3, 'out']], arms: 'high', ski: { L: [-0.07, -0.04, 0.04, -0.5, -0.1, 0.06], R: [0.13, 0.16, 0.14, 0.72, -0.72, -0.18] }, tuck: 0.8, lean: 1.1, twist: -0.78, side: -0.6, hips: 0.6,
-    // E (the grabbing hand's key) tweaks it further, R pokes the free leg, both together do both
+  /* a mute (redone 2026-11-10, for "mute and blunt for skis are still scuffed and do not look right", against photos of
+     real ones in ski8/R/ref: the Youth Olympics slopestyle shots 13, 21, 30, 31, 35, 36): the other hand reaches across
+     the front of the knees to the outside edge of the other ski just in front of its binding; the two skis cross in an X
+     right under the boots, both near level (only the tips a little up), the held one a little over the other and pulled
+     across towards the hand (the free one under it, so it passes below the held ski's boot); the knees tucked, the chest folded over them and turned to the grab, the reaching shoulder
+     dropped; the free arm straight out to the side at the shoulder with its pole out along it. (It had the held ski
+     pitched 41 degrees up in front of the chest and the body wound round hard, which read as a scuffle.) */
+  mute:      { name: 'Left Mute', hand: 'L', hands: [['L', 'R', 0.16, 'out']], arms: 'side', ski: { L: [-0.06, -0.08, 0.05, -0.42, -0.12, 0.08], R: [0.09, 0.09, 0.06, 0.48, -0.24, -0.22] }, tuck: 0.76, lean: 1.15, twist: -0.42, side: -0.34, hips: 0.45,
+    // the variations (grabs.js VERS: R the poke, E+R tweaked): a bigger X pulled further across, or the free leg kicked out
     vary: {
-      tweak: { ski: { L: [-0.08, -0.06, 0.02, -0.62, -0.05, 0.1], R: [0.16, 0.2, 0.15, 0.95, -0.85, -0.3] }, tuck: 0.86, lean: 1.2, twist: -1.0, side: -0.78, hips: 0.7 },
-      poke: { ski: { L: [-0.12, -0.26, 0.3, -0.5, -0.7, 0.08], R: [0.05, 0.22, 0.12, 0.78, -0.75, -0.2] }, tuck: 0.55, lean: 0.95, twist: -0.85, side: -0.66, hips: 0.6 },
-      both: { ski: { L: [-0.12, -0.28, 0.3, -0.6, -0.72, 0.1], R: [0.08, 0.26, 0.15, 1.0, -0.88, -0.32] }, tuck: 0.62, lean: 1.05, twist: -1.05, side: -0.8, hips: 0.7 },
+      tweak: { ski: { L: [-0.08, -0.12, 0.08, -0.58, -0.14, 0.1], R: [0.12, 0.1, 0.1, 0.68, -0.32, -0.3] }, tuck: 0.74, lean: 1.1, twist: -0.6, side: -0.46, hips: 0.55 },
+      poke: { ski: { L: [-0.05, -0.28, 0.26, -0.38, -0.55, 0.06], R: [0.09, 0.09, 0.07, 0.5, -0.26, -0.22] }, tuck: 0.5, lean: 0.85, twist: -0.48, side: -0.38, hips: 0.45 },
+      both: { ski: { L: [-0.06, -0.3, 0.27, -0.5, -0.58, 0.08], R: [0.12, 0.14, 0.07, 0.68, -0.32, -0.3] }, tuck: 0.6, lean: 0.95, twist: -0.62, side: -0.48, hips: 0.55 },
     } },
   // a japan: the hand reaches round the front of the tucked knee to the inside of that ski, the other leg kicked out
   // straight with its ski across under the first, the free arm up high (2026-11-05, for "v should default to v + e":
@@ -48,14 +51,13 @@ export const GRABS = {
   truck:     { name: 'Truck Driver', hand: 'B', kind: 'truck', hands: [['L', 'L', 0.35, 'out'], ['R', 'R', 0.35, 'out']], ski: { L: [-0.02, 0, 0.1, 0.04, -0.55, 0], R: [0.02, 0, 0.1, -0.04, -0.55, 0] }, tuck: 0.65, lean: 1.0, twist: 0, side: 0 },
   critical:  { name: 'Critical', hand: 'L', hands: [['L', 'R', 0.55, 'in']], arms: 'high', ski: { L: [-0.02, 0, 0.04, -0.06, 0.08, 0], R: [0.04, 0.06, 0.1, 0.12, -0.55, -0.05] }, tuck: 0.5, lean: 1.2, twist: -0.25, side: -0.22, hips: 0.4 },
   octo:      { name: 'Octograb', hand: 'B', hands: [['R', 'R', 0.85, 'end'], ['L', 'L', -0.82, 'out']], ski: { L: [-0.03, 0.02, -0.18, -0.06, 0.4, 0], R: [0.03, 0, 0.18, 0.06, -0.6, 0] }, tuck: 0.45, lean: 0.75, twist: 0.1, side: 0 },
-  // a blunt (2026-11-05, for "make it so that the f grab in shredsauce actually looks like blunt", from photos of real
-  // ones in ski5/R/ref): the very end of the tail held by the same hand up beside and behind the shoulder, so that ski
-  // stands nearly upright beside and behind the body, its tip pointing down past the other boot (yawed in, then pitched
-  // up: the long line runs from the shoulder down across behind the legs), the knee bent up; the chest turned to the
-  // grab and leaning towards it; the other ski level under the rider. Read from behind it is one long diagonal line.
-  // (2026-11-05: the ski moved further back and out to the side, where the chase camera above and behind sees it clear
-  // of the body; it hid behind the jacket)
-  blunt:     { name: 'Right Blunt', hand: 'R', kind: 'blunt', hands: [['R', 'R', -1, 'end']], arms: 'wide', ski: { L: [0.02, -0.08, 0.06, -0.06, 0.06, 0], R: [-0.16, 0.04, -0.3, 1.3, 1.2, 0.45] }, tuck: 0.45, lean: 0.25, twist: -0.9, side: 0.5, hips: 0.5 },
+  /* a blunt (redone 2026-11-10, against photos of real ones and the freeskiers' definition, "the true tail grab: the very
+     end of the tail", same hand, same ski): the boot brought up behind with the knee bent, so the held ski stands nearly
+     upright behind the hip and a little out to the side, its tail up at the hand behind the shoulder and its tip down
+     past the other boot; the other leg under the body with its ski level; the chest fairly upright, turned to the grab
+     and that shoulder dropped a little; the free arm out at the side with its pole; the head glancing back at the tail.
+     (It had that ski turned 75 degrees in and laid diagonally across behind the legs.) */
+  blunt:     { name: 'Right Blunt', hand: 'R', kind: 'blunt', hands: [['R', 'R', -1, 'end']], arms: 'side', ski: { L: [0.03, -0.06, 0.1, -0.06, -0.08, 0], R: [-0.17, 0.3, -0.27, 0.12, 1.52, -0.12] }, tuck: 0.38, lean: 0.25, twist: -0.42, side: 0.32, hips: 0.4, look: 0.25 },
   // (the grabbed ski brought behind the other leg, which stays forward, so neither goes through the other)
   stalefish: { name: 'Stalefish', hand: 'R', hands: [['R', 'L', -0.6, 'out']], arms: 'wide', ski: { L: [-0.03, 0.08, -0.2, -0.2, 0.45, 0], R: [-0.03, 0, 0.08, -0.04, 0.3, 0] }, tuck: 0.55, lean: 0.6, twist: -0.3, side: 0.35, hips: 0.4 },
   bowarrow:  { name: 'Bow and Arrow', hand: 'B', hands: [['R', 'R', 0.9, 'end'], ['L', 'L', 0.4, 'out']], ski: { L: [0.06, 0.12, 0.02, 0.08, -0.7, -0.1], R: [-0.02, -0.05, 0.26, -0.05, -0.65, 0] }, tuck: 0.45, lean: 0.9, twist: 0.1, side: 0.1 },

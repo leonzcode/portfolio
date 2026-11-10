@@ -1,9 +1,13 @@
 // Riding with others: the park lobby on mlhub (?mode=ski). Every page rides its own skier and sends where it is
 // and how it stands 12 times a second; the others are drawn from that, 150 ms behind so they move smoothly, each
 // with its name over the helmet. Tricks and chat go to the room.
+// (M, 2026-11-10) Each map has public parks of its own (join's map), a page may join to watch instead of ride (join's
+// watch, or setWatch: nothing is sent and the others do not draw it), and countUrl() is where the home screen asks how
+// many ride and watch on each map (online.js).
 import * as THREE from 'three';
 
 const SEND_HZ = 12, DELAY = 0.15;
+const _tv = new THREE.Vector3();
 const ST = ['ground', 'air', 'rail', 'crash'];
 
 function serverUrl() {
@@ -13,11 +17,20 @@ function serverUrl() {
   if (local) return 'ws://127.0.0.1:8851/ws?mode=ski';
   return 'wss://apps.leonzhao.dev/mc/ws?mode=ski';
 }
+// (M) the relay's GET /mc/ski/count, from the same place as the socket
+export function countUrl() {
+  const u = new URL(serverUrl());
+  u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:'; u.pathname = '/mc/ski/count'; u.search = '';
+  return u.href;
+}
 
 export class Net {
   constructor({ scene, camera, makeRig, onTrick, onChat, onStatus, getLook }) {
     Object.assign(this, { scene, camera, makeRig, onTrick, onChat, onStatus, getLook });
     this.ws = null; this.id = 0; this.code = ''; this.remotes = new Map(); this.sendT = 0; this.open = false;
+    // (M) watching instead of riding (the room's riders are drawn, ours is not sent), how many watch in the room, the
+    // rider whose name tag is hidden (followed in first person), and hooks for online.js: onInit(m), onMode(watching)
+    this.watching = false; this.watchN = 0; this.noTag = 0; this.onInit = null; this.onMode = null; this._posed = false;
     this.tags = document.getElementById('tags');
     // (L) what fills the state's open bag x: functions fn(x, skier) (the relay passes up to 24 short keys), and the
     // chairlift, so a rider on a chair is drawn on this page's own chair
@@ -43,42 +56,53 @@ export class Net {
     });
   }
   get inRoom() { return !!this.code; }
-  connect(name, rider, { code = '', priv = false } = {}) {
+  connect(name, rider, { code = '', priv = false, watch = false } = {}) {
     this.close();
-    this.want = { name, rider, code, priv };
+    this.want = { name, rider, code, priv, watch };
     let ws;
     try { ws = this.ws = new WebSocket(serverUrl()); } catch (e) { this.onStatus('Could not reach the park server.'); return; }
     this.onStatus('Connecting...');
     // (look: how this rider looks to the others, e.g. ride: 'ski' | 'board' and stance; the relay passes it on as it is)
-    ws.onopen = () => { this.open = true; ws.send(JSON.stringify({ type: 'join', name, rider, code, priv, look: this.getLook ? this.getLook() : undefined })); };
+    // (M: map, the map's own public park; watch, in to watch)
+    ws.onopen = () => { this.open = true; ws.send(JSON.stringify({ type: 'join', name, rider, code, priv, map: this.map || 'jumpline', watch: !!watch, look: this.getLook ? this.getLook() : undefined })); };
     ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (err) { return; } this.message(m); };
     ws.onclose = () => {
       const was = this.code; this.open = false; this.code = ''; this.clearRemotes();
-      if (this.ws === ws) { this.onStatus(was ? 'Lost the connection to the park.' : 'Could not reach the park server.'); if (was && this.want) this.retry = setTimeout(() => this.connect(this.want.name, this.want.rider, { code: was, priv: this.want.priv }), 2500); }
+      if (this.ws === ws) { this.onStatus(was ? 'Lost the connection to the park.' : 'Could not reach the park server.'); if (was && this.want) this.retry = setTimeout(() => this.connect(this.want.name, this.want.rider, { code: was, priv: this.want.priv, watch: this.watching }), 2500); }
     };
     ws.onerror = () => {};
   }
-  close() { clearTimeout(this.retry); if (this.ws) { const w = this.ws; this.ws = null; try { w.close(); } catch (e) {} } this.code = ''; this.clearRemotes(); }
+  close() { clearTimeout(this.retry); if (this.ws) { const w = this.ws; this.ws = null; try { w.close(); } catch (e) {} } this.code = ''; this.watchN = 0; this.watching = false; this.clearRemotes(); }
   leave() { this.want = null; this.close(); this.onStatus(''); }
   send(m) { if (this.ws && this.open && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); }
   message(m) {
     if (m.type === 'init') {
-      this.id = m.id; this.code = m.code; this.priv = m.priv;
+      // (M: an init on the same socket is a new room, a watcher put in another park to ride: the old room's riders go)
+      if (this.code && this.code !== m.code) this.clearRemotes();
+      this.id = m.id; this.code = m.code; this.priv = m.priv; this.watching = !!m.watch; this.watchN = m.watching || 0;
+      if (this.want) this.want.watch = this.watching;
       for (const p of m.players) this.add(p);
       this.status();
+      if (this.onInit) this.onInit(m);
     } else if (m.type === 'join') { this.add(m.player); this.status(); this.onChat({ sys: true, text: m.player.name + ' joined the park' }); }
-    else if (m.type === 'leave') { const r = this.remotes.get(m.id); if (r) { this.onChat({ sys: true, text: r.name + ' left' }); this.remove(m.id); this.status(); } }
+    else if (m.type === 'leave') { const r = this.remotes.get(m.id); if (r) { this.onChat({ sys: true, text: r.name + (m.watch ? ' is watching now' : ' left') }); this.remove(m.id); this.status(); } }
+    else if (m.type === 'watchers') { this.watchN = m.n | 0; this.status(); }
+    else if (m.type === 'mode') { this.watching = !!m.watch; if (this.want) this.want.watch = this.watching; this.status(); if (this.onMode) this.onMode(this.watching); }
     else if (m.type === 's') { const r = this.remotes.get(m.id); if (r) this.push(r, m.s); }
     else if (m.type === 'look') { const r = this.remotes.get(m.id); if (r) { this.relook(r, m.rider || r.rider, m.look || {}); this.status(); } }
     else if (m.type === 'trick') { const r = this.remotes.get(m.id); if (r) this.onTrick(r.name, m.name, m.pts); }
     else if (m.type === 'chat') this.onChat({ name: m.name, text: m.text, me: m.id === this.id });
-    else if (m.type === 'nope') { this.onStatus(m.why); this.want = null; }
+    else if (m.type === 'nope') { this.onStatus(m.why); if (!m.keep) this.want = null; else if (this.onMode) this.onMode(this.watching, m.why); }   // (keep: still in the room)
   }
   status() {
     let here = 1; for (const r of this.remotes.values()) if (!(this.map && r.look.map && r.look.map !== this.map)) here++;
-    const all = this.remotes.size + 1;
-    this.onStatus(`${this.priv ? 'Private room' : 'Public park'} ${this.code}: ${all} rider${all > 1 ? 's' : ''}${here < all ? `, ${here} on this map` : ''}`);
+    // (M: a watcher is not one of the riders; how many watch, when anyone does)
+    const me = this.watching ? 0 : 1, all = this.remotes.size + me; here -= 1 - me;
+    const w = this.watchN ? `, ${this.watchN} watching` : '';
+    this.onStatus(`${this.watching ? (this.priv ? 'Watching the private room' : 'Watching the public park') : this.priv ? 'Private room' : 'Public park'} ${this.code}: ${all} rider${all !== 1 ? 's' : ''}${here < all ? `, ${here} on this map` : ''}${w}`);
   }
+  // (M) watch (true) or ride (false) in the room you are in; the server answers with a mode (or a new room)
+  setWatch(on) { if (this.code) this.send({ type: 'watch', on: !!on }); }
   add(p) {
     if (this.remotes.has(p.id)) return;
     const tag = document.createElement('div'); tag.className = 'ntag'; tag.textContent = p.name; this.tags.appendChild(tag);
@@ -108,26 +132,46 @@ export class Net {
   }
   // send ours, draw theirs
   update(dt, sk, time) {
+    const posed = this._posed; this._posed = false;     // (M: posed already this frame, by online.js)
     if (!this.code) return;
     this.sendT += dt;
-    if (this.sendT >= 1 / SEND_HZ) {
+    if (this.sendT >= 1 / SEND_HZ && !this.watching) {   // (M: a watcher sends nothing)
       this.sendT = 0;
       const r3 = v => Math.round(v * 1000) / 1000;
       this.send({ type: 's', p: sk.p.toArray().map(r3), q: sk.q.toArray().map(r3), v: sk.v.toArray().map(r3), st: sk.state === 'lift' ? 0 : ST.indexOf(sk.state),   // (L: on the chairlift x.lf says so; st is ignored then)
         c: r3(sk.crouch), e: r3(sk.edge), tk: r3(sk.tuck), pr: r3(sk.press), b: r3(sk.balance || 0), br: r3(sk.brake), sw: sk.sw, g: sk.grab || null, po: sk.pose || null,
         tw: sk.tweak || '', sh: r3(sk.shift || 0), sk: r3(sk.skate || 0), ab: r3(sk.absorb || 0), ra: r3(sk.railAng || 0), rp: r3(sk.railPress || 0), lb: !!sk.lookBack, x: this.xOut(sk) });
     }
+    if (!posed) this.pose(dt, time);
+    // the names over the helmets, through this frame's camera
+    const w = innerWidth, h = innerHeight, v = _tv;
+    for (const r of this.remotes.values()) {
+      const V = r.view;
+      if (!V || !V.shown || r.id === this.noTag) { if (r.tagOn !== false) { r.tag.style.display = 'none'; r.tagOn = false; } continue; }
+      v.copy(V.p); v.y += 2.1; v.project(this.camera);
+      const on = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
+      if (on !== r.tagOn) { r.tag.style.display = on ? '' : 'none'; r.tagOn = on; }
+      if (on) r.tag.style.transform = `translate(${((v.x + 1) / 2 * w).toFixed(0)}px, ${((1 - v.y) / 2 * h).toFixed(0)}px) translate(-50%, -100%)`;
+    }
+  }
+  /* (M) the others posed for this frame: each between its two snapshots either side of 150 ms ago, its rig updated, and
+     r.view kept: where it is and how it rides as the cameras read a skier (p, q, v, com, state, crouch...), and shown
+     (false for a rider on another map). update() calls it, or online.js does first when the camera follows one of them. */
+  pose(dt, time) {
+    this._posed = true;
+    if (!this.code) return;
     const now = performance.now() / 1000 - DELAY;
-    const w = innerWidth, h = innerHeight, v = new THREE.Vector3();
     for (const r of this.remotes.values()) {
       const b = r.buf; if (!b.length) continue;
+      const V = r.view || (r.view = { p: new THREE.Vector3(), q: new THREE.Quaternion(), v: new THREE.Vector3(), com: new THREE.Vector3(), state: 'ground', shown: false });
       // (a rider on another map is in the room but not on this mountain: not drawn here, their tricks still in the feed)
       const away = !!(this.map && r.look.map && r.look.map !== this.map);
       if (r.rig) r.rig.root.visible = !away;
-      if (away) { r.tag.style.display = 'none'; continue; }
+      V.shown = !away;
+      if (away) continue;
       let a = b[0], c = b[b.length - 1], k = 0;
       for (let i = 0; i < b.length - 1; i++) if (b[i].t <= now && b[i + 1].t >= now) { a = b[i]; c = b[i + 1]; k = (now - a.t) / Math.max(1e-3, c.t - a.t); break; }
-      const p = new THREE.Vector3(), q = new THREE.Quaternion();
+      const p = V.p, q = V.q;
       if (now > c.t) { p.copy(c.p).addScaledVector(c.v, Math.min(0.25, now - c.t)); q.copy(c.q); }
       else { p.lerpVectors(a.p, c.p, k); q.slerpQuaternions(a.q, c.q, k); }
       const snap = now > c.t ? c : k < 0.5 ? a : c, s = snap.s;      // (X: past the last snapshot, the last one's state, not the oldest's)
@@ -139,11 +183,11 @@ export class Net {
           sw: s.sw, speed: c.v.length(), vel: c.v, balance: s.b, t: time, tweak: s.tw || '', shift: s.sh || 0, skate: s.sk || 0, absorb: s.ab || 0, railAng: s.ra || 0, railPress: s.rp || 0, lookBack: !!s.lb, liftSit: lk ? lk.sit : 0, liftFeet: lk ? lk.feet : null, liftKind: lk ? lk.kind || 'chair' : '', tbar: lk ? lk.tbar || null : null, /* (J: on the T-bar, tbar.js remoteSeat) */ act: xa, actT: xt, actN: xa ? s.x.rc || 0 : 0, actNext: !!(xa && s.x.rn), ...this.pOf(r, s, ST[s.st] || 'ground', now) }, dt);   // (P: one foot, the push, takeoff, landing, crash, the order of tricks)
         for (const o of r.rig.root.children) if (o !== r.rig.body) o.updateMatrixWorld(true);
       }
-      // the name over the helmet
-      v.copy(p); v.y += 2.1; v.project(this.camera);
-      const on = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
-      r.tag.style.display = on ? '' : 'none';
-      if (on) r.tag.style.transform = `translate(${((v.x + 1) / 2 * w).toFixed(0)}px, ${((1 - v.y) / 2 * h).toFixed(0)}px) translate(-50%, -100%)`;
+      // (M) as the cameras and the speed read a skier: the body's middle over the feet, the state and the pose numbers
+      V.state = lk ? 'lift' : s.x && s.x.lf ? 'ground' : ST[s.st] || 'ground';
+      V.liftKind = lk ? lk.kind || 'chair' : '';
+      V.v.copy(c.v); V.crouch = s.c || 0; V.edge = s.e || 0; V.balance = s.b || 0; V.brake = s.br || 0; V.grab = s.g || null; V.pose = s.po || null; V.act = xa;
+      V.com.set(0, 0.92 * (1 - V.crouch * 0.35), 0).applyQuaternion(q).add(p);
     }
   }
   /* (P) the physics' pose fields from another rider's x (see the xFns above), the same names as main.js poseState: the

@@ -13,11 +13,11 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Rig, springBank, smooth01, wrapPi, softReach, wob } from './rig.js?v=21';
-import { clamp, smoothstep } from './noise.js?v=21';
-import { height } from './terrain.js?v=21';
-import { LOOK } from './gear.js?v=21';
-import { RIDE_KEYS, RIDE_HELP } from './input.js?v=21';
+import { Rig, springBank, smooth01, wrapPi, softReach, wob } from './rig.js?v=22';
+import { clamp, smoothstep } from './noise.js?v=22';
+import { height } from './terrain.js?v=22';
+import { LOOK } from './gear.js?v=22';
+import { RIDE_KEYS, RIDE_HELP } from './input.js?v=22';
 
 const D = Math.PI / 180;
 // the board's size (the model is scaled to it), where the bindings are, and their angles (a mild duck stance)
@@ -217,7 +217,7 @@ function loadModel() {
   if (_gltf) return _gltf;
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  _gltf = loader.loadAsync('./models/board/board.glb?v=21').catch(e => { _gltf = null; throw e; });
+  _gltf = loader.loadAsync('./models/board/board.glb?v=22').catch(e => { _gltf = null; throw e; });
   return _gltf;
 }
 // the board's half width along it (at -1 tail .. +1 nose), measured from the model once
@@ -416,12 +416,21 @@ Rig.poser.board = (rig, S0, dt) => {
   const toeK = clamp(fb * -Math.sin(phi) * 2.4, -1, 1);                      // + on the toe edge, - on the heel edge
   const brake = sp('bbrake', ground ? S.brake || 0 : 0, 10), tuck = sp('btuck', S.tuck || 0, 9);
   // (a butter goes in and out over about a tenth of a second: 14/s jerked the board round as one ended, 2026-11-08)
-  // (P's landInto: N or S held in the air to land straight into a press or a hand drag; the board and body get ready over
-  // the last moments before the snow, from last frame's nearness to it)
-  const into = air ? S.landInto || null : null, preL = air ? rig._prepL || 0 : 0;
-  const press = sp('bpress', (rail ? S.railPress : ground ? S.press : into === 'nose' ? 0.7 * preL : into === 'tail' ? -0.7 * preL : 0) || 0, 10);
+  /* (P's landInto: N or S held in the air to land straight into a press or a hand drag.) (2026-11-10, for Leon's "you go
+     into the butter position before you touch the ground to really make it seem like you are landing on a butter")
+     from about 0.75 s before the snow (worked out ahead along the flight, intoAhead) the board tips to the press's
+     angle with the pressed end low and the other end up, the weight goes over that end, the shoulders drop towards it
+     and the arms set, so it comes down on the nose or the tail; for the hand drag the back hand reaches for the snow.
+     intoK is how far into that it is (all the way from about 0.3 s out); the press then carries on as the physics
+     lands it into it (S.press at once to +1 or -1). */
+  const into = air ? S.landInto || null : null;
+  const intoK = sp('binto', into ? smooth01((0.75 - intoAhead(S.p, vel, 0.8)) / 0.38) : 0, into ? 16 : 10);
+  const press = sp('bpress', (rail ? S.railPress : ground ? S.press : into === 'nose' ? intoK : into === 'tail' ? -intoK : 0) || 0, air ? 16 : 10);
   if (ground) bd.lastPress = S.press || 0;
-  const lazy = sp('blazy', ground ? S.lazy || 0 : into === 'lazy' ? 0.6 * preL : 0, 8);
+  const lazy = sp('blazy', ground ? S.lazy || 0 : into === 'lazy' ? intoK : 0, air ? 14 : 8);
+  // (a little further over in the air than a press on the snow, so the end that lands first shows; it eases back to the
+  // snow's angle after the touchdown)
+  const tipX = sp('btipX', air && into && into !== 'lazy' ? intoK : 0, 10);
   // (P's push, 2026-11-08: S.pushing 0..1 and its stroke's phase S.pushT, for every ride; S.skate before it)
   const skate = sp('bskate', ground ? Math.max(S.skate || 0, S.pushing || 0) : 0, 9);
   /* (2026-11-08) R held on a rail or the snow: a one-footer, the back foot out of its binding and held up behind the
@@ -481,8 +490,7 @@ Rig.poser.board = (rig, S0, dt) => {
   rig.grabHeld = gid && gid === rig.gid ? (rig.grabHeld || 0) + dt : 0; rig.gid = gid;
   const gW = sp('bgw', gd ? 1 : 0, gd ? 13 : 9);
   const prep = air ? 1 - smoothstep(0.09, 0.36, rig.timeToGround(S.p, vel)) : 0;
-  rig._prepL = prep;
-  const ext = sp('bext', air ? 1 - prep : 0, air ? 28 : 32);
+  const ext = sp('bext', air ? 1 - Math.max(prep, intoK) : 0, air ? 28 : 32);
   const twk = 1 + 0.18 * smooth01((rig.grabHeld - 0.45) / 0.75) + 0.04 * Math.sin(rig.grabHeld * 3.4) * smooth01(rig.grabHeld / 0.6);
   const flF = sp('bflF', air ? smoothstep(0.7, 4.2, Wx) : 0, 7, 0.75), flB = sp('bflB', air ? smoothstep(0.7, 4.2, -Wx) : 0, 7, 0.75);
   // the rider's own flips (the roll here, about the board's length): heels first is a backflip, toes first a front flip
@@ -511,7 +519,9 @@ Rig.poser.board = (rig, S0, dt) => {
   // a press or butter: pitched about the pressed end (which stays down), the board bending; a lazy boy sits on the tail
   const pr = clamp(press - 0.6 * lazy, -1, 1);
   if (Math.abs(pr) > 0.002) {
-    const pa = pr * 0.3, zp = (pr > 0 ? 1 : -1) * BOARD.half * 0.62;
+    // (in the air the pivot nearer the tip, so the tip itself is what reaches down: about the binding's end of it on the
+    // snow, where the board bends)
+    const pa = pr * (0.3 + 0.17 * tipX), zp = (pr > 0 ? 1 : -1) * BOARD.half * (0.62 + 0.24 * tipX);
     lq.multiply(_q1.setFromAxisAngle(X, pa));
     lp.y += zp * Math.sin(pa); lp.z += zp * (1 - Math.cos(pa));
   }
@@ -540,7 +550,7 @@ Rig.poser.board = (rig, S0, dt) => {
   // in the board's frame: across the board into the turn; along it towards a press, a pop's loaded end, a pushing foot
   let pelX = -Math.sin(phi) * colL + (0.016 + 0.014 * railW) * wob(tt * (1.7 + 0.9 * railW), 4.4) * (1 - airW);
   let pelY = A0 + colL * Math.cos(phi);
-  let pelZ = 0.14 * pr + (ground && S.loading ? (bd.lastPress > 0.3 ? 0.06 : -0.06) : 0) + 0.12 * skate + 0.08 * one1 - (tb ? 0.05 : 0);
+  let pelZ = (0.14 + 0.1 * tipX) * pr + (ground && S.loading ? (bd.lastPress > 0.3 ? 0.06 : -0.06) : 0) + 0.12 * skate + 0.08 * one1 - (tb ? 0.05 : 0);
   // (first person: the hips a little towards the trailing end, the head over the middle of the board, 2026-11-06)
   pelZ -= BFP.hips * (S.sw ? -1 : 1) * sp('bfpW0', rig.fp ? 1 : 0, 6) * (1 - airW);
   // heel side: hips back over the heels (sitting down a little); toe side: knees and hips forward
@@ -562,8 +572,11 @@ Rig.poser.board = (rig, S0, dt) => {
     twT = (gd ? gd.twist * noseX : 0.38 * travelX) + sway * wob(tt * 1.25, 8.8);
     sdT = (gd ? -gd.side * noseX : clamp(Wz * 0.03, -0.2, 0.2)) + (0.05 * gW + 0.08 * flow) * wob(tt * 1.05, 6.1);
     lnT = (gd ? gd.lean : 0.22 + 0.12 * prep + 0.25 * spinning + 0.75 * tkF - 0.5 * lay) + 0.25 * popK + 0.08 * flow * wob(tt * 0.85, 4.4) + 0.15 * rollOff;
+    // (setting up a press or a hand drag before the snow: the shoulders down towards the pressed end, a little forward,
+    // looking at where it lands; for the drag turned, leaned back and down towards the back hand, as on the snow)
+    sdT += (-0.5 * pr * noseX * (1 - lazy) + 0.9 * lazy * noseX) * intoK; lnT += (0.15 - 0.7 * lazy) * intoK; twT -= 0.35 * lazy * noseX * intoK;
     hyT = travelX * 1.0 + clamp(Wy * 0.08, -0.55, 0.55);
-    hpT = 0.1 + 0.3 * prep + 0.35 * tkF - 0.45 * lay;
+    hpT = 0.1 + 0.3 * prep + 0.35 * tkF - 0.45 * lay + 0.15 * intoK;
   } else if (rail) {
     // on a rail the chest turns down it, the head looks along it, the arms out for balance
     twT = clamp(look * 0.45, -0.9, 0.9);
@@ -660,7 +673,7 @@ Rig.poser.board = (rig, S0, dt) => {
     if (worst > 0) { _v5.normalize().multiplyScalar(worst); bw.position.add(_v5); }
   }
   bindingAnkles(rig, bd, fb);
-  bd.bend.value = 0.028 * Math.abs(pr) + 0.01 * lazy;           // (a press bows the board: 2.8 cm at the tips)
+  bd.bend.value = (0.028 * Math.abs(pr) + 0.01 * lazy) * (air ? 0.4 : 1);   // (a press bows the board: 2.8 cm at the tips; less with no weight on it, in the air)
   // pushing on the flat (a skate): the back foot leaves its binding, steps onto the snow on the toe side beside the
   // board, pushes back along it, then lifts and comes forward again; the front foot stays in
   const out = sp('bout', ground && skate > 0.15 && speed < 7 ? 1 : 0, 9), dirT = S.sw ? -1 : 1;     // (nobody pushes at speed)
@@ -718,6 +731,8 @@ Rig.poser.board = (rig, S0, dt) => {
       fwd += 0.12 * popK; up += 0.12 * popK;
       fwd += 0.12 * prep; lat += 0.04 * prep;
       lat += 0.2 * rollOff; up += 0.16 * rollOff;                                              // (rolled off soft: out for balance)
+      // (set for a press: out for balance, the arm over the pressed end reaching forward and down over it, the other up)
+      if (intoK > 0.01 && into !== 'lazy') { const over = (pr > 0) === front; lat += 0.12 * intoK; fwd += (over ? 0.12 : -0.04) * intoK; up += (over ? -0.12 : 0.12) * intoK; }
       if (gd && gd.arms) { const m = ARM_MODE[gd.arms]; lat = m[0]; up = m[1]; fwd = m[2]; lat += 0.05 * wob(tt * 1.3, 31 + k * 4); up += 0.06 * wob(tt * 1.6, 33 + k * 3); }
     } else if (rail) {
       const bal = S.balance || 0;
@@ -759,7 +774,7 @@ Rig.poser.board = (rig, S0, dt) => {
     const sh = _sh.setFromMatrixPosition(ua.matrixWorld);
     const wr = _wr.copy(sh).addScaledVector(cL, s * lat).addScaledVector(ub, up).addScaledVector(cFl, fwd);
     // a hand drag (the lazy boy key on a board): the back hand trails in the snow beside the heel edge, behind the back foot
-    const drag = !front && ground ? lazy : 0;
+    const drag = !front && (ground || into === 'lazy') ? lazy : 0;
     if (drag > 0.01) wr.lerp(_v2.set(-fb * (halfWidth(-0.35) + 0.14), 0.04 - (S.sink || 0), -BOARD.stance / 2 - 0.05).applyQuaternion(R).add(BP), drag);
     { const d = wr.distanceTo(sh), m = softReach(d, armL, 0.78 + 0.14 * drag, 0.93 + 0.065 * drag); if (m < d) wr.sub(sh).multiplyScalar(m / d).add(sh); }
     const fd = _fd.copy(cF).addScaledVector(ub, -0.35).normalize(), pa = _pa.copy(cL).multiplyScalar(-s);
@@ -809,6 +824,19 @@ export function firstPersonEyes(rig, R, vel, speed, dirZ, down, fwd = 0) {
   (rig.fpEye || (rig.fpEye = new THREE.Vector3())).copy(rig.eye).addScaledVector(d, fwd);
 }
 
+/* (2026-11-10) how long until the snow along the flight from p at v, looked for up to `upTo` seconds ahead (9 when
+   further): rig.timeToGround sees only 0.4 s ahead, and landing into a press is set up from 0.58 s out. Asked only
+   while S or N is held in the air. */
+function intoAhead(p, v, upTo) {
+  let gp = p.y - height(p.x, p.z);
+  if (gp <= 0) return 0;
+  for (let k = 1, n = Math.ceil(upTo / 0.05); k <= n; k++) {
+    const tt = k * 0.05, gap = p.y + v.y * tt - 4.905 * tt * tt - height(p.x + v.x * tt, p.z + v.z * tt);
+    if (gap <= 0) return tt - 0.05 + 0.05 * gp / (gp - gap);
+    gp = gap;
+  }
+  return 9;
+}
 // which binding a leg is in: the front one (0) is the left leg for regular, the right for goofy
 const legBinding = (k, noseX) => ((k === 0) === (noseX > 0)) ? 0 : 1;
 const rigLegThigh = (rig, k) => k ? rig.b.thR : rig.b.thL;

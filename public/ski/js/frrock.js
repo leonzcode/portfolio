@@ -14,8 +14,8 @@
    fight over the same snow). All of it is one rock mesh and one snow mesh, two draw calls (the rock slab of the jibs
    goes in the rock mesh too). */
 import * as THREE from 'three';
-import { snowUniforms } from './materials.js?v=21';
-import { simplex, clamp, smoothstep, rng } from './noise.js?v=21';
+import { snowUniforms } from './materials.js?v=22';
+import { simplex, clamp, smoothstep, rng } from './noise.js?v=22';
 
 // ---- the rock material: grey stone with strata, cracks and streaks, snow where it faces up -----------------------------
 let ROCK = null;
@@ -454,7 +454,16 @@ export function buildJibs(scene, fr, mats, q) {
     const b = v(x, y + hgt - 0.05, z, 0, 0, 1, ORANGE), c = v(x + 0.65, y + hgt - 0.25, z, 0, 0, 1, ORANGE), d = v(x, y + hgt - 0.5, z, 0, 0, 1, ORANGE);
     I.push(b, d, c, b, c, d);
   };
-  for (const st of fr.park.starts) if (/^Summit/.test(st.name)) { pole(st.x - 2.4, st.z + 4, 2.2); pole(st.x + 2.4, st.z + 4, 2.2); }
+  // (2026-11-10: the Peak's lines too, each with a sign beside its flags: below)
+  const lineTops = fr.park.starts.filter(st => /^(Summit|Peak):/.test(st.name));
+  // (the sign beside the flags, east of them, on two posts of its own: across the way in, riders and the camera behind
+  // them would pass through it)
+  const signAt = st => { const sx = st.x + 6.2, zs = st.z + 4, hw = 1.7; return { sx, zs, hw, hh: 0.23, y: Math.max(G(sx - hw, zs), G(sx + hw, zs)) + 1.2 }; };
+  for (const st of lineTops) {
+    pole(st.x - 2.4, st.z + 4, 2.2); pole(st.x + 2.4, st.z + 4, 2.2);
+    const s = signAt(st);
+    for (const px of [s.sx - s.hw + 0.15, s.sx + s.hw - 0.15]) cyl(new THREE.Vector3(px, G(px, s.zs) - 0.3, s.zs + 0.05), new THREE.Vector3(px, s.y + s.hh, s.zs + 0.05), 0.045, 5, false, false);
+  }
   // the finish: two posts and a banner across the corral's top
   const fz = 700, fy = Math.max(G(-10, fz), G(10, fz));
   for (const x of [-10, 10]) cyl(new THREE.Vector3(x, G(x, fz) - 0.4, fz), new THREE.Vector3(x, fy + 5.6, fz), 0.18, 8, true, false);
@@ -475,6 +484,41 @@ uniform float uNight;`).replace('#include <opaque_fragment>', `outgoingLight -= 
   const bt = new THREE.CanvasTexture(cv); bt.colorSpace = THREE.SRGBColorSpace;
   const bn = new THREE.Mesh(new THREE.BoxGeometry(20.5, 2.2, 0.2), new THREE.MeshStandardMaterial({ map: bt, roughness: 0.8 }));
   bn.position.set(0, fy + 4.6, fz); bn.castShadow = !(q.tier === 'low'); bn.name = 'finish banner'; bn.updateMatrix(); bn.matrixAutoUpdate = false; group.add(bn);
+  /* (2026-11-10, for Leon's "unique lines which one could ride and pick a new line each time they drop") a sign at each
+     line's top, beside its flags, with the line's name: on two posts, facing up the hill to the riders coming to it, its
+     back the same the right way round. All the names in one canvas, all the signs one mesh */
+  if (lineTops.length) {
+    const names = lineTops.map(st => st.name.replace(/^(Summit|Peak):\s*(the\s+)?/i, '').replace(/\s*\(.*\)\s*$/, '').toUpperCase());
+    const rowsN = Math.ceil(names.length / 2), cv = document.createElement('canvas'); cv.width = 1024; cv.height = 64 * Math.max(1, rowsN);
+    const cx = cv.getContext('2d');
+    names.forEach((nm, i) => {
+      const x0 = (i % 2) * 512, y0 = Math.floor(i / 2) * 64;
+      cx.fillStyle = '#0d1b2a'; cx.fillRect(x0, y0, 512, 64); cx.fillStyle = '#ff6a13'; cx.fillRect(x0, y0 + 56, 512, 8);
+      let fs = 46; cx.font = `italic 800 ${fs}px "Barlow Condensed", Arial Narrow, sans-serif`;
+      while (cx.measureText(nm).width > 480 && fs > 24) { fs -= 2; cx.font = `italic 800 ${fs}px "Barlow Condensed", Arial Narrow, sans-serif`; }
+      cx.fillStyle = '#fff'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(nm, x0 + 256, y0 + 30);
+    });
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+    const SP = [], SU = [], SN = [], SI = [];
+    lineTops.forEach((st, i) => {
+      const u0 = (i % 2) * 0.5, u1 = u0 + 0.5, v1 = 1 - Math.floor(i / 2) / rowsN, v0 = v1 - 1 / rowsN;
+      const { sx, zs, hw, hh, y } = signAt(st);
+      // (front, facing -z, up the hill: read from above; back, facing +z, mirrored so it reads the right way round too)
+      for (const [nz, dz, flip] of [[-1, -0.02, false], [1, 0.02, true]]) {
+        const b = SP.length / 3;
+        SP.push(sx - hw, y - hh, zs + dz, sx + hw, y - hh, zs + dz, sx + hw, y + hh, zs + dz, sx - hw, y + hh, zs + dz);
+        // (from -z, the sign's left is +x)
+        const ua = flip ? u0 : u1, ub = flip ? u1 : u0;
+        SU.push(ua, v0, ub, v0, ub, v1, ua, v1);
+        for (let k = 0; k < 4; k++) SN.push(0, 0, nz);
+        if (nz < 0) SI.push(b, b + 2, b + 1, b, b + 3, b + 2); else SI.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      }
+    });
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.Float32BufferAttribute(SP, 3)); sg.setAttribute('uv', new THREE.Float32BufferAttribute(SU, 2)); sg.setAttribute('normal', new THREE.Float32BufferAttribute(SN, 3)); sg.setIndex(SI);
+    sg.computeBoundingSphere();
+    const sm = new THREE.Mesh(sg, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 })); sm.name = 'line signs'; sm.matrixAutoUpdate = false; sm.updateMatrix(); group.add(sm);
+  }
   scene.add(group); group.updateMatrixWorld(true);
   return group;
 }

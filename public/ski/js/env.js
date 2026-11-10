@@ -12,9 +12,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { snowUniforms } from './materials.js?v=21';
-import { height, runHalf, getPark } from './terrain.js?v=21';
-import { installShadowOnly } from './shadowproxy.js?v=21';
+import { snowUniforms } from './materials.js?v=22';
+import { height, runHalf, getPark } from './terrain.js?v=22';
+import { installShadowOnly } from './shadowproxy.js?v=22';
 
 const KEY = 'ski_env';
 export const ENV = Object.assign({ time: 12.5, sky: 'clear', snow: 'groomed' },

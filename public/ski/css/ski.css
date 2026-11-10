@@ -172,3 +172,73 @@ select { font: 500 15px var(--body); padding: 6px 8px; border: 1px solid #b8c4cf
 .lk-acts button { flex: 1; background: #fff; color: var(--shade); border: 1px solid #c9d3dc; font-size: 15px; padding: 6px 4px; }
 .lk-acts button:hover { border-color: var(--shade); }
 @media (max-width: 420px) { .lk-row .seglab { flex-basis: 52px; } .lk-row .lk-seg button { font-size: 12px; } }
+
+/* ---- riding online (M, 2026-11-10): under the Ride button, a board like the lift status board at the base of a
+   resort: each map's riders and watchers right now, a live light, Ride online and Watch. Ice is the others' colour, as
+   in the HUD (their tricks, their names in the chat). ---- */
+:root { --live: #5ee08f; }
+.online { background: var(--shade); color: #e6eef5; margin: 10px 0 2px; padding: 10px 10px 9px; border-left: 4px solid var(--ice); }
+.onhead { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
+.live { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--live); animation: live 2.2s ease-out infinite; }
+.online.down .live { background: #6b7783; animation: none; }
+@keyframes live { 0% { box-shadow: 0 0 0 0 rgba(94,224,143,.6); } 70%, 100% { box-shadow: 0 0 0 7px rgba(94,224,143,0); } }
+.onlab { font: italic 800 17px var(--display); text-transform: uppercase; letter-spacing: .1em; color: #fff; }
+.ontotal { margin-left: auto; font: 500 12px var(--mono); color: var(--ice); text-align: right; }
+.onmaps { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.onmap { min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(159,198,232,.07); border: 1px solid rgba(159,198,232,.2); transition: border-color .3s; }
+.onmap.busy { border-color: rgba(94,224,143,.5); }
+.ontitle { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.ontitle b { font: italic 800 19px var(--display); text-transform: uppercase; color: #fff; line-height: 1; white-space: nowrap; }
+.online .sign { height: 20px; }
+.online .sign.diamond { background: #fff; padding: 0 4px; border-radius: 3px; }   /* (a black diamond on its white plate) */
+.online .sign.diamond i { width: 10px; height: 10px; margin: 0 2px; }
+.oncount { font: 500 12px var(--mono); color: #b9c8d6; }
+.oncount b { font: 500 15px var(--mono); color: #fff; }
+.onacts { display: grid; grid-template-columns: 1fr auto; gap: 5px; }
+.onacts button { padding: 8px 8px; }
+.onride { background: var(--ice); color: var(--shade); font-style: italic; font-weight: 800; font-size: 17px; }
+.onride:hover { background: #c4ddf2; }
+.onwatch { background: transparent; color: var(--ice); border: 1px solid rgba(159,198,232,.55); font-size: 15px; }
+.onwatch:hover { border-color: var(--ice); color: #fff; }
+.onme { display: flex; align-items: center; gap: 8px; margin-top: 8px; font: 600 11px var(--body); text-transform: uppercase; letter-spacing: .08em; color: #9fb0c0; }
+.onme input { flex: 1; min-width: 0; font: 500 14px var(--body); padding: 5px 8px; background: rgba(255,255,255,.07); border: 1px solid rgba(159,198,232,.3); color: #fff; }
+.onme input::placeholder { color: #8293a4; }
+@media (max-width: 420px) { .onacts { grid-template-columns: 1fr; } .ontitle b { font-size: 17px; } .online { padding: 9px 8px 8px; } }
+@media (prefers-reduced-motion: reduce) { .live { animation: none; } }
+
+/* watching the others ride: a bar along the bottom (who, the next or previous rider, the camera, Ride, Leave); the
+   speed moves up to where the grab list was, the score and the touch buttons go */
+#watchbar { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: min(720px, calc(100% - 24px)); pointer-events: auto;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "prev who next acts" "keys keys keys keys";
+  align-items: center; column-gap: 10px; row-gap: 5px; padding: 8px 10px 7px; background: rgba(13,27,42,.84); border-left: 5px solid var(--ice); color: #fff; }
+.wbnav { width: 40px; height: 40px; padding: 0; background: rgba(159,198,232,.14); color: var(--ice); font-size: 15px; }
+#wbprev { grid-area: prev; } #wbnext { grid-area: next; }
+.wbnav:not(:disabled):hover { background: rgba(159,198,232,.28); color: #fff; }
+.wbnav:disabled { opacity: .3; }
+.wbwho { grid-area: who; display: flex; flex-direction: column; min-width: 0; }
+.wblab { font: italic 700 12px var(--display); letter-spacing: .16em; text-transform: uppercase; color: var(--ice); }
+#wbname { font: italic 800 28px var(--display); text-transform: uppercase; line-height: 1.02; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#wbmeta { font: 500 12px var(--mono); color: #b9c8d6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wbacts { grid-area: acts; display: flex; gap: 6px; }
+.wbacts button { font-size: 15px; padding: 10px 12px; }
+#wbcam { min-width: 112px; background: transparent; border: 1px solid rgba(159,198,232,.55); color: var(--ice); }
+#wbride { background: var(--signal); font-style: italic; font-weight: 800; font-size: 18px; }
+.wbkeys { grid-area: keys; font: 500 11px var(--mono); color: #9fb0c0; text-align: center; }
+.wbkeys kbd { font: inherit; background: rgba(255,255,255,.12); color: #fff; padding: 0 4px; margin: 0 2px 0 8px; }
+#hud.watching #score, #hud.watching #grabhint, #hud.watching #touch { display: none !important; }
+#hud.watching #speed { bottom: auto; top: 12px; }
+#hud.watching.nobody #speed { display: none; }
+#hud.watching #chat { bottom: 132px; }
+#hud.watching #chatin { bottom: 98px; }
+#hud.watching #tricks { bottom: 168px; }
+@media (hover: none) { .wbkeys { display: none; } }
+@media (max-width: 640px) {
+  #watchbar { bottom: 10px; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "prev who next" "acts acts acts"; }
+  .wbacts button { flex: 1; padding: 10px 6px; }
+  #wbcam { min-width: 0; }
+  #wbname { font-size: 24px; }
+  .wbkeys { display: none; }
+  #hud.watching #chat { bottom: 158px; width: calc(100% - 36px); }
+  #hud.watching #chatin { bottom: 122px; width: calc(100% - 36px); }
+  #hud.watching #tricks { bottom: 200px; }
+}

@@ -1,30 +1,31 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=21';
-import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=21';
-import { makeMaterials, snowUniforms } from './materials.js?v=21';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=21';
-import { Mountain, SPOTS } from './dem.js?v=21';
-import { Skier } from './skier.js?v=21';
-import { Rig } from './rig.js?v=21';
-import './board.js?v=21';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
-import './scoot.js?v=21';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
-import './sled.js?v=21';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
-import { Tricks } from './tricks.js?v=21';
-import { Input } from './input.js?v=21';
-import { Cams } from './camera.js?v=21';
-import { Tracks, Spray } from './snow.js?v=21';
-import { Hud } from './hud.js?v=21';
-import { Sound } from './sound.js?v=21';
-import { Net } from './net.js?v=21';
-import { mergeGear } from './gear.js?v=21';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=22';
+import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=22';
+import { makeMaterials, snowUniforms } from './materials.js?v=22';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=22';
+import { Mountain, SPOTS } from './dem.js?v=22';
+import { Skier } from './skier.js?v=22';
+import { Rig } from './rig.js?v=22';
+import './board.js?v=22';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
+import './scoot.js?v=22';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
+import './sled.js?v=22';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
+import { Tricks } from './tricks.js?v=22';
+import { Input } from './input.js?v=22';
+import { Cams } from './camera.js?v=22';
+import { Tracks, Spray } from './snow.js?v=22';
+import { Hud } from './hud.js?v=22';
+import { Sound } from './sound.js?v=22';
+import { Net } from './net.js?v=22';
+import { mergeGear } from './gear.js?v=22';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Touch, TOUCH_GRABS } from './touch.js?v=21';
-import { Locker, loadLook, cleanLook } from './locker.js?v=21';
-import { planLift, Lift } from './lift.js?v=21';      // (L: the chairlift)
-import { planTbar, Tbar } from './tbar.js?v=21';      // (J: the Jump Line's T-bar)
-import { makeFreeride } from './freeride.js?v=21';    // (F: the Freeride mountain)
-import { buildRock, buildJibs } from './frrock.js?v=21';
+import { Touch, TOUCH_GRABS } from './touch.js?v=22';
+import { Locker, loadLook, cleanLook } from './locker.js?v=22';
+import { planLift, Lift } from './lift.js?v=22';      // (L: the chairlift)
+import { planTbar, Tbar } from './tbar.js?v=22';      // (J: the Jump Line's T-bar)
+import { makeFreeride } from './freeride.js?v=22';    // (F: the Freeride mountain)
+import { buildRock, buildJibs } from './frrock.js?v=22';
+import { Online } from './online.js?v=22';            // (M: the home screen's online buttons, and watching others)
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
@@ -358,10 +359,12 @@ net.map = opts.map || 'jumpline';
 if (lift) { net.lift = lift; net.xFns.push(x => lift.netX(x)); }   // (L: riders on the chairlift, in the state's x)
 $('mpname').value = opts.name || '';
 const mpName = () => { opts.name = $('mpname').value.trim(); save(); return opts.name || 'Rider'; };
-$('mppublic').onclick = () => { net.connect(mpName(), opts.rider); play(); };
+// (M: the public parks are the home screen's online board now, one for each map: online.js)
 $('mpprivate').onclick = () => { net.connect(mpName(), opts.rider, { priv: true }); play(); };
 $('mpjoin').onclick = () => { const c = $('mpcode').value.trim().toUpperCase(); if (c.length !== 4) { $('mpstatus').textContent = 'A room code has four letters.'; return; } net.connect(mpName(), opts.rider, { code: c }); play(); };
 $('mpleave').onclick = () => net.leave();
+// (M) the online board, the reload into another map's park, and watching the others ride
+const online = new Online({ net, opts, save, hud, cams, camera, lift, sound, play, toStart, rig: () => rig, start: START });
 const chatIn = $('chatin');
 addEventListener('keydown', e => {
   if (!playing || paused) return;
@@ -388,7 +391,7 @@ function tick() {
   if (filmHold) { clock.getDelta(); return; }            // a test is stepping the frames itself (__ski.film)
   const dt = Math.min(0.05, clock.getDelta());
   time += dt;
-  const live = playing && !paused && !replay;
+  const live = playing && !paused && !replay && !online.watching;   // (M: watching others, your own rider waits)
   const I = live ? input.read(skier.state === 'air', skier.state === 'rail') : { steer: 0, crouch: false, spin: 0, flip: 0, tilt: 0 };
   if (live) {
     if (input.took(opts.scheme === 'shred' ? 'KeyQ' : 'KeyC')) { opts.cam = cams.next(); sel.cammode.value = opts.cam; save(); hud.flash({ chase: 'Chase camera', far: 'Far chase', pov: 'First person', film: 'Filmer' }[opts.cam], 900); }
@@ -459,12 +462,15 @@ function tick() {
     S = Object.assign(r, { speed: r.v.length(), vel: r.v, t: replay.t });
     camSk = { p: r.p, v: r.v, state: r.state, crouch: r.crouch, com: r.com };
     rdt = dt * (replay.slow ? 0.3 : 1);                  // (the rider's own motion in slow motion too)
+  } else if (online.watching) {
+    camSk = online.frame(dt, time);                      // (M: the rider watched, the camera on them: online.js)
   } else {
     // the rider between the physics' last two steps (alpha: how far into the next one the clock has run)
     camSk = drawn(Math.min(1, acc / STEP));
     S = poseState(camSk, time);
     if (live) record(time);
   }
+  if (!online.watching) {                                // (M: online.frame did the camera; your own rider is hidden)
   rig.update(S, rdt);
   // the scene's matrices are not walked every frame (most of it never moves): what moves is updated here (unless the
   // rig did it itself this frame, measuring its gear against the snow)
@@ -475,6 +481,7 @@ function tick() {
   else if (skier.state === 'lift' || cams.orbit) cams.lookRound(live && skier.state === 'lift' ? I.steer : 0, dt);
   cams.update(dt, camSk, rig);
   if (lift && !replay) lift.camera(dt, camera, cams, camSk);   // (L: beside the stations a tripod takes over from the chase camera)
+  }
   // (R) the locker open on the menu: the camera turns round the rider beside the card
   if (!live && !replay && locker.open && !$('menu').classList.contains('hidden')) locker.preview(camera, rig, dt);
   if (live) { tracks.follow(view.p); tracks.fromSkier(view, rig); spray.fromSkier(view, rig, dt); }
@@ -485,12 +492,12 @@ function tick() {
   terrain.update(camera.position, frames);
   forest.update(camera.position);
   snowUniforms.uTime.value = time;
-  sound.frame(skier);
+  sound.frame(online.watching ? camSk : skier);           // (M: watching, the wind and the snow follow the rider watched)
   // (the others' name tags are put on the screen through this frame's camera: they were a frame behind it, and slid
   // against their riders whenever the camera moved)
   camera.updateMatrixWorld();
   net.update(dt, skier, time);
-  hud.frame(skier, opts.showfps ? fps : null);
+  hud.frame(online.watching ? camSk : skier, opts.showfps ? fps : null);
   /* (2026-11-06, for "random frames where it like blinks": a change of resolution resizes the canvas, which empties it.
      It was made just after the frame was drawn, so that frame went to the screen empty, a black flash about once a
      second while the frame rate sat under 48 or over 58. It is made here, before the draw, and less often: two slow
@@ -534,6 +541,7 @@ function tick() {
       for (const o of casters) o.frustumCulled = true;
     }
     $('play').disabled = false; $('play').textContent = 'Ride';
+    online.booted();                                     // (M: an online choice made before a reload into this map)
   } catch (e) {
     console.error(e); $('play').textContent = 'Could not load';
   }
@@ -551,6 +559,7 @@ function tick() {
   };
   window.__ski = { THREE, renderer, scene, camera, skier, film, release: () => { filmHold = false; }, get rig() { return rig; }, park, terrain, tricks, net, input, cams, tracks, spray, q, opts, height, normal, baseLine, play, step: (n, I) => { for (let i = 0; i < n; i++) { skier.step(STEP, Object.assign({ steer: 0, crouch: false, spin: 0, flip: 0, tilt: 0 }, I)); tricks.step(skier, STEP); } keepWas(); }, view };
   window.__ski.lift = lift; window.__ski.net = net;   // (L: test handles)
+  window.__ski.online = online;                        // (M)
   clock.getDelta();
   frame();
 })();
