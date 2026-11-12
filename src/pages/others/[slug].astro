@@ -92,7 +92,7 @@ const tech = project.tech ?? [];
         )
       }
       <ProjectSocial slugKey={`games/${project.slug}`} />
-      <div class="mt-3"><OnlineCount project={project.slug} /></div>
+      {project.multiplayer && <div class="mt-3"><OnlineCount project={project.slug} /></div>}
     </header>
 
     {

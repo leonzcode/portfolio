@@ -18,6 +18,7 @@ export interface Project {
   /** "games/ski": the key the server keeps the counts, comments and edits under,
       when it is not the address (the Others tab was the Games tab at /games) */
   socialKey?: string;
+  multiplayer?: boolean;
 }
 
 export const aiProjects: Project[] = [
@@ -109,6 +110,7 @@ aiProjects.forEach((p) => {
 export const otherProjects: Project[] = [
   {
     slug: "leoncraft2",
+    multiplayer: true,
     title: "Leoncraft 2",
     description:
       "A second, much bigger take on a Minecraft-style world in the browser: terrain made the way Minecraft makes it, survival, the Nether and the End, shader levels from plain to cinematic, and online servers with accounts.",
@@ -130,6 +132,7 @@ export const otherProjects: Project[] = [
   },
   {
     slug: "leon-kart",
+    multiplayer: true,
     title: "Leon Kart",
     description:
       "An original kart racer with five circuits that are drawn fresh every race, drift mini-turbos, gliders, items, and a server so you can race other people.",
@@ -151,6 +154,7 @@ export const otherProjects: Project[] = [
   },
   {
     slug: "minecraft",
+    multiplayer: true,
     title: "Leoncraft",
     description:
       "A voxel sandbox built from scratch in the browser: procedural worlds, hundreds of blocks, mobs, and a shared online server where you build alongside other people live.",

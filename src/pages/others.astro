@@ -82,7 +82,7 @@ const searchText = (project: (typeof otherProjects)[number]) =>
           </a>
           <p class="project-description" data-edit="desc" data-edit-key={project.socialKey}>{project.description}</p>
           <footer class="project-meta">
-            <OnlineCount project={project.slug} />
+            {project.multiplayer && <OnlineCount project={project.slug} />}
             <span class="project-stats" data-others-stats hidden>
               <span><Eye size={13} aria-hidden="true" /><span data-others-views></span></span>
               <span><Heart size={13} aria-hidden="true" /><span data-others-likes></span></span>
