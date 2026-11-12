@@ -7,14 +7,14 @@ const navItems = [
   { href: "/science", label: "Science" },
   { href: "/math", label: "Math" },
   { href: "/film", label: "Film" },
-  { href: "/edu", label: "Others" },
+  { href: "/others", label: "Others" },
   { href: "/contact", label: "Contact" },
 ];
 
 const currentPath = Astro.url.pathname.replace(/\/$/, "") || "/";
 ---
 
-<header class="flex items-center justify-between gap-4 mb-14">
+<header class="flex flex-wrap sm:flex-nowrap items-center justify-between gap-4 mb-14">
   <a href="/" aria-label="Home" class="shrink-0 block">
     <img
       src="/logo.png"
@@ -24,7 +24,7 @@ const currentPath = Astro.url.pathname.replace(/\/$/, "") || "/";
       class="w-9 h-9 rounded-full"
     />
   </a>
-  <nav class="flex items-center gap-1 sm:gap-2 text-[14px] font-medium">
+  <nav class="order-3 sm:order-none w-full sm:w-auto flex items-center justify-between sm:justify-start gap-0 sm:gap-2 text-[13px] sm:text-[14px] font-medium">
     {
       navItems.map((item) => {
         const isActive =
@@ -35,7 +35,7 @@ const currentPath = Astro.url.pathname.replace(/\/$/, "") || "/";
           <a
             href={item.href}
             class:list={[
-              "px-1.5 sm:px-2 py-1.5 rounded-md transition-colors",
+              "px-0.5 sm:px-2 py-1.5 rounded-md transition-colors",
               isActive
                 ? "text-neutral-900 dark:text-neutral-50"
                 : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100",

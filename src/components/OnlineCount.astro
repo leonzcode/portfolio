@@ -1,0 +1,21 @@
+---
+import Users from "@lucide/astro/icons/users";
+interface Props { project: string }
+const { project } = Astro.props;
+---
+
+<span class="online-count" data-project-online={project} data-online-state="loading" aria-label="Checking online count" title="Active browsers in the last 45 seconds">
+  <Users size={13} aria-hidden="true" />
+  <span data-online-value>Checking...</span>
+</span>
+
+<script>
+  import "../scripts/online-counts";
+</script>
+
+<style>
+  .online-count { display: inline-flex; align-items: center; gap: 5px; min-width: 86px; white-space: nowrap; font-size: 11.5px; line-height: 1.5; font-variant-numeric: tabular-nums; color: #737373; }
+  :global(.dark) .online-count { color: #a3a3a3; }
+  .online-count[data-online-state="active"] { color: #15803d; }
+  :global(.dark) .online-count[data-online-state="active"] { color: #86efac; }
+</style>

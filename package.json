@@ -8,11 +8,13 @@
     "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
+    "test:others": "node tools/check-others.cjs",
     "astro": "astro"
   },
   "dependencies": {
-    "astro": "^5.0.0",
+    "@lucide/astro": "^1.72.0",
     "@tailwindcss/vite": "^4.0.0",
+    "astro": "^5.0.0",
     "tailwindcss": "^4.0.0"
   }
 }

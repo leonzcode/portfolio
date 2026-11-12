@@ -340,7 +340,7 @@ export const otherProjects: Project[] = [
 ];
 
 otherProjects.forEach((p) => {
-  p.detailHref = `/edu/${p.urlSlug ?? p.slug}`;
+  p.detailHref = `/others/${p.urlSlug ?? p.slug}`;
   p.socialKey = `games/${p.slug}`;
 });
 
