@@ -28,7 +28,7 @@
    with y = 0 at the main start. The physics reads it directly (terrain.js ground through setMountain); rock faces are
    steeper than skier.js's walls (about 53 degrees), so they are walls to ride into and drops to ride off.
    This module is plain JS (no three.js) so it can be checked in Node. */
-import { simplex, fbm, ridged, smoothstep, clamp, smax } from './noise.js?v=24';
+import { simplex, fbm, ridged, smoothstep, clamp, smax } from './noise.js?v=25';
 
 const RAD = Math.PI / 180;
 

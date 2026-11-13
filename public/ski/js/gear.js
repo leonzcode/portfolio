@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { riderShadow } from './shadowproxy.js?v=24';   // (E: the rider's shadow in a few draws)
+import { riderShadow } from './shadowproxy.js?v=25';   // (E: the rider's shadow in a few draws)
 
 /* Downloaded gear (2026-11-05, models/gear/, credits in CREDITS.md): goggles, a beanie, a bike lid, two skis and a pole,
    loaded once each and shared by every rider (each rider gets its own copies of the materials, for its colours).
@@ -67,7 +67,7 @@ export const LOW = { baggy: 1, regular: 0.4, slim: 0 };
 export const FIT = { baggy: 1, regular: 0.7, slim: 0.45 };
 const _gear = new Map();
 export function gearModel(name) {
-  if (!_gear.has(name)) _gear.set(name, loadGLB('./models/gear/' + name + '.glb?v=24').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));   // (C: tried again, a time limit; a gear part that never comes is left out, our own stands in)
+  if (!_gear.has(name)) _gear.set(name, loadGLB('./models/gear/' + name + '.glb?v=25').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));   // (C: tried again, a time limit; a gear part that never comes is left out, our own stands in)
   return _gear.get(name);
 }
 /* (2026-11-12, loading) BufferGeometry.applyMatrix4 for plain float positions and normals: the same sums three does
@@ -142,7 +142,7 @@ function mergeInto(group, keep = () => false) {
   for (const o of drop) { o.parent.remove(o); o.geometry.dispose(); }
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: rough / n, metalness: Math.min(0.5, metal / n), side }));
   mesh.castShadow = true; mesh.name = group.name + '-merged';
-  if (head) mesh.userData.head = true;               // (C: a piece of the head: hidden only from its own rider's eyes)
+  if (head) { mesh.userData.head = true; mesh.frustumCulled = false; }   // (C: a piece of the head: hidden only from its own rider's eyes; never left out by its bounds, 2026-11-13)
   if (layer !== null) mesh.layers.mask = layer;
   group.add(mesh);
   return mesh;

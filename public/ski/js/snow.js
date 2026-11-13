@@ -17,9 +17,9 @@
 // powder takes a deep soft-walled trench with lumps heaped beside it; ice only a fine white scratch; a landing presses a
 // short flat patch; a fall leaves a hollow.
 import * as THREE from 'three';
-import { snowUniforms } from './materials.js?v=24';
-import { height, surface, getPark } from './terrain.js?v=24';
-import { snowKind, SNOW } from './env.js?v=24';
+import { snowUniforms } from './materials.js?v=25';
+import { height, surface, getPark } from './terrain.js?v=25';
+import { snowKind, SNOW } from './env.js?v=25';
 const SNOW_POWDER = SNOW.powder, SNOW_SPRING = SNOW.spring, SNOW_ICE = SNOW.ice;
 
 const FINE = { W: 1024, H: 2048, SX: 64, SZ: 128, back: 0.72, step: 0.5, bx: -32, bz: 0 };   // (bx, bz: where its tiles start, so no tile edge runs down the Jump Line's middle lane)

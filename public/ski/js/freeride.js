@@ -8,11 +8,11 @@
    Summit Chair from the finish corral by the arch straight up the main face, over the shoulder and up the Peak to the
    true summit; the first start at its top; where its towers may stand (park.towerOk), and where the physics meets a
    rock face (park.cliff). */
-import { Land, LIFT_XS, fallLines } from './frland.js?v=24';
-import { Kicker, Rail, assemble } from './park.js?v=24';
-import { setMountain } from './terrain.js?v=24';
-import { simplex, fbm, smoothstep } from './noise.js?v=24';
-import { setRockSource, rockFieldWorker, freerideLook, setFieldTrees } from './materials.js?v=24';
+import { Land, LIFT_XS, fallLines } from './frland.js?v=25';
+import { Kicker, Rail, assemble } from './park.js?v=25';
+import { setMountain } from './terrain.js?v=25';
+import { simplex, fbm, smoothstep } from './noise.js?v=25';
+import { setRockSource, rockFieldWorker, freerideLook, setFieldTrees } from './materials.js?v=25';
 
 const RAD = Math.PI / 180;
 export const FIELD_MID = [10, 225];     // (the rock field's middle: frfield.js is sent its windows round it; 1280 m of fine
@@ -103,7 +103,7 @@ export function makeFreeride(q, plan = null) {
      Worked out in a worker (frfield.js), so it is ready before a run starts and never takes a frame's time: baked on
      the page in idle moments it was still going ten seconds into a run on a slow machine */
   // (2026-11-11: and the mountain's own light in the same texels, the sky each place sees and the sun's shadows: frfield.js)
-  rockFieldWorker(new URL('./frfield.js?v=24', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)), true);
+  rockFieldWorker(new URL('./frfield.js?v=25', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)), true);
 
   // ---- kickers on the rock: [band, x, lip deg, R, half width, gap m]
   const K = [];

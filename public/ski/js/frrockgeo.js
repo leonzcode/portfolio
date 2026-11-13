@@ -7,7 +7,7 @@
    then rockFinish with the slabs)
    slabs: the jibs' rock slabs, made on the page (frrock.js slabArrays: { P, N, I } each), which go into the rock mesh
    after the faces, as before; cover is land.cover (markCover, below). */
-import { simplex } from './noise.js?v=24';
+import { simplex } from './noise.js?v=25';
 
 // ---- curtains ------------------------------------------------------------------------------------------------------------
 /* (2026-11-07: one zone, two draw calls, the rock and its snow, for the whole mountain: it was four zones of two, eight

@@ -1,7 +1,7 @@
 // The heads-up display: speed, score and the line's multiplier, trick names as they land, rail balance, a grab list.
-import { GRABS, guideOf } from './grabs.js?v=24';
-import { keyHelp } from './input.js?v=24';
-import { rideGrabDef, rideGuide } from './board.js?v=24';      // (B: a board's, scooter's... own grab names in the lists)
+import { GRABS, guideOf } from './grabs.js?v=25';
+import { keyHelp } from './input.js?v=25';
+import { rideGrabDef, rideGuide } from './board.js?v=25';      // (B: a board's, scooter's... own grab names in the lists)
 
 const $ = id => document.getElementById(id);
 /* (2026-11-12, Leon: "make it so that controls appear at the top left every time unless the user toggles them off")

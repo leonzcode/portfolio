@@ -1,8 +1,8 @@
 // Cameras: chase (behind the travel, held steady through spins), far chase, first person (a helmet camera at the
 // rider's eyes, turning with the head) and filmer (tripod spots beside the features, panning and zooming to follow).
 import * as THREE from 'three';
-import { height } from './terrain.js?v=24';
-import { FollowQ } from './rig.js?v=24';
+import { height } from './terrain.js?v=25';
+import { FollowQ } from './rig.js?v=25';
 
 const MODES = ['chase', 'far', 'pov', 'film'];
 const _lf = new THREE.Vector3(), _Y = new THREE.Vector3(0, 1, 0);   // (L: the chairlift's look round)

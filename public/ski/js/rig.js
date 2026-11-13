@@ -10,10 +10,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=24';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=24';
-import { height, normal } from './terrain.js?v=24';
-import { gltfLoader, gearParts, gearModel, loadGLB, fetchOnce, LOOK, FIT, TOPS, LOW } from './gear.js?v=24';
+import { clamp, smoothstep } from './noise.js?v=25';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=25';
+import { height, normal } from './terrain.js?v=25';
+import { gltfLoader, gearParts, gearModel, loadGLB, fetchOnce, LOOK, FIT, TOPS, LOW } from './gear.js?v=25';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -166,8 +166,8 @@ const GEAR_K = 3;                    // the lowest few of each piece of gear's o
 const _cx = V(), _cu = V(), _cn = V(), _cn2 = V(), _cb2 = V(), _cs = V(), _pb = V(), _pd = V(), _pn = V(), _cdn = V(), _cbest = new Float64Array(8), _cbi = new Int32Array(8), _ck = new Float64Array(10), _cki = new Int32Array(10);
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=24';
-import { grabDef } from './grabs.js?v=24';
+export { GRABS } from './grabs.js?v=25';
+import { grabDef } from './grabs.js?v=25';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -437,7 +437,7 @@ function maskImage(url) {
 }
 /* (C) the rider's model: the Low tier's own copy (lo: pictures 512 px, WebP; the same meshes and skeleton), else the
    full one; fetched once (fetchOnce), each rider parsed from it. A Low copy that will not come falls back to the full. */
-const riderUrl = (id, lo) => './models/' + id + (lo ? '_lo' : '') + '.glb?v=24';
+const riderUrl = (id, lo) => './models/' + id + (lo ? '_lo' : '') + '.glb?v=25';
 // (a rider parsed ahead by prefetchRider, while the world is built: the first load of that model takes it)
 const _pre = new Map();
 async function riderGltf(id, lo) {
@@ -467,7 +467,7 @@ export function prefetchRider(id, look = {}, kind = 'ski', lo = false) {
   gltfLoader();                                       // (the model decoder's files come down now)
   // (the model is parsed as soon as it is in: its pictures decoded and its meshes unpacked off the main thread)
   const u = riderUrl(id, lo), pre = loadGLB(u); _pre.set(u, pre); swallow(pre);
-  swallow(maskImage('./models/' + id + '_m.png?v=24'));
+  swallow(maskImage('./models/' + id + '_m.png?v=25'));
   swallow(gearModel('goggles')); if (look.head !== 'painted') swallow(gearModel(look.head === 'beanie' ? 'beanie' : 'helmet_c'));
   if (kind === 'ski') { swallow(gearModel('pole')); swallow(gearModel('binding')); if (look.ski && look.ski !== 'park') swallow(gearModel(look.ski === 'pow' ? 'ski_b' : 'ski_a')); }
 }
@@ -628,7 +628,7 @@ export class Rig {
   }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=24';
+    const maskUrl = './models/' + id + '_m.png?v=25';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = new THREE.Texture(await maskImage(maskUrl)); mask.needsUpdate = true;   // (C: the one picture regionMeans used)
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -1904,6 +1904,7 @@ if (uFpNear > 0.0) {
   // first person on or off (camera.js, each frame): the easing above, and the body's fade close to the lens
   setFirstPerson(on) {
     on = !!on;
+    if (on) this._fpAt = this._frame || 0;               // (renewed every frame the camera is at these eyes: placeHead)
     if (on === this.fp) return;
     this.fp = on; this._fpE = null;
     if (this.dressU) this.dressU.uFpNear.value = on ? 0.2 : 0;
@@ -1915,13 +1916,30 @@ if (uFpNear > 0.0) {
      watching someone through their eyes) every other rider in the park lost their head, and the locker's turntable
      after first person showed your own rider without one. Now only the rider seen from its own eyes has them there. */
   headLayer(n) {
-    const set = o => { if (o.isMesh && o.userData.head) o.layers.set(n); };
+    // (2026-11-13: and never left out by its bounds; the pieces are small, and the skinned head was not culled already)
+    const set = o => { if (o.isMesh && o.userData.head) { o.layers.set(n); o.frustumCulled = false; } };
     if (this.helmet) this.helmet.traverse(set);
     if (this.model) this.model.traverse(set);
+    this._headL = n; this._headN = this.helmet ? this.helmet.children.length : 0;
+  }
+  /* (2026-11-13, for "the head still disappears from skier after you go on a rail": not reproduced, in any ride, camera,
+     tier or map, alone or in a room, see the lead's notes; these keep the head against what could hide it) Each frame,
+     before the head is placed: first person lasts only while the camera says so (setFirstPerson(true) every frame from
+     camera.js); a rig it has not said so for two frames is out of first person, so its head cannot stay hidden after the
+     camera has moved on. The head's pieces are put on the layer first person asks for whenever they are not (also when
+     the helmet's pieces change, as gear.js merges them). */
+  keepHead() {
+    if (this.fp && (this._frame || 0) - (this._fpAt ?? -9) > 2) this.setFirstPerson(false);
+    const want = this.fp ? 1 : 0;
+    if (this._headL !== want || (this.helmet && this._headN !== this.helmet.children.length)) this.headLayer(want);
   }
   // the helmet on the head (hdQ: the head's world rotation, as posed), and the eyes for the first-person camera
   placeHead(hdQ) {
+    this.keepHead();
     const hpos = this.headPos.setFromMatrixPosition(this.b.head.matrixWorld);
+    /* (2026-11-13) a pose that went wrong (a number that is not a number in the springs: the head's place with it) is
+       started again next frame from rest, rather than kept for good (a spring never comes back from one) */
+    if (!(isFinite(hpos.x) && isFinite(hpos.y) && isFinite(hpos.z) && hdQ && isFinite(hdQ.x + hdQ.y + hdQ.z + hdQ.w))) { this.p = {}; this._pq = null; this._pvOk = false; this._fpE = null; this._cr = null; this._carry = 0; this.poseReset = (this.poseReset || 0) + 1; return; }
     const hFwd = _v2.set(0, 0, 1).applyQuaternion(hdQ), hUp = _v3.set(0, 1, 0).applyQuaternion(hdQ);
     this.eye.copy(this.eyeOff).applyQuaternion(hdQ).add(hpos);
     this.helmet.position.copy(this.eye).addScaledVector(hUp, 0.04).addScaledVector(hFwd, -0.062);

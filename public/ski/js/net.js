@@ -9,6 +9,13 @@ import * as THREE from 'three';
 const SEND_HZ = 12, DELAY = 0.15;
 const _tv = new THREE.Vector3();
 const ST = ['ground', 'air', 'rail', 'crash'];
+/* (2026-11-12, for "rooms ... close after 10 minutes of afk") the relay closes a room nobody has done anything in for
+   10 minutes (skipark.js): it says why ({ type: 'closed', why: 'idle', text }) and closes the socket with IDLE_CODE. A
+   page says now and then (act, at most every ACT_MS, or a quarter of the relay's limit) that its player pressed a key,
+   clicked or touched the screen since the last time; its own states never count (a rider left alone slides down the
+   slope, crashes and is put back by itself). */
+export const IDLE_CODE = 4001;
+const IDLE_WORDS = 'This room closed after 10 minutes with nobody active.', ACT_MS = 20000;
 
 function serverUrl() {
   const q = new URLSearchParams(location.search).get('mp');
@@ -32,6 +39,10 @@ export class Net {
     // rider whose name tag is hidden (followed in first person), and hooks for online.js: onInit(m), onMode(watching)
     this.watching = false; this.watchN = 0; this.noTag = 0; this.onInit = null; this.onMode = null; this._posed = false;
     this.tags = document.getElementById('tags');
+    // (the player's last key, click or touch, and the last act sent; onClosed(text): a room closed for idleness)
+    this.inputAt = performance.now(); this.actAt = 0; this.idleMs = 0; this.onClosed = null;
+    const seen = () => { this.inputAt = performance.now(); };
+    for (const t of ['keydown', 'pointerdown', 'touchstart', 'wheel']) addEventListener(t, seen, { capture: true, passive: true });
     // (L) what fills the state's open bag x: functions fn(x, skier) (the relay passes up to 24 short keys), and the
     // chairlift, so a rider on a chair is drawn on this page's own chair
     this.xFns = []; this.lift = null;
@@ -64,11 +75,16 @@ export class Net {
     this.onStatus('Connecting...');
     // (look: how this rider looks to the others, e.g. ride: 'ski' | 'board' and stance; the relay passes it on as it is)
     // (M: map, the map's own public park; watch, in to watch)
-    ws.onopen = () => { this.open = true; ws.send(JSON.stringify({ type: 'join', name, rider, code, priv, map: this.map || 'jumpline', watch: !!watch, look: this.getLook ? this.getLook() : undefined })); };
+    // (act: this page sends act messages and reads closed, 2026-11-12)
+    ws.onopen = () => { this.open = true; this.actAt = 0; ws.send(JSON.stringify({ type: 'join', name, rider, code, priv, map: this.map || 'jumpline', watch: !!watch, act: true, look: this.getLook ? this.getLook() : undefined })); };
     ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (err) { return; } this.message(m); };
-    ws.onclose = () => {
+    ws.onclose = e => {
       const was = this.code; this.open = false; this.code = ''; this.clearRemotes();
-      if (this.ws === ws) { this.onStatus(was ? 'Lost the connection to the park.' : 'Could not reach the park server.'); if (was && this.want) this.retry = setTimeout(() => this.connect(this.want.name, this.want.rider, { code: was, priv: this.want.priv, watch: this.watching }), 2500); }
+      if (this.ws !== ws) return;
+      // (closed by the relay because nobody was active in the room: no reconnecting; the closed message says why, this is
+      // in case it did not come)
+      if (e && e.code === IDLE_CODE) { this.ws = null; this.idleClosed({ text: IDLE_WORDS }); return; }
+      this.onStatus(was ? 'Lost the connection to the park.' : 'Could not reach the park server.'); if (was && this.want) this.retry = setTimeout(() => this.connect(this.want.name, this.want.rider, { code: was, priv: this.want.priv, watch: this.watching }), 2500);
     };
     ws.onerror = () => {};
   }
@@ -93,6 +109,16 @@ export class Net {
     else if (m.type === 'trick') { const r = this.remotes.get(m.id); if (r) this.onTrick(r.name, m.name, m.pts); }
     else if (m.type === 'chat') this.onChat({ name: m.name, text: m.text, me: m.id === this.id });
     else if (m.type === 'nope') { this.onStatus(m.why); if (!m.keep) this.want = null; else if (this.onMode) this.onMode(this.watching, m.why); }   // (keep: still in the room)
+    else if (m.type === 'hello') this.idleMs = m.idle || 0;
+    else if (m.type === 'closed') this.idleClosed(m);
+  }
+  // the room closed because nobody in it was active: out of it for good (no reconnecting), the status says why, and
+  // main.js (onClosed) takes the page back to the menu
+  idleClosed(m) {
+    const text = (m && m.text) || IDLE_WORDS;
+    this.want = null; this.close();
+    this.onStatus(text);
+    if (this.onClosed) { try { this.onClosed(text); } catch (e) { console.warn('closed', e); } }
   }
   status() {
     let here = 1; for (const r of this.remotes.values()) if (!(this.map && r.look.map && r.look.map !== this.map)) here++;
@@ -141,6 +167,11 @@ export class Net {
       this.send({ type: 's', p: sk.p.toArray().map(r3), q: sk.q.toArray().map(r3), v: sk.v.toArray().map(r3), st: sk.state === 'lift' ? 0 : ST.indexOf(sk.state),   // (L: on the chairlift x.lf says so; st is ignored then)
         c: r3(sk.crouch), e: r3(sk.edge), tk: r3(sk.tuck), pr: r3(sk.press), b: r3(sk.balance || 0), br: r3(sk.brake), sw: sk.sw, g: sk.grab || null, po: sk.pose || null,
         tw: sk.tweak || '', sh: r3(sk.shift || 0), sk: r3(sk.skate || 0), ab: r3(sk.absorb || 0), ra: r3(sk.railAng || 0), rp: r3(sk.railPress || 0), lb: !!sk.lookBack, x: this.xOut(sk) });
+    }
+    // (2026-11-12) the player at the keys since the last time: said now and then (a watcher's keys keep no room open)
+    if (!this.watching) {
+      const now = performance.now(), every = Math.max(1000, Math.min(ACT_MS, (this.idleMs || 600000) / 4));
+      if (this.inputAt > this.actAt && now - this.actAt >= every) { this.actAt = now; this.send({ type: 'act' }); }
     }
     if (!posed) this.pose(dt, time);
     // the names over the helmets, through this frame's camera

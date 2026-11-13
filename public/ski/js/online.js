@@ -10,8 +10,8 @@
 //   the game's own cameras (chase, far, first person, filmer), the next or previous rider, their name, Ride to start
 //   riding in the same room, Leave. From the home screen, or from the pause menu while riding in a room.
 import * as THREE from 'three';
-import { countUrl } from './net.js?v=24';
-import { height } from './terrain.js?v=24';
+import { countUrl } from './net.js?v=25';
+import { height } from './terrain.js?v=25';
 
 const MAP_NAMES = { jumpline: 'Jump Line', freeride: 'Freeride' };
 const CAM_NAMES = { chase: 'Chase', far: 'Far chase', pov: 'First person', film: 'Filmer' };
@@ -79,8 +79,21 @@ export class Online {
   }
   // (no name: the relay gives one, "Rider" and a number, so the watch bar can tell riders apart)
   name() { const v = ($('mpname').value || '').trim(); this.opts.name = v; this.save(); return v; }
+  /* (2026-11-12) a line on the board, over the maps: why a room closed (nobody in it was active). Gone at the next press
+     on the board. */
+  notice(text) {
+    const el = this.el; if (!el) return;
+    let n = this.noteEl;
+    if (!n && text) {
+      n = this.noteEl = document.createElement('p'); n.className = 'onnote'; n.setAttribute('role', 'status');
+      n.style.cssText = 'margin:0 0 8px;padding:6px 9px;background:rgba(255,138,42,.16);border-left:3px solid #ff8a2a;color:#ffe6cf;font-size:13px;line-height:1.35';
+      el.insertBefore(n, el.querySelector('.onmaps'));
+    }
+    if (n) { n.textContent = text || ''; n.hidden = !text; }
+  }
   // a press on the board: ride or watch the map's public park (another map: a reload first)
   go(act, map) {
+    this.notice('');
     const nm = this.name();
     if (map !== this.opts.map) {
       try { sessionStorage.setItem(GO, JSON.stringify({ act, map, at: Date.now() })); } catch (e) {}
