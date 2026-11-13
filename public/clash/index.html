@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Leon Clash</title>
+<meta name="description" content="Leon Clash: a real-time lane battle on a snowy mountain. Build a deck of eight cards, spend cocoa, take the huts and bring down the lodge.">
+<meta name="theme-color" content="#14202e">
+<link rel="icon" href="assets/icon.png?v=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<link rel="stylesheet" href="css/clash.css?v=1">
+<link rel="modulepreload" href="js/sim.js?v=1">
+<link rel="modulepreload" href="js/cards.js?v=1">
+<link rel="modulepreload" href="js/main.js?v=1">
+</head>
+<body>
+<div id="app" class="app">
+
+  <!-- home -->
+  <section id="home" class="screen on" aria-label="Home">
+    <header class="hm-bar">
+      <button class="hm-me" data-go="settings" aria-label="Your name and settings">
+        <span class="hm-name">Climber</span>
+        <span class="hm-league"></span>
+      </button>
+      <div class="hm-tro" title="Trophies"><span class="ico-tro" aria-hidden="true"></span><span class="hm-trn">0</span></div>
+    </header>
+    <div class="hm-mark">
+      <h1 class="logo"><span class="logo-a">Leon</span><span class="logo-b">Clash</span></h1>
+      <p class="logo-sub">A lane battle on the mountain</p>
+    </div>
+    <div class="trail" aria-label="Leagues">
+      <svg class="trail-svg" viewBox="0 0 360 300" preserveAspectRatio="xMidYMid meet" aria-hidden="true"></svg>
+      <div class="trail-now"></div>
+    </div>
+    <div class="hm-actions">
+      <button class="btn-battle" data-act="battle"><span class="bb-shadow"><span class="bb-plank">Battle</span></span><span class="bb-sub">Online, for trophies</span></button>
+      <div class="hm-row">
+        <button class="btn" data-act="practice">Practice</button>
+        <button class="btn" data-act="private">Private match</button>
+      </div>
+      <p class="hm-status" role="status"></p>
+    </div>
+    <nav class="hm-nav" aria-label="Main">
+      <button data-go="deck"><span class="nv-ico nv-deck" aria-hidden="true"></span>Deck</button>
+      <button data-go="leaders"><span class="nv-ico nv-lead" aria-hidden="true"></span>Leaders</button>
+      <button data-go="settings"><span class="nv-ico nv-set" aria-hidden="true"></span>Settings</button>
+    </nav>
+  </section>
+
+  <!-- deck builder -->
+  <section id="deck" class="screen" aria-label="Deck">
+    <header class="sc-bar"><button class="sc-back" data-go="home" aria-label="Back">&#8592;</button><h2>Your deck</h2><span class="dk-avg"></span></header>
+    <div class="dk-slots" role="tablist" aria-label="Saved decks"></div>
+    <div class="dk-deck"></div>
+    <p class="dk-hint">Tap a card to see its numbers. To swap, pick a card below, then the deck card it replaces.</p>
+    <div class="dk-filter" role="group" aria-label="Show">
+      <button data-f="all" class="on">All</button><button data-f="troop">Troops</button><button data-f="building">Buildings</button><button data-f="spell">Spells</button>
+    </div>
+    <div class="dk-all"></div>
+  </section>
+
+  <!-- leaderboard -->
+  <section id="leaders" class="screen" aria-label="Leaders">
+    <header class="sc-bar"><button class="sc-back" data-go="home" aria-label="Back">&#8592;</button><h2>Leaders</h2></header>
+    <p class="ld-status" role="status"></p>
+    <ol class="ld-list"></ol>
+  </section>
+
+  <!-- settings -->
+  <section id="settings" class="screen" aria-label="Settings">
+    <header class="sc-bar"><button class="sc-back" data-go="home" aria-label="Back">&#8592;</button><h2>Settings</h2></header>
+    <div class="set-body">
+      <label class="set-row"><span>Your name</span><input class="set-name" maxlength="16" autocomplete="nickname" spellcheck="false"></label>
+      <p class="set-note">Other players see this name. Letters, numbers, spaces, _ and -.</p>
+      <label class="set-row set-sw"><span>Sound</span><input type="checkbox" class="set-sound"></label>
+      <label class="set-row set-sw"><span>Less motion</span><input type="checkbox" class="set-motion"></label>
+      <div class="set-stats"></div>
+      <p class="set-note">Your trophies are kept on the server under a private key saved in this browser. Clearing site data starts you over.</p>
+      <a class="set-credits" href="CREDITS.md" target="_blank" rel="noopener">Art and sound credits</a>
+    </div>
+  </section>
+
+  <!-- the match -->
+  <section id="battle" class="screen" aria-label="Match"></section>
+
+  <!-- overlays -->
+  <div class="ov" id="ov-practice" hidden>
+    <div class="ov-box"><h3>Practice</h3><p>Play a bot. Trophies do not change.</p>
+      <div class="ov-col"><button class="btn" data-lvl="easy">Easy bot</button><button class="btn" data-lvl="medium">Medium bot</button><button class="btn" data-lvl="hard">Hard bot</button></div>
+      <button class="btn-quiet" data-close>Cancel</button></div>
+  </div>
+  <div class="ov" id="ov-queue" hidden>
+    <div class="ov-box"><h3>Finding a rival</h3><p class="q-msg">Looking for someone near your trophies</p>
+      <div class="q-spin" aria-hidden="true"></div><p class="q-time">0 s</p>
+      <div class="q-bot" hidden><p>Nobody is free right now.</p><button class="btn" data-act="qbot">Play a bot instead (no trophies)</button></div>
+      <button class="btn-quiet" data-act="qcancel">Stop looking</button></div>
+  </div>
+  <div class="ov" id="ov-private" hidden>
+    <div class="ov-box"><h3>Private match</h3><p>Play a friend. Trophies do not change.</p>
+      <button class="btn" data-act="pmake">Make a code</button>
+      <div class="pv-code" hidden><p>Tell your friend this code:</p><p class="pv-big"></p><p class="pv-wait">Waiting for them to join</p></div>
+      <div class="pv-join"><label>Have a code? <input class="pv-in" maxlength="4" autocapitalize="characters" spellcheck="false" placeholder="ABCD"></label><button class="btn" data-act="pjoin">Join</button></div>
+      <p class="pv-err" role="status"></p>
+      <button class="btn-quiet" data-act="pcancel">Cancel</button></div>
+  </div>
+  <div class="ov" id="ov-result" hidden>
+    <div class="ov-box res-box"><p class="res-eyebrow"></p><h3 class="res-title"></h3>
+      <div class="res-flags"><div><span class="res-n res-me">0</span><span>You</span></div><span class="res-dash">to</span><div><span class="res-n res-foe">0</span><span class="res-foename">Rival</span></div></div>
+      <p class="res-why"></p><p class="res-tro"></p>
+      <div class="ov-col"><button class="btn" data-act="again">Play again</button><button class="btn-quiet" data-act="home">Home</button></div></div>
+  </div>
+  <div class="ov" id="ov-card" hidden>
+    <div class="ov-box card-sheet" role="dialog" aria-modal="true"></div>
+  </div>
+</div>
+<script>window.__clashBase = location.pathname.replace(/[^/]*$/, "");</script>
+<script type="module" src="js/main.js?v=1"></script>
+<script defer src="/others/presence.js?v=1" data-project="clash"></script>
+</body>
+</html>
