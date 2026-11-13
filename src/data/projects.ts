@@ -295,13 +295,12 @@ export const otherProjects: Project[] = [
   },
   {
     slug: "clash",
-    multiplayer: true,
-    title: "Leon Clash",
+    title: "Clash Royale",
     description:
-      "An original real-time lane battle on a snowy mountain: 45 cards of my own design, a server that runs every online 1v1 match so both sides see the same result, trophies and leagues, and practice bots.",
-    href: "/clash/",
-    image: "/cards/card_leon-clash.jpg",
-    tag: "Online",
+      "A browser take on Clash Royale, dropping troops to topple the other side's towers.",
+    href: "https://leonzcode.github.io/clash/",
+    image: "/cards/card_clash.png",
+    tag: "Live demo",
   },
   {
     slug: "imposter",
@@ -553,6 +552,7 @@ const localProjectPaths: Record<string, string> = {
   leonski2: "/legacy/leonski2.html",
   coconut: "/legacy/coconut.html",
   car: "/legacy/car.html",
+  clash: "/legacy/clash.html",
   imposter: "/legacy/imposter.html",
   castlefall: "/legacy/castlefall.html",
   slope: "/legacy/slope.html",
