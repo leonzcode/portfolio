@@ -14,8 +14,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=22';
-import { clamp, smoothstep } from './noise.js?v=22';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=23';
+import { clamp, smoothstep } from './noise.js?v=23';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -556,7 +556,12 @@ export class Skier {
     /* (the snow fell away by more than 5 degrees in this one step, sharper than any knuckle or roller at any speed: a lip
        met a few millimetres past its edge, which the check above misses. Off it goes as off any lip, with the travel the
        ramp gave: laid on the slope straddling the lip, a big air's takeoff came out 10 degrees flat, 2026-11-05) */
-    if (vn1 > 0.09 * sp1 && speed > 2 && this.landT > 0.15) { this.p.set(nx, ny, nz); this.takeoff(dt, 0, 0, 'lip'); return; }
+    /* (J, round 9: a lip met a millimetre or two past its edge bent the travel by under 5 degrees in this step and again
+       in the next, which took off, so the takeoff came out 3 to 8 degrees flat, about once in a hundred, and a rider at
+       a jump's design speed landed on its knuckle. The snow a step further on more than 4 cm under the line of travel,
+       where this step fell away at all, is a lip too: a jump's 6 m knuckle at 25 m/s falls 4 mm under it in a step) */
+    const lipAhead = vn1 > 0.02 * sp1 && height(nx + this.v.x * dt, nz + this.v.z * dt) < ny + this.v.y * dt - 0.04;
+    if ((vn1 > 0.09 * sp1 || lipAhead) && speed > 2 && this.landT > 0.15) { this.p.set(nx, ny, nz); this.takeoff(dt, 0, 0, 'lip'); return; }
     this.v.addScaledVector(n, -vn1);
     if (sp1 > 0.5 && Math.abs(vn1) < 0.42 * sp1) this.v.setLength(sp1);
     this.toTangent(this.f);

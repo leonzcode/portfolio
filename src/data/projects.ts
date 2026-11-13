@@ -131,6 +131,50 @@ export const otherProjects: Project[] = [
     ],
   },
   {
+    slug: "earth-drive",
+    multiplayer: true,
+    title: "Earth Drive",
+    description:
+      "Drive anywhere on Earth in the browser: real streets, buildings, bridges and terrain built from open map data, with traffic, pedestrians, crash damage, two aircraft, weather and time of day, and Online rooms to drive together.",
+    href: "/car/",
+    image: "/cards/card_earth-drive.jpg",
+    tag: "Online",
+    story: [
+      "Earth Drive starts from a map: pick any place, and the car is dropped onto the real streets there. The roads, junctions, lane markings, bridges, tunnels and buildings are all built on the fly from OpenStreetMap and OpenFreeMap data, laid over open elevation tiles and satellite imagery, so the Golden Gate Bridge, a Paris boulevard or a mountain pass each come out as their own place rather than a stock level.",
+      "The car is a rigid body on four suspension springs with tyre grip, a gearbox and a torque curve, and crashes are worked out from each model's own geometry: panels crumple, bonnets tent, glass cracks or shatters, and wheels can be bent or torn off. I checked the crush depths against published NHTSA crash test numbers. Around you there is traffic that follows the lanes and the signals, pedestrians who react, a Cessna and a helicopter that fly, and a weather and time of day system where the sun and moon sit where they really are.",
+      "Online rooms run on a small Node server on my own VPS: everyone in a room sees each other's cars, the same traffic and pedestrians, and the same dents, with chat and a way to ask to join someone anywhere in the world. A lot of the work went into making it run on school Chromebooks as well as on a fast desktop, with graphics tiers that are picked for the machine automatically.",
+    ],
+    tech: [
+      "Three.js (WebGL 2), plain ES modules, no build step",
+      "Streets, buildings, bridges and tunnels generated from OpenStreetMap, OpenFreeMap vector tiles and Overture Maps",
+      "Open elevation tiles and Esri World Imagery for the ground",
+      "Vehicle physics with raycast suspension, tyre model and gearbox, and geometry-based crash damage",
+      "Node + ws server on a Hetzner VPS for Online rooms with shared traffic and pedestrians",
+    ],
+  },
+  {
+    slug: "leon-freeski",
+    multiplayer: true,
+    title: "Leon Freeski",
+    description:
+      "A freeski terrain park in the browser with five rides (skis, snowboard, snow scooter, snowbike and sled), a jump line with a jib line and a T-bar, a freeride mountain with a chairlift, and Online parks to ride with others.",
+    href: "/ski/",
+    image: "/cards/card_leon-freeski.jpg",
+    tag: "Online",
+    story: [
+      "Leon Freeski is my own take on a freeski terrain park, written from scratch. The Jump Line has six jumps, each with a large, medium and small takeoff on one landing, then a jib line of boxes and rails and a T-bar back up. Freeride is a big mountain with cliff bands, couloirs, pillows, spines and named lines on the peak, all draining back to one chairlift.",
+      "You can ride it on skis, a snowboard, a snow scooter, a snowbike or a sled. Tricks are named from the rotation you actually do (spins, flips, corks, grabs, butters and rail tricks), and landings, rails and crashes are worked out from the physics rather than canned animations. The rider is a rigged character posed every frame by inverse kinematics, with the grabs checked against photos of real ones.",
+      "Online parks run on a small Node server on my own VPS: everyone in a park sees each other ride, with names, tricks in the feed and chat, and anyone can watch a rider through every camera.",
+    ],
+    tech: [
+      "Three.js (WebGL 2), plain ES modules, no build step",
+      "Ski, board, scooter, snowbike and sled physics: carving, edges, pop, air rotation, rails and crashes",
+      "Rigged rider posed by inverse kinematics, with grabs built from real photos",
+      "Procedural terrain and park features, snow tracks drawn into a texture as you ride",
+      "Node + ws server on a Hetzner VPS for Online parks",
+    ],
+  },
+  {
     slug: "leon-kart",
     multiplayer: true,
     title: "Leon Kart",

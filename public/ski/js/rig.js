@@ -10,10 +10,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=22';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=22';
-import { height, normal } from './terrain.js?v=22';
-import { gltfLoader, gearParts, LOOK, FIT, TOPS, LOW } from './gear.js?v=22';
+import { clamp, smoothstep } from './noise.js?v=23';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=23';
+import { height, normal } from './terrain.js?v=23';
+import { gltfLoader, gearParts, gearModel, loadGLB, fetchOnce, LOOK, FIT, TOPS, LOW } from './gear.js?v=23';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -162,8 +162,8 @@ const GEAR_K = 3;                    // the lowest few of each piece of gear's o
 const _cx = V(), _cu = V(), _cn = V(), _cn2 = V(), _cb2 = V(), _cs = V(), _pb = V(), _pd = V(), _pn = V(), _cdn = V(), _cbest = new Float64Array(8), _cbi = new Int32Array(8), _ck = new Float64Array(10), _cki = new Int32Array(10);
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=22';
-import { grabDef } from './grabs.js?v=22';
+export { GRABS } from './grabs.js?v=23';
+import { grabDef } from './grabs.js?v=23';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -337,7 +337,7 @@ function makeHelmet(col, lens) {
   const strap = new THREE.Mesh(new THREE.TorusGeometry(1, 0.08, 4, 28), new THREE.MeshStandardMaterial({ color: 0x23252a, roughness: 0.8 }));
   strap.rotation.x = Math.PI / 2; strap.scale.set(0.121, 0.146, 0.18); strap.position.y = 0.0; g.add(strap);
   frame.userData.goggle = strap.userData.goggle = true;
-  g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.layers.set(1); } });
+  g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.userData.head = true; } });   // (C: a head piece, hidden only from its own rider's eyes: setFirstPerson)
   return g;
 }
 
@@ -373,7 +373,7 @@ function makeHead(kind, col, lens, frameCol, goggles, hat) {
   h.scale.setScalar(s); h.position.set(0, (kind === 'beanie' ? 0.142 : 0.15) - s * hb.max.y, kind === 'beanie' ? -0.008 : -0.006);
   g.add(h); g.userData.hat = h.material;
   addGoggles(g, goggles, lens, frameCol, kind);
-  g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.layers.set(1); } });
+  g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.userData.head = true; } });
   return g;
 }
 // the downloaded goggles' lens and frame across the eyes, and our strap round the back
@@ -387,7 +387,7 @@ function addGoggles(g, goggles, lens, frameCol, kind) {
   g.userData.lens = L.material;
   const strap = new THREE.Mesh(new THREE.TorusGeometry(1, 0.08, 4, 28), new THREE.MeshStandardMaterial({ color: 0x23252a, roughness: 0.8 }));
   strap.rotation.x = Math.PI / 2; strap.scale.set(kind === 'beanie' ? 0.112 : kind === 'painted' ? 0.121 : 0.126, 0.146, kind === 'beanie' ? 0.17 : 0.18); strap.position.y = -0.012; g.add(strap);
-  for (const o of [L, F, strap]) { o.castShadow = true; o.layers.set(1); o.userData.goggle = true; }
+  for (const o of [L, F, strap]) { o.castShadow = true; o.userData.head = true; o.userData.goggle = true; }
 }
 // a downloaded ski as one mesh like ours: our length, the top sheet in two colours by the faces' direction (tips in the
 // second colour), the base dark, the edges steel, our flex, our binding on it
@@ -421,8 +421,29 @@ function gearPole(parts, col) {
 }
 
 // ---- the outfit: recolour the model's clothes by its region mask, gloves found by skin weights -------------------------
+/* (C, 2026-11-11, loading) a rider's region mask, fetched once for the visit and decoded once (it was fetched twice a
+   rider, once as a picture and once as a texture), shared by every rider of that body */
+const _masks = new Map();
+function maskImage(url) {
+  if (!_masks.has(url)) {
+    const p = fetchOnce(url).then(b => new Promise((res, rej) => { const i = new Image(), u = URL.createObjectURL(new Blob([b], { type: 'image/png' })); i.onload = () => { URL.revokeObjectURL(u); res(i); }; i.onerror = e => { URL.revokeObjectURL(u); rej(e); }; i.src = u; }));
+    _masks.set(url, p); p.catch(() => _masks.delete(url));
+  }
+  return _masks.get(url);
+}
+/* (C) the rider's model: the Low tier's own copy (lo: pictures 512 px, WebP; the same meshes and skeleton), else the
+   full one; fetched once (fetchOnce), each rider parsed from it. A Low copy that will not come falls back to the full. */
+const riderUrl = (id, lo) => './models/' + id + (lo ? '_lo' : '') + '.glb?v=23';
+// (a rider parsed ahead by prefetchRider, while the world is built: the first load of that model takes it)
+const _pre = new Map();
+async function riderGltf(id, lo) {
+  const pre = _pre.get(riderUrl(id, lo));
+  if (pre) { _pre.delete(riderUrl(id, lo)); try { return await pre; } catch (e) {} }
+  if (lo) { try { return await loadGLB(riderUrl(id, true)); } catch (e) { console.warn('rider (low)', e); } }
+  return loadGLB(riderUrl(id, false));
+}
 async function regionMeans(tex, maskUrl) {
-  const img = tex.image, m = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = maskUrl; });
+  const img = tex.image, m = await maskImage(maskUrl);
   const S = 128, c = document.createElement('canvas'); c.width = S; c.height = S; const x = c.getContext('2d', { willReadFrequently: true });
   x.drawImage(img, 0, 0, S, S); const a = x.getImageData(0, 0, S, S).data;
   x.clearRect(0, 0, S, S); x.drawImage(m, 0, 0, S, S); const b = x.getImageData(0, 0, S, S).data;
@@ -434,6 +455,18 @@ async function regionMeans(tex, maskUrl) {
   return sum.map((s, k) => n[k] ? s / n[k] : 0.2);
 }
 
+/* (C, 2026-11-11, loading) start the downloads a rider needs, early (main.js calls this before the world is built, so
+   the network works while the processor builds): the model, the mask, and the gear the look wears. Nothing waits on
+   it; rig.load picks the same downloads up. */
+export function prefetchRider(id, look = {}, kind = 'ski', lo = false) {
+  const swallow = p => { if (p && p.catch) p.catch(() => {}); };
+  gltfLoader();                                       // (the model decoder's files come down now)
+  // (the model is parsed as soon as it is in: its pictures decoded and its meshes unpacked off the main thread)
+  const u = riderUrl(id, lo), pre = loadGLB(u); _pre.set(u, pre); swallow(pre);
+  swallow(maskImage('./models/' + id + '_m.png?v=23'));
+  swallow(gearModel('goggles')); if (look.head !== 'painted') swallow(gearModel(look.head === 'beanie' ? 'beanie' : 'helmet_c'));
+  if (kind === 'ski') { swallow(gearModel('pole')); swallow(gearModel('binding')); if (look.ski && look.ski !== 'park') swallow(gearModel(look.ski === 'pow' ? 'ski_b' : 'ski_a')); }
+}
 export class Rig {
   constructor() {
     this.root = new THREE.Group(); this.root.name = 'rider';          // stays at the origin: holds the body and the gear
@@ -463,7 +496,7 @@ export class Rig {
     const kind = opts.kind || 'ski';
     const want = { goggles: gearParts('goggles'), head: look.head === 'beanie' ? gearParts('beanie') : look.head === 'painted' ? null : gearParts('helmet_c'),
       ski: kind === 'ski' && look.ski !== 'park' ? gearParts(look.ski === 'pow' ? 'ski_b' : 'ski_a') : null, pole: kind === 'ski' ? gearParts('pole') : null, plate: kind === 'ski' ? gearParts('binding') : null };
-    const gl = await gltfLoader().loadAsync('./models/' + id + '.glb?v=22');
+    const gl = await riderGltf(id, !!opts.lo);         // (C: the Low tier's lighter copy, fetched once)
     const model = gl.scene; this.model = model;
     this.outfit = Object.assign({ jacket: '#d2462f', pants: '#1f2a36', gloves: '#16181c', helmet: '#f2f2ef', lens: '#ff8a2a', boots: '#e9eaec', skiA: '#0d1b2a', skiB: '#ff6a13' }, opts.outfit || {});
     if (opts.look) for (const k of ['jacket', 'jacket2', 'pants', 'gloves', 'helmet', 'lens', 'boots', 'skiA', 'skiB']) if (opts.look[k]) this.outfit[k] = opts.look[k];
@@ -488,7 +521,7 @@ export class Rig {
       let p = o; let far = false; while (p) { if (p.name === 'lod1') far = true; p = p.parent; }
       const mn = o.material && o.material.name;
       if (far || mn === 'hair') { o.visible = false; continue; }
-      if (mn === 'head') { o.layers.set(1); headMesh = o; }
+      if (mn === 'head') { o.userData.head = true; headMesh = o; }
       if (mn === 'body') {
         bodyMesh = o;
         bodyMat = o.material; o.geometry.computeBoundingBox(); this.bodyH = o.geometry.boundingBox.max.y - o.geometry.boundingBox.min.y; this.bodyY0 = o.geometry.boundingBox.min.y;
@@ -553,7 +586,7 @@ export class Rig {
       for (let i = 0; i < P.count; i++) { const z = P.getZ(i), y = P.getY(i); P.setX(i, P.getX(i) * 0.88); P.setZ(i, z + 0.022); if (z < 0 && y > -0.08) P.setY(i, y - 0.03 * (-z / 0.09)); }
       lg.computeVertexNormals();
       const gt = new THREE.Mesh(lg, new THREE.MeshStandardMaterial({ color: look.gaiterCol || '#22252b', roughness: 0.95, side: THREE.DoubleSide }));
-      gt.castShadow = true; gt.layers.set(1); gt.name = 'gaiter'; g.add(gt);
+      gt.castShadow = true; gt.userData.head = true; gt.name = 'gaiter'; g.add(gt);
     }
     {
       // the hood: a soft shell over the top, sides and back, open at the face, a little bigger than the helmet or beanie
@@ -564,7 +597,7 @@ export class Rig {
       const hood = new THREE.Mesh(hg, new THREE.MeshStandardMaterial({ color: this.outfit.jacket, roughness: 0.97, side: THREE.DoubleSide }));
       const k = beanie ? 0.95 : 1;
       hood.scale.set(0.136 * k, 0.152 * k, 0.158 * k); hood.position.set(0, beanie ? 0.0 : 0.006, -0.012);
-      hood.castShadow = false; hood.layers.set(1); hood.name = 'hood'; hood.userData.keep = true; g.add(hood); this.hood = hood;   // (no shadow of its own: the helmet's is the head's)
+      hood.castShadow = false; hood.userData.head = true; hood.name = 'hood'; hood.userData.keep = true; g.add(hood); this.hood = hood;   // (no shadow of its own: the helmet's is the head's)
     }
     if (look.gog === 'up') {
       // the goggles turned up about the head's middle onto the front of the helmet
@@ -591,9 +624,9 @@ export class Rig {
   }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=22';
+    const maskUrl = './models/' + id + '_m.png?v=23';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
-    const mask = await new THREE.TextureLoader().loadAsync(maskUrl);
+    const mask = new THREE.Texture(await maskImage(maskUrl)); mask.needsUpdate = true;   // (C: the one picture regionMeans used)
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
     const col = c => new THREE.Color(c);
     const handBones = [];
@@ -1870,6 +1903,17 @@ if (uFpNear > 0.0) {
     if (on === this.fp) return;
     this.fp = on; this._fpE = null;
     if (this.dressU) this.dressU.uFpNear.value = on ? 0.2 : 0;
+    this.headLayer(on ? 1 : 0);
+  }
+  /* (C, 2026-11-11, for "head sometimes disappears especialyl in multiplayer") The head, helmet or hat, goggles, gaiter
+     and hood are hidden from the eyes they belong to in first person by putting them on layer 1, which camera.js turns
+     off in first person. They used to sit on layer 1 for every rider all the time, so in first person (riding, or
+     watching someone through their eyes) every other rider in the park lost their head, and the locker's turntable
+     after first person showed your own rider without one. Now only the rider seen from its own eyes has them there. */
+  headLayer(n) {
+    const set = o => { if (o.isMesh && o.userData.head) o.layers.set(n); };
+    if (this.helmet) this.helmet.traverse(set);
+    if (this.model) this.model.traverse(set);
   }
   // the helmet on the head (hdQ: the head's world rotation, as posed), and the eyes for the first-person camera
   placeHead(hdQ) {

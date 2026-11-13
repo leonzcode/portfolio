@@ -3,10 +3,10 @@
 // background and replace with just a blue sky for now".)
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { height, ground, runHalf, baseLine, normal } from './terrain.js?v=22';
-import { fbm, ridged, rng, smoothstep } from './noise.js?v=22';
-import { Env, buildPanel } from './env.js?v=22';
-import { snowUniforms } from './materials.js?v=22';
+import { height, ground, runHalf, baseLine, normal, getPark } from './terrain.js?v=23';
+import { fbm, ridged, rng, smoothstep } from './noise.js?v=23';
+import { Env, buildPanel } from './env.js?v=23';
+import { snowUniforms, FIELD_GLSL, fieldUniforms } from './materials.js?v=23';
 
 // the sky, the sun and sky light, the fog and the reflections are env.js's (photographs of real skies, the time of
 // day and the weather chosen on the home screen); makeSky keeps its old shape for main.js: { sky, sun, hemi, sunDir, follow }
@@ -168,14 +168,17 @@ float treeDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); return (4.0 * tb
     const nearFade = fade(false), farFade = fade(true);
     tm.onBeforeCompile = s => {
       Object.assign(s.uniforms, { uNight: snowUniforms.uNight, uNoise: snowUniforms.uNoise, uSunDir: snowUniforms.uSunDir, uImp: this.uImp, uHorizon: snowUniforms.uHorizon, uSnowLook: snowUniforms.uSnowLook });
+      fieldUniforms(s);
       nearFade(s);
       s.vertexShader = s.vertexShader.replace('#include <common>', `#include <common>
-attribute float aSnow; varying float vSnow; varying vec3 vTW;`).replace('#include <project_vertex>', `#include <project_vertex>
+attribute float aSnow; varying float vSnow; varying vec3 vTW; varying vec2 vTL;
+${FIELD_GLSL}`).replace('#include <project_vertex>', `#include <project_vertex>
 vSnow = aSnow;
-vTW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;`);
+vTW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+vTL = fieldAt(instanceMatrix[3].xz).gb;     // (2026-11-11: the mountain's own light at the tree's foot: sky seen, sun)`);
       s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
 uniform float uNight; uniform sampler2D uNoise; uniform vec3 uSunDir; uniform float uImp; uniform sampler2D uHorizon; uniform vec4 uSnowLook;
-varying float vSnow; varying vec3 vTW; float gSn;`)
+varying float vSnow; varying vec3 vTW; varying vec2 vTL; float gSn;`)
         .replace('#include <fog_fragment>', TREE_FOG)
         // snow in clumps on the upper sides (filling the gaps between the needles near the stem), the undersides darker
         .replace('#include <alphatest_fragment>', `{
@@ -192,16 +195,18 @@ varying float vSnow; varying vec3 vTW; float gSn;`)
         .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
 normal = normalize(vNormal);`)
         .replace('#include <opaque_fragment>', `outgoingLight -= (reflectedLight.directDiffuse + reflectedLight.directSpecular) * uNight * 0.7;
+// (2026-11-11) out of the sun behind a ridge (not by night), less sky in a gully
+if (uImp < 0.5) outgoingLight -= (reflectedLight.directDiffuse + reflectedLight.directSpecular) * (1.0 - vTL.y) * (1.0 - uNight) * 0.9 + reflectedLight.indirectDiffuse * (1.0 - vTL.x) * 0.6;
 {
   // the sun through the needles, looking towards it (not through the snow on them)
   vec3 V = normalize(cameraPosition - vTW);
-  float tr = pow(max(0.0, dot(-V, uSunDir)), 5.0) * (1.0 - uNight) * (1.0 - gSn);
+  float tr = pow(max(0.0, dot(-V, uSunDir)), 5.0) * (1.0 - uNight) * (1.0 - gSn) * mix(1.0, vTL.y, 1.0 - uNight);
   outgoingLight += diffuseColor.rgb * vec3(1.0, 0.95, 0.72) * tr * 1.1;
 }
 if (uImp > 0.5) outgoingLight = diffuseColor.rgb;      // (taking the far trees' picture: the colour alone)
 #include <opaque_fragment>`);
     };
-    tm.customProgramCacheKey = () => 'conifer3';
+    tm.customProgramCacheKey = () => 'conifer4';
     this.near = new THREE.InstancedMesh(this.geo, tm, nearMax);
     this.near.castShadow = false; this.near.receiveShadow = q.tier !== 'low'; this.near.frustumCulled = false;   // (low: no shadows on the needles)
     /* (the lag pass: the near trees' shadows come from a copy holding only the trees that can shade the snow round the
@@ -230,15 +235,18 @@ if (uImp > 0.5) outgoingLight = diffuseColor.rgb;      // (taking the far trees'
     this.impRT = new THREE.WebGLRenderTarget(lowT ? 112 : 184, lowT ? 136 : 224, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, depthBuffer: true });
     const cm = new THREE.MeshLambertMaterial({ map: this.impRT.texture, alphaTest: 0.38, side: THREE.DoubleSide });
     cm.onBeforeCompile = s => {
-      s.uniforms.uNight = snowUniforms.uNight; s.uniforms.uHorizon = snowUniforms.uHorizon; farFade(s);
+      s.uniforms.uNight = snowUniforms.uNight; s.uniforms.uHorizon = snowUniforms.uHorizon; farFade(s); fieldUniforms(s);
       s.vertexShader = s.vertexShader.replace('#include <common>', `#include <common>
-varying vec3 vTW;`).replace('#include <project_vertex>', `#include <project_vertex>
-vTW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;`);
+varying vec3 vTW; varying vec2 vTL;
+${FIELD_GLSL}`).replace('#include <project_vertex>', `#include <project_vertex>
+vTW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+vTL = fieldAt(instanceMatrix[3].xz).gb;`);
       s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
-uniform float uNight; uniform sampler2D uHorizon; varying vec3 vTW;`).replace('#include <opaque_fragment>', `outgoingLight -= reflectedLight.directDiffuse * uNight * 0.8;
+uniform float uNight; uniform sampler2D uHorizon; varying vec3 vTW; varying vec2 vTL;`).replace('#include <opaque_fragment>', `outgoingLight -= reflectedLight.directDiffuse * uNight * 0.8;
+outgoingLight -= reflectedLight.directDiffuse * (1.0 - vTL.y) * (1.0 - uNight) * 0.9 + reflectedLight.indirectDiffuse * (1.0 - vTL.x) * 0.6;
 #include <opaque_fragment>`).replace('#include <fog_fragment>', TREE_FOG);
     };
-    cm.customProgramCacheKey = () => 'treecard3';
+    cm.customProgramCacheKey = () => 'treecard4';
     this.far = new THREE.InstancedMesh(cards, cm, this.trees.length);
     this.far.frustumCulled = false;
     // each tree's two matrices, worked out once: its card's straight into the card buffer, its near one kept for when it
@@ -356,7 +364,128 @@ export function makeMountainRanges(scene, q, mtn) {
 }
 
 // (no far ranges round the park for now: kept as a function so main.js's call stands)
-export function makeRanges() { return null; }
+// (2026-11-11: but Freeride has its own, makeFarRange, below)
+export function makeRanges(scene, q) { const park = getPark(); return park && park.freeride ? makeFarRange(scene, q) : null; }
+
+/* ---- Freeride's far ranges (2026-11-11, for "better graphics for the entire mountain": its skyline was empty haze past
+   the terrain's last patches, 2 km out). Two rings of made-up mountains round the venue, out past where the terrain is
+   drawn: a nearer range rising from 3 km out to its crests at about 4.5 km, and a higher one behind it from 7 km, both
+   ridged noise (sharp crests, gullies down their faces), snow where they are gentle enough to hold it, dark rock on
+   their steep crests and faces, a dark band of forest low on the nearer one. Lit by the sun and the sky as everything
+   else is (lit faces and shaded ones), and laid in the air's haze (the horizon's own colour that way, as the snow's fog
+   has it), more of it the further and the lower: their feet go into the haze the far snow fades into. One mesh, one
+   draw call: about 7 500 triangles on the low tier, 11 000 above. Nothing to ride: no physics, no shadows. */
+function makeFarRange(scene, q) {
+  const low = q.tier === 'low', C = [10, 250];
+  const P = [], I = [], K = [];
+  const ROCK = [0.085, 0.08, 0.075], SNOW = [0.84, 0.87, 0.92], WOOD = [0.045, 0.07, 0.05];
+  // a range: its rows' radii, segments round, its height at a place
+  // (its faces towards the venue no steeper than about 40 degrees between rows: a lone sharp peak over a low row in front
+  // stood as a thin dark fin down into the haze; the row in front is raised into a buttress instead)
+  const ring = (radii, segs, hAt) => {
+    const base = P.length / 3, rows = radii.length, h = new Float32Array(rows * segs);
+    for (let j = 0; j < rows; j++) for (let i = 0; i < segs; i++) {
+      const a = i / segs * Math.PI * 2, r = radii[j];
+      h[j * segs + i] = hAt(C[0] + Math.cos(a) * r, C[1] + Math.sin(a) * r, r);
+    }
+    for (let i = 0; i < segs; i++) for (let j = rows - 2; j >= 0; j--) {
+      const k = j * segs + i, lim = h[k + segs] - 0.84 * (radii[j + 1] - radii[j]);
+      if (h[k] < lim) h[k] = lim;
+    }
+    for (let j = 0; j < rows; j++) for (let i = 0; i < segs; i++) {
+      const a = i / segs * Math.PI * 2, r = radii[j];
+      P.push(C[0] + Math.cos(a) * r, h[j * segs + i], C[1] + Math.sin(a) * r);
+    }
+    for (let j = 0; j < rows - 1; j++) for (let i = 0; i < segs; i++) {
+      const a = base + j * segs + i, b = base + j * segs + (i + 1) % segs, c = a + segs, d = b + segs;
+      I.push(a, b, c, b, d, c);
+    }
+  };
+  // (crests a few degrees over the summit's horizon, as real ranges 5 to 10 km off stand: 200 to 550 m up for the nearer,
+  // to about 1 100 m for the higher one behind)
+  // (each higher in some directions than others, saddles and valleys opening between the massifs, not a saw of even
+  // peaks all round)
+  const near = (x, z, r) => {
+    const env = smoothstep(3000, 4500, r) * (1 - 0.85 * smoothstep(5100, 6400, r));
+    const m = ridged(x * 0.00032 + 3.1, z * 0.00032 - 1.7, 4), lump = fbm(x * 0.00018 - 2, z * 0.00018 + 5, 2);
+    const mass = 0.55 + 0.6 * smoothstep(-0.5, 0.5, fbm(x * 0.0001 + 8, z * 0.0001 - 4, 2));
+    return -760 + env * (560 + (700 * m * m + 160 * lump) * mass);
+  };
+  const far = (x, z, r) => {
+    const env = smoothstep(6800, 8800, r) * (1 - 0.75 * smoothstep(10000, 11600, r));
+    const m = ridged(x * 0.0002 - 5.3, z * 0.0002 + 2.9, 4);
+    const mass = 0.4 + 0.85 * smoothstep(-0.45, 0.45, fbm(x * 0.00007 - 3, z * 0.00007 + 6, 2));
+    return -900 + env * (1000 + 1300 * m * m * mass);
+  };
+  ring(low ? [3000, 3500, 3900, 4250, 4550, 4850, 5300, 5900, 6400] : [3000, 3350, 3700, 4000, 4250, 4450, 4650, 4900, 5200, 5600, 6000, 6400], low ? 320 : 480, near);
+  ring(low ? [6800, 7600, 8300, 8900, 9700, 11600] : [6800, 7400, 7950, 8400, 8850, 9400, 10200, 11600], low ? 240 : 360, far);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setIndex(I); g.computeVertexNormals();
+  // snow, rock and forest by the slope and height, broken up by noise
+  const nn = g.attributes.normal.array;
+  for (let k = 0; k < P.length / 3; k++) {
+    const x = P[k * 3], y = P[k * 3 + 1], z = P[k * 3 + 2], ny = nn[k * 3 + 1], n = fbm(x * 0.004, z * 0.004, 2);
+    const rock = smoothstep(0.8, 0.62, ny + n * 0.12), wood = (1 - smoothstep(-560, -420, y + n * 90)) * smoothstep(0.55, 0.8, ny);
+    for (let c = 0; c < 3; c++) K.push(SNOW[c] + (ROCK[c] - SNOW[c]) * rock * 0.9 + (WOOD[c] - SNOW[c]) * wood * 0.85);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(K, 3));
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+  /* (the faces' ribs and gullies, rock and snow, worked out per pixel: the ranges face the venue, so their fall lines
+     run out from its middle, and the noise picture laid in rings round it, stretched along the radius, gives ribs of rock
+     and gullies of snow down every face, and their shading; 120 ribs round, so the picture meets itself where the angle
+     comes round; some faces rocky, some broad snowfields; low down, where the valleys' haze lies, smooth snow and
+     forest) */
+  m.onBeforeCompile = s => {
+    s.uniforms.uHorizon = snowUniforms.uHorizon; s.uniforms.uNight = snowUniforms.uNight; s.uniforms.uNoise = snowUniforms.uNoise;
+    s.vertexShader = s.vertexShader.replace('#include <common>', `#include <common>
+varying vec3 vTW;`).replace('#include <project_vertex>', `#include <project_vertex>
+vTW = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+    s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+uniform sampler2D uHorizon; uniform float uNight; uniform sampler2D uNoise; varying vec3 vTW;
+vec2 gRel; vec4 gSt;`).replace('#include <color_fragment>', `#include <color_fragment>
+{
+  gRel = vTW.xz - vec2(${C[0]}.0, ${C[1]}.0);
+  float r = length(gRel), th = atan(gRel.y, gRel.x), dd = length(vTW - cameraPosition);
+  vec2 uv = vec2(th * 19.0986, r / 700.0);          // (120 ribs round: 120 / 2 pi)
+  float lod = max(0.0, log2(dd * 0.0075 / max(r, 1.0) * 1300.0));
+  vec4 a = textureLod(uNoise, uv, lod), b = ${low ? 'a.gbra' : 'textureLod(uNoise, uv * vec2(3.0, 2.3) + 0.37, lod)'};      // (low: one look fewer)
+  float big = textureLod(uNoise, vec2(th * 3.1831, r / 3000.0) + 0.6, 0.0).b;     // (20 round: rocky faces, snowfields)
+  float up = smoothstep(-560.0, -300.0, vTW.y);                                    // (none of it low in the haze)
+  gSt = vec4((a.rg * 0.65 + b.rg * 0.35 - 0.5) * up + 0.5, a.b * 0.62 + b.b * 0.38, up);
+  vec3 wn = normalize(cross(dFdx(vTW), dFdy(vTW)));
+  float steep = 1.0 - abs(wn.y);
+  // rock on the ribs (high in the picture), the steeper, the higher and the rockier the face the more; snow in the gullies
+  float rock = smoothstep(0.55, 0.61, gSt.z + steep * 0.55 + smoothstep(-200.0, 900.0, vTW.y) * 0.14 + (big - 0.5) * 0.5 - 0.17) * up;
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.075, 0.07, 0.066), rock * 0.92);
+}`).replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+{
+  // the ribs' and gullies' relief, across the faces (round the venue) more than down them
+  vec2 rad = gRel / max(length(gRel), 1.0), tng = vec2(-rad.y, rad.x);
+  vec3 bump = vec3(tng.x, 0.0, tng.y) * (gSt.x - 0.5) * 1.3 + vec3(rad.x, 0.0, rad.y) * (gSt.y - 0.5) * 0.4;
+  normal = normalize(normal + (viewMatrix * vec4(bump, 0.0)).xyz);
+}`).replace('#include <opaque_fragment>', `outgoingLight -= reflectedLight.directDiffuse * uNight * 0.9;
+// (the air between lights a far mountain's shade with the sky's blue: its shaded faces are blue-grey, never near black)
+outgoingLight += diffuseColor.rgb * vec3(0.13, 0.16, 0.22) * (1.0 - uNight);
+#include <opaque_fragment>`).replace('#include <fog_fragment>', `#ifdef USE_FOG
+  // the air's haze: more the further (as the scene's fog is thick) and the lower (the valleys' haze), the horizon's colour
+  float dd = length(vTW - cameraPosition), kk = fogDensity / 0.00028;
+  float hz = 1.0 - exp(-dd * 0.000055 * kk);
+  // (the valleys filled with haze, its top a fairly even level, as a valley's haze lies)
+  float lay = -300.0 + 60.0 * (textureLod(uNoise, vTW.xz * 0.00008, 0.0).b - 0.5);
+  hz = mix(hz, 1.0, (1.0 - smoothstep(lay - 70.0, lay + 50.0, vTW.y)) * 0.97);
+  vec3 fdir = normalize(vTW - cameraPosition);
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, texture2D(uHorizon, vec2(atan(fdir.z, fdir.x) * 0.1591549 + 0.5, 0.5)).rgb, clamp(hz, 0.0, 1.0));
+#endif`);
+  };
+  m.customProgramCacheKey = () => 'farrange' + (low ? 'L' : '');
+  const mesh = new THREE.Mesh(g, m);
+  mesh.name = 'far ranges'; mesh.matrixAutoUpdate = false; mesh.frustumCulled = false; mesh.castShadow = mesh.receiveShadow = false;
+  // (drawn after the rest of the opaque world, just before the sky: whatever the mountain covers is then skipped by the
+  // depth test before any of its shading is done)
+  mesh.renderOrder = 1e5;
+  scene.add(mesh);
+  return mesh;
+}
 
 // ---- lift, fences, flags, the start arch ----------------------------------------------------------------------------
 export function makeProps(scene, park, q) {
@@ -395,13 +524,17 @@ export function makeProps(scene, park, q) {
     add(hangG, 'steel', p.x, p.y - 1.1, p.z); add(chairG, 'dark', p.x, p.y - 2.2, p.z); add(backG, 'dark', p.x, p.y - 1.85, p.z - 0.28);
   }
   // the start arch
-  const sy = height(0, -20);
-  add(new THREE.BoxGeometry(0.5, 6, 0.5), 'dark', -9, sy + 3, -20); add(new THREE.BoxGeometry(0.5, 6, 0.5), 'dark', 9, sy + 3, -20);
+  /* (2026-11-11: not on Freeride, whose runs start at the Summit Chair's top on the Peak now; the arch stood on the main
+     face's brink, where runs began before the Peak was built, and its banner read as a leftover) */
+  if (!park.freeride) {
+  const az = park.archZ ?? -20, sy = height(0, az);   // (J, round 9: the Jump Line's start moved down the hill, park.archZ)
+  add(new THREE.BoxGeometry(0.5, 6, 0.5), 'dark', -9, sy + 3, az); add(new THREE.BoxGeometry(0.5, 6, 0.5), 'dark', 9, sy + 3, az);
   const banner = document.createElement('canvas'); banner.width = 1024; banner.height = 128; const bx = banner.getContext('2d');
   bx.fillStyle = '#0d1b2a'; bx.fillRect(0, 0, 1024, 128); bx.fillStyle = '#ff6a13'; bx.fillRect(0, 108, 1024, 20);
   bx.font = 'italic 800 84px "Barlow Condensed", Arial Narrow, sans-serif'; bx.fillStyle = '#fff'; bx.textAlign = 'center'; bx.fillText(park.banner || 'LEON FREESKI  PARK', 512, 92);
   const bt = new THREE.CanvasTexture(banner); bt.colorSpace = THREE.SRGBColorSpace;
-  const bn = new THREE.Mesh(new THREE.BoxGeometry(18.5, 2.2, 0.2), new THREE.MeshStandardMaterial({ map: bt, roughness: 0.8 })); bn.position.set(0, sy + 5.6, -20); bn.castShadow = true; group.add(bn);
+  const bn = new THREE.Mesh(new THREE.BoxGeometry(18.5, 2.2, 0.2), new THREE.MeshStandardMaterial({ map: bt, roughness: 0.8 })); bn.position.set(0, sy + 5.6, az); bn.castShadow = true; group.add(bn);
+  }
   // orange fences beside the jump line and the pipe
   const postG = new THREE.CylinderGeometry(0.04, 0.04, 1.3, 5);
   const fence = (x0, z0, x1, z1) => {

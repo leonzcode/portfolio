@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { riderShadow } from './shadowproxy.js?v=22';   // (E: the rider's shadow in a few draws)
+import { riderShadow } from './shadowproxy.js?v=23';   // (E: the rider's shadow in a few draws)
 
 /* Downloaded gear (2026-11-05, models/gear/, credits in CREDITS.md): goggles, a beanie, a bike lid, two skis and a pole,
    loaded once each and shared by every rider (each rider gets its own copies of the materials, for its colours).
@@ -14,8 +14,40 @@ let _loader = null;
 export function gltfLoader() {
   if (_loader) return _loader;
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/');
+  // (C, 2026-11-11, loading: the decoder's two files come down at once, not after the first model has; and one worker
+  // is enough for a few small models, a cheap Chromebook has two to four cores)
+  draco.setWorkerLimit(2);
+  try { draco.preload(); if (draco.decoderPending) draco.decoderPending.catch(() => { draco.decoderPending = null; }); } catch (e) {}   // (a decoder that failed to come is asked for again by the next model)
   _loader = new GLTFLoader(); _loader.setDRACOLoader(draco);
   return _loader;
+}
+/* (C, 2026-11-11, for "never loads on chromebook and takes too long to load") A file fetched once for the whole visit
+   (a second rider of the same body, a look changed back, all use the one download), tried again twice when it fails
+   (a school's or a train's Wi-Fi drops a request now and then: one lost file used to leave the game loading for ever),
+   and given up after a time limit, so nothing waits on it for ever. Resolves to an ArrayBuffer, rejects on a failure. */
+const _files = new Map();
+export function fetchOnce(url, { tries = 3, ms = 45000 } = {}) {
+  if (_files.has(url)) return _files.get(url);
+  const go = async () => {
+    let err = null;
+    for (let i = 0; i < tries; i++) {
+      const ac = typeof AbortController !== 'undefined' ? new AbortController() : null, t = ac ? setTimeout(() => ac.abort(), ms) : 0;
+      try {
+        const r = await fetch(url, ac ? { signal: ac.signal } : undefined);
+        if (!r.ok) throw new Error(url + ': ' + r.status);
+        const b = await r.arrayBuffer(); clearTimeout(t); return b;
+      } catch (e) { clearTimeout(t); err = e; if (i < tries - 1) await new Promise(res => setTimeout(res, 600 * (i + 1))); }
+    }
+    throw err;
+  };
+  const p = go(); _files.set(url, p);
+  p.catch(() => _files.delete(url));        // (a failure is not kept: the next ask tries again)
+  return p;
+}
+// a GLB through fetchOnce, parsed for the caller (each caller gets its own copy of the scene)
+export async function loadGLB(url, opts) {
+  const buf = await fetchOnce(url, opts);
+  return gltfLoader().parseAsync(buf, url.slice(0, url.lastIndexOf('/') + 1));
 }
 /* what a rider looks like (the locker, locker.js; saved as ski_look, sent to the room as the rider's look). Body: one
    of the five Rocketbox riders. head: 'lid' (the downloaded helmet), 'painted' (our own painted helmet) or 'beanie'.
@@ -35,7 +67,7 @@ export const LOW = { baggy: 1, regular: 0.4, slim: 0 };
 export const FIT = { baggy: 1, regular: 0.7, slim: 0.45 };
 const _gear = new Map();
 export function gearModel(name) {
-  if (!_gear.has(name)) _gear.set(name, gltfLoader().loadAsync('./models/gear/' + name + '.glb?v=22').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));
+  if (!_gear.has(name)) _gear.set(name, loadGLB('./models/gear/' + name + '.glb?v=23').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));   // (C: tried again, a time limit; a gear part that never comes is left out, our own stands in)
   return _gear.get(name);
 }
 // the model's meshes as plain meshes in the model's own frame (the node transforms baked into copies of their
@@ -59,7 +91,7 @@ function mergeInto(group, keep = () => false) {
   group.updateMatrixWorld(true);
   _inv.copy(group.matrixWorld).invert();
   const parts = [], drop = [];
-  let rough = 0, metal = 0, n = 0, layer = null, side = THREE.FrontSide;
+  let rough = 0, metal = 0, n = 0, layer = null, side = THREE.FrontSide, head = false;
   group.traverse(o => {
     if (!o.isMesh || o.isSkinnedMesh || o === group || keep(o)) return;
     const mat = Array.isArray(o.material) ? o.material[0] : o.material;
@@ -73,6 +105,7 @@ function mergeInto(group, keep = () => false) {
     parts.push(g); drop.push(o);
     rough += mat.roughness ?? 0.6; metal += mat.metalness ?? 0; n++;
     if (layer === null) layer = o.layers.mask;
+    if (o.userData.head) head = true;
     if (mat.side === THREE.DoubleSide) side = THREE.DoubleSide;
   });
   if (parts.length < 2) return null;
@@ -82,6 +115,7 @@ function mergeInto(group, keep = () => false) {
   for (const o of drop) { o.parent.remove(o); o.geometry.dispose(); }
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: rough / n, metalness: Math.min(0.5, metal / n), side }));
   mesh.castShadow = true; mesh.name = group.name + '-merged';
+  if (head) mesh.userData.head = true;               // (C: a piece of the head: hidden only from its own rider's eyes)
   if (layer !== null) mesh.layers.mask = layer;
   group.add(mesh);
   return mesh;

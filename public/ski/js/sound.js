@@ -3,10 +3,19 @@
 // park, the chairlift's drive) run all the time at the level the riding asks for; one-shots for the pop, landings, a
 // crash, meeting a rail or box, the "schat" of a swap and the chairlift's clack. The files load when you first ride;
 // until they have come the old sounds made on the fly stand in.
-import { ENV } from './env.js?v=22';
+import { ENV } from './env.js?v=23';
 
 const LOOPS = ['wind', 'carve', 'skid', 'powder', 'rail_grind', 'box_slide', 'ambience', 'lift_hum'];
 const SHOTS = ['pop', 'land', 'land_soft', 'crash', 'rail_hit', 'box_hit', 'schat', 'lift_clack'];
+const FIRST = ['wind', 'carve', 'skid', 'powder', 'pop', 'land', 'land_soft', 'crash'];   // (C: loaded first)
+// (C) a file with a time limit, tried once more if it fails
+async function getFile(url, ms = 20000) {
+  for (let i = 0; ; i++) {
+    const ac = typeof AbortController !== 'undefined' ? new AbortController() : null, t = ac ? setTimeout(() => ac.abort(), ms) : 0;
+    try { const r = await fetch(url, ac ? { signal: ac.signal } : undefined); if (!r.ok) throw new Error(url + ': ' + r.status); const b = await r.arrayBuffer(); clearTimeout(t); return { arrayBuffer: async () => b, json: async () => JSON.parse(new TextDecoder().decode(b)) }; }
+    catch (e) { clearTimeout(t); if (i >= 1) throw e; await new Promise(r => setTimeout(r, 800)); }
+  }
+}
 // what each rail kind is made of: steel rails, plastic tubes and box tops, wooden benches
 const METAL = { rail: 1, down: 1, kink: 1, rainbow: 1, dd: 1, c: 1, flatdown: 1 };
 const isMetal = k => !!METAL[k] || !k;
@@ -31,18 +40,32 @@ export class Sound {
     this.syn = { wind: src(500, 0.4, 'lowpass'), carve: src(3200, 1.2), skid: src(900, 0.8), grind: src(2400, 9) };
     this.load();
   }
+  /* (C, 2026-11-11, loading) the sounds of riding first (wind, the snow's hiss, the skid, powder, the pop, landings, a
+     crash), the rest (rails and boxes, the park's air, the lift) a few seconds later, so they do not share the line
+     with the first moments of riding; each file has a time limit and one more try, and one that never comes leaves
+     its stand-in (a lost file used to leave all of them silent) */
   async load() {
     try {
-      this.man = await (await fetch('./sounds/manifest.json')).json();
-      const names = [...LOOPS, ...SHOTS].filter(n => this.man[n]);
-      await Promise.all(names.map(async n => {
-        const ab = await (await fetch('./sounds/' + this.man[n].file)).arrayBuffer();
+      this.man = await (await getFile('./sounds/manifest.json')).json();
+      await this.loadSet(FIRST.filter(n => this.man[n]));
+      this.ready = true;
+      for (const k in this.syn) this.syn[k].g.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+      await new Promise(r => setTimeout(r, 3000));
+      await this.loadSet([...LOOPS, ...SHOTS].filter(n => this.man[n] && !FIRST.includes(n)));
+    } catch (e) { console.warn('sounds', e); }
+  }
+  async loadSet(names) {
+    await Promise.all(names.map(async n => {
+      try {
+        const ab = await (await getFile('./sounds/' + this.man[n].file)).arrayBuffer();
         this.buf[n] = await new Promise((res, rej) => this.ctx.decodeAudioData(ab, res, rej));
-      }));
+      } catch (e) { console.warn('sound', n, e); }
+    }));
+    {
       // every loop starts now, silent, and only its level changes from then on
       const t = this.ctx.currentTime;
       for (const n of LOOPS) {
-        if (!this.buf[n]) continue;
+        if (!this.buf[n] || this.loops[n] || !names.includes(n)) continue;
         const m = this.man[n], s = this.ctx.createBufferSource(); s.buffer = this.buf[n]; s.loop = true;
         if (m.loopEnd) { s.loopStart = m.loopStart; s.loopEnd = m.loopEnd; }
         const g = this.ctx.createGain(); g.gain.value = 0;
@@ -50,9 +73,7 @@ export class Sound {
         s.start(t, (m.loopStart || 0) + Math.random() * ((m.loopEnd || m.dur) - (m.loopStart || 0)));
         this.loops[n] = { s, g, base: m.gain ?? 0.5, want: 0, rate: 1 };
       }
-      this.ready = true;
-      for (const k in this.syn) this.syn[k].g.gain.setTargetAtTime(0, t, 0.05);
-    } catch (e) { console.warn('sounds', e); }
+    }
   }
   setOn(on) { this.on = on; if (this.master) this.master.gain.setTargetAtTime(on ? 0.7 : 0, this.ctx.currentTime, 0.05); }
   // a one-shot: gain 0..1.5, rate the playback speed (pitch), at a delay

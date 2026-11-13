@@ -16,7 +16,7 @@
 // A press is only used within 0.3 s of being made, so an old one never fires later.
 // All: C changes the camera (Q in the shred scheme), Backspace goes back to the top, Esc pauses; R starts again a
 // little earlier (mouse and keys; in the shred scheme R is a tweak key and Enter does it).
-import { POSITIONS } from './grabs.js?v=22';
+import { POSITIONS } from './grabs.js?v=23';
 export { POSITIONS };
 
 const GRAB_KEYS = {
@@ -66,12 +66,8 @@ export function keyHelp(scheme, kind = 'ski') {
   const grabs = Object.entries(g).map(([k, id]) => [name(k), id]);
   const hl = Object.assign({}, HELP_SKI, RIDE_HELP[kind] || {}), sTrick = 'KeyS' in g;
   let base;
-  if (scheme === 'mouse') base = [
-    ['Mouse', 'point where to go'], ['Left button', 'hold to crouch, let go to pop'], ['Right button / S', 'brake (hold harder to stop)'], ['W', 'tuck, skate on the flat'],
-    ['Air: mouse', 'spin and flip'], ['Q / E', 'tilt the axis (corks)'], ['Air: Shift + A / D', 'shifty'], ['Shift + W / S', 'butter on the nose / tail'],
-    ['Y (snow or rail)', hl.oneFoot], ['U (snow or rail)', hl.together],
-  ];
-  else if (scheme === 'shred') base = [
+  // (2026-11-12: the mouse scheme is no longer offered, main.js; its keys are not listed)
+  if (scheme === 'shred') base = [
     ['← / →', 'turn / spin'], ['↓', 'brake (hold to stop) / back flip'], ['↑', 'crouch for less drag, skate on the flat / front flip'],
     ['Shift', 'skate forward; in the air a shifty (Left Shift left, Right Shift or Alt right)'], ['Air: A / D', 'left / right shifty'], ...(sTrick ? [] : [['S', hl.lazy]]), ['G / H', 'Lincoln loop'],
     ['Space', 'crouch for less drag, let go to pop'], ['N', hl.butter],
@@ -94,7 +90,7 @@ export function keyHelp(scheme, kind = 'ski') {
 const NO_DEFAULT = ['Space', 'Tab', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'AltLeft', 'AltRight'];
 export class Input {
   constructor(canvas) {
-    this.canvas = canvas; this.scheme = 'mouse'; this.kind = 'ski';   // (kind: what you ride, set by main.js applyRide: its own trick keys, RIDE_KEYS)
+    this.canvas = canvas; this.scheme = 'shred'; this.kind = 'ski';   // (kind: what you ride, set by main.js applyRide: its own trick keys, RIDE_KEYS)
     this.keys = new Set(); this.pressed = new Map(); this.downAt = new Map(); this.lastTap = new Map(); this.revertAt = 0;
     this.mdx = 0; this.mdy = 0; this.lmb = false; this.rmb = false;
     this.stick = 0;                    // the mouse scheme's pointing, -1 (left) .. 1 (right)
@@ -126,7 +122,8 @@ export class Input {
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     addEventListener('mousemove', e => { if (document.pointerLockElement === canvas && !this.lookDrag) { this.mdx += e.movementX; this.mdy += e.movementY; } });   // (R: not while the middle button looks round in first person, camera.js attachLook)
   }
-  setScheme(s) { this.scheme = s; this.keys.clear(); this.grabOrder = []; this.stick = 0; this.table = null; }
+  // (2026-11-12: never the mouse scheme)
+  setScheme(s) { this.scheme = s === 'keys' ? 'keys' : 'shred'; this.keys.clear(); this.grabOrder = []; this.stick = 0; this.table = null; }
   setKind(k) { this.kind = k || 'ski'; this.grabOrder = []; this.table = null; }
   // the grab (or the ride's trick) a key gives, or nothing (the table is built once a scheme and ride)
   idOf(code) {

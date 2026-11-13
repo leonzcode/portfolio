@@ -1,8 +1,8 @@
 // Cameras: chase (behind the travel, held steady through spins), far chase, first person (a helmet camera at the
 // rider's eyes, turning with the head) and filmer (tripod spots beside the features, panning and zooming to follow).
 import * as THREE from 'three';
-import { height } from './terrain.js?v=22';
-import { FollowQ } from './rig.js?v=22';
+import { height } from './terrain.js?v=23';
+import { FollowQ } from './rig.js?v=23';
 
 const MODES = ['chase', 'far', 'pov', 'film'];
 const _lf = new THREE.Vector3(), _Y = new THREE.Vector3(0, 1, 0);   // (L: the chairlift's look round)
@@ -45,7 +45,9 @@ export class Cams {
     const L = this.lk = { yaw: 0, pitch: 0, dx: 0, dy: 0, on: false, idle: 9, id: -1, x: 0, y: 0 };
     const locked = () => document.pointerLockElement === canvas;
     canvas.addEventListener('pointerdown', e => {
-      if (this.mode !== 'pov') return;
+      // (2026-11-12: with the mouse scheme gone, a drag on the chairlift turns the chair camera round too; it stays turned)
+      L.chair = this.onLift && this.mode !== 'pov';
+      if (this.mode !== 'pov' && !L.chair) return;
       const ok = e.pointerType === 'touch' || e.button === 1 || (e.button === 0 && !locked() && input.scheme !== 'mouse');
       if (!ok) return;
       L.on = true; L.id = e.pointerId; L.x = e.clientX; L.y = e.clientY;
@@ -56,6 +58,7 @@ export class Cams {
       const lk = locked(), dx = lk ? e.movementX : e.clientX - L.x, dy = lk ? e.movementY : e.clientY - L.y;
       L.x = e.clientX; L.y = e.clientY;
       const k = e.pointerType === 'touch' ? 0.006 : 0.004;
+      if (L.chair) { if (this.onLift) { const o = (this.orbit || 0) - dx * k * 1.5; this.orbit = Math.atan2(Math.sin(o), Math.cos(o)); } return; }   // (right looks right, as the turn keys)
       L.dx -= dx * k; L.dy += dy * k;
     });
     const up = e => { if (e.pointerId === L.id) { L.on = false; L.id = -1; input.lookDrag = false; } };

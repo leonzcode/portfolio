@@ -118,7 +118,7 @@ export class Net {
     this.makeRig(rider, r.look).then(rig => {
       if (!this.remotes.has(r.id) || gen !== r.gen) return;
       if (r.rig) { this.scene.remove(r.rig.root); if (r.rig.dispose) r.rig.dispose(); }   // (R: the old one freed)
-      r.rig = rig; this.scene.add(rig.root);
+      r.rig = rig; rig.root.visible = false; this.scene.add(rig.root);   // (C: shown once posed, in pose())
     }).catch(() => {});
   }
   // tell the room how we look now (sent again on a change)
@@ -162,11 +162,15 @@ export class Net {
     if (!this.code) return;
     const now = performance.now() / 1000 - DELAY;
     for (const r of this.remotes.values()) {
-      const b = r.buf; if (!b.length) continue;
+      const b = r.buf;
+      /* (C, 2026-11-11, for "head sometimes disappears especialyl in multiplayer") a rider with no place heard yet (just
+         joined, or their page has not sent one) is not drawn: never posed, their rig stood at the middle of the world in
+         its resting shape, with its helmet and goggles at its feet, since those are put on the head by the pose */
+      if (!b.length) { if (r.rig) r.rig.root.visible = false; if (r.view) r.view.shown = false; continue; }
       const V = r.view || (r.view = { p: new THREE.Vector3(), q: new THREE.Quaternion(), v: new THREE.Vector3(), com: new THREE.Vector3(), state: 'ground', shown: false });
       // (a rider on another map is in the room but not on this mountain: not drawn here, their tricks still in the feed)
       const away = !!(this.map && r.look.map && r.look.map !== this.map);
-      if (r.rig) r.rig.root.visible = !away;
+      if (r.rig) r.rig.root.visible = !away && !!r.rig.ready;
       V.shown = !away;
       if (away) continue;
       let a = b[0], c = b[b.length - 1], k = 0;

@@ -1,38 +1,54 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=22';
-import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=22';
-import { makeMaterials, snowUniforms } from './materials.js?v=22';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=22';
-import { Mountain, SPOTS } from './dem.js?v=22';
-import { Skier } from './skier.js?v=22';
-import { Rig } from './rig.js?v=22';
-import './board.js?v=22';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
-import './scoot.js?v=22';                 // (B: and the snow scooter and snowbike: Rig.loader.scoot / bike, Rig.poser.scoot / bike)
-import './sled.js?v=22';                  // (B: and the sled: Rig.loader.sled, Rig.poser.sled)
-import { Tricks } from './tricks.js?v=22';
-import { Input } from './input.js?v=22';
-import { Cams } from './camera.js?v=22';
-import { Tracks, Spray } from './snow.js?v=22';
-import { Hud } from './hud.js?v=22';
-import { Sound } from './sound.js?v=22';
-import { Net } from './net.js?v=22';
-import { mergeGear } from './gear.js?v=22';
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=23';
+import { makePark, makeJumpLine, emptyPark, featureMesh, railMeshes } from './park.js?v=23';
+import { makeMaterials, snowUniforms } from './materials.js?v=23';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=23';
+import { Mountain, SPOTS } from './dem.js?v=23';
+import { Skier } from './skier.js?v=23';
+import { Rig, prefetchRider } from './rig.js?v=23';
+import './board.js?v=23';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
+// (B: the snow scooter and snowbike (scoot.js: Rig.loader.scoot / bike, Rig.poser.scoot / bike) and the sled (sled.js:
+// Rig.loader.sled, Rig.poser.sled) register the same way; C, 2026-11-11, loading: they come in when a ride needs them,
+// yours or another rider's (needRide below), not with the game's first files)
+import { Tricks } from './tricks.js?v=23';
+import { Input } from './input.js?v=23';
+import { Cams } from './camera.js?v=23';
+import { Tracks, Spray } from './snow.js?v=23';
+import { Hud } from './hud.js?v=23';
+import { Sound } from './sound.js?v=23';
+import { Net } from './net.js?v=23';
+import { mergeGear } from './gear.js?v=23';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Touch, TOUCH_GRABS } from './touch.js?v=22';
-import { Locker, loadLook, cleanLook } from './locker.js?v=22';
-import { planLift, Lift } from './lift.js?v=22';      // (L: the chairlift)
-import { planTbar, Tbar } from './tbar.js?v=22';      // (J: the Jump Line's T-bar)
-import { makeFreeride } from './freeride.js?v=22';    // (F: the Freeride mountain)
-import { buildRock, buildJibs } from './frrock.js?v=22';
-import { Online } from './online.js?v=22';            // (M: the home screen's online buttons, and watching others)
+import { Touch, TOUCH_GRABS } from './touch.js?v=23';
+import { Locker, loadLook, cleanLook } from './locker.js?v=23';
+// (C, 2026-11-11, loading: the map's own modules come in below, only for that map: the chairlift (L: lift.js), the
+// Freeride mountain (F: freeride.js, frrock.js) on Freeride, the T-bar (J: tbar.js) on the Jump Line)
+import { Online } from './online.js?v=23';            // (M: the home screen's online buttons, and watching others)
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
+// (C, 2026-11-11, loading) the scooter's, the bike's and the sled's modules, fetched the first time a ride needs them
+const RIDE_MODS = { scoot: './scoot.js?v=23', bike: './scoot.js?v=23', sled: './sled.js?v=23' };
+const needRide = kind => RIDE_MODS[kind] ? import(RIDE_MODS[kind]).catch(e => console.warn('ride', kind, e)) : Promise.resolve();
+/* (C, 2026-11-11, for "leonski never loads on chromebook and takes too long to load") The start-up's progress bar and
+   failures are index.html's (__skiBoot, there before any module): step(label, share) shows a step and gives the page a
+   moment to draw it and to answer between the heavy parts; soft(promise, ms, what) waits for something with a time
+   limit, and goes on without it (null) when it fails or takes too long, so nothing at the start waits for ever. */
+const BOOT = window.__skiBoot || { step: () => Promise.resolve(), ready() {}, fail(m) { console.error(m); } };
+const step = (label, share) => BOOT.step(label, share);
+const soft = (p, ms, what) => !p ? Promise.resolve(null) : new Promise(res => {
+  const t = setTimeout(() => { console.warn(what, 'took longer than', ms, 'ms: going on without it'); res(null); }, ms);
+  Promise.resolve(p).then(v => { clearTimeout(t); res(v === undefined ? true : v); }, e => { clearTimeout(t); console.warn(what, e); res(null); });
+});
 
 // ---- settings and graphics tier ------------------------------------------------------------------------------------
 const saved = (() => { try { return JSON.parse(localStorage.getItem('ski_opts') || '{}'); } catch (e) { return {}; } })();
-const opts = Object.assign({ scheme: 'mouse', cam: 'chase', gfx: 'auto', poles: '1', rider: 'm_adult_10', showfps: false, map: 'jumpline', ride: 'ski', stance: 'regular' }, saved);
+const opts = Object.assign({ scheme: 'shred', cam: 'chase', gfx: 'auto', poles: '1', rider: 'm_adult_10', showfps: false, map: 'jumpline', ride: 'ski', stance: 'regular' }, saved);
+// (2026-11-12, Leon: "remove the mouse controller thing") only Keyboard and Shredsauce are offered; a saved or asked-for
+// mouse scheme (or anything else) rides with Shredsauce's keys. The mouse code stays in input.js, never reached.
+{ const qsc = new URLSearchParams(location.search).get('scheme'); if (qsc) opts.scheme = qsc; }
+if (opts.scheme !== 'keys' && opts.scheme !== 'shred') opts.scheme = 'shred';
 // only the Jump Line is offered for now (Leon, 2026-11-05: "Remove mamoth map for now and also remove the other map as well
 // just keep jump line for now"); the other maps stay in the code and open with ?map= for tests
 // (F, 2026-11-06: and Freeride, the made-up big-mountain face, picked on the home screen)
@@ -42,7 +58,14 @@ if (qs.get('gfx')) opts.gfx = qs.get('gfx');
 function detectTier() {
   const ua = navigator.userAgent, mem = navigator.deviceMemory || 8, cores = navigator.hardwareConcurrency || 4;
   let gpu = '';
-  try { const gl = document.createElement('canvas').getContext('webgl2'); const d = gl && gl.getExtension('WEBGL_debug_renderer_info'); gpu = d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : ''; gl && gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch (e) {}
+  // (C, 2026-11-11: the graphics chip's name is kept from the last visit in this browser; asking for it made a WebGL
+  // context of its own and threw it away, a quarter of a second on a slow processor, every visit)
+  let kept = null; try { kept = JSON.parse(localStorage.getItem('ski_gpu') || 'null'); } catch (e) {}
+  if (kept && kept.ua === ua && typeof kept.gpu === 'string') gpu = kept.gpu;
+  else {
+    try { const gl = document.createElement('canvas').getContext('webgl2'); const d = gl && gl.getExtension('WEBGL_debug_renderer_info'); gpu = d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : ''; gl && gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch (e) {}
+    try { localStorage.setItem('ski_gpu', JSON.stringify({ ua, gpu })); } catch (e) {}
+  }
   const soft = /SwiftShader|llvmpipe|Software|Basic Render/i.test(gpu);
   const mobile = /Android|iPhone|iPad|Mobile/i.test(ua);
   if (/CrOS/.test(ua) || mem <= 4 || cores <= 2 || mobile || soft || (/Intel/i.test(gpu) && /(HD|UHD) Graphics/i.test(gpu) && cores <= 4)) return { tier: 'low', soft };
@@ -59,11 +82,21 @@ const Q = {
   high: { tier: 'high', pr: [0.8, Math.min(1.5, devicePixelRatio || 1)], start: Math.min(1.25, devicePixelRatio || 1), shadows: true, minLeaf: 16, K: 1.4, seg: 28, aa: true, fine: true },
 }[tier] || null;
 const q = Q || { tier: 'medium', pr: [0.7, 1], start: 1, shadows: true, minLeaf: 16, K: 1.6, aa: false, fine: true };
-if (det.soft) { q.pr = [0.4, 0.6]; q.start = 0.5; q.shadows = false; }
+if (det.soft) { q.pr = [0.3, 0.5]; q.start = 0.35; q.shadows = false; }   // (C, 2026-11-11: drawn by the processor, smaller: 6.4 frames a second at 0.35 under SwiftShader against 4.6 at 0.5)
 
 // ---- renderer and scene ----------------------------------------------------------------------------------------------
 const canvas = $('view');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: q.aa, powerPreference: 'high-performance', stencil: false });
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: q.aa, powerPreference: 'high-performance', stencil: false }); }
+catch (e) {
+  // (C, 2026-11-11: no WebGL 2 here, so no game; it used to say Loading for ever)
+  BOOT.fail('This browser could not start the game\'s 3D graphics (WebGL 2).', 'In Chrome: Settings, System, turn on "Use graphics acceleration when available", then restart Chrome. If it was on, restarting Chrome or the Chromebook often brings the graphics back.');
+  throw e;
+}
+// (C, 2026-11-11, loading) the downloads the start needs, begun now, before the world is built, so the network works
+// while the processor builds: the rider's model (the Low tier's lighter copy), its mask, its gear, the model decoder
+q.lo = q.tier === 'low';
+{ const L0 = loadLook({ body: opts.rider }); try { prefetchRider(L0.body || opts.rider, L0, opts.ride || 'ski', q.lo); } catch (e) { console.warn('prefetch', e); } }
 renderer.setPixelRatio(q.start);
 renderer.setSize(innerWidth, innerHeight, false);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -72,9 +105,33 @@ renderer.shadowMap.enabled = q.shadows; renderer.shadowMap.type = q.tier === 'hi
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.15, 20000);
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+/* (C, 2026-11-11) the graphics card reset (a Chromebook's graphics process starting again, often after running short of
+   memory): three.js puts everything back when the browser gives the context back; meanwhile, and if it never does, a
+   note says what happened instead of a frozen or black screen */
+{
+  let note = null, t = 0;
+  const say = (text, reload) => {
+    if (!note) { note = document.createElement('div'); note.id = 'gfxnote'; note.setAttribute('role', 'status'); document.body.appendChild(note); }
+    note.textContent = text; note.classList.remove('hidden');
+    if (reload) { const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Reload'; b.onclick = () => location.reload(); note.appendChild(b); }
+  };
+  canvas.addEventListener('webglcontextlost', () => {
+    try { pause(); } catch (e) {}                   // (riding on blind is no fun: paused until they are back)
+    say('The graphics were reset. Waiting for them to come back...');
+    clearTimeout(t); t = setTimeout(() => say('The graphics did not come back.', true), 8000);
+  });
+  canvas.addEventListener('webglcontextrestored', () => { clearTimeout(t); if (note) note.classList.add('hidden'); });
+}
 
 // the map: the terrain park, or a real mountain from open elevation data
 if (qs.get('map')) opts.map = qs.get('map');
+await step(opts.map === 'freeride' ? 'Building the mountain' : 'Building the jumps', 0.28);
+// (C: the map's own modules, see the imports)
+// (one that does not come down: the page is tried once more by itself, then says so, as for the first files)
+const mapMod = u => import(u).catch(e => { if (BOOT.noModule) BOOT.noModule(); throw e; });
+const [LM, TM, FM, RM] = await Promise.all([opts.map === 'freeride' ? mapMod('./lift.js?v=23') : {}, opts.map === 'jumpline' ? mapMod('./tbar.js?v=23') : {},
+  opts.map === 'freeride' ? mapMod('./freeride.js?v=23') : {}, opts.map === 'freeride' ? mapMod('./frrock.js?v=23') : {}, needRide(opts.ride)]);   // (and your ride's own module, when it is not skis or a board)
+const { planLift, Lift } = LM, { planTbar, Tbar } = TM, { makeFreeride } = FM, { buildRock, buildJibs } = RM;
 let mtn = null;
 if (SPOTS[opts.map]) {
   $('play').textContent = 'Loading the mountain...';
@@ -88,17 +145,21 @@ const park = fr ? fr.park : mtn ? emptyPark() : opts.map === 'jumpline' ? makeJu
 // (L) the chairlift beside the Jump Line: where it goes, and the flat snow under its stations (added to the park's height
 // before the terrain is built)
 const liftPlan = (fr || !mtn && opts.map === 'jumpline') && !qs.has('nolift') ? (fr ? planLift : planTbar)(park) : null;   // (F: Freeride's runs from its base to the ridge, park.liftLine)   // (?nolift: without it, for tests)   // (J: the Jump Line's is a T-bar, tbar.js)
+await step('Lighting the sky', 0.42);
 const sky = makeSky(scene, renderer, q, !!mtn);
+await step('Laying the snow', 0.47);
 const terrain = new Terrain(scene, mats.snow, { minLeaf: q.minLeaf, mtnLeaf: q.mtnLeaf, K: q.K, seg: q.seg, budget: q.tier === 'low' ? 3 : 4, far: q.tier === 'low' ? 2000 : 2600, root: mtn ? { x0: -4096, z0: -4096, size: 8192 } : null });
 const jumpLods = [], JUMP_FAR = q.tier === 'low' ? 110 : 150;
 {
   /* (2026-11-06, the lag pass: a jump's three takeoffs side by side are one mesh and one draw call; they were one each,
      21 on the Jump Line. Each jump is still left out when it is out of view.) */
   const groups = new Map();
-  for (const f of [...park.kickers, park.pipe, park.qp]) if (f) {
+  const feats = [...park.kickers, park.pipe, park.qp].filter(Boolean);
+  for (const [i, f] of feats.entries()) {
     const m = featureMesh(f, height, mats.snow, q.fine), key = (/^Jump \d+/.exec(f.name || '') || [f.group || m.uuid])[0];   // (F: Freeride's kickers are one group)
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(m);
+    if (i % 3 === 2) await step(null, 0.5 + 0.12 * i / feats.length);   // (C: a breath between them)
   }
   for (const [key, ms] of groups) {
     const g = ms.length > 1 ? mergeGeometries(ms.map(m => m.geometry), false) : null;
@@ -111,14 +172,20 @@ const jumpLods = [], JUMP_FAR = q.tier === 'low' ? 110 : 150;
        the low tier, 55 000 on the others. Past jumpLods' distance a jump is drawn from a copy with its rows and columns
        thinned out (park.js featureMesh), a third of the triangles; out there the two differ by a pixel or so.) */
     const fs = park.kickers.filter(f => (/^Jump \d+/.exec(f.name || '') || [])[0] === key);
-    const fg = fs.length ? mergeGeometries(fs.map(f => { const mm = featureMesh(f, height, mats.snow, q.fine, q.fine ? 0.3 : 0.35); return mm.geometry; }), false) : null;
-    if (fg) {
-      const far = new THREE.Mesh(fg, mats.snow);
-      far.receiveShadow = true; far.castShadow = false; far.matrixAutoUpdate = false; far.name = key + ' far'; far.visible = false;
-      scene.add(far);
-      g.computeBoundingBox();
-      jumpLods.push({ near: m, far, box: g.boundingBox, isFar: false });
-    }
+    // (C, 2026-11-11, loading: the far copies are built while the rider downloads, farCopies() at boot; until a jump's
+    // is there, the jump is drawn from its near copy)
+    if (fs.length) { g.computeBoundingBox(); jumpLods.push({ near: m, far: null, fs, key, box: g.boundingBox, isFar: false }); }
+  }
+}
+async function farCopies() {
+  for (const J of jumpLods) {
+    if (J.far) continue;
+    const fg = mergeGeometries(J.fs.map(f => { const mm = featureMesh(f, height, mats.snow, q.fine, q.fine ? 0.3 : 0.35); return mm.geometry; }), false);
+    if (!fg) continue;
+    const far = new THREE.Mesh(fg, mats.snow);
+    far.receiveShadow = true; far.castShadow = false; far.matrixAutoUpdate = false; far.name = J.key + ' far'; far.visible = false;
+    scene.add(far); J.far = far;
+    await step(null, 0.76);
   }
 }
 // which copy of each jump is drawn: the far one past JUMP_FAR metres from the camera (5 m more to go back, so it never
@@ -126,13 +193,15 @@ const jumpLods = [], JUMP_FAR = q.tier === 'low' ? 110 : 150;
 function lodJumps(cam) {
   for (const J of jumpLods) {
     const d = J.box.distanceToPoint(cam), far = J.isFar ? d > JUMP_FAR - 5 : d > JUMP_FAR;
-    if (far !== J.isFar) { J.isFar = far; J.near.visible = !far; J.far.visible = far; }
+    if (far !== J.isFar && J.far) { J.isFar = far; J.near.visible = !far; J.far.visible = far; }
   }
 }
+await step('Planting the trees', 0.64);
 // (the park's rails and boxes; the benches' model loads, and is in before the shaders are compiled at boot: K)
 const railsG = park.rails.length ? railMeshes(park.rails, mats) : null; if (railsG) scene.add(railsG);
 if (fr) { buildRock(scene, fr.land, mats, q); buildJibs(scene, fr, mats, q); }   // (F: the rock faces, logs, slab, stumps, flags and finish arch)
 const forest = new Forest(scene, q, mtn || (fr && fr.mtn));   // (F: Freeride's trees from its own list)
+await step(null, 0.69);
 if (mtn) makeMountainRanges(scene, q, mtn); else makeRanges(scene, q, mats.snow);
 if (!mtn) makeProps(scene, park, q);
 const tracks = new Tracks(renderer, q);
@@ -227,7 +296,7 @@ function applyRide() {
   if (hud.setRide) hud.setRide(opts.ride);            // (B: the grab lists name what you ride's grabs)
   if (touch.setRide) touch.setRide(opts.ride);
 }
-document.querySelectorAll('[data-ride]').forEach(b => b.onclick = () => { if (b.dataset.ride === opts.ride) return; opts.ride = b.dataset.ride; save(); applyRide(); toStart(); loadRider(); });
+document.querySelectorAll('[data-ride]').forEach(b => b.onclick = async () => { if (b.dataset.ride === opts.ride) return; opts.ride = b.dataset.ride; save(); await needRide(opts.ride); if (opts.ride !== b.dataset.ride) return; applyRide(); toStart(); loadRider(); });   // (C: needRide)
 document.querySelectorAll('[data-stance]').forEach(b => b.onclick = () => { if (b.dataset.stance === opts.stance) return; opts.stance = b.dataset.stance; save(); applyRide(); toStart(); loadRider(); });
 applyRide();
 document.querySelectorAll('[data-scheme]').forEach(b => b.onclick = () => { mark(null, 'data-scheme', b.dataset.scheme); sel.scheme.value = b.dataset.scheme; sel.scheme.onchange(); });
@@ -330,7 +399,7 @@ $('locker').closest('details').addEventListener('toggle', () => { cams.first = t
 async function loadRider() {
   const gen = (loadRider.gen = (loadRider.gen || 0) + 1);       // (B: only the last one asked for is put in)
   const r2 = new Rig();
-  await r2.load(opts.rider, { poles: opts.poles === '1', outfit: OUTFITS[opts.rider], look: locker.look, kind: opts.ride || 'ski', goofy: opts.stance === 'goofy' });   // (kind: R, for B's board; look: R's locker)
+  await r2.load(opts.rider, { poles: opts.poles === '1', outfit: OUTFITS[opts.rider], look: locker.look, kind: opts.ride || 'ski', goofy: opts.stance === 'goofy', lo: q.lo });   // (kind: R, for B's board; look: R's locker; lo: C, the Low tier's lighter model)
   r2.update({ p: skier.p, q: skier.q, state: 'ground', edge: 0, crouch: 0.3, tuck: 0, brake: 0, press: 0, sw: false, speed: 0, vel: skier.v, balance: 0, t: 0 }, 0.016);
   mergeGear(r2);
   r2._cp = null; r2.crashPts();                                 // (the parts the snow may not reach in a crash, from the merged gear)
@@ -346,7 +415,8 @@ async function loadRider() {
 const net = new Net({
   scene, camera,
   // (B: another rider's look says what they ride and their stance: look.ride 'ski' | 'board', look.stance)
-  makeRig: async (id, look) => { const r = new Rig(); await r.load(id, { poles: true, outfit: OUTFITS[id], look: cleanLook(look), kind: look && Rig.loader[look.ride] ? look.ride : 'ski', goofy: !!(look && look.stance === 'goofy') }); mergeGear(r); r._cp = null; r.crashPts();
+  // (C, 2026-11-11: the ride's own module first, if it has not come yet: needRide; lo: the Low tier's lighter model)
+  makeRig: async (id, look) => { await needRide(look && look.ride); const r = new Rig(); await r.load(id, { poles: true, outfit: OUTFITS[id], look: cleanLook(look), kind: look && Rig.loader[look.ride] ? look.ride : 'ski', goofy: !!(look && look.stance === 'goofy'), lo: q.lo }); mergeGear(r); r._cp = null; r.crashPts();
     try { await renderer.compileAsync(r.root, camera, scene); } catch (e) {}   // (R: another rider's gear may need shaders of its own: built before it is drawn)
     return r; },
   // (R: and what they wear, from the locker)
@@ -389,7 +459,10 @@ function frame() {
 }
 function tick() {
   if (filmHold) { clock.getDelta(); return; }            // a test is stepping the frames itself (__ski.film)
-  const dt = Math.min(0.05, clock.getDelta());
+  /* (C, 2026-11-11, for "you cant play" on a Chromebook: a frame's time is counted up to a tenth of a second, so the
+     riding keeps to real time down to 10 frames a second; counted to a twentieth, it went in slow motion under 20, three
+     quarters speed at 15. A physics step costs about 0.4 ms with the processor slowed six times.) */
+  const dt = Math.min(0.1, clock.getDelta());
   time += dt;
   const live = playing && !paused && !replay && !online.watching;   // (M: watching others, your own rider waits)
   const I = live ? input.read(skier.state === 'air', skier.state === 'rail') : { steer: 0, crouch: false, spin: 0, flip: 0, tilt: 0 };
@@ -424,7 +497,7 @@ function tick() {
     } else skier.mouseTarget = null;
     acc += dt;
     let n = 0;
-    while (acc >= STEP && n < 8) {
+    while (acc >= STEP && n < 13) {
       keepWas();                                         // (the state before this step: the frame is drawn between)
       skier.step(STEP, I);
       for (const e of skier.events) {
@@ -443,7 +516,7 @@ function tick() {
       tricks.step(skier, STEP);
       acc -= STEP; n++; window.__ski && (window.__ski.simT = (window.__ski.simT || 0) + STEP);
     }
-    if (n === 8) acc = 0;
+    if (n === 13) acc = 0;
     // the bottom: back up on the lift
     if (runOver() && skier.state === 'ground') {
       if (tricks.combo) tricks.endCombo();
@@ -483,7 +556,12 @@ function tick() {
   if (lift && !replay) lift.camera(dt, camera, cams, camSk);   // (L: beside the stations a tripod takes over from the chase camera)
   }
   // (R) the locker open on the menu: the camera turns round the rider beside the card
-  if (!live && !replay && locker.open && !$('menu').classList.contains('hidden')) locker.preview(camera, rig, dt);
+  if (!live && !replay && locker.open && !$('menu').classList.contains('hidden')) {
+    // (C, 2026-11-11: seen from the turntable, never from the eyes: in first person the rider's head was hidden here)
+    if (rig.setFirstPerson) rig.setFirstPerson(false);
+    camera.layers.enable(1);
+    locker.preview(camera, rig, dt);
+  }
   if (live) { tracks.follow(view.p); tracks.fromSkier(view, rig); spray.fromSkier(view, rig, dt); }
   tracks.flush();
   spray.update(dt, time);
@@ -520,16 +598,31 @@ function tick() {
 // ---- boot ---------------------------------------------------------------------------------------------------------------
 (async () => {
   try {
-    await loadRider();
+    /* (C, 2026-11-11) the rider (its download began before the world was built) is dressed while the jumps' far copies
+       are built; a rider that does not come is asked for once more, then the start says so. Every wait below has a
+       time limit and goes on without what did not come (the benches, the lift's model, the shaders' last checks). */
+    await step('Dressing your rider', 0.72);
+    // (the world's shaders start compiling now, beside the rider: the graphics driver builds them while the page goes on)
+    const shadersP = soft(renderer.compileAsync(scene, camera), 30000, 'shaders');
+    const riderP = loadRider();
+    await farCopies();
+    let ok = await soft(riderP, 90000, 'rider');
+    if (!ok) { await step('Trying your rider again', 0.74); ok = await soft(loadRider(), 90000, 'rider'); }
+    // (a ride or a rider picked meanwhile left this one unused: the one picked, then)
+    for (let i = 0; ok && !rig.ready && i < 3; i++) ok = await soft(loadRider(), 90000, 'rider');
+    if (!ok || !rig.ready) { BOOT.fail('Your rider did not download.', 'The connection may have dropped. Try again, or try on another network.'); throw new Error('no rider'); }
+    await step('Getting the graphics ready', 0.82);
     terrain.warm(new THREE.Vector3(skier.p.x, skier.p.y + 3, skier.p.z - 5));
     rig.update({ p: skier.p, q: skier.q, state: 'ground', edge: 0, crouch: 0.2, tuck: 0, brake: 0, press: 0, sw: false, speed: 0, vel: skier.v, balance: 0, t: 0 }, 0.016);
     cams.update(0.016, skier, rig);
     forest.update(camera.position);
     scene.updateMatrixWorld(true);
     scene.matrixWorldAutoUpdate = !!qs.has('matrixauto');
-    if (railsG) await railsG.ready;
-    if (liftReady) await liftReady;      // (L)
-    await renderer.compileAsync(scene, camera);
+    if (railsG) await soft(railsG.ready, 20000, 'rails');
+    if (liftReady) await soft(liftReady, 20000, 'lift');      // (L)
+    await shadersP;
+    await soft(renderer.compileAsync(scene, camera), 30000, 'shaders');   // (what came since: the rider, the lift, the benches)
+    await step('Almost there', 0.93);
     /* (2026-11-06: compileAsync builds the programs things are drawn with, not the shadow pass's own; those were built
        the first time a thing came near enough to cast a shadow on the rider's patch of snow, inside that frame's draw:
        on the high tier the start arch's banner, half way down the first run. Every shadow caster is drawn into the
@@ -541,9 +634,11 @@ function tick() {
       for (const o of casters) o.frustumCulled = true;
     }
     $('play').disabled = false; $('play').textContent = 'Ride';
+    BOOT.ready();                                        // (C)
     online.booted();                                     // (M: an online choice made before a reload into this map)
   } catch (e) {
     console.error(e); $('play').textContent = 'Could not load';
+    BOOT.fail('Something went wrong while the game was starting.', String(e && e.message || e).slice(0, 160));   // (C)
   }
   // (tests: hold the loop, then step physics, the rider, the camera and a draw one frame of dt at a time with inputs I)
   const film = (dt, I, camAt) => {

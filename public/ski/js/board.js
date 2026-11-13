@@ -13,11 +13,11 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Rig, springBank, smooth01, wrapPi, softReach, wob } from './rig.js?v=22';
-import { clamp, smoothstep } from './noise.js?v=22';
-import { height } from './terrain.js?v=22';
-import { LOOK } from './gear.js?v=22';
-import { RIDE_KEYS, RIDE_HELP } from './input.js?v=22';
+import { Rig, springBank, smooth01, wrapPi, softReach, wob } from './rig.js?v=23';
+import { clamp, smoothstep } from './noise.js?v=23';
+import { height } from './terrain.js?v=23';
+import { LOOK } from './gear.js?v=23';
+import { RIDE_KEYS, RIDE_HELP } from './input.js?v=23';
 
 const D = Math.PI / 180;
 // the board's size (the model is scaled to it), where the bindings are, and their angles (a mild duck stance)
@@ -217,7 +217,7 @@ function loadModel() {
   if (_gltf) return _gltf;
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  _gltf = loader.loadAsync('./models/board/board.glb?v=22').catch(e => { _gltf = null; throw e; });
+  _gltf = loader.loadAsync('./models/board/board.glb?v=23').catch(e => { _gltf = null; throw e; });
   return _gltf;
 }
 // the board's half width along it (at -1 tail .. +1 nose), measured from the model once

@@ -24,7 +24,7 @@
    the two bull wheels one more. The stations and towers cast their shadows from copies cut in 150 m pieces drawn only
    into the sun's shadow map (layer 5), as the chairlift does. */
 import * as THREE from 'three';
-import { ground, height, normal } from './terrain.js?v=22';
+import { ground, height, normal } from './terrain.js?v=23';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // ---- sizes (metres) ---------------------------------------------------------------------------------------------------
@@ -338,7 +338,7 @@ float tbDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); float a = 2.0 * ab
        its windows to the line; merged into this mesh, so no draw call of its own. Should it not load, a plain hut built
        here stands in. */
     let hutG = null;
-    try { const gl = await new GLTFLoader().loadAsync('./models/tbar/hut.glb?v=22'); gl.scene.traverse(o => { if (o.isMesh && !hutG) hutG = o.geometry; }); }
+    try { const gl = await new GLTFLoader().loadAsync('./models/tbar/hut.glb?v=23'); gl.scene.traverse(o => { if (o.isMesh && !hutG) hutG = o.geometry; }); }
     catch (e) { console.warn('tbar hut', e); }
     const extra = [];
     for (const [h, w, d, wall] of [[P.hut, 1.3, 1.6, C.wood], [P.motor, 1.5, 2.0, C.white]]) {

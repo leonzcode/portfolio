@@ -12,9 +12,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { snowUniforms } from './materials.js?v=22';
-import { height, runHalf, getPark } from './terrain.js?v=22';
-import { installShadowOnly } from './shadowproxy.js?v=22';
+import { snowUniforms, setFieldSun } from './materials.js?v=23';
+import { height, runHalf, getPark } from './terrain.js?v=23';
+import { installShadowOnly } from './shadowproxy.js?v=23';
 
 const KEY = 'ski_env';
 export const ENV = Object.assign({ time: 12.5, sky: 'clear', snow: 'groomed' },
@@ -98,7 +98,7 @@ void main() {
 const DOME_FS = `
 uniform sampler2D uA; uniform sampler2D uB; uniform float uMix; uniform float uRotA; uniform float uRotB;
 uniform vec3 uTint; uniform float uSat; uniform vec3 uSunDir; uniform vec3 uSunCol; uniform float uSunVis;
-uniform sampler2D uHz;
+uniform sampler2D uHz; uniform vec3 uZen;
 varying vec3 vDir;
 vec3 dec(vec3 s) { s = min(s, vec3(0.93)); return s / (1.0 - s); }    // the photos were stored as x / (1 + x) (capped: past 0.93 one step of 8 bits is a big jump)
 void main() {
@@ -109,6 +109,7 @@ void main() {
   float az = atan(d.z, d.x) * 0.1591549 + 0.5;
   vec3 c = mix(dec(texture2D(uA, vec2(az + uRotA, v)).rgb), dec(texture2D(uB, vec2(az + uRotB, v)).rgb), uMix) * uTint;
   c = max(vec3(0.0), mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, uSat));    // a touch more colour: the tone curve greys a sky
+  c *= mix(vec3(1.0), uZen, smoothstep(8.0, 70.0, el));    // (2026-11-11: high up the sky overhead is a deeper blue, Freeride's)
   float cs = dot(d, uSunDir), above = smoothstep(-0.02, 0.01, d.y);
   // the sun: a disc, its bright rim of glare and a soft halo
   c += uSunCol * uSunVis * above * (smoothstep(0.99996, 0.99999, cs) * 60.0 + pow(max(cs, 0.0), 2200.0) * 6.0 + pow(max(cs, 0.0), 60.0) * 0.35);
@@ -132,6 +133,7 @@ export class Env {
   constructor(scene, renderer, q, wide) {
     this.scene = scene; this.r = renderer; this.q = q; this.wide = wide;
     this.res = q.tier === 'low' ? '1k' : '2k';
+    this.alpine = !!(getPark() && getPark().freeride);      // (2026-11-11: Freeride's light, apply)
     this.tex = new Map();          // photo key -> { tex, hz: Float32Array(NH*3) in photo u, ready }
     this.skier = null;
     // the dome
@@ -141,6 +143,8 @@ export class Env {
       uA: { value: blank }, uB: { value: blank }, uMix: { value: 0 }, uRotA: { value: 0 }, uRotB: { value: 0 }, uTint: { value: new THREE.Vector3(1, 1, 1) },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 1, 1) }, uSunVis: { value: 1 },
       uSat: { value: 1.4 }, uHz: { value: blank },
+      // (2026-11-11) the sky overhead a deeper blue on a high mountain (Freeride: thinner, cleaner air), 1 elsewhere
+      uZen: { value: getPark() && getPark().freeride ? new THREE.Vector3(0.8, 0.88, 1.0) : new THREE.Vector3(1, 1, 1) },
     };
     this.domeMat = new THREE.ShaderMaterial({ uniforms: this.u, vertexShader: DOME_VS, fragmentShader: DOME_FS, side: THREE.BackSide, depthWrite: false });
     this.dome = new THREE.Mesh(new THREE.SphereGeometry(9000, 48, 24), this.domeMat);
@@ -228,6 +232,7 @@ export class Env {
   apply() {
     const t = ((ENV.time % 24) + 24) % 24, set = SETS[ENV.sky] || SETS.clear, kind = KIND[ENV.sky] || KIND.clear;
     const { el, dir } = sunAt(t, this.sunDir);
+    setFieldSun(dir);          // (the mountain's own shadows for this sun, Freeride's: materials.js, frfield.js)
     // the two photos round the time (wrapping round midnight)
     let i = set.findIndex(s => s[0] > t), a, b, f;
     if (i <= 0) { a = set[set.length - 1]; b = set[0]; const span = b[0] + 24 - a[0], dt = (t < b[0] ? t + 24 : t) - a[0]; f = dt / span; }
@@ -269,8 +274,12 @@ export class Env {
     }
     snowUniforms.uSunDir.value.copy(this.lightDir);
     // the sky light: the photos' zenith colour (blue by day, grey under cloud, dark blue at night)
-    const hemiI = table(HEMI_I, el) * kind.hemi;
-    const zen = ENV.sky === 'overcast' ? [0.82, 0.86, 0.92] : el > -2 ? [0.62, 0.76, 0.98] : [0.42, 0.5, 0.75];
+    /* (2026-11-11) high on a big mountain under a clear sky (Freeride) the shade is darker and bluer against the sunlit
+       snow, as in photographs of real faces: less of the sky's light (and of its reflection, below) and a bluer sky.
+       Not under a grey sky, where the sky's light is all there is, nor by night */
+    const alp = this.alpine && ENV.sky !== 'overcast' ? (1 - night) * (ENV.sky === 'cloudy' ? 0.6 : 1) : 0;
+    const hemiI = table(HEMI_I, el) * kind.hemi * (1 - 0.38 * alp);
+    const zen = ENV.sky === 'overcast' ? [0.82, 0.86, 0.92] : el > -2 ? [0.62 - 0.1 * alp, 0.76 - 0.05 * alp, 0.98] : [0.42, 0.5, 0.75];
     this.hemi.color.setRGB(zen[0], zen[1], zen[2]); this.hemi.intensity = hemiI;
     this.hemiWarm = (1 - ss(4, 18, Math.abs(el))) * (ENV.sky === 'overcast' ? 0.2 : 0.55);
     this.hemi.groundColor.setRGB(0.95, 0.96, 0.97).multiplyScalar(lerp(0.35, 1, ss(-6, 10, el)));
@@ -300,7 +309,7 @@ export class Env {
     if (this.hemiWarm > 0) { const m = Math.max(mr, mg, mb) / NH || 1; this.hemi.color.lerp(_c.setRGB(mr / NH / m, mg / NH / m, mb / NH / m), this.hemiWarm); }
     this.scene.fog.density = this.fogBase * kind.fog * lerp(1, 0.8, night);
     this.floorMat.color.setRGB(0.9, 0.93, 0.96).multiplyScalar(Math.min(1.2, sunI * 0.22 + hemiI * 0.45));
-    this.scene.environmentIntensity = 0.55 * lerp(0.25, 1, ss(-8, 8, el));
+    this.scene.environmentIntensity = 0.55 * lerp(0.25, 1, ss(-8, 8, el)) * (1 - 0.35 * alp);
     // how bright lit snow is on the screen, for the spray (drawn unlit): the sun and sky on it by day, the floodlights by night
     { const L = lerp(0.95 * (sunI * Math.max(0.15, dir.y) * 0.3 + hemiI * 0.7), 0.3, night); _v[0] = L * 0.97; _v[1] = L * 0.99; _v[2] = L; acesSRGB(_v, expo); snowUniforms.uSnowLit.value.set(_v[0], _v[1], _v[2]); }
     // the park's lights

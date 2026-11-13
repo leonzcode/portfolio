@@ -1,17 +1,37 @@
 // The heads-up display: speed, score and the line's multiplier, trick names as they land, rail balance, a grab list.
-import { GRABS, guideOf } from './grabs.js?v=22';
-import { keyHelp } from './input.js?v=22';
-import { rideGrabDef, rideGuide } from './board.js?v=22';      // (B: a board's, scooter's... own grab names in the lists)
+import { GRABS, guideOf } from './grabs.js?v=23';
+import { keyHelp } from './input.js?v=23';
+import { rideGrabDef, rideGuide } from './board.js?v=23';      // (B: a board's, scooter's... own grab names in the lists)
 
 const $ = id => document.getElementById(id);
+/* (2026-11-12, Leon: "make it so that controls appear at the top left every time unless the user toggles them off")
+   The main keys for the panel at the top left, short, for the scheme and what you ride. The full list is the menu's Keys. */
+function mainKeys(scheme, kind) {
+  const sled = kind === 'sled';
+  if (scheme === 'keys') return [
+    ['A / D', 'turn; in the air, spin'], ['W', 'tuck; in the air, front flip'], ['S', 'brake; in the air, back flip'],
+    ['Space', 'hold to crouch, let go to pop'], ['Q / E', 'tilt the spin (corks)'],
+    ['Shift + W / S', sled ? 'with A / D: spin flat on the snow' : 'butter on the nose / tail'],
+    ['C', 'camera'], ['R', 'start again a little earlier'], ['Backspace', 'back to the top'],
+    ['E', 'at a lift: ride it up'], ['Esc', 'pause, all keys'],
+  ];
+  return [
+    ['← / →', 'turn; in the air, spin'], ['↑', 'tuck; in the air, front flip'], ['↓', 'brake; in the air, back flip'],
+    ['Space', 'hold to crouch, let go to pop'], ['Shift', 'skate forward'], ['G / H', 'Lincoln loop'],
+    ['N', sled ? 'with ← / →: spin flat on the snow' : 'butter (with ↓ the tail)'],
+    ['Q', 'camera'], ['Enter', 'back to your last crash; twice: the start'], ['Backspace', 'back to the top'],
+    ['E', 'at a lift: ride it up'], ['Esc', 'pause, all keys'],
+  ];
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 export class Hud {
   constructor() {
     this.kmh = $('kmh'); this.pts = $('pts'); this.combo = $('combo'); this.list = $('tricks'); this.rail = $('rail'); this.railI = document.querySelector('#railbar i');
     this.note = $('note'); this.fps = $('fps'); this.hint = $('grabhint');
     this.shown = []; this.score = 0; this.lastK = -1;
-    // Tab hides the grab list (in the Shredsauce scheme Tab sets a marker, so the key there is the one left of 1)
+    // Tab hides the controls panel (in the Shredsauce scheme Tab sets a marker, so the key there is the one left of 1)
+    // (2026-11-12, Leon: shown by default every time: no timer hides it, and the choice is not kept past this visit)
     addEventListener('keydown', e => { if (e.code === (this.scheme === 'shred' ? 'Backquote' : 'Tab') && !(e.target && e.target.tagName === 'INPUT')) { e.preventDefault(); this.hint.classList.toggle('hidden'); } });
-    setTimeout(() => this.hint.classList.add('hidden'), 25000);
   }
   show(on) { $('hud').classList.toggle('hidden', !on); }
   // (B: what you ride, for the grab names in the lists)
@@ -20,9 +40,13 @@ export class Hud {
     this.scheme = scheme;
     const h = keyHelp(scheme, this.kind || 'ski'), other = this.kind && this.kind !== 'ski';   // (P: the ride's own trick keys first)
     const nm = id => { const d = other && rideGrabDef(this.kind, id); return d ? d.name : GRABS[id] ? GRABS[id].name : id; }, gd = id => other ? rideGuide(this.kind, id) : guideOf(id);
-    const gl = h.grabs.map(([k, id]) => `${k.padEnd(2)} ${nm(id)}`).join('\n');
-    const vary = '\n+E / +R  another version of it';   // (P, 2026-11-08: every ride's tricks have their own E and R versions now)
-    this.hint.textContent = gl + (scheme === 'shred' ? vary + '\n` hides this list' : '\nTab hides this list');
+    // the controls panel at the top left: the main keys, then the grabs (or the ride's tricks), and the key that hides it
+    const hideKey = scheme === 'shred' ? '`' : 'Tab';
+    const row = ([k, d]) => `<div><kbd>${esc(k)}</kbd>${esc(d)}</div>`;
+    this.hint.innerHTML = `<div class="gh-head"><b>Controls</b><span><kbd>${hideKey}</kbd>hides this</span></div>`
+      + `<div class="gh-main">${mainKeys(scheme, this.kind || 'ski').map(row).join('')}</div>`
+      + `<div class="gh-sub">${other && this.kind !== 'board' ? 'Tricks, in the air' : 'Grabs, hold in the air'}${scheme === 'shred' ? ' (+ E / R: another version)' : ''}</div>`   // (P, 2026-11-08: every ride's tricks have their own E and R versions)
+      + `<div class="gh-grabs">${h.grabs.map(([k, id]) => row([k, nm(id)])).join('')}</div>`;
     const box = $('keys');
     // (X: on a scooter, snowbike or sled the grab keys are its tricks; on a sled the butter keys spin it flat on the snow)
     const base = other && this.kind === 'sled' ? h.base.map(([k, d]) => [k, /butter/.test(d) ? 'with a turn key: spin the sled flat on the snow (a spinner)' : d]) : h.base;

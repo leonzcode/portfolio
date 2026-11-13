@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import SortSelect from "../components/SortSelect.astro";
 
 interface FilmVideo {
   id: string;
@@ -69,10 +70,20 @@ const thumbUrl = (v: FilmVideo) => {
       Short films, pitch videos, and PSAs I've directed or produced.
     </p>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
+    <div class="mb-8 flex">
+      <SortSelect id="film-sort" label="Sort videos" />
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10" data-film-grid>
       {
-        videos.map((v) => (
-          <article class="flex flex-col">
+        videos.map((v, i) => (
+          <article
+            class="flex flex-col"
+            data-card
+            data-index={i}
+            data-views={typeof v.views === "number" ? v.views : undefined}
+            data-likes={typeof v.likes === "number" ? v.likes : undefined}
+          >
             <div
               class="relative w-full overflow-hidden rounded-md bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800"
               style="aspect-ratio: 16 / 9;"
@@ -148,6 +159,23 @@ const thumbUrl = (v: FilmVideo) => {
     </div>
   </section>
 </BaseLayout>
+
+<script>
+  import { builtOrder, sortGrid } from "../scripts/sortgrid";
+  // the counts are YouTube's, written into the page (see the videos list above)
+  {
+    const grid = document.querySelector<HTMLElement>("[data-film-grid]");
+    const sort = document.querySelector<HTMLSelectElement>("#film-sort");
+    if (grid && sort) {
+      const arrange = () => {
+        builtOrder(grid);
+        sortGrid(grid, sort.value);
+      };
+      sort.addEventListener("change", arrange);
+      arrange();
+    }
+  }
+</script>
 
 <script>
   document.querySelectorAll<HTMLButtonElement>("[data-yt-facade]").forEach((btn) => {

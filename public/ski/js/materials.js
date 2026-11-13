@@ -4,8 +4,8 @@
 // (env.js: groomed, powder, packed, spring slush, ice), the floodlights' pools by night, and fog the colour of the sky's
 // own horizon in each direction.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=22';
-import { ground, onMountain } from './terrain.js?v=22';
+import { rng } from './noise.js?v=23';
+import { ground, onMountain } from './terrain.js?v=23';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
 function noiseTexture(size = 256, seed = 3) {
@@ -78,7 +78,42 @@ export const snowUniforms = {
   uRockMap2: { value: null },
   uRockWin: { value: new THREE.Vector4(0, 0, 1, 0) },
   uRockWin2: { value: new THREE.Vector4(0, 0, 1, 0) },
+  // (2026-11-11) 1 once the rock field also carries the mountain's own light (Freeride's, frfield.js): how much sky a
+  // place sees (g), whether the sun reaches it (b), how exposed it is to the wind (a)
+  uFieldLight: { value: 0 },
+  // (2026-11-11, Freeride) real rock: Poly Haven's "Dark Rock 02" (CC0), its colour with its height in alpha and its
+  // normal with its occlusion (tex/rock_col.webp, tex/rock_nrm.webp); uRockTex 1 once both have come
+  uRockCol: { value: null },
+  uRockNrm: { value: null },
+  uRockTex: { value: 0 },
 };
+/* (2026-11-11) the look a map asks for: Freeride's snow (freerideLook) has its wind texture and its rock from real
+   pictures; the other maps keep theirs (a program of its own, so theirs costs what it did) */
+export const LOOK = { fr: false };
+export function freerideLook() {
+  if (LOOK.fr) return; LOOK.fr = true;
+  let n = 0;
+  const load = (url, srgb) => {
+    const t = new THREE.TextureLoader().load(url, () => { if (++n === 2) snowUniforms.uRockTex.value = 1; });
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    return t;
+  };
+  snowUniforms.uRockCol.value = load('./tex/rock_col.webp', true);
+  snowUniforms.uRockNrm.value = load('./tex/rock_nrm.webp', false);
+}
+/* the field (above) at a world place, for the other materials that read the mountain's own light (frrock.js, world.js):
+   (steepness, sky seen, sun reaching it, wind exposure), (1, 1, 1, 0.5) where there is none */
+export const FIELD_GLSL = `
+uniform sampler2D uRockMap; uniform sampler2D uRockMap2; uniform vec4 uRockWin; uniform vec4 uRockWin2; uniform float uFieldLight;
+vec4 fieldAt(vec2 xz) {
+  vec4 f = vec4(1.0, 1.0, 1.0, 0.5);
+  if (uFieldLight < 0.5) return f;
+  vec2 u = (xz - uRockWin2.xy) * uRockWin2.z; float e = min(min(u.x, 1.0 - u.x), min(u.y, 1.0 - u.y));
+  f = mix(f, texture2D(uRockMap2, u), smoothstep(0.0, 0.03, e));
+  u = (xz - uRockWin.xy) * uRockWin.z; e = min(min(u.x, 1.0 - u.x), min(u.y, 1.0 - u.y));
+  return mix(f, texture2D(uRockMap, u), smoothstep(0.0, 0.06, e));
+}`;
+export const fieldUniforms = s => { for (const k of ['uRockMap', 'uRockMap2', 'uRockWin', 'uRockWin2', 'uFieldLight']) s.uniforms[k] = snowUniforms[k]; };
 
 /* ---- the rock field (2026-11-07, for "rock on steep snow blend naturally, with no patch-shaped edges"). Rock showed
    through the snow where the terrain's own normals were steep, and those normals depend on the size of the patch they
@@ -93,29 +128,83 @@ export const snowUniforms = {
    map's own source (freeride.js: its snow without its rock faces, which draw their own rock, so no grey halo round every
    cliff) comes with its own middle and a say in how rocky each place is. Meshes with their own fine normals that are
    not terrain patches (the kickers, vGroom 0.65) keep using those. */
-export const rockField = { height: null, center: null, adjust: null, state: 0 };
+export const rockField = { height: null, center: null, adjust: null, state: 0, data: [] };
 // the two windows round a middle: texels a side, metres a texel, the corner
 const ROCK_LEVELS = [{ N: 320, r: 4 }, { N: 256, r: 32 }];
 export function rockLevels(c) { return ROCK_LEVELS.map(L => ({ N: L.N, r: L.r, x0: c[0] - L.N * L.r / 2, z0: c[1] - L.N * L.r / 2 })); }
 function setRockLevel(i, data, c) {
   const L = rockLevels(c)[i], u = i ? snowUniforms.uRockWin2 : snowUniforms.uRockWin, m = i ? snowUniforms.uRockMap2 : snowUniforms.uRockMap;
   m.value = rockTexture(data, L.N); u.value.set(L.x0, L.z0, 1 / (L.N * L.r), 1);
+  rockField.data[i] = data.length === L.N * L.N * 4 ? { data, L } : null;
 }
 // (a map with its own source can start the bake at once: its heights do not wait for the rest of the world)
 export function setRockSource(height, center, adjust) { rockField.height = height; rockField.center = center; rockField.adjust = adjust || null; bakeRockField(); }
 /* (or have a module worker work it out, off the page's own thread: Freeride's land is plain JS a worker can load. The
    worker is sent the windows and posts back each one's texels; if it cannot start, the page bakes it itself) */
-export function rockFieldWorker(url, center, fallback) {
+/* (2026-11-11: light, Freeride's: the worker also works out the mountain's own light in the same texels, frfield.js, and
+   stays to work out the sun's shadows again for each new sun, setFieldSun) */
+export function rockFieldWorker(url, center, fallback, light = false) {
   let w = null;
   try { w = new Worker(url, { type: 'module' }); } catch (e) { w = null; }
   if (!w) { fallback(); return; }
   rockField.state = 1; rockField.center = center;
-  w.onmessage = e => { setRockLevel(e.data.i, e.data.data, center); if (e.data.i === ROCK_LEVELS.length - 1) { rockField.state = 2; w.terminate(); } };
-  w.onerror = () => { w.terminate(); if (rockField.state < 2) { rockField.state = 0; fallback(); } };
-  w.postMessage({ levels: rockLevels(center) });
+  w.onmessage = e => {
+    const d = e.data;
+    if (d.ms) (rockField.ms || (rockField.ms = [])).push((d.data ? 'level ' : d.ga ? 'light ' : 'sun ') + d.i + ' ' + Math.round(d.ms) + ' ms');
+    if (d.data) {
+      setRockLevel(d.i, d.data, center);
+      if (d.i === ROCK_LEVELS.length - 1) { rockField.state = 2; if (light) { snowUniforms.uFieldLight.value = 1; FIELD.ready = true; FIELD.send(); } else w.terminate(); }
+    } else if (d.b) {
+      // a new sun's shadows: into the blue channel of the texels kept, sent to the graphics card again
+      const k = rockField.data[d.i], m = d.i ? snowUniforms.uRockMap2 : snowUniforms.uRockMap;
+      if (k) { const D = k.data, b = d.b; for (let t = 0, n = b.length; t < n; t++) D[t * 4 + 2] = b[t]; m.value.needsUpdate = true; }
+      if (d.i === ROCK_LEVELS.length - 1) { FIELD.busy = false; FIELD.send(); }
+    } else if (d.ga) {
+      // the sky and the wind (after the steepness: frfield.js), into the green and alpha channels
+      const k = rockField.data[d.i], m = d.i ? snowUniforms.uRockMap2 : snowUniforms.uRockMap;
+      if (k) { const D = k.data, ga = d.ga; for (let t = 0, n = ga.length / 2; t < n; t++) { D[t * 4 + 1] = ga[t * 2]; D[t * 4 + 3] = ga[t * 2 + 1]; } m.value.needsUpdate = true; }
+    } else if (d.g) {
+      // the sky under the trees (the finest window), into the green channel
+      const k = rockField.data[d.i], m = d.i ? snowUniforms.uRockMap2 : snowUniforms.uRockMap;
+      if (k) { const D = k.data, g = d.g; for (let t = 0, n = g.length; t < n; t++) D[t * 4 + 1] = g[t]; m.value.needsUpdate = true; }
+    }
+  };
+  w.onerror = () => { w.terminate(); FIELD.w = null; snowUniforms.uFieldLight.value = 0; if (rockField.state < 2) { rockField.state = 0; fallback(); } };
+  w.postMessage({ levels: rockLevels(center), light });
+  if (light) FIELD.w = w;
+}
+/* the sun for the field's shadows (env.js apply, each change of the time of day): sent when it has moved more than
+   about a third of a degree, one at a time (a slider dragged sends the latest when the one before is done) */
+const FIELD = {
+  w: null, ready: false, busy: false, want: null, sent: null,
+  send() {
+    if (!this.w || !this.ready || this.busy || !this.want) return;
+    const a = this.want, b = this.sent;
+    if (b && a[0] * b[0] + a[1] * b[1] + a[2] * b[2] > 0.99998) return;
+    this.sent = a.slice(); this.busy = true; this.w.postMessage({ sun: this.sent });
+  },
+};
+export function setFieldSun(dir) { FIELD.want = [dir.x, dir.y, dir.z]; FIELD.send(); }
+// the trees, for their shade on the snow (frfield.js): [{ x, z, s }], sent once (Freeride's forest, freeride.js)
+export function setFieldTrees(list) {
+  if (!FIELD.w) return;
+  const a = new Float32Array(list.length * 3);
+  list.forEach((t, i) => { a[i * 3] = t.x; a[i * 3 + 1] = t.z; a[i * 3 + 2] = t.s; });
+  FIELD.w.postMessage({ trees: a }, [a.buffer]);
+}
+// the field's light at a place on the page's own thread (sky seen, sun reaching it), from the finest window holding it
+export function fieldLight(x, z, out = { sky: 1, sun: 1 }) {
+  out.sky = 1; out.sun = 1;
+  for (const k of rockField.data) {
+    if (!k) continue;
+    const { N, r, x0, z0 } = k.L, i = Math.floor((x - x0) / r), j = Math.floor((z - z0) / r);
+    if (i < 0 || j < 0 || i >= N || j >= N) continue;
+    const t = (j * N + i) * 4; out.sky = k.data[t + 1] / 255; out.sun = k.data[t + 2] / 255; return out;
+  }
+  return out;
 }
 function rockTexture(data, N) {
-  const t = new THREE.DataTexture(data, N, N, THREE.RedFormat, THREE.UnsignedByteType);
+  const t = new THREE.DataTexture(data, N, N, data.length === N * N * 4 ? THREE.RGBAFormat : THREE.RedFormat, THREE.UnsignedByteType);
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
   t.generateMipmaps = true; t.colorSpace = THREE.NoColorSpace; t.needsUpdate = true;
   return t;
@@ -198,6 +287,7 @@ export function makeSnowMaterial(q) {
   const detail = q.tier !== 'low';
   if (!detail && LOW_SHADOW === undefined) LOW_SHADOW = lowShadowChunk();
   m.onBeforeCompile = (s) => {
+    const fr = LOOK.fr;      // (Freeride's look: its rock from real pictures, its wind-blown snow; set before the first compile)
     bakeRockField();          // (the first compile: every height is known by now)
     Object.assign(s.uniforms, snowUniforms);
     if (!detail && LOW_SHADOW) s.fragmentShader = s.fragmentShader.replace('#include <shadowmap_pars_fragment>', LOW_SHADOW);
@@ -256,16 +346,21 @@ vec4 trTap(vec2 p, float wf, float wc) {
 }
 uniform vec3 uSunDir; uniform float uSparkle; uniform float uTime;
 uniform sampler2D uHorizon; uniform vec4 uSnowLook; uniform float uSnowRough; uniform float uNight;
+uniform sampler2D uRockCol; uniform sampler2D uRockNrm; uniform float uRockTex; vec3 gRN;
 uniform float uLamps; varying vec4 vLamp; uniform vec2 uFarFade; uniform sampler2D uGrain; uniform sampler2D uLumps; uniform float uTrackDepth;
 float hash13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
 vec3 hash33(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
 float gRock; float gTrackShadow; float gScrape; float gCover; float gTDep; float gBerm; vec2 gTN; vec4 gLump; vec3 gPN;
 // the snow's steepness for the rock, from the rock field where it is ready (the same at a place whatever patch draws it)
-uniform sampler2D uRockMap; uniform sampler2D uRockMap2; uniform vec4 uRockWin; uniform vec4 uRockWin2;
-float rockNy(float ny) {
-  if (uRockWin2.w > 0.5) { vec2 u = (vWPos.xz - uRockWin2.xy) * uRockWin2.z; float e = min(min(u.x, 1.0 - u.x), min(u.y, 1.0 - u.y)); ny = mix(ny, texture2D(uRockMap2, u).r, smoothstep(0.0, 0.03, e)); }
-  if (uRockWin.w > 0.5) { vec2 u = (vWPos.xz - uRockWin.xy) * uRockWin.z; float e = min(min(u.x, 1.0 - u.x), min(u.y, 1.0 - u.y)); ny = mix(ny, texture2D(uRockMap, u).r, smoothstep(0.0, 0.06, e)); }
-  return ny;
+uniform sampler2D uRockMap; uniform sampler2D uRockMap2; uniform vec4 uRockWin; uniform vec4 uRockWin2; uniform float uFieldLight;
+// (2026-11-11) the field here: (steepness, sky seen, sun reaching it, wind exposure); without the field's light (any map but
+// Freeride) the last three are (1, 1, 0.5)
+vec4 gFld;
+vec4 field(float ny) {
+  vec4 f = vec4(ny, 1.0, 1.0, 0.5);
+  if (uRockWin2.w > 0.5) { vec2 u = (vWPos.xz - uRockWin2.xy) * uRockWin2.z; float e = min(min(u.x, 1.0 - u.x), min(u.y, 1.0 - u.y)); f = mix(f, texture2D(uRockMap2, u), smoothstep(0.0, 0.03, e)); }
+  if (uRockWin.w > 0.5) { vec2 u = (vWPos.xz - uRockWin.xy) * uRockWin.z; float e = min(min(u.x, 1.0 - u.x), min(u.y, 1.0 - u.y)); f = mix(f, texture2D(uRockMap, u), smoothstep(0.0, 0.06, e)); }
+  return uFieldLight > 0.5 ? f : vec4(f.r, 1.0, 1.0, 0.5);
 }`)
       // albedo: rock on steep faces, compacted grey-blue in tracks
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -274,17 +369,55 @@ float rockNy(float ny) {
   float camD = length(vWPos - cameraPosition);
   // (2026-11-07: the terrain's steepness from the rock field, not its patch's normals: no patch-shaped edges. The
   // kickers' own meshes (groomed 0.65) keep their normals)
-  float rny = vGroom < 0.5 ? rockNy(wn.y) : wn.y;
+  gFld = field(wn.y);
+  float rny = vGroom < 0.5 ? gFld.r : wn.y;
   float steep = smoothstep(0.80, 0.62, rny);
   // (2026-11-06, the lag pass: rock only where the snow is steep enough for it, so most of the snow skips its three
   // lookups; the same picture)
   gRock = 0.0;
   if (steep > 0.0 && vGroom < 1.0) {
     float rn = texture2D(uNoise, vWPos.xz * 0.013).b + texture2D(uNoise, vWPos.xz * 0.05 + vWPos.y * 0.02).b * 0.5;
+    ${fr ? `/* (Freeride, 2026-11-11) rock from the real picture (materials.js freerideLook), seen from the three axes, and the
+       snow's edge on it by the rock's own relief: the snow fills the hollows and lies on the shelves, the rock's knobs
+       and edges stand out of it, crisp, as on a real face (it was a soft grey blot) */
+    gRN = vec3(0.0);
+    if (uRockTex > 0.5) {
+      // (how steep, the big and middle noise, a finer one and the rock's own relief, against one crisp edge, as wide as a
+      // pixel there: no grey wash where rock and snow mix, rock and snow side by side at any distance)
+      // (and streaks down the fall line, as rock shows on a face: in ribs and runnels, not round blots; the faces here
+      // fall to +z, the bowls' walls to the side, where the streaks lie across them as the rock's beds do)
+      // (the steepness and the big noise first: only where they bring the edge within reach are the rock's pictures and
+      // the finer noise looked at, so most of a steep snow face costs one more lookup, not six)
+      float s1 = texture2D(uNoise, vec2(vWPos.x * 0.034, vWPos.z * 0.0085) + 0.13).b;
+      float nearR = 1.0 - smoothstep(15.0, 60.0, camD);
+      float e = (0.8 - rny) * 2.4 + (rn - 0.75) * 0.42 + (s1 - 0.5) * 0.6;
+      float w = max(fwidth(e) * 0.7, mix(0.015, 0.004, nearR));
+      gRock = 0.0;
+      if (e > 0.3 - w - 0.19 - 0.09 * nearR) {
+        vec3 bl = pow(abs(wn), vec3(4.0)); bl /= bl.x + bl.y + bl.z;
+        ${detail ? `vec4 rc = texture2D(uRockCol, vWPos.zy * 0.25) * bl.x + texture2D(uRockCol, vWPos.xz * 0.25) * bl.y + texture2D(uRockCol, vWPos.xy * 0.25) * bl.z;
+        float n3 = texture2D(uNoise, vWPos.xz * 0.22 + 0.21).b, s2 = texture2D(uNoise, vec2(vWPos.x * 0.11, vWPos.z * 0.03) + 0.57).b;` :
+        // (the low tier: the picture from above only, and the finer noise from the one picture, three lookups fewer)
+        `vec4 rc = texture2D(uRockCol, vWPos.xz * 0.25);
+        vec4 nn = texture2D(uNoise, vWPos.xz * 0.22 + 0.21); float n3 = nn.b, s2 = nn.r;`}
+        // (near by, the rock's own relief rough on its edge; far off, where the picture is blurred, the noise's)
+        e += (s2 - 0.5) * 0.18 + (rc.a - 0.5) * (0.2 + 0.35 * nearR) + (n3 - 0.5) * 0.12;
+        gRock = smoothstep(0.3 - w, 0.3 + w, e) * (1.0 - vGroom);
+        if (gRock > 0.0) {
+          vec3 col = mix(vec3(dot(rc.rgb, vec3(0.3, 0.55, 0.15))), rc.rgb, 0.75) * 2.9 * (0.85 + 0.3 * ${detail ? 'texture2D(uNoise, vWPos.xz * 0.05).b' : 's1'});
+          // (snow lying on the rock's own high shelves, a dusting on its knobs)
+          col = mix(col, vec3(0.86, 0.89, 0.94), smoothstep(0.62, 0.76, rc.a + (n3 - 0.5) * 0.4) * 0.6);
+          diffuseColor.rgb = mix(diffuseColor.rgb, col, gRock);
+          ${detail ? `vec2 a = texture2D(uRockNrm, vWPos.zy * 0.25).rg * 2.0 - 1.0, b = texture2D(uRockNrm, vWPos.xz * 0.25).rg * 2.0 - 1.0, c = texture2D(uRockNrm, vWPos.xy * 0.25).rg * 2.0 - 1.0;
+          gRN = (vec3(0.0, a.y, a.x) * bl.x + vec3(b.x, 0.0, b.y) * bl.y + vec3(c.x, c.y, 0.0) * bl.z) * gRock;` : ''}
+        }
+      }
+    } else` : ''} {
     gRock = steep * smoothstep(0.45, 0.62, rn + (0.8 - rny) * 0.6) * (1.0 - vGroom);
     if (gRock > 0.0) {
       vec3 rock = mix(vec3(0.20, 0.19, 0.18), vec3(0.34, 0.32, 0.30), texture2D(uNoise, vWPos.xz * 0.2).b);
       diffuseColor.rgb = mix(diffuseColor.rgb, rock, gRock);
+    }
     }
   }
   // the crews' blue dye on lips and knuckles, soaked into the snow unevenly
@@ -393,6 +526,19 @@ roughnessFactor = mix(roughnessFactor, 0.9, gRock);`)
   float flat_ = 1.0 - max(gScrape * 0.8, gCover * 0.5);
   pn.xz += (g1 * fine * near * flat_ + g2 * 0.16 * (1.0 - uSnowLook.w * 0.6) + gl * (0.06 + max(uSnowLook.y, 0.55 * (1.0 - vGroom)) * 0.38) * (1.0 - vGroom * uSnowLook.x * 0.6) * (1.0 - gScrape * 0.6)) * (1.0 - side * 0.6);
   pn.xy += g3 * 0.12 * side * sideK;
+  ${fr && detail ? `/* (Freeride, 2026-11-11; not on the low tier) wind-blown snow off the groomed run: where the land stands out to
+     the wind (the field's a: crests, lips, ribs) the snow is carved into sastrugi, ridges a metre or two long lying
+     along the wind; in the hollows it lies soft. The wind blows across the face from the west. */
+  {
+    float wk = smoothstep(0.42, 0.75, gFld.a) * (1.0 - vGroom) * (1.0 - gRock) * (1.0 - smoothstep(60.0, 220.0, camD));
+    if (wk > 0.0) {
+      vec2 wd = vec2(0.94, 0.34), wq = vec2(dot(vWPos.xz, wd), dot(vWPos.xz, vec2(-wd.y, wd.x)));
+      vec2 sg = texture2D(uNoise, vec2(wq.x * 0.07, wq.y * 0.28)).rg * 2.0 - 1.0;
+      sg += (texture2D(uNoise, vec2(wq.x * 0.2, wq.y * 0.8) + 0.41).rg * 2.0 - 1.0) * 0.45;
+      pn.xz += (wd * sg.x * 0.6 + vec2(-wd.y, wd.x) * sg.y) * 0.11 * wk * (1.0 - side * 0.6);
+    }
+  }
+  pn += gRN * 0.8;` : ''}
   // corduroy: ridges about 3 cm apart along the fall line on groomed snow, faded before they alias; a track cuts
   // through them (crisply, with the groove's edge) and a skid wipes them out
   float fw = fwidth(vWPos.x);
@@ -419,12 +565,16 @@ roughnessFactor = mix(roughnessFactor, 0.9, gRock);`)
   float r = hash13(cell);
   vec3 fn = normalize(vec3(hash33(cell) * 2.0 - 1.0) + vec3(0.0, 1.2, 0.0));
   float gl = pow(max(0.0, dot(reflect(-uSunDir, fn), V)), 120.0) * step(0.84, r);
-  float sunlit = smoothstep(0.08, 0.5, dot(reflectedLight.directDiffuse, vec3(0.33)));
+  float sunlit = smoothstep(0.08, 0.5, dot(reflectedLight.directDiffuse, vec3(0.33))) * gFld.b;
   float fade = 1.0 - smoothstep(6.0, 40.0, camD);
   outgoingLight += vec3(1.0, 0.97, 0.92) * gl * 7.0 * sunlit * fade * uSparkle * (1.0 - gRock) * (1.0 - uNight);
   }` : ''}   // (no glints on the low tier: they cost about 0.35 ms a frame up close on the test machine)
-  float lit = dot(reflectedLight.directDiffuse, vec3(0.33));
-  outgoingLight -= reflectedLight.directDiffuse * gTrackShadow * 0.75;
+  /* (2026-11-11) the mountain's own light, Freeride's field: out of the sun behind a ridge, a rib or a cliff (not by
+     night: the floodlights' light is not the sun's), and less of the sky's light in a gully, a chute, under a wall */
+  float sunV = mix(1.0, gFld.b, 1.0 - uNight), skyV = gFld.g;
+  float lit = dot(reflectedLight.directDiffuse, vec3(0.33)) * sunV;
+  outgoingLight -= reflectedLight.directDiffuse * (1.0 - (1.0 - gTrackShadow * 0.75) * sunV) + reflectedLight.directSpecular * (1.0 - sunV);
+  outgoingLight -= (reflectedLight.indirectDiffuse + reflectedLight.indirectSpecular) * (1.0 - skyV) * 0.85;
   // (a deep trench sees less of the sky)
   outgoingLight -= reflectedLight.indirectDiffuse * gCover * gTDep * clamp(uTrackDepth * 2.5, 0.0, 0.55);
   // the park's lamps' pools (worked out at the corners, the vertex shader): the snow's own relief, tracks and all,
@@ -451,7 +601,7 @@ roughnessFactor = mix(roughnessFactor, 0.9, gRock);`)
   gl_FragColor.rgb = mix(gl_FragColor.rgb, fcol, fogFactor);
 #endif`);
   };
-  m.customProgramCacheKey = () => 'snow' + (detail ? 'D' : 'L');
+  m.customProgramCacheKey = () => 'snow' + (detail ? 'D' : 'L') + (LOOK.fr ? 'F' : '');
   return m;
 }
 

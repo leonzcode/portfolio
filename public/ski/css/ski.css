@@ -35,7 +35,16 @@ canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 #railbar { width: 220px; height: 10px; background: rgba(13,27,42,.6); position: relative; margin-bottom: 4px; }
 #railbar::after { content: ''; position: absolute; left: 50%; top: -3px; width: 2px; height: 16px; background: #fff; }
 #railbar i { position: absolute; top: 0; width: 14px; height: 10px; margin-left: -7px; background: var(--signal); left: 50%; }
-#grabhint { position: absolute; left: 18px; top: 14px; color: #fff; font-size: 13px; line-height: 1.5; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-family: var(--mono); white-space: pre; opacity: .9; }
+/* (2026-11-12) the controls panel, top left, shown by default every visit; Tab or ` hides it (hud.js) */
+#grabhint { position: absolute; left: 12px; top: 12px; width: 318px; max-height: calc(100% - 250px); overflow: hidden; color: #fff; font: 12px/1.38 var(--body); background: rgba(13,27,42,.62); border-left: 4px solid var(--signal); padding: 7px 10px 8px; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
+#grabhint kbd { display: inline-block; min-width: 18px; font: 600 11px/1.3 var(--mono); background: rgba(255,255,255,.16); color: #fff; padding: 0 4px; margin-right: 6px; text-align: center; }
+#grabhint .gh-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; font-family: var(--display); font-size: 15px; letter-spacing: .08em; text-transform: uppercase; }
+#grabhint .gh-head span { font-family: var(--body); font-size: 11px; letter-spacing: 0; text-transform: none; color: #dfe7ee; }
+#grabhint .gh-head span kbd { margin-right: 4px; }
+#grabhint .gh-main kbd { min-width: 72px; }
+#grabhint .gh-sub { margin: 6px 0 2px; padding-top: 5px; border-top: 1px solid rgba(255,255,255,.22); color: #dfe7ee; font-size: 11px; }
+#grabhint .gh-grabs { columns: 2; column-gap: 8px; }
+#grabhint .gh-grabs div { break-inside: avoid; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #note { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); font-family: var(--display); font-weight: 800; font-style: italic; font-size: 34px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.5); opacity: 0; transition: opacity .3s; }
 #note.on { opacity: 1; }
 #fps { position: absolute; right: 18px; bottom: 16px; font-family: var(--mono); font-size: 12px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
@@ -242,3 +251,18 @@ select { font: 500 15px var(--body); padding: 6px 8px; border: 1px solid #b8c4cf
   #hud.watching #chatin { bottom: 122px; width: calc(100% - 36px); }
   #hud.watching #tricks { bottom: 200px; }
 }
+
+/* ---- (C, 2026-11-11) loading: the start-up's progress under the Ride button, a note when it is slow, what went wrong
+   when it could not start, and the note over the game when the graphics are reset ---- */
+.loadbar { position: relative; height: 22px; margin: 8px 0 2px; background: rgba(13,27,42,.1); overflow: hidden; }
+.loadbar i { position: absolute; inset: 0; background: var(--ice); transform-origin: 0 50%; transform: scaleX(0); transition: transform .25s ease-out; }
+.loadbar span { position: relative; display: block; padding: 0 10px; line-height: 22px; font-family: var(--mono); font-size: 12px; color: var(--shade); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.loadbar.done { display: none; }
+.loadwait { margin: 6px 0 0; font-size: 13px; color: #3b4652; }
+.loadwait button { font-size: 14px; padding: 4px 10px; margin-left: 6px; }
+.loaderr { margin: 10px 0 4px; padding: 10px 12px; background: #fff; border-left: 5px solid var(--signal); }
+.loaderr p { margin: 0 0 4px; font-weight: 600; }
+.loaderr small { display: block; margin: 0 0 10px; color: #4a5561; font-size: 13px; overflow-wrap: anywhere; }
+.loaderr button.big { width: 100%; font-size: 22px; padding: 8px 0; }
+#gfxnote { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); z-index: 20; max-width: min(520px, 92vw); background: rgba(244,247,250,.96); color: var(--shade); padding: 10px 14px; border-left: 5px solid var(--signal); box-shadow: 0 8px 24px rgba(13,27,42,.3); font-size: 14px; }
+#gfxnote button { font-size: 15px; padding: 5px 12px; margin-left: 8px; }

@@ -14,10 +14,17 @@
    fight over the same snow). All of it is one rock mesh and one snow mesh, two draw calls (the rock slab of the jibs
    goes in the rock mesh too). */
 import * as THREE from 'three';
-import { snowUniforms } from './materials.js?v=22';
-import { simplex, clamp, smoothstep, rng } from './noise.js?v=22';
+import { snowUniforms, FIELD_GLSL, fieldUniforms } from './materials.js?v=23';
+import { simplex, clamp, smoothstep, rng } from './noise.js?v=23';
 
 // ---- the rock material: grey stone with strata, cracks and streaks, snow where it faces up -----------------------------
+/* (2026-11-11, for "better graphics for the entire mountain": rock from a real photograph) Poly Haven's "Dark Rock 02"
+   (CC0, materials.js freerideLook): its colour, height, normal and occlusion, seen from the three axes and blended by
+   the face's facing (no stretching on a wall), its layers lying level on the walls as rock beds do; at two sizes on the
+   tiers above low (3.4 m and 13 m a repeat, so no tile shows) and one on low; the layers of the rock in height, each its
+   own shade, and the iron stains and wet streaks as before; snow on what faces up, ledges and the tops of the beds,
+   by the photo's own relief; and the mountain's own light (materials.js field: out of the sun behind a ridge, less sky
+   in a couloir). Until the pictures have come, the old drawn rock. */
 let ROCK = null;
 export function rockMaterial(q) {
   if (ROCK) return ROCK;
@@ -26,49 +33,83 @@ export function rockMaterial(q) {
   const fine = q.tier !== 'low';
   m.onBeforeCompile = s => {
     s.uniforms.uNoise = snowUniforms.uNoise; s.uniforms.uNight = snowUniforms.uNight;
+    s.uniforms.uRockCol = snowUniforms.uRockCol; s.uniforms.uRockNrm = snowUniforms.uRockNrm; s.uniforms.uRockTex = snowUniforms.uRockTex;
+    fieldUniforms(s);
     s.vertexShader = s.vertexShader.replace('#include <common>', `#include <common>
 varying vec3 vWPos; varying vec3 vWNor;`).replace('#include <project_vertex>', `#include <project_vertex>
 vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNor = normalize(mat3(modelMatrix) * objectNormal);`);
     s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
 varying vec3 vWPos; varying vec3 vWNor; uniform sampler2D uNoise; uniform float uNight;
-float gSnowR; vec3 gBl; vec4 gTx, gTy, gTz;
+uniform sampler2D uRockCol; uniform sampler2D uRockNrm; uniform float uRockTex;
+${FIELD_GLSL}
+float gSnowR; vec3 gBl; vec4 gFl; vec3 gRN;
 // the noise picture seen from the three axes, blended by the surface's facing (no stretching on a wall)
-vec4 tri3(float k) { return texture2D(uNoise, vWPos.zy * k) * gBl.x + texture2D(uNoise, vWPos.xz * k) * gBl.y + texture2D(uNoise, vWPos.xy * k) * gBl.z; }`)
+vec4 tri3(float k) { return texture2D(uNoise, vWPos.zy * k) * gBl.x + texture2D(uNoise, vWPos.xz * k) * gBl.y + texture2D(uNoise, vWPos.xy * k) * gBl.z; }
+// the rock's pictures the same way (a wall's layers level: v is the height)
+vec4 triT(sampler2D t, float k) { return texture2D(t, vWPos.zy * k) * gBl.x + texture2D(t, vWPos.xz * k) * gBl.y + texture2D(t, vWPos.xy * k) * gBl.z; }
+// its normal: each view's tangent x and y laid on the world's two axes in that view (and its occlusion, gAO)
+float gAO;
+vec3 triN(float k) {
+  vec3 a = texture2D(uRockNrm, vWPos.zy * k).rgb, b = texture2D(uRockNrm, vWPos.xz * k).rgb, c = texture2D(uRockNrm, vWPos.xy * k).rgb;
+  gAO = a.b * gBl.x + b.b * gBl.y + c.b * gBl.z;
+  a.xy = a.xy * 2.0 - 1.0; b.xy = b.xy * 2.0 - 1.0; c.xy = c.xy * 2.0 - 1.0;
+  return vec3(0.0, a.y, a.x) * gBl.x + vec3(b.x, 0.0, b.y) * gBl.y + vec3(c.x, c.y, 0.0) * gBl.z;
+}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
 {
   vec3 wn = normalize(vWNor);
   gBl = pow(abs(wn), vec3(4.0)); gBl /= gBl.x + gBl.y + gBl.z;
-  float h1 = tri3(0.045).b, h2 = tri3(0.19).b, h3 = ${fine ? 'tri3(0.8).b' : '0.5'};
+  gFl = fieldAt(vWPos.xz);
+  float h1 = tri3(0.045).b;
   // the layers of the rock: bands in height, warped, each its own shade
   float lay = vWPos.y * 0.62 + (h1 - 0.5) * 3.2;
   float band = fract(lay), bandId = floor(lay);
   float shade = fract(sin(bandId * 12.9898) * 43758.5453);
-  vec3 rock = mix(vec3(0.085, 0.082, 0.08), vec3(0.25, 0.24, 0.225), clamp(0.25 + shade * 0.45 + (h2 - 0.5) * 0.7 + (h3 - 0.5) * 0.3, 0.0, 1.0));
+  vec3 rock; float relief;
+  gRN = vec3(0.0);
+  if (uRockTex > 0.5) {
+    // the photo's rock (linear, about 0.04 on average: real gneiss and schist are nearer 0.12, and a little greyer)
+    vec4 c1 = triT(uRockCol, 0.29);
+    ${fine ? 'vec4 c2 = triT(uRockCol, 0.077); vec3 col = mix(c1.rgb, c2.rgb, 0.35) * (0.8 + 0.45 * c2.a); relief = mix(c1.a, c2.a, 0.3);' : 'vec3 col = c1.rgb * (0.85 + 0.35 * h1); relief = c1.a;'}
+    col = mix(vec3(dot(col, vec3(0.3, 0.55, 0.15))), col, 0.75) * 2.9;
+    gRN = triN(0.29);
+    rock = col * (0.78 + 0.4 * shade) * (0.45 + 0.55 * gAO);      // (the cracks and hollows darker)
+    ${fine ? 'gRN = gRN * 0.8 + triN(0.077) * 0.45;' : ''}
+  } else {
+    float h2 = tri3(0.19).b, h3 = ${fine ? 'tri3(0.8).b' : '0.5'};
+    rock = mix(vec3(0.085, 0.082, 0.08), vec3(0.25, 0.24, 0.225), clamp(0.25 + shade * 0.45 + (h2 - 0.5) * 0.7 + (h3 - 0.5) * 0.3, 0.0, 1.0));
+    relief = h2;
+  }
   // a warm iron stain here and there, dark wet streaks running down, the cracks between the layers
-  rock = mix(rock, rock * vec3(1.12, 0.98, 0.84), smoothstep(0.55, 0.75, h1) * 0.6);
+  rock = mix(rock, rock * vec3(1.18, 0.98, 0.8), smoothstep(0.55, 0.75, h1) * 0.6);
   float streak = texture2D(uNoise, vec2((vWPos.x + vWPos.z) * 0.35, vWPos.y * 0.03)).b;
   rock *= 1.0 - 0.35 * smoothstep(0.55, 0.8, streak) * (1.0 - abs(wn.y));
-  rock *= 0.72 + 0.28 * smoothstep(0.0, 0.12, band) * smoothstep(1.0, 0.9, band);
-  // snow lying on what faces up: ledges, the tops of the layers, the cracks' lips
-  gSnowR = smoothstep(0.5, 0.72, wn.y + (h2 - 0.5) * 0.45 + (h3 - 0.5) * 0.15);
+  rock *= 0.78 + 0.22 * smoothstep(0.0, 0.12, band) * smoothstep(1.0, 0.9, band);
+  // snow lying on what faces up: ledges, the tops of the beds, the photo's own shelves (its normal turned up)
+  vec3 pn0 = normalize(wn + gRN * 0.9);
+  gSnowR = smoothstep(0.52, 0.74, pn0.y + (relief - 0.5) * 0.5 + (h1 - 0.5) * 0.25);
   diffuseColor.rgb = mix(rock, vec3(0.9, 0.93, 0.97), gSnowR);
 }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor = mix(0.93, 0.8, gSnowR);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 {
-  // bumps at two scales from the noise picture's normals, projected as the colour is
-  vec3 wn = normalize(vWNor);
-  vec2 a = texture2D(uNoise, vWPos.zy * 0.19).rg * 2.0 - 1.0, b = texture2D(uNoise, vWPos.xz * 0.19).rg * 2.0 - 1.0, c = texture2D(uNoise, vWPos.xy * 0.19).rg * 2.0 - 1.0;
-  vec3 pn = wn + (vec3(0.0, a.y, a.x) * gBl.x + vec3(b.x, 0.0, b.y) * gBl.y + vec3(c.x, c.y, 0.0) * gBl.z) * (0.85 - gSnowR * 0.6);
-  ${fine ? `vec2 a2 = texture2D(uNoise, vWPos.zy * 0.9).rg * 2.0 - 1.0, b2 = texture2D(uNoise, vWPos.xz * 0.9).rg * 2.0 - 1.0, c2 = texture2D(uNoise, vWPos.xy * 0.9).rg * 2.0 - 1.0;
-  pn += (vec3(0.0, a2.y, a2.x) * gBl.x + vec3(b2.x, 0.0, b2.y) * gBl.y + vec3(c2.x, c2.y, 0.0) * gBl.z) * 0.35 * (1.0 - gSnowR);` : ''}
+  vec3 wn = normalize(vWNor), pn;
+  if (uRockTex > 0.5) pn = wn + gRN * (1.0 - gSnowR * 0.7);
+  else {
+    // bumps at two scales from the noise picture's normals, projected as the colour is
+    vec2 a = texture2D(uNoise, vWPos.zy * 0.19).rg * 2.0 - 1.0, b = texture2D(uNoise, vWPos.xz * 0.19).rg * 2.0 - 1.0, c = texture2D(uNoise, vWPos.xy * 0.19).rg * 2.0 - 1.0;
+    pn = wn + (vec3(0.0, a.y, a.x) * gBl.x + vec3(b.x, 0.0, b.y) * gBl.y + vec3(c.x, c.y, 0.0) * gBl.z) * (0.85 - gSnowR * 0.6);
+  }
   normal = normalize((viewMatrix * vec4(normalize(pn), 0.0)).xyz);
 }`)
       .replace('#include <opaque_fragment>', `outgoingLight -= (reflectedLight.directDiffuse + reflectedLight.directSpecular) * uNight * 0.7;
+// the mountain's own light: behind a ridge out of the sun (not by night), a couloir's walls seeing less of the sky
+outgoingLight -= (reflectedLight.directDiffuse + reflectedLight.directSpecular) * (1.0 - gFl.b) * (1.0 - uNight) * 0.95;
+outgoingLight -= (reflectedLight.indirectDiffuse + reflectedLight.indirectSpecular) * (1.0 - gFl.g) * 0.8;
 #include <opaque_fragment>`);
   };
-  m.customProgramCacheKey = () => 'frrock' + (fine ? 1 : 0);
+  m.customProgramCacheKey = () => 'frrock2' + (fine ? 1 : 0);
   ROCK = m;
   return m;
 }

@@ -45,9 +45,11 @@ const searchText = (project: (typeof otherProjects)[number]) =>
       </div>
       <div class="catalog-sort">
         <label class="sr-only" for="others-sort">Sort projects</label>
-        <select id="others-sort" data-others-sort>
+        <select id="others-sort" data-others-sort autocomplete="off">
           <option value="featured">Featured order</option>
           <option value="title">Title, A to Z</option>
+          <option value="views">Most viewed</option>
+          <option value="likes">Most liked</option>
         </select>
         <ChevronDown size={15} aria-hidden="true" />
       </div>

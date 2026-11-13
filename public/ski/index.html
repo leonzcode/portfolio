@@ -3,19 +3,96 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<meta name="robots" content="noindex, nofollow">
 <title>Leon Freeski</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,800;1,700;1,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/ski.css?v=22">
+<!-- (C, 2026-11-11) the fonts no longer hold the game up: a stylesheet in the head is waited for before any script
+     runs, so a slow or blocked fonts server held the whole game at its first line; it now loads beside it -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,800;1,700;1,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="./css/ski.css?v=23">
 <script type="importmap">
 {
   "imports": {
-    "three": "/car/vendor/three/three.module.js?v=ski22",
+    "three": "/car/vendor/three/three.module.js?v=ski23",
     "three/addons/": "/car/vendor/three/addons/"
   }
 }
+</script>
+<script>
+/* (C, 2026-11-11, for "leonski never loads on chromebook and takes too long to load") Before any of the game's code:
+   - every module of the game is asked for at once (modulepreload), not three rounds of asking one after another as
+     each file names the next; only the map's own (Freeride's land, rock and chairlift, or the Jump Line's T-bar);
+   - an honest progress bar: the game's files as they come down, then main.js's own steps (__skiBoot.step);
+   - nothing loads for ever without saying so: a file that failed to come (the page is tried once more by itself),
+     an error while starting, no WebGL, or no step for a long while each say what happened, with a button to try again. */
+(function () {
+  var V = '?v=23', map = 'jumpline', ride = 'ski';
+  try { var o = JSON.parse(localStorage.getItem('ski_opts') || '{}'); if (o.map === 'freeride') map = 'freeride'; if (o.ride) ride = o.ride; } catch (e) {}
+  try { var qm = new URLSearchParams(location.search).get('map'); if (qm) map = qm; } catch (e) {}
+  var js = ['terrain', 'park', 'materials', 'world', 'dem', 'skier', 'rig', 'board', 'tricks', 'input', 'camera', 'snow', 'hud', 'sound', 'net', 'gear', 'touch', 'locker', 'online', 'noise', 'env', 'motion', 'grabs', 'shadowproxy'];
+  js = js.concat(map === 'freeride' ? ['freeride', 'frland', 'frrock', 'lift'] : map === 'jumpline' ? ['tbar'] : []);
+  js = js.concat(ride === 'scoot' || ride === 'bike' ? ['scoot'] : ride === 'sled' ? ['scoot', 'sled'] : []);   // (the other rides' modules come when needed)
+  var urls = ['/car/vendor/three/three.module.js?v=ski23', '/car/vendor/three/three.core.js', '/car/vendor/three/addons/loaders/GLTFLoader.js', '/car/vendor/three/addons/loaders/DRACOLoader.js', '/car/vendor/three/addons/utils/BufferGeometryUtils.js', './js/main.js' + V];
+  for (var i = 0; i < js.length; i++) urls.push('./js/' + js[i] + '.js' + V);
+  for (var k = 0; k < urls.length; k++) { var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = urls[k]; document.head.appendChild(l); }
+  var B = window.__skiBoot = { t0: performance.now(), last: performance.now(), frac: 0, done: false, files: urls.length, got: 0, kb: 0, paint: 0 };
+  var $ = function (id) { return document.getElementById(id); };
+  function show(label, f) {
+    var bar = $('loadbar'); if (!bar) return;
+    if (f != null) B.frac = Math.max(B.frac, Math.min(1, f));
+    bar.querySelector('i').style.transform = 'scaleX(' + B.frac.toFixed(3) + ')';
+    bar.setAttribute('aria-valuenow', String(Math.round(B.frac * 100)));
+    if (label) $('loadtxt').textContent = label;
+  }
+  // a step of the start-up: shown, then a moment for the page to draw it and to answer (the start-up was one task of
+  // several seconds on a slow processor, with nothing drawn and taps not answered)
+  B.step = function (label, f) {
+    B.started = true; B.last = performance.now(); show(label, f);
+    var now = performance.now(), paint = now - B.paint > 120;
+    return new Promise(function (res) {
+      if (!paint) { setTimeout(res, 0); return; }
+      B.paint = now; var done = false, go = function () { if (!done) { done = true; res(); } };
+      requestAnimationFrame(function () { setTimeout(go, 0); }); setTimeout(go, 50);   // (a hidden tab draws no frames)
+    });
+  };
+  B.ready = function () { B.done = true; B.last = performance.now(); var bar = $('loadbar'); if (bar) bar.classList.add('done'); show('', 1); var w = $('loadwait'); if (w) w.classList.add('hidden'); };
+  // something went wrong: what, and a button to try again
+  B.fail = function (msg, detail) {
+    if (B.failed) return; B.failed = true;
+    var e = $('loaderr'); if (!e) { alert(msg); return; }
+    e.querySelector('p').textContent = msg; e.querySelector('small').textContent = detail || '';
+    e.classList.remove('hidden'); var bar = $('loadbar'); if (bar) bar.classList.add('done');
+    var w = $('loadwait'); if (w) w.classList.add('hidden');
+    var p = $('play'); if (p) { p.textContent = 'Could not load'; p.disabled = true; }
+  };
+  B.retry = function () { try { sessionStorage.removeItem('ski_reload'); } catch (e) {} location.reload(); };
+  // a module that could not be fetched: the page is tried once more by itself, then it says so
+  B.noModule = function () {
+    var again = 0; try { again = +(sessionStorage.getItem('ski_reload') || 0); } catch (e) {}
+    if (Date.now() - again > 60000) { try { sessionStorage.setItem('ski_reload', String(Date.now())); } catch (e) {} location.reload(); return; }
+    B.fail('Part of the game did not download.', 'The connection dropped a file. Try again, or try on another network.');
+  };
+  addEventListener('error', function (ev) {
+    if (B.done || !ev || ev.target !== window && ev.target && ev.target.tagName) return;   // (only errors in the start-up)
+    B.fail('Something went wrong while the game was starting.', String(ev.message || ev.error || '').slice(0, 160));
+  });
+  // the game's files as they come down
+  try {
+    new PerformanceObserver(function (list) {
+      if (B.done || B.started) return;
+      var es = list.getEntries();
+      for (var j = 0; j < es.length; j++) { if (/\.js(\?|$)/.test(es[j].name)) { B.got++; B.kb += (es[j].transferSize || es[j].encodedBodySize || 0) / 1024; } }
+      B.last = performance.now();
+      show('Downloading the game (' + Math.min(B.got, B.files) + ' of ' + B.files + ' files, ' + (B.kb / 1024).toFixed(1) + ' MB)', 0.25 * Math.min(1, B.got / B.files));
+    }).observe({ type: 'resource', buffered: true });
+  } catch (e) {}
+  // nothing new for 40 s while starting: say so (a slow line or processor; the game may still come)
+  setInterval(function () {
+    if (B.done || B.failed) return;
+    var w = $('loadwait'); if (!w) return;
+    w.classList.toggle('hidden', performance.now() - B.last < 40000);
+  }, 2000);
+})();
 </script>
 </head>
 <body>
@@ -64,6 +141,10 @@
       <button data-stance="regular" role="radio">Regular</button><button data-stance="goofy" role="radio">Goofy</button>
     </div>
     <button id="play" class="big" disabled>Loading&hellip;</button>
+    <!-- (C) the start-up's progress, and what went wrong if it could not start -->
+    <div id="loadbar" class="loadbar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="loadtxt"><i></i><span id="loadtxt">Loading the game&hellip;</span></div>
+    <div id="loadwait" class="loadwait hidden">Still going. A slow connection or computer can take a minute. <button type="button" onclick="__skiBoot.retry()">Reload</button></div>
+    <div id="loaderr" class="loaderr hidden" role="alert"><p></p><small></small><button type="button" class="big" onclick="__skiBoot.retry()">Try again</button></div>
     <!-- (M) riding online: each map's public park, with how many ride and watch there now (online.js) -->
     <section class="online" id="online" aria-labelledby="onlab">
       <div class="onhead">
@@ -86,7 +167,7 @@
     </section>
     <div class="seg" role="radiogroup" aria-label="Controls">
       <span class="seglab">Controls</span>
-      <button data-scheme="mouse" role="radio">Mouse</button><button data-scheme="keys" role="radio">Keyboard</button><button data-scheme="shred" role="radio">Shredsauce</button>
+      <button data-scheme="keys" role="radio">Keyboard</button><button data-scheme="shred" role="radio">Shredsauce</button>
     </div>
     <details class="fold">
       <summary>Your rider</summary>
@@ -100,7 +181,7 @@
       <summary>Settings</summary>
       <div class="opts">
         <select id="map" hidden><option value="jumpline">Jump Line</option><option value="freeride">Freeride</option></select>
-        <select id="scheme" hidden><option value="mouse">Mouse steer</option><option value="keys">Keyboard</option><option value="shred">Shredsauce Controls</option></select>
+        <select id="scheme" hidden><option value="keys">Keyboard</option><option value="shred">Shredsauce Controls</option></select>
         <label>Camera
           <select id="cammode"><option value="chase">Chase</option><option value="far">Far chase</option><option value="pov">First person</option><option value="film">Filmer</option></select>
         </label>
@@ -149,6 +230,7 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=22"></script>
+<script type="module" src="./js/main.js?v=23" onerror="__skiBoot.noModule()"></script>
+<script defer src="/others/presence.js?v=1" data-project="leon-freeski"></script>
 </body>
 </html>

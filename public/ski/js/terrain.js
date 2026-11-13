@@ -8,7 +8,7 @@
 // frame, with skirts hiding the seams between sizes. Features with their own meshes (kickers, the pipe) are left out
 // of the patches (the ground under them is lowered a little) and drawn by park.js at finer spacing.
 import * as THREE from 'three';
-import { fbm, ridged, smoothstep, clamp } from './noise.js?v=22';
+import { fbm, ridged, smoothstep, clamp } from './noise.js?v=23';
 
 // ---- the run's long profile ----------------------------------------------------------------------------------------
 // [z where it starts, pitch in degrees] (above the start the slope behind is a gentle 12 degrees, not the old 26: with
@@ -19,7 +19,12 @@ const SECTIONS = [
 ];
 const Z0 = -900, Z1 = 2600, DZ = 0.5, NZ = Math.round((Z1 - Z0) / DZ) + 1;
 const PITCH = new Float32Array(NZ), BASE = new Float32Array(NZ);
-(function profile() {
+/* (J, round 9) a map may have a profile of its own: the Jump Line's short in-run (park.js JUMPLINE_RUN) drops in
+   steeply below its start; the park map keeps SECTIONS. setRun(sections) is called by the map's park maker, before
+   anything reads the run (main.js builds the park before the terrain, the lift and the props). */
+export function setRun(sections = SECTIONS) { profile(sections); }
+profile(SECTIONS);
+function profile(SECTIONS) {
   const raw = new Float32Array(NZ);
   let k = 0;
   for (let i = 0; i < NZ; i++) {
@@ -39,7 +44,7 @@ const PITCH = new Float32Array(NZ), BASE = new Float32Array(NZ);
   BASE[i0] = 0;
   for (let i = i0 + 1; i < NZ; i++) BASE[i] = BASE[i - 1] - Math.tan(PITCH[i]) * DZ;
   for (let i = i0 - 1; i >= 0; i--) BASE[i] = BASE[i + 1] + Math.tan(PITCH[i + 1]) * DZ;
-})();
+}
 export function baseLine(z) {
   const f = (clamp(z, Z0, Z1) - Z0) / DZ, i = Math.min(NZ - 2, Math.floor(f)), t = f - i;
   return BASE[i] + (BASE[i + 1] - BASE[i]) * t;

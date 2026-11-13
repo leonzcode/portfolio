@@ -1,6 +1,7 @@
 ---
 import type { Project } from "../data/projects";
 import ProjectCard from "./ProjectCard.astro";
+import SortSelect from "./SortSelect.astro";
 
 interface Props {
   projects: Project[];
@@ -22,8 +23,8 @@ const keyOf = (p: Project) => p.socialKey ?? (p.detailHref ? p.detailHref.replac
 ---
 
 <div data-project-section>
-  <div class="mb-8">
-    <div class="relative max-w-md">
+  <div class="mb-8 flex items-stretch justify-between gap-3">
+    <div class="relative flex-1 min-w-0 max-w-md">
       <svg
         class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 dark:text-neutral-500"
         xmlns="http://www.w3.org/2000/svg"
@@ -46,6 +47,7 @@ const keyOf = (p: Project) => p.socialKey ?? (p.detailHref ? p.detailHref.replac
         class="w-full pl-9 pr-3 py-2 text-[14.5px] rounded-md bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:border-neutral-400 dark:focus:border-neutral-600 transition-colors"
       />
     </div>
+    <SortSelect id="project-sort" label="Sort projects" />
   </div>
 
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10" data-grid>
@@ -66,18 +68,29 @@ const keyOf = (p: Project) => p.socialKey ?? (p.detailHref ? p.detailHref.replac
 
 <script>
   import { SITE_API, cachedEdits, rememberEdits, applyText, applyOrder } from "../scripts/siteedits";
+  import { setCounts, sortGrid } from "../scripts/sortgrid";
   // every card's views and likes, and the admin's edits, from one request for the whole page
   {
     const cards = [...document.querySelectorAll<HTMLElement>("[data-social-key]")];
     const keys = [...new Set(cards.map((c) => c.dataset.socialKey!))];
     const cats = [...new Set(keys.map((k) => k.split("/")[0]))];
-    const grids = [...document.querySelectorAll<HTMLElement>("[data-grid]")];
+    const sections = [...document.querySelectorAll<HTMLElement>("[data-project-section]")];
+    let saved: Record<string, string[]> = {};
+    // the saved order is the default; a chosen sort goes over it
+    const arrange = () => {
+      for (const s of sections) {
+        const g = s.querySelector<HTMLElement>("[data-grid]");
+        if (!g) continue;
+        const first = g.querySelector<HTMLElement>("[data-card][data-key]");
+        if (first) applyOrder(g, saved[first.dataset.key!.split("/")[0]]);
+        sortGrid(g, s.querySelector<HTMLSelectElement>("[data-sort]")?.value ?? "default");
+      }
+    };
+    for (const s of sections) s.querySelector("[data-sort]")?.addEventListener("change", arrange);
     const edit = (text: Record<string, any>, order: Record<string, string[]>) => {
       for (const k of keys) applyText(k, text[k]);
-      for (const g of grids) {
-        const first = g.querySelector<HTMLElement>("[data-card][data-key]");
-        if (first) applyOrder(g, order[first.dataset.key!.split("/")[0]]);
-      }
+      saved = order || {};
+      arrange();
       // the search finds a card by its edited words too
       for (const c of document.querySelectorAll<HTMLElement>("[data-card][data-key]")) {
         const t = text[c.dataset.key!];
@@ -103,7 +116,9 @@ const keyOf = (p: Project) => p.socialKey ?? (p.detailHref ? p.detailHref.replac
             const bits = [s.views + (s.views === 1 ? " view" : " views"), s.likes + (s.likes === 1 ? " like" : " likes")];
             c.textContent = bits.join(" · ");
             c.hidden = false;
+            setCounts(c.closest<HTMLElement>("[data-card]"), s.views, s.likes);
           }
+          arrange();
         })
         .catch(() => {});
     }

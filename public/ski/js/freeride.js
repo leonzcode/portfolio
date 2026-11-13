@@ -8,11 +8,11 @@
    Summit Chair from the finish corral by the arch straight up the main face, over the shoulder and up the Peak to the
    true summit; the first start at its top; where its towers may stand (park.towerOk), and where the physics meets a
    rock face (park.cliff). */
-import { Land, LIFT_XS, fallLines } from './frland.js?v=22';
-import { Kicker, Rail, assemble } from './park.js?v=22';
-import { setMountain } from './terrain.js?v=22';
-import { simplex, fbm, smoothstep } from './noise.js?v=22';
-import { setRockSource, rockFieldWorker } from './materials.js?v=22';
+import { Land, LIFT_XS, fallLines } from './frland.js?v=23';
+import { Kicker, Rail, assemble } from './park.js?v=23';
+import { setMountain } from './terrain.js?v=23';
+import { simplex, fbm, smoothstep } from './noise.js?v=23';
+import { setRockSource, rockFieldWorker, freerideLook, setFieldTrees } from './materials.js?v=23';
 
 const RAD = Math.PI / 180;
 export const FIELD_MID = [10, 225];     // (the rock field's middle: frfield.js is sent its windows round it; 1280 m of fine
@@ -80,6 +80,7 @@ const bandOf = (land, name) => land.features.find(f => f.name === name);
 
 export function makeFreeride(q) {
   const land = new Land(), G = land.G;
+  freerideLook();     // (2026-11-11: Freeride's own snow and rock pictures, materials.js)
   // ---- the mountain, through terrain.js's hook: no extra noise (bare), its own surfaces
   let park = null;
   const mtn = {
@@ -94,7 +95,8 @@ export function makeFreeride(q) {
   /* the snow shader's rock field: from the snow without the rock faces (they draw their own), the ribs' crests rocky.
      Worked out in a worker (frfield.js), so it is ready before a run starts and never takes a frame's time: baked on
      the page in idle moments it was still going ten seconds into a run on a slow machine */
-  rockFieldWorker(new URL('./frfield.js?v=22', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)));
+  // (2026-11-11: and the mountain's own light in the same texels, the sky each place sees and the sun's shadows: frfield.js)
+  rockFieldWorker(new URL('./frfield.js?v=23', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)), true);
 
   // ---- kickers on the rock: [band, x, lip deg, R, half width, gap m]
   const K = [];
@@ -169,12 +171,14 @@ export function makeFreeride(q) {
      +z; main.js reads it)
      (2026-11-10: one chairlift, from the finish corral by the arch to the true summit, 1100 m and 540 m up; the three
      others are gone, and every run comes back down to its bottom: frland.js runout) */
-  const lifts = [{ name: 'Summit Chair', x: LIFT_XS[0], top: -338, bot: 760 }];
+  /* (2026-11-12, for Leon's "remove top lift ... stop it at the shoulder") the chair ends at the top of the main face, on
+     the shoulder; the Peak's lines start from the pause menu's start points */
+  const lifts = [{ name: 'Summit Chair', x: LIFT_XS[0], top: -46, bot: 760 }];
   // (8 m to the side of the top station and 10 m down from its end, on the ramp off the unloading platform, where a rider
   // is a second after getting off: the chase camera behind is clear of the station there)
   const liftTop = (L, yaw) => ({ name: 'Top of the ' + L.name, x: L.x - 8, z: L.top + 10, v: 2, yaw });
   const starts = [
-    liftTop(lifts[0], -0.25),   // (on the summit, turned a little away from the line's towers below)
+    liftTop(lifts[0], -0.25),   // (on the shoulder, turned a little away from the line's towers below)
     { name: 'Summit: the centre line', x: 0, z: -7, v: 2.5 },
     { name: 'Summit: the Couloirs (the dog-leg)', x: 90, z: 3, v: 2.5 },
     { name: 'Summit: the narrow chute (mandatory air)', x: 63.8, z: 4, v: 2 },
@@ -308,7 +312,8 @@ export function makeFreeride(q) {
     }
     return out;
   };
-  mtn.trees = trees;
+  // (2026-11-11: and the forest, once planted, to the light field: the shade under and beside the trees, frfield.js)
+  mtn.trees = (max, r) => { const out = trees(max, r); setFieldTrees(out); return out; };
   mtn.spot = { treeline: -330 };
   land.jibs = rails;     // (frrock.js draws the rock slab with the rock faces)
   return { mtn, park, land, kickers: K, rails };

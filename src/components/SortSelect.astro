@@ -1,0 +1,38 @@
+---
+/* The sort menu on the AI, Science, Math and Film pages (src/scripts/sortgrid.ts
+   does the sorting). autocomplete="off" keeps the browser from bringing back an
+   old choice on Back that the cards would not follow. */
+interface Props {
+  id: string;
+  label: string;
+}
+const { id, label } = Astro.props;
+---
+
+<div class="relative shrink-0">
+  <label for={id} class="sr-only">{label}</label>
+  <select
+    id={id}
+    data-sort
+    autocomplete="off"
+    class="h-full min-h-[40px] appearance-none cursor-pointer pl-3 pr-8 text-[14px] rounded-md bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-neutral-300 dark:hover:border-neutral-700 focus:outline-none focus:border-neutral-400 dark:focus:border-neutral-600 transition-colors [&>option]:bg-white [&>option]:text-neutral-900 dark:[&>option]:bg-neutral-900 dark:[&>option]:text-neutral-100"
+  >
+    <option value="default">Default order</option>
+    <option value="title">A to Z</option>
+    <option value="views">Most viewed</option>
+    <option value="likes">Most liked</option>
+  </select>
+  <svg
+    class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400 dark:text-neutral-500"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+</div>

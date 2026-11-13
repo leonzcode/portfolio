@@ -1,6 +1,8 @@
 import { SITE_API, applyOrder, applyText, cachedEdits, rememberEdits, type TextEdit } from "./siteedits";
+import { setCounts, sortGrid } from "./sortgrid";
 
 const catalog = document.querySelector<HTMLElement>("[data-others-catalog]");
+const PINNED = ["leoncraft2", "earth-drive", "leon-freeski"];
 
 if (catalog) {
   const grid = catalog.querySelector<HTMLElement>("[data-others-list]")!;
@@ -10,17 +12,18 @@ if (catalog) {
   const counter = catalog.querySelector<HTMLElement>("[data-others-count]")!;
   const empty = catalog.querySelector<HTMLElement>("[data-others-empty]")!;
   const clear = catalog.querySelector<HTMLButtonElement>("[data-others-clear]")!;
-  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
   let featuredOrder: string[] = [];
 
   const titleOf = (card: HTMLElement) => card.querySelector('[data-edit="title"]')?.textContent?.trim() ?? "";
 
   function refresh() {
-    if (sort.value === "title") {
-      cards.slice().sort((a, b) => collator.compare(titleOf(a), titleOf(b))).forEach((card) => grid.append(card));
-    } else {
-      applyOrder(grid, featuredOrder);
-    }
+    // the featured order first (saved admin order, then the pins); a chosen sort (title, views, likes) goes over it,
+    // pinned projects included, with ties kept in the featured order
+    applyOrder(grid, featuredOrder);
+    // pinned to the top in this order whatever the saved admin order says (Leon, 2026-11-12)
+    const keyed = new Map(cards.map((card) => [card.dataset.key, card]));
+    PINNED.slice().reverse().forEach((slug) => { const card = keyed.get(`games/${slug}`); if (card) grid.prepend(card); });
+    sortGrid(grid, sort.value);
     const terms = search.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     let visible = 0;
     for (const card of cards) {
@@ -78,7 +81,10 @@ if (catalog) {
           region.setAttribute("aria-label", `${views} views, ${likes} likes`);
           region.title = `${views} views, ${likes} likes`;
           region.hidden = false;
+          setCounts(card, views, likes);
         }
+        // a views or likes sort chosen before the counts came is put right now
+        refresh();
       })
       .catch(() => {});
   }
