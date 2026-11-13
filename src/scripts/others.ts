@@ -2,7 +2,7 @@ import { SITE_API, applyOrder, applyText, cachedEdits, rememberEdits, type TextE
 import { setCounts, sortGrid } from "./sortgrid";
 
 const catalog = document.querySelector<HTMLElement>("[data-others-catalog]");
-const PINNED = ["leoncraft2", "earth-drive", "leon-freeski"];
+const PINNED = ["leoncraft2", "earth-drive"];
 
 if (catalog) {
   const grid = catalog.querySelector<HTMLElement>("[data-others-list]")!;

@@ -152,6 +152,7 @@ export const otherProjects: Project[] = [
       "Node + ws server on a Hetzner VPS for Online rooms with shared traffic and pedestrians",
     ],
   },
+  /* Leon Freeski: off the listing for now (Leon, 2026-11-12); the game is still at /ski. Uncomment to list it again, and put "leon-freeski" back in others.ts PINNED.
   {
     slug: "leon-freeski",
     multiplayer: true,
@@ -173,7 +174,7 @@ export const otherProjects: Project[] = [
       "Procedural terrain and park features, snow tracks drawn into a texture as you ride",
       "Node + ws server on a Hetzner VPS for Online parks",
     ],
-  },
+  }, */
   {
     slug: "leon-kart",
     multiplayer: true,
