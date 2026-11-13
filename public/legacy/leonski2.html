@@ -542,7 +542,7 @@ const OVERPASS_EPS=[
   'https://overpass.private.coffee/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
 ];
-function overpass(query, ms=16000){
+function overpass(query, ms=45000){   // (the public mirrors are slow these days: the one that answers takes 20 to 50 s)
   return new Promise(resolve=>{
     let pending=OVERPASS_EPS.length, settled=false;
     for(const ep of OVERPASS_EPS){
@@ -608,8 +608,19 @@ async function buildResort(center, steps){
     +`way["piste:type"="downhill"]["piste:status"="closed"](${bb});`
     +`way["landuse"="winter_sports"](${bb});`
     +`);out geom;`;
-  let osm = await overpass(q);
-  if(!osm){ osm = await overpass(q); }            // one quick retry — mirrors recover fast
+  // the built-in resorts' pistes and lifts ship with the site (leonski2data/, the same query's answer, baked ahead), and
+  // any other place's answer is kept in this browser, so a slow or dead Overpass mirror no longer leaves a resort bare
+  let osm = null;
+  const pre = PRESETS.find(p=>Math.abs(p.lat-center.lat)<1e-4 && Math.abs(p.lon-center.lon)<1e-4);
+  const okOsm = j=> j && Array.isArray(j.elements) && j.elements.length ? j : null;
+  if(pre){ try{ const r=await fetch('/legacy/leonski2data/'+pre.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'.json'); if(r.ok) osm=okOsm(await r.json()); }catch(e){} }
+  const osmKey='https://leonski2.cache/osm?c='+center.lat.toFixed(3)+','+center.lon.toFixed(3);
+  if(!osm){ try{ const c=await caches.open('leonski2-osm'), r=await c.match(osmKey); if(r) osm=okOsm(await r.json()); }catch(e){} }
+  if(!osm){
+    osm = await overpass(q);
+    if(!osm){ osm = await overpass(q); }            // one retry
+    if(osm){ try{ const c=await caches.open('leonski2-osm'); await c.put(osmKey, new Response(JSON.stringify({elements:osm.elements}),{headers:{'Content-Type':'application/json'}})); }catch(e){} }
+  }            // one quick retry — mirrors recover fast
   // raw (lon/lat) features + skiable bounding box (pistes + lifts define the extent)
   const rawP=[],rawL=[],rawA=[],rawC=[],rawB=[];
   let bxW=Infinity,bxE=-Infinity,bxS=Infinity,bxN=-Infinity;
