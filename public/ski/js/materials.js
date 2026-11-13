@@ -4,29 +4,38 @@
 // (env.js: groomed, powder, packed, spring slush, ice), the floodlights' pools by night, and fog the colour of the sky's
 // own horizon in each direction.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=23';
-import { ground, onMountain } from './terrain.js?v=23';
+import { rng } from './noise.js?v=24';
+import { ground, onMountain } from './terrain.js?v=24';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
+// (2026-11-12, loading: the same bytes as before, with each texel's cell worked out once a row and once a column instead
+// of through two small functions each time: about a third of the time, 0.1 s less of the start on a slow processor)
 function noiseTexture(size = 256, seed = 3) {
   const r = rng(seed), H = new Float32Array(size * size);
   for (const [cells, amp] of [[8, 1], [16, 0.55], [32, 0.3], [64, 0.16], [128, 0.08]]) {
     const L = new Float32Array(cells * cells); for (let i = 0; i < L.length; i++) L[i] = r() * 2 - 1;
-    const at = (i, j) => L[((j % cells + cells) % cells) * cells + ((i % cells + cells) % cells)];
-    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-      const fx = x / size * cells, fy = y / size * cells, ix = Math.floor(fx), iy = Math.floor(fy);
-      let tx = fx - ix, ty = fy - iy; tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
-      const a = at(ix, iy), b = at(ix + 1, iy), c = at(ix, iy + 1), d = at(ix + 1, iy + 1);
-      H[y * size + x] += amp * (a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty);
+    // (x and y run 0..size-1: a texel's cell and the next one along, which past the last is the first, and the smoothed
+    // place between them)
+    const I0 = new Int32Array(size), I1 = new Int32Array(size), T = new Float64Array(size);
+    for (let x = 0; x < size; x++) { const f = x / size * cells, i = Math.floor(f); let t = f - i; t = t * t * (3 - 2 * t); I0[x] = i % cells; I1[x] = (i + 1) % cells; T[x] = t; }
+    for (let y = 0; y < size; y++) {
+      const r0 = I0[y] * cells, r1 = I1[y] * cells, ty = T[y];
+      for (let x = 0; x < size; x++) {
+        const tx = T[x], a = L[r0 + I0[x]], b = L[r0 + I1[x]], c = L[r1 + I0[x]], d = L[r1 + I1[x]];
+        H[y * size + x] += amp * (a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty);
+      }
     }
   }
   const data = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const h = (i, j) => H[((j + size) % size) * size + ((i + size) % size)];
-    const dx = (h(x + 1, y) - h(x - 1, y)) * 2.2, dy = (h(x, y + 1) - h(x, y - 1)) * 2.2;
-    const l = Math.hypot(dx, dy, 1), k = (y * size + x) * 4;
-    data[k] = (-dx / l * 0.5 + 0.5) * 255; data[k + 1] = (-dy / l * 0.5 + 0.5) * 255;
-    data[k + 2] = (H[y * size + x] * 0.35 + 0.5) * 255; data[k + 3] = r() * 255;
+  for (let y = 0; y < size; y++) {
+    const ym = ((y - 1 + size) % size) * size, yp = ((y + 1) % size) * size, y0 = y * size;
+    for (let x = 0; x < size; x++) {
+      const xm = (x - 1 + size) % size, xp = (x + 1) % size;
+      const dx = (H[y0 + xp] - H[y0 + xm]) * 2.2, dy = (H[yp + x] - H[ym + x]) * 2.2;
+      const l = Math.hypot(dx, dy, 1), k = (y0 + x) * 4;
+      data[k] = (-dx / l * 0.5 + 0.5) * 255; data[k + 1] = (-dy / l * 0.5 + 0.5) * 255;
+      data[k + 2] = (H[y0 + x] * 0.35 + 0.5) * 255; data[k + 3] = r() * 255;
+    }
   }
   const t = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
@@ -137,6 +146,8 @@ function setRockLevel(i, data, c) {
   m.value = rockTexture(data, L.N); u.value.set(L.x0, L.z0, 1 / (L.N * L.r), 1);
   rockField.data[i] = data.length === L.N * L.N * 4 ? { data, L } : null;
 }
+// (main.js: the bake starts once this promise is done, not at the first compile)
+export function rockFieldAfter(p) { rockField.after = p; }
 // (a map with its own source can start the bake at once: its heights do not wait for the rest of the world)
 export function setRockSource(height, center, adjust) { rockField.height = height; rockField.center = center; rockField.adjust = adjust || null; bakeRockField(); }
 /* (or have a module worker work it out, off the page's own thread: Freeride's land is plain JS a worker can load. The
@@ -211,6 +222,9 @@ function rockTexture(data, N) {
 }
 function bakeRockField() {
   if (rockField.state) return;
+  // (2026-11-12, loading: on a map whose snow has no rock, the Jump Line, the bake waits for the start to be over;
+  // until it is in, the snow is drawn as all gentle, as it is there anyway)
+  if (rockField.after) { const p = rockField.after; rockField.after = null; p.then(bakeRockField, bakeRockField); return; }
   rockField.state = 1;
   const H = rockField.height || ground;
   const c = rockField.center || (onMountain() ? [0, 0] : [0, 620]);

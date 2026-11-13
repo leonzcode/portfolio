@@ -9,11 +9,11 @@
 <!-- (C, 2026-11-11) the fonts no longer hold the game up: a stylesheet in the head is waited for before any script
      runs, so a slow or blocked fonts server held the whole game at its first line; it now loads beside it -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,800;1,700;1,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" media="print" onload="this.media='all'">
-<link rel="stylesheet" href="./css/ski.css?v=23">
+<link rel="stylesheet" href="./css/ski.css?v=24">
 <script type="importmap">
 {
   "imports": {
-    "three": "/car/vendor/three/three.module.js?v=ski23",
+    "three": "/car/vendor/three/three.module.js?v=ski24",
     "three/addons/": "/car/vendor/three/addons/"
   }
 }
@@ -26,13 +26,13 @@
    - nothing loads for ever without saying so: a file that failed to come (the page is tried once more by itself),
      an error while starting, no WebGL, or no step for a long while each say what happened, with a button to try again. */
 (function () {
-  var V = '?v=23', map = 'jumpline', ride = 'ski';
+  var V = '?v=24', map = 'jumpline', ride = 'ski';
   try { var o = JSON.parse(localStorage.getItem('ski_opts') || '{}'); if (o.map === 'freeride') map = 'freeride'; if (o.ride) ride = o.ride; } catch (e) {}
   try { var qm = new URLSearchParams(location.search).get('map'); if (qm) map = qm; } catch (e) {}
   var js = ['terrain', 'park', 'materials', 'world', 'dem', 'skier', 'rig', 'board', 'tricks', 'input', 'camera', 'snow', 'hud', 'sound', 'net', 'gear', 'touch', 'locker', 'online', 'noise', 'env', 'motion', 'grabs', 'shadowproxy'];
-  js = js.concat(map === 'freeride' ? ['freeride', 'frland', 'frrock', 'lift'] : map === 'jumpline' ? ['tbar'] : []);
+  js = js.concat(map === 'freeride' ? ['freeride', 'frland', 'frrock', 'frrockgeo', 'lift'] : map === 'jumpline' ? ['tbar'] : []);
   js = js.concat(ride === 'scoot' || ride === 'bike' ? ['scoot'] : ride === 'sled' ? ['scoot', 'sled'] : []);   // (the other rides' modules come when needed)
-  var urls = ['/car/vendor/three/three.module.js?v=ski23', '/car/vendor/three/three.core.js', '/car/vendor/three/addons/loaders/GLTFLoader.js', '/car/vendor/three/addons/loaders/DRACOLoader.js', '/car/vendor/three/addons/utils/BufferGeometryUtils.js', './js/main.js' + V];
+  var urls = ['/car/vendor/three/three.module.js?v=ski24', '/car/vendor/three/three.core.js', '/car/vendor/three/addons/loaders/GLTFLoader.js', '/car/vendor/three/addons/loaders/DRACOLoader.js', '/car/vendor/three/addons/utils/BufferGeometryUtils.js', './js/main.js' + V];
   for (var i = 0; i < js.length; i++) urls.push('./js/' + js[i] + '.js' + V);
   for (var k = 0; k < urls.length; k++) { var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = urls[k]; document.head.appendChild(l); }
   var B = window.__skiBoot = { t0: performance.now(), last: performance.now(), frac: 0, done: false, files: urls.length, got: 0, kb: 0, paint: 0 };
@@ -46,13 +46,18 @@
   }
   // a step of the start-up: shown, then a moment for the page to draw it and to answer (the start-up was one task of
   // several seconds on a slow processor, with nothing drawn and taps not answered)
+  /* (2026-11-12, loading) the moment between steps is a message to this page, not a timer: while a page loads, the
+     browser may run its timers after the loading's own work (fetches, decoding) */
+  var mc = typeof MessageChannel !== 'undefined' ? new MessageChannel() : null, queue = [];
+  if (mc) mc.port1.onmessage = function () { var q = queue; queue = []; for (var i = 0; i < q.length; i++) q[i](); };
+  var soon = function (f) { if (mc) { queue.push(f); mc.port2.postMessage(0); } else setTimeout(f, 0); };
   B.step = function (label, f) {
     B.started = true; B.last = performance.now(); show(label, f);
     var now = performance.now(), paint = now - B.paint > 120;
     return new Promise(function (res) {
-      if (!paint) { setTimeout(res, 0); return; }
+      if (!paint) { soon(res); return; }
       B.paint = now; var done = false, go = function () { if (!done) { done = true; res(); } };
-      requestAnimationFrame(function () { setTimeout(go, 0); }); setTimeout(go, 50);   // (a hidden tab draws no frames)
+      requestAnimationFrame(function () { soon(go); }); setTimeout(go, 50);   // (a hidden tab draws no frames)
     });
   };
   B.ready = function () { B.done = true; B.last = performance.now(); var bar = $('loadbar'); if (bar) bar.classList.add('done'); show('', 1); var w = $('loadwait'); if (w) w.classList.add('hidden'); };
@@ -230,7 +235,7 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=23" onerror="__skiBoot.noModule()"></script>
+<script type="module" src="./js/main.js?v=24" onerror="__skiBoot.noModule()"></script>
 <script defer src="/others/presence.js?v=1" data-project="leon-freeski"></script>
 </body>
 </html>

@@ -3,10 +3,11 @@
 // background and replace with just a blue sky for now".)
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { height, ground, runHalf, baseLine, normal, getPark } from './terrain.js?v=23';
-import { fbm, ridged, rng, smoothstep } from './noise.js?v=23';
-import { Env, buildPanel } from './env.js?v=23';
-import { snowUniforms, FIELD_GLSL, fieldUniforms } from './materials.js?v=23';
+import { height, ground, runHalf, baseLine, normal, getPark } from './terrain.js?v=24';
+import { fbm, ridged, rng, smoothstep } from './noise.js?v=24';
+import { Env, buildPanel } from './env.js?v=24';
+import { snowUniforms, FIELD_GLSL, fieldUniforms } from './materials.js?v=24';
+import { bake } from './gear.js?v=24';
 
 // the sky, the sun and sky light, the fog and the reflections are env.js's (photographs of real skies, the time of
 // day and the weather chosen on the home screen); makeSky keeps its old shape for main.js: { sky, sun, hemi, sunDir, follow }
@@ -498,10 +499,13 @@ export function makeProps(scene, park, q) {
   // everything of one material goes into one mesh
   const buckets = { steel: [], dark: [], orange: [] };
   const _m = new THREE.Matrix4(), _e = new THREE.Euler();
+  // (2026-11-12, loading: each shape's plain copy made once and copied for every post and flag, placed by gear.js bake,
+  // the same sums as applyMatrix4; the same geometry as before, about half the time)
+  const plain = new Map();
   const add = (geo, key, x, y, z, ry = 0, rx = 0) => {
-    const g = (geo.index ? geo.toNonIndexed() : geo.clone());
-    g.deleteAttribute('uv');
-    g.applyMatrix4(_m.makeRotationFromEuler(_e.set(rx, ry, 0)).setPosition(x, y, z));
+    let t = plain.get(geo);
+    if (!t) { t = geo.index ? geo.toNonIndexed() : geo.clone(); t.deleteAttribute('uv'); plain.set(geo, t); }
+    const g = bake(t.clone(), _m.makeRotationFromEuler(_e.set(rx, ry, 0)).setPosition(x, y, z));
     buckets[key].push(g);
   };
   // chairlift up the right side of the run

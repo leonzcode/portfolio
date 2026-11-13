@@ -3,7 +3,7 @@
 // park, the chairlift's drive) run all the time at the level the riding asks for; one-shots for the pop, landings, a
 // crash, meeting a rail or box, the "schat" of a swap and the chairlift's clack. The files load when you first ride;
 // until they have come the old sounds made on the fly stand in.
-import { ENV } from './env.js?v=23';
+import { ENV } from './env.js?v=24';
 
 const LOOPS = ['wind', 'carve', 'skid', 'powder', 'rail_grind', 'box_slide', 'ambience', 'lift_hum'];
 const SHOTS = ['pop', 'land', 'land_soft', 'crash', 'rail_hit', 'box_hit', 'schat', 'lift_clack'];
@@ -23,7 +23,15 @@ const isMetal = k => !!METAL[k] || !k;
 export class Sound {
   constructor() { this.ctx = null; this.on = true; this.buf = {}; this.man = null; this.loops = {}; this.ready = false; this.lift = 0; this.slideKind = ''; window.__skiSound = this; }
   start() {
-    if (this.ctx) { this.ctx.resume(); return; }
+    if (this.ctx) { this.ctx.resume(); if (!this.loading) { this.loading = true; this.load(); } return; }
+    this.prepare(); if (this.ctx) { this.ctx.resume(); this.loading = true; this.load(); }
+  }
+  /* (2026-11-12, loading) the context and the stand-ins made ahead, at the end of the start (main.js): made on the click
+     on Ride they held its first frame about a tenth of a second on a slow processor. A context made without a click
+     waits, silent, until start() resumes it on the click (Chrome notes in the console that it was not allowed to start
+     yet: expected); the recordings still load from the first ride. */
+  prepare() {
+    if (this.ctx) return;
     const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
     const ctx = this.ctx = new C();
     this.master = ctx.createGain(); this.master.gain.value = this.on ? 0.7 : 0; this.master.connect(ctx.destination);
@@ -38,7 +46,6 @@ export class Sound {
       s.connect(fl); fl.connect(g); g.connect(this.master); s.start(); return { g, fl, s };
     };
     this.syn = { wind: src(500, 0.4, 'lowpass'), carve: src(3200, 1.2), skid: src(900, 0.8), grind: src(2400, 9) };
-    this.load();
   }
   /* (C, 2026-11-11, loading) the sounds of riding first (wind, the snow's hiss, the skid, powder, the pop, landings, a
      crash), the rest (rails and boxes, the park's air, the lift) a few seconds later, so they do not share the line

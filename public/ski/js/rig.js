@@ -10,10 +10,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=23';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=23';
-import { height, normal } from './terrain.js?v=23';
-import { gltfLoader, gearParts, gearModel, loadGLB, fetchOnce, LOOK, FIT, TOPS, LOW } from './gear.js?v=23';
+import { clamp, smoothstep } from './noise.js?v=24';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=24';
+import { height, normal } from './terrain.js?v=24';
+import { gltfLoader, gearParts, gearModel, loadGLB, fetchOnce, LOOK, FIT, TOPS, LOW } from './gear.js?v=24';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -147,12 +147,16 @@ const CRASH_EXTRA = [['Bip01_L_Finger21', 0.045], ['Bip01_R_Finger21', 0.045], [
    7 cm in some turns.) */
 const SUP_N = 80, SUP_DIRS = [];
 for (let i = 0; i < SUP_N; i++) { const y = 1 - 2 * (i + 0.5) / SUP_N, r = Math.sqrt(1 - y * y), a = i * 2.399963; SUP_DIRS.push(new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r)); }
+// (2026-11-12, loading: the directions as plain numbers and a plain position array read straight, the same sums; it was
+// about 60 ms of a rider's start on a slow processor through the accessors)
+const SUP_D = new Float64Array(SUP_N * 3); SUP_DIRS.forEach((d, k) => { SUP_D[k * 3] = d.x; SUP_D[k * 3 + 1] = d.y; SUP_D[k * 3 + 2] = d.z; });
 function outline(g) {
   if (g.userData.outline) return g.userData.outline;
   const P = g.attributes.position, best = new Float64Array(SUP_N).fill(-Infinity), at = new Int32Array(SUP_N).fill(-1);
+  const plain = !P.isInterleavedBufferAttribute && !P.normalized && P.itemSize === 3, A = P.array;
   for (let i = 0; i < P.count; i++) {
-    const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
-    for (let k = 0; k < SUP_N; k++) { const d = SUP_DIRS[k], s = x * d.x + y * d.y + z * d.z; if (s > best[k]) { best[k] = s; at[k] = i; } }
+    const x = plain ? A[i * 3] : P.getX(i), y = plain ? A[i * 3 + 1] : P.getY(i), z = plain ? A[i * 3 + 2] : P.getZ(i);
+    for (let k = 0; k < SUP_N; k++) { const s = x * SUP_D[k * 3] + y * SUP_D[k * 3 + 1] + z * SUP_D[k * 3 + 2]; if (s > best[k]) { best[k] = s; at[k] = i; } }
   }
   const seen = [...new Set(at)].filter(i => i >= 0), out = new Float32Array(seen.length * 3);
   seen.forEach((i, k) => { out[k * 3] = P.getX(i); out[k * 3 + 1] = P.getY(i); out[k * 3 + 2] = P.getZ(i); });
@@ -162,8 +166,8 @@ const GEAR_K = 3;                    // the lowest few of each piece of gear's o
 const _cx = V(), _cu = V(), _cn = V(), _cn2 = V(), _cb2 = V(), _cs = V(), _pb = V(), _pd = V(), _pn = V(), _cdn = V(), _cbest = new Float64Array(8), _cbi = new Int32Array(8), _ck = new Float64Array(10), _cki = new Int32Array(10);
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=23';
-import { grabDef } from './grabs.js?v=23';
+export { GRABS } from './grabs.js?v=24';
+import { grabDef } from './grabs.js?v=24';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -433,7 +437,7 @@ function maskImage(url) {
 }
 /* (C) the rider's model: the Low tier's own copy (lo: pictures 512 px, WebP; the same meshes and skeleton), else the
    full one; fetched once (fetchOnce), each rider parsed from it. A Low copy that will not come falls back to the full. */
-const riderUrl = (id, lo) => './models/' + id + (lo ? '_lo' : '') + '.glb?v=23';
+const riderUrl = (id, lo) => './models/' + id + (lo ? '_lo' : '') + '.glb?v=24';
 // (a rider parsed ahead by prefetchRider, while the world is built: the first load of that model takes it)
 const _pre = new Map();
 async function riderGltf(id, lo) {
@@ -463,7 +467,7 @@ export function prefetchRider(id, look = {}, kind = 'ski', lo = false) {
   gltfLoader();                                       // (the model decoder's files come down now)
   // (the model is parsed as soon as it is in: its pictures decoded and its meshes unpacked off the main thread)
   const u = riderUrl(id, lo), pre = loadGLB(u); _pre.set(u, pre); swallow(pre);
-  swallow(maskImage('./models/' + id + '_m.png?v=23'));
+  swallow(maskImage('./models/' + id + '_m.png?v=24'));
   swallow(gearModel('goggles')); if (look.head !== 'painted') swallow(gearModel(look.head === 'beanie' ? 'beanie' : 'helmet_c'));
   if (kind === 'ski') { swallow(gearModel('pole')); swallow(gearModel('binding')); if (look.ski && look.ski !== 'park') swallow(gearModel(look.ski === 'pow' ? 'ski_b' : 'ski_a')); }
 }
@@ -624,7 +628,7 @@ export class Rig {
   }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=23';
+    const maskUrl = './models/' + id + '_m.png?v=24';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = new THREE.Texture(await maskImage(maskUrl)); mask.needsUpdate = true;   // (C: the one picture regionMeans used)
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;

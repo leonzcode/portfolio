@@ -10,8 +10,8 @@
 //   the game's own cameras (chase, far, first person, filmer), the next or previous rider, their name, Ride to start
 //   riding in the same room, Leave. From the home screen, or from the pause menu while riding in a room.
 import * as THREE from 'three';
-import { countUrl } from './net.js?v=23';
-import { height } from './terrain.js?v=23';
+import { countUrl } from './net.js?v=24';
+import { height } from './terrain.js?v=24';
 
 const MAP_NAMES = { jumpline: 'Jump Line', freeride: 'Freeride' };
 const CAM_NAMES = { chase: 'Chase', far: 'Far chase', pov: 'First person', film: 'Filmer' };

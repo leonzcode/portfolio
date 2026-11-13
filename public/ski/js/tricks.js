@@ -4,9 +4,9 @@
 //   [Switch] [Left|Right] [Double] Cork|Rodeo|Bio|Misty 1080 [Mute to Tail]   or   Back Flip, Lincoln Loop, 360...
 // Rails: entry spin, 50-50 or slide, swaps and presses, exit spin ("Left 270 On, Slide, Back Swap, 270 Out").
 import * as THREE from 'three';
-import { GRABS, grabDef } from './grabs.js?v=23';
+import { GRABS, grabDef } from './grabs.js?v=24';
 // (B: on a snowboard the grabs, spins and slides have the board's own names, board.js)
-import { rideGrabDef, boardSpinParts, boardRailName } from './board.js?v=23';
+import { rideGrabDef, boardSpinParts, boardRailName } from './board.js?v=24';
 
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3();
 // (P: the extra rides name their own spins and flips: RIDE_SPIN[kind](A) gives the parts for a rotation, or null for

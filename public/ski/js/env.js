@@ -12,9 +12,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { snowUniforms, setFieldSun } from './materials.js?v=23';
-import { height, runHalf, getPark } from './terrain.js?v=23';
-import { installShadowOnly } from './shadowproxy.js?v=23';
+import { snowUniforms, setFieldSun } from './materials.js?v=24';
+import { height, runHalf, getPark } from './terrain.js?v=24';
+import { installShadowOnly } from './shadowproxy.js?v=24';
+import { bake } from './gear.js?v=24';
 
 const KEY = 'ski_env';
 export const ENV = Object.assign({ time: 12.5, sky: 'clear', snow: 'groomed' },
@@ -190,7 +191,16 @@ export class Env {
     this.lights = makeLightTowers(scene, q);
     this.night = 0;
     this.apply();
-    this.makeEnvMap();
+    /* (2026-11-12, for "improving loading time": the reflection map is made at the first frame, not here. Made here it
+       was made from the sky's blank stand-in (its photos still coming) and made again at the first frame from the
+       photos, about 0.2 s of the start on a slow processor for one never seen. Meanwhile scene.environment is an empty
+       target of the very same kind and size, so every shader is built at the start just as it will be drawn.) */
+    {
+      const cs = 2 ** Math.floor(Math.log2(q.tier === 'low' ? 128 : 256));
+      const rt = new THREE.WebGLRenderTarget(3 * Math.max(cs, 16 * 7), 4 * cs, { magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter, generateMipmaps: false, type: THREE.HalfFloatType, format: THREE.RGBAFormat, colorSpace: THREE.LinearSRGBColorSpace, depthBuffer: false });
+      rt.texture.mapping = THREE.CubeUVReflectionMapping; rt.texture.name = 'PMREM.cubeUv';
+      this.envRT = rt; this.scene.environment = rt.texture; this.envDirty = true; this.envAt = 0;
+    }
     window.__skiEnv = this;          // (for tests: __skiEnv.set('time', 18))
   }
   // the photo for a key, loading it the first time (the dome keeps the last ones meanwhile)
@@ -454,7 +464,7 @@ function makeLightTowers(scene, q) {
   glow.onBeforeRender = (r, sc, cam) => { glowM.uniforms.uScale.value = 0.5 * r.getDrawingBufferSize(_db2).y * cam.projectionMatrix.elements[5]; };
   scene.add(glow);
   if (!at.length) return { pole: null, lamps: null, glow, rows };
-  const build = (pole1, lamp1) => [mergeGeometries(at.map(t => pole1.clone().applyMatrix4(t))), mergeGeometries(at.map(t => lamp1.clone().applyMatrix4(t)))];
+  const build = (pole1, lamp1) => [mergeGeometries(at.map(t => bake(pole1.clone(), t))), mergeGeometries(at.map(t => bake(lamp1.clone(), t)))];   // (bake: gear.js, applyMatrix4's sums in one loop)
   // the stand-in: a pole and a lamp box leaning out (+z is towards the run)
   const poleG = new THREE.CylinderGeometry(0.11, 0.16, 13.5, 6); poleG.translate(0, 6.75, 0); poleG.deleteAttribute('uv');
   const headG = new THREE.BoxGeometry(0.5, 0.3, 1.2); headG.rotateX(-0.35); headG.translate(0, 13.4, 0.5); headG.deleteAttribute('uv');

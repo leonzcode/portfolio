@@ -8,11 +8,11 @@
    Summit Chair from the finish corral by the arch straight up the main face, over the shoulder and up the Peak to the
    true summit; the first start at its top; where its towers may stand (park.towerOk), and where the physics meets a
    rock face (park.cliff). */
-import { Land, LIFT_XS, fallLines } from './frland.js?v=23';
-import { Kicker, Rail, assemble } from './park.js?v=23';
-import { setMountain } from './terrain.js?v=23';
-import { simplex, fbm, smoothstep } from './noise.js?v=23';
-import { setRockSource, rockFieldWorker, freerideLook, setFieldTrees } from './materials.js?v=23';
+import { Land, LIFT_XS, fallLines } from './frland.js?v=24';
+import { Kicker, Rail, assemble } from './park.js?v=24';
+import { setMountain } from './terrain.js?v=24';
+import { simplex, fbm, smoothstep } from './noise.js?v=24';
+import { setRockSource, rockFieldWorker, freerideLook, setFieldTrees } from './materials.js?v=24';
 
 const RAD = Math.PI / 180;
 export const FIELD_MID = [10, 225];     // (the rock field's middle: frfield.js is sent its windows round it; 1280 m of fine
@@ -30,14 +30,18 @@ class RockKicker extends Kicker {
     // the takeoff's foot placed so its lip comes out where it is wanted
     let z0 = o.lipZ - 8;
     for (let it = 0; it < 4; it++) { const p = pitch(z0), lip = o.lip * RAD; z0 = o.lipZ - o.R * (Math.sin(p) + Math.sin(lip)); }
-    super(Object.assign({ base, pitch, z0, drop: 40, table: 1, land: 55, Rk: 1, wD: o.wT * 2 + 1, wL: o.wT + 2, sideS: 0.62, landS: 0.62, group: 'Freeride kickers' }, o));
+    super(Object.assign({ base, pitch, z0, drop: 40, table: 1, land: 55, Rk: 1, wD: o.wT * 2 + 1, wL: o.wT + 2, sideS: 0.62, landS: 0.62, group: 'Freeride kickers' }, o,
+      o.planned ? { vLip: o.planned[0] } : {}));   // (planned: park.js's own first guess at vLip, set again below, is not worked out)
     this.rock = true;
     /* the design speeds. Off a lip onto a natural steep apron the landing is soft only where the flight comes down
        nearly along the snow, so the speed off the lip is the one that lands softest (least speed into the snow) at least
        `gap` m out (the game's air drag, the real snow along the centre line); then up the ramp to it */
     const lip = this.lip * RAD, kd = 0.5 * 1.2 * 0.5 / 78, dt = 0.004;
     let best = null;
-    for (let v = 10; v <= 18; v += 0.25) {
+    // (2026-11-12, for "improving loading time": a kicker from Freeride's plan (makeFreeride) is given what this search
+    // found before, the same numbers: o.planned [v, vn, X], or null for none; the search was about 0.4 s of the start)
+    if (o.planned !== undefined) best = o.planned && { v: o.planned[0], vn: o.planned[1], X: o.planned[2] };
+    else for (let v = 10; v <= 18; v += 0.25) {
       let vz = v * Math.cos(lip), vy = v * Math.sin(lip), z = this.L.z, y = this.L.y;
       for (let t = 0; t < 6; t += dt) {
         const sp = Math.hypot(vz, vy); vz -= kd * sp * vz * dt; vy -= (9.81 + kd * sp * vy) * dt; z += vz * dt; y += vy * dt;
@@ -50,6 +54,7 @@ class RockKicker extends Kicker {
       }
     }
     this.vLip = best ? best.v : 12; this.landVn = best ? best.vn : 0; this.gapX = best ? best.X : this.gap;
+    this.planned = best ? [best.v, best.vn, best.X] : null;
     const target = this.L.z + this.gapX;
     const rise = this.L.y - base(this.z0);
     this.vDesign = Math.sqrt(this.vLip * this.vLip + 2 * 9.81 * rise * (1.12 + 0.02 * rise)) + 0.5;
@@ -78,7 +83,9 @@ class RockKicker extends Kicker {
 // the land's band by name (the kickers and logs are put on them)
 const bandOf = (land, name) => land.features.find(f => f.name === name);
 
-export function makeFreeride(q) {
+/* (2026-11-12) plan: the rock kickers' searches from a last start ({ kicker name: [v, vn, X] or null }, returned as
+   fr.plan), kept by main.js with a fingerprint of this file, frland.js, park.js, terrain.js and noise.js */
+export function makeFreeride(q, plan = null) {
   const land = new Land(), G = land.G;
   freerideLook();     // (2026-11-11: Freeride's own snow and rock pictures, materials.js)
   // ---- the mountain, through terrain.js's hook: no extra noise (bare), its own surfaces
@@ -96,13 +103,13 @@ export function makeFreeride(q) {
      Worked out in a worker (frfield.js), so it is ready before a run starts and never takes a frame's time: baked on
      the page in idle moments it was still going ten seconds into a run on a slow machine */
   // (2026-11-11: and the mountain's own light in the same texels, the sky each place sees and the sun's shadows: frfield.js)
-  rockFieldWorker(new URL('./frfield.js?v=23', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)), true);
+  rockFieldWorker(new URL('./frfield.js?v=24', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)), true);
 
   // ---- kickers on the rock: [band, x, lip deg, R, half width, gap m]
   const K = [];
   const onBand = (name, x, lip, R, wT, gap, label) => {
     const b = bandOf(land, name), lipZ = b.zL(x) - 1.3;
-    const k = new RockKicker(land, { name: label, x, lipZ, lip, R, wT, gap });
+    const k = new RockKicker(land, Object.assign({ name: label, x, lipZ, lip, R, wT, gap }, plan && label in plan ? { planned: plan[label] } : {}));
     K.push(k); return k;
   };
   onBand('Selection rock 1', -102, 7, 9, 2.8, 12, 'Selection kicker 1');
@@ -316,5 +323,5 @@ export function makeFreeride(q) {
   mtn.trees = (max, r) => { const out = trees(max, r); setFieldTrees(out); return out; };
   mtn.spot = { treeline: -330 };
   land.jibs = rails;     // (frrock.js draws the rock slab with the rock faces)
-  return { mtn, park, land, kickers: K, rails };
+  return { mtn, park, land, kickers: K, rails, plan: Object.fromEntries(K.map(k => [k.name, k.planned])) };
 }

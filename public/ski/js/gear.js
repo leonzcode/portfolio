@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { riderShadow } from './shadowproxy.js?v=23';   // (E: the rider's shadow in a few draws)
+import { riderShadow } from './shadowproxy.js?v=24';   // (E: the rider's shadow in a few draws)
 
 /* Downloaded gear (2026-11-05, models/gear/, credits in CREDITS.md): goggles, a beanie, a bike lid, two skis and a pole,
    loaded once each and shared by every rider (each rider gets its own copies of the materials, for its colours).
@@ -67,8 +67,35 @@ export const LOW = { baggy: 1, regular: 0.4, slim: 0 };
 export const FIT = { baggy: 1, regular: 0.7, slim: 0.45 };
 const _gear = new Map();
 export function gearModel(name) {
-  if (!_gear.has(name)) _gear.set(name, loadGLB('./models/gear/' + name + '.glb?v=23').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));   // (C: tried again, a time limit; a gear part that never comes is left out, our own stands in)
+  if (!_gear.has(name)) _gear.set(name, loadGLB('./models/gear/' + name + '.glb?v=24').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));   // (C: tried again, a time limit; a gear part that never comes is left out, our own stands in)
   return _gear.get(name);
+}
+/* (2026-11-12, loading) BufferGeometry.applyMatrix4 for plain float positions and normals: the same sums three does
+   (Vector3.applyMatrix4, applyNormalMatrix), in one plain loop; three's own goes through its accessors a vertex at a
+   time, about 170 ms of a rider's start on a slow processor (the helmet's and the goggles' thousands of points) */
+const _nm = new THREE.Matrix3();
+const plainVec3 = a => !!a && !a.isInterleavedBufferAttribute && !a.normalized && a.array instanceof Float32Array && a.itemSize === 3;
+export function bake(g, m) {
+  const P = g.attributes.position, N = g.attributes.normal;
+  if (!plainVec3(P) || (N && !plainVec3(N)) || g.attributes.tangent) return g.applyMatrix4(m);
+  const e = m.elements, p = P.array;
+  for (let i = 0; i < p.length; i += 3) {
+    const x = p[i], y = p[i + 1], z = p[i + 2], w = 1 / (e[3] * x + e[7] * y + e[11] * z + e[15]);
+    p[i] = (e[0] * x + e[4] * y + e[8] * z + e[12]) * w; p[i + 1] = (e[1] * x + e[5] * y + e[9] * z + e[13]) * w; p[i + 2] = (e[2] * x + e[6] * y + e[10] * z + e[14]) * w;
+  }
+  P.needsUpdate = true;
+  if (N) {
+    const f = _nm.getNormalMatrix(m).elements, n = N.array;
+    for (let i = 0; i < n.length; i += 3) {
+      const x = n[i], y = n[i + 1], z = n[i + 2];
+      const a = f[0] * x + f[3] * y + f[6] * z, b = f[1] * x + f[4] * y + f[7] * z, c = f[2] * x + f[5] * y + f[8] * z, k = 1 / (Math.sqrt(a * a + b * b + c * c) || 1);
+      n[i] = a * k; n[i + 1] = b * k; n[i + 2] = c * k;
+    }
+    N.needsUpdate = true;
+  }
+  if (g.boundingBox !== null) g.computeBoundingBox();
+  if (g.boundingSphere !== null) g.computeBoundingSphere();
+  return g;
 }
 // the model's meshes as plain meshes in the model's own frame (the node transforms baked into copies of their
 // geometry), each with its own copy of its material, keyed by the material's name
@@ -77,7 +104,7 @@ export async function gearParts(name) {
   const out = {};
   sc.traverse(o => {
     if (!o.isMesh) return;
-    const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld);
+    const g = bake(o.geometry.clone(), o.matrixWorld);
     const m = o.material.clone(), k = m.name || 'part';
     if (m.map) m.userData.sharedMaps = true;            // (the picture is the cached model's, shared by every rider)
     const mesh = new THREE.Mesh(g, m); mesh.castShadow = true; mesh.name = k;
@@ -98,7 +125,7 @@ function mergeInto(group, keep = () => false) {
     let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
     for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal') g.deleteAttribute(k);
     if (!g.attributes.normal) g.computeVertexNormals();
-    g.applyMatrix4(_m.multiplyMatrices(_inv, o.matrixWorld));
+    bake(g, _m.multiplyMatrices(_inv, o.matrixWorld));   // (applyMatrix4's sums in one loop)
     const c = (mat.color || new THREE.Color(1, 1, 1)).clone(), col = new Float32Array(g.attributes.position.count * 3);
     for (let i = 0; i < col.length; i += 3) { col[i] = c.r; col[i + 1] = c.g; col[i + 2] = c.b; }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));

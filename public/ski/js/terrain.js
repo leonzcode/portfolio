@@ -8,7 +8,7 @@
 // frame, with skirts hiding the seams between sizes. Features with their own meshes (kickers, the pipe) are left out
 // of the patches (the ground under them is lowered a little) and drawn by park.js at finer spacing.
 import * as THREE from 'three';
-import { fbm, ridged, smoothstep, clamp } from './noise.js?v=23';
+import { fbm, ridged, smoothstep, clamp } from './noise.js?v=24';
 
 // ---- the run's long profile ----------------------------------------------------------------------------------------
 // [z where it starts, pitch in degrees] (above the start the slope behind is a gentle 12 degrees, not the old 26: with
@@ -293,6 +293,7 @@ export class Terrain {
       this.queue.sort((a, b) => a[4] - b[4]);
       const until = performance.now() + this.budget;
       for (const q of this.queue) {
+        if (this.reach && q[4] > this.reach) break;       // (warm: only as far as reach)
         if (seen.has(q[0])) continue; seen.add(q[0]);
         const J = jobs.get(q[0]) || this.job(q[0], q[1], q[2], q[3]);
         if (this.stepJob(J, until)) { jobs.delete(q[0]); this.cache.set(q[0], this.mesh(J)); }
@@ -307,7 +308,7 @@ export class Terrain {
     this.show(now, frame);
     this.inUse = now;
     if (this.cache.size > 900) this.trim(frame);
-    return this.queue.length;
+    return this.reach ? this.queue.filter(q => q[4] <= this.reach && !this.cache.has(q[0])).length : this.queue.length;
   }
   // the patches in `now` shown in the batch, the others hidden; a patch with no slot yet is given one
   show(now, frame) {
@@ -373,6 +374,7 @@ export class Terrain {
     const list = [...this.cache.entries()].filter(([k]) => !this.inUse.has(k)).sort((a, b) => a[1].userData.used - b[1].userData.used);
     for (let i = 0; i < list.length - 600; i++) { list[i][1].geometry.dispose(); this.cache.delete(list[i][0]); }
   }
-  // build everything the camera at p needs now (behind the loading screen)
-  warm(p) { const b = this.budget; this.budget = 1e9; for (let i = 0; i < 12; i++) if (!this.update(p, 0)) break; this.budget = b; }
+  // build everything the camera at p needs now (behind the loading screen); reach: only the patches within that many
+  // metres (2026-11-12, loading: the far ones, about half of them, are built in the first frames after, nearest first)
+  warm(p, reach = 0) { const b = this.budget; this.budget = 1e9; this.reach = reach; for (let i = 0; i < 12; i++) if (!this.update(p, 0)) break; this.budget = b; this.reach = 0; this._at = null; }
 }

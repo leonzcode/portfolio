@@ -2,9 +2,9 @@
 // brake; in the air it spins and flips), and buttons on the right: Pop (hold to crouch, let go to pop), Grab (hold
 // for the grab shown on the picker above it, tap the picker to change grab), Butter (hold, the stick presses the nose
 // or tail), and the camera; on the snow and rails two small ones: One ski (or one foot) and Together.
-import { GRABS } from './grabs.js?v=23';
-import { rideGrabDef } from './board.js?v=23';      // (B: a board's own grab names on the picker)
-import { RIDE_KEYS } from './input.js?v=23';
+import { GRABS } from './grabs.js?v=24';
+import { rideGrabDef } from './board.js?v=24';      // (B: a board's own grab names on the picker)
+import { RIDE_KEYS } from './input.js?v=24';
 
 // (P, 2026-11-08: the picker's list is the ride's own: its trick keys' tricks first (input.js RIDE_KEYS, Leon's scheme),
 // then the ski grabs that give it something else. ORDER is changed in place, so main.js's grabId reads the current one.)
