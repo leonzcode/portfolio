@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Leon Freeski check</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;margin:24px;max-width:760px;color:#15131f;background:#f3f4f8}h1{font-size:22px}pre{background:#fff;border:1px solid #cfd3dd;border-radius:8px;padding:14px;white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,Consolas,monospace}button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #15131f;background:#15131f;color:#fff;cursor:pointer}</style>
+</head><body>
+<h1>Leon Freeski check</h1>
+<p>This page tests what the game needs on this computer. Wait for "Done", then press Copy and send the text to Leon.</p>
+<button id="copy" type="button">Copy the results</button>
+<pre id="out">Starting...</pre>
+<script>
+(async function () {
+  var out = document.getElementById('out'), lines = [];
+  function say(s) { lines.push(s); out.textContent = lines.join('\n'); }
+  document.getElementById('copy').onclick = function () { navigator.clipboard && navigator.clipboard.writeText(lines.join('\n')); this.textContent = 'Copied'; };
+  window.onerror = function (m) { say('PAGE ERROR: ' + m); };
+  say('time: ' + new Date().toISOString());
+  say('browser: ' + navigator.userAgent);
+  say('cores: ' + navigator.hardwareConcurrency + ', memory: ' + (navigator.deviceMemory || '?') + ' GB, screen: ' + screen.width + 'x' + screen.height + ' @' + devicePixelRatio);
+  try { localStorage.setItem('ski_check', '1'); localStorage.removeItem('ski_check'); say('storage: ok'); } catch (e) { say('storage: FAILED ' + e.message); }
+  say('WebAssembly: ' + (typeof WebAssembly === 'object' ? 'ok' : 'MISSING') + ', Worker: ' + (typeof Worker === 'function' ? 'ok' : 'MISSING'));
+  // graphics
+  try {
+    var c = document.createElement('canvas'), lost = false;
+    c.addEventListener('webglcontextlost', function () { lost = true; });
+    var gl = c.getContext('webgl2', { antialias: false, powerPreference: 'high-performance' });
+    if (!gl) { say('WebGL 2: NOT AVAILABLE (webgl 1: ' + (c.getContext('webgl') ? 'yes' : 'no') + ')'); }
+    else {
+      var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      say('WebGL 2: ok');
+      say('graphics: ' + (dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)));
+      say('max texture: ' + gl.getParameter(gl.MAX_TEXTURE_SIZE) + ', samplers: ' + gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) + ', varyings: ' + gl.getParameter(gl.MAX_VARYING_VECTORS) + ', uniforms: ' + gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS));
+      var want = ['EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'OES_texture_float_linear', 'WEBGL_multi_draw', 'EXT_texture_filter_anisotropic', 'KHR_parallel_shader_compile', 'EXT_clip_control', 'WEBGL_lose_context'];
+      say('extensions: ' + want.map(function (n) { return n + '=' + (gl.getExtension(n) ? 'yes' : 'no'); }).join(', '));
+      say('context lost: ' + (lost || gl.isContextLost() ? 'YES' : 'no'));
+    }
+  } catch (e) { say('graphics test FAILED: ' + e.message); }
+  // files
+  var V = '?v=ski23', files = [
+    ['three.js', '/car/vendor/three/three.module.js' + V],
+    ['three core', '/car/vendor/three/three.core.js'],
+    ['draco decoder', '/car/vendor/three/addons/libs/draco/draco_decoder.wasm'],
+    ['game code', './js/main.js?v=23'],
+    ['rider model', './models/m_adult_10_lo.glb'],
+    ['styles', './css/ski.css?v=23'],
+    ['fonts', 'https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&display=swap'],
+    ['online count', 'https://apps.leonzhao.dev/mc/ski/count']
+  ];
+  for (var i = 0; i < files.length; i++) {
+    var t = performance.now(), f = files[i];
+    try {
+      var ctl = new AbortController(), to = setTimeout(function () { ctl.abort(); }, 20000);
+      var r = await fetch(f[1], { cache: 'no-store', signal: ctl.signal }); var b = await r.arrayBuffer(); clearTimeout(to);
+      say('file ' + f[0] + ': ' + r.status + ' ' + (r.headers.get('content-type') || '') + ', ' + b.byteLength + ' bytes, ' + Math.round(performance.now() - t) + ' ms' + (r.redirected ? ', REDIRECTED to ' + r.url : ''));
+    } catch (e) { say('file ' + f[0] + ': FAILED (' + (e.name === 'AbortError' ? 'no answer in 20 s' : e.message) + ') after ' + Math.round(performance.now() - t) + ' ms'); }
+  }
+  // the 3D library as a module
+  try { var t0 = performance.now(); var T = await import('/car/vendor/three/three.module.js' + V); say('three.js module: ok, r' + T.REVISION + ', ' + Math.round(performance.now() - t0) + ' ms'); }
+  catch (e) { say('three.js module: FAILED ' + e.message); }
+  // what the game itself last reported on this computer
+  try { say('saved options: ' + (localStorage.getItem('ski_opts') || 'none') + ', gpu note: ' + (localStorage.getItem('ski_gpu') || 'none')); } catch (e) {}
+  say('Done.');
+})();
+</script>
+</body></html>
