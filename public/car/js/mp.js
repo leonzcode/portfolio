@@ -14,9 +14,9 @@
 // server works out who is near across the ground). Teleport requests go by buttons (Go to in the player list, Accept
 // and Deny in a box) and work across the world: a drop at their place first, then the lane behind them.
 import * as THREE from 'three';
-import { Vehicle } from './vehicle.js?v=52';
-import { seatsOf } from './occupants.js?v=52';
-import { frame as GF, toECEF, toLatLon } from './geo.js?v=52';
+import { Vehicle } from './vehicle.js?v=53';
+import { seatsOf } from './occupants.js?v=53';
+import { frame as GF, toECEF, toLatLon } from './geo.js?v=53';
 
 // (round 6) a frame's local-to-ECEF matrix, as geo.js setOrigin makes it (east, up, south at lat, lon, h)
 function localToEcefOf(lat, lon, h, out) {
@@ -43,6 +43,10 @@ export function serverUrl() {
 }
 
 const SEND_MS = 83, SEND_STILL_MS = 400; // about 12 a second, 2.5 a second standing still
+// (2026-11-12) a room nobody is active in closes on the server (earthdrive.js): the socket's close code for that, the
+// words when the server's own did not come, and how often at most this page says its player is at the controls
+export const IDLE_CODE = 4001, IDLE_WORDS = 'This room closed after 10 minutes with nobody active.';
+const ACT_MS = 20000;
 const DELAY = 140;                       // drawn this far behind the newest snapshot (sent 12 a second, relayed 20 a second)
 const MAX_DRAWN = 10;                    // other players' cars drawn (the nearest)
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _e = new THREE.Euler();
@@ -67,11 +71,14 @@ export class Net {
       const to = setTimeout(() => { try { ws.close(); } catch (e) {} rej(new Error('The game server did not answer.')); }, 9000);
       ws.onmessage = e => {
         let m; try { m = JSON.parse(e.data); } catch (er) { return; }
-        if (m.t === 'welcome') { this.id = m.id; this.v = m.v || 5; this.open = true; clearTimeout(to); this.connecting = null; res(); } // (v 6: the server knows frames of their own, round 6)
+        // (v 6: the server knows frames of their own, round 6; idle: how long a room may go with nobody active, 2026-11-12)
+        // (a new socket has said no hello yet: hello() again before joining)
+        if (m.t === 'welcome') { this.id = m.id; this.v = m.v || 5; this.idleMs = m.idle || 0; this.name = ''; this.open = true; clearTimeout(to); this.connecting = null; res(); }
         this.rx = (this.rx || 0) + e.data.length;
         this.emit(m);
       };
-      ws.onclose = () => { clearTimeout(to); const was = this.open; this.open = false; this.ws = null; this.connecting = null; this.room = null; if (!was) rej(new Error('Could not reach the game server.')); this.emit({ t: 'closed', was }); };
+      // (code 4001: the room was closed because nobody was active in it, 2026-11-12; not a lost connection)
+      ws.onclose = e => { clearTimeout(to); const was = this.open; this.open = false; this.ws = null; this.connecting = null; this.room = null; if (!was) rej(new Error('Could not reach the game server.')); this.emit({ t: 'closed', was, code: e && e.code, idle: !!(e && e.code === IDLE_CODE) }); };
       ws.onerror = () => {};
     });
     return this.connecting;
@@ -83,13 +90,14 @@ export class Net {
       const offs = [];
       const done = () => { offs.forEach(f => f()); clearTimeout(t); };
       for (const k of ok) offs.push(this.on(k, m => { done(); res(m); }));
-      offs.push(this.on('err', m => { if (m.what === what) { done(); rej(new Error(m.text)); } }));
+      offs.push(this.on('err', m => { if (m.what === what) { done(); rej(Object.assign(new Error(m.text), { idle: !!m.idle })); } }));   // (idle: a room closed because nobody was active)
       offs.push(this.on('closed', () => { done(); rej(new Error('The connection to the game server was lost.')); }));
       const t = setTimeout(() => { done(); rej(new Error('The game server did not answer.')); }, ms);
       if (!this.send(o)) { done(); rej(new Error('Not connected to the game server.')); }
     });
   }
-  async hello(name) { await this.connect(); const m = await this.ask({ t: 'hello', name }, ['hi'], 'name'); this.name = m.name; return m; }
+  // (act: this page says now and then that its player is at the controls, and reads roomClosed, 2026-11-12)
+  async hello(name) { await this.connect(); const m = await this.ask({ t: 'hello', name, act: 1 }, ['hi'], 'name'); this.name = m.name; return m; }
   async rooms() { await this.connect(); return (await this.ask({ t: 'list' }, ['rooms'], 'list')).list; }
   async create(o) { const m = await this.ask({ t: 'create', ...o }, ['joined'], 'create'); this.room = m.room; return m; }
   async join(o) { const m = await this.ask({ t: 'join', ...o }, ['joined'], 'join'); this.room = m.room; return m; }
@@ -535,8 +543,44 @@ export class Session {
     on('given', m => this.onGiven(m));
     on('tpReq', m => this.onTpReq(m));
     on('tpGo', m => this.onTpGo(m));
-    on('closed', () => { if (this.dead) return; this.lost = true; this.line('', 'Lost the connection to the game server. Trying to get back in...', 'sys'); this.reconnect(); });
+    on('closed', m => { if (this.dead || this.shut) return; if (m && m.idle) { this.closedIdle(IDLE_WORDS); return; } this.lost = true; this.line('', 'Lost the connection to the game server. Trying to get back in...', 'sys'); this.reconnect(); });
+    // (2026-11-12) the room closed because nobody in it was active for a while: back to the rooms, with why
+    on('roomClosed', m => this.closedIdle(m.text || IDLE_WORDS));
+    this.watchInput();
     window.__mp = this;
+  }
+
+  /* (2026-11-12, for "rooms ... close after 10 minutes of afk") Now and then (at most every 20 s, or a quarter of the
+     server's limit) the server is told this page's player pressed a key, clicked, touched the screen or used a game pad
+     since the last time. The server also counts the car or the person moving and the chat, so this only matters for a
+     player who is there but standing still (on the map, in the player list, looking round). */
+  watchInput() {
+    const S = this;
+    this.inputAt = performance.now(); this.actAt = 0;
+    const seen = () => { S.inputAt = performance.now(); };
+    for (const t of ['keydown', 'pointerdown', 'touchstart', 'wheel']) { addEventListener(t, seen, { capture: true, passive: true }); this.undo.push(() => removeEventListener(t, seen, { capture: true, passive: true })); }
+    const pads = () => { try { for (const g of (navigator.getGamepads ? navigator.getGamepads() : [])) { if (!g) continue; if (g.buttons.some(b => b.pressed || b.value > 0.3) || g.axes.some(a => Math.abs(a) > 0.35)) return true; } } catch (e) {} return false; };
+    const iv = setInterval(() => {
+      if (S.dead || S.shut) return;
+      const now = performance.now();
+      if (pads()) S.inputAt = now;
+      const every = Math.max(1000, Math.min(ACT_MS, (S.net.idleMs || 600000) / 4));
+      if (S.inputAt > S.actAt && now - S.actAt >= every) { if (S.net.send({ t: 'act' })) S.actAt = now; }
+    }, 500);
+    this.undo.push(() => clearInterval(iv));
+  }
+  // the room was closed for idleness (the server's roomClosed, or its socket closed with IDLE_CODE): no getting back in;
+  // the drive stops and the rooms are shown with why (as leaving by the player list does)
+  closedIdle(text) {
+    if (this.dead || this.shut) return;
+    this.shut = true; this.reconnecting = false;
+    try { this.closeTravel(false); } catch (e) {}
+    const D = this.drive, G = this.G, M = G.mapui;
+    D.active = false; D.hud.show(false); try { D.sound.stop(); } catch (e) {}
+    try { if (M) M.endDrive(); } catch (e) {}
+    G.paused = true;
+    if (G.home) { G.home.leaveRoom(); G.home.show('rooms', text); }
+    else { this.dispose(); if (M) M.showPicker(); }
   }
 
   // back into the room after the connection went (a deploy restarts the server: the room is made again by its code)
@@ -544,9 +588,9 @@ export class Session {
     if (this.reconnecting) return;
     this.reconnecting = true;
     const t0 = performance.now(), name = (() => { try { return localStorage.getItem('car_mpname'); } catch (e) { return null; } })() || this.me.name;
-    while (!this.dead && performance.now() - t0 < 180000) {
+    while (!this.dead && !this.shut && performance.now() - t0 < 180000) {
       await new Promise(r => setTimeout(r, 2000 + Math.random() * 1500));
-      if (this.dead) break;
+      if (this.dead || this.shut) break;
       try {
         await this.net.connect();
         await this.net.hello(name);
@@ -554,10 +598,14 @@ export class Session {
         this.rejoined(m);
         this.reconnecting = false;
         return;
-      } catch (e) { /* the server is not back yet: again in a moment */ }
+      } catch (e) {
+        // (the room was closed meanwhile because nobody was active in it: it is not made again)
+        if (e && e.idle) { this.reconnecting = false; this.closedIdle(e.message || IDLE_WORDS); return; }
+        /* the server is not back yet: again in a moment */
+      }
     }
     this.reconnecting = false;
-    if (!this.dead) this.line('', 'Could not get back into the room. You can keep driving on your own.', 'sys');
+    if (!this.dead && !this.shut) this.line('', 'Could not get back into the room. You can keep driving on your own.', 'sys');
   }
   rejoined(m) {
     this.room = m.room; this.me = m.you; this.lost = false; this.hostId = m.room.host;
@@ -854,7 +902,7 @@ export class Session {
     })();
     const sl = setInterval(() => this.sendLook(), 4000); this.undo.push(() => clearInterval(sl));
     // the traffic and the pedestrians shared (npcnet.js)
-    import('./npcnet.js?v=52').then(M => { if (this.dead) return; this.npc = new M.NpcNet(this); if (this.role !== undefined) this.npc.setRole(this.role); }).catch(e => console.warn('npcnet', e));
+    import('./npcnet.js?v=53').then(M => { if (this.dead) return; this.npc = new M.NpcNet(this); if (this.role !== undefined) this.npc.setRole(this.role); }).catch(e => console.warn('npcnet', e));
   }
 
   // where this player starts in the room: the room's place, a few car lengths along the road per player before
@@ -1455,7 +1503,7 @@ export class Session {
         D.loadingArea = true;
         D.hud.loading('Going to ' + m.name, 0.4);
         try { await D.loadArea(tx, tz); } finally { D.loadingArea = false; }
-        try { if (D.world.heights && D.world.heights.want) { const { toLatLon } = await import('./geo.js?v=52'); const g = toLatLon(new THREE.Vector3(tx, 0, tz)); await D.world.heights.want(g.lat, g.lon, 600); } } catch (e) {}
+        try { if (D.world.heights && D.world.heights.want) { const { toLatLon } = await import('./geo.js?v=53'); const g = toLatLon(new THREE.Vector3(tx, 0, tz)); await D.world.heights.want(g.lat, g.lon, 600); } } catch (e) {}
         D.hud.loading(null);
       }
       // (in the air only if they are flying and what we drive flies too: a car comes down on the road under them)

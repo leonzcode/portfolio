@@ -13,8 +13,8 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south.
 import * as THREE from 'three';
-import { buildTunnels } from './tunnels.js?v=52';
-import { sharedTexture } from './texcache.js?v=52'; // (round 6, perf P)
+import { buildTunnels } from './tunnels.js?v=53';
+import { sharedTexture } from './texcache.js?v=53'; // (round 6, perf P)
 
 const BASE = new URL('../', import.meta.url).href;
 const PW = 0.32;                // parapet thickness
@@ -27,7 +27,7 @@ const RAIL_TOP = 1.15;          // the parapet's collision reaches this far over
 let MATS = null;
 // (round 6, perf P) the roads' own pictures, one copy each on the graphics card (texcache.js)
 function tex(file, srgb) {
-  return sharedTexture(BASE + 'textures/roads/' + file + '?v=52', { srgb, anisotropy: 4, optional: /_(nor_gl|rough)_/.test(file) });
+  return sharedTexture(BASE + 'textures/roads/' + file + '?v=53', { srgb, anisotropy: 4, optional: /_(nor_gl|rough)_/.test(file) });
 }
 function materials() {
   if (MATS) return MATS;
@@ -200,12 +200,24 @@ export async function build(R, opts = {}) {
     }
     // parapets: along each side, except where that line lies on another carriageway at this level (a fork on a
     // viaduct, a slip road joining)
-    const rail = [[], []];
+    // (both ends of each stretch as well as its middle, and any road up to 2.6 m under the parapet: a slip road
+    // joining took the middle's test only, and the parapet's end stood a metre into its lane)
+    // (railH: the lowest of those roads' surfaces, which the deck's side face is drawn no higher than: where two decks
+    // merge a little apart in height, the higher one's side stood as a lip across the lower one's lane)
+    const rail = [[], []], railH = [[], []];
     for (let i = 1; i < N; i++) for (const [si, sd] of [[0, -1], [1, 1]]) {
       const a = S[i - 1], b = S[i], off = (sd < 0 ? dL : dR) - PW / 2;
       const mx = (a.x + b.x) / 2 + (a.nx * a.k + b.nx * b.k) / 2 * sd * off, mz = (a.z + b.z) / 2 + (a.nz * a.k + b.nz * b.k) / 2 * sd * off;
       const q = surf(mx, mz, (a.top + b.top) / 2);
-      rail[si][i] = !(q && q.onRoad && q.edge < -0.25);
+      let on = !!(q && q.onRoad && q.edge < -0.25), low = on ? q.h : null;
+      if (R.roadAcross) {
+        const lo = Math.min(a.w, b.w) - 2.6, hi = Math.max(a.w, b.w) + RAIL_TOP; // (0.4 m to spare: the road heights are worked out again as finer ground comes in)
+        for (const [px, pz] of [[a.x + a.nx * a.k * sd * off, a.z + a.nz * a.k * sd * off], [mx, mz], [b.x + b.nx * b.k * sd * off, b.z + b.nz * b.k * sd * off]]) {
+          let h = null; try { h = R.roadAcross(px, pz, lo, hi); } catch (err) { h = null; }
+          if (h != null) { on = true; low = low == null ? h : Math.min(low, h); }
+        }
+      }
+      rail[si][i] = !on; railH[si][i] = low;
     }
     // collision: the parapets, in pieces of up to 6 m
     if (collide && collide.addSegment) for (const [si, sd] of [[0, -1], [1, 1]]) {
@@ -235,8 +247,9 @@ export async function build(R, opts = {}) {
       for (const [si, sd] of [[0, -1], [1, 1]]) {
         const off = sd < 0 ? dL : dR, has = rail[si][i];
         const nOut = [(A.nx + B.nx) / 2 * sd, 0, (A.nz + B.nz) / 2 * sd];
-        const ta = has ? A.w + PH : A.w, tb = has ? B.w + PH : B.w;
-        soup.quad(P(A, sd * off, A.b), P(B, sd * off, B.b), P(B, sd * off, tb), P(A, sd * off, ta), nOut, [ua, A.b * 0.25], [ub, B.b * 0.25], [ub, tb * 0.25], [ua, ta * 0.25]);
+        const cap = has || railH[si][i] == null ? Infinity : railH[si][i] - 0.03;
+        const ta = has ? A.w + PH : Math.min(A.w, cap), tb = has ? B.w + PH : Math.min(B.w, cap);
+        if (ta > A.b + 0.05 && tb > B.b + 0.05) soup.quad(P(A, sd * off, A.b), P(B, sd * off, B.b), P(B, sd * off, tb), P(A, sd * off, ta), nOut, [ua, A.b * 0.25], [ub, B.b * 0.25], [ub, tb * 0.25], [ua, ta * 0.25]);
         if (!has) continue;
         const inn = sd * (off - PW), nIn = [-nOut[0], 0, -nOut[2]];
         soup.quad(P(A, inn, A.w - 0.05), P(B, inn, B.w - 0.05), P(B, inn, B.w + PH), P(A, inn, A.w + PH), nIn, [ua, 0], [ub, 0], [ub, PH * 0.25], [ua, PH * 0.25]);
@@ -286,13 +299,20 @@ export async function build(R, opts = {}) {
         for (const ds of [0, 5, -5, 10, -10]) {
           const p = at(Math.max(1, Math.min(e.len - 1, s + ds))), g = ground(p.x, p.z);
           if (g == null || p.b - g < 1.4) break;
-          // never on a road under the deck
+          // never on a road under the deck: its middle 1.5 m clear of every carriageway, and the whole pier 0.6 m clear
+          // (a single pier is a wall up to 4.5 m wide, a column up to 1.8 m round: only the middle was tested, and the
+          // wall's end stood in the lane of a road passing beside it)
           let clear = true;
-          for (let ci = 0; ci < cols && clear; ci++) {
-            const o = cols === 1 ? mid : -dL + 1.6 + (W - 3.2) * ci / (cols - 1);
+          const hh = p.b - g, wq = Math.min(4.5, W * 0.45), rq = Math.min(1.8, 0.55 + hh * 0.014);
+          const spots = cols === 1 ? [[mid, 1.5], [mid - wq / 2, 0.6], [mid + wq / 2, 0.6]] : Array.from({ length: cols }, (_, ci) => [-dL + 1.6 + (W - 3.2) * ci / (cols - 1), Math.max(1.5, rq + 0.6)]);
+          for (const [o, m] of spots) {
+            if (!clear) break;
             // (any road under it whatever its height: a road in a cutting lies well under the ground's model)
             const rr = surf(p.x + p.nx * o, p.z + p.nz * o, g + 0.4, 1), r2 = surf(p.x + p.nx * o, p.z + p.nz * o, undefined, 1);
-            if ((rr && (rr.onRoad || rr.edge < 1.5)) || (r2 && (r2.onRoad || r2.edge < 1.5) && (r2.h == null || r2.h < p.b))) clear = false;
+            if ((rr && (rr.onRoad || rr.edge < m)) || (r2 && (r2.onRoad || r2.edge < m) && (r2.h == null || r2.h < p.b))) clear = false;
+            // (nor a road at any height the pier spans, a tunnel's among them: with no height given the lookup leaves
+            // tunnels out, and Shibuya's piers stood in the lanes of the tunnel under the expressway)
+            else if (R.roadAcross) { let h = null; try { h = R.roadAcross(p.x + p.nx * o, p.z + p.nz * o, g - 3.5, p.b - 1.5, -m); } catch (err) { h = null; } if (h != null) clear = false; }
           }
           if (clear) { q = { ...p, g }; break; }
         }
@@ -343,6 +363,10 @@ export async function build(R, opts = {}) {
         const k = Math.min(1.6, e.mk[i] || 1), x = e.px[i] + e.nx[i] * k * sd * off, z = e.pz[i] + e.nz[i] * k * sd * off;
         const top = e.ph[i] + lift + WALK, g = ground(x, z);
         const cur = { x, z, top, g, rise: g == null ? 0 : top - g, nx: e.nx[i] * sd, nz: e.nz[i] * sd, s: e.ps[i] };
+        // (not where the wall's line lies on another road's carriageway, at any height the wall spans: a ramp beside a
+        // slip road at its foot, or splitting from the road it climbs out of, had the wall and its parapet down that
+        // road's lane)
+        if (R.roadAcross) { let h = null; try { h = R.roadAcross(x, z, (g == null ? top : Math.min(g, top)) - 2.5, top + RAIL_TOP); } catch (err) { h = null; } if (h != null) { prev = null; continue; } }
         if (prev && open && (prev.rise > 0.35 || cur.rise > 0.35) && prev.g != null && cur.g != null) {
           const wa = prev.rise > 1.2 ? WALL_H : 0, wb = cur.rise > 1.2 ? WALL_H : 0, n = [(prev.nx + cur.nx) / 2, 0, (prev.nz + cur.nz) / 2];
           soup.quad([prev.x, prev.g - 0.6, prev.z], [cur.x, cur.g - 0.6, cur.z], [cur.x, cur.top + wb, cur.z], [prev.x, prev.top + wa, prev.z], n, [prev.s * 0.25, (prev.g - 0.6) * 0.25], [cur.s * 0.25, (cur.g - 0.6) * 0.25], [cur.s * 0.25, (cur.top + wb) * 0.25], [prev.s * 0.25, (prev.top + wa) * 0.25]);

@@ -16,7 +16,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south.
 import * as THREE from 'three';
-import { under, indexTube } from './under.js?v=52';
+import { under, indexTube } from './under.js?v=53';
 
 const T = 0.45;            // lining thickness
 const WALK = 0.12;         // the walkway along each wall over the road (roads.js draws it)
@@ -202,12 +202,16 @@ export async function buildTunnels(R, L, opts, group, concrete, stats) {
         const A = S[a], B = S[b];
         const pa = [A.x + A.nx * A.k * sd * off, A.z + A.nz * A.k * sd * off], pb = [B.x + B.nx * B.k * sd * off, B.z + B.nz * B.k * sd * off];
         // (no higher than a street over it: a car on the street is not stopped by the tunnel's wall under it)
-        // (not across another road at this level: where two bores fork, or a ramp joins, the wall of one stood across
-        // the other's carriageway and stopped the car in the Tuileries tunnel)
-        const crosses = [pa, pb, [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2]].some(q => { const r = surfAt(q[0], q[1], (A.f + B.f) / 2); return r && r.onRoad && r.edge < -0.25; });
-        if (crosses) { a = b; continue; }
         let top = Math.max(A.f, B.f) + I.crown;
         for (const q of [pa, pb, [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2]]) { const r = surf(q[0], q[1]); if (r && r.h != null && (r.onRoad || r.curbH > 0) && r.h > Math.min(A.f, B.f) + 1.5) top = Math.min(top, r.h - 0.4); }
+        // (not across another road at this level: where two bores fork, or a ramp joins, the wall of one stood across
+        // the other's carriageway and stopped the car in the Tuileries tunnel; nor across one anywhere up the wall's
+        // height, R.roadAcross: a ramp a level up beside the bus station's bores ran through it)
+        const crosses = [pa, pb, [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2]].some(q => {
+          const r = surfAt(q[0], q[1], (A.f + B.f) / 2); if (r && r.onRoad && r.edge < -0.25) return true;
+          try { return !!R.roadAcross && R.roadAcross(q[0], q[1], Math.min(A.f, B.f) - 2.5, top - 0.5) != null; } catch (err) { return false; }
+        });
+        if (crosses) { a = b; continue; }
         collide.addSegment(pa, pb, 0.3, Math.min(A.f, B.f) - 0.6, top, 'tunnel');
         a = b;
       }
@@ -248,9 +252,23 @@ export async function buildTunnels(R, L, opts, group, concrete, stats) {
       oo = Math.min(oo, Math.max(dL, dR) + 14);
       const g = ground(A.x, A.z);
       const top = Math.max(O.crown + 1.4, Math.min(g == null ? 0 : g - A.f + 0.4, O.crown + 5));
-      const poly = [[-oo, -0.8], [-dL, -0.8]];
+      // each side stops short of another road's carriageway along its line (a ramp forking off at the portal, the
+      // junction there): it stood across that road's lanes, wall and collision (ooL, ooR)
+      // (a road right beside the bore's wall: no headwall that side, but a sliver for the drawing)
+      const reach = (sd) => {
+        const o0 = (sd < 0 ? dL : dR) + 0.1;
+        if (!R.roadAcross) return oo;
+        for (let o = o0 + 0.3; o <= oo; o += 0.6) {
+          const p = P(A, sd * o, 0);
+          let hit = null; try { hit = R.roadAcross(p[0] - tx * 0.4, p[2] - tz * 0.4, A.f - 2.9, A.f + top - 0.3); } catch (err) { hit = null; }
+          if (hit != null) return Math.max(o0 - 0.05, o - 0.6);
+        }
+        return oo;
+      };
+      const ooL = reach(-1), ooR = reach(1);
+      const poly = [[-ooL, -0.8], [-dL, -0.8]];
       for (const q of I.P) poly.push([q[0], q[1]]);
-      poly.push([dR, -0.8], [oo, -0.8], [oo, top], [-oo, top]);
+      poly.push([dR, -0.8], [ooR, -0.8], [ooR, top], [-ooL, top]);
       let tris = null;
       try { tris = THREE.ShapeUtils.triangulateShape(poly.map(q => new THREE.Vector2(q[0], q[1])), []); } catch (err) { tris = null; }
       const Q = (o, y, back = 0) => { const p = P(A, o, y); return [p[0] - tx * back, p[1], p[2] - tz * back]; };
@@ -259,8 +277,8 @@ export async function buildTunnels(R, L, opts, group, concrete, stats) {
         shell.tri(Q(a[0], a[1]), Q(b[0], b[1]), Q(cc[0], cc[1]), [tx, 0, tz], [a[0] * 0.25, a[1] * 0.25], [b[0] * 0.25, b[1] * 0.25], [cc[0] * 0.25, cc[1] * 0.25]);
       }
       // its coping, and its ends
-      shell.quad(Q(-oo, top), Q(oo, top), Q(oo, top, 1.2), Q(-oo, top, 1.2), [0, 1, 0]);
-      for (const sd of [-1, 1]) shell.quad(Q(sd * oo, -0.8), Q(sd * oo, top), Q(sd * oo, top, 1.2), Q(sd * oo, -0.8, 1.2), [A.nx * sd, 0, A.nz * sd]);
+      shell.quad(Q(-ooL, top), Q(ooR, top), Q(ooR, top, 1.2), Q(-ooL, top, 1.2), [0, 1, 0]);
+      for (const sd of [-1, 1]) { const os = sd < 0 ? ooL : ooR; shell.quad(Q(sd * os, -0.8), Q(sd * os, top), Q(sd * os, top, 1.2), Q(sd * os, -0.8, 1.2), [A.nx * sd, 0, A.nz * sd]); }
       // the reveal between the lining and the shell at the opening
       for (let j = 1; j < I.P.length; j++) {
         const a = I.P[j - 1], b = I.P[j], a2 = O.P[j - 1], b2 = O.P[j];
@@ -268,7 +286,8 @@ export async function buildTunnels(R, L, opts, group, concrete, stats) {
         shell.quad(Q(a[0], a[1]), Q(b[0], b[1]), Q(b[0], b[1], 0.6), Q(a[0], a[1], 0.6), [tx, 0, tz]);
       }
       if (collide && collide.addSegment) for (const sd of [-1, 1]) {
-        const off0 = (sd < 0 ? dL : dR) + 0.1, a = P(A, sd * off0, 0), b = P(A, sd * oo, 0);
+        const off0 = (sd < 0 ? dL : dR) + 0.1, os = sd < 0 ? ooL : ooR, a = P(A, sd * off0, 0), b = P(A, sd * os, 0);
+        if (os < off0 + 0.3) continue;
         collide.addSegment([a[0] - tx * 0.4, a[2] - tz * 0.4], [b[0] - tx * 0.4, b[2] - tz * 0.4], 0.8, A.f - 1, A.f + top, 'portal');
       }
       stats.portals++;
@@ -312,10 +331,24 @@ export async function buildTunnels(R, L, opts, group, concrete, stats) {
           let blocked = nb !== null && (cut ? nb < top + 0.6 : nb > top - 0.6);
           if (!blocked && nb !== null) g = cut ? Math.max(g, nb) : Math.min(g, nb);
           if (!blocked && bl) for (const b of buildingsAt(bl, ox, oz)) if (bBase(b) < top + 1.5) { blocked = true; break; }
-          if (DBG) DBG.push([e.id, sd, i, +x.toFixed(1), +z.toFixed(1), +top.toFixed(2), +g.toFixed(2), cut ? 'c' : 'f', blocked ? 'blk' : 'ok', nb === null ? null : +nb.toFixed(2)]);
+          // the wall's own line on another road's carriageway, anywhere up its height (with no height given, surf
+          // above answers for the highest piece only): a road up on the bank over the wall's line caps the wall just
+          // under its surface, a retaining wall holding that road up; one at this road's level, or under the wall,
+          // ends it (it stood in that road's lanes: up to 8 m of wall in a Bay Bridge ramp, a 0.3 m lip of it across
+          // the streets over the Paris quays)
+          let capped = false;
+          if (!blocked && R.roadAcross) {
+            for (const [qx, qz] of [[x, z], [x + e.nx[i] * sd * 0.45, z + e.nz[i] * sd * 0.45]]) {
+              let hb = null; try { hb = R.roadAcross(qx, qz, (cut ? top : g) - 2.5, cut ? g + 0.3 : top + 0.1, 0.15); } catch (err) { hb = null; }
+              if (hb == null) continue;
+              if (cut && hb > top + 0.6) { g = Math.min(g, hb - 0.36); capped = true; } else { blocked = true; break; }
+            }
+            if (!blocked && cut && g - top < 0.25) blocked = true;
+          }
+          if (DBG) DBG.push([e.id, sd, i, +x.toFixed(1), +z.toFixed(1), +top.toFixed(2), +g.toFixed(2), cut ? 'c' : 'f', blocked ? 'blk' : capped ? 'cap' : 'ok', nb === null ? null : +nb.toFixed(2)]);
           if (blocked) { pts.push(null); continue; }
           const ex = e.px[i] + e.nx[i] * k * sd * c.hw, ez = e.pz[i] + e.nz[i] * k * sd * c.hw, et = e.ph[i] + lift + (e.pc[i] || 0) * sd * c.hw;
-          pts.push({ x, z, top, g, cut, s: e.ps[i], nx: e.nx[i] * sd, nz: e.nz[i] * sd, i, k, ex, ez, et });
+          pts.push({ x, z, top, g, cut, capped, s: e.ps[i], nx: e.nx[i] * sd, nz: e.nz[i] * sd, i, k, ex, ez, et });
         }
         // runs of the same kind
         let run = [];
@@ -342,7 +375,8 @@ export async function buildTunnels(R, L, opts, group, concrete, stats) {
         // the ground from the carriageway's edge to the wall (under the pavement where there is one), so nothing
         // shows through where the terrain is cut away
         shell.quad([a.ex, a.et - 0.03, a.ez], [b.ex, b.et - 0.03, b.ez], [b.x, b.top - 0.04, b.z], [a.x, a.top - 0.04, a.z], [0, 1, 0]);
-        if (collide && collide.addSegment && Math.min(a.g - a.top, b.g - b.top) > 0.9) collide.addSegment([a.x + a.nx * 0.15, a.z + a.nz * 0.15], [b.x + b.nx * 0.15, b.z + b.nz * 0.15], 0.3, Math.min(a.top, b.top) - 0.6, Math.max(a.g, b.g) + 0.3, 'wall');
+        // (none where the wall holds up a road over its line: its top is that road's edge, which the car drives over)
+        if (collide && collide.addSegment && !a.capped && !b.capped && Math.min(a.g - a.top, b.g - b.top) > 0.9) collide.addSegment([a.x + a.nx * 0.15, a.z + a.nz * 0.15], [b.x + b.nx * 0.15, b.z + b.nz * 0.15], 0.3, Math.min(a.top, b.top) - 0.6, Math.max(a.g, b.g) + 0.3, 'wall');
         // the ground over the road and its pavement out to the wall is cut away (the mask, relative to the road's
         // height at the mask's own cells)
         const e2 = e, ia = a.i, ib = b.i;

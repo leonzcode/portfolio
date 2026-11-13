@@ -19,10 +19,10 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=52';
-import { patchBaked } from './baked.js?v=52';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=52';
-import overture from './overture.js?v=52';
+import { frame, project } from './geo.js?v=53';
+import { patchBaked } from './baked.js?v=53';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=53';
+import overture from './overture.js?v=53';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -152,6 +152,309 @@ function perimRings(outer, holes, w) {
   if (ringsCross([o, ...hs])) return null;
   for (const h of hs) for (const q of h) if (!inRing(q[0], q[1], o)) return null;
   return { o, hs };
+}
+
+// ---------- roofs over any outline: the straight skeleton ----------
+// The straight skeleton of a simple outline (no courtyards), found by moving every wall in at the same speed: each
+// wall's face of a hipped roof whose slopes all have one pitch. faces[e] is the plan of wall e's face (its two
+// corners first, then the ridges and hips round it); T how far in the last of it meets. Null when the outline is
+// too awkward, and the caller falls back to the roof over the outline's box.
+function skeleton(ring, tCut = Infinity) {
+  const n = ring.length;
+  if (n < 3 || n > 64) return null;
+  let A2 = 0; for (let i = 0; i < n; i++) { const p = ring[i], q = ring[(i + 1) % n]; A2 += p[0] * q[1] - q[0] * p[1]; }
+  const sg = A2 > 0 ? 1 : -1;
+  let scale = 0; for (const p of ring) scale = Math.max(scale, Math.abs(p[0] - ring[0][0]), Math.abs(p[1] - ring[0][1]));
+  const tol = Math.max(1e-7, scale * 1e-7);
+  const E = [];
+  for (let i = 0; i < n; i++) {
+    const a = ring[i], b = ring[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz);
+    if (l < 1e-6) return null;
+    const u = [dx / l, dz / l];
+    E.push({ a, u, n: sg > 0 ? [-u[1], u[0]] : [u[1], -u[0]] });
+  }
+  // a corner's speed: it stays on both of its walls as they move in at speed 1
+  const vel = (eL, eR) => {
+    const a = E[eL].n, b = E[eR].n, det = a[0] * b[1] - a[1] * b[0];
+    if (Math.abs(det) < 1e-9) return a[0] * b[0] + a[1] * b[1] > 0 ? [a[0], a[1]] : null;
+    return [(b[1] - a[1]) / det, (a[0] - b[0]) / det];
+  };
+  const verts = [];
+  const mk = (p, t0, eL, eR) => {
+    const w = vel(eL, eR);
+    const cr = E[eL].u[0] * E[eR].u[1] - E[eL].u[1] * E[eR].u[0];
+    // (flat: between two walls that face each other and have just met, so the strip between them is gone)
+    const v = { p0: p, t0, w: w || [0, 0], flat: !w, eL, eR, alive: true, reflex: cr * sg < -1e-9, prev: null, next: null };
+    verts.push(v); return v;
+  };
+  const pos = (v, t) => [v.p0[0] + v.w[0] * (t - v.t0), v.p0[1] + v.w[1] * (t - v.t0)];
+  for (let i = 0; i < n; i++) if (mk(ring[i], 0, (i - 1 + n) % n, i).flat) return null;
+  for (let i = 0; i < n; i++) { verts[i].prev = verts[(i - 1 + n) % n]; verts[i].next = verts[(i + 1) % n]; }
+  const arcs = [];
+  const kill = (v, t, p) => { v.alive = false; arcs.push({ a: v.p0, b: p || pos(v, t), f: v.eL, g: v.eR }); };
+  // A corner between two walls that have met runs along the line where they lie on each other to the nearer corner
+  // on it (the ridge between them), and takes that corner's place, until it stands between walls that do not face
+  const settle = (N, T) => {
+    for (let k = 0; N.flat && k < n; k++) {
+      const C = N.next, D = N.prev;
+      if (C === D || C === N) return;
+      const pc = pos(C, T), pd = pos(D, T), p = N.p0;
+      if (Math.hypot(pd[0] - p[0], pd[1] - p[1]) <= Math.hypot(pc[0] - p[0], pc[1] - p[1])) {
+        kill(D, T, pd); kill(N, T, pd);
+        const M = mk(pd, T, D.eL, N.eR);
+        M.prev = D.prev; M.next = C; D.prev.next = M; C.prev = M; N = M;
+      } else {
+        kill(C, T, pc); kill(N, T, pc);
+        const M = mk(pc, T, N.eL, C.eR);
+        M.prev = D; M.next = C.next; D.next = M; C.next.prev = M; N = M;
+      }
+    }
+  };
+  // the loops of corners still moving, where they are at time t
+  const loops = (t) => {
+    const seen = new Set(), out = [];
+    for (const v of verts) {
+      if (!v.alive || seen.has(v)) continue;
+      const r = []; let w = v;
+      do { seen.add(w); r.push(pos(w, t)); w = w.next; } while (w !== v && r.length <= verts.length);
+      if (r.length >= 3) out.push(r);
+    }
+    return out;
+  };
+  let front = null;
+  let T = 0, guard = 8 * n + 40;
+  for (;;) {
+    if (--guard < 0) return null;
+    let live = 0;
+    // small loops close at once: two corners left are a ridge (or a point)
+    for (const v of verts) {
+      if (!v.alive) continue;
+      if (v.next === v) { kill(v, T); continue; }
+      if (v.next.next === v) {
+        const o = v.next, pv = pos(v, T), po = pos(o, T);
+        kill(v, T, pv); kill(o, T, po);
+        arcs.push({ a: pv, b: po, f: v.eR, g: v.eL });
+        continue;
+      }
+      live++;
+    }
+    if (!live) break;
+    let best = null;
+    for (const A of verts) {
+      if (!A.alive) continue;
+      const B = A.next, e = A.eR, u = E[e].u;
+      const pa = pos(A, T), pb = pos(B, T);
+      const d = (pb[0] - pa[0]) * u[0] + (pb[1] - pa[1]) * u[1];
+      const rate = (B.w[0] - A.w[0]) * u[0] + (B.w[1] - A.w[1]) * u[1];
+      let t = Infinity;
+      if (d < tol * 10) t = T;
+      else if (rate < -1e-12) t = T - d / rate;
+      if (t < (best ? best.t - 1e-12 : Infinity)) best = { t, k: 0, A, B };
+    }
+    for (const V of verts) {
+      if (!V.alive || !V.reflex) continue;
+      const pv = pos(V, T);
+      for (let S = V.next; S !== V.prev && S !== V; S = S.next) {
+        const e = S.eR; if (e === V.eL || e === V.eR) continue;
+        const N2 = E[e].n, a = E[e].a;
+        const c = (pv[0] - a[0]) * N2[0] + (pv[1] - a[1]) * N2[1] - T;
+        const den = 1 - (V.w[0] * N2[0] + V.w[1] * N2[1]);
+        if (den < 1e-9 || c < -tol * 10) continue;
+        const t = T + Math.max(0, c) / den;
+        if (best && t >= best.t - 1e-12) continue;
+        const H = [pv[0] + V.w[0] * (t - T), pv[1] + V.w[1] * (t - T)];
+        const s1 = pos(S, t), s2 = pos(S.next, t), u = E[e].u;
+        const k1 = (H[0] - s1[0]) * u[0] + (H[1] - s1[1]) * u[1], k2 = (H[0] - s2[0]) * u[0] + (H[1] - s2[1]) * u[1];
+        if (k1 < -tol * 10 || k2 > tol * 10) continue;
+        best = { t, k: 1, V, S, H };
+      }
+    }
+    if (!best || !isFinite(best.t)) {
+      // nothing more meets: what is left has no area (ridges walked down one side and back up the other). Each
+      // stretch between two corners is a ridge between its wall and the wall that runs back over it.
+      const left = verts.filter(v => v.alive), P = new Map();
+      for (const v of left) { const p = pos(v, T); P.set(v, p); kill(v, T, p); }
+      const segs = [], ends = left.map(v => P.get(v)), near = tol * 1e3;
+      // (each stretch cut where another corner lies on it, so the two sides of a ridge pair up piece by piece)
+      for (const v of left) {
+        const a = P.get(v), b = P.get(v.next), dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz;
+        const cut = [];
+        if (L2 > near * near) for (const p of ends) {
+          const t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / L2;
+          if (t <= 1e-6 || t >= 1 - 1e-6) continue;
+          if (Math.abs((p[0] - a[0]) * dz - (p[1] - a[1]) * dx) / Math.sqrt(L2) > near) continue;
+          cut.push([t, p]);
+        }
+        cut.sort((x, y) => x[0] - y[0]);
+        let q = a;
+        for (const [, p] of cut) { segs.push({ a: q, b: p, e: v.eR, done: false }); q = p; }
+        segs.push({ a: q, b, e: v.eR, done: false });
+      }
+      for (const s of segs) {
+        if (s.done) continue; s.done = true;
+        if (Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) < tol * 100) continue;
+        let o = null;
+        for (const q of segs) if (!q.done && Math.hypot(q.a[0] - s.b[0], q.a[1] - s.b[1]) < tol * 1e3 && Math.hypot(q.b[0] - s.a[0], q.b[1] - s.a[1]) < tol * 1e3) { o = q; break; }
+        if (!o) return null;
+        o.done = true;
+        arcs.push({ a: s.a, b: s.b, f: s.e, g: o.e });
+      }
+      break;
+    }
+    // (the walls' line as it passes tCut, where a roof cut flat there has its flat top)
+    if (!front && best.t >= tCut) front = loops(tCut);
+    T = Math.max(T, best.t);
+    if (best.k === 0) {
+      const { A, B } = best, pa = pos(A, T), pb = pos(B, T), P = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2];
+      kill(A, T, P); kill(B, T, P);
+      if (A.prev === B) continue; // (a loop of two: both gone)
+      // (two walls facing each other: the corner waits where they met, the strip between them is gone)
+      const N = mk(P, T, A.eL, B.eR);
+      N.prev = A.prev; N.next = B.next; A.prev.next = N; B.next.prev = N;
+      settle(N, T);
+    } else {
+      const { V, S, H } = best, S2 = S.next;
+      kill(V, T, H);
+      const V1 = mk(H, T, V.eL, S.eR), V2 = mk(H, T, S.eR, V.eR);
+      V1.prev = V.prev; V1.next = S2; V.prev.next = V1; S2.prev = V1;
+      V2.prev = S; V2.next = V.next; S.next = V2; V.next.prev = V2;
+      settle(V1, T); if (V2.alive) settle(V2, T);
+    }
+  }
+  // each edge's face: its corners, then the arcs that carry its index, chained point to point
+  const faces = [];
+  for (let e = 0; e < n; e++) {
+    const mine = arcs.filter(r => r.f === e || r.g === e);
+    const start = ring[(e + 1) % n], end = ring[e];
+    const poly = [end, start];
+    let cur = start, used = new Set(), ok = false;
+    for (let step = 0; step < mine.length + 2; step++) {
+      let nx = null;
+      for (let k = 0; k < mine.length; k++) {
+        if (used.has(k)) continue;
+        const r = mine[k];
+        if (r.a === cur) { nx = r.b; used.add(k); break; }
+        if (r.b === cur) { nx = r.a; used.add(k); break; }
+      }
+      if (!nx) {
+        // (a point met again by value: arcs that end where another starts)
+        for (let k = 0; k < mine.length; k++) {
+          if (used.has(k)) continue;
+          const r = mine[k];
+          if (Math.hypot(r.a[0] - cur[0], r.a[1] - cur[1]) < tol * 100) { nx = r.b; used.add(k); break; }
+          if (Math.hypot(r.b[0] - cur[0], r.b[1] - cur[1]) < tol * 100) { nx = r.a; used.add(k); break; }
+        }
+      }
+      if (!nx) break;
+      if (nx === end || Math.hypot(nx[0] - end[0], nx[1] - end[1]) < tol * 100) { ok = true; break; }
+      if (Math.hypot(nx[0] - cur[0], nx[1] - cur[1]) > tol * 100) poly.push(nx);
+      cur = nx;
+    }
+    if (!ok) return null;
+    faces.push(poly);
+  }
+  return { faces, E, T, front };
+}
+
+// The roof of a footprint that is no rectangle, and of every roof that slopes up from all its walls (perim), from
+// its outline's straight skeleton: each wall's own face, sloping in at the roof's pitch and cut flat where it reaches
+// the roof's height; on a gabled roof the end of each narrow wing is a gable (the ridge carried out to the wall).
+// Pieces: { poly, e } sloping up from wall e (k times the distance in from it), or { poly, flat } at the cap.
+function skelRoof(P) {
+  const ring = P.outer, n = ring.length, perim = P.shape === 'perim';
+  const k = perim ? P.roofH / Math.max(0.5, P.perimW) : Math.tan(clamp(P.pitch, 8, 65) * D2R);
+  if (!(k > 0) || !(P.roofH > 0.05)) return null;
+  // (the walls' line where the roof reaches its height is its flat top, one piece however many walls led to it)
+  const S = skeleton(ring, P.roofH / k);
+  if (!S) return null;
+  const E = S.E, cap = Math.min(P.roofH, k * S.T);
+  if (!(cap > 0.05)) return null;
+  const ov = !perim && P.overhang > 0 ? P.overhang : 0;
+  const O = ov ? offsetRing(ring, ov) : ring;
+  const pieces = [], kink = new Map(), dc = cap / k, cut = !!S.front && cap < k * S.T - 0.02;
+  const half = (nE, a) => nE[0] * a[0] + nE[1] * a[1];
+  // a face's piece sloping up from wall e (below the cut, where there is one); a gable's half also keeps its part over
+  // the cut that the hipped roof's flat top (the walls' line) does not cover: from 0 up to its own end wall's line
+  const add = (poly, e, end) => {
+    if (!cut) { const r = dedupe(poly); if (r.length >= 3) pieces.push({ poly: r, e }); return; }
+    const nE = E[e].n, na = half(nE, E[e].a);
+    const lo = dedupe(clip(poly, [-nE[0], -nE[1]], na + dc));
+    if (lo.length >= 3) pieces.push({ poly: lo, e });
+    if (end != null) {
+      const nG = E[end].n, hi = dedupe(clip(clip(poly, [nE[0], nE[1]], -na - dc), [-nG[0], -nG[1]], half(nG, E[end].a) + dc));
+      if (hi.length >= 3 && Math.abs(area2(hi)) > 0.01) pieces.push({ poly: hi, flat: true });
+    }
+  };
+  for (let e = 0; e < n; e++) {
+    const f = S.faces[e].slice(); f[0] = O[e]; f[1] = O[(e + 1) % n];
+    const ep = (e - 1 + n) % n, en = (e + 1) % n;
+    if (P.shape === 'gabled') {
+      const s = gableEnd(S, ring, e);
+      if (s != null) {
+        // (its two halves take the planes of the walls either side)
+        const apex = S.faces[e][2], A = f[0], B = f[1], ab = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, ux = (B[0] - A[0]) / ab, uz = (B[1] - A[1]) / ab;
+        const t = (apex[0] - A[0]) * ux + (apex[1] - A[1]) * uz, M = [A[0] + ux * t, A[1] + uz * t];
+        add([A, M, apex], ep, e); add([M, B, apex], en, e);
+        kink.set(e, s);
+        continue;
+      }
+    }
+    add(f, e);
+  }
+  if (cut) for (const r of S.front) { const q = dedupe(r); if (q.length >= 3 && Math.abs(area2(q)) > 0.01) pieces.push({ poly: q, flat: true }); }
+  // the highest point of the ridges (a chimney stands there)
+  let peak = null, ph = -1;
+  for (let e = 0; e < n; e++) for (const p of S.faces[e]) { const h = (p[0] - E[e].a[0]) * E[e].n[0] + (p[1] - E[e].a[1]) * E[e].n[1]; if (h > ph) { ph = h; peak = p; } }
+  return { pieces, E, k, cap, kink, peak, T: S.T };
+}
+// A gable at the end of a wing: wall e's face a triangle between two walls square to it whose faces run on (not the
+// sides of a square), its peak over the wall's middle part. Where along the wall the peak is (0..1), or null.
+function gableEnd(S, ring, e) {
+  const n = ring.length, E = S.E, F = S.faces, ep = (e - 1 + n) % n, en = (e + 1) % n;
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
+  if (F[e].length !== 3 || F[ep].length <= 3 || F[en].length <= 3 || Math.abs(dot(E[e].u, E[ep].u)) > 0.3 || Math.abs(dot(E[e].u, E[en].u)) > 0.3) return null;
+  const apex = F[e][2], a = ring[e], b = ring[en], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  const s = ((apex[0] - a[0]) * E[e].u[0] + (apex[1] - a[1]) * E[e].u[1]) / L;
+  return s > 0.2 && s < 0.8 ? s : null;
+}
+// consecutive points that are one (a clipped piece repeats a point lying on the cut)
+function dedupe(r) {
+  const out = [];
+  for (const p of r) { const q = out[out.length - 1]; if (!q || Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) > 1e-5) out.push(p); }
+  while (out.length > 2 && Math.abs(out[0][0] - out[out.length - 1][0]) + Math.abs(out[0][1] - out[out.length - 1][1]) <= 1e-5) out.pop();
+  return out;
+}
+// a piece's height over the eave at (x, z)
+function skelPieceH(K, pc, x, z) {
+  if (pc.flat) return K.cap;
+  const E = K.E[pc.e];
+  return Math.min(K.cap, K.k * ((x - E.a[0]) * E.n[0] + (z - E.a[1]) * E.n[1]));
+}
+// the skeleton roof's height over the eave at (x, z): the piece over it (on an edge, the nearest)
+function skelAt(P, x, z) {
+  const K = P.skel;
+  for (const pc of K.pieces) if (inRing(x, z, pc.poly)) return skelPieceH(K, pc, x, z);
+  let best = null, bd = Infinity;
+  for (const pc of K.pieces) { const d = ringDist(x, z, pc.poly); if (d < bd) { bd = d; best = pc; } }
+  return best ? skelPieceH(K, best, x, z) : 0;
+}
+// the walls' top along wall e of a skeleton roof: the eave, or a gable's two slopes up to the ridge
+function skelWall(P, e, x, z) {
+  const K = P.skel;
+  if (!K.kink.has(e)) return 0;
+  const n = K.E.length, a = K.E[(e - 1 + n) % n], b = K.E[(e + 1) % n];
+  const d = Math.min((x - a.a[0]) * a.n[0] + (z - a.a[1]) * a.n[1], (x - b.a[0]) * b.n[0] + (z - b.a[1]) * b.n[1]);
+  return Math.max(0, Math.min(K.cap, K.k * d));
+}
+// the distance from (x, z) to a ring's outline
+function ringDist(x, z, r) {
+  let m = Infinity;
+  for (let i = 0; i < r.length; i++) {
+    const a = r[i], b = r[(i + 1) % r.length], ex = b[0] - a[0], ez = b[1] - a[1], L2 = ex * ex + ez * ez || 1;
+    const t = clamp(((x - a[0]) * ex + (z - a[1]) * ez) / L2, 0, 1);
+    m = Math.min(m, Math.hypot(a[0] + ex * t - x, a[1] + ez * t - z));
+  }
+  return m;
 }
 
 // clip a ring by f(p) = g . p + c >= 0
@@ -575,6 +878,8 @@ function roofAt(P, terms, x, z, below = false) {
   if (below) return P.roofH * Math.min(1, 1 - m);
   return P.roofH * Math.max(0, Math.min(1, 1 - m));
 }
+// the roof's height over the eave at (x, z), from the skeleton's pieces or from the box's terms
+function roofY(P, terms, x, z) { return P.skel ? Math.max(0, skelAt(P, x, z)) : roofAt(P, terms, x, z); }
 // a radial roof's height share at (x, z): by the distance from the middle against the ring's mean radius
 function radialAt(P, x, z) {
   const prof = PROFILE[P.shape], d = Math.hypot(x - P.rc[0], z - P.rc[1]) / Math.max(0.5, P.rR);
@@ -638,11 +943,12 @@ function plan(b, ctx) {
     else if ((ctx.zone === 'nl' || ctx.zone === 'be') && P.front >= 0 && P.frontLen < 10 && P.depth > P.frontLen * 1.2 && area < 450 && notBig && !(tagH > 30) && !P.rowLike) {
       shape = 'gabled'; P.cand = 'house';
       const p = outer[P.front], q = outer[(P.front + 1) % outer.length], fl = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
-      P.across = Math.abs(((q[0] - p[0]) * ob.A[0] + (q[1] - p[1]) * ob.A[1]) / fl) > 0.7; // ridge at right angles to the front
+      P.across = Math.abs(((q[0] - p[0]) * ob.A[0] + (q[1] - p[1]) * ob.A[1]) / fl) > 0.7 && ob.hl < ob.hw * 1.3; // ridge at right angles to the front (and along a long house)
     }
     else if (houseLike && area < 700 && area / ob.area > 0.55) { shape = guessHouseRoof(P, ctx); P.cand = 'house'; }
-    // (churches and town halls of old towns: pitched more often than not; the picture decides)
-    else if (eurOld && (CIVIC.has(t) || t === 'church') && area < 6000 && area / ob.area > 0.5) { shape = 'flat'; P.cand = 'maybe'; }
+    // (churches and town halls of old towns: pitched more often than not; the picture decides. So for the big low
+    // civic buildings of American towns, art centres, churches, libraries, which were all drawn flat)
+    else if ((eurOld || (/^us/.test(ctx.zone) && !(tagH > 16) && !(b.levels > 3))) && (CIVIC.has(t) || t === 'church') && area < 6000 && area / ob.area > 0.5) { shape = 'flat'; P.cand = 'maybe'; }
     else if (notBig && area > 25 && area < (eurOld ? (ctx.density > 0.25 ? 3000 : 1400) : 600) && (tagH == null || tagH < (eurOld ? 30 : 22)) && !(b.levels > (eurOld ? 7 : 5)) && area / ob.area > 0.5) { shape = 'flat'; P.cand = 'maybe'; }
     else shape = 'flat';
     P.roofSrc = 'guess';
@@ -675,6 +981,10 @@ function guessHouseRoof(P, ctx) {
     // ridge parallel to the front: along the long axis when the front is the long side
     P.across = gableToStreet ? alongLong : !alongLong;
   }
+  // (but a long house's ridge runs along it, whichever side faces the street: a narrow deep house on a city lot has
+  // its gable or hip to the street, a terrace drawn as one outline its ridge along the row. Across, the roof spanned
+  // the long side, 6 m high over one storey; in Chicago 1222 houses and in Clapham 1681 had it so)
+  if (P.ob.hl > P.ob.hw * 1.3) P.across = false;
   return shape;
 }
 
@@ -709,7 +1019,8 @@ function finish(P, ctx) {
     else if (shape === 'mansard') roofH = null; // below, from the height
     else if (shape === 'perim') roofH = P.perimMan ? null : P.perimW * tp;
     else if (P.spire) roofH = Math.max(3, Math.min(X.hw, X.hl) * 2 * (1.1 + P.r3 * 0.9));
-    else roofH = Math.min(houseLike ? 6.5 : 9, X.hw * tp * (shape === 'gambrel' ? 1.15 : 1));
+    // (a skeleton roof's ridge is as high as the outline is wide where it is widest, not its box)
+    else roofH = Math.min(houseLike ? 6.5 : 9, (P.skelOn && P.skelT > 0 ? P.skelT : X.hw) * tp * (shape === 'gambrel' ? 1.15 : 1));
   }
   if (shape === 'flat') roofH = 0;
 
@@ -818,14 +1129,36 @@ function perimGuess(P, ctx) {
   if (P.area < (paris ? 300 : 250) || P.H > 34 || P.H < 6) return;
   if (paris) { if (!(P.shape === 'flat' || (P.shape === 'mansard' && !P.rect && P.area >= 750))) return; }
   else if (P.shape !== 'flat' || (SHOPS.has(t) && t !== 'mixed_use' && t !== 'hotel')) return;
-  // (outside Paris a share stays flat, as modern blocks are)
-  if (!paris && hashf(P.id, 120) > (ctx.zone === 'uk' || ctx.zone === 'fr' ? 0.85 : 0.7)) return;
+  // (outside Paris a share stays flat, as modern blocks are; but not a row of houses in Britain or the Low Countries,
+  // whose roofs are pitched behind their parapets)
+  if (!paris && !(P.rowLike && /^(uk|nl|be)$/.test(ctx.zone)) && hashf(P.id, 120) > (ctx.zone === 'uk' || ctx.zone === 'fr' ? 0.85 : 0.7)) return;
   const w = paris ? 1.8 : clamp(Math.sqrt(P.area) * 0.18, 3, 5.5);
-  if (!perimRings(P.outer, P.holes, w) && !perimRings(P.outer, P.holes, w * 0.6)) return;
+  // (an outline whose walls moved in would fold still has a skeleton: no courtyard, and the roof is made from it)
+  if (!perimRings(P.outer, P.holes, w) && !perimRings(P.outer, P.holes, w * 0.6) && (P.holes.length || !skeleton(P.outer))) return;
   P.perimW = w; P.perimMan = paris; P.dormers = null; P.parisStacks = false;
   setShape(P, 'perim'); P.roofSrc = 'guess';
   (ctx.perims = (ctx.perims || 0) + 1);
 }
+
+// Which roofs are made from the outline's straight skeleton (skelRoof): pitched roofs over outlines that are no
+// rectangle (one roof over the outline's box put the ridge off the middle and walls up into the roof at every notch:
+// a third to a half of the pitched houses in Willow Glen and Chicago), and every roof sloping up from all its walls.
+// A Paris mansard over such an outline becomes a mansard all round it. Rectangles keep the box's roof, which is the
+// same roof there (and has the shapes the skeleton does not: saltbox, gambrel, round, skillion, pyramidal).
+const SKEL_SHAPES = /^(hipped|half-hipped|gabled|mansard|perim)$/;
+function skelGuess(P) {
+  P.skel = null; P.skelOn = false; P.skelT = null;
+  if (!SKEL_SHAPES.test(P.shape) || P.holes.length || P.spire || P.tower || P.outer.length > 64) return;
+  if (P.shape !== 'perim' && isRect(P.outer)) return;
+  const S = skeleton(P.outer);
+  if (!S) return;
+  // (a canal house keeps its shaped gable to the street: so only where its front is a gable end of the skeleton's roof)
+  if (P.canal && P.shape === 'gabled' && !(P.front >= 0 && gableEnd(S, P.outer, P.front) != null)) return;
+  if (P.shape === 'mansard') { P.perimW = 1.8; P.perimMan = true; setShape(P, 'perim'); }
+  P.skelOn = true; P.skelT = S.T;
+}
+// four square corners (once nearly straight points are left out)
+function isRect(r) { const s = simplifyRing(r); return s.length === 4 && squareCorners(s); }
 
 // ---------- the look of one building: walls, windows, ground floor, the things on it ----------
 function decorate(P, ctx) {
@@ -880,7 +1213,8 @@ function decorate(P, ctx) {
     P.style = (ctx.region === 'uk' || /^us/.test(z) || z === 'nl' || (z === 'de' && frame.lat > 52.2)) && r2 < 0.55 ? STYLE.BRICK : STYLE.STONE;
     P.palette = P.style === STYLE.BRICK ? hex(['#7a4434', '#8b5a42', '#6d4a3a', '#9a6a50']) : hex(['#a39b8a', '#b6ab92', '#8f8a80', '#c2b59a', '#9a8c74']);
     F[0] = clamp(Math.sqrt(P.area) * 0.22, 3.2, 5.5); F[1] = 0.3; F[2] = 0.7; P.bits = FBIT.ARCH | (r5 < 0.5 ? FBIT.SURROUND : 0); P.look = 0; P.ground = GROUND.NONE;
-    if (!b.roofShape && !RADIAL.has(P.shape) && !P.holes.length) { setShape(P, 'gabled', false); P.roofSrc = 'church'; }
+    // (not over a roof the picture shows near white: a modern church's flat roof)
+    if (!b.roofShape && !RADIAL.has(P.shape) && !P.holes.length && !(P.roofSrc === 'img' && P.shape === 'flat' && P.read && P.read.w >= 0.45)) { setShape(P, 'gabled', false); P.roofSrc = 'church'; }
     P.pitch = 50 + (r3 - 0.5) * 8;
   }
   applyCity(P, ctx);
@@ -924,7 +1258,8 @@ function fitOut(P, ctx) {
     if (hashf(P.id, 92) < ch) { P.canal = true; if (z === 'de') P.gableKind = 'step'; }
   }
   // Paris: the chimney stacks along a mansard's party walls
-  P.parisStacks = P.look === LOOK.HAUSS && P.shape === 'mansard';
+  // (and on a mansard made all round an outline that is no rectangle: P.dormers still 'bays')
+  P.parisStacks = P.look === LOOK.HAUSS && (P.shape === 'mansard' || (P.shape === 'perim' && P.perimMan && P.skelOn && P.dormers === 'bays'));
 }
 const r6of = (P) => P.r6;
 
@@ -934,7 +1269,7 @@ const r6of = (P) => P.r6;
 // none (flat). A pitched roof's faces are lit differently by the sun when the picture was taken.
 function readRoof(P, at) {
   const ob = P.ob, out = [];
-  let green = 0, tile = 0;
+  let green = 0, tile = 0, white = 0;
   const nu = clamp(Math.round(2 * ob.hl / 0.55), 6, 26), nv = clamp(Math.round(2 * ob.hw / 0.55), 4, 18);
   const su = Math.max(0.3, ob.hl - 0.45), sv = Math.max(0.3, ob.hw - 0.45);
   for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
@@ -942,7 +1277,10 @@ function readRoof(P, at) {
     const x = ob.cx + ob.A[0] * u + ob.P[0] * v, z = ob.cz + ob.A[1] * u + ob.P[1] * v;
     if (!inRing(x, z, P.outer)) continue;
     const c = at(x, z); if (!c) continue;
-    out.push([u, v, 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]]);
+    const lu = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+    out.push([u, v, lu]);
+    // (and the share that is near white: a membrane or a gravel roof, flat)
+    if (lu > 212) white++;
     // (the share of it that is leaves: a tree over the roof hides its faces)
     if (c[1] > c[0] * 1.04 && c[1] > c[2] * 1.12) green++;
     // (and the share that is the red and orange of clay tiles: a tiled roof is a pitched one)
@@ -979,7 +1317,7 @@ function readRoof(P, at) {
     let g = 0; for (let i = 1; i < 4; i++) if (t[i] > t[g]) g = i;
     return g;
   }, 4);
-  return { along, across, hip, std, tile: tile / n };
+  return { along, across, hip, std, tile: tile / n, mean, white: white / n };
 }
 // what the picture says, applied to the plan when it is sure enough
 function roofFromPicture(P, at, ctx) {
@@ -991,8 +1329,18 @@ function roofFromPicture(P, at, ctx) {
   // (a roof of clay tiles is pitched whatever the light did: only its shape and way are asked of the picture)
   const tiled = R.tile > 0.45;
   const sure = P.cand === 'house' || tiled ? 0.28 : 0.4, minDiff = P.cand === 'house' || tiled ? 9 : 14;
-  P.read.t = +R.tile.toFixed(2);
+  P.read.t = +R.tile.toFixed(2); P.read.m = Math.round(R.mean); P.read.w = +R.white.toFixed(2);
   const us = /^us/.test(ctx.zone);
+  // (most of it near white: a membrane or a gravel roof, flat, whatever its vents and shadows did to the faces' fit;
+  // shingles, tiles and slates are not that light. Of 48 picture-read roofs looked at in Willow Glen and Chicago, those
+  // with 45% or more near white were flat, but for one part flat and part pitched; the pitched ones had at most 39%)
+  if (!tiled && R.white >= 0.45 && best < 0.5 && P.area > 40) {
+    // (marked as the picture's even when it was flat already: no guess later puts a pitched roof on it)
+    const was = P.shape;
+    if (was !== 'flat') setShape(P, 'flat');
+    P.roofSrc = 'img';
+    return was !== 'flat';
+  }
   if (!tiled && best < (P.cand === 'house' ? (us ? 0.05 : 0.1) : 0.16) && (R.std || 0) < (P.cand === 'house' && us ? 10 : 16)) {
     // even, without faces: a flat roof (a house with a flat roof, or a town building that is not pitched)
     if (P.cand === 'house' && !(P.area > 70)) return false;
@@ -1207,7 +1555,7 @@ function emit(P, ctx, W, R, img) {
   // (a bridge tower standing across a deck: drawn from 5.5 m over the deck, so the road passes under it)
   if (P.b.passY != null && isFinite(P.b.passY) && P.b.passY + 5.5 - base > minH && P.b.passY + 5.5 - base < eave - 3) P.minH = P.b.passY + 5.5 - base;
   const yBot = P.minH > 0.3 ? base + P.minH : gmin - 1.2;
-  const terms = roofTerms(P);
+  const terms = P.skel ? null : roofTerms(P);
   const yEave = base + eave;
   const seed = Math.floor(P.r4 * 997);   // a whole number: the shader hashes it
   const wc = P.wallColour;
@@ -1223,7 +1571,7 @@ function emit(P, ctx, W, R, img) {
   let fdx = 0, fdz = 0;
   if (P.front >= 0) { const p = outer[P.front], q = outer[(P.front + 1) % outer.length], l = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1; fdx = (q[0] - p[0]) / l; fdz = (q[1] - p[1]) / l; }
   // a canal house's gable: its front wall rises over the roof in a stepped or a neck gable
-  const gableFront = P.canal && P.front >= 0 && terms && (P.shape === 'gabled') && Math.abs(fdx * P.ax.A[0] + fdz * P.ax.A[1]) < 0.35;
+  const gableFront = P.canal && P.front >= 0 && P.shape === 'gabled' && (P.skel ? P.skel.kink.has(P.front) : terms && Math.abs(fdx * P.ax.A[0] + fdz * P.ax.A[1]) < 0.35);
   // walls, ring by ring
   for (const ring of [outer, ...holes]) {
     const n = ring.length;
@@ -1254,6 +1602,8 @@ function emit(P, ctx, W, R, img) {
         // (only where the term really changes along the edge: a long wall's own line wavers round 1 by millimetres)
         if ((fa > 0) !== (fb > 0) && Math.abs(fa - fb) > 0.03) { const s = fa / (fa - fb); if (s > 0.001 && s < 0.999) ss.push(s); }
       }
+      // (a skeleton roof's wall is level at the eave, but for a gable's peak)
+      if (P.skel && ring === outer && P.skel.kink.has(i)) ss.push(P.skel.kink.get(i));
       ss.sort((x, y) => x - y);
       // keep only the real kinks of the walls' top (where the roof's height along the wall bends): a crossing of two
       // terms neither of which is the roof there splits nothing
@@ -1324,7 +1674,8 @@ function emit(P, ctx, W, R, img) {
         // the ends are the ring's own vertices, bit for bit, so neighbouring walls share their corner exactly
         const ax = sa === 0 ? e.p[0] : e.p[0] + e.dx * sa, az = sa === 0 ? e.p[1] : e.p[1] + e.dz * sa;
         const bx = sb === 1 ? e.q[0] : e.p[0] + e.dx * sb, bz = sb === 1 ? e.q[1] : e.p[1] + e.dz * sb;
-        const ta = yEave + roofAt(P, terms, ax, az), tb = yEave + roofAt(P, terms, bx, bz);
+        const sk = P.skel && e.ring === outer;
+        const ta = yEave + (sk ? skelWall(P, e.i, ax, az) : roofAt(P, terms, ax, az)), tb = yEave + (sk ? skelWall(P, e.i, bx, bz) : roofAt(P, terms, bx, bz));
         const ga = ground0(ax, az), gb = ground0(bx, bz);
         const ua = uStart[k] + e.len * sa, ub = uStart[k] + e.len * sb;
         const eh = eave;
@@ -1389,12 +1740,15 @@ function emit(P, ctx, W, R, img) {
       if (cr < 0) R.idx.push(ids[t[0]], ids[t[1]], ids[t[2]]); else R.idx.push(ids[t[0]], ids[t[2]], ids[t[1]]);
     }
   };
-  if (RADIAL.has(P.shape)) {
+  if (P.skel) {
+    for (const pc of P.skel.pieces) pushTris(pc.poly, [], (x, z) => yEave + skelPieceH(P.skel, pc, x, z));
+  } else if (RADIAL.has(P.shape)) {
     pushTris(outer, holes, () => yEave + 0.02);
     radialRoof(P, R, yEave, uvOf, rc);
   } else if (P.shape === 'perim') {
     // a roof up from every wall to a flat top: the rings w in, a strip from each wall's top to them
-    const pr = perimRings(outer, holes, P.perimW) || perimRings(outer, holes, P.perimW * 0.6);
+    let pr = perimRings(outer, holes, P.perimW); P.perimWUsed = P.perimW;
+    if (!pr) { pr = perimRings(outer, holes, P.perimW * 0.6); P.perimWUsed = pr ? P.perimW * 0.6 : 0; }
     const yTop = yEave + P.roofH;
     if (!pr) pushTris(outer, holes, () => yEave);
     else {
@@ -1439,7 +1793,7 @@ const AWNING = ['#1f4a36', '#6a1e2a', '#1e2c4a', '#1b1b1d', '#8c1c1c', '#b3a27f'
 // bell), strip by strip across the front, in the wall's own material
 function emitGableFront(P, e, k, uStart, L, W, base, yBot, yEave, terms, ground0, wc, seed, gk, lk) {
   const nx = -e.dz / e.len, nz = e.dx / e.len, kind = P.gableKind || (P.r5 < 0.3 ? 'step' : P.r5 < 0.75 ? 'neck' : 'bell');
-  const top = P.roofH + 0.7, n = kind === 'step' ? 10 : 16;
+  const top = (P.skel ? P.skel.cap : P.roofH) + 0.7, n = kind === 'step' ? 10 : 16;
   const prof = (s) => {
     // s across the front 0..1; the gable's height over the eave
     const c = Math.abs(s - 0.5) * 2; // 0 at the middle, 1 at the corners
@@ -1452,7 +1806,7 @@ function emitGableFront(P, e, k, uStart, L, W, base, yBot, yEave, terms, ground0
     const sa = j / n, sb = (j + 1) / n;
     const ax = e.p[0] + e.dx * sa, az = e.p[1] + e.dz * sa, bx = e.p[0] + e.dx * sb, bz = e.p[1] + e.dz * sb;
     const ua = uStart[k] + e.len * sa, ub = uStart[k] + e.len * sb, ga = ground0(ax, az), gb = ground0(bx, bz);
-    const h = Math.max(prof((sa + sb) / 2), roofAt(P, terms, (ax + bx) / 2, (az + bz) / 2) + 0.05);
+    const h = Math.max(prof((sa + sb) / 2), roofY(P, terms, (ax + bx) / 2, (az + bz) / 2) + 0.05);
     const y1 = yEave + h;
     const i0 = W.v(ax, yBot, az, nx, 0, nz, wc, ua, L, eh, ga, base, fh, gh, seed, style, gk, lk);
     const i1 = W.v(bx, yBot, bz, nx, 0, nz, wc, ub, L, eh, gb, base, fh, gh, seed, style, gk, lk);
@@ -1465,7 +1819,7 @@ function emitGableFront(P, e, k, uStart, L, W, base, yBot, yEave, terms, ground0
   for (let j = 0; j < n; j++) {
     const sa = j / n, sb = (j + 1) / n;
     const ax = e.p[0] + e.dx * sa, az = e.p[1] + e.dz * sa, bx = e.p[0] + e.dx * sb, bz = e.p[1] + e.dz * sb;
-    const h = Math.max(prof((sa + sb) / 2), roofAt(P, terms, (ax + bx) / 2, (az + bz) / 2) + 0.05), y1 = yEave + h;
+    const h = Math.max(prof((sa + sb) / 2), roofY(P, terms, (ax + bx) / 2, (az + bz) / 2) + 0.05), y1 = yEave + h;
     W.quad([ax, y1, az], [bx, y1, bz], [bx - nx * 0.3, y1, bz - nz * 0.3], [ax - nx * 0.3, y1, az - nz * 0.3], [0, 1, 0], cop, STYLE.SOFFIT, y1 - 1, y1);
   }
 }
@@ -1524,6 +1878,16 @@ function radialRoof(P, R, yEave, uvOf, rc) {
 function extras(P, ctx, W, R, terms, base, yEave, uvOf, rc, ground0) {
   const roofCol = P.roofCol || new THREE.Color(0.2, 0.2, 0.21);
   const X = P.ax || P.ob;
+  if (P.chimney && P.skel && P.skel.peak && P.skel.cap > 1.2 && P.shape !== 'perim') {
+    // a skeleton roof's chimney: where its ridges are highest
+    const brick = P.style === STYLE.BRICK ? P.wallColour : new THREE.Color().setRGB(0.42, 0.24, 0.17, THREE.SRGBColorSpace).multiplyScalar(0.62);
+    const stucco = P.style === STYLE.STUCCO && hashf(P.id, 86) < 0.6, w = 0.35 + hashf(P.id, 88) * 0.2;
+    const [x, z] = P.skel.peak, top = yEave + P.skel.cap;
+    // (its foot below the roof all round it: the lowest of the roof under its four corners)
+    let y0 = top;
+    for (const [sa, sb] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) y0 = Math.min(y0, yEave + Math.max(0, skelAt(P, x + X.A[0] * w * sa + X.P[0] * 0.4 * sb, z + X.A[1] * w * sa + X.P[1] * 0.4 * sb)));
+    box(W, x, z, X.A, w, 0.4, y0 - 0.2, top + 0.7 + hashf(P.id, 89) * 0.6, stucco ? P.wallColour : brick, stucco ? STYLE.STUCCO : STYLE.BRICK, true, new THREE.Color(0.06, 0.06, 0.06));
+  }
   if (P.chimney && terms && P.roofH > 1.2) {
     // on the ridge near a gable end (British terraces: on every party wall)
     const brick = P.style === STYLE.BRICK ? P.wallColour : new THREE.Color().setRGB(0.42, 0.24, 0.17, THREE.SRGBColorSpace).multiplyScalar(0.62);
@@ -1655,7 +2019,7 @@ function extras(P, ctx, W, R, terms, base, yEave, uvOf, rc, ground0) {
       }
     }
   }
-  if (P.dormers && terms && P.front >= 0) {
+  if (P.dormers && (terms || P.skel) && P.front >= 0) {
     // dormers on the slope that faces the street (a mansard's: one a bay all along its fronts)
     const o = P.outer, edgesList = P.dormers === 'bays' ? o.map((_, i) => i) : [P.front];
     let made = 0;
@@ -1673,7 +2037,7 @@ function extras(P, ctx, W, R, terms, base, yEave, uvOf, rc, ground0) {
       }
     }
   }
-  if (P.parisStacks && terms) {
+  if (P.parisStacks && (terms || P.skel)) {
     // a long stack on the top of each party wall (the walls that face no street), with its pots
     const o = P.outer, top = yEave + P.roofH, col = new THREE.Color().setRGB(0.62, 0.5, 0.42, THREE.SRGBColorSpace).multiplyScalar(0.62);
     let made = 0;
@@ -1718,7 +2082,7 @@ function dormer(P, W, R, terms, x, z, ex, ez, nx, nz, yEave, roofCol, uvOf, rc) 
   const hwid = 0.7, depthIn = 1.6;
   // the slope's height at the dormer's face (a little up from the eave) and further in
   const fx = x - nx * 0.6, fz = z - nz * 0.6;
-  const yF = yEave + roofAt(P, terms, fx, fz), yIn = yEave + roofAt(P, terms, fx - nx * depthIn, fz - nz * depthIn);
+  const yF = yEave + roofY(P, terms, fx, fz), yIn = yEave + roofY(P, terms, fx - nx * depthIn, fz - nz * depthIn);
   if (yIn - yF < 0.4) return;
   const y0 = yF, y1 = Math.min(yF + 1.6, yEave + P.roofH - 0.3); if (y1 - y0 < 1.0) return;
   const peak = y1 + 0.45;
@@ -1733,7 +2097,7 @@ function dormer(P, W, R, terms, x, z, ex, ez, nx, nz, yEave, roofCol, uvOf, rc) 
   W.idx.push(ia, ib, ic, ia, ic, id);
   W.F = keep;
   // the cheeks: from the face back into the slope
-  const back = (pt, y) => { const bx = pt[0] - nx * depthIn, bz = pt[2] - nz * depthIn; return [bx, Math.max(y, yEave + roofAt(P, terms, bx, bz)), bz]; };
+  const back = (pt, y) => { const bx = pt[0] - nx * depthIn, bz = pt[2] - nz * depthIn; return [bx, Math.max(y, yEave + roofY(P, terms, bx, bz)), bz]; };
   const cheek = P.zinc ? new THREE.Color(0.2, 0.21, 0.22) : roofCol;
   const LB = back(L1, y1), RB = back(R1, y1);
   W.tri(L0, L1, LB, [-ex, 0, -ez], cheek, STYLE.ROOFING, y0, y1);
@@ -2117,10 +2481,15 @@ function roofInfo(P) {
     const top = Math.max(...subs.map(q => q.info.top)), base = P.baseY;
     return { base, eave: base + P.eave, top, under: null, at: (x, z) => { let y = -Infinity; for (const q of subs) if (inRing(x, z, q.C.outer)) y = Math.max(y, q.info.at ? q.info.at(x, z) : q.info.top); return isFinite(y) ? y : base + P.eave; } };
   }
-  const base = P.baseY, terms = roofTerms(P), eave = base + P.eave, top = base + P.H;
+  const base = P.baseY, terms = P.skel ? null : roofTerms(P), eave = base + P.eave, top = base + P.H;
   const under = P.minH > 0.3 ? base + P.minH : null;
   let at = terms && P.shape !== 'flat' && P.roofH > 0.05 ? (x, z) => eave + roofAt(P, terms, x, z) : null;
   if (RADIAL.has(P.shape)) at = (x, z) => eave + P.roofH * radialAt(P, x, z);
+  // (a skeleton roof as drawn; a roof sloping up from every wall round a courtyard by the distance from the walls:
+  // both were a flat top at the ridge's height, so a car on them floated over the slopes)
+  if (P.skel) at = (x, z) => eave + Math.max(0, skelAt(P, x, z));
+  else if (P.shape === 'perim' && P.perimWUsed > 0 && P.roofH > 0.05) at = (x, z) => { let d = ringDist(x, z, P.outer); for (const h of P.holes) d = Math.min(d, ringDist(x, z, h)); return eave + P.roofH * Math.min(1, d / P.perimWUsed); };
+  else if (P.shape === 'perim') at = () => eave; // (its rings would fold: drawn flat at the eave)
   return { base, eave, top, under, at };
 }
 // (the walls block up to a metre under the roof's edge: a car landing on the roof dips a little into it on its
@@ -2346,10 +2715,11 @@ export function build(list, opts = {}) {
       ctx.density = c.density;
       decorate(P, ctx);
       perimGuess(P, ctx);
+      skelGuess(P);
       // (the city's look may have changed the roof: heights again)
       finish(P, ctx);
       fitOut(P, ctx);
-      P.children = wings(P, ctx);
+      P.children = P.skelOn ? null : wings(P, ctx);
       const mean = at ? roofMean(P, at, img.lean) : null;
       const face = at && img.lean ? facadeMean(P, at, img.lean) : null;
       if (face) stats.faceColours = (stats.faceColours || 0) + 1;
@@ -2364,6 +2734,8 @@ export function build(list, opts = {}) {
       // (taller ones further), so no two buildings' walls are ever exactly coplanar.
       const eps = 0.012 + 0.0003 * Math.min(P.H, 400) + 0.014 * P.r4;
       if (!P.offset) { P.outer = offsetRing(P.outer, eps); P.holes = P.holes.map(h => offsetRing(h, eps)); P.offset = true; P.ob = obb(P.outer) || P.ob; P.ax = axesOf(P); }
+      // the skeleton's roof over the outline as drawn (null: the box's roof after all)
+      if (P.skelOn) { P.skel = skelRoof(P); if (P.skel) stats.skel = (stats.skel || 0) + 1; else stats.skelFail = (stats.skelFail || 0) + 1; }
       const w0 = W.idx.length, r0 = R.idx.length;
       if (P.real) { stats.real = (stats.real || 0) + 1; } // (round 6, agent T: drawn by the open tileset)
       else if (P.children) {

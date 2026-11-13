@@ -5,9 +5,9 @@
 // section of the settings panel, an optional frame-rate counter, and keeps the page alive when the graphics card
 // drops the drawing context (a Chromebook short of memory does that rather than slowing down).
 import * as THREE from 'three';
-import { quality } from './quality.js?v=52';
-import { settings } from './settings.js?v=52';
-import { bakedUniforms } from './baked.js?v=52';
+import { quality } from './quality.js?v=53';
+import { settings } from './settings.js?v=53';
+import { bakedUniforms } from './baked.js?v=53';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 const NAMES = { auto: 'Auto', low: 'Low', medium: 'Medium', high: 'High' };

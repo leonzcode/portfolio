@@ -24,8 +24,8 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=52';
-import { sharedTexture } from './texcache.js?v=52'; // (round 6, perf P)
+import { unproject } from './geo.js?v=53';
+import { sharedTexture } from './texcache.js?v=53'; // (round 6, perf P)
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -142,7 +142,7 @@ let MATS = null;
 // (round 6, perf P) one copy of each picture on the graphics card, shared with the bridges (texcache.js); on the
 // low tier no normal or roughness picture
 function texture(file, srgb) {
-  return sharedTexture(BASE + 'textures/roads/' + file + '?v=52', { srgb, anisotropy: 8, optional: /_(nor_gl|rough)_/.test(file) });
+  return sharedTexture(BASE + 'textures/roads/' + file + '?v=53', { srgb, anisotropy: 8, optional: /_(nor_gl|rough)_/.test(file) });
 }
 const NOISE_GLSL = `
 float rdHash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -566,6 +566,7 @@ async function buildTopology(data) {
   // junction where they cross, so the two surfaces meet at one height instead of overlapping
   await Y();
   const extra = joinCrossings(ways);
+  mergeNearJunctions(ways, extra, nodePos, data.source === 'openfreemap');
   await Y();
   // node occurrences
   const occ = new Map();
@@ -724,6 +725,43 @@ function joinCrossings(ways) {
     w.ids = ids; w.pts = pts;
   });
   return extra;
+}
+// Junction nodes a few centimetres to a metre and a half apart along a way become one node. Where three or more roads
+// cross in the vector tiles their lines meet a little apart, and joinCrossings adds a node where each pair crosses:
+// the pieces of road between those nodes (2 cm to 60 cm long) were junctions of their own, and their signal poles and
+// stop signs, set out from a stop line in the middle of the crossing, stood in the traffic. Two nodes of one way are on
+// one level, so nothing on a bridge is joined to the road under it. Real map nodes (Overpass) are never moved or
+// renamed (a signal or a stop is mapped on one); the tiles' made-up nodes and joinCrossings' are.
+function mergeNearJunctions(ways, extra, nodePos, tiles) {
+  const NEAR = 1.5;
+  // (only nodes whose ways are all on one level: the tiles' nodes are shared by any lines that pass within half a
+  // metre, a bridge's and a street's under it among them)
+  const level = (w) => w.c.bridge ? 'b' + w.c.layer : w.c.tunnel === 'bore' ? 't' + w.c.layer : w.c.layer < 0 ? 'u' + w.c.layer : 'g';
+  const count = new Map(), lv = new Map();
+  for (const w of ways) { const k = level(w); for (const id of new Set(w.ids)) { count.set(id, (count.get(id) || 0) + 1); const l = lv.get(id); lv.set(id, l === undefined || l === k ? k : null); } }
+  const junc = id => ((count.get(id) || 0) > 1 || extra.has(id)) && lv.get(id) != null;
+  const free = id => tiles || extra.has(id);
+  const parent = new Map(), find = id => { while (parent.has(id)) id = parent.get(id); return id; };
+  const posOf = id => extra.get(id) || nodePos.get(id);
+  for (const w of ways) for (let i = 1; i < w.ids.length; i++) {
+    const ia = w.ids[i - 1], ib = w.ids[i];
+    if (!junc(ia) || !junc(ib)) continue;
+    const a = find(ia), b = find(ib); if (a === b) continue;
+    const pa = posOf(a), pb = posOf(b); if (!pa || !pb) continue;
+    if (Math.hypot(w.pts[i][0] - w.pts[i - 1][0], w.pts[i][1] - w.pts[i - 1][1]) > NEAR || Math.hypot(pa.x - pb.x, pa.z - pb.z) > NEAR) continue;
+    if (free(b)) parent.set(b, a); else if (free(a)) parent.set(a, b);
+  }
+  if (!parent.size) return;
+  for (const w of ways) {
+    const ids = [], pts = [];
+    for (let i = 0; i < w.ids.length; i++) {
+      const id = w.ids[i], r = find(id);
+      if (ids.length && ids[ids.length - 1] === r) continue;
+      const p = r !== id ? posOf(r) : null;
+      ids.push(r); pts.push(p ? [p.x, p.z] : w.pts[i]);
+    }
+    w.ids = ids; w.pts = pts;
+  }
 }
 function reverseEdge(e) {
   e.ids.reverse(); e.pts.reverse(); e.wayDir = -e.wayDir;
@@ -2696,6 +2734,42 @@ export function surfaceAt(x, z, yHint, skip = 0) {
   return r;
 }
 
+// A carriageway at (x, z), at least `depth` inside its edge, whose surface lies between lo and hi (whatever its level:
+// a deck overhead, a road down in a cutting, a tunnel): its height, or null. surfaceAt only answers for the piece
+// nearest one height; a wall, a parapet or a pole spans several, and must stand on none of them.
+export function roadAcross(x, z, lo, hi, depth = 0.25) {
+  if (!LIVE || !LIVE.grid || !(hi >= lo)) return null;
+  const n = Math.max(1, Math.ceil((hi - lo) / 2.5));
+  for (let k = 0; k <= n; k++) {
+    const r = surfaceAt(x, z, lo + (hi - lo) * k / n);
+    if (r.onRoad && r.edge < -depth && r.h >= lo - 0.05 && r.h <= hi + 0.05) return r.h;
+  }
+  return null;
+}
+// How far (x, z) is from the middle of the nearest lane within maxDist (u-turns at dead ends, which loop past the road's
+// end, left out), at a height within 2.5 m of y when y is given; Infinity when none. kind 'road' leaves out the turns
+// across junctions.
+export function laneDist(x, z, maxDist = 3, y = null, kind = null) {
+  const G = LIVE && LIVE.graph, grid = LIVE && LIVE.laneGrid;
+  if (!G || !grid) return Infinity;
+  let bd = maxDist, hit = false;
+  const cell = 16;
+  for (let i = Math.floor((x - maxDist) / cell); i <= Math.floor((x + maxDist) / cell); i++) for (let j = Math.floor((z - maxDist) / cell); j <= Math.floor((z + maxDist) / cell); j++) {
+    const l = grid.get(i * 73856093 ^ j * 19349663); if (!l) continue;
+    for (const id of l) {
+      const L = G.lanes[Math.floor(id / 100000)], k = id % 100000; if (!L || L.turn === 'uturn' || (kind && L.kind !== kind)) continue;
+      const a = L.pts[k - 1], b = L.pts[k]; if (!a || !b) continue;
+      const dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz;
+      const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / L2)) : 0;
+      const d = Math.hypot(x - a.x - dx * t, z - a.z - dz * t);
+      if (d >= bd) continue;
+      if (y != null && Math.abs(a.y + (b.y - a.y) * t - y) > 2.5) continue;
+      bd = d; hit = true;
+    }
+  }
+  return hit ? bd : Infinity;
+}
+
 export function nearestEdge(x, z, maxDist = 40) {
   // (squared distances, and the answer made once at the end: the buildings ask this for every footprint)
   let bd2 = maxDist * maxDist, be = null, bk = 0, bt = 0;
@@ -3042,5 +3116,5 @@ export function tunnelMaterials() { if (!MATS) makeMaterials(); return [MATS.tas
 // (round 6, weather.js) the shared materials, so the weather can teach them the wet and the lamps before they are built
 export function materials() { if (!MATS) makeMaterials(); return MATS; }
 
-export const roads = { build, reheight, surfaceAt, nearestLane, nearestRoadPoint, nearestEdge, dispose, tunnelMaterials, group: GROUP, graph, signals, signalGroups, signs, leftHand, style, stats: null, _debug };
+export const roads = { build, reheight, surfaceAt, roadAcross, laneDist, nearestLane, nearestRoadPoint, nearestEdge, dispose, tunnelMaterials, group: GROUP, graph, signals, signalGroups, signs, leftHand, style, stats: null, _debug };
 export default roads;

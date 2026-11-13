@@ -2,15 +2,15 @@
 // photographs), sky, collide, vehicle (physics), cars (models), roads/osm/props (OpenStreetMap), traffic,
 // camera, hud, mapui (the Google Maps style picker).
 import * as THREE from 'three';
-import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=52';
-import { World } from './world.js?v=52';
-import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=52';
-import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=52'; // (perf A: the shadow pass's casters, steady lights)
-import { Drive } from './drive.js?v=52';
-import { CompileGate } from './gate.js?v=52'; // (perf B) nothing drawn with a program still being built
-import { Weather } from './weather.js?v=52'; // (round 6, W) the time of day and the weather
-import { quality } from './quality.js?v=52'; // (round 6, perf P) the graphics tier: low, medium or high
-import { setupPerf } from './perf.js?v=52'; // (round 6, perf P) the tier applied, the settings panel's Graphics, a lost context
+import { setOrigin, frame, toLocal, toLatLon, headingDir, dirHeading } from './geo.js?v=53';
+import { World } from './world.js?v=53';
+import { syncBaked, bakedUniforms, makeDetail } from './baked.js?v=53';
+import { Sky, tidyCasters, hideShadowOnly, wrapShadowPass, steadySpots } from './sky.js?v=53'; // (perf A: the shadow pass's casters, steady lights)
+import { Drive } from './drive.js?v=53';
+import { CompileGate } from './gate.js?v=53'; // (perf B) nothing drawn with a program still being built
+import { Weather } from './weather.js?v=53'; // (round 6, W) the time of day and the weather
+import { quality } from './quality.js?v=53'; // (round 6, perf P) the graphics tier: low, medium or high
+import { setupPerf } from './perf.js?v=53'; // (round 6, perf P) the tier applied, the settings panel's Graphics, a lost context
 
 const Q = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
@@ -274,7 +274,7 @@ async function dropAt({ lat, lon, heading }) {
 }
 async function openMap(quiet) {
   try {
-    const M = await import('./mapui.js?v=52');
+    const M = await import('./mapui.js?v=53');
     if (!mapui) mapui = M.createMapUI(document.getElementById('ui'), {
       onDrop: o => dropAt(o),
       // (round 5) leaving a drive in a multiplayer room goes back to the rooms (home.js), not the map
@@ -312,7 +312,7 @@ G.dropTo = async (lat, lon, heading) => { await openMap(true); if (mapui) await 
 // to the map
 async function openHome() {
   if (Q.has('nohome')) return openMap();
-  try { const H = await import('./home.js?v=52'); new H.Home(G).show('start'); }
+  try { const H = await import('./home.js?v=53'); new H.Home(G).show('start'); }
   catch (e) { console.warn('home screen', e); openMap(); }
 }
 G.onFrame = () => {

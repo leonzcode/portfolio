@@ -91,11 +91,21 @@ export class StreetSigns {
       if (!A || !B) continue;
       const sa = slot(A.name), sb = slot(B.name);
       if (!sa || !sb) continue;
-      // the corner of the block between the two streets, past the kerb
-      const x = J.n.x + A.dx * (B.hw + 1.4) + B.dx * (A.hw + 1.4), z = J.n.z + A.dz * (B.hw + 1.4) + B.dz * (A.hw + 1.4);
-      const sf = roads.surfaceAt(x, z);
-      if (sf && sf.onRoad) continue;
-      if (inBuilding(x, z)) continue;
+      // the corner of the block between the two streets, past the kerb; further out along the corner's diagonal where
+      // that spot is on a carriageway or in a lane's way (streets meeting at a slant, a turn cutting the corner: the
+      // pole stood in the lane) or in a building
+      const x0 = J.n.x + A.dx * (B.hw + 1.4) + B.dx * (A.hw + 1.4), z0 = J.n.z + A.dz * (B.hw + 1.4) + B.dz * (A.hw + 1.4);
+      let x = x0, z = z0, sf = null, ok = false;
+      for (const k of [0, 0.7, 1.4, 2.2]) {
+        x = x0 + (A.dx + B.dx) * k; z = z0 + (A.dz + B.dz) * k;
+        sf = roads.surfaceAt(x, z);
+        if (sf && sf.onRoad) continue;
+        const yh = sf && Number.isFinite(sf.h) ? sf.h : (Number.isFinite(J.n.h) ? J.n.h : null);
+        if (roads.laneDist && (roads.laneDist(x, z, 1.4, yh, 'road') < 1.4 || roads.laneDist(x, z, 1.15, yh, 'junction') < 1.15)) continue;
+        if (inBuilding(x, z)) continue;
+        ok = true; break;
+      }
+      if (!ok) continue;
       const y = sf && Number.isFinite(sf.h) ? sf.h : (Number.isFinite(J.n.h) ? J.n.h + 0.15 : 0);
       pole(x, y, z, 3.15);
       quad(x, y + 2.86, z, A.dx, A.dz, sa.w, 0.19, sa, false); quad(x, y + 2.86, z, A.dx, A.dz, sa.w, 0.19, sa, true);

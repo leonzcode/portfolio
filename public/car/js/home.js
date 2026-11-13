@@ -4,7 +4,7 @@
 // room). In the page's own Google Maps look; a link with ?lat= drops straight in and never shows this.
 // (round 6) Once in a room, a player may go anywhere and stay in it (mp.js openTravel); the room list says where the
 // players of each room are.
-import { Net, Session } from './mp.js?v=52';
+import { Net, Session } from './mp.js?v=53';
 
 const CSS = `
 .mph { position: fixed; inset: 0; z-index: 40; overflow: hidden; background: #1b1d1f; font-family: Roboto, 'Segoe UI', Arial, sans-serif; color: #1f1f1f; -webkit-font-smoothing: antialiased; }
@@ -95,7 +95,8 @@ export class Home {
     G.onLeaveDrive = () => { if (!this.session) return false; try { if (this.session.openTravel(true)) return true; } catch (e) { console.warn('travel', e); } this.leaveRoom(); this.show('rooms'); return true; };
   }
 
-  show(view = 'start') {
+  // (note: words to show at the top of the rooms, e.g. why a room closed, 2026-11-12)
+  show(view = 'start', note = '') {
     // (round 6) the home screen itself, from the map's menu while in a room (the travel map): out of the room first
     if (view === 'start' && this.session) { try { this.session.closeTravel(false); } catch (e) {} this.leaveRoom(); }
     this.el.hidden = false; this.G.paused = true;
@@ -103,7 +104,7 @@ export class Home {
     clearInterval(this.refresh);
     if (view === 'start') this.start();
     else if (view === 'name') this.nameView();
-    else this.rooms();
+    else this.rooms(note);
   }
   hide() { this.el.hidden = true; clearInterval(this.refresh); }
 
@@ -139,7 +140,8 @@ export class Home {
   async connect() {
     if (!this.net) {
       this.net = new Net(); this.G.net = this.net;
-      this.net.on('closed', () => { if (this.view === 'rooms' && !this.el.hidden) this.rooms('The connection to the game server was lost. Trying again...'); });
+      // (a socket closed because a room closed for idleness is no lost connection: the session says why)
+      this.net.on('closed', m => { if (m && m.idle) return; if (this.view === 'rooms' && !this.el.hidden) this.rooms('The connection to the game server was lost. Trying again...'); });
     }
     await this.net.connect();
     if (!this.net.name && store.get('car_mpname')) await this.net.hello(store.get('car_mpname'));

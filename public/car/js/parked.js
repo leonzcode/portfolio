@@ -4,7 +4,7 @@
 // parts are one InstancedMesh for all its parked copies, near ones with the detailed parts, the rest with the far
 // ones, so a hundred parked cars cost about what one moving car does.
 import * as THREE from 'three';
-import { frame } from './geo.js?v=52';
+import { frame } from './geo.js?v=53';
 
 const MODELS = ['fairheaven', 'milano', 'shvan', 'conquer', 's10', 'fairheaven', 'milano'];
 // outside North America no pickups or boxy American vans: saloons and hatchbacks
@@ -127,6 +127,10 @@ export class Parked {
           if (nearJunction(x, z) || !own(e, x, z) || !own(e, x + tx * 3, z + tz * 3) || !own(e, x - tx * 3, z - tz * 3)) continue;
           const sf = roads.surfaceAt(x, z);
           if (!sf || !sf.onRoad || !Number.isFinite(sf.h)) continue;
+          // (not reaching into a lane: on a bend the map's line, which the slot is set out from, and the lanes part a
+          // little, and the car's corner stood in the traffic)
+          const sh = sf.h;
+          if (roads.laneDist && [[0, 0, 2.1], [2.3, 0.95, 1.1], [2.3, -0.95, 1.1], [-2.3, 0.95, 1.1], [-2.3, -0.95, 1.1]].some(([u, v, m]) => roads.laneDist(x + tx * u - tz * v, z + tz * u + tx * v, m, sh) < m)) continue;
           // facing the way traffic goes on that side of the road
           const along = (side > 0) !== leftHand;
           const heading = (Math.atan2(along ? tx : -tx, along ? -tz : tz) * 180 / Math.PI + 360) % 360;

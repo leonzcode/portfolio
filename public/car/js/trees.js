@@ -8,9 +8,9 @@
 //                         roadsMask, buildings, roads, centre: [x, z], radius, lean: [kx, kz] })
 //   t.group, t.ready (Promise of stats), t.dispose()
 import * as THREE from 'three';
-import { frame } from './geo.js?v=52';
-import { detect } from './treedetect.js?v=52';
-import { bakedUniforms } from './baked.js?v=52'; // (round 6, weather.js: the light of the moment, uSkyLight)
+import { frame } from './geo.js?v=53';
+import { detect } from './treedetect.js?v=53';
+import { bakedUniforms } from './baked.js?v=53'; // (round 6, weather.js: the light of the moment, uSkyLight)
 
 const D2R = Math.PI / 180;
 function hashf(n, salt = 0) {
@@ -217,7 +217,7 @@ function getWorker() {
   if (WORKER === false) return null;
   if (!WORKER) {
     try {
-      WORKER = new Worker(new URL('./treeworker.js?v=52', import.meta.url), { type: 'module' });
+      WORKER = new Worker(new URL('./treeworker.js?v=53', import.meta.url), { type: 'module' });
       WORKER.onmessage = (e) => { const j = jobs.get(e.data.id); if (!j) return; jobs.delete(e.data.id); if (e.data.error) j.reject(new Error(e.data.error)); else j.resolve(e.data.res); };
       WORKER.onerror = () => { WORKER = false; for (const j of jobs.values()) j.reject(new Error('worker failed')); jobs.clear(); };
     } catch (e) { WORKER = false; return null; }
@@ -292,9 +292,27 @@ export function build(src, opts = {}) {
   // where no trunk may stand: on a carriageway, on a kerb or pavement, or within 1.5 m of a carriageway's edge
   // (roads.js), else the caller's mask
   let roadsMask = opts.roadsMask || null;
-  if (!roadsMask && opts.roads && typeof opts.roads.surfaceAt === 'function') roadsMask = (x, z) => {
-    const r = opts.roads.surfaceAt(x, z);
-    return !!(r && (r.onRoad || r.curbH > 0 || (r.h != null && typeof r.edge === 'number' && r.edge < 1.5)));
+  // (nor in a lane's way, inLane: a turn across a junction can cut a corner off the carriageway's edge)
+  const RD = opts.roads && typeof opts.roads.surfaceAt === 'function' ? opts.roads : null;
+  const inLane = (x, z) => { try { return !!RD && typeof RD.laneDist === 'function' && (RD.laneDist(x, z, 1.6, null, 'road') < 1.6 || RD.laneDist(x, z, 1.3, null, 'junction') < 1.3); } catch (e) { return false; } };
+  if (!roadsMask && RD) roadsMask = (x, z) => {
+    const r = RD.surfaceAt(x, z);
+    return !!(r && (r.onRoad || r.curbH > 0 || (r.h != null && typeof r.edge === 'number' && r.edge < 1.5))) || inLane(x, z);
+  };
+  // a mapped tree on a carriageway or in a lane's way (a row drawn along the kerb of a road wider than the map's line
+  // says, a tree on a median the road has no room for): moved out past the nearest road's edge, as props.js moves a
+  // street tree, or left out when that spot is no better (they were all kept where mapped, in the traffic)
+  const onCarriageway = (x, z) => { if (!RD) return false; try { const r = RD.surfaceAt(x, z); return !!(r && r.onRoad && r.edge < -0.2); } catch (e) { return false; } };
+  const onStreet = (x, z) => onCarriageway(x, z) || inLane(x, z);
+  // (off the carriageway but in a turn's way, a corner a turn cuts, it is left out rather than moved)
+  const toVerge = (x, z) => {
+    if (!RD || typeof RD.nearestEdge !== 'function' || !onCarriageway(x, z)) return null;
+    let e = null; try { e = RD.nearestEdge(x, z, 30); } catch (err) { e = null; }
+    if (!e) return null;
+    let vx = x - e.x, vz = z - e.z, d = Math.hypot(vx, vz);
+    if (d < 0.05) { const h = e.heading * Math.PI / 180; vx = Math.cos(h); vz = Math.sin(h); d = 1; }
+    const need = Math.max(d, e.halfWidth + 1.2);
+    return [e.x + vx / d * need, e.z + vz / d * need];
   };
   // the tree line: about 3600 m up to 30 degrees of latitude, 90 m lower a degree past that (2100 m in the Alps,
   // 900 m at 60 degrees); trees thin out over the 400 m below it
@@ -446,7 +464,15 @@ export function build(src, opts = {}) {
       const t = list[i];
       if ((i & 63) === 0) await slice('filter');
       const d = wallDist(t.x, t.z);
-      if (t.src === 'osm' || t.src === 'row') { if (d > 0) kept.push(t); continue; }
+      if (t.src === 'osm' || t.src === 'row') {
+        if (d <= 0) continue;
+        if (onStreet(t.x, t.z)) {
+          const v = toVerge(t.x, t.z);
+          if (!v || onStreet(v[0], v[1]) || wallDist(v[0], v[1]) < 0.5) { stats.dropRoad = (stats.dropRoad || 0) + 1; continue; }
+          t.x = v[0]; t.z = v[1]; stats.toVerge = (stats.toVerge || 0) + 1;
+        }
+        kept.push(t); continue;
+      }
       if (d < 1.0) { stats.dropWall = (stats.dropWall || 0) + 1; continue; }
       if (roadsMask) { let bad = false; try { bad = roadsMask(t.x, t.z); } catch (e) { bad = false; } if (bad) { stats.dropRoad = (stats.dropRoad || 0) + 1; continue; } }
       const g = groundAt(t.x, t.z);

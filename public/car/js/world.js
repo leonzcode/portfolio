@@ -7,9 +7,9 @@ import { GLTFExtensionsPlugin, TileCompressionPlugin, TilesFadePlugin, Terrarium
 import { GoogleCloudAuthPlugin } from '3d-tiles-renderer/core/plugins';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=52';
-import { patchBaked } from './baked.js?v=52';
-import { under } from './under.js?v=52';
+import { frame, toLocal, unproject, lonLatToTile } from './geo.js?v=53';
+import { patchBaked } from './baked.js?v=53';
+import { under } from './under.js?v=53';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -152,7 +152,7 @@ export class World extends THREE.EventDispatcher {
     if (this.open) { try { this.open.dispose(); } catch (e) {} this.open = null; }
     // (v52) off: Leon asked for our generated buildings everywhere again; only a test's ?opentiles=<id> loads them
     const wantOpen = /[?&]opentiles=/.test(location.search);
-    const openP = mode === 'open' && wantOpen ? import('./opentiles.js?v=52').then(OT => OT.startOpenTiles(this, lat, lon)).catch(e => { console.warn('open tiles', e); return null; }) : null;
+    const openP = mode === 'open' && wantOpen ? import('./opentiles.js?v=53').then(OT => OT.startOpenTiles(this, lat, lon)).catch(e => { console.warn('open tiles', e); return null; }) : null;
     if (this.heights) await this.heights.want(lat, lon, 1500);
     if (openP) this.open = await openP;
     if (mode === 'google') {

@@ -17,8 +17,8 @@
 // placed with yaw H (heading degrees) its front faces heading H.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { frame, dirHeading } from './geo.js?v=52';
-import * as SIG from './signals.js?v=52';
+import { frame, dirHeading } from './geo.js?v=53';
+import * as SIG from './signals.js?v=53';
 
 const D2R = Math.PI / 180;
 const BIN = 500;
@@ -1002,23 +1002,41 @@ function sample(rec) {
   }
   if (rec.cols) for (const c of rec.cols) {
     if (!c.s) continue;
-    if (rec.ok) { c.s.y0 = rec.ys[c.i] - 0.3; c.s.y1 = rec.ys[c.i] + c.h; } else { c.s.y0 = -1e4; c.s.y1 = 1e4; }
+    if (rec.ok) { c.s.y0 = rec.ys[c.i] - 0.3; c.s.y1 = c.cap != null ? Math.min(rec.ys[c.i] + c.h, c.cap) : rec.ys[c.i] + c.h; } else { c.s.y0 = -1e4; c.s.y1 = 1e4; }
   }
 }
+// in the way of a lane: within 1.45 m of a lane's middle at the height the thing stands at (half a lane: a car keeping
+// to it meets the thing), or 1.15 m of a turn's across a junction (a turn may cut a kerb's corner a little)
+function inLane(x, z, y) {
+  const r = S.roads;
+  if (!r || typeof r.laneDist !== 'function') return false;
+  try { return r.laneDist(x, z, 1.45, y, 'road') < 1.45 || r.laneDist(x, z, 1.15, y, 'junction') < 1.15; } catch (e) { return false; }
+}
+// A road deck over (x, z), lower than the top of a thing h tall standing at y (a freeway over a street): its height,
+// else null. The thing must stop under it (its pole came up through the deck, and stood in the freeway's lane).
+function deckOver(x, z, y, h) {
+  const r = S.roads;
+  if (y == null || !r || typeof r.roadAcross !== 'function') return null;
+  try { return r.roadAcross(x, z, y + 1.8, y + h + 0.6, -1.0); } catch (e) { return null; }
+}
 // A one-point prop that still ends up well inside a carriageway (mapped on a road whose kerb could not be found, or
-// pushed off one road onto the next at a junction) or inside a building is left out: there it would be a pole in the
-// traffic or a sign sticking out of a wall.
+// pushed off one road onto the next at a junction), in a lane's way, or inside a building is left out: there it would
+// be a pole in the traffic or a sign sticking out of a wall.
 function misplaced(x, z) {
   const r = S.roads;
+  let hh = null; try { hh = heightAt(x, z); } catch (e) {}
   // (on the level the thing stands on: a lamp on the street under a bridge is not on the bridge's deck)
-  if (r && typeof r.surfaceAt === 'function') { try { const hh = heightAt(x, z), q = r.surfaceAt(x, z, hh == null ? undefined : hh); if (q && q.onRoad && q.edge < -0.6) return 'road'; } catch (e) {} }
+  if (r && typeof r.surfaceAt === 'function') { try { const q = r.surfaceAt(x, z, hh == null ? undefined : hh); if (q && q.onRoad && q.edge < -0.6) return 'road'; } catch (e) {} }
+  // (the carriageway's edge alone missed some: inside a junction made of several small ones, where the outline's
+  // distance is all surfaceAt has, and on the turns that cut a corner)
+  if (inLane(x, z, hh)) return 'lane';
   if (S.bld && S.bld.inside(x, z, 0.3)) return 'building';
   return null;
 }
 function addRec(pts, emit, extra) {
   if (pts.length === 1) {
     const why = misplaced(pts[0][0], pts[0][1]);
-    if (why) { S.dropped = S.dropped || { road: 0, building: 0 }; S.dropped[why]++; const r = { pts, ys: new Array(pts.length), emit() {}, cols: null, ok: false, skip: true }; sample(r); return r; }
+    if (why) { S.dropped = S.dropped || { road: 0, building: 0, lane: 0 }; S.dropped[why] = (S.dropped[why] || 0) + 1; const r = { pts, ys: new Array(pts.length), emit() {}, cols: null, ok: false, skip: true }; sample(r); return r; }
   }
   const rec = { pts, ys: new Array(pts.length), emit, cols: null, ok: false, ...extra };
   sample(rec);
@@ -1028,17 +1046,19 @@ function addRec(pts, emit, extra) {
   S.recs.push(rec);
   return rec;
 }
+// (under a road deck the shape stops a metre under its top, cap: the deck's own lanes are clear)
 function circle(rec, x, z, r, h, i = 0) {
   const c = S.collide; if (!c || !c.addCircle || rec.skip) return;
-  const y = rec.ok ? rec.ys[i] : null;
-  const s = c.addCircle(x, z, r, y != null ? y - 0.3 : -1e4, y != null ? y + h : 1e4, 'prop');
-  (rec.cols || (rec.cols = [])).push({ s, i, h });
+  const y = rec.ok ? rec.ys[i] : null, d = deckOver(x, z, y, h), cap = d != null ? d - 1.1 : null;
+  const s = c.addCircle(x, z, r, y != null ? y - 0.3 : -1e4, y != null ? (cap != null ? Math.min(y + h, cap) : y + h) : 1e4, 'prop');
+  (rec.cols || (rec.cols = [])).push({ s, i, h, cap });
 }
 function segment(rec, a, b, th, h, i = 0) {
   const c = S.collide; if (!c || !c.addSegment || rec.skip) return;
   const y = rec.ok ? Math.min(rec.ys[i], rec.ys[Math.min(i + 1, rec.ys.length - 1)]) : null;
-  const s = c.addSegment(a, b, th, y != null ? y - 0.3 : -1e4, y != null ? y + h : 1e4, 'prop');
-  (rec.cols || (rec.cols = [])).push({ s, i, h });
+  const d = deckOver((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, y, h), cap = d != null ? d - 1.1 : null;
+  const s = c.addSegment(a, b, th, y != null ? y - 0.3 : -1e4, y != null ? (cap != null ? Math.min(y + h, cap) : y + h) : 1e4, 'prop');
+  (rec.cols || (rec.cols = [])).push({ s, i, h, cap });
 }
 
 // emission into the bin being rebuilt
@@ -1348,12 +1368,14 @@ function placeLamp(p) {
     const [x, z, toRoad] = curbside(p.x, p.z, 0.6);
     if (!h) h = S.region === 'us' ? 9 : S.region === 'jp' ? 8 : 8;
     const s = clamp(h / 9.35, 0.5, 1.6);
+    if (deckOver(x, z, heightAt(x, z), h) != null) return; // (under a freeway's deck: it would stand up through it)
     const c = S.region === 'us' || S.region === 'jp' ? new THREE.Color(0.62, 0.64, 0.66) : S.region === 'uk' ? new THREE.Color(0.55, 0.57, 0.58) : new THREE.Color(0.36, 0.39, 0.4);
     const yaw = toRoad ?? 0;
     const rec = addRec([[x, z]], (r) => { const m = base(x, r.ys[0], z, yaw, s); emit('lampCobra', m, c); emit('lampCobraLens', m); });
     circle(rec, x, z, 0.12, h);
   } else {
     if (!h) h = 4.6;
+    if (deckOver(p.x, p.z, heightAt(p.x, p.z), h) != null) return;
     const s = clamp(h / 4.7, 0.6, 1.5), c = S.region === 'us' ? new THREE.Color(0.06, 0.07, 0.07) : new THREE.Color(0.08, 0.1, 0.09);
     const rec = addRec([[p.x, p.z]], (r) => { const m = base(p.x, r.ys[0], p.z, 0, s); emit('lampPost', m, c); emit('lampPostGlass', m); });
     circle(rec, p.x, p.z, 0.12, h);
@@ -1373,12 +1395,14 @@ function placeSign(sg) {
   if (R0 && R0.surfaceAt && sg.x != null && Math.hypot(px - sg.x, pz - sg.z) > 0.5) {
     const vx = px - sg.x, vz = pz - sg.z, l = Math.hypot(vx, vz), hd = sg.heading * D2R, bx = -Math.sin(hd), bz = Math.cos(hd);
     // further out from the road, and back along it (away from the junction ahead, where a cross street can lie)
+    // (nor in a lane's way, inLane: a spot off every carriageway's edge could still be inside a junction made of
+    // several small ones, or on a turn that cuts the corner)
     let done = false;
-    for (const back of [0, 1.5, 3, 4.5, 6, 8]) {
-      for (const dd of [0, 0.4, 0.9, 1.5, 2.2]) {
+    for (const back of [0, 1.5, 3, 4.5, 6, 8, 10]) {
+      for (const dd of [0, 0.4, 0.9, 1.5, 2.2, 3]) {
         const x = px + vx / l * dd + bx * back, z = pz + vz / l * dd + bz * back;
         let q = null; try { q = R0.surfaceAt(x, z); } catch (e) { q = null; }
-        if ((!q || !q.onRoad || q.edge > -0.3) && !(S.bld && S.bld.inside(x, z, 0.3))) { px = x; pz = z; done = true; break; }
+        if ((!q || !q.onRoad || q.edge > -0.3) && !(S.bld && S.bld.inside(x, z, 0.3)) && !inLane(x, z, heightAt(x, z))) { px = x; pz = z; done = true; break; }
       }
       if (done) break;
     }
@@ -1492,6 +1516,7 @@ function placeTree(x, z, t, seed, isRow) {
   // a street tree mapped inside the carriageway goes to the verge
   const e = nearestEdge(x, z);
   if (e && e.dist < e.halfWidth + 1.0) { const [nx, nz] = curbside(x, z, 1.2, 30); x = nx; z = nz; }
+  if (deckOver(x, z, heightAt(x, z), H) != null) return; // (under a road deck: its crown came up through the deck)
   const s = H / 10;
   let sxz = s;
   if (D && D > 1 && D < 40) { const nomD = kind === 'round' ? 6.6 : kind === 'oval' ? 4.6 : kind === 'cone' ? 5 : 7; sxz = clamp(D / nomD, s * 0.6, s * 1.6); }
@@ -1649,13 +1674,40 @@ function placeSignalApproach(G, ap, phase, g) {
   let al = Math.hypot(ax, az);
   if (al < 0.3) { const s = S.left ? 1 : -1; ax = -Math.cos(d) * s; az = -Math.sin(d) * s; al = 1; }
   ax /= al; az /= al;
+  // a pole on a carriageway or in a lane's way (the far side of a junction made of several small ones, a near side
+  // corner that a turn cuts) moves out from the road, and away from the junction along it, until it is clear; with no
+  // clear spot there is no pole
+  // (one only just on the asphalt, the rounded corner of a junction, goes out past the kerb too where it can)
+  const onCw = (x, z) => { const r0 = S.roads; if (!r0 || typeof r0.surfaceAt !== 'function') return false; try { const hh = heightAt(x, z), q = r0.surfaceAt(x, z, hh == null ? undefined : hh); return !!(q && q.onRoad && q.edge < -0.2); } catch (e) { return false; } };
+  if (misplaced(px, pz) || onCw(px, pz)) {
+    const away = farSide && ap.fx != null ? 1 : -1;
+    let best = misplaced(px, pz) ? null : [px, pz], clear = null;
+    for (const along of [0, 1.5, 3, 5, 8]) {
+      for (const out of [0.4, 0.9, 1.5, 2.2, 3]) {
+        const x = px - ax * out + dx * along * away, z = pz - az * out + dz * along * away;
+        if (misplaced(x, z)) continue;
+        if (!best) best = [x, z];
+        if (!onCw(x, z)) { clear = [x, z]; break; }
+      }
+      if (clear) break;
+    }
+    const at = clear || best;
+    if (!at) { S.dropped = S.dropped || { road: 0, building: 0, lane: 0 }; S.dropped.signal = (S.dropped.signal || 0) + 1; return null; }
+    px = at[0]; pz = at[1];
+  }
   const lensR = R === 'us' || R === 'jp' ? 0.15 : 0.105;
   const hsp = lensR * 2.25;
   const housing = R === 'us' ? (rng(G.id)() < 0.55 ? new THREE.Color(0.85, 0.66, 0.05) : new THREE.Color(0.05, 0.05, 0.05)) : R === 'jp' ? new THREE.Color(0.72, 0.74, 0.75) : R === 'uk' ? new THREE.Color(0.04, 0.04, 0.04) : new THREE.Color(0.12, 0.13, 0.14);
   const poleC = R === 'us' ? new THREE.Color(0.6, 0.62, 0.64) : R === 'jp' ? new THREE.Color(0.66, 0.68, 0.7) : R === 'uk' ? new THREE.Color(0.06, 0.06, 0.06) : new THREE.Color(0.38, 0.4, 0.41);
   const gid = G.id;
   const lensMeta = (role) => ({ g: gid, p: phase, r: role });
-  const mastArm = (R === 'us' && (lanes >= 2 || hw > 4.6)) || R === 'jp';
+  // (under a road deck no higher than a mast arm (a freeway over the street) anywhere along the arm, the short pole: the
+  // arm and its heads stood up through the deck)
+  let mastArm = (R === 'us' && (lanes >= 2 || hw > 4.6)) || R === 'jp';
+  if (mastArm) {
+    const gy = heightAt(px, pz), reachA = R === 'jp' ? Math.min(3.3 * lanes * 0.6 + 1, 7) : 0.8 + 3.3 * (Math.min(lanes, 4) - 0.5) + 0.8;
+    for (const f of [0, 0.5, 1]) if (deckOver(px + ax * reachA * f, pz + az * reachA * f, gy, 7.6) != null) { mastArm = false; break; }
+  }
   const rec = addRec([[px, pz]], (r) => {
     const y = r.ys[0];
     const head = (cx, cy, cz, vertical) => {
@@ -1759,10 +1811,24 @@ function placeBarrier(b) {
       const t0 = k / n, t1 = (k + 1) / n;
       const p0 = [a[0] + (c[0] - a[0]) * t0, a[1] + (c[1] - a[1]) * t0], p1 = [a[0] + (c[0] - a[0]) * t1, a[1] + (c[1] - a[1]) * t1];
       const last = i + 2 === seq.length && k === n - 1;
+      // (not a piece on a carriageway or across a lane: a fence or wall mapped across an entrance or a gate, or
+      // drawn through a road, stood across the street)
+      if (pieceInRoad(p0, p1)) { S.dropped = S.dropped || { road: 0, building: 0, lane: 0 }; S.dropped.barrier = (S.dropped.barrier || 0) + 1; continue; }
       const rec = addRec([p0, p1], (rr) => emitPiece(ty, rr, p0, p1, H, thick, spec, { isBrick, wallC, hedgeC, paintC, last }));
       segment(rec, p0, p1, ty === 'wall' ? thick : ty === 'hedge' ? thick : 0.15, H);
     }
   }
+}
+function pieceInRoad(p0, p1) {
+  const r = S.roads; if (!r || typeof r.surfaceAt !== 'function') return false;
+  const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]), n = Math.max(2, Math.ceil(L / 1.2));
+  for (let k = 0; k <= n; k++) {
+    const x = p0[0] + (p1[0] - p0[0]) * k / n, z = p0[1] + (p1[1] - p0[1]) * k / n;
+    let hh = null; try { hh = heightAt(x, z); } catch (e) {}
+    try { const q = r.surfaceAt(x, z, hh == null ? undefined : hh); if (q && q.onRoad && q.edge < -0.3) return true; } catch (e) {}
+    if (inLane(x, z, hh)) return true;
+  }
+  return false;
 }
 function emitPiece(ty, r, p0, p1, H, thick, spec, o) {
   const [ax, az] = p0, [bx, bz] = p1, ya = r.ys[0], yb = r.ys[1];
@@ -1979,6 +2045,25 @@ export function reheight(bbox) {
   } finally { S = keep; }
 }
 
+// The props on screen that test(x, z, y) puts in the way are hidden (a few ms of work at a time): drive.js asks this of
+// the old area's while the next one builds, for the new roads' lanes. The next build replaces them all. Returns how many.
+export async function hideWhere(test, sliceMs = Infinity) {
+  const st = LIVE; if (!st) return 0;
+  let t0 = performance.now(), n = 0;
+  const touched = new Set();
+  for (const rec of st.recs) {
+    if (performance.now() - t0 > sliceMs) { await yieldNow(); t0 = performance.now(); if (LIVE !== st) return n; }
+    if (rec.hidden || rec.skip || rec.wire) continue;
+    let hit = false; for (let i = 0; i < rec.pts.length && !hit; i++) hit = test(rec.pts[i][0], rec.pts[i][1], rec.ok ? rec.ys[i] : null);
+    if (!hit) continue;
+    rec.hidden = true; rec.emit = () => {}; n++; touched.add(rec.bin);
+  }
+  if (LIVE !== st || !touched.size) return n;
+  const keep = S; S = st;
+  try { for (const k of touched) { const b = st.bins.get(k); if (b) rebuildBin(b); } recolourLenses(st, true); } finally { S = keep; }
+  return n;
+}
+
 // Records still standing on a guessed height (no ground there yet).
 export function pending() { let n = 0; if (LIVE) for (const r of LIVE.recs) if (!r.ok) n++; return n; }
 
@@ -1996,5 +2081,5 @@ export function stats() {
   return { bins: st.bins.size, meshes, instances: inst, drawn, records: st.recs.length, dropped: st.dropped || null, groups: st.groups.size, wires: st.wires.length, region: st.region, leftHand: st.left, byPart };
 }
 
-export const props = { preload, build, update, signalAt, reheight, reset, dispose: reset, pending, stats, setReach, get groups() { return (LIVE || S).groups; }, get group() { return LIVE ? LIVE.group : null; } };
+export const props = { preload, build, update, signalAt, reheight, reset, dispose: reset, pending, stats, setReach, hideWhere, get groups() { return (LIVE || S).groups; }, get group() { return LIVE ? LIVE.group : null; } };
 export default props;
