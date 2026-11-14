@@ -8,11 +8,11 @@
    Summit Chair from the finish corral by the arch straight up the main face, over the shoulder and up the Peak to the
    true summit; the first start at its top; where its towers may stand (park.towerOk), and where the physics meets a
    rock face (park.cliff). */
-import { Land, LIFT_XS, fallLines } from './frland.js?v=25';
-import { Kicker, Rail, assemble } from './park.js?v=25';
-import { setMountain } from './terrain.js?v=25';
-import { simplex, fbm, smoothstep } from './noise.js?v=25';
-import { setRockSource, rockFieldWorker, freerideLook, setFieldTrees } from './materials.js?v=25';
+import { Land, LIFT_XS, fallLines, LINES } from './frland.js?v=26';
+import { Kicker, Rail, assemble } from './park.js?v=26';
+import { setMountain } from './terrain.js?v=26';
+import { simplex, fbm, smoothstep } from './noise.js?v=26';
+import { setRockSource, rockFieldWorker, freerideLook, setFieldTrees } from './materials.js?v=26';
 
 const RAD = Math.PI / 180;
 export const FIELD_MID = [10, 225];     // (the rock field's middle: frfield.js is sent its windows round it; 1280 m of fine
@@ -103,7 +103,7 @@ export function makeFreeride(q, plan = null) {
      Worked out in a worker (frfield.js), so it is ready before a run starts and never takes a frame's time: baked on
      the page in idle moments it was still going ten seconds into a run on a slow machine */
   // (2026-11-11: and the mountain's own light in the same texels, the sky each place sees and the sun's shadows: frfield.js)
-  rockFieldWorker(new URL('./frfield.js?v=25', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)), true);
+  rockFieldWorker(new URL('./frfield.js?v=26', import.meta.url), FIELD_MID, () => setRockSource((x, z) => land.snowAt(x, z), FIELD_MID, (x, z, ny) => land.rockNy(x, z, ny)), true);
 
   // ---- kickers on the rock: [band, x, lip deg, R, half width, gap m]
   const K = [];
@@ -190,12 +190,15 @@ export function makeFreeride(q, plan = null) {
     { name: 'Summit: the Couloirs (the dog-leg)', x: 90, z: 3, v: 2.5 },
     { name: 'Summit: the narrow chute (mandatory air)', x: 63.8, z: 4, v: 2 },
     { name: 'Summit: the Spines', x: -96, z: 5, v: 2.5 },
+    // (2026-11-13, flow: a start for each named line, frland.js LINES)
+    { name: 'Summit: the step-downs', x: -38, z: -9, v: 2.5 },
+    { name: 'Summit: the wide chute', x: 125, z: 2, v: 2 },
     { name: 'Mid-face: above Tier A', x: 8, z: 176, v: 6 },
     { name: 'Mid-face: the Big Ones', x: 34, z: 240, v: 6 },          // (6 m clear of the Face Chair's line at x 28)
     { name: 'Selection: the rock kickers', x: -102, z: 190, v: 6 },
-    { name: 'Lower face: the pillows', x: -26, z: 350, v: 6 },
+    { name: 'Lower face: the pillows', x: -40, z: 362, v: 6 },          // (2026-11-13: above the pillow line, which is lower now)
     { name: 'Lower face: Selection kickers', x: -107, z: 352, v: 6 },
-    { name: 'Above the Great Wall', x: -30, z: 440, v: 7 },
+    { name: 'Above the Great Wall', x: -30, z: 460, v: 7 },
     { name: 'Finish apron', x: 0, z: 600, v: 6 },
     { name: 'West Glades: the cornice', x: -366, z: -4, v: 2.5 },
     { name: 'West Glades: the natural halfpipe', x: -318, z: 30, v: 4 },
@@ -219,6 +222,8 @@ export function makeFreeride(q, plan = null) {
   const fences = [[-46, 735, -46, 820], [46, 735, 46, 820]];
   park = assemble({ kickers: K, rails, starts, fences, banner: 'FREERIDE' });
   park.land = land; park.freeride = true;
+  // (2026-11-13) the named lines, start to finish (frland.js LINES: each one's start is one of the starts above)
+  park.lines = LINES.filter(l => starts.some(st => st.name === l.start));
   // (2026-11-08, with P) on a rock face: the physics' wall; everywhere else on Freeride is snow to ride (frland.js cliff)
   park.cliff = (x, z) => land.cliff(x, z);
   /* (2026-11-10) the one chairlift, its bottom where the run flattens by the finish arch, straight up the main face
@@ -311,6 +316,9 @@ export function makeFreeride(q, plan = null) {
       if (Math.abs(x) < 80 + jit * 3 && z > 670 + jit && z < 950) continue;
       if (lifts.some(L => (Math.abs(x - L.x) < 13 && z > L.top - 20 && z < L.bot + 45) || (Math.abs(x - L.x) < 40 && z > L.bot - 20 && z < L.bot + 45))) continue;
       if (lanes.some(([lx, hw, z0, z1]) => Math.abs(x - lx) < hw + jit && z > z0 && z < z1)) continue;
+      // (2026-11-13: and none within about 6 m of a named line's way down, frland.js LINES: through the woods each line is
+      // a clear lane you can read from above)
+      if (land.lineNear(x, z) < 6 + jit * 0.5) continue;
       // (on a feature, its bench or its apron: the land there is not the bare slope)
       if (Math.abs(land.at(x, z) - land.base(x, z)) > 0.25 || Math.abs(land.at(x + 2.5, z) - land.base(x + 2.5, z)) > 0.4 || Math.abs(land.at(x - 2.5, z) - land.base(x - 2.5, z)) > 0.4) continue;
       const e = 0.6, y = G(x, z), gx = (G(x + e, z) - G(x - e, z)) / (2 * e), gz = (G(x, z + e) - G(x, z - e)) / (2 * e);

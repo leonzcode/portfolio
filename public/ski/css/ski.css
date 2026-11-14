@@ -266,3 +266,72 @@ select { font: 500 15px var(--body); padding: 6px 8px; border: 1px solid #b8c4cf
 .loaderr button.big { width: 100%; font-size: 22px; padding: 8px 0; }
 #gfxnote { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); z-index: 20; max-width: min(520px, 92vw); background: rgba(244,247,250,.96); color: var(--shade); padding: 10px 14px; border-left: 5px solid var(--signal); box-shadow: 0 8px 24px rgba(13,27,42,.3); font-size: 14px; }
 #gfxnote button { font-size: 15px; padding: 5px 12px; margin-left: 8px; }
+
+/* ---- (W, round 10) Any mountain: its tile (a blue run sign with a peak on it), the place picker under the tiles, and
+   the trail map over the game (wsearch.js, wtrail.js). The trail colours are the ones on the slopes' own signs. ---- */
+:root { --green: #1f9d55; --blue: #1f5fb8; --black: #111418; }
+.maps.runs:has(> :nth-child(3)) { grid-template-columns: repeat(3, 1fr); }
+.maps.runs:has(> :nth-child(3)) .map { padding: 9px 8px 8px; }
+.maps.runs:has(> :nth-child(3)) .map b { font-size: 17px; }
+.sign.peak { width: 22px; justify-content: center; background: var(--blue); border-radius: 3px; }
+.sign.peak i { display: block; width: 16px; height: 11px; background: #fff; clip-path: polygon(0 100%, 36% 18%, 52% 52%, 68% 30%, 100% 100%); margin-top: 3px; }
+.wpanel { margin: -2px 0 12px; padding: 10px 10px 8px; background: #fff; border: 1px solid #c9d3dc; border-top: 3px solid var(--blue); }
+.wnow { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; min-width: 0; }
+.wnow[hidden] { display: none; }
+.wlab { flex: 0 0 auto; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: #4a5561; }
+.wnow b { font: italic 800 20px var(--display); text-transform: uppercase; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wnow small { font-size: 12px; color: #5b6774; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.wsearch { position: relative; }
+.wsearch input { width: 100%; box-sizing: border-box; font: 500 15px var(--body); padding: 8px 10px 8px 32px; border: 1px solid #b8c4cf; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%234a5561' stroke-width='2.4'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='m20 20-4.6-4.6'/%3E%3C/svg%3E") 10px 50% no-repeat; color: var(--shade); }
+.wsug { position: absolute; left: 0; right: 0; top: 100%; z-index: 5; margin: 2px 0 0; padding: 0; list-style: none; max-height: 290px; overflow-y: auto; background: #fff; border: 1px solid #b8c4cf; box-shadow: 0 10px 26px rgba(13,27,42,.22); }
+.wsug li { display: flex; align-items: center; gap: 9px; padding: 7px 10px; cursor: pointer; border-left: 3px solid transparent; }
+.wsug li:hover, .wsug li[aria-selected="true"] { background: #eef3f7; border-left-color: var(--signal); }
+.wsug li.wnote { cursor: default; color: #5b6774; font-size: 13px; }
+.wpin { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: #9aa7b4; }
+.wpin.ski { width: 9px; height: 9px; border-radius: 2px; background: var(--blue); }
+.wtxt { display: flex; flex-direction: column; min-width: 0; }
+.wtxt b { font: 600 14px var(--body); color: var(--shade); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wtxt small { font-size: 12px; color: #5b6774; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wqstate { margin: 4px 0 0; min-height: 0; font-size: 12px; color: #4a5561; }
+.wqstate:empty { display: none; }
+.wpre { margin: 8px 0 0; max-height: 236px; overflow-y: auto; border-top: 1px solid #e1e7ec; padding-top: 6px; }
+.wreg + .wreg { margin-top: 8px; }
+.wreglab { display: block; margin: 0 0 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: #4a5561; }
+.wreg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.wreglab { grid-column: 1 / -1; }
+.wres { display: flex; flex-direction: column; align-items: flex-start; gap: 0; min-width: 0; padding: 6px 8px 5px; background: #f4f7fa; color: var(--shade); border: 1px solid #dbe2e9; border-bottom: 2px solid #dbe2e9; text-transform: none; letter-spacing: 0; text-align: left; }
+.wres:hover { border-color: #8fa1b2; }
+.wres[aria-current="true"] { border-color: var(--shade); border-bottom-color: var(--signal); background: #eef3f7; }
+.wres b { font: italic 800 15px var(--display); text-transform: uppercase; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.wres small { font: 400 11px var(--body); color: #5b6774; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.wsrc { margin: 8px 0 0; font-size: 11px; color: #6b7783; line-height: 1.35; }
+@media (max-width: 420px) { .maps.runs:has(> :nth-child(3)) .map b { font-size: 15px; } .wreg { grid-template-columns: 1fr; } }
+
+/* the trail map: the mountain's real shading under its runs in their trail colours, the lifts, you; a click drops you */
+.wtrail { position: fixed; inset: 0; z-index: 30; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: #0d1b2a; color: #fff; }
+.wthead { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 3px solid var(--signal); background: rgba(13,27,42,.96); }
+.wthead h2 { margin: 0; font-size: clamp(22px, 3.4vw, 32px); color: #fff; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.wthead small { font: 500 12px var(--mono); color: #b9c8d6; white-space: nowrap; }
+.wthead .wtsp { flex: 1; }
+.wthead button { font-size: 16px; padding: 8px 14px; background: rgba(255,255,255,.1); }
+.wthead button:hover { background: rgba(255,255,255,.2); }
+.wtmap { position: relative; min-height: 0; overflow: hidden; cursor: crosshair; touch-action: none; }
+.wtmap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wttip { position: absolute; pointer-events: none; transform: translate(12px, -50%); background: rgba(13,27,42,.9); border-left: 3px solid var(--signal); padding: 3px 8px; font: 600 13px var(--body); white-space: nowrap; }
+.wttip small { display: block; font: 500 11px var(--mono); color: #b9c8d6; }
+.wtfoot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 14px; font: 500 12px var(--body); color: #dfe7ee; background: rgba(13,27,42,.96); }
+.wtkey { display: inline-flex; align-items: center; gap: 6px; }
+.wtkey i { display: inline-block; width: 18px; height: 5px; border-radius: 1px; }
+.wtfoot .wthint { margin-left: auto; color: #9fb0c0; }
+/* (W) the online board's third tile: across the board under the two maps, the place it is at */
+.onmaps .onworld { grid-column: 1 / -1; }
+.onworld .sign.peak { width: 20px; height: 20px; }
+.onplace { font: 500 12px var(--body); color: #dfe7ee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -3px; }
+.onplace:empty { display: none; }
+.wskip { width: 100%; margin: 6px 0 0; font-size: 14px; padding: 7px 10px; background: #fff; color: var(--shade); border: 1px solid var(--blue); }
+.wskip[hidden] { display: none; }
+/* (W) the corner map while riding Any mountain (wtrail.js mini): bottom right, over the frame rate; a click opens the trail map */
+.wmini { position: absolute; right: 16px; bottom: 36px; width: 150px; height: 150px; pointer-events: auto; cursor: pointer; border: 2px solid rgba(255,255,255,.85); box-shadow: 0 4px 14px rgba(13,27,42,.35); }
+#hud.watching .wmini { display: none; }
+@media (hover: none) { .wmini { display: none; } }
+@media (max-width: 640px) { .wmini { width: 110px; height: 110px; } }

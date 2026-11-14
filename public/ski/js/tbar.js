@@ -24,7 +24,7 @@
    the two bull wheels one more. The stations and towers cast their shadows from copies cut in 150 m pieces drawn only
    into the sun's shadow map (layer 5), as the chairlift does. */
 import * as THREE from 'three';
-import { ground, height, normal } from './terrain.js?v=25';
+import { ground, height, normal } from './terrain.js?v=26';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // ---- sizes (metres) ---------------------------------------------------------------------------------------------------
@@ -67,7 +67,8 @@ const Y = new THREE.Vector3(0, 1, 0);
 export function planTbar(park) {
   const fR = park.fences && park.fences.length ? Math.max(...park.fences.map(f => Math.max(f[0], f[2]))) : 22;
   const XU = fR + 6.5, XC = XU + G2, XD = XU + 2 * G2;
-  const lastMeet = Math.max(...park.kickers.map(k => k.zMeet || k.z0 || 0), ...(park.rails || []).map(r => r.P[r.P.length - 1].z));
+  // (J, round 10: and the course's other features, the superpipe last)
+  const lastMeet = Math.max(...park.kickers.map(k => k.zMeet || k.z0 || 0), ...(park.rails || []).map(r => r.P[r.P.length - 1].z), ...(park.meshed || []).map(f => f.z1 || 0), park.pipe ? park.pipe.z1 : 0);
   const start = park.starts && park.starts[0] ? park.starts[0] : { x: 0, z: -30 };
   const zLoad = lastMeet + 46, zBot = zLoad + 8;          // the bottom wheel's middle 8 m down from the loading point
   const zUnload = start.z - 22, zTop = zUnload - 9;       // the top wheel's middle 9 m up from the unloading point
@@ -338,7 +339,7 @@ float tbDither() { vec2 p = mod(floor(gl_FragCoord.xy), 4.0); float a = 2.0 * ab
        its windows to the line; merged into this mesh, so no draw call of its own. Should it not load, a plain hut built
        here stands in. */
     let hutG = null;
-    try { const gl = await new GLTFLoader().loadAsync('./models/tbar/hut.glb?v=25'); gl.scene.traverse(o => { if (o.isMesh && !hutG) hutG = o.geometry; }); }
+    try { const gl = await new GLTFLoader().loadAsync('./models/tbar/hut.glb?v=26'); gl.scene.traverse(o => { if (o.isMesh && !hutG) hutG = o.geometry; }); }
     catch (e) { console.warn('tbar hut', e); }
     const extra = [];
     for (const [h, w, d, wall] of [[P.hut, 1.3, 1.6, C.wood], [P.motor, 1.5, 2.0, C.white]]) {

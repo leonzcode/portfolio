@@ -3,7 +3,7 @@
 // park, the chairlift's drive) run all the time at the level the riding asks for; one-shots for the pop, landings, a
 // crash, meeting a rail or box, the "schat" of a swap and the chairlift's clack. The files load when you first ride;
 // until they have come the old sounds made on the fly stand in.
-import { ENV } from './env.js?v=25';
+import { ENV } from './env.js?v=26';
 
 const LOOPS = ['wind', 'carve', 'skid', 'powder', 'rail_grind', 'box_slide', 'ambience', 'lift_hum'];
 const SHOTS = ['pop', 'land', 'land_soft', 'crash', 'rail_hit', 'box_hit', 'schat', 'lift_clack'];

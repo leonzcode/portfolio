@@ -13,11 +13,11 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Rig, springBank, smooth01, wrapPi, softReach, wob } from './rig.js?v=25';
-import { clamp, smoothstep } from './noise.js?v=25';
-import { height } from './terrain.js?v=25';
-import { LOOK } from './gear.js?v=25';
-import { RIDE_KEYS, RIDE_HELP } from './input.js?v=25';
+import { Rig, springBank, smooth01, wrapPi, softReach, wob, segSeg } from './rig.js?v=26';
+import { clamp, smoothstep } from './noise.js?v=26';
+import { height } from './terrain.js?v=26';
+import { LOOK } from './gear.js?v=26';
+import { RIDE_KEYS, RIDE_HELP } from './input.js?v=26';
 
 const D = Math.PI / 180;
 // the board's size (the model is scaled to it), where the bindings are, and their angles (a mild duck stance)
@@ -37,23 +37,23 @@ export const BOARD = { len: 1.55, half: 0.775, top: 0.037, stance: 0.54, angF: 1
 // between the legs to the heel edge; Japan: a mute pulled up behind, front knee down; Crail: back hand to the nose;
 // Tindy: an indy slid back towards the tail).
 export const BOARD_GRABS = {
-  indy:      { name: 'Indy', hands: [['B', -0.02, 'toe']], board: [0, 0.04, 0.04, 0, -0.06, -0.12], tuck: 0.72, lean: 0.4, twist: -0.3, side: -0.22, arms: 'out' },
-  mute:      { name: 'Mute', hands: [['F', 0.08, 'toe']], board: [0, 0.04, 0.05, 0, 0.06, -0.1], tuck: 0.7, lean: 0.48, twist: 0.25, side: 0.35, arms: 'out' },
-  melon:     { name: 'Melon', hands: [['F', 0.04, 'heel']], board: [0, 0, 0.1, 0.05, 0.16, -0.3], tuck: 0.55, lean: 0.55, twist: 0.45, side: 0.45, arms: 'out' },
-  stalefish: { name: 'Stalefish', hands: [['B', -0.08, 'heel']], board: [0, 0.02, -0.08, 0, -0.14, 0.32], tuck: 0.58, lean: 0.42, twist: -0.45, side: -0.42, arms: 'out' },
-  method:    { name: 'Method', hands: [['F', 0.06, 'heel']], board: [0.02, 0.16, -0.2, 0, 0.3, 1.05], tuck: 0.8, lean: -0.05, twist: 0.35, side: 0.4, arms: 'up' },
-  nose:      { name: 'Nose', hands: [['F', 1, 'end']], board: [0.04, -0.02, 0.06, 0.08, 0.42, -0.05], tuck: 0.45, lean: 0.7, twist: 0.4, side: 0.42, arms: 'out' },
-  tail:      { name: 'Tail', hands: [['B', -1, 'end']], board: [-0.04, -0.02, 0.02, -0.08, -0.42, 0.05], tuck: 0.45, lean: 0.45, twist: -0.42, side: -0.42, arms: 'out' },
-  roastbeef: { name: 'Roast Beef', hands: [['B', 0.02, 'heel']], board: [0, 0.03, 0.08, 0, 0, -0.12], tuck: 0.72, lean: 0.62, twist: 0.05, side: -0.15, arms: 'out' },
-  japan:     { name: 'Japan', hands: [['F', 0.42, 'toe']], board: [0, 0.14, -0.14, 0, 0.32, 0.72], tuck: 0.82, lean: 0.5, twist: 0.45, side: 0.38, arms: 'out' },
-  crail:     { name: 'Crail', hands: [['B', 0.6, 'toe']], board: [0.06, 0, 0.1, 0.3, -0.05, -0.08], tuck: 0.5, lean: 0.85, twist: 0.55, side: 0.25, bone: 'B', arms: 'out' },
-  seatbelt:  { name: 'Seatbelt', hands: [['F', -1, 'end']], board: [-0.03, 0.02, 0.06, -0.12, -0.38, 0], tuck: 0.6, lean: 0.62, twist: -0.6, side: -0.25, arms: 'out' },
-  truck:     { name: 'Truck Driver', hands: [['F', 0.08, 'heel'], ['B', -0.04, 'toe']], board: [0, 0.04, 0.04, 0, 0, 0], tuck: 0.72, lean: 0.55, twist: 0, side: 0 },
-  tindy:     { name: 'Tindy', hands: [['B', -0.55, 'toe']], board: [0, 0, 0.04, -0.06, -0.16, -0.08], tuck: 0.55, lean: 0.55, twist: -0.4, side: -0.32, arms: 'out' },
-  swiss:     { name: 'Swiss Cheese', hands: [['B', 0.45, 'heel']], board: [0, 0, 0.08, 0.05, 0.12, -0.1], tuck: 0.5, lean: 0.85, twist: 0.3, side: 0.22, bone: 'B', arms: 'out' },
-  rocket:    { name: 'Rocket', hands: [['F', 1, 'end'], ['B', 0.93, 'toe']], board: [0.04, 0.04, 0.08, 0.1, 0.85, -0.05], tuck: 0.3, lean: 0.75, twist: 0.5, side: 0.45, bone: 'B' },
-  slob:      { name: 'Slob', hands: [['F', 0.06, 'toe']], board: [0, -0.04, 0.06, 0, -0.04, -0.06], tuck: 0.42, lean: 0.62, twist: 0.25, side: 0.3, bone: 'B', arms: 'wide' },
-  dracula:   { name: 'Bloody Dracula', hands: [['B', -1, 'end'], ['F', -0.85, 'heel']], board: [-0.04, 0.04, -0.04, -0.1, -0.5, 0.15], tuck: 0.42, lean: 0.3, twist: -0.65, side: -0.2 },
+  indy:      { name: 'Indy', hands: [['B', -0.12, 'toe']], board: [0, 0.04, -0.01, 0, -0.089, -0.06], tuck: 0.85, lean: 0.84, twist: 0.504, side: -0.25, knees: 0.25, arms: 'raise' },
+  mute:      { name: 'Mute', hands: [['F', 0.12, 'toe']], board: [0, 0.04, 0.092, 0, -0.06, -0.27], tuck: 0.898, lean: 0.628, twist: -0.51, side: -0.042, knees: 0.218, arms: 'out' },
+  melon:     { name: 'Melon', hands: [['F', 0.08, 'heel']], board: [0, 0.02, 0.04, 0.05, 0.12, 0.186], tuck: 0.829, lean: 0.196, twist: 0.66, side: 0.4, knees: 0.2, arms: 'out' },
+  stalefish: { name: 'Stalefish', hands: [['B', -0.18, 'heel']], board: [0, 0.02, -0.04, 0, -0.192, 0.4], tuck: 0.757, lean: 0.218, twist: -0.9, side: -0.237, knees: 0.2, arms: 'out' },
+  method:    { name: 'Method', hands: [['F', 0.06, 'heel']], board: [0.02, 0.16, -0.171, 0, 0.201, 0.859], tuck: 0.874, lean: 0.006, twist: 0.403, side: 0.484, knees: 0.093, arms: 'up' },
+  nose:      { name: 'Nose', hands: [['F', 1, 'end']], board: [0.04, -0.02, 0.06, 0.08, 0.314, -0.05], tuck: 0.424, lean: 0.7, twist: 0.4, side: 0.42, knees: 0.1, arms: 'out' },
+  tail:      { name: 'Tail', hands: [['B', -1, 'end']], board: [-0.04, -0.02, 0.02, -0.08, -0.535, 0.05], tuck: 0.45, lean: 0.45, twist: -0.18, side: -0.391, knees: 0.1, arms: 'out' },
+  roastbeef: { name: 'Roast Beef', hands: [['B', -0.15, 'heel']], board: [0, 0.03, 0.1, 0, 0.504, 0.42], tuck: 0.72, lean: 0.56, twist: -0.25, side: 0.042, knees: 0.09, arms: 'out' },
+  japan:     { name: 'Japan', hands: [['F', 0.12, 'toe']], board: [0, 0.14, -0.12, 0, 0.397, 0.72], tuck: 0.532, lean: 0.95, twist: -0.3, side: 0.428, knees: 0.15, arms: 'out' },
+  crail:     { name: 'Crail', hands: [['B', 0.6, 'toe']], board: [0.06, 0, 0.1, 0.3, 0.07, -0.026], tuck: 0.62, lean: 1.032, twist: 0.732, side: 0.104, knees: 0.1, bone: 'B', arms: 'out' },
+  seatbelt:  { name: 'Seatbelt', hands: [['F', -1, 'end']], board: [-0.03, 0.02, 0.064, -0.12, -0.46, -0.035], tuck: 0.338, lean: 1.062, twist: -1.049, side: -0.138, knees: 0, arms: 'out' },
+  truck:     { name: 'Truck Driver', hands: [['F', 0.08, 'heel'], ['B', -0.12, 'toe']], board: [0, 0.04, 0.14, 0, -0.36, 0.3], tuck: 0.84, lean: 0.7, twist: 0.75, side: -0.336, knees: 0.1 },
+  tindy:     { name: 'Tindy', hands: [['B', -0.62, 'toe']], board: [0, 0, 0.04, -0.06, -0.16, -0.23], tuck: 0.55, lean: 0.55, twist: -0.19, side: -0.306, knees: 0.046, arms: 'out' },
+  swiss:     { name: 'Swiss Cheese', hands: [['B', 0.45, 'heel']], board: [0, 0, 0.193, 0.05, 0.381, 0.404], tuck: 0.573, lean: 1.06, twist: 1.06, side: 0.606, knees: 0.174, bone: 'B', arms: 'out' },
+  rocket:    { name: 'Rocket', hands: [['F', 1, 'end'], ['B', 0.93, 'toe']], board: [0.04, 0.04, 0.169, 0.1, 0.73, -0.018], tuck: 0.343, lean: 0.692, twist: 1.1, side: 0.378, knees: 0.19, bone: 'B' },
+  slob:      { name: 'Slob', hands: [['F', 0.62, 'toe']], board: [0, -0.04, 0.06, 0, 0.08, -0.21], tuck: 0.54, lean: 0.62, twist: 0.19, side: 0.3, knees: 0.1, bone: 'B', arms: 'wide' },
+  dracula:   { name: 'Bloody Dracula', hands: [['B', -1, 'end'], ['F', -0.7, 'heel']], board: [-0.04, 0.04, 0.16, -0.1, -0.329, 0.482], tuck: 0.158, lean: 0.95, twist: -1.046, side: 0.1, knees: 0.18 },
   // positions without a hand: a leg kicked straight ("boned"), or both knees tucked up
   nosebone:  { name: 'Nose Bone', pos: true, hands: [], board: [0.06, -0.12, 0.08, 0.1, -0.32, -0.05], tuck: 0.25, lean: 0.25, twist: 0.3, side: 0.1, bone: 'F', arms: 'wide' },
   tailbone:  { name: 'Tail Bone', pos: true, hands: [], board: [-0.06, -0.12, 0.08, -0.1, 0.32, -0.05], tuck: 0.25, lean: 0.25, twist: -0.3, side: -0.1, bone: 'B', arms: 'wide' },
@@ -80,46 +80,63 @@ export const BOARD_FOR = {
    through the legs to the toe edge), Chicken Salad (a Roast Beef with the front hand: through the legs to the heel
    edge), Nuclear (the back hand across the front of the body to the heel edge by the nose), Cross Rocket (both hands on
    the nose, crossed), the Seatbelt's front leg boned. */
-const BOARD_VARS = {
-  indy: [{ name: 'Indy Tail Bone', bone: 'B', board: [0, 0, 0.16, -0.06, -0.2, -0.32], tuck: 0.6, lean: 0.5, twist: -0.6, side: -0.42, arms: 'up' },
-    { name: 'Tindy', hands: [['B', -0.55, 'toe']], board: [-0.02, 0, 0.05, -0.08, -0.22, -0.1], tuck: 0.6, lean: 0.55, twist: -0.5, side: -0.36 }],
-  mute: [{ name: 'Mute Tail Bone', bone: 'B', board: [0.02, 0.1, -0.08, 0.1, 0.26, 0.42], tuck: 0.72, lean: 0.45, twist: 0.55, side: 0.48, arms: 'up' },
-    { name: 'Taipan', hands: [['F', 0.02, 'toe']], board: [0, 0.12, -0.16, 0.04, 0.3, 0.62], tuck: 0.78, lean: 0.62, twist: 0.5, side: 0.42 }],
-  melon: [{ name: 'Boned Melon', bone: 'F', board: [0.02, -0.06, 0.12, 0.12, 0.3, -0.42], tuck: 0.4, lean: 0.5, twist: 0.58, side: 0.52, arms: 'wide' },
-    { name: 'Lien Air', hands: [['F', 0.72, 'heel']], board: [0.04, 0, 0.12, 0.16, 0.48, -0.26], tuck: 0.45, lean: 0.9, twist: 0.55, side: 0.52 }],
-  stalefish: [{ name: 'Stalefish Nose Bone', bone: 'F', board: [0, 0.14, -0.2, -0.08, -0.3, 0.85], tuck: 0.75, lean: 0.15, twist: -0.58, side: -0.5, arms: 'up' },
-    { name: 'Canadian Bacon', hands: [['B', -0.02, 'toe']], board: [0, 0.1, -0.18, -0.04, -0.28, 0.62], tuck: 0.78, lean: 0.45, twist: -0.5, side: -0.46 }],
-  method: [{ name: 'Power Method', board: [0.04, 0.3, -0.3, 0.05, 0.42, 1.35], tuck: 0.9, lean: -0.25, twist: 0.55, side: 0.55, arms: 'up' },
-    { name: 'Two-Handed Method', hands: [['F', 0.08, 'heel'], ['B', -0.08, 'heel']], board: [0, 0.2, -0.16, 0, 0.12, 0.9], tuck: 0.85, lean: 0.1, twist: 0.1, side: 0.12 }],
-  nose: [{ name: 'Boned Nose', bone: 'B', board: [0.06, -0.04, 0.08, 0.14, 0.62, -0.05], tuck: 0.3, lean: 0.8, twist: 0.5, side: 0.5, arms: 'wide' },
-    { name: 'Two-Handed Nose', hands: [['F', 1, 'end'], ['B', 0.86, 'heel']], board: [0.05, 0.06, 0.1, 0.12, 0.72, -0.05], tuck: 0.55, lean: 0.85, twist: 0.55, side: 0.4 }],
-  tail: [{ name: 'Boned Tail', bone: 'F', board: [-0.06, -0.04, 0.04, -0.14, -0.62, 0.05], tuck: 0.3, lean: 0.45, twist: -0.5, side: -0.5, arms: 'wide' },
-    { name: 'Two-Handed Tail', hands: [['B', -1, 'end'], ['F', -0.86, 'toe']], board: [-0.05, 0.06, 0.08, -0.12, -0.7, 0.05], tuck: 0.55, lean: 0.65, twist: -0.65, side: -0.36 }],
-  roastbeef: [{ name: 'Roast Beef Tail Bone', bone: 'B', board: [0.02, -0.02, 0.12, 0.06, 0.2, -0.3], tuck: 0.5, lean: 0.7, twist: 0.15, side: -0.25, arms: 'up' },
-    { name: 'Chicken Salad', hands: [['F', 0, 'heel']], board: [0, 0.03, 0.1, 0.04, 0.1, -0.15], tuck: 0.72, lean: 0.7, twist: 0.25, side: 0.2 }],
-  japan: [{ name: 'Japan Tail Bone', bone: 'B', board: [0, 0.22, -0.24, 0.05, 0.42, 1.05], tuck: 0.8, lean: 0.55, twist: 0.6, side: 0.5, arms: 'up' },
-    { name: 'Nuclear', hands: [['B', 0.62, 'heel']], board: [0.04, 0.04, 0.12, 0.2, 0.22, -0.2], tuck: 0.6, lean: 0.85, twist: 0.65, side: 0.25 }],
-  crail: [{ name: 'Crail, Nose Down', bone: 'B', board: [0.08, -0.04, 0.14, 0.42, -0.2, -0.12], tuck: 0.45, lean: 0.95, twist: 0.7, side: 0.35 },
-    { name: 'Two-Handed Crail', hands: [['B', 0.6, 'toe'], ['F', 0.62, 'heel']], board: [0.06, 0.04, 0.08, 0.25, 0.1, -0.05], bone: '', tuck: 0.65, lean: 0.9, twist: 0.5, side: 0.2 }],
-  seatbelt: [{ name: 'Seatbelt Nose Bone', bone: 'F', board: [-0.05, -0.02, 0.1, -0.2, -0.55, 0.05], tuck: 0.4, lean: 0.55, twist: -0.75, side: -0.35, arms: 'up' },
-    { name: 'Two-Handed Seatbelt', hands: [['F', -1, 'end'], ['B', -0.85, 'toe']], board: [-0.04, 0.06, 0.06, -0.14, -0.55, 0], tuck: 0.6, lean: 0.6, twist: -0.7, side: -0.3 }],
-  truck: [{ name: 'Stretched Truck Driver', board: [0, 0.08, 0.1, 0.15, 0.2, -0.2], tuck: 0.82, lean: 0.75, twist: 0.3, side: 0.22 },
-    { name: 'Double Mute', hands: [['F', 0.14, 'toe'], ['B', -0.08, 'toe']], board: [0, 0.06, 0.06, 0, 0, -0.15], tuck: 0.78, lean: 0.7, twist: 0, side: 0 }],
-  tindy: [{ name: 'Tindy Nose Bone', bone: 'F', board: [-0.03, -0.02, 0.1, -0.12, -0.3, -0.12], tuck: 0.45, lean: 0.6, twist: -0.55, side: -0.45, arms: 'up' },
-    { name: 'Two-Handed Tindy', hands: [['B', -0.55, 'toe'], ['F', -0.2, 'toe']], board: [-0.02, 0.05, 0.06, -0.08, -0.2, -0.1], tuck: 0.65, lean: 0.65, twist: -0.4, side: -0.25 }],
-  swiss: [{ name: 'Stretched Swiss Cheese', board: [0, 0, 0.12, 0.08, 0.2, -0.16], tuck: 0.45, lean: 0.95, twist: 0.42, side: 0.3, arms: 'up' },
-    { name: 'Swiss Cheese Nose Bone', bone: 'F', board: [0.04, -0.06, 0.1, 0.1, 0.3, -0.12], tuck: 0.35, lean: 0.85, twist: 0.4, side: 0.3 }],
-  rocket: [{ name: 'Stretched Rocket', board: [0.06, 0.06, 0.1, 0.15, 1.05, -0.05], tuck: 0.25, lean: 0.9, twist: 0.6, side: 0.5 },
-    { name: 'Cross Rocket', hands: [['F', 0.92, 'toe'], ['B', 0.92, 'heel']], board: [0.04, 0.04, 0.08, 0.12, 0.8, -0.05], tuck: 0.3, lean: 0.8, twist: 0.5, side: 0.45 }],
-  slob: [{ name: 'Stretched Slob', board: [0, -0.06, 0.1, 0.05, -0.08, -0.12], tuck: 0.35, lean: 0.7, twist: 0.4, side: 0.4, arms: 'up' },
-    { name: 'Two-Handed Slob', hands: [['F', 0.08, 'toe'], ['B', -0.08, 'toe']], board: [0, -0.02, 0.08, 0, -0.04, -0.06], tuck: 0.45, lean: 0.7, twist: 0.1, side: 0.1, arms: undefined }],
-  dracula: [{ name: 'Stretched Bloody Dracula', board: [-0.06, 0.08, -0.06, -0.15, -0.72, 0.22], tuck: 0.45, lean: 0.3, twist: -0.85, side: -0.3 },
-    { name: 'Bloody Dracula Nose Bone', bone: 'F', board: [-0.05, 0.02, -0.02, -0.12, -0.6, 0.15], tuck: 0.3, lean: 0.35, twist: -0.7, side: -0.25 }],
+export const BOARD_VARS = {
+  indy: [{ name: 'Indy Tail Bone', knees: 0.55, bone: 'B', board: [0, 0, 0.21, -0.06, -0.2, -0.47], tuck: 0.48, lean: 0.95, twist: 0.3, side: -0.18, arms: 'up' },
+    { name: 'Tindy', hands: [['B', -0.62, 'toe']], board: [-0.02, 0, 0.061, -0.08, -0.34, -0.1], tuck: 0.626, lean: 0.55, twist: -0.35, side: -0.36, knees: 0.218 },
+    { board: [-0.025, 0, 0.063, -0.108, -0.391, -0.135], tuck: 0.626, lean: 0.63, twist: -0.305, side: -0.468, knees: 0.218 }],
+  mute: [{ name: 'Mute Tail Bone', knees: 0.35, bone: 'B', board: [0.02, 0.06, 0, 0.1, 0.2, 0.15], tuck: 0.48, lean: 0.9, twist: 0.004, side: 0.12, arms: 'up' },
+    { name: 'Taipan', hands: [['F', 0.02, 'toe']], board: [0, 0.12, -0.11, 0.04, 0.389, 0.62], tuck: 0.586, lean: 1.07, twist: -0.278, side: 0.302, knees: 0 },
+    { board: [0, 0.15, -0.088, 0.054, 0.447, 0.837], tuck: 0.66, lean: 1.2, twist: -0.526, side: 0.546, knees: 0.4 }],
+  melon: [{ name: 'Boned Melon', knees: 0.2, bone: 'F', board: [0.02, -0.06, 0.07, 0.12, 0.18, 0.03], tuck: 0.76, lean: 0.596, twist: 0.676, side: 0.56, arms: 'wide' },
+    { name: 'Lien Air', hands: [['F', 0.5, 'heel']], board: [0.04, 0, 0.17, 0.16, 0.446, -0.164], tuck: 0.45, lean: 0.9, twist: 0.76, side: 0.52, knees: 0.2 },
+    { board: [0.05, 0, 0.212, 0.216, 0.576, -0.149], tuck: 0.476, lean: 1.012, twist: 0.793, side: 0.65, knees: 0.2 }],
+  stalefish: [{ name: 'Stalefish Nose Bone', knees: 0.2, bone: 'F', board: [0, 0.14, -0.25, -0.08, -0.3, 1], tuck: 0.702, lean: 0.3, twist: -0.58, side: -0.526, arms: 'up' },
+    { name: 'Canadian Bacon', hands: [['B', -0.12, 'toe']], board: [0, 0.1, -0.08, -0.04, -0.28, 0.47], tuck: 0.54, lean: 1.05, twist: 0.25, side: -0.46, knees: 0.65 },
+    { board: [0, 0.125, -0.1, -0.054, -0.336, 0.837], tuck: 0.54, lean: 1.2, twist: 0.43, side: -0.598, knees: 0.296 }],
+  method: [{ name: 'Power Method', board: [0.04, 0.3, -0.25, 0.05, 0.42, 1.468], tuck: 0.926, lean: -0.25, twist: 0.818, side: 0.447, knees: 0.093, arms: 'up' },
+    { name: 'Two-Handed Method', hands: [['F', 0.08, 'heel'], ['B', -0.08, 'heel']], board: [0, 0.2, -0.248, 0, 0.022, 0.6], tuck: 0.61, lean: -0.14, twist: -0.014, side: 0.12, knees: 0.093 },
+    { board: [0, 0.25, -0.275, 0, 0, 1.215], tuck: 0.61, lean: 0.022, twist: -0.181, side: 0.151, knees: 0.093 }],
+  nose: [{ name: 'Boned Nose', knees: 0.1, bone: 'B', board: [0.06, -0.04, 0.08, 0.14, 0.457, -0.05], tuck: 0.3, lean: 0.8, twist: 0.5, side: 0.5, arms: 'wide' },
+    { name: 'Two-Handed Nose', hands: [['F', 1, 'end'], ['B', 0.8, 'toe']], board: [0.05, 0.06, 0.05, 0.12, 0.648, -0.05], tuck: 0.576, lean: 0.886, twist: 1.1, side: 0.374, knees: 0 },
+    { board: [0.062, 0.075, 0.086, 0.162, 0.836, -0.036], tuck: 0.43, lean: 1.015, twist: 1.183, side: 0.364, knees: 0.1 }],
+  tail: [{ name: 'Boned Tail', knees: 0.186, bone: 'F', board: [-0.06, -0.04, 0.028, -0.14, -0.74, -0.004], tuck: 0.3, lean: 0.45, twist: -0.242, side: -0.5, arms: 'wide' },
+    { name: 'Two-Handed Tail', hands: [['B', -1, 'end'], ['F', -0.86, 'toe']], board: [-0.05, 0.06, 0.08, -0.12, -0.7, 0.05], tuck: 0.55, lean: 0.65, twist: -1.01, side: -0.194, knees: 0 },
+    { board: [-0.062, 0.075, 0.05, -0.162, -0.945, 0.068], tuck: 0.43, lean: 0.752, twist: -1.1, side: -0.283, knees: 0.1 }],
+  roastbeef: [{ name: 'Roast Beef Tail Bone', knees: 0.321, bone: 'B', board: [0.02, -0.02, 0.067, 0.06, 0.349, 0.151], tuck: 0.6, lean: 0.911, twist: 0.295, side: -0.335, arms: 'up' },
+    { name: 'Chicken Salad', hands: [['F', 0, 'heel']], board: [0, 0.03, 0.032, 0.04, 0.1, 0.15], tuck: 0.835, lean: 0.598, twist: 0.7, side: 0.2, knees: 0.09 },
+    { board: [0, 0.037, 0.043, 0.054, 0.178, 0.203], tuck: 0.835, lean: 0.684, twist: 1.1, side: 0.26, knees: 0.09 }],
+  japan: [{ name: 'Japan Tail Bone', knees: 0.25, bone: 'B', board: [0, 0.16, -0.17, 0.05, 0.3, 0.6], tuck: 0.68, lean: 1.2, twist: -0.15, side: 0.721, arms: 'up' },
+    { name: 'Nuclear', hands: [['B', 0.62, 'heel']], board: [0.04, 0.04, 0.14, 0.2, 0.1, 0.4], tuck: 0.365, lean: 1.054, twist: 0.836, side: 0.327, knees: 0.09 },
+    { board: [0.05, 0.05, 0.275, 0.27, 0.057, 0.232], tuck: 0.48, lean: 0.93, twist: 1.1, side: 0.325, knees: 0.1 }],
+  crail: [{ name: 'Crail, Nose Down', knees: 0.1, bone: 'B', board: [0.08, -0.04, 0.14, 0.42, -0.063, -0.188], tuck: 0.596, lean: 1.2, twist: 0.872, side: 0.204 },
+    { name: 'Two-Handed Crail', hands: [['B', 0.6, 'toe'], ['F', 0.62, 'heel']], board: [0.06, 0.04, 0.091, 0.25, 0.1, 0.072], knees: 0.1, bone: '', tuck: 0.65, lean: 0.932, twist: 0.622, side: 0.2 },
+    { board: [0.075, 0.05, 0.114, 0.338, 0.135, 0.03], tuck: 0.65, lean: 1.012, twist: 0.731, side: 0.26, knees: 0.1 }],
+  seatbelt: [{ name: 'Seatbelt Nose Bone', knees: 0.06, bone: 'F', board: [-0.05, -0.02, 0.2, -0.2, -0.67, 0.14], tuck: 0.52, lean: 0.706, twist: -1.1, side: -0.038, arms: 'up' },
+    { name: 'Two-Handed Seatbelt', hands: [['F', -1, 'end'], ['B', -0.7, 'heel']], board: [-0.04, 0.06, 0.065, -0.14, -0.463, -0.018], tuck: 0.496, lean: 0.824, twist: -1.1, side: -0.048, knees: 0.032 },
+    { board: [-0.05, 0.075, 0.043, -0.189, -0.564, -0.182], tuck: 0.48, lean: 1.012, twist: -1.1, side: -0.053, knees: 0 }],
+  truck: [{ name: 'Stretched Truck Driver', board: [0, 0.08, 0.15, 0.15, -0.16, 0.4], tuck: 0.7, lean: 0.9, twist: 0.9, side: -0.097, knees: 0.1 },
+    { name: 'Double Mute', hands: [['F', 0.18, 'toe'], ['B', -0.15, 'toe']], board: [0, 0.06, 0.11, 0, 0, -0.118], tuck: 0.66, lean: 0.7, twist: -0.072, side: 0, knees: 0.106 },
+    { board: [0, 0.075, 0.075, 0, 0, -0.203], tuck: 0.54, lean: 0.78, twist: -0.259, side: 0.166, knees: 0.09 }],
+  tindy: [{ name: 'Tindy Nose Bone', knees: 0.068, bone: 'F', board: [-0.03, -0.02, 0.1, -0.12, -0.343, -0.152], tuck: 0.476, lean: 0.632, twist: -0.554, side: -0.45, arms: 'up' },
+    { name: 'Two-Handed Tindy', hands: [['B', -0.62, 'toe'], ['F', -0.1, 'toe']], board: [-0.02, 0.05, 0.01, -0.08, -0.248, -0.34], tuck: 0.794, lean: 0.828, twist: -0.378, side: -0.176, knees: 0 },
+    { board: [-0.025, 0.062, 0.094, -0.108, -0.412, -0.459], tuck: 0.722, lean: 0.94, twist: -0.115, side: -0.292, knees: 0.304 }],
+  swiss: [{ name: 'Stretched Swiss Cheese', board: [0, 0, 0.2, 0.08, 0.382, 0.009], tuck: 0.457, lean: 1.05, twist: 1.1, side: 0.509, knees: 0.032, arms: 'up' },
+    { name: 'Swiss Cheese Nose Bone', knees: 0.188, bone: 'F', board: [0.04, -0.06, 0.156, 0.1, 0.459, 0.133], tuck: 0.314, lean: 0.962, twist: 1.1, side: 0.493 },
+    { board: [0.05, -0.075, 0.225, 0.135, 0.502, -0.024], tuck: 0.619, lean: 1.2, twist: 1.1, side: 0.726, knees: 0.226 }],
+  rocket: [{ name: 'Stretched Rocket', board: [0.06, 0.06, 0.22, 0.15, 0.786, -0.023], tuck: 0.224, lean: 0.775, twist: 1.1, side: 0.475, knees: 0.09 },
+    { name: 'Cross Rocket', hands: [['F', 0.82, 'toe'], ['B', 0.82, 'heel']], board: [0.04, 0.04, 0.16, 0.12, 0.56, 0.31], tuck: 0.223, lean: 1.094, twist: 0.47, side: 0.095, knees: 0 },
+    { board: [0.05, 0.05, 0.177, 0.162, 0.683, 0.09], tuck: 0.108, lean: 1.11, twist: 0.68, side: 0.005, knees: 0.09 }],
+  slob: [{ name: 'Stretched Slob', board: [0, -0.06, 0.05, 0.05, 0.04, -0.12], tuck: 0.47, lean: 0.85, twist: 0.4, side: 0.52, knees: 0.1, arms: 'up' },
+    { name: 'Two-Handed Slob', hands: [['F', 0.08, 'toe'], ['B', -0.08, 'toe']], board: [0, -0.02, 0.084, 0, 0.01, -0.368], tuck: 0.642, lean: 1.07, twist: -0.101, side: 0.202, knees: 0, arms: undefined },
+    { board: [0, -0.025, 0.13, 0, -0.083, -0.486], tuck: 0.642, lean: 1.14, twist: -0.032, side: 0.286, knees: 0.01 }],
+  dracula: [{ name: 'Stretched Bloody Dracula', board: [-0.06, 0.08, 0.084, -0.15, -0.331, 0.52], tuck: 0.15, lean: 0.996, twist: -1.1, side: 0.06, knees: 0.1 },
+    { name: 'Bloody Dracula Nose Bone', knees: 0.1, bone: 'F', board: [-0.05, 0.02, 0.13, -0.12, -0.506, 0.51], tuck: 0, lean: 1.012, twist: -1.1, side: 0.158 },
+    { board: [-0.062, 0.025, 0.131, -0.162, -0.48, 0.66], tuck: 0, lean: 1.03, twist: -1.3, side: 0.292, knees: 0 }],
   nosebone: [{ name: 'Stretched Nose Bone', board: [0.08, -0.18, 0.12, 0.16, -0.48, -0.08], tuck: 0.2, lean: 0.3, twist: 0.45, side: 0.15 },
     { name: 'Nose Bone, Arms Up', arms: 'up', board: [0.06, -0.12, 0.08, 0.1, -0.32, -0.05], tuck: 0.25, lean: 0.1, twist: 0.3, side: 0.1 }],
   tailbone: [{ name: 'Stretched Tail Bone', board: [-0.08, -0.18, 0.12, -0.16, 0.48, -0.08], tuck: 0.2, lean: 0.3, twist: -0.45, side: -0.15 },
     { name: 'Tail Bone, Arms Up', arms: 'up', board: [-0.06, -0.12, 0.08, -0.1, 0.32, -0.05], tuck: 0.25, lean: 0.1, twist: -0.3, side: -0.1 }],
-  tuckknee: [{ name: 'Deep Tuck Knee', board: [0, 0.14, -0.04, 0.12, 0.2, 0.2], tuck: 1, lean: 0.7, twist: 0.3, side: 0.15 },
+  tuckknee: [{ name: 'Deep Tuck Knee', board: [0, 0.08, -0.04, 0.12, 0.2, 0.2], tuck: 0.95, lean: 0.7, twist: 0.3, side: 0.15 },
     { name: 'Tuck Knee, Arms Up', arms: 'up', board: [0, 0.1, 0.02, 0, 0, 0], tuck: 0.98, lean: 0.35, twist: 0, side: 0 }],
   stiffy: [{ name: 'Stretched Stiffy', board: [0, -0.18, 0.08, 0.15, 0.15, -0.2], tuck: 0, lean: 0.3, twist: 0.3, side: 0.15 },
     { name: 'Stiffy, Arms Up', arms: 'up', board: [0, -0.14, 0.04, 0, 0, -0.1], tuck: 0.05, lean: -0.05, twist: 0, side: 0 }],
@@ -136,8 +153,12 @@ export function boardGrabDef(id, mod = '') {
   if (vs) {
     // the version itself (R's when both are held); both held: R's version pulled further, with E's boned leg
     Object.assign(d, R ? vs[1] : vs[0]);
-    if (E && R) {
+    // (2026-11-13: a version's own numbers for both held, vs[2], where pulling R's further put limbs through each other)
+    if (E && R && vs[2]) Object.assign(d, vs[2]);
+    else if (E && R) {
       d.board = d.board.map((v, i) => v * (i < 3 ? 1.25 : 1.35)); d.twist *= 1.3; d.side *= 1.3; d.lean += 0.08;
+    }
+    if (E && R) {
       // (named for the leg E kicks straight, or tweaked: a plain grab held a second is already called Tweaked)
       if (vs[0].bone && !d.bone) d.bone = vs[0].bone;
       d.name = vs[0].bone ? vs[1].name + (vs[0].bone === 'F' ? ' Nose Bone' : ' Tail Bone') : 'Tweaked ' + vs[1].name;
@@ -149,6 +170,8 @@ export function boardGrabDef(id, mod = '') {
   row[ci] = d;
   return d;
 }
+// (for B's tests: forget the versions made, after the numbers they are made from are changed)
+export const clearGrabCache = () => _cache.clear();
 export const boardGrabName = (id, mod) => { const d = boardGrabDef(id, mod); return d ? d.name : id; };
 // every ride other than skis names its own grabs and tricks: RIDE_GRABS[kind](id, mod) (the extra rides add theirs)
 export const RIDE_GRABS = { board: boardGrabDef };
@@ -217,7 +240,7 @@ function loadModel() {
   if (_gltf) return _gltf;
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  _gltf = loader.loadAsync('./models/board/board.glb?v=25').catch(e => { _gltf = null; throw e; });
+  _gltf = loader.loadAsync('./models/board/board.glb?v=26').catch(e => { _gltf = null; throw e; });
   return _gltf;
 }
 // the board's half width along it (at -1 tail .. +1 nose), measured from the model once
@@ -251,6 +274,11 @@ Rig.loader.board = async (rig, opts) => {
   const btm = tinted(src[front].material, chosen('boots'), null);
   bd.bootF = new THREE.Mesh(src[front].geometry, btm); bd.bootB = new THREE.Mesh(src[back].geometry, btm);
   for (const m of [bd.bootF, bd.bootB]) { m.castShadow = true; m.matrixAutoUpdate = true; rig.root.add(m); }
+  /* (2026-11-13) each boot's middle across its own width (its outline's bounds along the board): the two boot models sit
+     3 to 4 cm off their origins the same way, so they stood off their bindings towards the tail riding regular and
+     towards the nose goofy, the back boot 4 to 5 cm nearer the middle goofy (B's clear.cjs: an indy's forearm met it) */
+  const cx = g => { if (!g.boundingBox) g.computeBoundingBox(); return (g.boundingBox.min.x + g.boundingBox.max.x) / 2; };
+  bd.cxF = cx(bd.bootF.geometry); bd.cxB = cx(bd.bootB.geometry);
   // the bindings (made here: no openly licensed snowboard binding model was found), both in one mesh on the board
   const bnd = new THREE.Mesh(bindingsGeometry(rig.goofy ? 1 : -1), BIND_MAT || (BIND_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.15 })));
   bnd.castShadow = true; bnd.name = 'bindings'; bd.root.add(bnd);
@@ -315,6 +343,14 @@ const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new TH
 const _q1 = Q(), _q2 = Q(), _q3 = Q(), _qi = Q(), _Rr = Q(), _bq = Q(), _bw = Q(), _pelQ = Q(), _chQ = Q(), _hdQ = Q(), _ry = Q(), _ryi = Q(), _qr = Q(), _lq = Q();
 const _v1 = V(), _v2 = V(), _v3 = V(), _v4 = V(), _v5 = V(), _v6 = V(), _acc = V(), _vb = V(), _ub = V(), _bp = V(), _bpw = V(), _pull = V(), _hip = V(), _ank = [V(), V()], _toe = [V(), V()];
 const _pf = V(), _cF = V(), _cL = V(), _cFl = V(), _sh = V(), _wr = V(), _fd = V(), _pa = V(), _el = V(), _gpt = V(), _gpa = V(), _gfi = V(), _kp = V();
+const _gw2 = V(), _bend = V(), _bl = V(), _bn = V(), _bx = V(), _bt = V(), _ba = V(), _bc = V(), _bp2 = V(), _bendQ = Q(), _qri = Q(), _ch0 = Q(), _clq = Q();
+/* (2026-11-13) how a grab is reached (see the grabs in the pose): the arm straight to REACH of its length, the upper body
+   bent about the hips by at most BEND_MAX more than the grab's own lean, the collarbone dropped and forward by at most
+   CLAV_MAX (rad), then the board brought up to the hand by at most PULL_MAX (m); each ankle kept at least
+   FOLD_MIN x the leg's length from its hip */
+const REACH = 0.95, BEND_MAX = 0.9, CLAV_MAX = 0.42, PULL_MAX = 0.12, FOLD_MIN = 0.3;
+// (2026-11-13) the wrist's distance out from the edge it holds (the palm's thickness): 3 cm put the hand into the board
+const PALM = 0.045;
 // first person on the snow (2026-11-06): how much more upright the chest is (rad), how far the hips sit towards the
 // trailing end (m), and how much further towards the nose, up and towards the toes the front hand rides (m)
 // (2026-11-08: the front hand a little lower and further out over the toes, and the view's own aim FPV.board: measured
@@ -329,7 +365,8 @@ const gp = { pt: V(), palm: V(), fingers: V() }, gp2 = { pt: V(), palm: V(), fin
 const HAND_W = ['bhL', 'bhR'], ARMN = [['baLx', 'baLy', 'baLz'], ['baRx', 'baRy', 'baRz']], BSH = ['bs0', 'bs1', 'bs2', 'bs3', 'bs4', 'bs5'];
 // (a grab's free arm out to the side at about shoulder height, as riders hold it in photos of grabs: Commons, "Snowboard
 // IndyGrab2.jpg", "Snowboard.jpg", B/ref/; up: raised over the head, for a method)
-const ARM_MODE = { out: [0.36, -0.02, -0.04], up: [0.22, 0.3, -0.1], wide: [0.42, -0.06, 0.0] };
+// (2026-11-13: further out, the elbow only a little bent, as in the photos; raise: out and up, as many indies hold it)
+const ARM_MODE = { out: [0.46, -0.02, 0.06], up: [0.2, 0.5, 0.0], wide: [0.5, -0.08, 0.0], raise: [0.38, 0.42, 0.06] };
 const TG = new Float64Array(6), SH = new Float64Array(6);
 
 // a point on the board (board-local) and the hand's palm and fingers there, all in the world (into out)
@@ -486,7 +523,14 @@ Rig.poser.board = (rig, S0, dt) => {
   const crouch = sp('bcrouch', clamp(cT, 0, 1), popK > 0.2 || landX > 0.03 ? 30 : 20);
   // ---- grabs and positions
   const gid = air ? (S.grab || S.pose || null) : null;
-  const gd = gid ? boardGrabDef(gid, S.tweak || '') : null;
+  const gd0 = gid ? boardGrabDef(gid, S.tweak || '') : null;
+  /* (2026-11-13) a grab let go keeps the body in its shape until the hand is off the board (the hand first, then the
+     legs and the chest open, as riders let go; together, the knees came down through the arm: B's clear.cjs). gd0 is
+     the grab held now (the hands go by it), gd the shape the body takes. */
+  let gd = gd0;
+  if (gd0) { rig._gdLast = gd0; rig._gdOff = 0; }
+  else if (air && rig._gdLast && ((rig.hs[0].w > 0.05 || rig.hs[1].w > 0.05) || (rig._gdOff += dt) < 0.15)) gd = rig._gdLast;   // (and 0.15 s more: the arm away first)
+  else rig._gdLast = null;
   rig.grabHeld = gid && gid === rig.gid ? (rig.grabHeld || 0) + dt : 0; rig.gid = gid;
   const gW = sp('bgw', gd ? 1 : 0, gd ? 13 : 9);
   const prep = air ? 1 - smoothstep(0.09, 0.36, rig.timeToGround(S.p, vel)) : 0;
@@ -510,7 +554,10 @@ Rig.poser.board = (rig, S0, dt) => {
   if (air) { const Ax = clamp((Wx - (rig._pWx ?? Wx)) / Math.max(dt, 1e-3), -40, 40); TG[4] += clamp(Ax * 0.01 * noseX, -0.25, 0.25) * (gd ? 0.5 : 1); }
   rig._pWx = Wx;
   for (let i = 0; i < 6; i++) SH[i] = sp(BSH[i], TG[i], gd ? 14 : 11, air ? (gd ? 0.74 : 0.72) : 1);
-  const kneeUp = sp('bkneeUp', (gd ? 0.05 + 0.32 * gd.tuck : air ? (0.05 + 0.1 * crouch + 0.05 * spinning) * (1 - lay) + 0.34 * tkF - 0.06 * lay : 0) * (1 - popK), gd ? 15 : 12, air ? 0.8 : 1);
+  // (2026-11-13: a grab cuts the pop's stretch short, the knees coming up to meet the hand)
+  const kneeUp = sp('bkneeUp', (gd ? 0.05 + 0.32 * gd.tuck : air ? (0.05 + 0.1 * crouch + 0.05 * spinning) * (1 - lay) + 0.34 * tkF - 0.06 * lay : 0) * (1 - popK * (1 - 0.7 * gW)), gd ? 15 : 12, air ? 0.8 : 1);
+  // (2026-11-13) how far the knees open along the board in the air (a grab's own `knees`)
+  const kneeOut = sp('bkneeOut', air ? 0.1 + (gd ? (gd.knees ?? 0.1) : 0.05 * crouch) : 0, 12);
   const boneF = sp('bboneF', gd && gd.bone && gd.bone.includes('F') ? 1 : 0, 12), boneB = sp('bboneB', gd && gd.bone && gd.bone.includes('B') ? 1 : 0, 12);
   // ---- the board, in the body's frame
   const lp = _bp.set(0, 0, 0), lq = _lq.identity();
@@ -565,7 +612,7 @@ Rig.poser.board = (rig, S0, dt) => {
   const gl = rig._gl;
   if (t > gl.next || t < gl.next - 30) { gl.yaw = (Math.random() - 0.5) * 0.7; gl.pitch = (Math.random() - 0.35) * 0.2; gl.until = t + 0.6 + Math.random() * 0.8; gl.next = gl.until + 2.5 + Math.random() * 4; }
   const glance = t < gl.until && ground && Math.abs(S.edge || 0) < 0.5 && brake < 0.2;
-  const spinLead = sp('bspinLead', air ? clamp(Wy * 0.09, -0.8, 0.8) : 0, 16);
+  const spinLead = sp('bspinLead', air ? clamp(Wy * 0.09, -0.8, 0.8) * (1 - 0.75 * gW) : 0, 16);   // (2026-11-13: less with a grab held)
   let twT, sdT, lnT, hyT, hpT;
   if (air) {
     const sway = 0.08 * gW + 0.18 * flow;
@@ -632,26 +679,98 @@ Rig.poser.board = (rig, S0, dt) => {
   const off = _v4.setFromMatrixPosition(b.pelvis.matrixWorld).sub(_v5.setFromMatrixPosition(b.root.matrixWorld));
   rig.setWorldPos(b.root, _v6.copy(pelW).sub(off));
   rig.blendBone(b.pelvis, 'pelvis', pelQ, chQ, 0);
-  rig.blendBone(b.spine, 'spine', pelQ, chQ, 0.35); rig.blendBone(b.spine1, 'spine1', pelQ, chQ, 0.7); rig.blendBone(b.chest, 'chest', pelQ, chQ, 1);
-  const hdYaw = clamp(hy - tw * (1 - 0.3 * airW), -1.45, 1.45);
-  const hdQ = _hdQ.copy(chQ).multiply(_q1.setFromAxisAngle(Y, hdYaw)).multiply(_q1.setFromAxisAngle(Z, -chRoll * 0.5)).multiply(_q1.setFromAxisAngle(X, hp - lean * 0.6 + 0.2 * hardL));
-  rig.blendBone(b.neck, 'neck', chQ, hdQ, 0.5); rig.blendBone(b.head, 'head', hdQ, hdQ, 0);
-  rig.blendBone(b.clL, 'clL', chQ, chQ, 0); rig.blendBone(b.clR, 'clR', chQ, chQ, 0);
-  // ---- grabs: the hand to its point; the board brought up to a hand that cannot reach it (at most 55 cm)
+  poseSpine(rig, pelQ, chQ);
+  // ---- grabs: how much each hand holds the board
   const holdOK = ext > 0.55;
   for (let k = 0; k < 2; k++) {
     const side = k ? 'R' : 'L', isFront = (k === 0) === (noseX > 0);
-    let want = null; if (gd) for (const h of gd.hands) if ((h[0] === 'F') === isFront) want = h;
-    const w = sp(HAND_W[k], want && holdOK ? 1 : 0, want && holdOK ? 22 : 12);
+    let want = null; if (gd0) for (const h of gd0.hands) if ((h[0] === 'F') === isFront) want = h;
+    const w = sp(HAND_W[k], want && holdOK ? 1 - 0.6 * popK : 0, want && holdOK ? 22 : 18);   // (2026-11-13: the hand goes once the pop is done)
     const Hs = rig.hs[k];
     if (want && want !== Hs.cur) { Hs.prev = Hs.cur && w > 0.05 ? Hs.cur : null; Hs.f.set(Hs.prev ? 0 : 1); Hs.cur = want; }
     Hs.fx = Hs.f.to(1, 13, dt); Hs.w = Hs.cur ? w : 0;
+  }
+  /* (2026-11-13, for Leon's "the melon/safety/indy grabs look better and nothing goes through each other") a hand gets
+     to its grab as a rider's does: the upper body bends and turns about the hips towards it until the shoulder is
+     within the arm's reach (two passes, at most BEND_MAX past the grab's own lean), the collarbone drops and comes
+     forward (CLAV_MAX), and only what is left brings the board up to the hand (PULL_MAX). The board used to be brought
+     up as far as 55 cm: the ankles came up over the hips, and the board, the knees and the grabbing arm went through
+     each other in every grab (B's clear.cjs). The bend is eased in the rider's own frame, so a spin carries it round. */
+  _bend.set(0, 0, 0);
+  if (gd && ext > 0.02) {
+    _ch0.copy(chQ);
+    for (let it = 0; it < 2; it++) {
+      _bn.set(0, 0, 0); let nh = 0;
+      for (let k = 0; k < 2; k++) {
+        const Hs = rig.hs[k]; if (!Hs.cur || Hs.w < 0.02) continue;
+        const ua = k ? b.uaR : b.uaL; ua.updateWorldMatrix(false, false);
+        const a = _ba.setFromMatrixPosition(ua.matrixWorld), piv = _bp2.setFromMatrixPosition(b.pelvis.matrixWorld);
+        const g = boardPoint(bd, Hs.cur[1], Hs.cur[2], fb, gp);
+        const c = _bc.copy(g.pt).addScaledVector(g.fingers, -0.07).addScaledVector(g.palm, -PALM).sub(piv);
+        a.sub(piv);
+        const la = a.length(), lc = c.length(), reach = REACH * (rig.len.ua + rig.len.fa) + 0.05;
+        if (la < 1e-4 || lc < 1e-4) continue;
+        const cw = (la * la + lc * lc - reach * reach) / (2 * la * lc), th = a.angleTo(c), th2 = cw >= 1 ? 0 : cw <= -1 ? Math.PI : Math.acos(cw);
+        // (the spine bends a part of what the chest turns, so the chest turns about a third more than the shoulder
+        // has to go round)
+        if (th > th2) {
+          _bx.crossVectors(a, c);
+          // (a bend mostly forward and to the side: half of any turn about the chest's own up is left out)
+          _bl.set(0, 1, 0).applyQuaternion(chQ); _bx.addScaledVector(_bl, -0.5 * _bx.dot(_bl));
+          if (_bx.lengthSq() > 1e-12) { _bn.addScaledVector(_bx.normalize(), (th - th2) * 1.3 * Hs.w); nh++; }
+        }
+      }
+      if (!nh) break;
+      if (nh > 1) _bn.multiplyScalar(1 / nh);
+      const add = _bn.length(), have = _bend.length(), room = BEND_MAX - have;
+      if (room <= 0.001) break;
+      if (add > room) _bn.multiplyScalar(room / add);
+      _bend.add(_bn);
+      if (_bn.lengthSq() > 1e-10) { _bendQ.setFromAxisAngle(_bx.copy(_bn).normalize(), _bn.length()); chQ.premultiply(_bendQ); poseSpine(rig, pelQ, chQ); }
+    }
+    // (back to the chest as it was: the eased bend is put on below)
+    chQ.copy(_ch0);
+  }
+  _qri.copy(Rr).invert(); _bl.copy(_bend).applyQuaternion(_qri);
+  _bl.set(sp('bbx', _bl.x, 11), sp('bby', _bl.y, 11), sp('bbz', _bl.z, 11));   // (slower than the knees: the board comes up first)
+  const bendA = _bl.length();
+  if (bendA > 1e-5) { _bl.applyQuaternion(Rr).divideScalar(bendA); _bendQ.setFromAxisAngle(_bl, bendA); chQ.premultiply(_bendQ); }
+  poseSpine(rig, pelQ, chQ);
+  const hdYaw = clamp(hy - tw * (1 - 0.3 * airW), -1.45, 1.45);
+  // (the head keeps most of the grab's bend off, looking out rather than down at the snow, as in the photos)
+  const hdQ = _hdQ.copy(chQ).multiply(_q1.setFromAxisAngle(Y, hdYaw)).multiply(_q1.setFromAxisAngle(Z, -chRoll * 0.5)).multiply(_q1.setFromAxisAngle(X, hp - lean * 0.6 + 0.2 * hardL));
+  if (bendA > 1e-5) hdQ.premultiply(_q1.setFromAxisAngle(_bl, -0.75 * bendA));
+  rig.blendBone(b.neck, 'neck', chQ, hdQ, 0.5); rig.blendBone(b.head, 'head', hdQ, hdQ, 0);
+  rig.blendBone(b.clL, 'clL', chQ, chQ, 0); rig.blendBone(b.clR, 'clR', chQ, chQ, 0);
+  // the collarbone: the shoulder dropped and forward towards the grab, for what the bend left
+  for (let k = 0; k < 2; k++) {
+    const Hs = rig.hs[k], cl = k ? b.clR : b.clL;
+    let ang = 0;
+    if (Hs.cur && Hs.w > 0.02 && cl) {
+      const ua = k ? b.uaR : b.uaL; ua.updateWorldMatrix(false, false);
+      const sh = _ba.setFromMatrixPosition(ua.matrixWorld), cp = _bp2.setFromMatrixPosition(cl.matrixWorld);
+      const g = boardPoint(bd, Hs.cur[1], Hs.cur[2], fb, gp);
+      const tg = _bt.copy(g.pt).addScaledVector(g.fingers, -0.07).addScaledVector(g.palm, -PALM);
+      const need = tg.distanceTo(sh) - REACH * (rig.len.ua + rig.len.fa), lc = sh.distanceTo(cp);
+      if (need > 0 && lc > 0.02) { ang = Math.min(CLAV_MAX, need / lc) * Hs.w; _bx.subVectors(sh, cp).cross(_bc.subVectors(tg, cp)); if (_bx.lengthSq() < 1e-12) ang = 0; else _bx.normalize(); }
+      if (ang > 0) _bx.applyQuaternion(_qri);
+    }
+    // (eased in the rider's frame)
+    const kk = k ? 'R' : 'L';
+    if (ang <= 0) _bx.set(0, 0, 0); else _bx.multiplyScalar(ang);
+    _bx.set(sp('bcl' + kk + 'x', _bx.x, 18), sp('bcl' + kk + 'y', _bx.y, 18), sp('bcl' + kk + 'z', _bx.z, 18));
+    const ca = _bx.length();
+    if (ca > 1e-5 && cl) { _bx.applyQuaternion(Rr).divideScalar(ca); _clq.setFromAxisAngle(_bx, ca).multiply(chQ).multiply(rig.rest[k ? 'clR' : 'clL'].q); rig.setWorldQ(cl, _clq); }
+  }
+  // what is still out of reach: the board brought up to the hand (at most PULL_MAX)
+  for (let k = 0; k < 2; k++) {
+    const Hs = rig.hs[k];
     if (Hs.w > 0.02) {
       const ua = k ? b.uaR : b.uaL; ua.updateWorldMatrix(false, false);
-      const sh = _v3.setFromMatrixPosition(ua.matrixWorld), reach = (rig.len.ua + rig.len.fa) * 0.92;
+      const sh = _v3.setFromMatrixPosition(ua.matrixWorld), reach = (rig.len.ua + rig.len.fa) * REACH;
       const g = boardPoint(bd, Hs.cur[1], Hs.cur[2], fb, gp);
-      const wp = _v4.copy(g.pt).addScaledVector(g.fingers, -0.07).addScaledVector(g.palm, -0.03), dd = wp.distanceTo(sh);
-      if (dd > reach) pullW.addScaledVector(_v5.subVectors(sh, wp).normalize(), Math.min(0.55, dd - reach) * Hs.w);
+      const wp = _v4.copy(g.pt).addScaledVector(g.fingers, -0.07).addScaledVector(g.palm, -PALM), dd = wp.distanceTo(sh);
+      if (dd > reach) pullW.addScaledVector(_v5.subVectors(sh, wp).normalize(), Math.min(PULL_MAX, dd - reach) * Hs.w);
     }
   }
   // (two hands on the board: the pull is their average, not their sum, or a truck driver jammed the board into the body)
@@ -659,6 +778,18 @@ Rig.poser.board = (rig, S0, dt) => {
   const pl = _v3.copy(pullW).applyQuaternion(qi);
   _v4.set(sp('bpx', pl.x, 20), sp('bpy', pl.y, 20), sp('bpz', pl.z, 20));
   if (_v4.lengthSq() > 1e-8) { lp.add(_v4); bw.position.copy(lp).applyQuaternion(R).add(BP); }
+  /* (2026-11-13) and never folded tighter than a leg can (each ankle FOLD_MIN x the leg's length from its hip): the board
+     pushed away from the hips. In the air only (on the snow the pelvis comes down instead). */
+  if (airW > 0.01) for (let it = 0; it < 2; it++) {
+    bindingAnkles(rig, bd, fb);
+    let worst = 0; _v5.set(0, 0, 0);
+    for (let k = 0; k < 2; k++) {
+      const thb = rigLegThigh(rig, k, noseX); thb.updateWorldMatrix(false, false);
+      const hip = _hip.setFromMatrixPosition(thb.matrixWorld), an = _ank[legBinding(k, noseX)], dd = an.distanceTo(hip), lo = FOLD_MIN * rig.legLen;
+      if (dd < lo) { const ex = lo - dd; if (ex > worst) worst = ex; _v5.addScaledVector(_v6.subVectors(an, hip).normalize(), ex); }
+    }
+    if (worst > 0) { _v5.normalize().multiplyScalar(worst * airW); bw.position.add(_v5); }
+  }
   // keep both bindings within their legs' reach (pulled towards the hips, a boned leg nearly straight)
   for (let it = 0; it < 2; it++) {
     bindingAnkles(rig, bd, fb);
@@ -693,25 +824,7 @@ Rig.poser.board = (rig, S0, dt) => {
     _pf.set(fb * (halfWidth(-0.6) + 0.04), BOARD.top + rig.ankleH + 0.2 + 0.03 * wob(tt * 2.6, 13), -BOARD.stance / 2 - 0.2).applyQuaternion(bw.quaternion).add(bw.position);
     _ank[1].lerp(_pf, one1);
   }
-  // ---- the legs: to the boots, the knees over the toes (out a little, the duck stance), pushed in a turn
-  for (let k = 0; k < 2; k++) {
-    const j = legBinding(k, noseX), toe = _toe[j];
-    const th = k ? b.thR : b.thL, ca = k ? b.caR : b.caL, ft = k ? b.ftR : b.ftL;
-    const kp = _kp.copy(toe).addScaledVector(ub, 0.35);
-    kp.addScaledVector(_v3.set(fb, 0, 0).applyQuaternion(R), 0.4 * toeK);
-    if (j === 1 && out > 0.01) kp.lerp(_v3.set(0, 0, dirT).applyQuaternion(R).addScaledVector(ub, 0.3), out);
-    // (the lifted foot's knee forward and out over the toes; pinched in, the knees towards each other)
-    if (j === 1 && one1 > 0.01) kp.lerp(_v3.set(fb * 0.7, 0, 0.3).applyQuaternion(bw.quaternion).addScaledVector(ub, 0.4), one1);
-    if (tog > 0.01) kp.addScaledVector(_v3.set(0, 0, j === 0 ? -1 : 1).applyQuaternion(bw.quaternion), 0.8 * tog);
-    rig.twoBone(th, ca, k ? 'thR' : 'thL', k ? 'caR' : 'caL', _ank[j], kp, Z);
-    _q3.copy(bw.quaternion).multiply(_q1.setFromAxisAngle(Y, j === 0 ? bd.yawF : bd.yawB));
-    if (j === 1 && out > 0.01) _q3.slerp(_q2.copy(R).multiply(_q1.setFromAxisAngle(Y, dirT > 0 ? 0.25 * fb : Math.PI - 0.25 * fb)), out);
-    rig.setWorldQ(ft, _q3.multiply(rig.rest[k ? 'ftR' : 'ftL'].q));
-    if (j === 1) { bd.backFoot = ft; (bd.backFootRest || (bd.backFootRest = new THREE.Quaternion())).copy(rig.rest[k ? 'ftR' : 'ftL'].q).invert(); }
-  }
-  bd.backOut = out > 0.01 || one1 > 0.01;
-  placeBoots(rig, bd, skate, t, S);
-  bd.backOut = false;
+  // (2026-11-13: the arms are posed before the legs, so the knees can keep clear of them)
   // ---- arms
   const cF = _cF.set(0, 0, 1).applyQuaternion(chQ), cL = _cL.set(1, 0, 0).applyQuaternion(chQ);
   const cFl = _cFl.copy(cF).addScaledVector(ub, -cF.dot(ub)); if (cFl.lengthSq() < 1e-4) cFl.copy(cF); cFl.normalize();
@@ -772,11 +885,16 @@ Rig.poser.board = (rig, S0, dt) => {
     const ua = k ? b.uaR : b.uaL, fa = k ? b.faR : b.faL, ha = k ? b.haR : b.haL;
     ua.updateWorldMatrix(false, false);
     const sh = _sh.setFromMatrixPosition(ua.matrixWorld);
-    const wr = _wr.copy(sh).addScaledVector(cL, s * lat).addScaledVector(ub, up).addScaledVector(cFl, fwd);
+    // (2026-11-13: a free arm in a grab goes out level with the body, not along the bent chest's side, or the arm away
+    // from the grab went up by the head when the chest bent down to it)
+    // (and partly along the board, the way the photos hold it out for balance: along a chest turned for the grab it went
+    // out in front)
+    const cLa = gW > 0.01 && !(Hs.w > 0.5) ? _v6.copy(cL).addScaledVector(ub, -cL.dot(ub) * gW).normalize().multiplyScalar(1 - 0.6 * gW).addScaledVector(_v5.set(1, 0, 0).applyQuaternion(Rr), 0.6 * gW).normalize() : cL;
+    const wr = _wr.copy(sh).addScaledVector(cLa, s * lat).addScaledVector(ub, up).addScaledVector(cFl, fwd);
     // a hand drag (the lazy boy key on a board): the back hand trails in the snow beside the heel edge, behind the back foot
     const drag = !front && (ground || into === 'lazy') ? lazy : 0;
     if (drag > 0.01) wr.lerp(_v2.set(-fb * (halfWidth(-0.35) + 0.14), 0.04 - (S.sink || 0), -BOARD.stance / 2 - 0.05).applyQuaternion(R).add(BP), drag);
-    { const d = wr.distanceTo(sh), m = softReach(d, armL, 0.78 + 0.14 * drag, 0.93 + 0.065 * drag); if (m < d) wr.sub(sh).multiplyScalar(m / d).add(sh); }
+    { const fr = gW * (1 - (Hs.w || 0)), d = wr.distanceTo(sh), m = softReach(d, armL, 0.78 + 0.14 * drag + 0.1 * fr, 0.93 + 0.065 * drag + 0.04 * fr); if (m < d) wr.sub(sh).multiplyScalar(m / d).add(sh); }   // (fr: a free arm in a grab held nearly straight)
     const fd = _fd.copy(cF).addScaledVector(ub, -0.35).normalize(), pa = _pa.copy(cL).multiplyScalar(-s);
     if (drag > 0.01) { fd.lerp(_v2.set(0, 0, -1).applyQuaternion(R), drag).normalize(); pa.lerp(_v6.copy(ub).negate(), drag).normalize(); }
     let curl = 0.6 - 0.3 * drag;
@@ -786,15 +904,20 @@ Rig.poser.board = (rig, S0, dt) => {
         const g0 = boardPoint(bd, Hs.prev[1], Hs.prev[2], fb, gp2), f = smooth01(Hs.fx);
         g.pt.lerpVectors(g0.pt, g.pt, f); g.fingers.lerpVectors(g0.fingers, g.fingers, f).normalize(); g.palm.lerpVectors(g0.palm, g.palm, f).normalize();
       }
-      const gw = _v2.copy(g.pt).addScaledVector(g.fingers, -0.07).addScaledVector(g.palm, -0.03);
-      wr.lerp(gw, Hs.w); fd.lerp(g.fingers, Hs.w).normalize(); pa.lerp(g.palm, Hs.w).normalize(); curl += (1.35 - curl) * Hs.w;
+      const gw = _v2.copy(g.pt).addScaledVector(g.fingers, -0.07).addScaledVector(g.palm, -PALM);
+      /* (2026-11-13) the hand comes to the edge along the arm's own line and leaves the same way (a curve through the point
+         half way from the grab to the shoulder, B's clear.cjs): the arm as it holds the grab is clear of the legs, and in a
+         straight line from where the arm was it cut through the knees and shins as a grab was let go */
+      const wv = Hs.w, a0 = (1 - wv) * (1 - wv), a1 = 2 * wv * (1 - wv) * (1 - wv);
+      _gw2.copy(gw).lerp(sh, 0.5);
+      wr.multiplyScalar(a0).addScaledVector(_gw2, a1).addScaledVector(gw, 1 - a0 - a1); fd.lerp(g.fingers, Hs.w).normalize(); pa.lerp(g.palm, Hs.w).normalize(); curl += (1.35 - curl) * Hs.w;
     }
     // (2026-11-08) on a T-bar the hand nearer the stem holds it, the palm towards it, the fingers round it
     if (tb && k === tbK && tbOn > 0.01) {
       const to = _v6.subVectors(tb.stem, sh); to.addScaledVector(ub, -to.dot(ub)); if (to.lengthSq() < 1e-6) to.copy(cFl); to.normalize();
       wr.lerp(_v2.copy(tb.stem).addScaledVector(to, -0.035), tbOn); pa.lerp(to, tbOn).normalize(); fd.lerp(_v2.crossVectors(ub, to).multiplyScalar(s), tbOn).normalize(); curl += (1.4 - curl) * tbOn;
     }
-    { const d = wr.distanceTo(sh), m = softReach(d, armL, 0.84 + 0.02 * Hs.w, 0.965 + 0.02 * Hs.w); if (m < d) wr.sub(sh).multiplyScalar(m / d).add(sh); }
+    { const fr = gW * (1 - (Hs.w || 0)), d = wr.distanceTo(sh), m = softReach(d, armL, 0.84 + 0.02 * Hs.w + 0.08 * fr, 0.965 + 0.02 * Hs.w + 0.015 * fr); if (m < d) wr.sub(sh).multiplyScalar(m / d).add(sh); }
     const upK = smoothstep(-0.05, 0.2, up) * (1 - Hs.w);
     const el = _el.set(0, 0, -1).applyQuaternion(chQ).addScaledVector(cL, s * (0.25 + 0.35 * Hs.w)).addScaledVector(ub, -1.1).normalize();
     if (upK > 0.01) el.lerp(_v6.copy(cL).multiplyScalar(s).addScaledVector(cFl, 0.3).addScaledVector(ub, 0.15).normalize(), upK).normalize();
@@ -803,6 +926,36 @@ Rig.poser.board = (rig, S0, dt) => {
     rig.aim(ha, rig.rest[k ? 'haR' : 'haL'].q, HH.fd, HH.palm, fd, pa);
     rig.curl(HH, curl);
   }
+  // (2026-11-13) the arms as posed (shoulder, elbow, wrist), for the knees to keep clear of (clearKnee)
+  for (let k = 0; k < 2; k++) {
+    const Hs = rig.hs[k]; _kOn[k] = airW > 0.3 ? 1 : 0;
+    if (!_kOn[k]) continue;
+    _ka[k].setFromMatrixPosition((k ? b.uaR : b.uaL).matrixWorld); _km[k].setFromMatrixPosition((k ? b.faR : b.faL).matrixWorld); _kb[k].setFromMatrixPosition((k ? b.haR : b.haL).matrixWorld);
+  }
+  if (airW > 0.3) { b.spine1.updateWorldMatrix(false, false); _kS0.setFromMatrixPosition(b.spine1.matrixWorld); b.neck.updateWorldMatrix(false, false); _kS1.setFromMatrixPosition(b.neck.matrixWorld); }
+  // ---- the legs: to the boots, the knees over the toes (out a little, the duck stance), pushed in a turn
+  for (let k = 0; k < 2; k++) {
+    const j = legBinding(k, noseX), toe = _toe[j];
+    const th = k ? b.thR : b.thL, ca = k ? b.caR : b.caL, ft = k ? b.ftR : b.ftL;
+    const kp = _kp.copy(toe).addScaledVector(ub, 0.35);
+    kp.addScaledVector(_v3.set(fb, 0, 0).applyQuaternion(R), 0.4 * toeK);
+    // (2026-11-13) in the air the knees open along the board, the front one towards the nose and the back one towards the
+    // tail, as a tucked rider's do (photos of indies and melons, B/ref/): the chest and a grabbing arm go down between them
+    if (kneeOut > 0.01) kp.addScaledVector(_v3.set(0, 0, j === 0 ? 1 : -1).applyQuaternion(bw.quaternion), kneeOut);
+    if (j === 1 && out > 0.01) kp.lerp(_v3.set(0, 0, dirT).applyQuaternion(R).addScaledVector(ub, 0.3), out);
+    // (the lifted foot's knee forward and out over the toes; pinched in, the knees towards each other)
+    if (j === 1 && one1 > 0.01) kp.lerp(_v3.set(fb * 0.7, 0, 0.3).applyQuaternion(bw.quaternion).addScaledVector(ub, 0.4), one1);
+    if (tog > 0.01) kp.addScaledVector(_v3.set(0, 0, j === 0 ? -1 : 1).applyQuaternion(bw.quaternion), 0.8 * tog);
+    if (airW > 0.3) clearKnee(rig, th, _ank[j], kp, airW);
+    rig.twoBone(th, ca, k ? 'thR' : 'thL', k ? 'caR' : 'caL', _ank[j], kp, Z);
+    _q3.copy(bw.quaternion).multiply(_q1.setFromAxisAngle(Y, j === 0 ? bd.yawF : bd.yawB));
+    if (j === 1 && out > 0.01) _q3.slerp(_q2.copy(R).multiply(_q1.setFromAxisAngle(Y, dirT > 0 ? 0.25 * fb : Math.PI - 0.25 * fb)), out);
+    rig.setWorldQ(ft, _q3.multiply(rig.rest[k ? 'ftR' : 'ftL'].q));
+    if (j === 1) { bd.backFoot = ft; (bd.backFootRest || (bd.backFootRest = new THREE.Quaternion())).copy(rig.rest[k ? 'ftR' : 'ftL'].q).invert(); }
+  }
+  bd.backOut = out > 0.01 || one1 > 0.01;
+  placeBoots(rig, bd, skate, t, S);
+  bd.backOut = false;
   rig.placeHead(hdQ);
   // (in the air the camera's own way: the body's turn, looking down at a grab)
   if (!air) firstPersonEyes(rig, R, S.vel || ZERO, speed, S.sw ? -1 : 1, FPV.board, 0.12);
@@ -837,6 +990,54 @@ function intoAhead(p, v, upTo) {
   }
   return 9;
 }
+// (2026-11-13) the spine from the hips' turn to the chest's, and the collarbones with the chest
+function poseSpine(rig, pelQ, chQ) {
+  const b = rig.b;
+  rig.blendBone(b.spine, 'spine', pelQ, chQ, 0.35); rig.blendBone(b.spine1, 'spine1', pelQ, chQ, 0.7); rig.blendBone(b.chest, 'chest', pelQ, chQ, 1);
+  // (the collarbones hang from the neck: it goes first; the pose sets the neck again with the head)
+  rig.blendBone(b.neck, 'neck', chQ, chQ, 0); rig.blendBone(b.clL, 'clL', chQ, chQ, 0); rig.blendBone(b.clR, 'clR', chQ, chQ, 0);
+}
+/* (2026-11-13) a knee kept clear of a grabbing arm (the line from its shoulder to where the wrist goes on the board, _ka
+   to _kb) and of the chest (spine1 to the neck): where two-bone IK will put the knee from the hip, the ankle and the
+   pole is worked out, and while the thigh or the shin is nearer an arm, or the knee nearer the chest, than their
+   thicknesses (B's clear.cjs: cores of 0.085 and 0.075 m for the thigh and shin, 0.06 for the arm, 0.13 for the chest,
+   and 2 cm more), the knee is moved round its circle about the hip-ankle line, away from it, by turning the pole. In the
+   air (w), three rounds at most. */
+const _ka = [V(), V()], _km = [V(), V()], _kb = [V(), V()], _kOn = [0, 0], _kS0 = V(), _kS1 = V();
+const _kH = V(), _kD = V(), _kK = V(), _kP = V(), _kM = V(), _kc1 = V(), _kc2 = V(), _kN = V(), _kU = V();
+function clearKnee(rig, th, ank, pole, w) {
+  th.updateWorldMatrix(false, false);
+  const H = _kH.setFromMatrixPosition(th.matrixWorld), l1 = rig.len.th, l2 = rig.len.ca;
+  const dn = _kD.subVectors(ank, H); let dist = dn.length(); dn.divideScalar(dist || 1);
+  dist = clamp(dist, Math.abs(l1 - l2) + 0.01, (l1 + l2) * 0.999);
+  const a = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  const mid = _kM.copy(H).addScaledVector(dn, a);
+  for (let it = 0; it < 3; it++) {
+    const p = _kP.copy(pole).addScaledVector(dn, -pole.dot(dn)); if (p.lengthSq() < 1e-8) return; p.normalize();
+    const K = _kK.copy(mid).addScaledVector(p, h);
+    _kN.set(0, 0, 0); let worst = 0;
+    for (let k = 0; k < 2; k++) {
+      if (_kOn[k] < 0.01) continue;
+      for (let s = 0; s < 4; s++) {
+        // (thigh and shin, each against the upper arm and the forearm)
+        const A = s & 1 ? _km[k] : _ka[k], B = s & 1 ? _kb[k] : _km[k], r = (s & 2 ? 0.075 : 0.085) + (s & 1 ? 0.045 : 0.06) + 0.025;
+        const d = s & 2 ? segSeg(K, ank, A, B, _kc1, _kc2) : segSeg(H, K, A, B, _kc1, _kc2), need = (r - d) * _kOn[k];
+        if (need <= 0) continue;
+        const u = _kU.subVectors(_kc1, _kc2); u.addScaledVector(dn, -u.dot(dn));
+        if (u.lengthSq() < 1e-10) continue;
+        _kN.addScaledVector(u.normalize(), need); if (need > worst) worst = need;
+      }
+    }
+    { const d = segSeg(K, K, _kS0, _kS1, _kc1, _kc2), need = 0.235 - d;
+      if (need > 0) { const u = _kU.subVectors(_kc1, _kc2); u.addScaledVector(dn, -u.dot(dn)); if (u.lengthSq() > 1e-10) { _kN.addScaledVector(u.normalize(), need); if (need > worst) worst = need; } } }
+    if (worst <= 0.002) return;
+    // (the knee moved along its circle: pushed, then put back on the circle)
+    _kN.normalize().multiplyScalar(worst * w * 1.2);
+    K.add(_kN).sub(mid); K.addScaledVector(dn, -K.dot(dn));
+    if (K.lengthSq() < 1e-8) return;
+    pole.copy(K);
+  }
+}
 // which binding a leg is in: the front one (0) is the left leg for regular, the right for goofy
 const legBinding = (k, noseX) => ((k === 0) === (noseX > 0)) ? 0 : 1;
 const rigLegThigh = (rig, k) => k ? rig.b.thR : rig.b.thL;
@@ -856,6 +1057,7 @@ function placeBoots(rig, bd, skate, t, S) {
   const bq = bd.root.quaternion, bp = bd.root.position, s2 = BOARD.stance / 2;
   bd.bootF.position.set(0, BOARD.top, s2).applyQuaternion(bq).add(bp);
   bd.bootF.quaternion.copy(bq).multiply(_q1.setFromAxisAngle(Y, bd.yawF));
+  bd.bootF.position.addScaledVector(_v5.set(1, 0, 0).applyQuaternion(bd.bootF.quaternion), -(bd.cxF || 0));   // (centred in its binding)
   if (bd.backOut) {
     // on the back foot: the boot's sole under the ankle bone
     const ft = bd.backFoot; ft.updateWorldMatrix(false, false);
@@ -865,6 +1067,7 @@ function placeBoots(rig, bd, skate, t, S) {
   } else {
     bd.bootB.position.set(0, BOARD.top, -s2).applyQuaternion(bq).add(bp);
     bd.bootB.quaternion.copy(bq).multiply(_q1.setFromAxisAngle(Y, bd.yawB));
+    bd.bootB.position.addScaledVector(_v5.set(1, 0, 0).applyQuaternion(bd.bootB.quaternion), -(bd.cxB || 0));
   }
 }
 

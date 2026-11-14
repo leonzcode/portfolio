@@ -36,6 +36,20 @@
 - Scuffs and scratches on the park's tubes, boxes and steel rails (`models/park/plastic_rough.webp`, `models/park/steel_rough.webp`): from ambientCG's "Plastic 010" (its roughness map) and "Scratches 005" (its scratch mask, made into roughness), https://ambientcg.com/view?id=Plastic010 and https://ambientcg.com/view?id=Scratches005, CC0 1.0. Cut to 512 px WebP.
 - Trees (`tex/fir_atlas.webp`): from Poly Haven's "Fir Tree 01" by Rob Tuytel (photography) and Rico Cilliers (modelling), https://polyhaven.com/a/fir_tree_01, CC0 (https://polyhaven.com/license). Four of its twig sprays (its twig colour and alpha pictures) and a strip of its bark cut into one 512 px picture, with a strip of its sprays heaped up dark for the middle of the crowns; the trees themselves (trunks, whorls of branch cards, snow on them) are made in the game.
 - Freeride's rock (`tex/rock_col.webp`: colour with height in alpha; `tex/rock_nrm.webp`: normal with ambient occlusion in blue): Poly Haven's "Dark Rock 02" by Amal Kumar, https://polyhaven.com/a/dark_rock_02, CC0 (https://polyhaven.com/license). Cut to 512 px WebP and packed two maps to a picture; on the cliffs, and where rock shows through Freeride's snow.
+- Any mountain (W, round 10): nothing of these is shipped with the game; each is read live in the player's browser, as
+  Leonski 2 does, with no key:
+  - Elevation: AWS Terrain Tiles (Terrarium PNGs at zooms 10, 12 and 14), https://registry.opendata.aws/terrain-tiles/,
+    open data collected by Mapzen from SRTM, EU-DEM, USGS 3DEP, Canada's CDEM, ETOPO1 and others (attribution:
+    https://github.com/tilezen/joerd/blob/master/docs/attribution.md).
+  - Runs, lifts, terrain parks, lit runs and place names: OpenStreetMap, (c) OpenStreetMap contributors, ODbL 1.0
+    (https://www.openstreetmap.org/copyright), from the Overpass API mirrors; the 17 built-in resorts' answers are the
+    ones Leonski 2 already ships in `/legacy/leonski2data/`.
+  - Where the forest is (read from the picture's colours only, never shown): Esri World Imagery, Sources: Esri, Maxar,
+    Earthstar Geographics, and the GIS User Community.
+  - Place search: Photon by komoot (https://photon.komoot.io) and Nominatim (https://nominatim.openstreetmap.org), both
+    on OpenStreetMap data, within their usage policies (Nominatim at most one request a second).
+  - Made in the game for it: the side hits, rollers, wind lips, rock drops and the parks' lines, the edge poles and run
+    signs, the trail map.
 - Everything else (the park's tubes, boxes and rails, the jib line, the terrain, the ski boots, the snowboard bindings, the trees' shapes, the snow's shader and tracks, the floodlight towers, the poses and tricks, Freeride's far ranges and the light its mountain casts and holds) is made for this game.
 
 MIT licence text for the Rocketbox files:

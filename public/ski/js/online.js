@@ -10,8 +10,8 @@
 //   the game's own cameras (chase, far, first person, filmer), the next or previous rider, their name, Ride to start
 //   riding in the same room, Leave. From the home screen, or from the pause menu while riding in a room.
 import * as THREE from 'three';
-import { countUrl } from './net.js?v=25';
-import { height } from './terrain.js?v=25';
+import { countUrl } from './net.js?v=26';
+import { height } from './terrain.js?v=26';
 
 const MAP_NAMES = { jumpline: 'Jump Line', freeride: 'Freeride' };
 const CAM_NAMES = { chase: 'Chase', far: 'Far chase', pov: 'First person', film: 'Filmer' };
@@ -67,7 +67,8 @@ export class Online {
     this.counts = c;
     const el = this.el; if (!el) return;
     for (const tile of el.querySelectorAll('[data-online]')) {
-      const m = c ? c.maps[tile.dataset.online] || { ride: 0, watch: 0 } : null, n = m ? m.ride | 0 : 0, w = m ? m.watch | 0 : 0;
+      // (W, round 10: Any mountain's tile counts every place's riders, maps w_...)
+      const m = c ? (tile.dataset.online === 'world' ? Object.keys(c.maps).filter(k => /^w_/.test(k)).reduce((t, k) => ({ ride: t.ride + (c.maps[k].ride | 0), watch: t.watch + (c.maps[k].watch | 0) }), { ride: 0, watch: 0 }) : c.maps[tile.dataset.online] || { ride: 0, watch: 0 }) : null, n = m ? m.ride | 0 : 0, w = m ? m.watch | 0 : 0;
       const html = m ? `<b data-n="ride">${n}</b> riding${w ? ` &middot; <b data-n="watch">${w}</b> watching` : ''}` : 'No count right now';
       const box = tile.querySelector('.oncount'); if (box.innerHTML !== html) box.innerHTML = html;
       tile.classList.toggle('busy', n > 0);
@@ -107,7 +108,7 @@ export class Online {
   }
   run(act, nm = this.name()) {
     const net = this.net;
-    net.map = this.opts.map;
+    net.map = this.netMap || this.opts.map;   // (W, round 10: Any mountain's place, main.js)
     const here = net.inRoom && !net.priv;     // (already in this map's public park: no need to join it again)
     if (act === 'watch') {
       if (!(here && net.watching)) { if (here) net.setWatch(true); else net.connect(nm, this.opts.rider, { watch: true }); }
@@ -247,7 +248,7 @@ export class Online {
   }
   // the bar's words, written only when they change
   label(L, r) {
-    const map = MAP_NAMES[this.opts.map] || this.opts.map, i = r ? L.indexOf(r) : -1, w = this.net.watchN;
+    const map = MAP_NAMES[this.opts.map] || this.mapName || this.opts.map,   /* (W: a place's name) */ i = r ? L.indexOf(r) : -1, w = this.net.watchN;
     const name = r ? r.name : this.net.inRoom ? 'Nobody riding yet' : 'Joining the park...';
     const meta = r ? `${map} · ${i + 1} of ${L.length}${w > 1 ? ` · ${w} watching` : ''}` : this.net.inRoom ? `${map} · riders show up here as they drop in` : this.statusText || map;
     const cam = CAM_NAMES[this.cams.mode] || 'Chase', key = name + '|' + meta + '|' + cam + '|' + (L.length > 1);

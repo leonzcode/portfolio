@@ -1,36 +1,36 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=25';
-import { makePark, makeJumpLine, emptyPark, featureMeshSteps, railMeshes } from './park.js?v=25';
-import { makeMaterials, snowUniforms, rockFieldAfter } from './materials.js?v=25';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=25';
-import { Mountain, SPOTS } from './dem.js?v=25';
-import { Skier } from './skier.js?v=25';
-import { Rig, prefetchRider } from './rig.js?v=25';
-import './board.js?v=25';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
+import { Terrain, setPark, setMountain, height, normal, baseLine } from './terrain.js?v=26';
+import { makePark, makeJumpLine, emptyPark, featureMeshSteps, railMeshes } from './park.js?v=26';
+import { makeMaterials, snowUniforms, rockFieldAfter } from './materials.js?v=26';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=26';
+import { Mountain, SPOTS } from './dem.js?v=26';
+import { Skier } from './skier.js?v=26';
+import { Rig, prefetchRider } from './rig.js?v=26';
+import './board.js?v=26';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
 // (B: the snow scooter and snowbike (scoot.js: Rig.loader.scoot / bike, Rig.poser.scoot / bike) and the sled (sled.js:
 // Rig.loader.sled, Rig.poser.sled) register the same way; C, 2026-11-11, loading: they come in when a ride needs them,
 // yours or another rider's (needRide below), not with the game's first files)
-import { Tricks } from './tricks.js?v=25';
-import { Input } from './input.js?v=25';
-import { Cams } from './camera.js?v=25';
-import { Tracks, Spray } from './snow.js?v=25';
-import { Hud } from './hud.js?v=25';
-import { Sound } from './sound.js?v=25';
-import { Net } from './net.js?v=25';
-import { mergeGear } from './gear.js?v=25';
-import { shadowOnly } from './shadowproxy.js?v=25';
+import { Tricks } from './tricks.js?v=26';
+import { Input } from './input.js?v=26';
+import { Cams } from './camera.js?v=26';
+import { Tracks, Spray } from './snow.js?v=26';
+import { Hud } from './hud.js?v=26';
+import { Sound } from './sound.js?v=26';
+import { Net } from './net.js?v=26';
+import { mergeGear } from './gear.js?v=26';
+import { shadowOnly } from './shadowproxy.js?v=26';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Touch, TOUCH_GRABS } from './touch.js?v=25';
-import { Locker, loadLook, cleanLook } from './locker.js?v=25';
+import { Touch, TOUCH_GRABS } from './touch.js?v=26';
+import { Locker, loadLook, cleanLook } from './locker.js?v=26';
 // (C, 2026-11-11, loading: the map's own modules come in below, only for that map: the chairlift (L: lift.js), the
 // Freeride mountain (F: freeride.js, frrock.js) on Freeride, the T-bar (J: tbar.js) on the Jump Line)
-import { Online } from './online.js?v=25';            // (M: the home screen's online buttons, and watching others)
+import { Online } from './online.js?v=26';            // (M: the home screen's online buttons, and watching others)
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
 // (C, 2026-11-11, loading) the scooter's, the bike's and the sled's modules, fetched the first time a ride needs them
-const RIDE_MODS = { scoot: './scoot.js?v=25', bike: './scoot.js?v=25', sled: './sled.js?v=25' };
+const RIDE_MODS = { scoot: './scoot.js?v=26', bike: './scoot.js?v=26', sled: './sled.js?v=26' };
 const needRide = kind => RIDE_MODS[kind] ? import(RIDE_MODS[kind]).catch(e => console.warn('ride', kind, e)) : Promise.resolve();
 /* (C, 2026-11-11, for "leonski never loads on chromebook and takes too long to load") The start-up's progress bar and
    failures are index.html's (__skiBoot, there before any module): step(label, share) shows a step and gives the page a
@@ -55,7 +55,7 @@ if (opts.scheme !== 'keys' && opts.scheme !== 'shred') opts.scheme = 'shred';
 // only the Jump Line is offered for now (Leon, 2026-11-05: "Remove mamoth map for now and also remove the other map as well
 // just keep jump line for now"); the other maps stay in the code and open with ?map= for tests
 // (F, 2026-11-06: and Freeride, the made-up big-mountain face, picked on the home screen)
-if (opts.map !== 'freeride') opts.map = 'jumpline';
+if (opts.map !== 'freeride' && opts.map !== 'world') opts.map = 'jumpline';   // (W, round 10: and Any mountain, its place in opts.place: wmap.js)
 const qs = new URLSearchParams(location.search);
 if (qs.get('gfx')) opts.gfx = qs.get('gfx');
 function detectTier() {
@@ -85,8 +85,8 @@ function detectTier() {
    only when that matches, so a change to that code is worked out again, never mistaken. Asked for at once, beside the
    downloads; null when there is none to use. */
 const PLANS = {
-  jumpline: { key: 'ski_jlplan', files: ['./park.js?v=25', './terrain.js?v=25', './noise.js?v=25'] },
-  freeride: { key: 'ski_frplan', files: ['./freeride.js?v=25', './frland.js?v=25', './park.js?v=25', './terrain.js?v=25', './noise.js?v=25'] },
+  jumpline: { key: 'ski_jlplan', files: ['./park.js?v=26', './terrain.js?v=26', './noise.js?v=26'] },
+  freeride: { key: 'ski_frplan', files: ['./freeride.js?v=26', './frland.js?v=26', './park.js?v=26', './terrain.js?v=26', './noise.js?v=26'] },
 };
 function codePrint(texts) {
   let h = 0x811c9dc5, n = 0;
@@ -99,7 +99,7 @@ const planP = PL ? (async () => {
     const texts = await Promise.all(PL.files.map(f => fetch(new URL(f, import.meta.url), { cache: 'force-cache' }).then(r => { if (!r.ok) throw new Error(f + ' ' + r.status); return r.text(); })));
     const print = codePrint(texts);
     try { const k = JSON.parse(localStorage.getItem(PL.key) || 'null'); if (k && k.print === print && k.plan) return { print, plan: k.plan }; } catch (e) {}
-    try { const r = await fetch(new URL('../data/' + planMap + '.json?v=25', import.meta.url)); if (r.ok) { const d = await r.json(); if (d && d.print === print && d.plan) return { print, plan: d.plan, keep: true }; } } catch (e) {}
+    try { const r = await fetch(new URL('../data/' + planMap + '.json?v=26', import.meta.url)); if (r.ok) { const d = await r.json(); if (d && d.print === print && d.plan) return { print, plan: d.plan, keep: true }; } } catch (e) {}
     return { print, plan: null };
   } catch (e) { return null; }
 })() : null;
@@ -110,7 +110,7 @@ const tier = opts.gfx === 'auto' ? det.tier : opts.gfx;
 // (2026-11-12) Freeride's rock faces: their worker starts now, beside the rest of the start (rockP, below)
 let rockWorker = null;
 if ((qs.get('map') || opts.map) === 'freeride') {
-  try { const w = rockWorker = new Worker(new URL('./frrockworker.js?v=25', import.meta.url), { type: 'module' }); w.onerror = () => { w.failed = true; }; w.postMessage({ low: tier === 'low' }); } catch (e) { rockWorker = null; }
+  try { const w = rockWorker = new Worker(new URL('./frrockworker.js?v=26', import.meta.url), { type: 'module' }); w.onerror = () => { w.failed = true; }; w.postMessage({ low: tier === 'low' }); } catch (e) { rockWorker = null; }
 }
 const Q = {
   // (E, 2026-11-08, the lag pass: bigger terrain patches split later, the same detail on the screen in about a third
@@ -172,9 +172,11 @@ await step(opts.map === 'freeride' ? 'Building the mountain' : 'Building the jum
 // (one that does not come down: the page is tried once more by itself, then says so, as for the first files)
 bt('step1');
 const mapMod = u => import(u).catch(e => { if (BOOT.noModule) BOOT.noModule(); throw e; });
-const [LM, TM, FM, RM] = await Promise.all([opts.map === 'freeride' ? mapMod('./lift.js?v=25') : {}, opts.map === 'jumpline' ? mapMod('./tbar.js?v=25') : {},
-  opts.map === 'freeride' ? mapMod('./freeride.js?v=25') : {}, opts.map === 'freeride' ? mapMod('./frrock.js?v=25') : {}, needRide(opts.ride)]);   // (and your ride's own module, when it is not skis or a board)
+const [LM, TM, FM, RM] = await Promise.all([opts.map === 'freeride' ? mapMod('./lift.js?v=26') : {}, opts.map === 'jumpline' ? mapMod('./tbar.js?v=26') : {},
+  opts.map === 'freeride' ? mapMod('./freeride.js?v=26') : {}, opts.map === 'freeride' ? mapMod('./frrock.js?v=26') : {}, needRide(opts.ride)]);   // (and your ride's own module, when it is not skis or a board)
 const { planLift, Lift } = LM, { planTbar, Tbar } = TM, { makeFreeride } = FM, { buildRock, buildJibs } = RM;
+// (W, round 10: Any mountain's own modules, wmap.js and what it imports)
+const WM = opts.map === 'world' ? await mapMod('./wmap.js?v=26') : {};
 bt('imports');
 let mtn = null;
 if (SPOTS[opts.map]) {
@@ -183,9 +185,17 @@ if (SPOTS[opts.map]) {
   catch (e) { console.warn('mountain', e); mtn = null; opts.map = 'park'; }
 }
 const mats = makeMaterials(q); bt('mats');
+/* (W, round 10) Any mountain: the place's ground, runs, lifts and forest (wmap.js), put in through the mountain hook
+   before anything reads the ground; a place that cannot be built says so, and the home screen is still there to pick
+   another (wsearch.js works without the rest of the game) */
+let wld = null;
+if (opts.map === 'world') {
+  try { wld = await WM.makeWorld(q, opts.place || WM.MAMMOTH, (t, f) => step(t, f), { drop: WM.takeDrop(opts.place) }); bt('world'); }
+  catch (e) { console.error('world', e); BOOT.fail('This mountain could not be built.', 'Its elevation did not download (' + String(e && e.message || e).slice(0, 80) + '). Try again, or pick another place or map on this screen.'); throw e; }
+}
 // (2026-11-12: the park map's rock field, which shows no rock there, is worked out after the start: bootDone)
 let bootDone; const booted = new Promise(r => { bootDone = r; });
-if (!mtn && opts.map !== 'freeride') rockFieldAfter(booted.then(() => new Promise(r => setTimeout(r, 1500))));
+if (!mtn && !wld && opts.map !== 'freeride') rockFieldAfter(booted.then(() => new Promise(r => setTimeout(r, 1500))));
 // (F) Freeride: its land through the mountain hook (setMountain, inside makeFreeride) and a park of its own
 const mapPlan = !mtn && PL && (opts.map === 'jumpline' || opts.map === 'freeride') ? await soft(planP, 4000, 'plan') : null; bt('plan');
 const fr = !mtn && opts.map === 'freeride' ? makeFreeride(q, mapPlan && mapPlan.plan) : null;
@@ -202,16 +212,16 @@ const rockP = fr && rockWorker ? new Promise(res => {
   try { w.postMessage({ slabs: RM.slabArrays(fr.land) }); } catch (e) { w.terminate(); res(null); }
 }) : null;
 if (rockWorker && !fr) rockWorker.terminate();
-const park = fr ? fr.park : mtn ? emptyPark() : opts.map === 'jumpline' ? makeJumpLine(mapPlan && mapPlan.plan) : makePark(); setPark(park);
+const park = wld ? wld.park : fr ? fr.park : mtn ? emptyPark() : opts.map === 'jumpline' ? makeJumpLine(mapPlan && mapPlan.plan) : makePark(); setPark(park);
 if (!fr && opts.map === 'jumpline') keepPlan(mapPlan, park.plan);
 bt('park');
 // (L) the chairlift beside the Jump Line: where it goes, and the flat snow under its stations (added to the park's height
 // before the terrain is built)
 const liftPlan = (fr || !mtn && opts.map === 'jumpline') && !qs.has('nolift') ? (fr ? planLift : planTbar)(park) : null;   // (F: Freeride's runs from its base to the ridge, park.liftLine)   // (?nolift: without it, for tests)   // (J: the Jump Line's is a T-bar, tbar.js)
 await step('Lighting the sky', 0.42);
-const sky = makeSky(scene, renderer, q, !!mtn);
+const sky = makeSky(scene, renderer, q, !!(mtn || wld));
 await step('Laying the snow', 0.47);
-const terrain = new Terrain(scene, mats.snow, { minLeaf: q.minLeaf, mtnLeaf: q.mtnLeaf, K: q.K, seg: q.seg, budget: q.tier === 'low' ? 3 : 4, far: q.tier === 'low' ? 2000 : 2600, root: mtn ? { x0: -4096, z0: -4096, size: 8192 } : null });
+const terrain = new Terrain(scene, mats.snow, { minLeaf: q.minLeaf, mtnLeaf: q.mtnLeaf, K: q.K, seg: q.seg, budget: q.tier === 'low' ? 3 : 4, far: q.tier === 'low' ? 2000 : 2600, root: wld ? wld.root : mtn ? { x0: -4096, z0: -4096, size: 8192 } : null });   // (W: Any mountain's, round the area built)
 const terrainBudget = terrain.budget;
 const jumpLods = [], JUMP_FAR = q.tier === 'low' ? 110 : 150;
 /* (2026-11-06, the lag pass: a jump's three takeoffs side by side are one mesh and one draw call; they were one each,
@@ -221,7 +231,7 @@ const jumpLods = [], JUMP_FAR = q.tier === 'low' ? 110 : 150;
    A jump's mesh is only its look: what the riding reads is the park's own height functions, there from the start.) */
 const jumpGroups = (() => {
   const groups = new Map();
-  for (const f of [...park.kickers, park.pipe, park.qp].filter(Boolean)) {
+  for (const f of [...park.kickers, park.pipe, park.qp, ...(park.meshed || [])].filter(Boolean)) {   // (J, round 10: park.meshed, the Jump Line's shapes with meshes of their own)
     const key = (/^Jump \d+/.exec(f.name || '') || [f.group || f.name || 'feature'])[0];   // (F: Freeride's kickers are one group)
     if (!groups.has(key)) groups.set(key, { key, fs: [] });
     groups.get(key).fs.push(f);
@@ -246,7 +256,7 @@ function* buildJump(G, now) {
   /* (2026-11-06, the lag pass: looking down the Jump Line every jump was drawn in full, about 23 000 triangles each on
      the low tier, 55 000 on the others. Past jumpLods' distance a jump is drawn from a copy with its rows and columns
      thinned out (park.js featureMesh), a third of the triangles; out there the two differ by a pixel or so.) */
-  const fs = G.fs.filter(f => /^Jump \d+/.test(f.name || ''));
+  const fs = G.fs.filter(f => /^Jump \d+/.test(f.name || '') || f.lod);   // (J, round 10: and any feature marked lod)
   if (fs.length) { g.computeBoundingBox(); jumpLods.push({ near: m, far: null, fs, key: G.key, box: g.boundingBox, isFar: false }); }
 }
 // a jump's far copy (until it is there, the jump is drawn from its near copy)
@@ -374,10 +384,11 @@ await step('Planting the trees', 0.64);
 // (the park's rails and boxes; the benches' model loads, and is in before the shaders are compiled at boot: K)
 const railsG = park.rails.length ? railMeshes(park.rails, mats) : null; if (railsG) scene.add(railsG);
 if (fr) { buildRock(scene, fr.land, mats, q, await soft(rockP, 60000, 'rock faces')); buildJibs(scene, fr, mats, q); }   // (F: the rock faces, logs, slab, stumps, flags and finish arch)   // (the worker's arrays, or made here)
-const forest = new Forest(scene, q, mtn || (fr && fr.mtn));   // (F: Freeride's trees from its own list)
+const forest = new Forest(scene, q, mtn || (fr && fr.mtn) || (wld && wld.mtn));   // (W: Any mountain's from its forest, wmap.js)   // (F: Freeride's trees from its own list)
 await step(null, 0.69);
-if (mtn) makeMountainRanges(scene, q, mtn); else makeRanges(scene, q, mats.snow);
-if (!mtn) makeProps(scene, park, q);
+if (mtn) makeMountainRanges(scene, q, mtn); else if (!wld) makeRanges(scene, q, mats.snow);
+if (!mtn && !wld) makeProps(scene, park, q);
+if (wld) wld.dress(scene, mats, q);   // (W: Any mountain's signs, markers and the parks' meshes: wmap.js)
 const tracks = new Tracks(renderer, q);
 const spray = new Spray(scene, q);
 
@@ -385,7 +396,7 @@ const skier = new Skier(park);
 skier.trees = forest;
 // (L) the chairlift (its model loads in the background, in before the shaders are compiled at boot); its towers and the
 // stations' piers are hit as trees are
-const lift = liftPlan ? (liftPlan.tbar ? new Tbar(scene, liftPlan, q) : new Lift(scene, liftPlan, q)) : null;   // (J: tbar.js has the same interface)
+const lift = wld ? (wld.planned.plans.length ? new WM.WorldLifts(scene, wld.planned, q) : null) : liftPlan ? (liftPlan.tbar ? new Tbar(scene, liftPlan, q) : new Lift(scene, liftPlan, q)) : null;   // (J: tbar.js has the same interface)
 const liftReady = lift ? lift.load().catch(e => console.warn('lift', e)) : null;
 if (lift) skier.trees = lift.withTowers(forest);
 sky.env.attach(skier);       // the snow kind's riding (skier.snowK) and look, from the home screen's 'Time, sky and snow' (env.js)
@@ -436,7 +447,7 @@ function drawn(alpha) {
   return view;
 }
 // the end of a run: the bottom of the park, or far down or away on the mountain
-const runOver = () => mtn ? (Math.hypot(skier.p.x, skier.p.z) > 4000 || skier.p.y < -900) : lift ? lift.pastBottom(skier.p) : skier.p.z > 1470;   // (L: past the lift's bottom station)
+const runOver = () => wld ? false : mtn ? (Math.hypot(skier.p.x, skier.p.z) > 4000 || skier.p.y < -900) : lift ? lift.pastBottom(skier.p) : skier.p.z > 1470;   // (L: past the lift's bottom station)
 toStart();
 
 // ---- menu --------------------------------------------------------------------------------------------------------------
@@ -551,6 +562,8 @@ $('totop').onclick = () => { toStart(); play(); };
     box.appendChild(b);
   }
 }
+// (W, round 10) Any mountain's trail map, from the pause menu: a drop anywhere on it (wtrail.js)
+if (wld) { wld.liveSk = skier; wld.trail({ skier, pause: () => pause(), drop: (x, z) => { skier.spawn(x, z, 2, WM.fallYaw(height, x, z, 6)); skier.safe.length = 0; cams.first = true; play(); }, back: () => $('pause').classList.remove('hidden') }); }
 $('tomenu').onclick = () => { $('pause').classList.add('hidden'); $('menu').classList.remove('hidden'); $('play').textContent = 'Keep riding'; paused = true; };
 addEventListener('keydown', e => { if (e.code === 'Escape' && playing) { paused ? play() : pause(); } });
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && playing && !paused && opts.scheme === 'mouse') pause(); });
@@ -594,12 +607,12 @@ const net = new Net({
     try { await renderer.compileAsync(r.root, camera, scene); } catch (e) {}   // (R: another rider's gear may need shaders of its own: built before it is drawn)
     return r; },
   // (R: and what they wear, from the locker)
-  getLook: () => Object.assign({}, locker.look, { ride: opts.ride || 'ski', stance: opts.stance || 'regular', map: opts.map || 'jumpline' }),   // (map: riders on another map are not drawn here)
+  getLook: () => Object.assign({}, locker.look, { ride: opts.ride || 'ski', stance: opts.stance || 'regular', map: wld ? wld.id : opts.map || 'jumpline' }),   // (map: riders on another map are not drawn here)
   onTrick: (who, name, pts) => hud.remoteTrick(who, name, pts),
   onChat: m => hud.chat(m),
   onStatus: t => { $('mpstatus').textContent = t; $('mpleave').classList.toggle('hidden', !net.inRoom && !t.startsWith('Connecting')); },
 });
-net.map = opts.map || 'jumpline';
+net.map = wld ? wld.id : opts.map || 'jumpline';   // (W: Any mountain's place, wmap.js worldId)
 if (lift) { net.lift = lift; net.xFns.push(x => lift.netX(x)); }   // (L: riders on the chairlift, in the state's x)
 $('mpname').value = opts.name || '';
 const mpName = () => { opts.name = $('mpname').value.trim(); save(); return opts.name || 'Rider'; };
@@ -609,6 +622,7 @@ $('mpjoin').onclick = () => { const c = $('mpcode').value.trim().toUpperCase(); 
 $('mpleave').onclick = () => net.leave();
 // (M) the online board, the reload into another map's park, and watching the others ride
 const online = new Online({ net, opts, save, hud, cams, camera, lift, sound, play, toStart, rig: () => rig, start: START });
+if (wld) { online.netMap = wld.id; online.mapName = wld.place.name; }   // (W: Any mountain's room is its place's)
 const chatIn = $('chatin');
 /* (2026-11-12) the room closed because nobody in it was active for 10 minutes (net.js): back to the menu (watching:
    out of the watch bar to it), with why on the online board and in the private rooms' line. Not reconnected; Keep
@@ -761,6 +775,7 @@ function tick() {
   // (2026-11-12: while the menu is up, the far snow left from the start is built faster)
   terrain.budget = live ? terrainBudget : 10;
   terrain.update(camera.position, frames);
+  if (wld) wld.frame(camSk.p, terrain, dt);           // (W: Any mountain's fine ground streamed round the rider past the area built)
   forest.update(camera.position);
   snowUniforms.uTime.value = time;
   sound.frame(online.watching ? camSk : skier);           // (M: watching, the wind and the snow follow the rider watched)

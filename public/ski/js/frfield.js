@@ -17,7 +17,7 @@
    less sky under each crown (g, posted again as { i, g }), and each crown's shadow laid on the snow away from the sun,
    as long as the sun is low (b). At 4 m a texel these are soft patches of shade, not a tree's outline: the shadow map
    round the rider draws the near trees' own shadows on the tiers that have it. */
-import { Land } from './frland.js?v=25';
+import { Land } from './frland.js?v=26';
 
 let land = null, levels = null, grids = null, sun = null, light = false, T0 = 0, trees = null;
 onmessage = e => {

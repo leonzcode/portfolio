@@ -10,10 +10,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=25';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=25';
-import { height, normal } from './terrain.js?v=25';
-import { gltfLoader, gearParts, gearModel, loadGLB, fetchOnce, LOOK, FIT, TOPS, LOW } from './gear.js?v=25';
+import { clamp, smoothstep } from './noise.js?v=26';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=26';
+import { height, normal } from './terrain.js?v=26';
+import { gltfLoader, gearParts, gearModel, loadGLB, fetchOnce, LOOK, FIT, TOPS, LOW } from './gear.js?v=26';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -166,8 +166,8 @@ const GEAR_K = 3;                    // the lowest few of each piece of gear's o
 const _cx = V(), _cu = V(), _cn = V(), _cn2 = V(), _cb2 = V(), _cs = V(), _pb = V(), _pd = V(), _pn = V(), _cdn = V(), _cbest = new Float64Array(8), _cbi = new Int32Array(8), _ck = new Float64Array(10), _cki = new Int32Array(10);
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=25';
-import { grabDef } from './grabs.js?v=25';
+export { GRABS } from './grabs.js?v=26';
+import { grabDef } from './grabs.js?v=26';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -437,7 +437,7 @@ function maskImage(url) {
 }
 /* (C) the rider's model: the Low tier's own copy (lo: pictures 512 px, WebP; the same meshes and skeleton), else the
    full one; fetched once (fetchOnce), each rider parsed from it. A Low copy that will not come falls back to the full. */
-const riderUrl = (id, lo) => './models/' + id + (lo ? '_lo' : '') + '.glb?v=25';
+const riderUrl = (id, lo) => './models/' + id + (lo ? '_lo' : '') + '.glb?v=26';
 // (a rider parsed ahead by prefetchRider, while the world is built: the first load of that model takes it)
 const _pre = new Map();
 async function riderGltf(id, lo) {
@@ -467,7 +467,7 @@ export function prefetchRider(id, look = {}, kind = 'ski', lo = false) {
   gltfLoader();                                       // (the model decoder's files come down now)
   // (the model is parsed as soon as it is in: its pictures decoded and its meshes unpacked off the main thread)
   const u = riderUrl(id, lo), pre = loadGLB(u); _pre.set(u, pre); swallow(pre);
-  swallow(maskImage('./models/' + id + '_m.png?v=25'));
+  swallow(maskImage('./models/' + id + '_m.png?v=26'));
   swallow(gearModel('goggles')); if (look.head !== 'painted') swallow(gearModel(look.head === 'beanie' ? 'beanie' : 'helmet_c'));
   if (kind === 'ski') { swallow(gearModel('pole')); swallow(gearModel('binding')); if (look.ski && look.ski !== 'park') swallow(gearModel(look.ski === 'pow' ? 'ski_b' : 'ski_a')); }
 }
@@ -628,7 +628,7 @@ export class Rig {
   }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=25';
+    const maskUrl = './models/' + id + '_m.png?v=26';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = new THREE.Texture(await maskImage(maskUrl)); mask.needsUpdate = true;   // (C: the one picture regionMeans used)
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -1130,7 +1130,7 @@ if (uFpNear > 0.0) {
     this.railC2 = rail ? Math.cos(ra) ** 2 : 1;
     // a butter or press tips the skis about the pressed end (on a rail the contact under the boots in a slide); the
     // pivot's place eases between them, so leaving a box mid-press does not snap the skis
-    const zpL = sp('zpL', rail ? 0.55 * this.railC2 : 0.6, 12), flexW = sp('flexW', ground ? 1 : lzIn, 12);   // (bent in the air too as a butter landing comes)
+    const zpL = sp('zpL', rail ? 0.55 * this.railC2 : 0.6, 12), flexW = sp('flexW', ground ? 1 : rail ? this.railC2 : lzIn, 12);   // (bent in the air too as a butter landing comes; H, round 10: and on a rail in a 50-50, so a press's pressed end lies along it instead of 3 to 7 cm into it)
     for (let k = 0; k < 2; k++) {
       const s = k ? -1 : 1, ski = this.sk[k], pos = ski.pos, q = ski.q, A = this.air6[k];
       pos.set(s * stance, 0, 0);

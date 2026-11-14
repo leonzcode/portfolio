@@ -1,8 +1,8 @@
 // Cameras: chase (behind the travel, held steady through spins), far chase, first person (a helmet camera at the
 // rider's eyes, turning with the head) and filmer (tripod spots beside the features, panning and zooming to follow).
 import * as THREE from 'three';
-import { height } from './terrain.js?v=25';
-import { FollowQ } from './rig.js?v=25';
+import { height } from './terrain.js?v=26';
+import { FollowQ } from './rig.js?v=26';
 
 const MODES = ['chase', 'far', 'pov', 'film'];
 const _lf = new THREE.Vector3(), _Y = new THREE.Vector3(0, 1, 0);   // (L: the chairlift's look round)
@@ -218,8 +218,6 @@ export class Cams {
     } else if (st !== 'crash') F.inCrash = false;
     F.crash = st === 'crash' ? ease(F.crash, 1, 3) : 0;
     const cw = F.crash * F.crash * (3 - 2 * F.crash);
-    // (the head and the helmet back in view once the camera is out of the head)
-    if (cw < 0.25) cam.layers.disable(1);
     /* the gaze: the head's against the body, eased (quickly on the snow, slowly in the air), on the body as it is: the
        body's own turn (a spin, a flip, a sled's spinner) is followed exactly, the head's slower looks (into a turn,
        back over the shoulder riding switch, at the landing) come through, but not its quick swings in a trick (in a
@@ -281,6 +279,9 @@ export class Cams {
     cam.quaternion.copy(q).multiply(_FLIP);
     const gy = height(t.x, t.z) + R.low; if (t.y < gy) t.y = gy;
     cam.position.copy(t);
+    /* (the head and the helmet hidden only while the camera is in them: H, round 10, it went by how far into the crash's
+       swing out the camera was, and for a few frames of a crash the body was seen from half a metre away with no head) */
+    if (t.distanceToSquared(EYE) < 0.09) cam.layers.disable(1);
     // about 104 degrees across whatever the screen's shape (66 to 96 up and down), a little wider with speed
     const want = THREE.MathUtils.clamp(2 * Math.atan(Math.tan(52 * Math.PI / 180) / (cam.aspect || 1.6)) * 180 / Math.PI, 66, 96) + Math.min(4, sk.v.length() * 0.15);
     this.fov = reset ? want : this.fov + (want - this.fov) * Math.min(1, dt * 4);

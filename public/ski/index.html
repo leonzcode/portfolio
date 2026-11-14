@@ -10,11 +10,11 @@
 <!-- (C, 2026-11-11) the fonts no longer hold the game up: a stylesheet in the head is waited for before any script
      runs, so a slow or blocked fonts server held the whole game at its first line; it now loads beside it -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,800;1,700;1,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" media="print" onload="this.media='all'">
-<link rel="stylesheet" href="./css/ski.css?v=25">
+<link rel="stylesheet" href="./css/ski.css?v=26">
 <script type="importmap">
 {
   "imports": {
-    "three": "/car/vendor/three/three.module.js?v=ski25",
+    "three": "/car/vendor/three/three.module.js?v=ski26",
     "three/addons/": "/car/vendor/three/addons/"
   }
 }
@@ -27,13 +27,16 @@
    - nothing loads for ever without saying so: a file that failed to come (the page is tried once more by itself),
      an error while starting, no WebGL, or no step for a long while each say what happened, with a button to try again. */
 (function () {
-  var V = '?v=25', map = 'jumpline', ride = 'ski';
+  var V = '?v=26', map = 'jumpline', ride = 'ski';
   try { var o = JSON.parse(localStorage.getItem('ski_opts') || '{}'); if (o.map === 'freeride') map = 'freeride'; if (o.ride) ride = o.ride; } catch (e) {}
+  try { var o2 = JSON.parse(localStorage.getItem('ski_opts') || '{}'); if (o2.map === 'world') map = 'world'; } catch (e) {}   // (W, round 10: Any mountain)
   try { var qm = new URLSearchParams(location.search).get('map'); if (qm) map = qm; } catch (e) {}
   var js = ['terrain', 'park', 'materials', 'world', 'dem', 'skier', 'rig', 'board', 'tricks', 'input', 'camera', 'snow', 'hud', 'sound', 'net', 'gear', 'touch', 'locker', 'online', 'noise', 'env', 'motion', 'grabs', 'shadowproxy'];
   js = js.concat(map === 'freeride' ? ['freeride', 'frland', 'frrock', 'frrockgeo', 'lift'] : map === 'jumpline' ? ['tbar'] : []);
+  // (W, round 10: Any mountain's own modules, and the home screen's place picker on every map)
+  js = js.concat(map === 'world' ? ['wmap', 'wdem', 'wosm', 'wland', 'wpark', 'wlift', 'wfeat', 'wtrail', 'wsigns', 'wplaces', 'wsearch', 'lift'] : ['wplaces', 'wsearch']);
   js = js.concat(ride === 'scoot' || ride === 'bike' ? ['scoot'] : ride === 'sled' ? ['scoot', 'sled'] : []);   // (the other rides' modules come when needed)
-  var urls = ['/car/vendor/three/three.module.js?v=ski25', '/car/vendor/three/three.core.js', '/car/vendor/three/addons/loaders/GLTFLoader.js', '/car/vendor/three/addons/loaders/DRACOLoader.js', '/car/vendor/three/addons/utils/BufferGeometryUtils.js', './js/main.js' + V];
+  var urls = ['/car/vendor/three/three.module.js?v=ski26', '/car/vendor/three/three.core.js', '/car/vendor/three/addons/loaders/GLTFLoader.js', '/car/vendor/three/addons/loaders/DRACOLoader.js', '/car/vendor/three/addons/utils/BufferGeometryUtils.js', './js/main.js' + V];
   for (var i = 0; i < js.length; i++) urls.push('./js/' + js[i] + '.js' + V);
   for (var k = 0; k < urls.length; k++) { var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = urls[k]; document.head.appendChild(l); }
   var B = window.__skiBoot = { t0: performance.now(), last: performance.now(), frac: 0, done: false, files: urls.length, got: 0, kb: 0, paint: 0 };
@@ -132,9 +135,22 @@
       <p class="tag">Pick a run, then ride.</p>
     </div>
     <div class="maps runs" role="radiogroup" aria-label="Mountain">
-      <button class="map" data-map="jumpline" role="radio"><span class="sign park" aria-hidden="true">Park</span><b>Jump Line</b><small>Six jumps, three sizes each</small></button>
+      <button class="map" data-map="jumpline" role="radio"><span class="sign park" aria-hidden="true">Park</span><b>Jump Line</b><small>Rails, transitions, jumps, big air, pipe</small></button>
       <button class="map" data-map="freeride" role="radio"><span class="sign diamond" aria-hidden="true"><i></i><i></i></span><b>Freeride</b><small>Cliffs, chutes and a big face</small></button>
+      <!-- (W, round 10) a real ski area anywhere: its picker below (wsearch.js) -->
+      <button class="map" data-wmap="world" role="radio" aria-controls="wpanel"><span class="sign peak" aria-hidden="true"><i></i></span><b>Any mountain</b><small>A real ski area, anywhere</small></button>
     </div>
+    <section id="wpanel" class="wpanel hidden" aria-label="Pick a mountain">
+      <div id="wnow" class="wnow" hidden><span id="wnowlab" class="wlab">Riding</span><b></b><small></small></div>
+      <div class="wsearch">
+        <input id="wq" type="search" placeholder="Search a ski area, mountain or town" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="wsug" aria-label="Search a place to ride">
+        <ul id="wsug" class="wsug hidden" role="listbox"></ul>
+        <p id="wqstate" class="wqstate" aria-live="polite"></p>
+        <button type="button" id="wskip" class="wskip" hidden>Skip the runs and ride the bare mountain</button>
+      </div>
+      <div id="wpre" class="wpre"></div>
+      <p class="wsrc">Ground: AWS Terrain Tiles. Runs, lifts and parks: OpenStreetMap contributors. Forest: Esri World Imagery. Place search: Photon and Nominatim.</p>
+    </section>
     <div class="maps rides" role="radiogroup" aria-label="Ride">
       <button class="map" data-ride="ski" role="radio"><span class="sign park" aria-hidden="true">Ski</span><b>Skis</b><small>Twin tips, two poles</small></button>
       <button class="map" data-ride="board" role="radio"><span class="sign park" aria-hidden="true">Board</span><b>Snowboard</b><small>One board, sideways</small></button>
@@ -165,6 +181,13 @@
         </div>
         <div class="onmap" data-online="freeride">
           <div class="ontitle"><span class="sign diamond" aria-hidden="true"><i></i><i></i></span><b>Freeride</b></div>
+          <div class="oncount">Counting&hellip;</div>
+          <div class="onacts"><button class="onride" data-act="ride">Ride online</button><button class="onwatch" data-act="watch">Watch</button></div>
+        </div>
+        <!-- (W, round 10) Any mountain: the public park at the place last picked (wsearch.js names it); the count is every place's -->
+        <div class="onmap onworld" data-online="world">
+          <div class="ontitle"><span class="sign peak" aria-hidden="true"><i></i></span><b>Any mountain</b></div>
+          <div class="onplace" id="onplace"></div>
           <div class="oncount">Counting&hellip;</div>
           <div class="onacts"><button class="onride" data-act="ride">Ride online</button><button class="onwatch" data-act="watch">Watch</button></div>
         </div>
@@ -230,13 +253,16 @@
   <div class="card slim">
     <h2>Paused</h2>
     <div class="row"><button id="resume" class="big">Keep riding</button></div>
-    <div class="row"><button id="totop">Back to the top</button><button id="tomenu">Settings and controls</button><button id="towatch" class="hidden">Watch the others</button><button id="toreplay">Watch the last 15 seconds</button></div>
+    <div class="row"><button id="totop">Back to the top</button><button id="tomenu">Settings and controls</button><button id="towatch" class="hidden">Watch the others</button><button id="toreplay">Watch the last 15 seconds</button><button id="totrail" class="hidden">Trail map</button></div>
     <div class="startlab">Start somewhere else</div>
     <div class="row starts" id="starts"></div>
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=25" onerror="__skiBoot.noModule()"></script>
+<script type="module" src="./js/main.js?v=26" onerror="__skiBoot.noModule()"></script>
+<!-- (W, round 10) the place picker, on its own so it works even if the game could not start -->
+<script type="module" src="./js/wsearch.js?v=26"></script>
+<div id="wtrail" class="wtrail hidden" role="dialog" aria-modal="true" aria-labelledby="wtname"></div>
 <script defer src="/others/presence.js?v=1" data-project="leon-freeski"></script>
 </body>
 </html>

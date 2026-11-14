@@ -24,7 +24,12 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { ground, height } from './terrain.js?v=25';
+import { ground, height } from './terrain.js?v=26';
+/* (W, round 10, Any mountain: a real lift's line runs any way. wlift.js plans and runs each one in a frame of its own,
+   turned so that its line runs along z as here, and while it does, these two give that frame's heights; everywhere else
+   they are terrain.js's own, as before) */
+let LH = height, LG = ground;   // (named so: planOne has a local H of its own)
+export function liftHeights(h, g) { LH = h || height; LG = g || ground; }
 
 // ---- the model's numbers (metres, from models/lift/lift.glb) --------------------------------------------------------
 const HALF = 2.388;                  // half the gauge: each cable's distance from the line's middle (the chairs' grips)
@@ -78,7 +83,7 @@ function planOne(park, LL) {
   const padOf = (z0, z1, uphillZ) => {
     const x0 = XL - 12, x1 = XL + 8;
     let lvl = -Infinity;
-    for (let x = x0; x <= x1; x += 1) for (let z = z0; z <= z1; z += 1) lvl = Math.max(lvl, ground(x, z));
+    for (let x = x0; x <= x1; x += 1) for (let z = z0; z <= z1; z += 1) lvl = Math.max(lvl, LG(x, z));   // (W: LG, LH: the frame's own)
     return { x0, x1, z0, z1, y: lvl + 0.05 };
   };
   /* (a map's own line, Freeride's, 2026-11-08 second pass: the top pad ends a metre inside the station's front, so the
@@ -118,7 +123,7 @@ function planOne(park, LL) {
     const L = a.z - b.z;
     for (let t = 0.05; t < 0.96; t += 0.05) {
       const z = a.z - L * t, y = a.y + (b.y - a.y) * t - 4 * SAG * L * L * t * (1 - t);
-      const g = Math.max(height(xU, z), height(xD, z));
+      const g = Math.max(LH(xU, z), LH(xD, z));
       const nearSt = Math.min(Math.abs(z - bot.front), Math.abs(z - top.front)) < 16;
       if (y + CHAIR_BOTTOM - g < (nearSt ? 0.4 : 2.6)) return false;
     }
@@ -140,7 +145,7 @@ function planOne(park, LL) {
     for (let span = a === sup[0] ? 22 : SPAN; span >= 20; span -= dSpan) {
       const z = a.z - span; if (z < top.front + 18) continue;
       if (ok && !ok(XL, z)) continue;
-      const g = height(XL, z); spans.push([z, g]);
+      const g = LH(XL, z); spans.push([z, g]);
       if (clear(a, { z, y: g + HC })) { placed = { z, y: g + HC, h: HC }; break; }
     }
     if (!placed) for (const [z, g] of spans) {
@@ -151,20 +156,20 @@ function planOne(park, LL) {
     if (!placed && ok) for (let span = SPAN + 2; span <= 120; span += 2) {
       const z = a.z - span; if (z < top.front + 18) break;
       if (!ok(XL, z)) continue;
-      const g = height(XL, z); let h = HC; while (h <= TALL && !clear(a, { z, y: g + h })) h += 2;
+      const g = LH(XL, z); let h = HC; while (h <= TALL && !clear(a, { z, y: g + h })) h += 2;
       if (h <= TALL) { placed = { z, y: g + h, h }; break; }
     }
     // (still nowhere: the map's looser rule, ok(x, z, false), within a span, the shortest tower that clears)
     if (!placed && ok) for (let span = SPAN; span >= 20; span -= 2) {
       const z = a.z - span; if (z < top.front + 18 || !ok(XL, z, false)) continue;
-      const g = height(XL, z); let h = HC; while (h <= TALL && !clear(a, { z, y: g + h })) h += 2;
+      const g = LH(XL, z); let h = HC; while (h <= TALL && !clear(a, { z, y: g + h })) h += 2;
       if (h <= TALL && (!placed || h < placed.h)) placed = { z, y: g + h, h };
     }
     if (!placed) {            // (nothing clears: a short span with the tallest tower)
       const z = a.z - 20; if (z < top.front + 18) { sup.push(endS); break; }
-      placed = { z, y: height(XL, z) + TALL, h: TALL };
+      placed = { z, y: LH(XL, z) + TALL, h: TALL };
     }
-    towers.push({ x: XL, z: placed.z, y: height(XL, placed.z), h: placed.h });
+    towers.push({ x: XL, z: placed.z, y: LH(XL, placed.z), h: placed.h });
     sup.push(placed); a = placed;
   }
   // the cable between supports: straight, less the sag of the span
@@ -578,7 +583,7 @@ export class Lift {
       // shuffle to the load line, turning to face up the hill, and stand there till the chair comes
       const k = r.walk > 0 ? smooth(r.t / r.walk) : 1;
       this.feet.set(r.from.x + (L.x - r.from.x) * k, 0, r.from.z + (L.z - r.from.z) * k);
-      this.feet.y = height(this.feet.x, this.feet.z);
+      this.feet.y = LH(this.feet.x, this.feet.z);
       let dy = Math.PI - r.yaw0; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       const yaw = r.yaw0 + dy * k;
       sk.q.setFromAxisAngle(Y, yaw);
@@ -614,7 +619,7 @@ export class Lift {
         // standing up: the hips leave the seat, the skis on the unloading platform, turning off towards the start
         const k = smooth(r.t / 0.45);
         this.sit = 1 - k;
-        this.feet.set(_p.x, 0, _p.z); this.feet.y = height(_p.x, _p.z); this.feetOn = true;
+        this.feet.set(_p.x, 0, _p.z); this.feet.y = LH(_p.x, _p.z); this.feetOn = true;
         sk.p.copy(_p);
         const yawOut = Math.atan2(-0.85, 0.53);
         let dy = yawOut - this.yaw[i]; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
@@ -753,7 +758,7 @@ export class Lift {
     if (k <= 0) { this.camLookOk = false; if (clear) this.clipNear(cam, sk); return; }
     cam.position.copy(_v);
     // (never under the snow on the way between the two: the top station's pad stands over the slope)
-    const gy = height(cam.position.x, cam.position.z) + 0.8; if (cam.position.y < gy) cam.position.y = gy;
+    const gy = LH(cam.position.x, cam.position.z) + 0.8; if (cam.position.y < gy) cam.position.y = gy;
     // the eyes go to the rider quickly, while the camera itself moves over
     _cl.copy(cams.look).lerp(this.camLook, Math.min(1, k * 3));
     cam.up.set(0, 1, 0); cam.lookAt(_cl);
@@ -787,7 +792,7 @@ export class Lift {
     const Lt = P.lights;
     if (Lt && Math.abs(p.x - Lt.x) < 2) {
       const nL = Math.floor((Lt.z1 - Lt.z0) / Lt.S), i = Math.max(0, Math.min(nL, Math.round((p.z - Lt.z0) / Lt.S))), pz = Lt.z0 + i * Lt.S;
-      post(Lt.x, pz, height(Lt.x, pz), height(Lt.x, pz) + 14, 0.25);
+      post(Lt.x, pz, LH(Lt.x, pz), LH(Lt.x, pz) + 14, 0.25);
     }
     // the chairs (any but the rider's own): from the grip down to the footrest, about 1.2 m either side of the hanger
     const mine = r ? r.chair : -1;
@@ -847,7 +852,7 @@ export class Lift {
       this.seatAt(i, (x.ls | 0) & 3, p, q);
       out.feet = null;
       // (standing up at the top: the skis on the platform under the seat)
-      if (out.sit < 1) { out.feet = out.f || (out.f = new THREE.Vector3()); out.feet.set(p.x, height(p.x, p.z), p.z); }
+      if (out.sit < 1) { out.feet = out.f || (out.f = new THREE.Vector3()); out.feet.set(p.x, LH(p.x, p.z), p.z); }
     } else { out.feet = out.f || (out.f = new THREE.Vector3()); out.feet.set(p.x, p.y - 0.5, p.z); }
     return out;
   }
@@ -887,10 +892,10 @@ export class Lift {
    off one set of line segments, the shadow copies cut in 150 m squares. Each frame the owner (a Lift on its own, or
    Lifts) starts the counts (begin), every lift writes its chairs and wheels in view after the last (Lift.place), and the
    owner hands the counts to the meshes (end). */
-async function liftKit(q) {
+export async function liftKit(q) {   // (W: exported, wlift.js builds its lifts' kit)
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  const gltf = await loader.loadAsync('./models/lift/lift.glb?v=25');
+  const gltf = await loader.loadAsync('./models/lift/lift.glb?v=26');
   draco.dispose();
   const part = name => { let m = null; gltf.scene.traverse(o => { if (o.isMesh && o.name === name) m = o; }); if (!m) throw new Error('lift: no ' + name); return m; };
   const chair = part('chair'), chairLo = part('chair_lo'), tower = part('tower'), towerLo = part('tower_lo'), station = part('station'), bull = part('bull');

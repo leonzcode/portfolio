@@ -8,7 +8,7 @@
 // frame, with skirts hiding the seams between sizes. Features with their own meshes (kickers, the pipe) are left out
 // of the patches (the ground under them is lowered a little) and drawn by park.js at finer spacing.
 import * as THREE from 'three';
-import { fbm, ridged, smoothstep, clamp } from './noise.js?v=25';
+import { fbm, ridged, smoothstep, clamp } from './noise.js?v=26';
 
 // ---- the run's long profile ----------------------------------------------------------------------------------------
 // [z where it starts, pitch in degrees] (above the start the slope behind is a gentle 12 degrees, not the old 26: with
@@ -220,7 +220,7 @@ export class Terrain {
       const hx = H[(j + 1) * N + i + 2] - H[(j + 1) * N + i], hz = H[(j + 2) * N + i + 1] - H[j * N + i + 1];
       let nx = -hx, ny = 2 * st, nz = -hz; const l = Math.hypot(nx, ny, nz); nor[v * 3] = nx / l; nor[v * 3 + 1] = ny / l; nor[v * 3 + 2] = nz / l;
       const d = Math.abs(x) - runHalf(z);
-      grm[v] = mtn ? 0 : 1 - smoothstep(-1.5, 1.5, d);
+      grm[v] = mtn ? (mtn.groom ? mtn.groom(x, z) : 0) : 1 - smoothstep(-1.5, 1.5, d);   // (W: a real mountain's groomed runs, wland.js)
       if (h < ymin) ymin = h; if (h > ymax) ymax = h;
     }
     // skirts hang below the four edges
@@ -377,4 +377,19 @@ export class Terrain {
   // build everything the camera at p needs now (behind the loading screen); reach: only the patches within that many
   // metres (2026-11-12, loading: the far ones, about half of them, are built in the first frames after, nearest first)
   warm(p, reach = 0) { const b = this.budget; this.budget = 1e9; this.reach = reach; for (let i = 0; i < 12; i++) if (!this.update(p, 0)) break; this.budget = b; this.reach = 0; this._at = null; }
+  /* (W, round 10, Any mountain: finer elevation came in for a box of the world, wdem.js) the patches over the box built
+     again: dropped from the cache (a patch shown keeps its slot in the batch, given back to be reused first, until its
+     new copy is built; meanwhile the patches round it cover it as when a patch is not built yet) */
+  invalidate(x0, z0, x1, z1) {
+    let n = 0;
+    for (const [k, m] of this.cache) {
+      const u = m.userData; if (u.x0 > x1 || u.z0 > z1 || u.x0 + u.size < x0 || u.z0 + u.size < z0) continue;
+      const S = this.slots.get(k);
+      if (S) { this.slots.delete(k); if (S.vis) { this.batch.setVisibleAt(S.inst, false); S.vis = false; } S.used = -1; this.slots.set('free:' + k + ':' + n, S); }
+      if (this.shown.has(k)) { this.group.remove(m); this.shown.delete(k); }
+      m.geometry.dispose(); this.cache.delete(k); if (this.jobs) this.jobs.delete(k); n++;
+    }
+    this._at = null; if (this.gmemo) this.gmemo.clear();
+    return n;
+  }
 }

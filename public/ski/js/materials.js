@@ -4,8 +4,8 @@
 // (env.js: groomed, powder, packed, spring slush, ice), the floodlights' pools by night, and fog the colour of the sky's
 // own horizon in each direction.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=25';
-import { ground, onMountain } from './terrain.js?v=25';
+import { rng } from './noise.js?v=26';
+import { ground, onMountain } from './terrain.js?v=26';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
 // (2026-11-12, loading: the same bytes as before, with each texel's cell worked out once a row and once a column instead
@@ -150,6 +150,9 @@ function setRockLevel(i, data, c) {
 export function rockFieldAfter(p) { rockField.after = p; }
 // (a map with its own source can start the bake at once: its heights do not wait for the rest of the world)
 export function setRockSource(height, center, adjust) { rockField.height = height; rockField.center = center; rockField.adjust = adjust || null; bakeRockField(); }
+/* (W, round 10, Any mountain: the area built is up to 12 km across, the field's fine window 1.3 km) baked again round a
+   new middle once the last bake is done, the old windows shown until each new one is in; false while one is going */
+export function rebakeRockField(center) { if (rockField.state !== 2 || !rockField.height) return false; rockField.state = 0; rockField.center = center; bakeRockField(); return true; }
 /* (or have a module worker work it out, off the page's own thread: Freeride's land is plain JS a worker can load. The
    worker is sent the windows and posts back each one's texels; if it cannot start, the page bakes it itself) */
 /* (2026-11-11: light, Freeride's: the worker also works out the mountain's own light in the same texels, frfield.js, and
