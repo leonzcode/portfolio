@@ -24,15 +24,15 @@
    after travelling, kept topped up while you stand in a portal; end portals
    and gateways at once.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=122';
-import { Y0 } from '../world-const.js?v=122';
-import { DIMS } from '../dims.js?v=122';
-import { explode } from '../explosion.js?v=122';
-import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=122';
-import { EndFight, gatewayBlocks } from './endfight.js?v=122';
-import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=122';
-import { mix32, rng } from '../noise.js?v=122';
-import { portalSwirl } from './art.js?v=122';
+import { B, BLOCKS } from '../blocks.js?v=123';
+import { Y0 } from '../world-const.js?v=123';
+import { DIMS } from '../dims.js?v=123';
+import { explode } from '../explosion.js?v=123';
+import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=123';
+import { EndFight, gatewayBlocks } from './endfight.js?v=123';
+import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=123';
+import { mix32, rng } from '../noise.js?v=123';
+import { portalSwirl } from './art.js?v=123';
 const THREE = window.THREE;
 
 const E = y => y - Y0;                     // world y -> engine y
@@ -434,12 +434,31 @@ export class Realms {
   useAir(id) {
     const d = BLOCKS[id] || {};
     if (d.use !== 'eye' || this.dim !== 'overworld') return false;
-    const g = this.game, p = g.player;
-    const t = nearestStronghold(g.entry.seed | 0, p.pos.x, p.pos.z);
-    if (!t) return false;
-    const e = new EyeOfEnder(this, t, Math.random() >= 0.2);
-    this.add(e.at(p.pos.x, p.pos.y + p.eyeH - 0.1, p.pos.z));
-    this.usedItem(id);
+    const g = this.game, p = g.player, w = this.world;
+    const fly = t => {
+      const e = new EyeOfEnder(this, t, Math.random() >= 0.2);
+      this.add(e.at(p.pos.x, p.pos.y + p.eyeH - 0.1, p.pos.z));
+      this.usedItem(id);
+    };
+    /* The world's own strongholds, from the workers that hold its generator (struct/starts.js nearest, what
+       /locate uses), so the eye leads to the one that is really built. The last answer is kept while you stay
+       within 48 blocks of where it was asked from; a new one is asked for otherwise and the eye thrown when it
+       comes, if the eye is still in the hand. A world with no strongholds throws nothing, as the game. */
+    const k = this.eyeAt;
+    if (k && k.w === w && Math.hypot(k.px - p.pos.x, k.pz - p.pos.z) < 48) { if (k.t) fly(k.t); return !!k.t; }
+    if (this.eyeAsk || !w || !w.ask) return true;
+    this.eyeAsk = true;
+    const px = p.pos.x, pz = p.pos.z;
+    w.ask({ type: 'structures', op: 'locate', kind: 'stronghold', x: Math.floor(px), z: Math.floor(pz) }).then(m => {
+      this.eyeAsk = false;
+      if (this.world !== w || this.game !== g) return;
+      const f = m && m.found;
+      // the stronghold's starting stairs (struct/stronghold.js starts its pieces at +2, +2 of the chunk)
+      const t = f ? { x: f.x + 2.5, z: f.z + 2.5 } : null;
+      this.eyeAt = { w, px, pz, t };
+      const h = g.hands && g.hands.held;
+      if (t && this.dim === 'overworld' && h && BLOCKS[h.id] && BLOCKS[h.id].use === 'eye') fly(t);
+    }, () => { this.eyeAsk = false; });
     return true;
   }
   // a left click: the nearest entity part on the view ray within reach, if nearer than the block
