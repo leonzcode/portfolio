@@ -1070,6 +1070,60 @@
         /* IMPROVED ANIMATIONS */
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
         .shake-effect { animation: shake 0.3s; }
+
+        /* ===== ONLINE 1v1 ===== */
+        .duel-open-btn {
+            margin-top: 14px; padding: 9px 24px; pointer-events: auto; cursor: pointer;
+            background: linear-gradient(180deg, #4fd470, #2ba448);
+            border: 3px solid rgba(255,255,255,0.85); border-radius: 14px;
+            color: #fff; font-family: 'Bungee', cursive; font-size: 15px; letter-spacing: 1px;
+            box-shadow: 0 4px 0 #0a3d1a, 0 6px 14px rgba(0,0,0,0.4);
+        }
+        .duel-open-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #0a3d1a; }
+        #duel-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.75); z-index: 999;
+            display: none; justify-content: center; align-items: center;
+            pointer-events: auto; backdrop-filter: blur(4px);
+        }
+        #duel-overlay.open { display: flex; }
+        .duel-line { color: #ccdaee; font-size: 13px; font-weight: 800; text-align: center; margin-bottom: 8px; line-height: 1.4; }
+        .duel-sub { color: rgba(255,255,255,0.45); font-size: 11px; font-weight: 700; text-align: center; line-height: 1.4; }
+        .duel-err { color: #ff8a80; font-size: 12px; font-weight: 800; text-align: center; min-height: 4px; margin: 4px 0 8px; }
+        .duel-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+        .duel-btn {
+            flex: 1; padding: 10px; cursor: pointer;
+            background: linear-gradient(180deg, #3d8bff, #2266dd);
+            border: 2px solid rgba(255,255,255,0.3); border-radius: 10px;
+            color: #fff; font-weight: 900; font-size: 13px; font-family: 'Nunito', sans-serif;
+            box-shadow: 0 3px 0 #0a2a6a;
+        }
+        .duel-btn:disabled, .settings-close-btn:disabled { opacity: 0.45; cursor: default; }
+        .duel-code-in {
+            width: 90px; background: rgba(255,255,255,0.08); color: #fff;
+            border: 1.5px solid rgba(255,255,255,0.15); border-radius: 8px;
+            padding: 9px 8px; font-size: 15px; font-weight: 900; outline: none;
+            text-align: center; text-transform: uppercase; letter-spacing: 3px; font-family: 'Nunito', sans-serif;
+        }
+        .duel-code { font-family: 'Bungee', cursive; font-size: 34px; color: #ffd700; text-align: center; letter-spacing: 6px; margin: 4px 0 8px; }
+        .duel-top-row {
+            display: flex; justify-content: space-between; gap: 8px;
+            font-size: 12px; color: #ccdaee; font-weight: 800;
+            padding: 4px 10px; margin-bottom: 3px;
+            background: rgba(255,255,255,0.04); border-radius: 8px;
+        }
+        .duel-top-row.me { color: #ffd700; }
+        #duel-banner {
+            position: absolute; top: 52px; left: 50%; transform: translateX(-50%);
+            padding: 3px 12px; border-radius: 12px; max-width: 70%;
+            background: rgba(0,0,0,0.6); color: #fff;
+            font-size: 12px; font-weight: 800; text-align: center;
+            pointer-events: none; display: none;
+        }
+        #duel-banner.warn { background: rgba(170,30,30,0.9); }
+        #duel-end-btns { display: none; flex-direction: column; align-items: center; gap: 12px; }
+        #duel-end-note { color: rgba(255,255,255,0.75); font-size: 13px; font-weight: 700; text-align: center; max-width: 80%; }
+        #duel-end-btns .ok-btn:disabled { opacity: 0.5; }
     </style>
 </head>
 <body>
@@ -1140,6 +1194,8 @@
                             </div>
                         </div>
                     </div>
+
+                    <button id="duel-open" class="duel-open-btn" onclick="duelOpenPanel()">Online 1v1</button>
                 </div>
             </div>
 
@@ -1309,6 +1365,7 @@
             <div id="home-btn" onclick="returnToMenu()">
                 <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
             </div>
+            <div id="duel-banner"></div>
         </div>
         <div id="game-status"></div>
         <div id="bottom-dock-container">
@@ -1441,6 +1498,40 @@
             </div>
 
             <button class="updates-close-btn" onclick="closeUpdates()">Let's Go!</button>
+        </div>
+    </div>
+
+    <!-- ONLINE 1v1 (kept away from the end screen above: an unclosed SVG path there swallows markup up to the next quote) -->
+    <div id="duel-overlay" onclick="if(event.target===this)duelClosePanel()">
+        <div class="settings-panel">
+            <div class="settings-title">Online 1v1</div>
+            <div id="duel-me" class="duel-line">Connecting...</div>
+            <div id="duel-err" class="duel-err"></div>
+            <div id="duel-home">
+                <button id="duel-find" class="settings-close-btn" style="margin-top:0;" onclick="duelFind()">Find match</button>
+                <div class="duel-sub" style="margin:8px 0 16px;">Public matches win or lose online trophies.</div>
+                <div class="settings-group-label">Private room (no trophies)</div>
+                <div class="duel-row">
+                    <button id="duel-make" class="duel-btn" onclick="duelMakeRoom()">Create room</button>
+                </div>
+                <div class="duel-row">
+                    <input id="duel-code-in" class="duel-code-in" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter')duelJoinRoom()">
+                    <button id="duel-join" class="duel-btn" onclick="duelJoinRoom()">Join room</button>
+                </div>
+                <div class="settings-group-label" style="margin-top:14px;">Top players</div>
+                <div id="duel-top"><div class="duel-sub">Loading...</div></div>
+            </div>
+            <div id="duel-wait" style="display:none;">
+                <div id="duel-wait-text" class="duel-line">Looking for a player...</div>
+                <div id="duel-code" class="duel-code" style="display:none;"></div>
+                <div id="duel-wait-sub" class="duel-sub" style="margin-bottom:12px;"></div>
+                <div id="duel-lonely" style="display:none; margin-bottom: 6px;">
+                    <div class="duel-sub" style="margin-bottom:8px;">Nobody else is looking for a match right now.</div>
+                    <button id="duel-bot" class="duel-btn" style="width:100%;" onclick="duelPlayBot()">Play the bot instead (no trophies)</button>
+                </div>
+                <div class="settings-danger-btn" style="text-align:center;" onclick="duelCancel()">Cancel</div>
+            </div>
+            <button class="settings-close-btn" onclick="duelClosePanel()">Close</button>
         </div>
     </div>
 </div>
@@ -2749,18 +2840,20 @@ class Game {
         CTX.fillRect(CANVAS.width - 18, 0, 3, CANVAS.height);
         
         // TOWER BASES (circles on ground)
+        // (an online guest's turned-round view puts its towers elsewhere: towerBases)
+        let tb = this.towerBases || { blueP: 610, blueK: 700, redP: 170, redK: 135 };
         CTX.save();
         CTX.globalAlpha = 0.4;
         // Blue tower bases
         CTX.fillStyle = '#2244aa';
-        CTX.beginPath(); CTX.ellipse(CONSTANTS.LANE_LEFT, 610, 40, 20, 0, 0, Math.PI * 2); CTX.fill();
-        CTX.beginPath(); CTX.ellipse(CONSTANTS.LANE_RIGHT, 610, 40, 20, 0, 0, Math.PI * 2); CTX.fill();
-        CTX.beginPath(); CTX.ellipse(CONSTANTS.CENTER_X, 700, 50, 25, 0, 0, Math.PI * 2); CTX.fill();
+        CTX.beginPath(); CTX.ellipse(CONSTANTS.LANE_LEFT, tb.blueP, 40, 20, 0, 0, Math.PI * 2); CTX.fill();
+        CTX.beginPath(); CTX.ellipse(CONSTANTS.LANE_RIGHT, tb.blueP, 40, 20, 0, 0, Math.PI * 2); CTX.fill();
+        CTX.beginPath(); CTX.ellipse(CONSTANTS.CENTER_X, tb.blueK, 50, 25, 0, 0, Math.PI * 2); CTX.fill();
         // Red tower bases
         CTX.fillStyle = '#aa2222';
-        CTX.beginPath(); CTX.ellipse(CONSTANTS.LANE_LEFT, 170, 40, 20, 0, 0, Math.PI * 2); CTX.fill();
-        CTX.beginPath(); CTX.ellipse(CONSTANTS.LANE_RIGHT, 170, 40, 20, 0, 0, Math.PI * 2); CTX.fill();
-        CTX.beginPath(); CTX.ellipse(CONSTANTS.CENTER_X, 135, 50, 25, 0, 0, Math.PI * 2); CTX.fill();
+        CTX.beginPath(); CTX.ellipse(CONSTANTS.LANE_LEFT, tb.redP, 40, 20, 0, 0, Math.PI * 2); CTX.fill();
+        CTX.beginPath(); CTX.ellipse(CONSTANTS.LANE_RIGHT, tb.redP, 40, 20, 0, 0, Math.PI * 2); CTX.fill();
+        CTX.beginPath(); CTX.ellipse(CONSTANTS.CENTER_X, tb.redK, 50, 25, 0, 0, Math.PI * 2); CTX.fill();
         CTX.restore();
 
         this.entities.filter(e => e.type !== 'effect').forEach(e => e.draw(CTX));
@@ -3682,6 +3775,1017 @@ function loop() {
 }
 
 loop();
+</script>
+<script>
+/* ===== ONLINE 1v1 =====
+   Two people on different computers play one match. One page (the host, picked
+   by the server at random and swapped on a rematch) runs the real Game with the
+   bot switched off. The other page (the guest) sends its card plays (hand slot,
+   card and spot) to the host, which checks each against the guest's hand, elixir
+   and deploy zone and plays it for the red side. The host sends a compact
+   snapshot 15 times a second; the guest draws it a little behind, eased between
+   snapshots and turned round, so each player has their own towers at the bottom
+   and in blue. A full lockstep was not used: the game steps a fixed dt per drawn
+   frame, calls Math.random in its spawns and uses Math.sin/atan2/hypot, which do
+   not have to give the same last bits in every browser.
+   The server (mlhub apps/mc/clashduel.js) pairs players, relays and keeps the
+   online trophies. Single player is untouched: nothing here runs, and no socket
+   is opened, until "Online 1v1" is used (or a match is being rejoined). */
+(function () {
+'use strict';
+const DUEL = {
+    STEP_MS: 1000 / 60,     // the host runs 60 game steps a real second, as single player does on a 60 Hz screen
+    SNAP_EVERY: 4,          // a snapshot every 4 steps: 15 a second
+    DELAY_MS: 120,          // the guest draws this far behind the newest snapshot
+    RIVER: CONSTANTS.RIVER_Y,
+    K: 265 / 300,           // guest view: host y -> 400 + (400 - y) * K, which puts the host's king where the red king stands
+    RED_BACK: 15,           // the red (guest) side's deploy lines in the host's world,
+    RED_BASE: 360,          //   mirrored from blue's: 820 (dock), 440 (own half) and 215 (pocket)
+    RED_POCKET: 565,
+    SAVE_MS: 1000,          // the host keeps its match in localStorage this often, to come back after a reload
+    PING_MS: 2000,
+};
+const ABS = () => performance.timeOrigin + performance.now();   // one clock for all pages on a machine (tests)
+const $ = id => document.getElementById(id);
+const V = y => DUEL.RIVER + (DUEL.RIVER - y) * DUEL.K;          // host y -> guest view y
+const H = y => DUEL.RIVER - (y - DUEL.RIVER) / DUEL.K;          // guest view y -> host y
+const hasCard = k => typeof k === 'string' && Object.prototype.hasOwnProperty.call(CARDS, k);
+
+const D = {
+    ws: null, url: '', http: '', connected: false, want: false, retries: 0, retryTimer: 0,
+    tok: '', pid: '', me: null, online: 0, grace: 30000,
+    phase: 'off',           // off | connecting | idle | queue | pwait | match | over
+    err: '', code: '', lonely: false, queueAt: 0, top: null, resuming: false,
+    mid: 0, role: '', ranked: false, opp: null, oppAway: false, awaySince: 0,
+    result: null, overMsg: null, reported: false, rematchAsked: false, rematchOffer: false, noRematch: false, endShown: false,
+    // host
+    needFull: true, hist: [], hreg: new Map(),
+    // guest
+    snaps: [], reg: new Map(), preg: new Map(), ghosts: new Map(), pghosts: new Map(), effects: [], fxq: [],
+    pending: [], seq: 0, ack: 0, hand: null, queue: null, relixir: 5, relixirAt: 0, em: 1,
+    est: null, samples: [], marks: [], renderRt: 0, lastNeed: 0, lastPing: 0, lastMark: 0, rtt: 0, sawOT: false, sawEm: 1, overSnap: null, handSig: '',
+    playOfId: new Map(), logBySeq: new Map(),
+    stats: { up: 0, down: 0, upN: 0, downN: 0, dUp: 0, dDown: 0, dUpN: 0, dDownN: 0 },
+    log: [],
+};
+
+/* ---------------- the connection ---------------- */
+function isLocal() { const h = location.hostname; return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]'; }
+function duelUrl() {
+    let u = 'wss://apps.leonzhao.dev/mc/ws';
+    // a test server, only from a page served on this machine
+    try { const mp = new URLSearchParams(location.search).get('mp'); if (mp && isLocal() && /^wss?:\/\/[^\s]+$/.test(mp)) u = mp; } catch (e) {}
+    return u + (u.indexOf('?') < 0 ? '?' : '&') + 'mode=clashduel';
+}
+function httpBase(u) { const m = /^ws(s?):\/\/([^\/?#]+)/.exec(u); return m ? 'http' + m[1] + '://' + m[2] : ''; }
+function token() {
+    let t = '';
+    try { t = localStorage.getItem('clashDuelTok') || ''; } catch (e) {}
+    if (!/^[0-9a-f]{32}$/.test(t)) {
+        const b = new Uint8Array(16); crypto.getRandomValues(b);
+        t = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+        try { localStorage.setItem('clashDuelTok', t); } catch (e) {}
+    }
+    return t;
+}
+function connect() {
+    D.want = true;
+    if (D.ws && (D.ws.readyState === 0 || D.ws.readyState === 1)) return;
+    clearTimeout(D.retryTimer);
+    D.url = duelUrl(); D.http = httpBase(D.url);
+    if (D.phase === 'off') D.phase = 'connecting';
+    let ws;
+    try { ws = new WebSocket(D.url); } catch (e) { retry(); return; }
+    D.ws = ws;
+    ws.onopen = function () {
+        if (D.ws !== ws) return;
+        D.connected = true; D.retries = 0;
+        D.tok = token();
+        send({ t: 'hello', tok: D.tok, name: gameSettings.playerName || 'Player' });
+    };
+    ws.onmessage = function (ev) {
+        if (D.ws !== ws) return;
+        const s = typeof ev.data === 'string' ? ev.data : '';
+        D.stats.down += s.length; D.stats.downN++;
+        let m; try { m = JSON.parse(s); } catch (e) { return; }
+        if (!m || typeof m !== 'object') return;
+        if (m.t === 'd') { D.stats.dDown += s.length; D.stats.dDownN++; }
+        try { onMsg(m); } catch (e) { console.error('online message', e); }
+    };
+    ws.onclose = function () {
+        if (D.ws !== ws) return;
+        D.ws = null; D.connected = false;
+        if (D.phase === 'queue' || D.phase === 'pwait') { D.phase = 'idle'; D.err = 'Lost the connection to the server.'; }
+        if (D.want) retry();
+        renderPanel();
+    };
+    ws.onerror = function () {};
+}
+function retry() {
+    clearTimeout(D.retryTimer);
+    D.retries++;
+    const inMatch = D.phase === 'match';
+    if ((!inMatch && D.retries > 5) || D.retries > 90) {
+        D.want = false;
+        if (inMatch && G && G.online) lostMatch('Could not reach the game server again.');
+        D.phase = 'off'; D.err = 'Could not reach the game server. Try again in a moment.';
+        renderPanel();
+        return;
+    }
+    D.retryTimer = setTimeout(connect, Math.min(3000, 800 + D.retries * 400));
+}
+function send(obj) {
+    const ws = D.ws;
+    if (!ws || ws.readyState !== 1) return false;
+    const s = JSON.stringify(obj);
+    D.stats.up += s.length; D.stats.upN++;
+    if (obj.t === 'd') { D.stats.dUp += s.length; D.stats.dUpN++; }
+    try { ws.send(s); } catch (e) { return false; }
+    return true;
+}
+function sendD(d) { return send({ t: 'd', d: d }); }
+setInterval(function () { if (D.connected && D.phase !== 'match') send({ t: 'ping', c: 0 }); }, 25000);
+
+function onMsg(m) {
+    switch (m.t) {
+        case 'hi':
+            D.me = m.me; D.pid = m.pid || ''; D.online = m.online | 0; D.grace = m.grace || 30000;
+            if (D.phase === 'off' || D.phase === 'connecting') D.phase = 'idle';
+            if (!m.inMatch) {
+                clearMarker();
+                if (G && G.online && D.phase === 'match' && !D.overMsg) lostMatch('The match ended while this page was offline.');
+                else if (D.resuming) { D.err = 'Your last online match ended while you were away.'; duelOpenPanel(); }
+                D.resuming = false;
+            }
+            fetchTop(); renderPanel();
+            return;
+        case 'queued': D.phase = 'queue'; D.queueAt = Date.now(); D.lonely = false; D.err = ''; renderPanel(); return;
+        case 'lonely': if (D.phase === 'queue') { D.lonely = true; renderPanel(); } return;
+        case 'cancelled': if (D.phase === 'queue' || D.phase === 'pwait') D.phase = 'idle'; renderPanel(); return;
+        case 'pcode': D.phase = 'pwait'; D.code = m.code; D.err = ''; renderPanel(); return;
+        case 'perr': D.err = m.e === 'That deck is not allowed' ? deckWords() : (m.e || 'Could not join that room.'); renderPanel(); return;
+        case 'closed': if (D.phase === 'queue' || D.phase === 'pwait') D.phase = 'idle'; D.err = m.e || ''; renderPanel(); return;
+        case 'err':
+            D.err = m.e === 'That deck is not allowed' ? deckWords() : (m.e || 'Something went wrong.');
+            if (m.e === 'You opened the match somewhere else' && G && G.online) lostMatch('You opened this match in another tab, so it stopped here.');
+            if (D.phase === 'queue' && /full/.test(D.err)) D.phase = 'idle';
+            renderPanel();
+            return;
+        case 'match': startMatch(m); return;
+        case 'd': onData(m.d); return;
+        case 'away': D.oppAway = true; D.awaySince = Date.now(); if (m.grace) D.grace = m.grace; banner(); return;
+        case 'back':
+            D.oppAway = false;
+            if (D.role === 'host') D.needFull = true; else sendD({ need: 1 });
+            banner();
+            return;
+        case 'over': onOver(m); return;
+        case 'rematch': D.rematchOffer = true; renderEndButtons(); return;
+        case 'nore': D.noRematch = true; renderEndButtons(); return;
+    }
+}
+function deckWords() { return 'Your deck needs 8 different cards. Change it in the Cards tab.'; }
+
+/* ---------------- shared rules ---------------- */
+// Where the red (guest) side may put a card, in the host's world: blue's rules turned round the river.
+function redValid(key, hx, hy, blueLeftAlive, blueRightAlive) {
+    if (!hasCard(key)) return false;
+    if (!(hx >= 0 && hx <= GAME_W && hy >= 0 && hy <= GAME_H)) return false;
+    const s = CARDS[key];
+    if (s.globalDeploy) return true;
+    if (hy < DUEL.RED_BACK) return false;
+    if (s.type === 'troop') {
+        if (hy < DUEL.RED_BASE) return true;
+        if (!blueLeftAlive && hx < CONSTANTS.CENTER_X && hy < DUEL.RED_POCKET) return true;
+        if (!blueRightAlive && hx > CONSTANTS.CENTER_X && hy < DUEL.RED_POCKET) return true;
+        return false;
+    }
+    if (s.type === 'building') return hy <= CONSTANTS.RIVER_Y;
+    return false;
+}
+// The same spawning deployCard does for blue, for either side.
+function deployFor(g, team, key, x, y) {
+    const stats = CARDS[key];
+    const kTower = g.entities.find(e => e.team === team && e.isKing);
+    const sx = kTower ? kTower.x : CONSTANTS.CENTER_X, sy = kTower ? kTower.y : (team === 'blue' ? 800 : 135);
+    if (stats.type === 'spell' && (key === 'goblinbarrel' || key === 'rocket')) {
+        const p = new Projectile(sx, sy, null, key, team);
+        p.targetPos = { x: x, y: y }; p.damage = stats.dmg; p.radius = stats.radius;
+        p.stunDuration = stats.stunDuration || 0; p.speed = (key === 'goblinbarrel') ? 400 : 250;
+        g.projectiles.push(p);
+    } else if (stats.type === 'spell') {
+        const p = new Projectile(x, y, null, key, team);
+        p.targetPos = { x: x, y: y }; p.damage = stats.dmg; p.radius = stats.radius;
+        p.stunDuration = stats.stunDuration || 0;
+        g.createSpellEffect(p, x, y);
+    } else if (stats.type === 'building') {
+        const u = new Entity(team, key, x, y);
+        g.applyStats(u, stats); u.isBuilding = true;
+        g.entities.push(u);
+    } else {
+        for (let i = 0; i < stats.count; i++) {
+            const ox = (i * 20) - (stats.count - 1) * 10;
+            const u = new Entity(team, key, x + ox, y);
+            g.applyStats(u, stats);
+            g.entities.push(u);
+        }
+    }
+}
+// Crowns a side took, the way the end screen counts them.
+function crownsOf(ents, winTeam) {
+    const lose = winTeam === 'blue' ? 'red' : 'blue';
+    if (!ents.some(e => e.team === lose && e.isKing && e.hp > 0)) return 3;
+    return Math.max(1, 3 - ents.filter(e => e.team === lose && e.isBuilding && e.hp > 0).length);
+}
+function cleanDeck(d) {
+    if (Array.isArray(d) && d.length === 8 && new Set(d).size === 8 && d.every(hasCard)) return d.slice();
+    return defaultDeck.slice();
+}
+function r1(v) { return Math.round(v * 10) / 10; }
+function r3(v) { return Math.round(v * 1000) / 1000; }
+function showGameUI() {
+    $('menu-layer').style.display = 'none';
+    $('game-ui-layer').style.display = 'flex';
+    $('end-screen').style.display = 'none';
+    hideDuelEnd();
+    resizeGame();
+}
+// The online end screen's own buttons, made here rather than written in the HTML: an unclosed SVG path
+// in the end screen's OK button swallows the markup after it up to the next quote, and anything added
+// there changes how the rest of the page (the settings panel) parses.
+(function makeEndButtons() {
+    const box = document.createElement('div');
+    box.id = 'duel-end-btns';
+    box.innerHTML = '<div id="duel-end-note"></div>' +
+        '<button id="duel-rematch" class="ok-btn"><span id="duel-rematch-text">Rematch</span></button>' +
+        '<button id="duel-back" class="ok-btn" style="background: linear-gradient(to bottom, #6f8299, #4a5b70); box-shadow: 0 6px 0 #212b38, 0 10px 15px rgba(0,0,0,0.4);"><span>Back</span></button>';
+    $('end-screen').appendChild(box);
+    $('duel-rematch').onclick = function () { window.duelRematch(); };
+    $('duel-back').onclick = function () { window.returnToMenu(); };
+    // (that same parse closes game-wrapper early, so the panel's markup lands in <body>: put it over the game)
+    $('game-wrapper').appendChild($('duel-overlay'));
+})();
+// what the single player end screen shows that the online one hides (its OK button, and the stray settings button the parse leaves there)
+function singleEndBits() { return Array.from(document.querySelectorAll('#end-screen > .ok-btn, #end-screen > .settings-close-btn')); }
+function writeMarker() { try { localStorage.setItem('clashDuelLive', JSON.stringify({ mid: D.mid, role: D.role, at: Date.now() })); } catch (e) {} }
+function clearMarker() { try { localStorage.removeItem('clashDuelLive'); } catch (e) {} }
+function clearSave() { try { localStorage.removeItem('clashDuelSave'); } catch (e) {} }
+
+/* ---------------- a match starts (or is rejoined) ---------------- */
+function startMatch(m) {
+    const same = !!(G && G.online && G.online.mid === m.mid && G.online.role === m.role);
+    D.phase = 'match'; D.mid = m.mid; D.role = m.role; D.ranked = !!m.ranked; D.opp = m.opp || { name: 'Opponent', tr: 0 };
+    if (m.me) D.me = Object.assign(D.me || {}, m.me);
+    D.oppAway = !!m.oppAway; D.awaySince = Date.now(); if (m.grace) D.grace = m.grace;
+    D.resuming = false; D.err = '';
+    if (!same) { D.result = null; D.overMsg = null; D.reported = false; D.endShown = false; D.rematchAsked = false; D.rematchOffer = false; D.noRematch = false; }
+    writeMarker();
+    closePanelQuiet();
+    if (m.role === 'host') {
+        if (same) { D.needFull = true; return; }
+        if (m.resume) {
+            if (!restoreHost(m)) {
+                send({ t: 'leave' });
+                clearMarker(); clearSave();
+                D.phase = 'idle';
+                D.err = 'This page could not bring the match back, so it counted as a loss.';
+                if (G && G.online) G = null;
+                baseReturn(); duelOpenPanel();
+            }
+            return;
+        }
+        newHost(m);
+    } else {
+        if (!same) newGuest(m);
+        sendD({ need: 1 });
+    }
+}
+
+/* ---------------- the host: runs the real Game ---------------- */
+function newHost(m) {
+    showGameUI();
+    G = new Game(userDeck, 'medium', 'normal');
+    hostify(G, m);
+    const od = cleanDeck(m.oppDeck);
+    G.botDeck = od.slice(); G.botHand = od.slice(0, 4); G.botQueue = od.slice(4); G.botElixir = 5;
+    saveHost(G);
+}
+function hostify(g, m) {
+    g.online = { role: 'host', mid: m.mid };
+    g.botNextMove = Infinity;                       // the bot never plays: the guest is the red side
+    g.diffSettings = DIFFICULTY_SETTINGS.medium;    // red elixir at the plain rate (medium's multiplier is 1)
+    g._rseq = 0; g._steps = 0; g._snapN = 0; g._nidSeq = 0; g._acc = 0; g._last = performance.now();
+    g._lastSnapStep = -99; g._hsig = ''; g._rej = []; g._savedAt = 0; g._over = null; g._overSent = false;
+    g.update = hostUpdate; g.end = hostEnd;
+    D.needFull = true; D.hist = []; D.hreg = new Map();
+}
+function hostUpdate() {
+    const g = this, t = performance.now();
+    const dt = t - g._last; g._last = t;
+    // the match runs only while this page is connected: the guest cannot see it otherwise
+    if (!g.gameOver && D.connected && D.phase === 'match') {
+        g._acc = Math.min(g._acc + Math.min(dt, 1000), 1500);
+        const cap = document.hidden ? 70 : 8;
+        let n = 0;
+        while (g._acc >= DUEL.STEP_MS && n < cap) {
+            Game.prototype.update.call(g);
+            g._acc -= DUEL.STEP_MS; g._steps++; n++;
+            if (g.gameOver) break;
+        }
+        if (g.gameOver) { if (g._over && !g._overSent) hostFinish(g); }
+        else if (D.needFull || g._steps - g._lastSnapStep >= DUEL.SNAP_EVERY) sendSnap(g);
+    }
+    // (the latency log: the guest's plays applied since the last frame are drawn now)
+    for (let i = D.log.length - 1; i >= 0 && i >= D.log.length - 20; i--) { const L = D.log[i]; if (L.hostApplyAt && !L.hostDrawAt) L.hostDrawAt = ABS(); }
+    if (!g.gameOver && D.phase === 'match' && t - g._savedAt > DUEL.SAVE_MS) saveHost(g);
+    banner();
+}
+function hostEnd(res) {
+    if (this.gameOver) return;
+    this.gameOver = true;
+    const w = res === 'BLUE WINS!' ? 'host' : res === 'RED WINS!' ? 'guest' : 'draw';
+    this._over = { w: w, c: [w === 'host' ? crownsOf(this.entities, 'blue') : 0, w === 'guest' ? crownsOf(this.entities, 'red') : 0] };
+    // the last snapshot is taken now, in the step that ended the match, so the guest reads the same towers
+    sendSnap(this, Math.round((this._steps + 1) * DUEL.STEP_MS));
+}
+function hostFinish(g) {
+    g._overSent = true;
+    if (!D.overMsg) { send({ t: 'result', w: g._over.w }); D.reported = true; }
+    D.result = { w: g._over.w, crowns: g._over.c[0] };
+    clearSave();
+    showEnd();
+}
+function hostPlay(p) {
+    const g = G;
+    if (!g || !g.online || g.online.role !== 'host' || g.gameOver) return;
+    if (!Array.isArray(p) || p.length !== 5) return;
+    const seq = p[0], i = p[1], key = p[2], hx = p[3], hy = p[4];
+    if (typeof seq !== 'number' || !(seq > g._rseq)) return;
+    g._rseq = seq;
+    const L = { seq: seq, key: key, hostRecvAt: ABS() };
+    D.log.push(L); if (D.log.length > 300) D.log.shift();
+    const no = why => { g._rej.push(seq); L.rejected = why; };
+    if (!Number.isInteger(i) || i < 0 || i > 3 || !hasCard(key) || g.botHand[i] !== key) return no('hand');
+    if (!Number.isFinite(hx) || !Number.isFinite(hy)) return no('spot');
+    const st = CARDS[key];
+    if (g.botElixir < st.cost) return no('elixir');
+    const left = g.entities.some(e => e.team === 'blue' && e.lane === 'left' && e.isBuilding && !e.isKing);
+    const right = g.entities.some(e => e.team === 'blue' && e.lane === 'right' && e.isBuilding && !e.isKing);
+    if (!redValid(key, hx, hy, left, right)) return no('spot');
+    g.botElixir -= st.cost;
+    deployFor(g, 'red', key, hx, hy);
+    const next = g.botQueue.shift(); g.botQueue.push(key); g.botHand[i] = next;
+    L.hostApplyAt = ABS();
+}
+function sendSnap(g, rtOverride) {
+    const full = D.needFull; D.needFull = false;
+    g._lastSnapStep = g._steps;
+    const e = [], p = [], nw = [], pn = [], fx = [];
+    for (const x of g.entities) {
+        if (x.type === 'effect') {
+            if (!x._dsent) {
+                x._dsent = true;
+                if (x.duration > 0 && isFinite(x.x) && isFinite(x.y)) fx.push([r1(x.x), r1(x.y), x.spellType, r1(x.radius || 0), r3(x.duration), r3(x.initialDuration || x.duration)]);
+            }
+            continue;
+        }
+        if (!(x.hp > 0) || !isFinite(x.x) || !isFinite(x.y)) continue;
+        if (!x._nid) x._nid = ++g._nidSeq;
+        if (full || !x._dsent) {
+            x._dsent = true;
+            nw.push([x._nid, x.type, x.sprite, x.team === 'blue' ? 0 : 1, Math.round(x.maxHp) || 1, x.radius,
+                     (x.isBuilding ? 1 : 0) | (x.isKing ? 2 : 0) | (x.isFlying ? 4 : 0), x.lane === 'left' ? 1 : x.lane === 'right' ? 2 : 0]);
+            D.hreg.set(x._nid, { type: x.type, team: x.team });
+        }
+        let f = 0;
+        if (x.stunTimer > 0) f |= 1;
+        if (x.slowTimer > 0) f |= 2;
+        if (x.isCharging) f |= 4;
+        if (x.isThrown) f |= 8;
+        if (x.active) f |= 16;
+        const a = x.isThrown ? Math.round(x.throwProgress * 100) : (x.isBuilding && !x.isKing && x.lifetime > 0 ? Math.round(x.lifetime * 10) : 0);
+        e.push(x._nid, Math.round(x.x), Math.round(x.y), Math.ceil(x.hp), f, a);
+    }
+    for (const q of g.projectiles) {
+        if (!q.active || !isFinite(q.x) || !isFinite(q.y)) continue;
+        if (!q._nid) q._nid = ++g._nidSeq;
+        if (full || !q._dsent) { q._dsent = true; pn.push(q._nid, q.type); }
+        p.push(q._nid, Math.round(q.x), Math.round(q.y));
+    }
+    const s = { n: ++g._snapN, rt: rtOverride || Math.round(g._steps * DUEL.STEP_MS), tl: Math.round(g.timeLeft * 10), ot: g.isOvertime ? 1 : 0,
+                em: g.elapsedTime >= 240 ? 3 : g.elapsedTime >= 120 ? 2 : 1, re: Math.round(g.botElixir * 100), ack: g._rseq, e: e, p: p };
+    if (nw.length) s.nw = nw;
+    if (pn.length) s.pn = pn;
+    if (fx.length) s.fx = fx;
+    const hs = g.botHand.join(',') + '|' + g.botQueue.join(',');
+    if (full || hs !== g._hsig) { g._hsig = hs; s.h = g.botHand.slice(); s.q = g.botQueue.slice(); }
+    if (full) s.full = 1;
+    if (g._rej.length) { s.rej = g._rej; g._rej = []; }
+    if (g._over) s.over = g._over;
+    sendD({ s: s });
+    D.hist.push({ rt: s.rt, e: e, p: p }); if (D.hist.length > 90) D.hist.shift();
+}
+// The host's match in localStorage, so a reloaded page can carry on with it.
+const GFIELDS = ['t', 'timeLeft', 'elapsedTime', 'isOvertime', 'doubleElixir', 'gameOver', 'hasTriggered2x', 'hasTriggered3x', 'elixir', 'botElixir',
+                 'myDeck', 'hand', 'queue', 'botDeck', 'botHand', 'botQueue', '_nidSeq', '_rseq', '_steps', '_snapN'];
+function pack(o) {
+    const out = {};
+    for (const k in o) {
+        if (!Object.prototype.hasOwnProperty.call(o, k) || k === '_dsent') continue;
+        const v = o[k];
+        if (k === 'target' || k === 'jumpTarget') { out[k] = v && v._nid ? v._nid : 0; continue; }
+        if (k === 'targetPos') { out[k] = v ? { x: v.x, y: v.y } : null; continue; }
+        if (typeof v === 'number') out[k] = isFinite(v) ? v : (v > 0 ? 1e15 : v < 0 ? -1e15 : 0);
+        else if (v === null || typeof v === 'string' || typeof v === 'boolean') out[k] = v;
+        else if (Array.isArray(v)) out[k] = v.slice();
+    }
+    return out;
+}
+function saveHost(g) {
+    g._savedAt = performance.now();
+    try {
+        for (const x of g.entities) if (!x._nid) x._nid = ++g._nidSeq;
+        for (const q of g.projectiles) if (!q._nid) q._nid = ++g._nidSeq;
+        const st = { g: {}, e: g.entities.map(x => [x instanceof SpellEffect ? 'S' : 'E', pack(x)]), p: g.projectiles.map(pack) };
+        for (const k of GFIELDS) st.g[k] = Array.isArray(g[k]) ? g[k].slice() : g[k];
+        localStorage.setItem('clashDuelSave', JSON.stringify({ mid: D.mid, at: Date.now(), st: st }));
+    } catch (e) {}
+    writeMarker();
+}
+function restoreHost(m) {
+    let sv = null;
+    try { sv = JSON.parse(localStorage.getItem('clashDuelSave') || 'null'); } catch (e) {}
+    if (!sv || sv.mid !== m.mid || !sv.st || !Array.isArray(sv.st.e)) return false;
+    showGameUI();
+    const g = new Game(userDeck, 'medium', 'normal');
+    hostify(g, m);
+    const st = sv.st;
+    for (const k of GFIELDS) if (k in st.g) g[k] = st.g[k];
+    const byId = new Map();
+    g.entities = st.e.map(function (pair) {
+        const o = pair[1];
+        const x = pair[0] === 'S' ? new SpellEffect(o.x, o.y, o.spellType, o.radius, o.duration) : new Entity(o.team, o.type, o.x, o.y);
+        Object.assign(x, o); x.target = null; x.jumpTarget = null;
+        byId.set(x._nid, [x, o]);
+        return x;
+    });
+    g.projectiles = (st.p || []).map(function (o) {
+        const q = new Projectile(o.x, o.y, null, o.type, o.team);
+        Object.assign(q, o); q.target = null;
+        byId.set(q._nid, [q, o]);
+        return q;
+    });
+    for (const [, pair] of byId) {
+        const x = pair[0], o = pair[1];
+        if (o.target && byId.has(o.target)) x.target = byId.get(o.target)[0];
+        if (o.jumpTarget && byId.has(o.jumpTarget)) x.jumpTarget = byId.get(o.jumpTarget)[0];
+    }
+    g.gameOver = false;
+    G = g;
+    g._last = performance.now(); g._acc = 0;
+    D.needFull = true;
+    renderHand();
+    return true;
+}
+
+/* ---------------- the guest: draws the host's match ---------------- */
+function newGuest(m) {
+    showGameUI();
+    const deck = cleanDeck(m.deck);
+    const g = Object.create(Game.prototype);
+    Object.assign(g, {
+        t: 0, dt: 0.016, entities: [], projectiles: [], gameMode: 'normal', elixir: 5, maxElixir: 10,
+        timeLeft: CONSTANTS.GAME_DURATION, isOvertime: false, gameOver: false,
+        input: { cardIdx: -1, isDragging: false, x: 0, y: 0, valid: false },
+        hand: deck.slice(0, 4), queue: deck.slice(4), myDeck: deck.slice(),
+        // our own towers are the host's red ones, turned round to the bottom
+        towerBases: { blueP: V(170), blueK: V(135), redP: V(610), redK: V(700) },
+    });
+    g.online = { role: 'guest', mid: m.mid };
+    g.update = guestUpdate; g.deployCard = guestDeploy; g.checkDeployValidity = guestValid; g.end = function () {};
+    g.draw = guestDraw;
+    D.marks = [];
+    D.snaps = []; D.reg = new Map(); D.preg = new Map(); D.ghosts = new Map(); D.pghosts = new Map(); D.effects = []; D.fxq = [];
+    D.pending = []; D.seq = Math.max(D.seq, Date.now()); D.ack = 0; D.hand = deck.slice(0, 4); D.queue = deck.slice(4);
+    D.relixir = 5; D.relixirAt = performance.now(); D.em = 1;
+    D.est = null; D.samples = []; D.renderRt = 0; D.sawOT = false; D.sawEm = 1; D.overSnap = null; D.handSig = ''; D.playOfId = new Map();
+    G = g;
+    renderHand();
+}
+function guestUpdate() {
+    const now = performance.now();
+    this.t += this.dt;
+    if (!this.gameOver) guestFrame(this, now);
+    this.cleanupParticles();
+    banner();
+    if (D.phase === 'match' && D.connected) {
+        if (now - D.lastPing > DUEL.PING_MS) { D.lastPing = now; sendD({ pg: Math.round(now) }); }
+        if (now - D.lastMark > 2000) { D.lastMark = now; writeMarker(); }
+    }
+}
+// The game's own drawing, plus a faint copy of a card just dropped until its units arrive from the host.
+function guestDraw() {
+    Game.prototype.draw.call(this);
+    const now = performance.now();
+    D.marks = D.marks.filter(function (m) { const L = D.logBySeq.get(m.seq); return !(L && (L.guestDrawAt || L.rejected)) && now - m.at < 1200; });
+    for (const m of D.marks) {
+        const s = CARDS[m.key], img = s && SPRITES[s.sprite];
+        if (!img || s.type === 'spell') continue;
+        CTX.save(); CTX.globalAlpha = 0.45; CTX.drawImage(img, m.x - 25, m.y - 25, 50, 50); CTX.restore();
+    }
+}
+function onData(d) {
+    if (!d || typeof d !== 'object' || !G || !G.online) return;
+    if (G.online.role === 'host') {
+        if (Array.isArray(d.p)) hostPlay(d.p);
+        if (d.need) D.needFull = true;
+        if (typeof d.pg === 'number') sendD({ po: d.pg });
+        if (document.hidden) G.update();     // (a hidden tab's timers are slowed; messages still come in)
+    } else {
+        if (d.s && typeof d.s === 'object' && Array.isArray(d.s.e)) guestSnap(d.s);
+        if (typeof d.po === 'number') D.rtt = performance.now() - d.po;
+    }
+}
+function guestSnap(s) {
+    const now = performance.now();
+    const last = D.snaps[D.snaps.length - 1];
+    if (last && s.rt < last.rt) { D.snaps = []; D.samples = []; D.est = null; }    // the host carried on from its last save
+    if (s.full) { D.reg.clear(); D.preg.clear(); }
+    if (s.nw) for (const r of s.nw) D.reg.set(r[0], { type: r[1], sprite: r[2], team: r[3], maxHp: r[4], radius: r[5], flags: r[6], lane: r[7] });
+    if (s.pn) for (let i = 0; i + 1 < s.pn.length; i += 2) D.preg.set(s.pn[i], s.pn[i + 1]);
+    if (s.fx) for (const f of s.fx) D.fxq.push({ rt: s.rt, f: f });
+    if (Array.isArray(s.h) && Array.isArray(s.q)) { D.hand = s.h; D.queue = s.q; }
+    if (Array.isArray(s.rej)) for (const q of s.rej) { const L = D.logBySeq.get(q); if (L) L.rejected = 'host'; }
+    if (s.ack > D.ack) {
+        // our plays that just landed: tag their units, for the latency log
+        for (const pl of D.pending) {
+            if (pl.seq > s.ack) continue;
+            const L = D.logBySeq.get(pl.seq);
+            if (L && !L.ackAt) { L.ackAt = ABS(); if (s.nw) for (const r of s.nw) if (r[3] === 1 && r[1] === pl.key && !D.playOfId.has(r[0])) D.playOfId.set(r[0], L); }
+        }
+        D.ack = s.ack;
+    }
+    D.relixir = (s.re || 0) / 100; D.relixirAt = now; D.em = s.em || 1;
+    // the host's clock against ours: the quickest arrival of the last 1.5 s (late ones are only late)
+    D.samples.push([now, now - s.rt]);
+    while (D.samples.length && now - D.samples[0][0] > 1500) D.samples.shift();
+    let est = Infinity;
+    for (const smp of D.samples) if (smp[1] < est) est = smp[1];
+    D.est = est;
+    D.snaps.push(s);
+    if (D.snaps.length > 60) D.snaps.splice(0, D.snaps.length - 60);
+    if (s.over) D.overSnap = s;
+    for (let i = 0; i < s.e.length; i += 6) if (!D.reg.has(s.e[i])) { askFull(); break; }
+}
+function askFull() { const t = performance.now(); if (t - D.lastNeed > 800) { D.lastNeed = t; sendD({ need: 1 }); } }
+function indexOf(s, k, stride) {
+    const c = '_ix' + k;
+    if (s[c]) return s[c];
+    const m = new Map(), a = s[k] || [];
+    for (let i = 0; i < a.length; i += stride) m.set(a[i], i);
+    s[c] = m;
+    return m;
+}
+// the two snapshots either side of a host time, and how far between them
+function bracket(S, rt) {
+    let i0 = -1;
+    for (let i = S.length - 1; i >= 0; i--) if (S[i].rt <= rt) { i0 = i; break; }
+    if (i0 < 0) return { i0: 0, s0: S[0], s1: S[0], a: 0 };
+    const s0 = S[i0], s1 = S[i0 + 1] || s0;
+    const a = s1 === s0 || s1.rt <= s0.rt ? (s1 === s0 ? 0 : 1) : Math.min(1, Math.max(0, (rt - s0.rt) / (s1.rt - s0.rt)));
+    return { i0: i0, s0: s0, s1: s1, a: a };
+}
+function ghost(id, st) {
+    let gh = D.ghosts.get(id);
+    if (!gh) {
+        // drawn the other way round: our own (the host's red) side is blue here
+        gh = new Entity(st.team === 1 ? 'blue' : 'red', st.type, 0, 0);
+        gh.sprite = st.sprite; gh.maxHp = st.maxHp; gh.hp = st.maxHp; gh.radius = st.radius;
+        gh.isBuilding = !!(st.flags & 1); gh.isKing = !!(st.flags & 2); gh.isFlying = !!(st.flags & 4);
+        gh._id = id; gh._new = true;
+        D.ghosts.set(id, gh);
+    }
+    return gh;
+}
+function guestFrame(g, now) {
+    predict(g, now);
+    const S = D.snaps;
+    if (!S.length || D.est == null) { g.entities = D.effects.slice(); return; }
+    const rtNow = now - D.est - DUEL.DELAY_MS;
+    const b = bracket(S, rtNow), s0 = b.s0, s1 = b.s1, a = b.a;
+    if (b.i0 > 0) S.splice(0, b.i0);
+    D.renderRt = s0.rt + (s1.rt - s0.rt) * a;
+    const base = a >= 0.5 ? s1 : s0, other = base === s1 ? s0 : s1;
+    const oix = indexOf(other, 'e', 6);
+    const seen = new Set();
+    for (let i = 0; i < base.e.length; i += 6) {
+        const id = base.e[i], st = D.reg.get(id);
+        if (!st) continue;
+        let x = base.e[i + 1], y = base.e[i + 2];
+        const j = oix.get(id);
+        if (j !== undefined && other !== base) {
+            const ox = other.e[j + 1], oy = other.e[j + 2];
+            const x0 = base === s0 ? x : ox, y0 = base === s0 ? y : oy, x1 = base === s0 ? ox : x, y1 = base === s0 ? oy : y;
+            x = x0 + (x1 - x0) * a; y = y0 + (y1 - y0) * a;
+        }
+        const gh = ghost(id, st);
+        const nx = GAME_W - x, ny = V(y);
+        if (!gh._new && Math.abs(nx - gh.x) + Math.abs(ny - gh.y) > 0.3) gh.animOffset += 0.2;
+        gh.x = nx; gh.y = ny;
+        const hp = base.e[i + 3], f = base.e[i + 4], av = base.e[i + 5];
+        if (!gh._new && hp < gh.hp - 0.5) g.createDamageNumber(gh.x, gh.y, gh.hp - hp);
+        gh.hp = hp;
+        gh.stunTimer = f & 1 ? 1 : 0; gh.slowTimer = f & 2 ? 1 : 0;
+        gh.isCharging = !!(f & 4); gh.isThrown = !!(f & 8); gh.active = !!(f & 16);
+        gh.throwProgress = gh.isThrown ? av / 100 : 0;
+        if (gh.isBuilding && !gh.isKing) gh.lifetime = av / 10;
+        if (gh._new) { gh._new = false; const L = D.playOfId.get(id); if (L && !L.guestDrawAt) L.guestDrawAt = ABS(); }
+        seen.add(id);
+    }
+    for (const [id, gh] of D.ghosts) if (!seen.has(id)) { D.ghosts.delete(id); died(g, gh); }
+    const pix = indexOf(other, 'p', 3), pseen = new Set(), projs = [];
+    for (let i = 0; i < base.p.length; i += 3) {
+        const id = base.p[i], type = D.preg.get(id);
+        if (!type) continue;
+        let x = base.p[i + 1], y = base.p[i + 2];
+        const j = pix.get(id);
+        if (j !== undefined && other !== base) {
+            const ox = other.p[j + 1], oy = other.p[j + 2];
+            const x0 = base === s0 ? x : ox, y0 = base === s0 ? y : oy, x1 = base === s0 ? ox : x, y1 = base === s0 ? oy : y;
+            x = x0 + (x1 - x0) * a; y = y0 + (y1 - y0) * a;
+        }
+        let pg = D.pghosts.get(id);
+        if (!pg) { pg = new Projectile(0, 0, null, type, 'blue'); D.pghosts.set(id, pg); }
+        pg.x = GAME_W - x; pg.y = V(y);
+        pseen.add(id); projs.push(pg);
+    }
+    for (const id of Array.from(D.pghosts.keys())) if (!pseen.has(id)) D.pghosts.delete(id);
+    for (let k = 0; k < D.fxq.length; k++) { if (D.fxq[k].rt <= rtNow) { spawnFx(g, D.fxq[k].f); D.fxq.splice(k--, 1); } }
+    D.effects.forEach(fx => fx.update(g));
+    D.effects = D.effects.filter(fx => fx.duration > 0);
+    g.entities = Array.from(D.ghosts.values()).sort((p, q) => p.y - q.y).concat(D.effects);
+    g.projectiles = projs;
+    g.timeLeft = base.tl / 10; g.isOvertime = !!base.ot;
+    if (base.ot && !D.sawOT) { D.sawOT = true; showStatus('Sudden Death!'); }
+    const em = base.em || 1;
+    if (em > D.sawEm) { D.sawEm = em; showStatus(em >= 3 ? '3x Elixir!' : '2x Elixir!'); }
+    if (D.overSnap && D.renderRt >= D.overSnap.rt) guestEnd(g);
+}
+function died(g, gh) {
+    const rect = CANVAS.getBoundingClientRect();
+    const sx = rect.left + gh.x, sy = rect.top + gh.y;
+    if (gh.sprite === 'vishwahut') {
+        for (let i = 0; i < 5; i++) {
+            const poof = document.createElement('div');
+            poof.className = 'poof';
+            const size = 30 + Math.random() * 30;
+            poof.style.width = size + 'px'; poof.style.height = size + 'px';
+            poof.style.left = (sx - size / 2 + (Math.random() * 40 - 20)) + 'px';
+            poof.style.top = (sy - size / 2 + (Math.random() * 40 - 20)) + 'px';
+            poof.style.background = 'radial-gradient(circle, rgba(255,255,255,0.9), rgba(200,200,200,0.4))';
+            poof.style.animationDelay = (i * 0.08) + 's';
+            $('game-wrapper').appendChild(poof);
+            setTimeout(() => poof.remove(), 800);
+        }
+    }
+    g.createParticles(sx, sy, gh.team === 'blue' ? '#4488ff' : '#ff4444', 8);
+}
+function spawnFx(g, f) {
+    const fx = new SpellEffect(GAME_W - f[0], V(f[1]), f[2], f[3], f[4]);
+    fx.initialDuration = f[5] || f[4];
+    D.effects.push(fx);
+    const rect = CANVAS.getBoundingClientRect();
+    const col = f[2] === 'fireball' ? '#ff6600' : f[2] === 'zap' ? '#ffff00' : '#ff0000';
+    g.createParticles(rect.left + fx.x, rect.top + fx.y, col, 20);
+}
+// Elixir and hand: the host's newest word, plus our own plays still on their way to it.
+function predict(g, now) {
+    D.pending = D.pending.filter(p => p.seq > D.ack);
+    const hand = (D.hand || g.hand).slice(), q = (D.queue || []).slice();
+    let cost = 0;
+    for (const p of D.pending) {
+        if (hand[p.idx] === p.key && q.length) { const nx = q.shift(); q.push(p.key); hand[p.idx] = nx; }
+        cost += p.cost;
+    }
+    if (D.oppAway || !D.connected || D.phase !== 'match') D.relixirAt = now;    // the match is not running for us
+    const rate = 0.96 / 2.8 * (D.em || 1);      // 60 steps a second, dt / 2.8 elixir a step
+    const el = Math.min(10, D.relixir + rate * (now - D.relixirAt) / 1000) - cost;
+    g.elixir = Math.max(0, Math.min(10, el));
+    const sig = hand.join(',');
+    g.hand = hand;
+    if (sig !== D.handSig) { D.handSig = sig; renderHand(); }
+}
+function blueTowerAlive(lane) {
+    for (const [id] of D.ghosts) {
+        const st = D.reg.get(id);
+        if (st && st.team === 0 && (st.flags & 1) && !(st.flags & 2) && st.lane === lane) return true;
+    }
+    return false;
+}
+function guestValid(x, y) {
+    if (this.input.cardIdx === -1) return false;
+    return redValid(this.hand[this.input.cardIdx], GAME_W - x, H(y), blueTowerAlive(1), blueTowerAlive(2));
+}
+function guestDeploy(idx, x, y) {
+    const g = this, key = g.hand[idx], st = CARDS[key];
+    if (!st || g.elixir < st.cost) return;
+    g.input.cardIdx = -1; g.input.isDragging = false;
+    if (D.phase !== 'match' || !D.connected || D.oppAway || !D.snaps.length || g.gameOver) { renderHand(); return; }
+    const seq = ++D.seq;
+    D.pending.push({ seq: seq, idx: idx, key: key, cost: st.cost });
+    const L = { seq: seq, key: key, clickAt: ABS() };
+    D.log.push(L); D.logBySeq.set(seq, L);
+    if (D.log.length > 300) { const old = D.log.shift(); D.logBySeq.delete(old.seq); }
+    sendD({ p: [seq, idx, key, Math.round(GAME_W - x), Math.round(H(y))] });
+    D.marks.push({ seq: seq, key: key, x: x, y: y, at: performance.now() });
+    const rect = CANVAS.getBoundingClientRect();
+    g.createParticles(rect.left + x, rect.top + y, '#ffeb3b', 12);
+    predict(g, performance.now());
+    renderHand();
+}
+// Who won, read from the last snapshot with the same rules the host's game uses.
+function verdict(s) {
+    let k0 = false, k1 = false, b0 = 0, b1 = 0;
+    for (let i = 0; i < s.e.length; i += 6) {
+        const st = D.reg.get(s.e[i]);
+        if (!st || !(st.flags & 1)) continue;
+        if (st.team === 0) { b0++; if (st.flags & 2) k0 = true; } else { b1++; if (st.flags & 2) k1 = true; }
+    }
+    if (!k0 && k1) return 'guest';
+    if (!k1 && k0) return 'host';
+    if (b0 > b1) return 'host';
+    if (b1 > b0) return 'guest';
+    return 'draw';
+}
+function guestEnd(g) {
+    if (g.gameOver) return;
+    g.gameOver = true;
+    const w = verdict(D.overSnap);
+    D.result = { w: w, crowns: w === 'guest' ? crownsOf(g.entities, 'blue') : 0 };
+    if (!D.reported && !D.overMsg) { send({ t: 'result', w: w }); D.reported = true; }
+    showEnd();
+}
+
+/* ---------------- the end ---------------- */
+function onOver(m) {
+    if (m.mid && D.mid && m.mid !== D.mid) return;
+    if (m.me) D.me = m.me;
+    clearMarker(); clearSave();
+    // (a page that already left the match only takes the new record)
+    if (!(G && G.online && G.online.mid === m.mid)) { fetchTop(); renderPanel(); return; }
+    D.overMsg = m; D.phase = 'over';
+    G.gameOver = true;
+    if (!D.result) {
+        // over without the game's own end: a forfeit, a leave or no result
+        const mine = m.w === D.role;
+        D.result = { w: m.w, crowns: mine ? crownsOf(G.entities, 'blue') : 0 };
+    }
+    showEnd();
+    fetchTop();
+}
+function lostMatch(text) {
+    if (G && G.online) G.gameOver = true;
+    D.overMsg = { w: null, why: 'lost', note: text, delta: 0 };
+    D.phase = 'over'; D.noRematch = true;
+    clearMarker(); clearSave();
+    if (G && G.online) showEnd();
+}
+function showEnd() {
+    const m = D.overMsg, r = D.result || {};
+    const w = m ? m.w : r.w;
+    const mine = w == null ? 'none' : w === 'draw' ? 'draw' : w === D.role ? 'win' : 'lose';
+    const endMsg = $('end-msg');
+    endMsg.innerText = mine === 'win' ? 'YOU WIN!' : mine === 'lose' ? 'YOU LOSE' : mine === 'draw' ? 'DRAW!' : 'NO RESULT';
+    endMsg.className = mine === 'win' ? 'win-text' : mine === 'lose' ? 'lose-text' : 'draw-text';
+    const crowns = mine === 'win' ? (r.crowns || (G ? crownsOf(G.entities, 'blue') : 1)) : 0;
+    for (let i = 1; i <= 3; i++) $('crown-' + i).className = 'crown-icon-end ' + (i <= crowns ? 'earned' : 'lost');
+    let tl;
+    if (m && m.why === 'lost') tl = '';      // this page could not hear how it ended: the panel has the trophies
+    else if (!D.ranked) tl = 'Friendly match, no trophies';
+    else if (!m) tl = 'Waiting for the result...';
+    else if (m.w) tl = (m.delta > 0 ? '+' : '') + (m.delta | 0) + ' Trophies';
+    else tl = 'No trophies changed';
+    $('trophy-change').innerText = tl;
+    const opp = (D.opp && D.opp.name) || 'The other player';
+    let note = '';
+    if (m) {
+        if (m.note) note = m.note;
+        else if (m.why === 'forfeit') note = mine === 'win' ? opp + ' did not come back in time.' : 'You were away too long.';
+        else if (m.why === 'left') note = mine === 'win' ? opp + ' left the match.' : 'You left the match.';
+        else if (m.why === 'dispute') note = 'The two pages did not agree on the winner, so the match was not counted.';
+        else if (m.why === 'unconfirmed') note = 'The other page did not confirm the result, so the match was not counted.';
+        else if (m.why === 'gone') note = 'Both players were away too long.';
+        else if (m.why === 'idle') note = 'Nothing happened in the match for 10 minutes.';
+        if (D.ranked && m.me && m.w) note += (note ? ' ' : '') + 'Online trophies: ' + m.me.tr + '.';
+    }
+    $('duel-end-note').textContent = note;
+    $('end-screen').style.display = 'flex';
+    singleEndBits().forEach(el => { el.style.display = 'none'; });
+    $('duel-end-btns').style.display = 'flex';
+    D.endShown = true;
+    renderEndButtons();
+}
+function renderEndButtons() {
+    const b = $('duel-rematch'), t = $('duel-rematch-text');
+    if (!b) return;
+    const opp = (D.opp && D.opp.name) || 'The other player';
+    b.style.display = D.overMsg ? '' : 'none';
+    b.disabled = !!D.noRematch || D.rematchAsked;
+    if (D.noRematch) t.textContent = opp + ' has left';
+    else if (D.rematchAsked) t.textContent = 'Waiting for ' + opp + '...';
+    else if (D.rematchOffer) t.textContent = 'Rematch (' + opp + ' is ready)';
+    else t.textContent = 'Rematch';
+}
+function hideDuelEnd() {
+    singleEndBits().forEach(el => { el.style.display = ''; });
+    const e = $('duel-end-btns'); if (e) e.style.display = 'none';
+    const bn = $('duel-banner'); if (bn) { bn.style.display = 'none'; bn._t = ''; }
+}
+function banner() {
+    const el = $('duel-banner');
+    if (!el) return;
+    let txt = '', warn = false;
+    if (G && G.online && D.phase === 'match' && !G.gameOver) {
+        const opp = (D.opp && D.opp.name) || 'The other player';
+        if (!D.connected) { txt = 'Connection lost. Reconnecting...'; warn = true; }
+        else if (D.oppAway) {
+            const left = Math.max(0, Math.ceil((D.grace - (Date.now() - D.awaySince)) / 1000));
+            txt = D.role === 'host' ? opp + ' lost connection. They have ' + left + ' s to come back.' : 'Waiting for ' + opp + ' to come back (' + left + ' s)';
+            warn = true;
+        } else txt = 'vs ' + opp + (D.ranked ? ' (' + (D.opp.tr | 0) + ' trophies)' : ' (friendly)');
+    }
+    if (el._t !== txt) { el._t = txt; el.textContent = txt; el.style.display = txt ? 'block' : 'none'; }
+    el.classList.toggle('warn', warn);
+}
+// the home button and the end screen's Back
+const baseReturn = window.returnToMenu;
+window.returnToMenu = function () {
+    if (G && G.online) {
+        if (D.phase === 'match' && !G.gameOver && !D.overMsg && !confirm('Leave this match? It will count as a loss.')) return;
+        send({ t: 'leave' });
+        clearMarker(); clearSave();
+        D.phase = D.connected ? 'idle' : 'off';
+        hideDuelEnd();
+        baseReturn();
+        duelOpenPanel();
+        return;
+    }
+    hideDuelEnd();
+    baseReturn();
+};
+
+/* ---------------- the panel ---------------- */
+function panelOpen() { return $('duel-overlay').classList.contains('open'); }
+function renderPanel() {
+    if (!panelOpen()) return;
+    const me = D.me, waiting = D.phase === 'queue' || D.phase === 'pwait';
+    let line;
+    if (D.connected && me) line = me.name + ': ' + me.tr + ' online trophies, ' + me.w + ' won, ' + me.l + ' lost. ' + D.online + ' online now.';
+    else if (D.want) line = 'Connecting...';
+    else line = 'Not connected.';
+    $('duel-me').textContent = line;
+    $('duel-err').textContent = D.err || '';
+    $('duel-home').style.display = waiting ? 'none' : '';
+    $('duel-wait').style.display = waiting ? '' : 'none';
+    const can = D.connected && !!me && !waiting;
+    ['duel-find', 'duel-make', 'duel-join'].forEach(id => { $(id).disabled = !can; });
+    if (D.phase === 'queue') {
+        $('duel-wait-text').textContent = 'Looking for a player... ' + Math.floor((Date.now() - D.queueAt) / 1000) + ' s';
+        $('duel-code').style.display = 'none';
+        $('duel-wait-sub').textContent = 'You will be matched with someone near your trophies.';
+        $('duel-lonely').style.display = D.lonely ? '' : 'none';
+    } else if (D.phase === 'pwait') {
+        $('duel-wait-text').textContent = 'Your room code';
+        $('duel-code').textContent = D.code; $('duel-code').style.display = '';
+        $('duel-wait-sub').textContent = 'Give this code to a friend. The room stays open for 10 minutes.';
+        $('duel-lonely').style.display = 'none';
+    }
+    const top = $('duel-top');
+    if (!D.top) top.innerHTML = '<div class="duel-sub">' + (D.connected ? 'Loading...' : 'Not loaded.') + '</div>';
+    else if (!D.top.length) top.innerHTML = '<div class="duel-sub">Nobody has played an online match yet.</div>';
+    else {
+        top.innerHTML = '';
+        D.top.slice(0, 10).forEach(function (r, i) {
+            const row = document.createElement('div');
+            row.className = 'duel-top-row' + (me && r.name === me.name ? ' me' : '');
+            const a = document.createElement('span'); a.textContent = (i + 1) + '. ' + r.name;
+            const b = document.createElement('span'); b.textContent = r.tr + ' trophies';
+            row.appendChild(a); row.appendChild(b); top.appendChild(row);
+        });
+    }
+}
+setInterval(function () { if (D.phase === 'queue' && panelOpen()) renderPanel(); }, 1000);
+function fetchTop() {
+    if (!D.http) return;
+    fetch(D.http + '/mc/clashduel/top', { cache: 'no-store' }).then(r => r.json()).then(function (j) {
+        if (j && Array.isArray(j.top)) { D.top = j.top; if (typeof j.online === 'number') D.online = j.online; renderPanel(); }
+    }).catch(function () {});
+}
+function closePanelQuiet() { $('duel-overlay').classList.remove('open'); }
+window.duelOpenPanel = function () {
+    $('duel-overlay').classList.add('open');
+    if (!D.connected) { if (D.phase === 'off') D.err = ''; D.retries = 0; connect(); }
+    else fetchTop();
+    renderPanel();
+};
+window.duelClosePanel = function () {
+    if (D.phase === 'queue' || D.phase === 'pwait') window.duelCancel();
+    closePanelQuiet();
+};
+window.duelFind = function () {
+    if (!D.connected) return;
+    D.err = '';
+    send({ t: 'queue', deck: userDeck.slice() });
+};
+window.duelCancel = function () {
+    send({ t: 'cancel' });
+    D.phase = D.connected ? 'idle' : 'off'; D.lonely = false;
+    renderPanel();
+};
+window.duelMakeRoom = function () { if (!D.connected) return; D.err = ''; send({ t: 'pmake', deck: userDeck.slice() }); };
+window.duelJoinRoom = function () {
+    if (!D.connected) return;
+    const code = ($('duel-code-in').value || '').trim().toUpperCase();
+    if (!/^[A-Z]{4}$/.test(code)) { D.err = 'A room code is 4 letters.'; renderPanel(); return; }
+    D.err = '';
+    send({ t: 'pjoin', code: code, deck: userDeck.slice() });
+};
+window.duelPlayBot = function () {
+    send({ t: 'cancel' });
+    D.phase = D.connected ? 'idle' : 'off'; D.lonely = false;
+    closePanelQuiet();
+    currentGameMode = 'normal';
+    startGame();
+    // a practice match against the bot: single player trophies stay as they are
+    G.end = function (res) {
+        const keep = trophies;
+        Game.prototype.end.call(this, res);
+        trophies = keep; saveData(); updateMenuUI();
+        $('trophy-change').innerText = 'Practice match, no trophies';
+    };
+};
+window.duelRematch = function () {
+    if (!D.overMsg || D.noRematch || D.rematchAsked) return;
+    D.rematchAsked = true;
+    send({ t: 'rematch' });
+    renderEndButtons();
+};
+
+/* ---------------- keeping a match across a reload ---------------- */
+window.addEventListener('pagehide', function () { if (G && G.online && G.online.role === 'host' && D.phase === 'match' && !G.gameOver) saveHost(G); });
+// a hidden host tab gets no animation frames: keep its match going from a timer (the browser slows it, steps catch up)
+setInterval(function () { if (document.hidden && G && G.online && G.online.role === 'host') G.update(); }, 200);
+window.addEventListener('load', function () {
+    let mk = null;
+    try { mk = JSON.parse(localStorage.getItem('clashDuelLive') || 'null'); } catch (e) {}
+    if (mk && mk.mid && Date.now() - mk.at < 120000) { D.resuming = true; connect(); }
+    else if (mk) clearMarker();
+});
+
+/* ---------------- a handle for tests ---------------- */
+window.__duel = {
+    get state() {
+        return { phase: D.phase, connected: D.connected, role: D.role, mid: D.mid, ranked: D.ranked, me: D.me, opp: D.opp,
+                 oppAway: D.oppAway, code: D.code, lonely: D.lonely, err: D.err, result: D.result, over: D.overMsg, rtt: D.rtt,
+                 url: D.url, pid: D.pid, renderRt: D.renderRt, pending: D.pending.length, ack: D.ack, snaps: D.snaps.length,
+                 elixir: G ? G.elixir : null, hand: G && G.hand ? G.hand.slice() : null, endShown: D.endShown,
+                 steps: G && G._steps, gameOver: G ? !!G.gameOver : null, online: !!(G && G.online) };
+    },
+    // what this page draws, in its own view (team as drawn: blue is this page's own side)
+    view() {
+        if (!G) return null;
+        const host = G.online && G.online.role === 'host';
+        return { rt: host ? Math.round(G._steps * DUEL.STEP_MS) : D.renderRt, timeLeft: G.timeLeft,
+                 ents: G.entities.filter(e => e.type !== 'effect').map(e => ({ id: (host ? e._nid : e._id) || 0, type: e.type, sprite: e.sprite,
+                     team: e.team, x: e.x, y: e.y, hp: e.hp, b: !!e.isBuilding, k: !!e.isKing })), projs: G.projectiles.length };
+    },
+    // host only: its snapshots eased to a host time, exactly as a guest eases them
+    hostAt(rt) {
+        const S = D.hist;
+        if (!S.length) return null;
+        const b = bracket(S, rt), base = b.a >= 0.5 ? b.s1 : b.s0, other = base === b.s1 ? b.s0 : b.s1;
+        const oix = indexOf(other, 'e', 6), out = [];
+        for (let i = 0; i < base.e.length; i += 6) {
+            const id = base.e[i], r = D.hreg.get(id);
+            let x = base.e[i + 1], y = base.e[i + 2];
+            const j = oix.get(id);
+            if (j !== undefined && other !== base) {
+                const ox = other.e[j + 1], oy = other.e[j + 2];
+                const x0 = base === b.s0 ? x : ox, y0 = base === b.s0 ? y : oy, x1 = base === b.s0 ? ox : x, y1 = base === b.s0 ? oy : y;
+                x = x0 + (x1 - x0) * b.a; y = y0 + (y1 - y0) * b.a;
+            }
+            out.push({ id: id, type: r ? r.type : '?', team: r ? r.team : '?', x: x, y: y, hp: base.e[i + 3] });
+        }
+        return { rt: rt, first: S[0].rt, last: S[S.length - 1].rt, ents: out };
+    },
+    toHost(x, y) { return [GAME_W - x, H(y)]; },
+    toView(x, y) { return [GAME_W - x, V(y)]; },
+    stats() { return Object.assign({ t: performance.now() }, D.stats); },
+    log() { return D.log.map(L => Object.assign({}, L)); },
+    send(o) { return send(o); },
+    connect: connect, K: DUEL.K,
+};
+})();
 </script>
 </body>
 </html>
