@@ -126,9 +126,10 @@ class Layer {
 const ease = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
 
 /* ---- the fine heights streamed in round the rider, past the area built (Elevation.stream) ------------------------------
-   Zoom 14 tiles kept one by one (never dropped, up to a cap), joining the built window's own: where both are there the
-   ground is zoom 14 throughout, and it eases into the coarser layers only towards the edge of what has come. The built
-   window's tiles count as there, so the two join without a seam. */
+   Zoom 14 tiles kept one by one (up to a cap), joining the built window's own: where both are there the ground is zoom
+   14 throughout, and it eases into the coarser layers only towards the edge of what has come. The built window's tiles
+   count as there, so the two join without a seam. (W11 fly, 2026-11-14: past the cap the streamed tile furthest from
+   the rider, and well clear of them, is let go for a new one; the built window's tiles never are.) */
 class Sparse {
   constructor(frame, fine, band) {
     this.frame = frame; this.fine = fine; this.band = band; this.tiles = new Map(); this.loading = new Set();
@@ -203,18 +204,44 @@ export class Elevation {
     if (df <= 0) return m;
     return m + (F.sample(x, z) - m) * ease(df / F.band);
   }
-  /* the fine tiles round a point (the rider) that are not there yet, asked for: those within r tiles of it, at most cap
-     kept in all; done(box) is told each local box whose heights changed (a tile come and the band round it), for the
-     terrain to build its patches there again */
-  stream(x, z, done, r = 1.4, cap = 40) {
-    const X = this.extra; if (X.n + X.loading.size >= cap) return;
-    const px = (x * X.k + X.ox) / 256, py = (z * X.k + X.oy) / 256, i0 = Math.floor(px), j0 = Math.floor(py);
-    for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) {
-      const i = i0 + a, j = j0 + b, key = X.key(i, j);
-      if (X.there(i, j) || X.loading.has(key) || X.n + X.loading.size >= cap) continue;
-      // (the nearest point of the tile within r tiles)
-      const dx = Math.max(i - px, 0, px - (i + 1)), dy = Math.max(j - py, 0, py - (j + 1));
-      if (Math.hypot(dx, dy) > r) continue;
+  /* the fine tiles round a point (the rider) that are not there yet, asked for: those within r tiles of it, nearest
+     first, at most cap kept in all; done(box, gone) is told each local box whose heights changed (a tile come, or gone,
+     and the band round it), for the terrain to build its patches there again.
+     (W11 fly, 2026-11-14) ax, az: a second point, ahead of a fast flyer (fly.js), whose tiles within r are asked for
+     after the rider's own. With cap reached, a tile wanted lets go of the streamed tile furthest from both points, if
+     that one is more than r + 1 tiles from either (so never one round you or ahead); a long flight no longer ends on the
+     coarse 27 m ground once cap tiles have come. */
+  stream(x, z, done, r = 1.4, cap = 40, ax, az) {
+    const X = this.extra;
+    const pt = (u, w) => [(u * X.k + X.ox) / 256, (w * X.k + X.oy) / 256];
+    const P = [pt(x, z)]; if (Number.isFinite(ax) && Number.isFinite(az)) P.push(pt(ax, az));
+    // (how far, in tiles, the nearest point of tile i, j is from a point)
+    const far = (i, j, [px, py]) => Math.hypot(Math.max(i - px, 0, px - (i + 1)), Math.max(j - py, 0, py - (j + 1)));
+    const want = [], seen = new Set();
+    for (let n = 0; n < P.length; n++) {
+      const i0 = Math.floor(P[n][0]), j0 = Math.floor(P[n][1]);
+      for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) {
+        const i = i0 + a, j = j0 + b, key = X.key(i, j);
+        if (seen.has(key)) continue; seen.add(key);
+        if (X.there(i, j) || X.loading.has(key)) continue;
+        const d = far(i, j, P[n]); if (d > r) continue;
+        want.push([n * 100 + d, i, j, key]);        // (the rider's own first, then the ones ahead, nearest first)
+      }
+    }
+    want.sort((p, q) => p[0] - q[0]);
+    for (const [, i, j, key] of want) {
+      if (X.n + X.loading.size >= cap) {
+        // full: the streamed tile furthest from both points goes, if it is well clear of them
+        let worst = -1, wd = r + 1, wi = 0, wj = 0;
+        for (const k of X.tiles.keys()) {
+          const tj = k % 65536, ti = (k - tj) / 65536;
+          let d = Infinity; for (const p of P) d = Math.min(d, far(ti, tj, p));
+          if (d > wd) { wd = d; worst = k; wi = ti; wj = tj; }
+        }
+        if (worst < 0) break;
+        X.tiles.delete(worst); X.n = X.tiles.size; X.gone = (X.gone || 0) + 1;
+        if (done) done(X.box(wi, wj), true);
+      }
       X.loading.add(key);
       fetchTile(14, i, j).then(decodeTile).then(t => { X.tiles.set(key, t); X.n = X.tiles.size; X.loading.delete(key); if (done) done(X.box(i, j)); }, () => { setTimeout(() => X.loading.delete(key), 30000); });
     }

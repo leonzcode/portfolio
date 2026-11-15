@@ -5,7 +5,8 @@
    3. the Overpass mirrors, raced, each with a time limit (the public ones take 20 to 50 s; overpass-api.de and some
       others fail from some networks, maps.mail.ru answers browsers).
    Everything has a time limit and a progress line; nothing found is a bare mountain, still rideable. */
-import { Frame } from './wdem.js?v=26';
+import { Frame } from './wdem.js?v=27';
+import { landQuery, bboxOf, build as buildLand, encode as encodeLand, decode as decodeLand, LAND_HALF } from './wlanddata.js?v=27';
 
 const MIRRORS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
@@ -73,6 +74,36 @@ export async function loadOsm(place, say = () => {}, signal) {
   return { osm: null, from: 'none' };
 }
 
+/* (W, round 11) the land cover round a place (wlanddata.js: woods, scrub, lakes, rock, scree, glaciers, cliffs, trees,
+   boulders, buildings, halfpipes), in this page's local metres: { land, from } (from 'site', 'cache', 'overpass' or
+   'none': land null). A built-in place's is shipped with the site (public/ski/data/world/<preset>.json, baked by
+   tools/ski/bake_world_land.cjs); a searched place's is asked of Overpass once and kept in Cache Storage (ski-land-v1). */
+const LAND_CACHE = 'ski-land-v1';
+export async function loadLand(place, frame, say = () => {}, signal) {
+  const shiftOf = o => {
+    if (!o || (Math.abs(o[0] - frame.lat0) < 1e-9 && Math.abs(o[1] - frame.lon0) < 1e-9)) return null;
+    const F0 = new Frame(o[0], o[1]);
+    return (x, z) => { const ll = F0.toLatLon(x, z); return frame.toLocal(ll.lat, ll.lon); };
+  };
+  if (place.preset) {
+    try {
+      const ac = new AbortController(), t = setTimeout(() => ac.abort(), 20000);
+      const r = await fetch(new URL('../data/world/' + place.preset + '.json?v=27', import.meta.url), { signal: ac.signal }); clearTimeout(t);
+      if (r.ok) { const o = await r.json(); const land = decodeLand(o, shiftOf(o.o)); land.from = 'site'; land.missing = o.missing || null; return { land, from: 'site' }; }
+    } catch (e) { console.warn('baked land', e); }
+  }
+  const key = 'https://ski.cache/land?v=1&c=' + frame.lat0.toFixed(4) + ',' + frame.lon0.toFixed(4);
+  try { const c = await caches.open(LAND_CACHE), r = await c.match(key); if (r) { const o = await r.json(); const land = decodeLand(o, shiftOf(o.o)); land.from = 'cache'; return { land, from: 'cache' }; } } catch (e) {}
+  say('Asking OpenStreetMap for the forests and rock');
+  const bb = bboxOf(frame.lat0, frame.lon0).map(v => v.toFixed(5)).join(',');
+  const j = await overpass(landQuery(bb), 60000, signal);
+  if (!j) return { land: null, from: 'none' };
+  const H = LAND_HALF, land = buildLand(j.elements, (lat, lon) => frame.toLocal(lat, lon), { x0: -H, z0: -H, x1: H, z1: H });
+  try { const c = await caches.open(LAND_CACHE); await c.put(key, new Response(JSON.stringify(encodeLand(land, [frame.lat0, frame.lon0])), { headers: { 'Content-Type': 'application/json' } })); } catch (e) {}
+  land.from = 'overpass';
+  return { land, from: 'overpass' };
+}
+
 // ---- reading the answer ----------------------------------------------------------------------------------------------
 const NOT_LIFTS = new Set(['station', 'goods', 'zip_line', 'explosive', 'pylon', 'canopy', 'yes']);
 const DIFF = { novice: 0, easy: 1, intermediate: 2, advanced: 3, expert: 4, freeride: 5, extreme: 5 };
@@ -120,13 +151,16 @@ export function parse(osm, frame) {
     const name = t.name || t['piste:name'] || '', ref = t.ref || t['piste:ref'] || '';
     const g = String(t['piste:grooming'] || '').toLowerCase();
     let diff = DIFF[t['piste:difficulty'] || t['disused:piste:difficulty']] ?? 2;
-    const park = pt === 'snow_park' || (PARK_NAME.test(name) && !/parking/i.test(name));
+    /* (W, round 11: a park is what the map says is one: piste:type=snow_park, a mapped halfpipe, or a run whose name says
+       it is a terrain park; not a run merely named "... Park" on a novice slope (a kids' area), "Park City" and the like) */
+    const pipe = t.man_made === 'piste:halfpipe' || /\bhalf ?-?pipe\b|\bsuper ?-?pipe\b/i.test(name) && !/\b(exit|access|return|road|trail|way|traverse|connector|cat ?track)\b/i.test(name);
+    const park = pt === 'snow_park' || pipe || (PARK_NAME.test(name) && !/parking/i.test(name) && !(/\bpark\b/i.test(name) && !/\b(snow|terrain|fun|jib|freestyle) ?park|park$/i.test(name.trim())) && DIFF[t['piste:difficulty']] !== 0);
     if (park) diff = 6;
     // groomed: as tagged; untagged, the marked runs are groomed, the expert, freeride and gladed ones left as they are
     const groom = g ? !/mogul|^no|backcountry/.test(g) : !(t.gladed === 'yes' || diff >= 4 && diff < 6);
     const area = el.geometry.length > 3 && el.geometry[0].lat === el.geometry[el.geometry.length - 1].lat && el.geometry[0].lon === el.geometry[el.geometry.length - 1].lon && (t.area === 'yes' || pt === 'snow_park');
     const w = num(t['piste:width']) || num(t.width) || WIDTH[diff];
-    const rec = { pts, diff, name, ref, groom: groom && !closed, w: Math.max(8, Math.min(120, w)), area, park, gladed: t.gladed === 'yes', lit: t.lit === 'yes' || t['piste:lit'] === 'yes', oneway: t['piste:oneway'] || t.oneway, id: el.id, closed };
+    const rec = { pts, diff, name, ref, groom: groom && !closed, w: Math.max(8, Math.min(120, w)), wTag: !!(num(t['piste:width']) || num(t.width)), area, park, pipe, snowPark: pt === 'snow_park', gladed: t.gladed === 'yes' || /glade/i.test(g), lit: t.lit === 'yes' || t['piste:lit'] === 'yes', oneway: t['piste:oneway'] || t.oneway, id: el.id, closed };
     (closed ? out.closed : out.pistes).push(rec);
   }
   return out;

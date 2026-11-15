@@ -15,9 +15,9 @@
    The lips, humps, bands and ramps are drawn by the terrain's own patches (no mesh of their own); the parks' kickers have
    meshes of their own (dress), all of them in one draw call. */
 import * as THREE from 'three';
-import { Kicker, Rail } from './park.js?v=26';
-import { ground, height } from './terrain.js?v=26';
-import { smoothstep, clamp, simplex, rng } from './noise.js?v=26';
+import { Kicker, Rail } from './park.js?v=27';
+import { ground, height } from './terrain.js?v=27';
+import { smoothstep, clamp, simplex, rng } from './noise.js?v=27';
 
 const RAD = Math.PI / 180;
 const _l = { x: 0, z: 0 };
@@ -90,6 +90,66 @@ class Band {
   rock(x, z) { const H = this.Hx(x); if (H < 0.8) return false; const z0 = this.fz(x); return z > z0 - 0.8 && z < z0 + 0.22 * H + 0.8; }
   surface() { return false; }
 }
+/* (W, round 11) a rock band whose face height comes from the elevation measured across a real cliff (or a step the
+   elevation itself has), not from a random number: Hs[] the heights at x = xs0, xs0 + dx, ... along it, eased off over
+   the last metres at either end */
+class DataBand extends Band {
+  constructor(o) { super(o); this.x0 = this.xs0 - 4; this.x1 = this.xs0 + this.dx * (this.Hs.length - 1) + 4; }
+  Hx(x) {
+    const u = (x - this.xs0) / this.dx, n = this.Hs.length;
+    if (u < -1.2 || u > n - 1 + 1.2) return 0;
+    const i = Math.max(0, Math.min(n - 2, Math.floor(u))), t = Math.max(0, Math.min(1, u - i));
+    const h = n > 1 ? this.Hs[i] * (1 - t) + this.Hs[i + 1] * t : this.Hs[0];
+    const end = Math.min(smoothstep(-1.2, 0.6, u), 1 - smoothstep(n - 1.6, n - 1 + 1.2, u));
+    return h * end;
+  }
+  fz() { return 0; }
+}
+/* (W, round 11) a mapped halfpipe (man_made=piste:halfpipe, or a run named one): walls of the game's superpipe's cross
+   section (park.js Pipe's: a flat bottom, quarter circles to a short vert, a deck, the outside slope) along its mapped
+   line, the floor a plane at a steady grade laid over the ground (snow is built up, never dug), x across, z down it */
+class WPipe {
+  constructor(o) {
+    Object.assign(this, { F: 6.5, R: 5.4, vert: 0.4, deck: 3.5, entry: 14, exit: 10, len: 120, name: 'Halfpipe', floor0: 0, grade: 0.3 }, o);
+    this.ownMesh = true; this.H = this.R + this.vert; this.out = this.R + 0.15 + this.deck;
+    const half = this.F + this.out + (this.H + (this.raise || 0)) / 0.7 + 1;
+    this.x0 = -half; this.x1 = half; this.z0 = -2; this.z1 = this.len + 2; this.x = 0;
+  }
+  wall(a) {
+    const { R, vert, deck, H } = this;
+    if (a <= 0) return 0;
+    if (a < R * 0.995) return R - Math.sqrt(R * R - a * a);
+    const r0 = R - Math.sqrt(R * R - (R * 0.995) ** 2);
+    if (a < R + 0.15) { const t = (a - R * 0.995) / (R + 0.15 - R * 0.995); return r0 + t * (H - r0); }
+    if (a < R + 0.15 + deck) return H;
+    return Math.max(0, H - (a - R - 0.15 - deck) * 0.7);
+  }
+  scale(z) { return smoothstep(0, this.entry, z) * (1 - smoothstep(this.len - this.exit, this.len, z)); }
+  floor(z) { return this.floor0 - this.grade * z; }
+  height(x, z, g) {
+    if (z < 0 || z > this.len || x < this.x0 || x > this.x1) return -Infinity;
+    const s = this.scale(z); if (s <= 0.002) return -Infinity;
+    // (past the deck the outside slope runs on down until it meets the ground: the floor may stand over the ground)
+    const a = Math.abs(x) - this.F, f = this.floor(z), y = a > this.out ? f + this.H * s - (a - this.out) * 0.7 : f + this.wall(a) * s;
+    // (the floor eases into the ground at either end)
+    const e = Math.min(1, z / 14, (this.len - z) / 10);
+    return g + (y - g) * Math.max(0, e);
+  }
+  surface(x, z) { return z > 0 && z < this.len && Math.abs(x) < this.F + this.R + this.deck; }
+  rows(fine) { const r = []; for (let z = -0.5; z <= this.len + 0.5; z += fine ? 1.2 : 2.0) r.push(z); return r; }
+  cols(fine) {
+    const half = [], st0 = fine ? 0.3 : 0.5, flat = fine ? 1.0 : 1.6, aW = this.R + 0.3;
+    let a = -this.F, prev = this.wall(a); half.push(a);
+    const end = this.out + (this.H + (this.raise || 0)) / 0.7 + 1;
+    while (a < end) {
+      const st = a < -0.5 ? Math.min(flat, -a) : a < aW ? st0 : flat; let da = st;
+      for (let k = 0; k < 6; k++) { const y = this.wall(a + da); const l = Math.hypot(da, y - prev); if (l > st * 1.05) da *= st / l; else break; }
+      da = Math.max(da, 0.008); a += da; prev = this.wall(a); half.push(a);
+    }
+    const c = []; for (const v of half) c.push(this.F + v, -this.F - v);
+    return [...new Set(c.map(v => Math.round(v * 1000) / 1000))].filter(v => v >= this.x0 && v <= this.x1).sort((p, q) => p - q);
+  }
+}
 // a snow ramp up to a rail's start (its start at z 0, rising over len m to h, then falling off fast past the start)
 class Ramp {
   constructor(o) { Object.assign(this, { h: 0.4, len: 3.5, hw: 1.3, name: 'Ramp' }, o); this.x0 = -this.hw - 2; this.x1 = this.hw + 2; this.z0 = -this.len; this.z1 = 1.2; }
@@ -121,17 +181,73 @@ export function addFeatures(park, land, data, opts = {}) {
   const add = (f, F, name) => { const w = new Framed(f, F, name); out.push(w); return w; };
 
   // ---- the terrain parks first (they claim their ground)
-  // (not a race course or a ski school's area, which some maps tag as parks: no jumps there)
-  const parks = data.pistes.filter(p => p.park && p.pts.length >= 2 && !/stade|slalom|race|racing|course|rennstrecke|gara|kids|enfant|school|ecole|esf/i.test(p.name || ''));
+  /* (W, round 11, for Leon's "make features/jibs that are in actual places on the ski slope be there") What the map
+     says is a park (wosm.js parse: piste:type=snow_park, a mapped halfpipe, a run named a terrain park). OpenStreetMap
+     has no tags for single jumps or rails (none in any of the 17 built-in places' data, nor in taginfo), so:
+     - a mapped halfpipe (man_made=piste:halfpipe, or a run or area named a halfpipe or superpipe) gets a pipe along its
+       real line: real data;
+     - any other park: a line of jumps and rails laid along its real line inside its real outline, our own layout
+       (marked generated, and the trail map says so).
+     Not a race course, a ski school's or kids' area, a boardercross or a speed course, which some maps tag as parks. */
+  const L = opts.L || null, marks = [], parkList = [];
+  const mark = (kind, name, x, z, yaw, src) => marks.push({ kind, name, x, z, yaw, src, generated: src === 'generated' });
+  const NOT_PARK = /stade|slalom|race|racing|course|rennstrecke|gara|kids|kinder|enfant|school|ecole|esf|boarder ?cross|border ?cross|ski ?cross|vitesse|speed|family|famille|aventure|adventure|(exit|access|return|road|traverse|connector)/i;
+  // the real halfpipes: the runs and areas marked as one, and the land cover's own (man_made=piste:halfpipe with no run)
+  const pipes = data.pistes.filter(p => p.pipe && p.pts.length >= 2).map(p => ({ pts: p.pts, name: p.name || 'Halfpipe', area: p.area, src: p }));
+  if (L) for (const q of L.pipes) {
+    const c = q.pts[Math.floor(q.pts.length / 2)];
+    if (!pipes.some(p => p.pts.some(r => Math.hypot(r.x - c.x, r.z - c.z) < 60))) pipes.push({ pts: q.pts, name: 'Halfpipe', area: q.area, src: null });
+  }
+  // (a pipe area and its line are one pipe: the line kept)
+  for (let i = pipes.length - 1; i >= 0; i--) if (pipes[i].area && pipes.some((p, j) => j !== i && !p.area && p.pts.some(r => pipes[i].pts.some(s => Math.hypot(r.x - s.x, r.z - s.z) < 40)))) pipes.splice(i, 1);
+  for (const Pp of pipes) {
+    let hi = null, lo = null;
+    for (const p of Pp.pts) { if (!inArea(p.x, p.z)) continue; const y = G(p.x, p.z); if (!hi || y > hi.y) hi = { x: p.x, z: p.z, y }; if (!lo || y < lo.y) lo = { x: p.x, z: p.z, y }; }
+    if (!hi || !lo) continue;
+    let Lp = Math.hypot(lo.x - hi.x, lo.z - hi.z), dx, dz;
+    if (Lp < 30) {        // (a point or a stub: a pipe down the fall line from its middle)
+      const f = fall(hi.x, hi.z, 10); dx = f.dx; dz = f.dz; const len0 = 90; hi = { x: (hi.x + lo.x) / 2 - dx * len0 / 2, z: (hi.z + lo.z) / 2 - dz * len0 / 2 }; Lp = len0;
+    } else { dx = (lo.x - hi.x) / Lp; dz = (lo.z - hi.z) / Lp; }
+    const len = Math.max(60, Math.min(170, Lp));
+    // (down the fall line, as pipes are cut, where the mapped line runs within 35 degrees of it: across a slope the pipe
+    // would stand metres over the snow on its low side)
+    { const fm = fall(hi.x + dx * len / 2, hi.z + dz * len / 2, 25); if (fm.m > 0.05 && fm.dx * dx + fm.dz * dz > Math.cos(35 * RAD)) { const sx = hi.x + dx * len / 2 - fm.dx * len / 2, sz = hi.z + dz * len / 2 - fm.dz * len / 2; hi = { x: sx, z: sz }; dx = fm.dx; dz = fm.dz; } }
+    const F = new F2(hi.x, hi.z, thOf(dx, dz)), W = 6.5 + 5.4 + 0.15 + 3.5;
+    // the floor: a plane fitted down the highest snow across the pipe, lifted to clear it (snow is built up, not dug)
+    const mx = [], mn = [];
+    for (let z = 0; z <= len; z += 4) { let a = -Infinity, b = Infinity; for (let x = -W; x <= W; x += 2) { const y = G(F.wx(x, z), F.wz(x, z)); if (y > a) a = y; if (y < b) b = y; } mx.push([z, a]); mn.push(b); }
+    let sz = 0, sy = 0, szz = 0, szy = 0; for (const [z, a] of mx) { sz += z; sy += a; szz += z * z; szy += z * a; }
+    const nn = mx.length, slope = (nn * szy - sz * sy) / Math.max(1e-6, nn * szz - sz * sz), grade = clamp(-slope, 0.12, 0.45);
+    let f0 = -Infinity; for (const [z, a] of mx) if (z >= 10 && z <= len - 8) f0 = Math.max(f0, a + grade * z); if (!Number.isFinite(f0)) f0 = mx[0][1]; f0 += 0.1;
+    // (dropped into from above: never starting higher than the snow at its top; lower down the snow may then show through
+    // its floor on the high side, which the ground's own height keeps smooth)
+    f0 = Math.min(f0, G(F.wx(0, 0), F.wz(0, 0)) + 0.3);
+    let raise = 0; mx.forEach(([z], i) => { raise = Math.max(raise, f0 - grade * z - mn[i]); });
+    if (raise > 9) continue;              // (across a slope too steep for a pipe to stand on)
+    const pp = new WPipe({ name: Pp.name, len, floor0: f0, grade, raise });
+    const w = add(pp, F, Pp.name); kickers.push({ k: pp, F, w, park: 'pipe' + counts.parks });
+    take(F.wx(0, len / 2), F.wz(0, len / 2), len / 2 + 14);
+    counts.parks++; counts.pipes = (counts.pipes || 0) + 1;
+    mark('pipe', Pp.name, F.wx(0, len / 2), F.wz(0, len / 2), F.th, 'osm');
+    parkList.push({ name: Pp.name, pts: Pp.pts, area: !!Pp.area, generated: false, built: true, real: ['halfpipe (' + (Pp.src ? 'man_made=piste:halfpipe or its name' : 'man_made=piste:halfpipe') + ')'], gen: [] });
+    if (Pp.src) Pp.src.pipeBuilt = true;
+  }
+  const parks = data.pistes.filter(p => p.park && !p.pipe && !p.pipeBuilt && p.pts.length >= 2 && !NOT_PARK.test(p.name || ''));
+  const sameAs = P => parkList.find(e => e.built && e.generated && e.pts.some(r => P.pts.some(s => Math.hypot(r.x - s.x, r.z - s.z) < 25)));
   for (const P of parks) {
+    const entry = { name: P.name || 'Terrain park', pts: P.pts, area: !!P.area, generated: true, real: ['its outline or line (' + (P.snowPark ? 'piste:type=snow_park' : 'a run named a park') + ')'], gen: [] };
+    // (inside a park already laid out, as a park's area and its line often both are: once)
+    const twin = sameAs(P);
+    parkList.push(entry);
+    if (twin) { entry.gen.push('none: the same park as ' + twin.name); continue; }
     // its fall line: from its highest point to its lowest
     let hi = null, lo = null;
     for (const p of P.pts) { if (!inArea(p.x, p.z)) continue; const y = G(p.x, p.z); if (!hi || y > hi.y) hi = { x: p.x, z: p.z, y }; if (!lo || y < lo.y) lo = { x: p.x, z: p.z, y }; }
-    if (!hi || !lo) continue;
-    const L = Math.hypot(lo.x - hi.x, lo.z - hi.z); if (L < 60 || hi.y - lo.y < 6) continue;
-    const dx = (lo.x - hi.x) / L, dz = (lo.z - hi.z) / L, F = new F2(hi.x, hi.z, thOf(dx, dz));
+    if (!hi || !lo) { entry.gen.push('none: outside the area built'); continue; }
+    const L2 = Math.hypot(lo.x - hi.x, lo.z - hi.z); if (L2 < 60 || hi.y - lo.y < 6) { entry.gen.push('none: too short or flat (' + Math.round(L2) + ' m, ' + Math.round(hi.y - lo.y) + ' m down)'); continue; }
+    const dx = (lo.x - hi.x) / L2, dz = (lo.z - hi.z) / L2, F = new F2(hi.x, hi.z, thOf(dx, dz));
     const base = z => G(F.wx(0, z), F.wz(0, z)), pitch = z => Math.atan((base(z - 0.5) - base(z + 0.5)) / 1.0);
-    counts.parks++;
+    counts.parks++; entry.built = true;
     // (a run that is not the park crossing its line: nothing built where it passes within 9 m)
     const others = data.pistes.filter(q => q !== P && !q.park && !q.area);
     const crossed = (za, zb) => {
@@ -146,32 +262,35 @@ export function addFeatures(park, land, data, opts = {}) {
       return false;
     };
     let z = 18, k = 0;
-    while (z < L - 40 && k < (low ? 4 : 6)) {
+    while (z < L2 - 40 && k < (low ? 4 : 6)) {
       const pz = (pitch(z) + pitch(z + 20) + pitch(z + 40)) / 3 / RAD;
       // a jump, sized by the slope there: a medium one where it is steep enough to feed it, a small one elsewhere
-      const big = pz > 11 && L - z > 120;
+      const big = pz > 11 && L2 - z > 120;
       const o = big ? { lip: 27, R: 10, drop: 0.5, table: 9, Rk: 3.5, land: 30, wT: 2.7, wD: 4.6, wL: 7.5 } : { lip: 24, R: 7, drop: 0.35, table: 5, Rk: 3, land: 27, wT: 2.4, wD: 4, wL: 6.5 };
       if (pz < 4) { z += 20; continue; }
       const kk = new Kicker(Object.assign({ name: (P.name || 'Terrain park') + (big ? ' medium jump' : ' small jump'), x: 0, z0: z, base, pitch, group: 'World park', sideS: 0.62, landS: 0.55 }, o));
-      if (kk.zMeet > L + 10) break;
+      if (kk.zMeet > L2 + 10) break;
       if (crossed(kk.z0 - 10, kk.zMeet + 4)) { z += 25; continue; }
       const w = add(kk, F, kk.name); kickers.push({ k: kk, F, w, park: counts.parks });
       take(F.wx(0, (kk.z0 + kk.zMeet) / 2), F.wz(0, (kk.z0 + kk.zMeet) / 2), (kk.zMeet - kk.z0) / 2 + 12);
-      counts.parkKickers++; k++;
+      counts.parkKickers++; k++; entry.gen.push(big ? 'medium jump' : 'small jump');
+      mark('jump', kk.name, F.wx(0, (kk.z0 + kk.zMeet) / 2), F.wz(0, (kk.z0 + kk.zMeet) / 2), F.th, 'generated');
       z = kk.zMeet + 22;
       // a rail row: a box and a rail side by side, each on its snow ramp
-      if (z < L - 30 && !crossed(z - 5, z + 12)) {
+      if (z < L2 - 30 && !crossed(z - 5, z + 12)) {
         for (const [sx, kind, h, len] of [[-3.2, 'box', 0.38, 9], [3.2, 'rail', 0.55, 10]]) {
           const zs = z, ze = z + len;
           const a = [F.wx(sx, zs), F.wz(sx, zs)], b = [F.wx(sx, ze), F.wz(sx, ze)];
           rails.push(new Rail({ name: (P.name || 'Terrain park') + (kind === 'box' ? ' box' : ' rail'), kind, pts: [[a[0], a[1], h], [b[0], b[1], h * 0.9]] }));
           add(new Ramp({ h: h - 0.06, len: 3.2, hw: kind === 'box' ? 1.3 : 1.1 }), new F2(F.wx(sx, zs - 0.4), F.wz(sx, zs - 0.4), F.th), 'Ramp');
-          counts.parkRails++;
+          counts.parkRails++; entry.gen.push(kind);
+          mark(kind, (P.name || 'Terrain park') + ' ' + kind, F.wx(sx, zs + len / 2), F.wz(sx, zs + len / 2), F.th, 'generated');
         }
         take(F.wx(0, z + 5), F.wz(0, z + 5), 14);
         z += 34;
       }
     }
+    if (!entry.gen.length) entry.gen.push('none: no stretch steep enough for a jump, or runs crossing it');
   }
 
   // ---- side hits and rollers along the groomed runs
@@ -204,7 +323,7 @@ export function addFeatures(park, land, data, opts = {}) {
       let jx = -nx * side * 0.7 + ux * 0.75, jz = -nz * side * 0.7 + uz * 0.75; const jl = Math.hypot(jx, jz); jx /= jl; jz /= jl;
       const h = 0.9 + r() * 0.7;
       add(new Lip({ h, up: 5 + h * 2, face: 2.4 + h, hw: 2.5 + r() * 1.5, soft: 2.5, name: 'Side hit' }), new F2(bx, bz, thOf(jx, jz)), 'Side hit');
-      take(bx, bz, 14); counts.sideHits++;
+      take(bx, bz, 14); counts.sideHits++; mark('side hit', 'Side hit', bx, bz, thOf(jx, jz), 'generated');
       break;
     }
     // a roller where the run steepens over a knoll (the slope 25 m on steeper than 25 m back)
@@ -212,12 +331,12 @@ export function addFeatures(park, land, data, opts = {}) {
       const back = (G(S.x - ux * 25, S.z - uz * 25) - cy) / 25, on = (cy - G(S.x + ux * 25, S.z + uz * 25)) / 25;
       if (on - back > 0.12 && back < 0.35 && r() < 0.7) {
         add(new Lip({ h: 0.7 + r() * 0.5, up: 9, face: 7, hw: Math.max(4, S.hw - 4), soft: 4, packed: false, name: 'Roller' }), new F2(S.x, S.z, thOf(ux, uz)), 'Roller');
-        take(S.x, S.z, 30); counts.rollers++;
+        take(S.x, S.z, 30); counts.rollers++; mark('roller', 'Roller', S.x, S.z, thOf(ux, uz), 'generated');
       }
     }
   }
 
-  // ---- off the runs: rock drops and wind lips where the ground's shape has them
+  // ---- off the runs: wind lips where the ground's shape has them (a convex break: gentle above, steeper below)
   const E = land.ext, step = 24, cand = [];
   for (let z = E.z0 + 200; z < E.z1 - 200; z += step) for (let x = E.x0 + 200; x < E.x1 - 200; x += step) {
     const jx = x + (r() - 0.5) * step, jz = z + (r() - 0.5) * step;
@@ -226,7 +345,6 @@ export function addFeatures(park, land, data, opts = {}) {
     // near a run (within about 250 m): somewhere riders can get to
     let near = false; for (let k = 0; k < 8 && !near; k++) { const a = k * Math.PI / 4; for (const d of [80, 160, 250]) if (land.onRun(jx + Math.cos(a) * d, jz + Math.sin(a) * d) > 0.3) { near = true; break; } }
     if (!near) continue;
-    // its shape down the fall line: gentle above, steep below (a convex break)
     const y0 = G(jx, jz), up = (G(jx - f.dx * 18, jz - f.dz * 18) - y0) / 18, dn = (y0 - G(jx + f.dx * 18, jz + f.dz * 18)) / 18;
     const conv = Math.atan(dn) - Math.atan(up);
     if (conv < 8 * RAD) continue;
@@ -247,43 +365,115 @@ export function addFeatures(park, land, data, opts = {}) {
   };
   // the way in: from `from` m up the way to the lip, no rock and nothing steeper than about 40 degrees (a run-in a rider
   // can ride; a drop above a cliff left riders sliding down the cliff)
-  const runIn = (F, from) => {
-    for (let zz = from; zz <= -2; zz += 4) for (const sx of [-3, 0, 3]) {
+  const runIn = (F, from, to = -2) => {
+    for (let zz = from; zz <= to; zz += 4) for (const sx of [-3, 0, 3]) {
       const x = F.wx(sx, zz), z = F.wz(sx, zz);
       if (land.cliff(x, z) || land.ny(x, z, 4) < 0.76) return false;
     }
     return true;
   };
   for (const c of cand) {
-    if (counts.drops >= maxDrops && counts.windLips >= maxLips) break;
+    if (counts.windLips >= maxLips) break;
     if (!inArea(c.x, c.z)) continue;
     const steepBelow = Math.atan(c.dn) / RAD;
-    // a rock drop where it falls away steeply below (28 to 48 degrees), a wind lip on a gentler roll off a crest
-    if (steepBelow > 27 && steepBelow < 48 && c.up > 0.3 && counts.drops < maxDrops && free(c.x, c.z, 60)) {
-      let H = clamp(2 + (steepBelow - 27) / 21 * 6 + (r() - 0.5) * 1.5, 2, 8);
-      const hl = clamp(10 + r() * 22, 10, 32), F = new F2(c.x, c.z, thOf(c.f.dx, c.f.dz));
-      /* the bench above the face: long enough that the snow on it still slopes down the way (the raise over the bench is
-         at most 0.45 of the slope above it, in its steepest part), else the face lower; a bench that would be uphill
-         stopped riders on it */
-      const upS = Math.max(0.05, c.up);
-      let bench = 1.8 * H / (upS * 0.45);
-      if (bench > 55) { H = Math.max(2, 55 * upS * 0.45 / 1.8); bench = 1.8 * H / (upS * 0.45); }
-      if (bench > 60 || !landing(F, 0.5) || !runIn(F, -bench - 25)) continue;
-      // (never across a run, nor right above one)
-      let clear = true;
-      for (let s = -hl; s <= hl && clear; s += 4) for (const zz of [-14, 0, 12]) if (land.onRun(F.wx(s, zz), F.wz(s, zz)) > 0.05) { clear = false; break; }
-      if (!clear) continue;
-      const b = new Band({ H, hl, bench: Math.max(10, bench), seed: counts.drops + 1 });
-      const w = add(b, F, 'Rock drop'); rocky.push({ b, F });
-      take(c.x, c.z, Math.max(30, hl + 12)); take(F.wx(0, 28), F.wz(0, 28), hl + 12); counts.drops++;   // (and its landing: no trees there)
-    } else if (steepBelow >= 18 && steepBelow <= 34 && Math.atan(c.up) / RAD < 16 && counts.windLips < maxLips && free(c.x, c.z, 50)) {
+    if (steepBelow >= 18 && steepBelow <= 34 && Math.atan(c.up) / RAD < 16 && free(c.x, c.z, 50)) {
       const F = new F2(c.x, c.z, thOf(c.f.dx, c.f.dz)), hw = 8 + r() * 12;
       let clear = true;
       for (let s = -hw; s <= hw && clear; s += 4) if (land.onRun(F.wx(s, 0), F.wz(s, 0)) > 0.05) clear = false;
       if (!clear || !landing(F, 2.5) || !runIn(F, -30)) continue;
       add(new Lip({ h: 1.2 + r() * 0.9, up: 7, face: 2.2, hw, soft: 5, packed: false, name: 'Wind lip' }), F, 'Wind lip');
       take(c.x, c.z, hw + 20); take(F.wx(0, 25), F.wz(0, 25), hw + 8); counts.windLips++;
+      mark('wind lip', 'Wind lip', c.x, c.z, F.th, 'generated');
     }
+  }
+  /* ---- rock drops (W, round 11, for "make the rock and cliff more accurate for real ski mountains"): only where the rock
+     is: along OpenStreetMap's mapped cliffs (natural=cliff), and where the elevation itself steps (steeper than about 46
+     degrees over 8 m, and the drop across the step more than the slope round it gives); none from a guess. Each face is
+     as tall as the elevation measured across it there: the drop over 10 m either side less what the slope over 40 m
+     either side would give, eased along the face, 1.5 to 9 m (a taller cliff is left a rock wall). Never on a groomed
+     run: a mapped cliff across one keeps the run smooth and its rock beside it (wland.js). */
+  counts.dropsOsm = 0; counts.dropsDem = 0; counts.dropsRandom = 0; counts.cliffPieces = 0;
+  const stepAcross = (x, z, nx, nz) => {
+    const d10 = G(x - nx * 10, z - nz * 10) - G(x + nx * 10, z + nz * 10), d40 = G(x - nx * 40, z - nz * 40) - G(x + nx * 40, z + nz * 40);
+    return Math.max(0, d10 - d40 / 80 * 20);
+  };
+  const onGroomed = (x, z) => land.groom(x, z) > 0.2 || land.onRun(x, z) > 0.3;
+  const pieces = [];
+  // the mapped cliffs, cut into straight pieces of 9 to 24 m where the elevation steps 1.5 m or more across them
+  if (L) for (const l of L.cliff) {
+    if (!l.some(p => land.elev.inFine(p.x, p.z, 0))) continue;
+    const S = [];
+    for (let i = 0; i < l.length - 1; i++) {
+      const a = l[i], b = l[i + 1], len = Math.hypot(b.x - a.x, b.z - a.z); if (len < 0.5) continue;
+      const tx = (b.x - a.x) / len, tz = (b.z - a.z) / len;
+      for (let s = 0; s < len; s += 3) {
+        const x = a.x + tx * s, z = a.z + tz * s;
+        if (!inArea(x, z)) { S.push({ x, z, tx, tz, nx: 1, nz: 0, D: 0, ok: false }); continue; }
+        // (the low side: OpenStreetMap draws a cliff with its face on the right; the elevation decides where it is clear)
+        let nx = -tz, nz = tx; const dd = G(x - nx * 12, z - nz * 12) - G(x + nx * 12, z + nz * 12);
+        if (dd < -1) { nx = -nx; nz = -nz; }
+        S.push({ x, z, tx: dd < -1 ? -tx : tx, tz: dd < -1 ? -tz : tz, nx, nz, D: inArea(x, z) ? stepAcross(x, z, nx, nz) : 0, ok: inArea(x, z) && !onGroomed(x, z) && !onGroomed(x + nx * 8, z + nz * 8) && !onGroomed(x - nx * 8, z - nz * 8) });
+      }
+    }
+    let cur = [];
+    const flush = () => { if (cur.length >= 4) pieces.push({ S: cur, src: 'osm' }); cur = []; };
+    for (const s of S) {
+      const good = s.ok && s.D >= 1.5 && s.D <= 14;
+      if (!good) { flush(); continue; }
+      if (cur.length && (cur.length >= 8 || cur[0].nx * s.nx + cur[0].nz * s.nz < 0.9)) flush();
+      cur.push(s);
+    }
+    flush();
+  }
+  counts.cliffPieces = pieces.length;
+  // the elevation's own steps (where no cliff is mapped): from the convex breaks above
+  for (const c of cand) {
+    if (pieces.length > 400) break;
+    if (!inArea(c.x, c.z) || onGroomed(c.x, c.z)) continue;
+    const D = stepAcross(c.x, c.z, c.f.dx, c.f.dz);
+    if (D < 2 || D > 14 || land.ny(c.x + c.f.dx * 8, c.z + c.f.dz * 8, 4) > 0.7) continue;
+    if (land.cliffW && land.cliffW.at(c.x, c.z) > 0.1) continue;       // (a mapped cliff is there: done above)
+    const tx = c.f.dz, tz = -c.f.dx, S = [];
+    for (let k = -3; k <= 3; k++) { const x = c.x + tx * k * 3, z = c.z + tz * k * 3; S.push({ x, z, tx, tz, nx: c.f.dx, nz: c.f.dz, D: stepAcross(x, z, c.f.dx, c.f.dz) }); }
+    pieces.push({ S, src: 'dem' }); counts.demPieces = (counts.demPieces || 0) + 1;
+  }
+  counts.cand = cand.length;
+  // nearest the runs first (where riders can get to them)
+  const nearRun = (x, z) => { for (const d of [40, 90, 160, 250]) for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; if (land.onRun(x + Math.cos(a) * d, z + Math.sin(a) * d) > 0.3) return d; } return 999; };
+  for (const P of pieces) { const m = P.S[P.S.length >> 1]; P.m = m; P.near = nearRun(m.x, m.z); }
+  pieces.sort((a, b) => a.near - b.near);
+  const why = counts.dropWhy = { far: 0, low: 0, taken: 0, bench: 0, landing: 0, runIn: 0, run: 0 };
+  for (const P of pieces) {
+    if (counts.drops >= maxDrops) break;
+    if (P.near > 300) { why.far++; continue; }
+    const m = P.m; let nx = 0, nz = 0; for (const s of P.S) { nx += s.nx; nz += s.nz; } const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
+    const F = new F2(m.x, m.z, thOf(nx, nz)), xs = P.S.map(s => F.loc(s.x, s.z).x), x0 = Math.min(...xs), x1 = Math.max(...xs);
+    // (the face's heights along it, from the elevation, at 3 m steps, eased over two samples either side)
+    const n = Math.max(2, Math.round((x1 - x0) / 3) + 1), Hs = [];
+    for (let i = 0; i < n; i++) { const lx = x0 + (x1 - x0) * i / (n - 1); let best = P.S[0], bd = Infinity; for (const s of P.S) { const d = Math.abs(F.loc(s.x, s.z).x - lx); if (d < bd) { bd = d; best = s; } } Hs.push(best.D); }
+    const Hm = Hs.map((h, i) => Math.min(9, (Hs[Math.max(0, i - 1)] + 2 * h + Hs[Math.min(n - 1, i + 1)]) / 4));
+    const H = Math.max(...Hm); if (H < 1.5) { why.low++; continue; }
+    const hl = (x1 - x0) / 2; if (!free(m.x, m.z, Math.max(20, hl + 8))) { why.taken++; continue; }
+    // the bench above the face: long enough that the snow on it still slopes down the way (as the old drops)
+    const upS = Math.max(0.05, (G(F.wx(0, -30), F.wz(0, -30)) - G(F.wx(0, -5), F.wz(0, -5))) / 25);
+    // (a gentle slope above makes a long bench; past 100 m the face is kept lower, as the slope above allows)
+    let bench = 1.8 * H / (upS * 0.45), Hk = 1;
+    if (bench > 100) { Hk = 100 / bench; bench = 100; }
+    if (H * Hk < 1.5) { why.bench++; continue; }
+    // (a landing below: from 8 m on, no other rock, not too steep, not flat; a way in above)
+    let ok = true, prev = G(F.wx(0, 8), F.wz(0, 8));
+    for (let zz = 12; zz <= 40 && ok; zz += 4) { const x = F.wx(0, zz), z = F.wz(0, zz), y = G(x, z), drop = (prev - y) / 4; if (drop > (zz < 20 ? 1.5 : 1.0) || (zz > 16 && drop < 0.2) || (zz > 18 && land.cliff(x, z)) || land.onRun(x, z) > 0.05) ok = false; prev = y; }
+    if (!ok) { why.landing++; continue; }
+    // (the way in above the bench: the bench itself is built over the slope there)
+    if (!runIn(F, -Math.max(10, bench) - 25, -Math.max(10, bench))) { why.runIn++; continue; }
+    let clear = true;
+    for (let s = x0 - 3; s <= x1 + 3 && clear; s += 4) for (const zz of [-14, 0, 12]) if (land.onRun(F.wx(s, zz), F.wz(s, zz)) > 0.05) { clear = false; break; }
+    if (!clear) { why.run++; continue; }
+    const b = new DataBand({ H: H * Hk, hl: Math.max(hl, 4), bench: Math.max(10, bench), xs0: x0, dx: (x1 - x0) / (n - 1), Hs: Hm.map(h => h * Hk), seed: counts.drops + 1, name: P.src === 'osm' ? 'Cliff drop' : 'Rock drop' });
+    add(b, F, b.name); rocky.push({ b, F });
+    take(m.x, m.z, Math.max(30, hl + 12)); take(F.wx(0, 28), F.wz(0, 28), hl + 12); counts.drops++;
+    if (P.src === 'osm') counts.dropsOsm++; else counts.dropsDem++;
+    mark('rock drop', b.name + ' (' + (H * Hk).toFixed(1) + ' m)', m.x, m.z, F.th, P.src);
   }
 
   // ---- into the park: features, rails; rock faces marked on the rock raster (the physics' walls, the snow's rock)
@@ -346,5 +536,5 @@ export function addFeatures(park, land, data, opts = {}) {
   const fieldHeight = (x, z) => { const g = land.at(x, z), f = park.heightTerrainOnly(x, z, g); return f > g ? f : g; };
   // (a place a feature has taken: its run-in, itself and its landing; no trees there: wmap.js)
   const taken = (x, z) => !free(x, z, 2);
-  return { counts, dress, fieldHeight, out, taken };
+  return { counts, dress, fieldHeight, out, taken, marks, parks: parkList };
 }

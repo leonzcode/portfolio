@@ -5,18 +5,19 @@
    The place is opts.place: { name, sub, lat, lon, preset } (a built-in resort has preset, its slug; a searched one not).
    Its id (worldId) goes in the room's map, so riders at other places are not mixed (the relay takes 16 letters, digits
    and underscores). */
-import { setMountain, height, ground, normal } from './terrain.js?v=26';
-import { Frame, Elevation, demStats } from './wdem.js?v=26';
-import { loadOsm, parse, skiExtent } from './wosm.js?v=26';
-import { PRESETS, MAMMOTH, worldId, originOf } from './wplaces.js?v=26';
-import { WorldLand, forestCover, treelineFor } from './wland.js?v=26';
-import { makeWorldPark, fallYaw } from './wpark.js?v=26';
-import { liftLines, planWorldLifts, WorldLifts, kindName } from './wlift.js?v=26';
-import { addFeatures } from './wfeat.js?v=26';
-import { TrailMap } from './wtrail.js?v=26';
-import { makeSigns } from './wsigns.js?v=26';
-import { setRockSource, rebakeRockField, freerideLook } from './materials.js?v=26';
-import { smoothstep, fbm } from './noise.js?v=26';
+import { setMountain, height, ground, normal } from './terrain.js?v=27';
+import { Frame, Elevation, demStats } from './wdem.js?v=27';
+import { loadOsm, loadLand, parse, skiExtent } from './wosm.js?v=27';
+import { PRESETS, MAMMOTH, worldId, originOf } from './wplaces.js?v=27';
+import { WorldLand, forestCover, treelineFor } from './wland.js?v=27';
+import { TreeStream, WorldForest, woodIndex, fitRunWidths } from './wtrees.js?v=27';
+import { makeWorldPark, fallYaw } from './wpark.js?v=27';
+import { liftLines, planWorldLifts, WorldLifts, kindName } from './wlift.js?v=27';
+import { addFeatures } from './wfeat.js?v=27';
+import { TrailMap } from './wtrail.js?v=27';
+import { makeSigns } from './wsigns.js?v=27';
+import { setRockSource, rebakeRockField, freerideLook } from './materials.js?v=27';
+import { smoothstep, fbm } from './noise.js?v=27';
 
 export { PRESETS, MAMMOTH, worldId, originOf };
 
@@ -51,6 +52,8 @@ export async function makeWorld(q, place, say, opts = {}) {
      picker beside it stays usable to go somewhere else) */
   const skipAc = new AbortController(), skip = document.getElementById('wskip');
   if (skip) skip.onclick = () => { skipAc.abort(); skip.hidden = true; };
+  // (W, round 11: the forests, rock and the rest of the land cover, asked for beside the runs: wosm.js loadLand)
+  const landP = loadLand(Object.assign({}, place, o), frame, () => {}, skipAc.signal).catch(e => { console.warn('land', e); return { land: null, from: 'none' }; });
   const got = await loadOsm(Object.assign({}, place, o), t => { if (skip && /OpenStreetMap/.test(t)) skip.hidden = false; return say(t, 0.32); }, skipAc.signal);
   if (skip) skip.hidden = true;
   const data = parse(got.osm, frame); mark('osm');
@@ -63,11 +66,17 @@ export async function makeWorld(q, place, say, opts = {}) {
   if (opts.drop) { cx = opts.drop.x; cz = opts.drop.z; }
   else if (ext) { const b = busiest(data, size); if (b) { cx = b.x; cz = b.z; } else { cx = ext.cx; cz = ext.cz; } }
   const elev = new Elevation(frame, cx, cz, fineN);
-  // (the forest from the satellite picture, asked for meanwhile)
-  const forestP = forestCover(frame, elev.fineExtent()).catch(() => null);
+  /* (the forest from the satellite picture, asked for meanwhile: W, round 11, only where OpenStreetMap maps no woods at
+     all, as the fallback; the land's answer decides) */
+  const forestP = landP.then(r => r.land && r.land.wood.length ? null : forestCover(frame, elev.fineExtent()).catch(() => null));
   await say('Reading the ground (elevation tiles)', 0.36);
   await elev.load((n, all) => { if (n % 4 === 0 || n === all) say(`Reading the ground (${n} of ${all} elevation tiles)`, 0.36 + 0.14 * n / all); });
   mark('dem');
+  // (W, round 11) the land cover: up to 20 s more for it once the ground is in (a searched place asks Overpass)
+  const gotLand = await Promise.race([landP, new Promise(r => setTimeout(() => r({ land: null, from: 'late' }), 20000))]);
+  const osmLand = gotLand.land; mark('land');
+  // (the mapped woods, once; a run with no width tag as wide as the gap the woods leave for it, where they are cut for it)
+  const woods = woodIndex(osmLand), runsFitted = fitRunWidths(data, woods, (x, z) => elev.inFine(x, z, 0));
   // ---- the mountain
   await say('Grooming the runs', 0.5);
   const land = new WorldLand(frame, elev, data, { low });
@@ -82,11 +91,11 @@ export async function makeWorld(q, place, say, opts = {}) {
   };
   if (low) mtn.lodK = 0.8;
   setMountain(mtn);
-  land.buildRock(); mark('rock');
+  land.woods = woods; land.buildRock(osmLand); mark('rock');   // (W, round 11: and OpenStreetMap's cliffs, bare rock, scree, glaciers)
   park = makeWorldPark(land);
   // ---- the generated features (side hits, wind lips, drops, the parks' lines): before the lifts, which stand clear of them
   await say('Shaping the snow', 0.52);
-  const feats = addFeatures(park, land, data, { low }); mark('features');
+  const feats = addFeatures(park, land, data, { low, L: osmLand }); mark('features');   // (W, round 11: L, the mapped cliffs and halfpipes)
   // ---- the lifts
   await say('Building the lifts', 0.54);
   const inArea = (x, z) => elev.inFine(x, z, 60);
@@ -139,8 +148,20 @@ export async function makeWorld(q, place, say, opts = {}) {
   }
   // ---- the forest
   await say('Planting the trees', 0.58);
-  const cover = await Promise.race([forestP, new Promise(r => setTimeout(() => r(null), 15000))]);
-  mtn.trees = (max, r) => plantTrees(land, data, planned, park, cover, max, r, o.lat, starts[0], low, feats);
+  /* (W, round 11) only where OpenStreetMap maps woods (wtrees.js), the runs, lifts and clearings cut out of them; where it
+     maps none at all here, the old rule: the satellite picture's green, else a treeline from the latitude */
+  const hasWood = !!(osmLand && osmLand.wood.length);
+  const cover = hasWood ? null : await Promise.race([forestP, new Promise(r => setTimeout(() => r(null), 15000))]);
+  const tl = treelineFor(o.lat) - land.y0;
+  const fallback = (x, z, y) => {
+    let d;
+    if (cover) { const c = cover.at(x, z); d = c < 0 ? 0 : c; }
+    else d = 1 - smoothstep(tl - 180, tl + 40, y + 60 * fbm(x * 0.004, z * 0.004, 2));
+    return d * smoothstep(-0.25, 0.2, fbm(x * 0.02, z * 0.02, 2));    // (clumps and glades)
+  };
+  const stream = new TreeStream(land, data, osmLand, { q, park, feats, fallback, woods }); stream.runsFitted = runsFitted;
+  const woodSrc = hasWood ? 'osm' : cover ? 'satellite' : 'treeline';
+  mtn.trees = () => stream.initial(starts[0].x, starts[0].z);
   mark('forest');
   // ---- the rock drawn on the snow: the faces and the steep snow off the runs (materials.js's field, round the start)
   freerideLook();
@@ -152,6 +173,12 @@ export async function makeWorld(q, place, say, opts = {}) {
   // the terrain's quadtree: a square 64 km across round the area built (the far elevation's horizon)
   const root = { x0: Math.round(cx / 64) * 64 - 32768, z0: Math.round(cz / 64) * 64 - 32768, size: 65536 };
   const W = { mtn, park, land, frame, data, planned, starts, cover, id: worldId(place), place, from: got.from, times, demStats, ext: elev.fineExtent(), center: { x: cx, z: cz }, feats, root };
+  /* (W, round 11) the land cover and the forest: osmLand (wlanddata.js, null if none came), landFrom where it came from,
+     wood.at(x, z) the forest cover 0..1 (the trail map's tree texture), woodSrc 'osm' | 'satellite' | 'treeline';
+     makeForest(scene, q) for main.js (the forest streamed round the camera) */
+  W.osmLand = osmLand; W.landFrom = gotLand.from; W.woodSrc = woodSrc; W.trees = stream;
+  { const c2 = [0, 0]; W.wood = hasWood ? { at: (x, z) => { stream.woods.cellAt(x, z, c2); return c2[0] >= 2 ? 1 : c2[0] === 1 ? 0.35 : 0; } } : { at: (x, z) => fallback(x, z, land.at(x, z)) }; }
+  W.makeForest = (scene, q2) => new WorldForest(scene, q2, mtn, stream);
   // (main.js, once the scene is up: the runs' signs and markers and the parks' meshes)
   W.dress = (scene, mats, q2) => { if (feats && feats.dress) feats.dress(scene, mats, q2); W.signs = makeSigns(scene, W, q2); };
   /* (main.js, each frame) the fine heights streamed in round the rider once past the built area (wdem.js stream): asked
@@ -162,24 +189,34 @@ export async function makeWorld(q, place, say, opts = {}) {
     if (W.miniFrame && W.liveSk) W.miniFrame(dt, W.liveSk);
     // (the snow's rock field baked again round the rider once 450 m from its middle: the fine window is 1.3 km)
     if (Math.hypot(p.x - fieldAt[0], p.z - fieldAt[1]) > 450 && rebakeRockField([p.x, p.z])) fieldAt = [p.x, p.z];
-    streamT -= dt; if (streamT > 0) return; streamT = 0.5;
-    elev.stream(p.x, p.z, b => { terrain.invalidate(b.x0, b.z0, b.x1, b.z1); W.streamed = (W.streamed || 0) + 1; }, 1.4, low ? 24 : 40);
+    // (W11 fly: faster than a skier goes, asked for four times a second, and round the point about 5 s ahead too, at most
+    // 3 km on; a tile let go past the cap (gone) is counted apart)
+    const sv = W.liveSk && W.liveSk.v, sp = sv ? Math.hypot(sv.x, sv.z) : 0, ah = sp > 30 ? Math.min(3000, sp * 5) / sp : 0;
+    streamT -= dt; if (streamT > 0) return; streamT = ah ? 0.25 : 0.5;
+    elev.stream(p.x, p.z, (b, gone) => { terrain.invalidate(b.x0, b.z0, b.x1, b.z1); if (gone) W.evicted = (W.evicted || 0) + 1; else W.streamed = (W.streamed || 0) + 1; stream.forget(b); }, 1.4, low ? 24 : 40, ah ? p.x + sv.x * ah : undefined, ah ? p.z + sv.z * ah : undefined);
   };
   // (main.js: the trail map behind the pause menu's button)
   W.trail = g => {
     const b = document.getElementById('totrail'); if (!b) return;
     let map = null;
+    const tm = W.trailMap = () => map || (map = new TrailMap(W, g));
     b.classList.remove('hidden');
-    b.onclick = () => { if (!map) map = new TrailMap(W, g); document.getElementById('pause').classList.add('hidden'); map.open(); };
-    W.trailMap = () => map || (map = new TrailMap(W, g));
-    // (the corner map while riding: a click opens the trail map, the game paused)
+    b.onclick = () => { document.getElementById('pause').classList.add('hidden'); tm().open(); };
+    /* (W11 trail) every frame while riding (W.frame): a lift built in stretches ridden on, the corner map, and the map's
+       tiles made ahead in idle moments (wtrail.js frame); the corner map and the made-ahead list are set up once the
+       start is over, in an idle moment (a few milliseconds) */
+    W.miniFrame = (dt, sk) => { if (map) map.frame(dt, sk); };
     const hud = document.getElementById('hud');
-    if (hud && g.pause && !matchMedia('(hover: none)').matches) {
-      const tm = W.trailMap(), openIt = () => { g.pause(); document.getElementById('pause').classList.add('hidden'); tm.open(); };
-      // (made once the start is over, in an idle moment: its shading is about a fifth of a second of work)
-      const make = () => { W.miniFrame = tm.mini(hud, openIt); };
-      setTimeout(() => (typeof requestIdleCallback === 'function' ? requestIdleCallback(make, { timeout: 4000 }) : make()), 2500);
-    }
+    const idle = f => (typeof requestIdleCallback === 'function' ? requestIdleCallback(f, { timeout: 4000 }) : setTimeout(f, 50));
+    const make = () => {
+      const m = tm();
+      if (hud && g.pause && !matchMedia('(hover: none)').matches) m.mini(hud, () => { g.pause(); document.getElementById('pause').classList.add('hidden'); m.open(); });
+      else m.ahead();
+    };
+    // (the runs' and lifts' list read in one idle moment, the corner map set up in the next)
+    setTimeout(() => idle(() => { tm().prep(); idle(make); }), 2000);
+    // (a lift picked on the trail map before the page was built again round it: ridden once Ride is pressed)
+    if (takeDrop.board) tm().pendingBoard(takeDrop.board);
   };
   if (typeof window !== 'undefined') window.__skiWorld = W;     // (a test handle)
   return W;
@@ -187,55 +224,13 @@ export async function makeWorld(q, place, say, opts = {}) {
 export { WorldLifts, fallYaw };
 // a drop on the trail map outside the area built: the page is built again round it (sessionStorage, this place only)
 export function takeDrop(place) {
+  takeDrop.board = null;       // (W11 trail: a lift to put the rider on once Ride is pressed, W.trail)
   try {
     const d = JSON.parse(sessionStorage.getItem('ski_wdrop') || 'null'); sessionStorage.removeItem('ski_wdrop');
-    if (d && place && d.id === worldId(place) && Date.now() - d.at < 120000) return { x: d.x, z: d.z, spawn: true };
+    if (d && place && d.id === worldId(place) && Date.now() - d.at < 120000) { takeDrop.board = d.board || null; return { x: d.x, z: d.z, spawn: d.spawn !== false }; }
   } catch (e) {}
   return null;
 }
 
-/* trees: as many as the tier allows (and a little more, the far ones are one card each), most of them where riders see
-   them: along the runs' edges and round the start, where the forest is (the satellite's green) or, without that picture,
-   below the treeline; never on a run, a lift's line, a station, a feature or anything steeper than about 40 degrees */
-function plantTrees(land, data, planned, park, cover, max, r, lat, start, low, feats) {
-  const out = [], E = land.ext, want = Math.round(max * 1.6), tl = treelineFor(lat) - land.y0;
-  // the lifts' lines as segments (16 m either side kept clear)
-  const lifts = planned.plans.map(P => ({ ax: P.F.wx(0, P.plan.bot.z + 20), az: P.F.wz(0, P.plan.bot.z + 20), bx: P.F.wx(0, P.plan.top.z - 20), bz: P.F.wz(0, P.plan.top.z - 20) }));
-  const nearLift = (x, z) => lifts.some(L => { const dx = L.bx - L.ax, dz = L.bz - L.az, l2 = dx * dx + dz * dz; let t = ((x - L.ax) * dx + (z - L.az) * dz) / l2; t = t < 0 ? 0 : t > 1 ? 1 : t; return Math.hypot(x - L.ax - dx * t, z - L.az - dz * t) < 16; });
-  const density = (x, z, y) => {
-    let d;
-    if (cover) { const c = cover.at(x, z); d = c < 0 ? 0 : c; }
-    else d = 1 - smoothstep(tl - 180, tl + 40, y + 60 * fbm(x * 0.004, z * 0.004, 2));
-    // (clumps and glades)
-    return d * smoothstep(-0.25, 0.2, fbm(x * 0.02, z * 0.02, 2));
-  };
-  // places to try: beside the runs (most of them), round the start, anywhere in the area
-  const segs = [];
-  for (const p of data.pistes) for (let i = 0; i < p.pts.length - 1; i++) segs.push([p.pts[i], p.pts[i + 1], p.w / 2]);
-  const sx = start ? start.x : 0, sz = start ? start.z : 0;
-  for (let tries = 0; out.length < want && tries < want * 10; tries++) {
-    const k = r();
-    let x, z;
-    if (k < 0.6 && segs.length) {
-      const [a, b, hw] = segs[(r() * segs.length) | 0], t = r(), side = r() < 0.5 ? -1 : 1, dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
-      const off = hw + 4 + Math.pow(r(), 1.8) * 140;
-      x = a.x + dx * t + side * -dz / l * off; z = a.z + dz * t + side * dx / l * off;
-    } else if (k < 0.85) { const a = r() * Math.PI * 2, d = 20 + Math.sqrt(r()) * 1600; x = sx + Math.cos(a) * d; z = sz + Math.sin(a) * d; }
-    else { x = E.x0 + r() * (E.x1 - E.x0); z = E.z0 + r() * (E.z1 - E.z0); }
-    if (!land.elev.inFine(x, z, 30)) continue;
-    if (land.onRun(x, z) > 0.05 || land.groom(x, z) > 0.02) continue;
-    // (and a few metres more off a run's edge, as the edges' own trees are cut back)
-    if (land.onRun(x + 6, z) > 0.3 || land.onRun(x - 6, z) > 0.3 || land.onRun(x, z + 6) > 0.3 || land.onRun(x, z - 6) > 0.3) continue;
-    const y = ground(x, z);
-    if (r() > density(x, z, y)) continue;
-    if (land.cliff(x, z) || land.rockAmt(x, z) > 0.05) continue;
-    if (park.surface(x, z) || park.height(x, z, y) > y + 0.05) continue;
-    if (feats && feats.taken(x, z)) continue;
-    const e = 1.5, gx = (ground(x + e, z) - ground(x - e, z)) / (2 * e), gz = (ground(x, z + e) - ground(x, z - e)) / (2 * e);
-    if (Math.hypot(gx, gz) > 0.84) continue;
-    if (nearLift(x, z)) continue;
-    const up = cover ? 1 : 1 - smoothstep(tl - 200, tl, y);
-    out.push({ x, y: y - 0.3, z, s: (6 + r() * 11) * (0.6 + 0.4 * up), rot: r() * 6.28 });
-  }
-  return out;
-}
+/* (W, round 11: the trees are wtrees.js's now, from the woods OpenStreetMap maps; the old planting by the satellite
+   picture is its fallback, `fallback` in makeWorld) */

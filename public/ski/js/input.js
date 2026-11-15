@@ -16,7 +16,7 @@
 // A press is only used within 0.3 s of being made, so an old one never fires later.
 // All: C changes the camera (Q in the shred scheme), Backspace goes back to the top, Esc pauses; R starts again a
 // little earlier (mouse and keys; in the shred scheme R is a tweak key and Enter does it).
-import { POSITIONS } from './grabs.js?v=26';
+import { POSITIONS } from './grabs.js?v=27';
 export { POSITIONS };
 
 const GRAB_KEYS = {
@@ -69,7 +69,7 @@ export function keyHelp(scheme, kind = 'ski') {
   // (2026-11-12: the mouse scheme is no longer offered, main.js; its keys are not listed)
   if (scheme === 'shred') base = [
     ['← / →', 'turn / spin'], ['↓', 'brake (hold to stop) / back flip'], ['↑', 'crouch for less drag, skate on the flat / front flip'],
-    ['Shift', 'skate forward; in the air a shifty (Left Shift left, Right Shift or Alt right)'], ['Air: A / D', 'left / right shifty'], ...(sTrick ? [] : [['S', hl.lazy]]), ['G / H', 'Lincoln loop'],
+    ['Shift', 'push hard forward, uphill too; in the air a shifty (Left Shift left, Right Shift or Alt right)'], ['Air: A / D', 'left / right shifty'], ...(sTrick ? [] : [['S', hl.lazy]]), ['G / H', 'Lincoln loop'],
     ['Space', 'crouch for less drag, let go to pop'], ['N', hl.butter],
     ['N N', 'just after a landing: a revert'], ['Air: ← ← / → →', 'a quick second press spins faster'],
     ['R (snow or rail)', hl.oneFoot], ['E (snow or rail)', hl.together],
@@ -83,7 +83,7 @@ export function keyHelp(scheme, kind = 'ski') {
   ];
   base.push([scheme === 'shred' ? 'Q' : 'C', 'camera (chase, far, first person, filmer)']);
   if (scheme !== 'shred') base.push(['R', 'start again a little earlier']);
-  base.push(['Backspace', 'back to the top'], ['Esc', 'pause']);
+  base.push(['Backspace', 'back to the top'], ['Shift + `', 'fly around: W A S D move, Space up, Shift down, Ctrl faster, drag or the arrows look, the wheel zooms; again to land on the snow below'], ['Esc', 'pause']);   // (W11 fly: fly.js)
   return { base, grabs };
 }
 
@@ -175,6 +175,8 @@ export class Input {
       const L = k.down('KeyA', 'ArrowLeft'), R = k.down('KeyD', 'ArrowRight'), F = k.down('KeyW', 'ArrowUp'), B = k.down('KeyS', 'ArrowDown');
       const shift = k.down('ShiftLeft', 'ShiftRight');
       I.butter = shift && !air;
+      // Shift alone on the snow (no direction key) is the hard push, as in Shredsauce Controls; with a direction it butters
+      if (I.butter && !L && !R && !F && !B) { I.butter = false; I.push = true; }
       I.press = I.butter ? (F ? 1 : B ? -1 : 0) : 0;
       I.tilt = (k.down('KeyE') ? 1 : 0) - (k.down('KeyQ') ? 1 : 0);
       if (air && shift) { I.shifty = (R ? 1 : 0) - (L ? 1 : 0); }

@@ -1,7 +1,7 @@
 // The heads-up display: speed, score and the line's multiplier, trick names as they land, rail balance, a grab list.
-import { GRABS, guideOf } from './grabs.js?v=26';
-import { keyHelp } from './input.js?v=26';
-import { rideGrabDef, rideGuide } from './board.js?v=26';      // (B: a board's, scooter's... own grab names in the lists)
+import { GRABS, guideOf } from './grabs.js?v=27';
+import { keyHelp } from './input.js?v=27';
+import { rideGrabDef, rideGuide } from './board.js?v=27';      // (B: a board's, scooter's... own grab names in the lists)
 
 const $ = id => document.getElementById(id);
 /* (2026-11-12, Leon: "make it so that controls appear at the top left every time unless the user toggles them off")
@@ -13,16 +13,18 @@ function mainKeys(scheme, kind) {
     ['Space', 'hold to crouch, let go to pop'], ['Q / E', 'tilt the spin (corks)'],
     ['Shift + W / S', sled ? 'with A / D: spin flat on the snow' : 'butter on the nose / tail'],
     ['C', 'camera'], ['R', 'start again a little earlier'], ['Backspace', 'back to the top'],
-    ['E', 'at a lift: ride it up'], ['Esc', 'pause, all keys'],
+    ['E', 'at a lift: ride it up'], FLY_KEY, ['Esc', 'pause, all keys'],   // (W11 fly: FLY_KEY)
   ];
   return [
     ['← / →', 'turn; in the air, spin'], ['↑', 'tuck; in the air, front flip'], ['↓', 'brake; in the air, back flip'],
-    ['Space', 'hold to crouch, let go to pop'], ['Shift', 'skate forward'], ['G / H', 'Lincoln loop'],
+    ['Space', 'hold to crouch, let go to pop'], ['Shift', 'push hard forward, uphill too'], ['G / H', 'Lincoln loop'],
     ['N', sled ? 'with ← / →: spin flat on the snow' : 'butter (with ↓ the tail)'],
     ['Q', 'camera'], ['Enter', 'back to your last crash; twice: the start'], ['Backspace', 'back to the top'],
-    ['E', 'at a lift: ride it up'], ['Esc', 'pause, all keys'],
+    ['E', 'at a lift: ride it up'], FLY_KEY, ['Esc', 'pause, all keys'],   // (W11 fly)
   ];
 }
+// (W11 fly, 2026-11-14: fly.js, the same in both schemes)
+const FLY_KEY = ['Shift + `', 'fly around (W A S D); again to land'];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 export class Hud {
   constructor() {
@@ -31,7 +33,7 @@ export class Hud {
     this.shown = []; this.score = 0; this.lastK = -1;
     // Tab hides the controls panel (in the Shredsauce scheme Tab sets a marker, so the key there is the one left of 1)
     // (2026-11-12, Leon: shown by default every time: no timer hides it, and the choice is not kept past this visit)
-    addEventListener('keydown', e => { if (e.code === (this.scheme === 'shred' ? 'Backquote' : 'Tab') && !(e.target && e.target.tagName === 'INPUT')) { e.preventDefault(); this.hint.classList.toggle('hidden'); } });
+    addEventListener('keydown', e => { if (e.code === (this.scheme === 'shred' ? 'Backquote' : 'Tab') && !(e.shiftKey && e.code === 'Backquote') && !(e.target && e.target.tagName === 'INPUT')) { e.preventDefault(); this.hint.classList.toggle('hidden'); } });   // (W11 fly: Shift + ` flies, main.js; it leaves this alone)
   }
   show(on) { $('hud').classList.toggle('hidden', !on); }
   // (B: what you ride, for the grab names in the lists)

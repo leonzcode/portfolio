@@ -12,10 +12,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { snowUniforms, setFieldSun } from './materials.js?v=26';
-import { height, runHalf, getPark } from './terrain.js?v=26';
-import { installShadowOnly } from './shadowproxy.js?v=26';
-import { bake } from './gear.js?v=26';
+import { snowUniforms, setFieldSun } from './materials.js?v=27';
+import { height, runHalf, getPark } from './terrain.js?v=27';
+import { installShadowOnly } from './shadowproxy.js?v=27';
+import { bake } from './gear.js?v=27';
 
 const KEY = 'ski_env';
 export const ENV = Object.assign({ time: 12.5, sky: 'clear', snow: 'groomed' },
@@ -124,6 +124,9 @@ void main() {
      few degrees above, the dome is the horizon's own colour round the compass, the same colour (already on the
      screen's scale) the far snow and the fog fade into, so the gap and the far snow are one colour.) */
   gl_FragColor.rgb = mix(gl_FragColor.rgb, texture2D(uHz, vec2(az, 0.5)).rgb, 1.0 - smoothstep(-0.5, 3.0, el));
+  // (G, round 11: half a step of the screen's 8 bits of noise, so the sky's long smooth gradients, the dusk's and the
+  // night's dark ones above all, show no bands)
+  gl_FragColor.rgb += (fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5) / 255.0;
 }`;
 
 const sRGBtoLin = s => (s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4));
@@ -154,7 +157,7 @@ export class Env {
     // the sun (by night, the floodlight over the rider): a shadow box that follows the rider
     this.sunDir = new THREE.Vector3();
     const sun = this.sun = new THREE.DirectionalLight(0xfff1df, 3.1);
-    const shadowRes = q.tier === 'low' ? 1024 : 2048, box = q.tier === 'low' ? 26 : 34;
+    const shadowRes = q.shadowRes || (q.tier === 'low' ? 1024 : 2048), box = q.tier === 'low' ? 26 : 34;
     sun.castShadow = q.shadows;
     sun.shadow.mapSize.set(shadowRes, shadowRes);
     Object.assign(sun.shadow.camera, { left: -box, right: box, top: box, bottom: -box, near: 1, far: 300 });

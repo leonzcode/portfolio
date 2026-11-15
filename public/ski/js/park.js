@@ -3,8 +3,8 @@
 // function the physics reads directly; kickers and the pipe also get meshes of their own, much finer at the lips,
 // knuckles and coping than the terrain's patches.
 import * as THREE from 'three';
-import { baseLine, pitchAt, ground, setRun, height, getPark } from './terrain.js?v=26';
-import { smoothstep, clamp, smax } from './noise.js?v=26';
+import { baseLine, pitchAt, ground, setRun, height, getPark } from './terrain.js?v=27';
+import { smoothstep, clamp, smax } from './noise.js?v=27';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -28,12 +28,13 @@ export class Kicker {
   pa(z) { return this.pitch ? this.pitch(z) : pitchAt(z); }
   constructor(o) {
     Object.assign(this, { lip: 27, R: 10, drop: 0.5, table: 10, Rk: 3.5, land: 31, wT: 2.6, wD: 4.5, wL: 7.5, name: 'kicker',
-      side: 1, wF: 0, sideS: 0.62, landS: 0.5, shoulder: 0.8, toe: 0.35, wTab: 0 }, o);
+      side: 1, wF: 0, sideS: 0.62, landS: 0.5, shoulder: 0.8, toe: 0.35, wTab: 0, tabZ: [-0.5, 4] }, o);
     this.ownMesh = true;
     // the takeoff's core: the jump (x +- wT) and the feature strip of width wF on one side of it
     this.cxT = this.x + this.side * this.wF / 2; this.hwT = this.wT + this.wF / 2;
     this.splay = Math.max(0, (this.wD - this.wT) * 0.5);          // the table widens a little towards the knuckle
-    // (J, round 10: wTab, a table wider than the takeoff, reached 4 m past the lip: jump 1's, under its two skews)
+    // (J, round 10: wTab, a table wider than the takeoff, reached 4 m past the lip: jump 1's, under its two skews; J, round
+    // 11: tabZ, where it widens, metres past the lip)
     this.tab = this.wTab > this.hwT ? this.wTab - this.hwT : 0;
     this.hwLand = Math.max(this.wL + this.wF / 2, this.hwT + this.tab + this.splay + 0.5);
     this.ents = [];                                               // snow ramps up to the features' starts (Jump Line)
@@ -121,7 +122,7 @@ export class Kicker {
   // the core's half width along the kicker: the takeoff's, splaying a little along the table, then out to the landing's
   hwAt(z) {
     if (z <= this.L.z) return this.hwT;
-    const t = this.tab ? this.tab * smoothstep(this.L.z - 0.5, this.L.z + 4, z) : 0;
+    const t = this.tab ? this.tab * smoothstep(this.L.z + this.tabZ[0], this.L.z + this.tabZ[1], z) : 0;
     if (z <= this.K.z) return this.hwT + t + this.splay * (z - this.L.z) / (this.K.z - this.L.z);
     return this.hwT + t + this.splay + (this.hwLand - this.hwT - t - this.splay) * smoothstep(this.K.z, this.zMeet, z);
   }
@@ -185,12 +186,16 @@ export class Kicker {
   }
   // rows in z: fine at the lip, its back face and the knuckle (the entry ramps have grids of their own: entryGrid)
   rows(fine) {
-    const r = [], st = fine ? 0.6 : 1.0;
+    /* (J, round 11: on the low tier the takeoff's arc 1.6 m a row, the lip's back face (a plane) 0.25 m and the knuckle 0.7
+       m: the surface moves 2 cm at most, and two kickers in the first row came to 30 000 triangles a jump without it) */
+    const r = [], st = fine ? 0.6 : 1.6;
     for (let z = this.z0 - 0.5; z < this.L.z; z += st) r.push(z);
     for (let z = this.L.z; z < this.K.z - 0.5; z += fine ? 1.2 : 2.0) r.push(z);
-    for (let z = this.Kend.z + 0.5; z < this.z1; z += fine ? 1.2 : 2.0) r.push(z);
-    for (let z = this.L.z - 0.5; z < this.L.z + this.drop * 1.75 + 0.3; z += fine ? 0.06 : 0.1) r.push(z);
-    for (let z = this.K.z - 0.5; z < this.Kend.z + 0.5; z += fine ? 0.2 : 0.35) r.push(z);
+    for (let z = this.Kend.z + 0.5; z < this.z1; z += fine ? 1.2 : 1.4) r.push(z);   // (J, round 11: 1.4 on the low tier, was 2: its rounded shoulders, widening along the landing, came out 0.17 m low between rows)
+    for (let z = this.L.z - 0.5; z < this.L.z + this.drop * 1.75 + 0.3; z += fine ? 0.06 : 0.25) r.push(z);
+    for (let z = this.K.z - 0.5; z < this.Kend.z + 0.5; z += fine ? 0.2 : 0.7) r.push(z);
+    // (J, round 11: and where the landing rounds into the slope: at 2 m, the low tier's rows cut across it up to 0.27 m)
+    for (let z = this.zMeet - 3; z < Math.min(this.z1, this.zMeet + 3); z += fine ? 0.5 : 0.7) r.push(z);
     for (const z of [this.L.z - 0.2, this.L.z - 0.17, this.L.z + 0.03, this.K.z + 0.26, this.K.z + 0.29, this.K.z + 0.51, this.K.z + 0.54, this.L.z - 1.4]) r.push(z);
     r.push(this.L.z, this.L.z - 0.005, this.zBack);
     return [...new Set(r.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
@@ -199,10 +204,32 @@ export class Kicker {
   cols(fine) {
     const c = [], st = fine ? 0.9 : 1.4;
     for (let x = this.x0; x <= this.x1; x += st) c.push(x);
-    for (const hw of [this.hwT, this.hwT + this.tab + this.splay, (this.hwT + this.hwLand) / 2, this.hwLand]) for (const s of [-1, 1])
+    // (J, round 11: and a quarter and three quarters of the way out, where the landing's edge passes as it widens)
+    const hm = this.hwT + this.tab + this.splay;
+    for (const hw of [this.hwT, hm, (this.hwT + this.hwLand) / 2, this.hwLand, hm + (this.hwLand - hm) * 0.25, hm + (this.hwLand - hm) * 0.75]) for (const s of [-1, 1])
       for (const e of fine ? [-0.25, 0, 0.2, 0.4, 0.6, 0.8, 1.1] : [-0.2, 0, 0.4, 0.8]) c.push(this.cxT + s * (hw + e));
     for (const s of [-1, 1]) for (const e of [-0.12, -0.07, 0, 0.07, 0.12]) c.push(this.x + s * (this.wT + e));
     return [...new Set(c.map(v => Math.round(v * 1000) / 1000))].filter(v => v >= this.x0 && v <= this.x1).sort((a, b) => a - b);
+  }
+  /* (J, round 11) the far copy's rows and columns (featureMeshSteps, past main.js's JUMP_FAR): the lip, its back face and
+     the knuckle as close as in the near copy, the plain ramp, table, landing and sides 1.6 to 1.8 m apart. Thinned from the
+     near grid by spacing alone, the far copies kept most of the near copy's rows and carried most of the park's
+     triangles looking down the course from the top. */
+  rowsFar() {
+    const r = [], dz = this.L.z + this.drop * 1.75 + 0.3;
+    for (let z = this.z0 - 0.5; z < this.L.z - 1; z += 1.6) r.push(z);
+    r.push(this.L.z - 1, this.L.z - 0.4, this.L.z - 0.15, this.L.z, this.L.z + 0.05, this.zBack, this.zBack + 0.3, dz);
+    for (let z = dz; z < this.K.z - 0.5; z += 1.8) r.push(z);
+    for (let z = this.K.z - 0.5; z < this.Kend.z + 0.5; z += 0.7) r.push(z);
+    for (let z = this.Kend.z + 0.5; z < this.z1; z += 1.6) r.push(z);
+    r.push(this.zMeet - 1.2, this.zMeet, this.zMeet + 1.5, this.z1);
+    return uniq(r.filter(z => z >= this.z0 - 0.5 && z <= this.z1));
+  }
+  colsFar() {
+    const c = [], hm = this.hwT + this.tab + this.splay;
+    for (let x = this.x0; x <= this.x1; x += 1.6) c.push(x);
+    for (const hw of [this.hwT, hm, (hm + this.hwLand) / 2, this.hwLand]) for (const s of [-1, 1]) for (const e of [0, 0.5]) c.push(this.cxT + s * (hw + e));
+    return uniq(c).filter(v => v >= this.x0 && v <= this.x1);
   }
   /* (J, 2026-11-11) a snow ramp up to a feature's start, drawn as a small grid of its own over just its footprint: as rows
      and columns of the kicker's own grid they ran its whole length and width, 38k of the Jump Line's 173k snow triangles
@@ -503,11 +530,12 @@ class Line extends Shape {
   cols(fine) { const c = span(this.u0, this.u1, fine ? 0.8 : 1.3); for (const s of [-1, 1]) for (const e of [-0.2, 0, 0.3, 0.6, 1.0]) c.push(s * (this.hw + e)); return uniq(c); }
 }
 /* a step-up: a takeoff, a gap, then a face rising to a deck `up` metres higher than the lip, which you land on, a knuckle
-   and a landing. (Never land short of it: its face is what you hit.) vDesign: the speed at the foot that lands a third
-   of the way along the deck. */
+   and a landing. (Never land short of it: its face is what you hit.) vDesign: the speed at the foot that lands `aim` of
+   the way along the deck (a third; J, round 11: the Jump Line's are aimed at 0.45, so a rider half a metre a second
+   slow still lands on the deck, not on the face's edge). */
 export class StepUp extends Line {
   constructor(o) {
-    super(Object.assign({ name: 'Step-up', lip: 30, R: 9, gap: 2.2, up: 0.5, upA: 32 * RAD, deckL: 7, deckA: 5 * RAD, land: 30, Rk: 5, hw: 2.8 }, o));
+    super(Object.assign({ name: 'Step-up', lip: 30, R: 9, gap: 2.2, up: 0.5, upA: 32 * RAD, deckL: 7, deckA: 5 * RAD, land: 30, Rk: 5, hw: 2.8, aim: 0.33 }, o));
     const p = pitchAt(this.z0), lip = this.lip * RAD, A = { z: this.z0, y: baseLine(this.z0) };
     const C = this.C = { z: A.z + this.R * Math.sin(p), y: A.y + this.R * Math.cos(p) };
     this.L = { z: C.z + this.R * Math.sin(lip), y: C.y - this.R * Math.cos(lip) };
@@ -523,9 +551,9 @@ export class StepUp extends Line {
     this.zMeet = z;
     this.breaks = [this.z0, this.L.z, this.zU, this.zD0, this.zD1, this.zK1];
     this.setup(this.z0 - 0.3, this.zMeet + 3);
-    // the speed off the lip that lands a third of the way along the deck, then up the ramp
+    // the speed off the lip that lands `aim` of the way along the deck, then up the ramp
     const surf = z => { const c = this.relC(z); return baseLine(z) + (c > 0 ? c : 0); };
-    this.vLip = flightFor(this.L, lip, surf, this.zD0 + this.deckL * 0.33);
+    this.vLip = flightFor(this.L, lip, surf, this.zD0 + this.deckL * this.aim);
     const rise2 = this.L.y - baseLine(this.z0);
     this.vDesign = Math.sqrt(this.vLip * this.vLip + 2 * 9.81 * rise2 * (1.12 + 0.02 * rise2)) + 0.5;
   }
@@ -547,14 +575,18 @@ export class StepUp extends Line {
    the table, which takes you on to the knuckle; its back falls at 32 degrees towards the lip. */
 export class Rollin extends Line {
   constructor(o) {
-    super(Object.assign({ name: 'Knuckle huck drop-in', H: 2.0, len: 10, top: 1.5, hw: 1.2, sideS: 0.8 }, o));
+    super(Object.assign({ name: 'Knuckle huck drop-in', H: 2.0, len: 10, top: 1.5, hw: 1.2, sideS: 0.8, zIn: 4.5 }, o));
     const k = this.k;
-    this.yT = k.yT; this.zA = k.L.z + 4.5; this.zB = this.zA + this.top; this.zC = this.zB + this.len;
+    this.yT = k.yT; this.zA = k.L.z + this.zIn; this.zB = this.zA + this.top; this.zC = this.zB + this.len;
     this.zA0 = this.zA - this.H / 0.62; this.breaks = [this.zA, this.zB, this.zC];
-    this.setup(this.zA0, this.zC + 0.5);
+    // (J, round 11: from 0.3 m before its back's foot, at the table's own height there: its grid began on that foot, and
+    // the first row, rounded to the millimetre, fell just before it, where it had no snow, so its first cells dived to the
+    // ground and showed a hole 0.5 m deep in the table)
+    this.setup(this.zA0 - 0.3, this.zC + 0.5);
   }
   relC(z) {
-    if (z < this.zA0 || z > this.zC) return -Infinity;
+    if (z < this.zA0 - 0.3 || z > this.zC) return -Infinity;
+    if (z < this.zA0) return this.yT - baseLine(z);
     const t = clamp((z - this.zB) / this.len, 0, 1), h = z < this.zA ? this.H - (this.zA - z) * 0.62 : z < this.zB ? this.H : this.H * (1 - t * t * (3 - 2 * t));
     return this.yT + h - baseLine(z);
   }
@@ -591,7 +623,10 @@ export class SkewKicker extends Shape {
     const L = this.toLocal(x, z, _sl), k = this.k;
     if (this.cut && L.s > k.zBack + 0.02) return -Infinity;
     const r = k.height(L.u, L.s, 0); if (r === -Infinity) return -Infinity;
-    const rc = k.rel(L.s, 0), w = rc > 0.05 ? clamp(r / rc, 0, 1) : 0;
+    /* (J, round 11: the fall across taken out fades in over the takeoff's first 0.3 m of height; it came in all at once
+       where the takeoff stood 5 cm tall, a 6 cm step 1 m off its middle 1.5 m up from its foot, which the skis read as a lip:
+       riders hopped there and left the real lip slow) */
+    const rc = k.rel(L.s, 0), w = rc > 0 ? clamp(r / rc, 0, 1) * smoothstep(0, 0.3, rc) : 0;
     const y = g + r - (baseLine(z) - k.bl(L.s)) * w;
     return y > g + 0.002 ? y : -Infinity;
   }
@@ -606,12 +641,14 @@ export class SkewKicker extends Shape {
    down it. A wallride is one with a tall vertical part (vert), faced with wood (railMeshes draws the boards). */
 export class Quarter {
   constructor(o) {
-    Object.assign(this, { R: 4.0, vert: 0.4, deck: 2.5, dir: 1, entry: 6, exit: 6, ownMesh: true, local: true, trim: true, lod: true, name: 'quarterpipe', group: 'Features', base: null, xAt: null }, o);
+    // (backS: how steeply its back falls away behind the deck; J, round 11: 0.9 for Jump 6's inner one, which stands high on
+    // the landing and kept its back off the street side's rails so)
+    Object.assign(this, { R: 4.0, vert: 0.4, deck: 2.5, dir: 1, entry: 6, exit: 6, backS: 0.7, ownMesh: true, local: true, trim: true, lod: true, name: 'quarterpipe', group: 'Features', base: null, xAt: null }, o);
     if (!this.xAt) { const x = this.x; this.xAt = () => x; }
     this.H = this.R + this.vert; this.aDeck = this.R + 0.15 + this.deck;
     let xa = Infinity, xb = -Infinity, hb = 0;
     for (let z = this.z0; z <= this.z1 + 1e-6; z += 1) { const e = this.xAt(z); xa = Math.min(xa, e); xb = Math.max(xb, e); if (this.base) { const g = ground(e, z); hb = Math.max(hb, this.base(e, z, g) - g); } }
-    const reach = this.aDeck + (this.H + hb) / 0.7 + 1;
+    const reach = this.aDeck + (this.H + hb) / this.backS + 1;
     this.x0 = this.dir > 0 ? xa - 0.5 : xa - reach; this.x1 = this.dir > 0 ? xb + reach : xb + 0.5; this.zs = this.z0;
     this.x = (xa + xb) / 2; this.reach = reach;
   }
@@ -623,22 +660,150 @@ export class Quarter {
     if (z < this.z0 || z > this.z1 || x < this.x0 || x > this.x1) return -Infinity;
     const s = this.scale(z); if (s <= 0) return -Infinity;
     const a = (x - this.xAt(z)) * this.dir; if (a < 0.01) return -Infinity;
-    const b = this.base ? this.base(x, z, g) : g;
-    const y = a <= this.aDeck ? b + this.wall(a) * s : b + this.H * s - (a - this.aDeck) * 0.7;
+    /* (J, round 11: the snow it stands on (a landing's, base) rises with its wall over its entry and falls with it over its
+       exit: at full height from its first row, its ends were a hidden step up out of the landing's side slope, up to 2 m
+       a few metres out, drawn as a slope across by the mesh) */
+    const b = this.base ? g + (this.base(x, z, g) - g) * s : g;
+    const y = a <= this.aDeck ? b + this.wall(a) * s : b + this.H * s - (a - this.aDeck) * this.backS;
     return y > g + 0.002 ? y : -Infinity;
   }
   surface(x, z) { if (z < this.z0 || z > this.z1) return false; const a = (x - this.xAt(z)) * this.dir; return a > -0.5 && a < this.aDeck && this.scale(z) > 0; }
-  rows(fine) { return uniq([...span(this.z0, this.z1, fine ? 0.9 : 2.0), ...span(this.z0, this.z0 + this.entry, fine ? 0.5 : 0.8), ...span(this.z1 - this.exit, this.z1, fine ? 0.5 : 0.8)]); }
+  // (J, round 11: 1.3 m apart on the low tier, 0.7 over its ends: at 2 m and 0.8, where a quarterpipe on a landing rises out
+  // of the landing's side the rows cut across the crease up to 0.25 m)
+  rows(fine) { return uniq([...span(this.z0, this.z1, fine ? 0.9 : 1.3), ...span(this.z0, this.z0 + this.entry, fine ? 0.5 : 0.7), ...span(this.z1 - this.exit, this.z1, fine ? 0.5 : 0.7)]); }
   // by arc length over the wall, so its steep part gets as many points as the flat
-  cols(fine) {
-    const st = fine ? 0.3 : 0.5, c = [0.02]; let a = 0.02, prev = this.wall(a);
+  cols(fine, step) {
+    const st = step || (fine ? 0.3 : 0.5), c = [0.02]; let a = 0.02, prev = this.wall(a);
     while (a < this.aDeck) {
       let da = st;
       for (let k = 0; k < 6; k++) { const l = Math.hypot(da, this.wall(a + da) - prev); if (l > st * 1.05) da *= st / l; else break; }
       a = Math.min(this.aDeck, a + Math.max(da, 0.008)); prev = this.wall(a); c.push(a);
     }
-    for (const v of span(this.aDeck, this.reach, fine ? 1.0 : 1.6)) c.push(v);
+    for (const v of span(this.aDeck, this.reach, step ? Math.max(step, 1.6) : 1.0)) c.push(v);
     return uniq(c);
+  }
+  // (J, round 11) the far copy's: the same arc length walk, coarser (featureMeshSteps)
+  colsThin(fine, st) { return this.cols(fine, Math.max(st, fine ? 0.3 : 0.5)); }
+}
+
+// ---- the street side's shapes (J, round 11) -------------------------------------------------------------------------
+/* For "make it so that one side of the entire park is rails and jib features and small jumps/other jump things you see on
+   the more street/jibby side ... right now some ramps are also invisible so fix this as well" (Leon, round 11). Each has a
+   mesh of its own (main.js builds them with the jumps), so none is left to the terrain's patches, which are 2 m a cell
+   near the rider on the low tier and 4 m further off: the rail sections' ramps (Wedge) were drawn up to 0.75 m under what
+   the skis rode. */
+/* the snow ramp up to a rail's or box's start: Wedge's very shape (rising along +z over len to h at zEnd, the rail
+   starting 0.7 m on, then falling away under the rail over 1.2 m; flanks 42 degrees), in a frame of its own (u across,
+   s = z - its foot) */
+export class Ramp extends Shape {
+  constructor(o) {
+    super(Object.assign({ len: 3.5, hw: 1.3, h: 0.5, name: 'Ramp', group: 'Ramps' }, o, { z: o.zEnd - (o.len ?? 3.5) }));
+    this.zEnd = this.z + this.len;
+    const side = this.hw + this.h / 0.9 + 0.1;
+    this.u0 = -side; this.u1 = side; this.s0 = -0.05; this.s1 = this.len + 1.25;
+    this.bound();
+  }
+  rel(u, s) {
+    if (s <= 0 || s >= this.len + 1.2) return -Infinity;
+    let r = s <= this.len ? this.h * (s / this.len) ** 1.3 : this.h - (s - this.len) * (this.h / 1.2);
+    return r - Math.max(0, Math.abs(u) - this.hw) * 0.9;
+  }
+  rows(fine) { const st = fine ? 0.25 : 0.35; return uniq([...span(0, this.len, st), ...span(this.len, this.len + 1.2, st / 2), this.len - 0.04, this.len + 0.04]); }
+  cols(fine) { const c = span(this.u0, this.u1, fine ? 0.25 : 0.35); for (const sg of [-1, 1]) for (const e of [-0.08, 0, 0.08]) c.push(sg * (this.hw + e)); return uniq(c); }
+  rowsFar() { return uniq([...span(0, this.len, 0.9), ...span(this.len, this.len + 1.2, 0.6), this.len - 0.04]); }
+  colsFar() { return uniq([this.u0, this.u1, 0, ...[-1, 1].map(sg => sg * this.hw)]); }
+}
+// a butter pad: a round low mound of packed snow for presses and spins on the snow (the park map's Mound, with a mesh)
+export class Pad extends Shape {
+  constructor(o) { super(Object.assign({ r: 5, h: 0.6, name: 'Butter pad' }, o)); this.u0 = this.s0 = -this.r; this.u1 = this.s1 = this.r; this.bound(); }
+  rel(u, s) { const d = Math.hypot(u, s) / this.r; return d >= 1 ? -Infinity : this.h * (Math.cos(d * Math.PI) * 0.5 + 0.5); }
+  rows(fine) { return span(-this.r, this.r, fine ? 0.4 : 0.6); }
+  cols(fine) { return span(-this.r, this.r, fine ? 0.4 : 0.6); }
+  rowsFar() { return span(-this.r, this.r, 1.2); }
+  colsFar() { return span(-this.r, this.r, 1.2); }
+}
+// rollers: n smooth bumps one after another down the fall line, a lane w either side of its middle, eased out over 3 m
+export class RollerLane extends Shape {
+  constructor(o) { super(Object.assign({ amp: 0.9, len: 11, n: 3, w: 3, name: 'Rollers' }, o)); this.u0 = -this.w - 3; this.u1 = this.w + 3; this.s0 = 0; this.s1 = this.len * this.n; this.bound(); }
+  rel(u, s) { if (s <= 0 || s >= this.len * this.n) return -Infinity; const q = Math.sin(Math.PI * s / this.len); return this.amp * q * q * (1 - smoothstep(this.w, this.w + 3, Math.abs(u))); }
+  rows(fine) { return span(0, this.len * this.n, fine ? 0.6 : 1.0); }
+  cols(fine) { return span(this.u0, this.u1, fine ? 0.6 : 1.0); }
+  rowsFar() { return span(0, this.len * this.n, 1.0); }
+  colsFar() { return span(this.u0, this.u1, 1.2); }
+}
+/* a stair set: a snow deck reached up a short rise, then N steps down (level treads, upright risers RW wide) whose noses
+   lie on a line `stair` degrees steep in the world, then a landing on along that line into the slope. A handrail and a
+   ledge stand on the deck's two sides and run on down beside the steps (rails the layout adds), each with a snow ramp
+   up to its start on the deck (ents, entryRel: as a kicker's takeoff features have). Ride the handrail or the ledge,
+   gap the steps from the deck's edge, or ride down them. (s is the world's z here: z = 0.) */
+const RW = 0.05;
+export class Stairs extends Line {
+  constructor(o) {
+    super(Object.assign({ name: 'Stair set', Hd: 2.2, riseL: 9, deckL: 6, N: 6, step: 0.3, stair: 30, hw: 3.2, sideS: 0.62, shoulder: 0.6 }, o));
+    this.ents = [];
+    this.ta = Math.tan(this.stair * RAD); this.tread = this.step / this.ta;
+    this.zB = this.z0 + this.riseL;                          // the deck's start
+    this.zC = this.zB + this.deckL;                          // its edge: the first nose
+    this.yC = baseLine(this.zC) + this.Hd;
+    this.zE = this.zC + this.N * this.tread;                 // the last tread's end, on the noses' line
+    this.yE = this.yC - this.N * this.step;
+    let z = this.zE; while (z < this.zE + 60 && this.yE - (z - this.zE) * this.ta > baseLine(z) - 0.02) z += 0.1;
+    this.zMeet = z;
+    const br = [this.z0, this.zB, this.zC, this.zMeet];
+    for (let i = 0; i < this.N; i++) br.push(this.zC + i * this.tread, this.zC + i * this.tread + RW);
+    this.breaks = br;
+    this.setup(this.z0 - 0.3, this.zMeet + 2.5);
+  }
+  // the noses' line (world y) at z, and on the snow as it lies at x (with the ground's own undulation, as every height
+  // here is the ground plus the shape): the handrail and the ledge follow it down
+  noseY(z) { return this.yC - (z - this.zC) * this.ta; }
+  noseSnow(x, z) { return this.noseY(z) + ground(x, z) - baseLine(z); }
+  relC(z) {
+    if (z < this.z0) return -Infinity;
+    const b = baseLine(z);
+    if (z < this.zB) { const t = (z - this.z0) / this.riseL; return this.Hd * t * t * (3 - 2 * t); }
+    if (z < this.zC) return this.Hd;                         // (the deck follows the slope)
+    let y;
+    if (z < this.zE) { const i = Math.min(this.N - 1, Math.floor((z - this.zC) / this.tread)), t = z - this.zC - i * this.tread; y = this.yC - i * this.step - this.step * Math.min(1, t / RW); }
+    else y = smax(this.yE - (z - this.zE) * this.ta, b, 0.8);
+    return y - b;
+  }
+  rows(fine) {
+    const r = span(this.za, this.zb, fine ? 0.8 : 1.3);
+    for (const b of [this.z0, this.zB, this.zC, this.zMeet]) for (const e of [-0.6, -0.3, -0.12, 0, 0.12, 0.3, 0.6]) if (b + e > this.za && b + e < this.zb) r.push(b + e);
+    // each riser's top and foot edge, and a row through each tread
+    for (let i = 0; i < this.N; i++) { const a = this.zC + i * this.tread; r.push(a - 0.01, a, a + RW, a + RW + 0.01, a + RW + (this.tread - RW) / 2); }
+    r.push(this.zE - 0.01, this.zE + 0.1, this.zE + 0.3);
+    return uniq(r);
+  }
+  bareRel(x, z) { return Shape.prototype.height.call(this, x, z, 0); }
+  height(x, z, g) {
+    let r = this.bareRel(x, z);
+    if (r === -Infinity) return -Infinity;
+    if (this.ents.length) r += this.entryRel(x, z);
+    return g + r;
+  }
+  snowY(x, z) { const r = this.bareRel(x, z); return ground(x, z) + (r > -Infinity ? r : 0); }
+  // the deck's edge sprayed blue (as a kicker's lip)
+  dye(x, z) { return Math.abs(z - this.zC + 0.06) < 0.08 && Math.abs(x - this.x) < this.hw ? 1 : 0; }
+}
+Stairs.prototype.entryRel = Kicker.prototype.entryRel;
+Stairs.prototype.entryGrid = Kicker.prototype.entryGrid;
+/* a close-out: a snow deck as high as the box that runs into it, its face (42 degrees) standing under the box's end, so
+   the box closes out into it: slide it and ride on out onto the deck, then down its back */
+export class CloseOut extends Line {
+  constructor(o) {
+    super(Object.assign({ name: 'Close-out', H: 0.5, deckL: 3, backL: 4.5, hw: 1.6, sideS: 0.62, shoulder: 0.5 }, o));
+    this.fw = this.H / Math.tan(42 * RAD);
+    this.breaks = [this.zF - this.fw, this.zF, this.zF + this.deckL];
+    this.setup(this.zF - this.fw - 0.3, this.zF + this.deckL + this.backL + 0.3);
+  }
+  relC(z) {
+    const a = this.zF - this.fw;
+    if (z < a || z > this.zF + this.deckL + this.backL) return -Infinity;
+    if (z < this.zF) return this.H * (z - a) / this.fw;
+    if (z < this.zF + this.deckL) return this.H;
+    const t = (z - this.zF - this.deckL) / this.backL; return this.H * (1 - t * t * (3 - 2 * t));
   }
 }
 
@@ -744,38 +909,13 @@ export function assemble({ kickers, pipe = null, qp = null, ground2 = [], rails 
   };
   return park;
 }
-/* ---- the Jump Line (2026-11-03) ------------------------------------------------------------------------------------
-   Jumps down the run, each one three takeoffs side by side, Large, Medium and Small, landing on one shared landing:
-   the Large lane's table and landing are built first, and each smaller lane is placed up the hill so that its own
-   (lower) table meets that same landing plane, just further down it, with the table length asked for (found by
-   bisection: further down the hill, the table comes out shorter). So you can choose a size at each jump and change
-   lanes between them.
-   (2026-11-08, J, for "make the large jumps even larger and upscale all the jumps respectively" and "make the jumps in
-   jump line more transitionable and easier to jump from one line to the other without casing":)
-   - every jump is bigger, after real slopestyle and park jumps: at full size the Large table 23 m (a 75 ft pro jump),
-     the Medium 17 m, the Small 12 m; each jump is as big as the slope there can feed with speed (a smaller size where
-     the run is gentle, rather than a long empty run-out);
-   - each next jump is placed where riders coming off this jump's Medium and Small landings have the next Large
-     takeoff's design speed (rollTo, with the physics' own drag and snow friction), with room to cross the line, so off
-     any lane's landing you can take any lane of the next jump; a rider with more than a takeoff wants is checked down
-     on its in-run (skier.js);
-   - the lanes are closer together, so crossing from one to another is shorter;
-   - below the last jump, on the gentler run, is a jib line (jibLine): rails, tubes and boxes in three columns, row
-     after row, each with its own snow ramp in.
-   The features that stood on the takeoffs beside the jumps (2026-11-05, from Leon's picture: a fat tube up the left
-   part of a kicker's ramp) were off in v20 to v22 (TAKEOFF_FEATURES) and are back (2026-11-11, J, round 9, for "put
-   rails on the jumps like before"): a rail, tube, box, bench or donkey dick on the same ramp beside every jump, three
-   different kinds across each jump's three lanes (PLAN), as fat as the jib line's; the lanes sit a little further
-   apart for their strips (x -20, 2, 18).
-   (2026-11-11, J, round 9, for "make the inrun for jumpline shorter":) the start is 100 m above the first jump's
-   Large takeoff (it was 198 m), with a steep drop in below it (JUMPLINE_RUN: 27 degrees, then the 14 degrees the
-   first jump stands on), so the first jump is still reached at its design speed and a little more. */
-const TAKEOFF_FEATURES = true;
-/* the Jump Line's run profile ([z where it starts, pitch in degrees], as terrain.js SECTIONS, which the park map keeps):
-   the old [12, 19], [42, 14] (a 19 degree pitch, then 14 degrees for 126 m before the first takeoff) is a drop in of
-   27 degrees from just below the start, easing to 14 degrees 34 m before the first takeoff; below that the same as the
-   park map's. A straight roll from the start at 5 m/s (rollTo) is at 20.7 m/s at the first Large takeoff's foot, which
-   wants 19.7 (in the old profile, 20.0 there). */
+/* ---- the Jump Line's jumps (2026-11-03; J, 2026-11-08) -----------------------------------------------------------
+   A jump of two or three lanes side by side lands them on one landing: the biggest lane's table and landing are built
+   first, and each smaller lane is placed up the hill so that its own (lower) table meets that same landing plane, just
+   further down it, with the table length asked for (laneOn: found by bisection). Sizes after real slopestyle and park
+   jumps: at full size the Large table 23 m (a 75 ft pro jump), the Medium 17 m, the Small 12 m. A rail, tube, box, bench
+   or donkey dick may stand on a takeoff beside the jump, on the same ramp (takeoffFeature, from Leon's picture: a fat
+   tube up the left part of a kicker's ramp). The course itself is makeJumpLine, below. */
 const LANES = {
   L: { lip: 31, R: 19, drop: 1.0, table: 23, land: 35, wT: 3.6, wD: 6.2, wL: 11, Rk: 6 },
   M: { lip: 29, R: 15, drop: 0.8, table: 17, land: 35, wT: 3.2, wD: 5.6, wL: 10, Rk: 6 },
@@ -790,16 +930,6 @@ const FEAT = {
   M: { wF: 2.8, tube: 0.5, box: 0.85, boxH: 0.4, bench: 0.6, benchL: 3.5, rail: 0.16, railH: 0.52, dd: 0.42, ddIn: 2.0, ddOut: 1.8, arcR: 4.4, arcRise: 0.6 },
   S: { wF: 2.6, tube: 0.45, box: 0.8, boxH: 0.35, bench: 0.55, benchL: 2.8, rail: 0.16, railH: 0.48, dd: 0.4, ddIn: 1.6, ddOut: 1.4, arcR: 3.2, arcRise: 0.42 },
 };
-// what stands on each jump's takeoffs: [Large, Medium, Small] (three different kinds at every jump)
-const PLAN = [
-  ['tube', 'box', 'bench'],
-  ['kinkTube', 'dd', 'tube'],
-  ['rainbowBox', 'tube', 'box'],
-  ['box', 'bench', 'dd'],
-  ['dd', 'rainbow', 'tube'],
-  ['bench', 'kink', 'box'],
-  ['upRail', 'tube', 'rainbow'],
-];
 // box sides and donkey dicks: park colours
 const PAINT = [0xff6a13, 0x1f6fd1, 0x2fa84f, 0xd8312b, 0xf2c014, 0x8a3ffc];
 // a lane that lands on another kicker's landing line, with about the table length asked for
@@ -824,9 +954,9 @@ function alongRamp(k, x, za, zb, T, step = 0.7) {
 // a snow ramp up to a feature's start, its top `gap` under the feature's
 function entry(k, x, z1, T, hw, gap = 0.03) { k.ents.push({ x, z0: z1 - clamp(T * 5.5, 1.5, 2.8), z1, h: Math.max(0.05, T - gap), hw }); }
 // the feature on one takeoff
-function takeoffFeature(k, kind, sz, j, lane) {
+function takeoffFeature(k, kind, sz, j, lane, prefix) {
   const F = FEAT[sz], x = k.x + k.side * (k.wT + k.wF / 2), ramp = k.L.z - k.z0, under = (px, pz) => k.snowY(px, pz);
-  const name = `Jump ${j + 1} ${{ L: 'Large', M: 'Medium', S: 'Small' }[sz]} `, colour = PAINT[(j * 3 + lane) % PAINT.length];
+  const name = prefix ?? `Jump ${j + 1} ${{ L: 'Large', M: 'Medium', S: 'Small' }[sz]} `, colour = PAINT[(j * 3 + lane) % PAINT.length];
   const R = o => new Rail(Object.assign({ abs: true, under, onKicker: k, colour, size: sz }, o));
   const lipA = k.lip * RAD;
   switch (kind) {
@@ -916,122 +1046,47 @@ function exitSpeed(k) {
   for (let zz = Math.max(z, k.Kend.z); zz < k.zMeet; zz += 0.25) v = Math.sqrt(Math.max(0.25, v * v + 2 * accel(land, v) * 0.25 / Math.cos(land)));
   return v;
 }
-/* ---- the Jump Line as a slopestyle course (J, round 10) ----------------------------------------------------------
-   For "introduce different kinds of jumps that allow you to have transitions and different features rather than just
-   the same jump over and over again. Research x-games and olympic park setups and make sure that everything in those
-   park setups is in my park" (Leon, round 10). Laid out as the Olympic and X Games slopestyle courses are (rail
-   sections at the top with five options each, then the jumps), with a transition section between them (as Dew Tour's
-   and the Laax Open's), a big air with a roll-in to its knuckle (X Games' knuckle huck) and a superpipe at the bottom
-   (the FIS's: 22 foot walls, 19 to 21 m from coping to coping, 18 degrees, over 150 m). From the top:
-   - Rail section 1: flat box, jersey barrier, down rail, cannon rail, down-flat-down rail.
-   - Rail section 2: flat tube, rainbow box, mailbox, up-flat-down rail, waterfall rail.
-   - Wall section: shipping container, wallride, pole jam to a down rail, tank, tyre bonk.
-   - Transitions: quarterpipe side hits on both edges, a spine, a hip, a volcano, a shark fin, banked turns down the
-     right (the easy way down), butter pads, a step-up and a step-down.
-   - Jump 1: two skew kickers turned in over one table, with a roller to its knuckle between them (Beijing 2022's
-     first jump has the skews over a table, its second the roller to the knuckle).
-   - Jump 2: a big jump and a small one onto one landing, with a quarterpipe down each side of it to air out of.
-   - Jump 3, the money booter: three sizes side by side onto one landing, a rail, tube or box on each takeoff.
-   - The big air, the course's biggest jump, with a small drop-in on its table for knuckle hucks.
-   - The superpipe.
-   Each jump is placed where riders coming off the one above have its speed (rollTo), as the Jump Line's were. The
-   beginners' way down: the flat box and tube in the rail sections, the banked turns, the small lanes of jumps 2 and 3,
-   the roller of jump 1, and the snow beside the big air and the pipe.
-   (2026-11-12 plan: every number the layout searches for (each kicker's speed off its lip, where each jump goes, where
-   each lane and skew sits) is kept in order in park.plan and read back in the same order (memo, kick), so a start with
-   the plan builds the very same course without the searches.) */
+/* ---- the Jump Line as a park of two sides (J, round 11) ------------------------------------------------------------
+   For "for the park start with jumps next to rails so that users can do either jumps or rails and make it so that one
+   side of the entire park is rails and jib features and small jumps/other jump things you see on the more street/jibby
+   side and then the other side is the larger jump line with different jumps you would see and make both have things
+   that would appear in xgames, olympics, and other competitions" (Leon, round 11). Two sides, the whole way down:
+   - the jump side (x < 0): eight jumps, each of its own kind, as slopestyle and big air finals have them: a Small and a
+     Medium tabletop side by side (a tube up the Small's takeoff), a Medium and a Large, a step-down, a step-up, a
+     transfer (two skews turned in over one table, a roller to its knuckle between them), a Large with a quarterpipe down
+     each side of its landing to air out of, the money booter (a Large and a Medium, a donkey dick and a box on their
+     takeoffs), and the big air with its knuckle huck drop-in;
+   - the street side (x > 0, the T-bar's side): thirteen rows of two to four things side by side, as street-style and
+     slopestyle rail sections have them: boxes (flat, wide, long, flat-down, down-flat-down, rainbow, C), rails (flat, down,
+     down-flat-down, rainbow, C, S, up, waterfall, up-flat-down, cannon), a kinked tube, a jersey barrier, a picnic
+     table, a mailbox, a tyre bonk, a pole jam to a down rail, a tank, a barrel, a wallride, a shipping container, a close-out box, a stair set with a handrail and a ledge, butter pads, small kickers, a small step-up,
+     rollers, a spine, a hip, a shark fin, a volcano, a side hit and a mini quarterpipe;
+   - both run into the superpipe at the bottom, in the middle (x 0): it serves both.
+   The first row has both: the jump side's two tabletops (with the tube up the Small's takeoff) level with the street
+   side's first rails and its small kicker, the Small's lane and the first rail each about 10 m either side of the
+   start's line. Each jump is placed where riders off the one above have its speed (placeAt, rollTo); each street row lies
+   beside a jump and is drawn with it (its group), so the park is no more meshes than before. Riders cross between the
+   sides between rows; the transfer's right skew is ridden in from the middle.
+   Kept from before: every number the layout searches for (each kicker's speed off its lip, where each jump goes, where
+   each lane and skew sits) is kept in order in park.plan and read back in the same order (memo, kick, skewKick), so a
+   start with the plan builds the very same course without the searches. */
 let PQ = null, PO = [];
 function memo(f) { const v = PQ && PQ.i < PQ.a.length ? PQ.a[PQ.i++] : f(); PO.push(v); return v; }
 function kick(o) { const v = PQ && PQ.i < PQ.a.length ? PQ.a[PQ.i++] : 0; const k = new Kicker(v > 0 ? Object.assign({}, o, { vLip: v }) : o); PO.push(k.vLip); return k; }
 function skewKick(o) { const v = PQ && PQ.i < PQ.a.length ? PQ.a[PQ.i++] : 0; const k = new SkewKicker(v > 0 ? Object.assign({}, o, { vLip: v }) : o); PO.push(k.vLip); return k; }
 const okPlan = p => Array.isArray(p) && p.length > 0 && p.every(v => typeof v === 'number' || (Array.isArray(v) && v.every(w => typeof w === 'number')));
 const JL_START = 68;
-// the course's run down to the big air; below it the superpipe's 18 degrees and the run-out are added (pipeRun)
-const JUMPLINE_RUN = [[-900, 12], [-150, 10], [-55, 10], [70, 12], [92, 10], [250, 12], [430, 14], [700, 15]];
+/* the run ([z where a pitch starts, degrees], terrain.js SECTIONS' form): a drop in of about 23 degrees just below the
+   start, so the first row's jumps are reached at their speed within about 50 m of it, then 12 to 15 degrees down to the big
+   air; below it the superpipe's 18 degrees and the run-out are added (pipeRun) */
+const JUMPLINE_RUN = [[-900, 12], [-150, 10], [-55, 10], [60, 11], [72, 23], [116, 12], [300, 13], [520, 14], [760, 15]];
 const pipeRun = (zP, len) => JUMPLINE_RUN.concat([[zP - 22, 18], [zP + len + 6, 9], [zP + len + 40, 3], [zP + len + 110, 0.5]]);
-/* the rail sections: [x, kind, name, length (m), top over the snow at its start, at its end, extra]. Five options a
-   row, as Beijing's first two sections had, the easiest on the left. */
-const RAIL_ROWS = [
-  { name: 'Rail section 1', items: [
-    [-28, 'box', 'Flat box', 10, 0.42, 0.42, { w: 1.05 }],
-    [-14, 'barrier', 'Jersey barrier', 8, 0.8, 0.8],
-    [0, 'down', 'Down rail', 12, 1.0, 0.4],
-    [14, 'cannon', 'Cannon rail', 12, 0.85, 0.35],
-    [28, 'dfd', 'Down-flat-down rail', 15, 1.0, 0.3],
-  ] },
-  { name: 'Rail section 2', items: [
-    [-28, 'tube', 'Flat tube', 10, 0.5, 0.5],
-    [-14, 'rainbowBox', 'Rainbow box', 12, 0.5, 0.5, { rise: 0.55 }],
-    [0, 'mailbox', 'Mailbox', 1.8, 1.0, 1.0],
-    [14, 'ufd', 'Up-flat-down rail', 14, 0.55, 0.4],
-    [28, 'waterfall', 'Waterfall rail', 15, 1.05, 0.45],
-  ] },
-  { name: 'Wall section', items: [
-    [-28, 'container', 'Shipping container', 8, 1.1, 1.1],
-    [-14, 'wallride', 'Wallride', 22],
-    [0, 'poljam', 'Pole jam to down rail', 11],
-    [14, 'tank', 'Tank', 6, 0.95, 0.95],
-    [28, 'bonk', 'Tyre bonk', 1.0, 0.85, 0.85],
-  ] },
-];
-const ROW_GAP = 54;
-function railRow(row, zr, rails, meshed, pipes, i) {
-  row.items.forEach(([x, kind, name, len, h0, h1, o = {}], c) => {
-    const colour = PAINT[(i * 5 + c) % PAINT.length], za = zr, zb = za + len, R = q => rails.push(new Rail(Object.assign({ colour, group: row.name }, q)));
-    switch (kind) {
-      case 'box': case 'tube': R({ name, kind, pts: [[x, za, h0], [x, zb, h1]], ramp: h0 - 0.08, w: o.w }); break;
-      case 'barrier': R({ name, kind: 'box', look: 'barrier', w: 0.36, pts: [[x, za, h0], [x, zb, h1]], ramp: h0 - 0.08, colour: 0x9c9b95 }); break;
-      case 'down': R({ name, kind: 'rail', pts: [[x, za, h0], [x, zb, h1]], ramp: h0 - 0.08, legs: true }); break;
-      case 'cannon': {     // a rail coming out of a cannon's mouth: ride the barrel, then the down rail out of it
-        R({ name: name + ' (barrel)', kind: 'tube', look: 'cannon', w: 0.8, pts: [[x, za, h0], [x, za + 2.4, h0]], ramp: h0 - 0.08 });
-        R({ name, kind: 'rail', pts: [[x, za + 2.45, h0 - 0.02], [x, zb, h1]], legs: true });
-        break;
-      }
-      case 'dfd': R({ name, kind: 'kink', pts: [[x, za, h0], [x, za + len * 0.3, 0.6], [x, za + len * 0.7, 0.6], [x, zb, h1]], ramp: h0 - 0.08, legs: true }); break;
-      case 'rainbowBox': R({ name, kind: 'rainbow', top: 'flat', look: 'box', w: 0.85, pts: rainbow(x, za, len, h0, o.rise), ramp: h0 - 0.08, legs: true }); break;
-      case 'mailbox': R({ name, kind: 'box', look: 'mailbox', w: 0.5, pts: [[x, za, h0], [x, zb, h1]], ramp: h0 - 0.08 }); break;
-      case 'ufd': R({ name, kind: 'kink', pts: [[x, za, h0], [x, za + len * 0.3, 1.1], [x, za + len * 0.6, 1.1], [x, zb, h1]], ramp: h0 - 0.08, legs: true }); break;
-      case 'waterfall': R({ name, kind: 'kink', pts: [[x, za, h0], [x, za + 3.4, h0], [x, za + 5.6, 0.8], [x, za + 8.6, 0.8], [x, za + 10.8, 0.55], [x, za + 13.4, 0.55], [x, zb, h1]], ramp: h0 - 0.08, legs: true }); break;
-      case 'container': R({ name, kind: 'box', look: 'container', w: 2.4, pts: [[x, za, h0], [x, zb, h1]], ramp: h0 - 0.08, rampW: 1.7, colour: 0x2f6f9f }); break;
-      case 'tank': R({ name, kind: 'tube', look: 'tank', w: 1.4, pts: [[x, za, h0], [x, zb, h1]], ramp: h0 - 0.08, rampW: 1.3, colour: 0xd8312b }); break;
-      case 'bonk': R({ name, kind: 'tube', look: 'bonk', w: 0.9, pts: [[x, za, h0], [x, zb, h1]], ramp: h0 - 0.1 }); break;
-      case 'poljam': {     // a pole jam out of the snow, then a gap to a down rail (Laax's)
-        R({ name: 'Pole jam', kind: 'dd', look: 'pole', w: 0.16, pts: [[x, za, 0.04], [x, za + 2.6, 1.08]] });
-        R({ name: 'Down rail after the pole jam', kind: 'rail', pts: [[x, za + 4.4, 0.95], [x, za + len, 0.35]], legs: true });
-        break;
-      }
-      case 'wallride': {   // a wall of boards on a short transition, ridden from the right
-        const q = new Quarter({ name, group: row.name, x: x + 2.4, dir: -1, z0: za - 2, z1: za + len, R: 2.0, vert: 2.8, deck: 0.6, entry: 2.5, exit: 3.5, wood: true });
-        meshed.push(q); pipes.push(q); rails.panels.push(q);
-        break;
-      }
-    }
-  });
-}
-// the transition section, from zT; returns where it ends
-function transitions(zT, kickers, meshed, pipes, ground2, starts) {
-  const G = 'Transitions', add = f => { meshed.push(f); return f; };
-  // quarterpipe side hits on both edges, 4 m walls (Dew Tour's "mirrored side hits with 13 ft walls")
-  pipes.push(add(new Quarter({ name: 'Left side hit', group: G + ' 1', x: -30, dir: -1, z0: zT, z1: zT + 50, R: 3.6, vert: 0.4, deck: 2.5 })));
-  pipes.push(add(new Quarter({ name: 'Right side hit', group: G + ' 1', x: 30, dir: 1, z0: zT + 16, z1: zT + 66, R: 3.6, vert: 0.4, deck: 2.5 })));
-  add(new Ridge({ name: 'Spine', group: G + ' 1', x: -9, z: zT + 4, len: 28, H: 2.4, deck: 0.3, te: 5, left: { take: 38 * RAD }, right: { take: 38 * RAD } }));
-  add(new Ridge({ name: 'Hip', group: G + ' 1', x: 12, z: zT + 8, len: 26, H: 2.6, deck: 3, te: 5, left: { take: 30 * RAD }, right: { land: 34 * RAD, Rk: 2.5, Rr: 5 } }));
-  add(new Volcano({ name: 'Volcano', group: G + ' 2', x: -16, z: zT + 84, H: 2.8, Rc: 3.4, A: 30 * RAD }));
-  add(new Ridge({ name: 'Shark fin', group: G + ' 2', x: 6, z: zT + 64, len: 34, H: 3.2, deck: 0.25, te: 3, grow: 0.8, left: { take: 38 * RAD }, right: { take: 38 * RAD } }));
-  ground2.push(new Mound({ x: -34, z: zT + 66, r: 6, h: 0.7 }), new Mound({ x: -2, z: zT + 114, r: 7, h: 0.8 }));
-  // banked turns down the right: a slalom round x 31, 4 m either way, 36 m a turn; a bank outside each turn
-  const zb = zT + 76, xm = 31, amp = 4, wl = 36, rc = wl * wl / (4 * Math.PI * Math.PI * amp);
-  for (let i = 0; i < 4; i++) {
-    const right = i % 2 === 0, ze = zb + wl / 4 + i * wl / 2, xe = xm + (right ? amp : -amp);
-    add(new Berm({ name: 'Banked turn ' + (i + 1), group: G + ' 2', x: xe - (right ? rc : -rc), z: ze, a: right ? 0 : Math.PI, Rc: rc - 2.2 }));
-  }
-  // the step-up and the step-down
-  add(new StepUp({ name: 'Step-up', group: G + ' 3', x: -18, z0: zT + 122 }));
-  kickers.push(kick({ name: 'Step-down', group: G + ' 3', lod: true, x: 10, z0: zT + 128, lip: 28, R: 12, drop: 1.8, table: 3, land: 32, wT: 2.6, wD: 3.6, wL: 7, Rk: 3 }));
-  starts.push({ name: 'Transitions: side hits, spine and hip', x: 0, z: zT - 24, v: 9 }, { name: 'Transitions: volcano, fin and banked turns', x: 4, z: zT + 40, v: 9 },
-    { name: 'Step-up and step-down', x: -4, z: zT + 74, v: 8 });
-  return zT + 176;
-}
+const JX = { O: -26, I: -8, M: -17 };              // the jump side's lanes: outer, inner, and a jump of one lane
+/* the jump side's sides: the tables' at 36 degrees, the landings' at 32 (with the landings' own 35 to 37, about 43 at
+   most). The tables are level while the run falls away under them, so at the big air's knuckle the table stands 10.8 m
+   over the snow; at the kickers' own 32 and 27 the outer lanes reached past the run's edge into the deep snow and the
+   inner ones into the street side's rails. */
+const JSIDE = 0.72, JLAND = 0.62;
 /* a skew's place: its lip at (x, z) turned in by yaw, its own table at height yT (another feature's table): the radius
    of its takeoff found by bisection (a bigger radius stands its foot further up the hill, higher) */
 function skewPlace(o, x, z, yT) {
@@ -1052,84 +1107,283 @@ function startFor(name, x, z, zTo, vTo) {
 }
 // a lane on another kicker's landing (laneOn's search): [z0, table]
 function lanePlace(big, o) { const k = laneOn(big, Object.assign({}, o, { geomOnly: true })); return [k.z0, k.table]; }
+/* where the next jump's takeoff starts (make(z0) builds it there), from z where the last landings meet the slope, riders
+   leaving the jump above at vM (one lane) and vS (the other): where both have its design speed and a little more, and
+   at least gap0 m on, at most gapMax. Its design speed changes with the slope it stands on: placed, measured, placed
+   again. */
+const GAP0 = 60;
+function placeAt(z, vM, vS, make, gap0 = GAP0, gapMax = 130) {
+  let z0 = z + gap0;
+  for (let it = 0; it < 6; it++) {
+    const k = make(z0), more = 0.6 * smoothstep(13 * RAD, 11 * RAD, pitchAt(z0));
+    const z1 = Math.min(z + gapMax, Math.max(z + gap0, rollTo(z, vM, z + 400, k.vDesign + 0.3).z, rollTo(z, vS, z + 400, k.vDesign + 0.3 + more).z));
+    if (Math.abs(z1 - z0) < 0.01) break;
+    z0 = z1;
+  }
+  return z0;
+}
+const nextAt = (z, vM, vS, o, gap0, gapMax) => placeAt(z, vM, vS, z0 => new Kicker(Object.assign({}, o, { z0 })), gap0, gapMax);
+// a step-up's speed where its landing meets the slope, after a straight air at its design speed (as exitSpeed)
+function exitStepUp(f) {
+  const lip = f.lip * RAD, dt = 0.01, surf = z => { const c = f.relC(z); return baseLine(z) + (c > 0 ? c : 0); };
+  let vz = f.vLip * Math.cos(lip), vy = f.vLip * Math.sin(lip), z = f.L.z, y = f.L.y;
+  for (let t = 0; t < 6; t += dt) { const sp = Math.hypot(vz, vy); vz -= KD * sp * vz * dt; vy -= (G + KD * sp * vy) * dt; z += vz * dt; y += vy * dt; if (z > f.L.z + 0.5 && y <= surf(z)) break; }
+  let v = Math.max(1, vz * Math.cos(f.deckA) - vy * Math.sin(f.deckA));
+  for (let zz = z; zz < f.zMeet; zz += 0.25) { const th = zz < f.zD1 ? f.deckA : f.land * RAD; v = Math.sqrt(Math.max(0.25, v * v + 2 * accel(th, v) * 0.25 / Math.cos(th))); }
+  return v;
+}
+/* ---- the street side: rows of [x, kind, name, options]; the lanes are x 14, 22, 30 and 38 (8 m apart), the
+   quarterpipes and the wallride stand on the outer edge (x 38), rising out of the park */
+const STREET = [
+  { name: 'Street 1: first rails', items: [[14, 'box', 'Wide box', { w: 1.6, len: 10, h0: 0.42 }], [22, 'down', 'Down rail'], [31, 'kicker', 'Small kicker'], [40, 'tube', 'Flat tube']] },
+  { name: 'Street 2: kinks', items: [[14, 'flatDown', 'Flat-down box'], [22, 'dfd', 'Down-flat-down rail'], [30, 'rainbow', 'Rainbow rail'], [38, 'kinkTube', 'Kinked tube']] },
+  { name: 'Street 3: curves and butter pads', items: [[14, 'pads', 'Butter pads'], [22, 'cRail', 'C rail'], [30.5, 'sRail', 'S rail'], [39, 'cannon', 'Cannon rail']] },
+  { name: 'Street 4: street jibs and a side hit', items: [[14, 'barrier', 'Jersey barrier'], [22, 'picnic', 'Picnic table'], [30, 'mailbox', 'Mailbox'], [38.5, 'sidehit', 'Side hit']] },
+  // (a spine, a hip, a shark fin and a volcano each have a row to themselves, rails only outside the snow they land you
+  // on: crossed, they throw riders 6 m and more out to their sides)
+  { name: 'Street 5: spine and a small kicker with a box', items: [[15, 'spine', 'Spine'], [36, 'kickerBox', 'Small kicker with a box']] },
+  { name: 'Street 6: stair set', items: [[17, 'stairs', 'Stair set'], [30, 'closeout', 'Close-out box'], [38, 'upRail', 'Up rail']] },
+  { name: 'Street 7: wallride, tank and barrel', items: [[14, 'poljam', 'Pole jam to down rail'], [22, 'tank', 'Tank'], [30, 'barrel', 'Barrel'], [38.5, 'wallride', 'Wallride']] },
+  { name: 'Street 8: rollers, step-up and tyre bonk', items: [[12, 'rollers', 'Rollers'], [24.5, 'stepup', 'Small step-up'], [37, 'bonk', 'Tyre bonk']] },
+  { name: 'Street 9: long rails', items: [[14, 'waterfall', 'Waterfall rail'], [22, 'longBox', 'Long flat box'], [30, 'container', 'Shipping container'], [38, 'ufd', 'Up-flat-down rail']] },
+  { name: 'Street 10: hip and rainbow box', items: [[8, 'rainbowBox', 'Rainbow box'], [27, 'hip', 'Hip']] },
+  { name: 'Street 11: shark fin and C box', items: [[22, 'fin', 'Shark fin'], [40, 'cBox', 'C box']] },
+  { name: 'Street 12: volcano and down rails', items: [[13, 'volcano', 'Volcano'], [29, 'down', 'Long down rail', { len: 16, h0: 1.0, h1: 0.35 }], [37.5, 'dfdBox', 'Down-flat-down box']] },
+  { name: 'Street 13: last jibs and a mini quarterpipe', items: [[10, 'rail', 'Flat rail'], [18, 'box', 'Flat box'], [27.5, 'kicker', 'Last small kicker'], [41, 'miniqp', 'Mini quarterpipe']] },
+];
+// a rail curving in plan: from (x, z) along +z, turning by `turn` radians over its length (a C), or one way then the
+// other (an S), its top h over the snow
+function curved(x, z, len, turn, h, s = false) {
+  const pts = [], n = 16, R = len / Math.abs(turn), sg = Math.sign(turn);
+  let px = x, pz = z, a = 0;
+  pts.push([px, pz, h]);
+  for (let i = 1; i <= n; i++) {
+    const da = (s ? (i <= n / 2 ? 1 : -1) * 2 : 1) * Math.abs(turn) / n * sg, step = len / n;
+    a += da / 2; px += Math.sin(a) * step; pz += Math.cos(a) * step; a += da / 2;
+    pts.push([px, pz, h]);
+  }
+  return pts;
+}
+// one street row's things, from zr (where its rails start; a kicker's foot and a ramp's start are a few metres above)
+function streetRow(row, zr, C) {
+  row.items.forEach(([x, kind, name, o = {}]) => {
+    const colour = PAINT[(C.n++) % PAINT.length], group = C.group, za = zr;
+    // a rail or box, and its ramp (a mesh of its own: Ramp)
+    const R = (q, ramp, rampW) => {
+      const r = new Rail(Object.assign({ colour, group, row: row.name }, q)); C.rails.push(r);
+      if (ramp) C.meshed.push(new Ramp({ name: q.name + ' ramp', group, row: row.name, x: r.P[0].x, zEnd: r.P[0].z - 0.7, h: ramp, hw: rampW ?? (FLAT_KINDS.has(r.kind) || r.top === 'flat' ? 1.4 : 1.2) }));
+      return r;
+    };
+    const S = f => { f.group = group; f.row = row.name; C.meshed.push(f); return f; };
+    const len = o.len, h0 = o.h0, h1 = o.h1;
+    switch (kind) {
+      case 'box': R({ name, kind: 'box', w: o.w, pts: [[x, za, h0 ?? 0.42], [x, za + (len ?? 10), h1 ?? h0 ?? 0.42]] }, (h0 ?? 0.42) - 0.08, o.w ? o.w / 2 + 0.6 : undefined); break;
+      case 'longBox': R({ name, kind: 'box', pts: [[x, za, 0.4], [x, za + 18, 0.4]] }, 0.32); break;
+      case 'tube': R({ name, kind: 'tube', pts: [[x, za, 0.5], [x, za + 10, 0.5]] }, 0.42); break;
+      case 'rail': R({ name, kind: 'rail', legs: true, pts: [[x, za, 0.7], [x, za + 11, 0.7]] }, 0.62); break;
+      case 'down': R({ name, kind: 'rail', legs: true, pts: [[x, za, h0 ?? 0.95], [x, za + (len ?? 12), h1 ?? 0.4]] }, (h0 ?? 0.95) - 0.08); break;
+      case 'flatDown': R({ name, kind: 'box', pts: [[x, za, 0.5], [x, za + 7, 0.5], [x, za + 14, 0.2]] }, 0.42); break;
+      case 'dfd': R({ name, kind: 'kink', legs: true, pts: [[x, za, 1.0], [x, za + 4.5, 0.6], [x, za + 10.5, 0.6], [x, za + 15, 0.3]] }, 0.92); break;
+      case 'dfdBox': R({ name, kind: 'box', legs: true, pts: [[x, za, 0.8], [x, za + 4, 0.45], [x, za + 10, 0.45], [x, za + 14, 0.25]] }, 0.72); break;
+      case 'kinkTube': R({ name, kind: 'kink', look: 'tube', w: 0.5, pts: [[x, za, 0.55], [x, za + 6, 0.55], [x, za + 12, 0.25]] }, 0.47); break;
+      case 'ufd': R({ name, kind: 'kink', legs: true, pts: [[x, za, 0.55], [x, za + 4.2, 1.1], [x, za + 8.4, 1.1], [x, za + 14, 0.4]] }, 0.47); break;
+      case 'waterfall': R({ name, kind: 'kink', legs: true, pts: [[x, za, 1.05], [x, za + 3.4, 1.05], [x, za + 5.6, 0.8], [x, za + 8.6, 0.8], [x, za + 10.8, 0.55], [x, za + 13.4, 0.55], [x, za + 15, 0.45]] }, 0.97); break;
+      case 'rainbow': R({ name, kind: 'rainbow', legs: true, pts: rainbow(x, za, 12, 0.55, 0.6) }, 0.47); break;
+      case 'rainbowBox': R({ name, kind: 'rainbow', top: 'flat', look: 'box', w: 0.85, legs: true, pts: rainbow(x, za, 12, 0.5, 0.55) }, 0.42); break;
+      // (C and S rails: their first piece runs straight down the hill, so they are locked onto as any other)
+      case 'cRail': R({ name, kind: 'rail', legs: true, pts: [[x, za, 0.7], ...curved(x, za + 2.5, 11, 0.5, 0.7)] }, 0.62); break;
+      case 'sRail': R({ name, kind: 'rail', legs: true, pts: [[x, za, 0.7], ...curved(x, za + 2.5, 13, 0.36, 0.7, true)] }, 0.62); break;
+      case 'cBox': R({ name, kind: 'box', w: 0.8, pts: [[x, za, 0.45], ...curved(x, za + 2.5, 10, -0.45, 0.45)] }, 0.37); break;
+      case 'upRail': R({ name, kind: 'rail', legs: true, pts: [[x, za, 0.5], [x, za + 7, 1.45]] }, 0.42); break;
+      case 'cannon':     // a rail coming out of a cannon's mouth: ride the barrel, then the down rail out of it
+        R({ name: name + ' (barrel)', kind: 'tube', look: 'cannon', w: 0.8, pts: [[x, za, 0.85], [x, za + 2.4, 0.85]] }, 0.77);
+        R({ name, kind: 'rail', legs: true, pts: [[x, za + 2.45, 0.83], [x, za + 12, 0.35]] });
+        break;
+      case 'barrier': R({ name, kind: 'box', look: 'barrier', w: 0.36, colour: 0x9c9b95, pts: [[x, za, 0.8], [x, za + 8, 0.8]] }, 0.72); break;
+      case 'mailbox': R({ name, kind: 'box', look: 'mailbox', w: 0.5, pts: [[x, za, 1.0], [x, za + 1.8, 1.0]] }, 0.92); break;
+      case 'bonk': R({ name, kind: 'tube', look: 'bonk', w: 0.9, pts: [[x, za, 0.85], [x, za + 1.0, 0.85]] }, 0.75); break;
+      case 'tank': R({ name, kind: 'tube', look: 'tank', w: 1.4, colour: 0xd8312b, pts: [[x, za, 0.95], [x, za + 6, 0.95]] }, 0.87, 1.3); break;
+      case 'barrel': R({ name, kind: 'tube', look: 'tank', w: 1.0, colour: 0x1f6fd1, pts: [[x, za, 0.8], [x, za + 3.2, 0.8]] }, 0.72, 1.1); break;
+      case 'container': R({ name, kind: 'box', look: 'container', w: 2.4, colour: 0x2f6f9f, pts: [[x, za, 1.1], [x, za + 8, 1.1]] }, 1.02, 1.7); break;
+      case 'poljam':     // a pole jam out of the snow, then a gap to a down rail
+        R({ name: 'Pole jam', kind: 'dd', look: 'pole', w: 0.16, pts: [[x, za, 0.04], [x, za + 2.6, 1.08]] });
+        R({ name: 'Down rail after the pole jam', kind: 'rail', legs: true, pts: [[x, za + 4.4, 0.95], [x, za + 11, 0.35]] });
+        break;
+      // a picnic table, slid along its top (its benches are left off: beside it, the table always took the rider first)
+      case 'picnic': R({ name, kind: 'picnic', look: 'picnic', w: 0.8, pts: [[x, za, 0.75], [x, za + 2.6, 0.75]] }, 0.67, 1.0); break;
+      // a wall of boards on a transition along the outer edge, ridden from the park's side: up it at an angle and back
+      // down (aired out of, its upright part is short enough that the rider comes back down onto the curve)
+      case 'wallride': {
+        const q = new Quarter({ name, group, row: row.name, x, dir: 1, z0: za - 2, z1: za + 22, R: 3.2, vert: 0.9, deck: 1.0, entry: 2.5, exit: 3.5, wood: true, backS: 0.9 });
+        C.meshed.push(q); C.pipes.push(q); C.rails.panels.push(q);
+        break;
+      }
+      case 'sidehit': case 'miniqp': {
+        // (their backs at 42 degrees and decks of 1.4 m: so they end near the groomed run's edge, not out on the deep snow's drifts)
+        const q = new Quarter(Object.assign({ name, group, row: row.name, x, dir: 1, z0: za - 4, backS: 0.9 }, kind === 'sidehit' ? { z1: za + 40, R: 3.4, vert: 0.3, deck: 1.4 } : { z1: za + 30, R: 2.6, vert: 0.2, deck: 1.4 }));
+        C.meshed.push(q); C.pipes.push(q);
+        break;
+      }
+      case 'pads': for (const [dx, dz] of [[-1.5, 2], [1.5, 11], [-1, 20]].slice(0, o.n || 3)) S(new Pad({ name: `${name} ${dz < 5 ? 1 : dz < 15 ? 2 : 3}`, x: x + dx, z: za + dz, r: 3.6, h: 0.5 })); break;
+      case 'rollers': S(new RollerLane({ name, x, z: za - 4, n: 3, len: 11, amp: 0.9, w: 2.0 })); break;
+      case 'spine': S(new Ridge({ name, x, z: za - 4, len: 24, H: 2.2, deck: 0.3, te: 5, left: { take: 36 * RAD }, right: { take: 36 * RAD } })); break;
+      case 'hip': S(new Ridge({ name, x, z: za - 4, len: 24, H: 2.4, deck: 2.6, te: 5, left: { take: 34 * RAD }, right: { land: 34 * RAD, Rk: 2.5, Rr: 5 } })); break;
+      case 'fin': S(new Ridge({ name, x, z: za - 4, len: 28, H: 2.6, deck: 0.25, te: 3, grow: 0.8, left: { take: 38 * RAD }, right: { take: 38 * RAD } })); break;
+      case 'volcano': S(new Volcano({ name, x, z: za + 8, H: 2.0, Rc: 2.8, A: 34 * RAD })); break;
+      case 'stepup': S(new StepUp({ name, x, z0: za - 4, lip: 26, R: 6, gap: 1.2, up: 0.25, deckL: 5, land: 28, Rk: 3, hw: 1.6, sideS: 0.8, aim: 0.45 })); break;
+      case 'kicker': case 'kickerBox': {
+        const k = new Kicker(Object.assign({ name, group, row: row.name, lod: true, x, z0: za - 4, lip: 24, R: 7, drop: 0.35, table: 5, land: 28, wT: 2.2, wD: 3.4, wL: 4.5, Rk: 3, sideS: 0.75, landS: 0.65 },
+          kind === 'kickerBox' ? { lip: 25, R: 8, drop: 0.4, table: 6, land: 29, wT: 2.3, wD: 3.6, wL: 4, Rk: 3.5, side: 1, wF: FEAT.S.wF } : {}));
+        C.kickers.push(k);
+        if (kind === 'kickerBox') { const r = takeoffFeature(k, 'box', 'S', 0, C.n, name + ' '); if (r) { r.group = group; r.row = row.name; C.rails.push(r); } }
+        break;
+      }
+      case 'stairs': {   // the deck starts at za; the handrail on its left (+x), the ledge on its right
+        const st = S(new Stairs({ name, x, z0: za - 9 }));
+        C.rails.decor.push(st);
+        const under = (px, pz) => st.snowY(px, pz);
+        for (const [sg, nm, T, w, look, kd] of [[1, 'Handrail', 0.62, 0.16, null, 'rail'], [-1, 'Ledge', 0.45, 0.55, 'ledge', 'ledge']]) {
+          const rx = x + sg * 2.35, zs = st.zB + 2.4, pts = [];
+          for (let z = zs; z < st.zC - 0.1; z += 0.5) pts.push([rx, z, st.snowY(rx, z) + T]);
+          pts.push([rx, st.zC, st.snowY(rx, st.zC - 0.01) + T]);
+          // (on down beside the steps, parallel to their noses (on the snow as it lies there), to past the last one)
+          for (let z = st.zC + 0.5; z < st.zE + 1.6; z += 0.5) pts.push([rx, z, st.noseSnow(rx, z) + T]);
+          C.rails.push(new Rail({ name: `${name}: ${nm.toLowerCase()}`, kind: kd, top: kd === 'ledge' ? 'flat' : 'round', look, w, abs: true, under, legs: kd === 'rail', colour: kd === 'rail' ? colour : 0x9d9a92, group, row: row.name, pts }));
+          entry(st, rx, zs, T, w / 2 + 0.35);
+        }
+        break;
+      }
+      case 'closeout': {   // a box running into a snow deck as high as it
+        const zF = za + 8, H = 0.5;
+        R({ name, kind: 'box', pts: [[x, za, H], [x, zF - 0.05, H]] }, H - 0.08);
+        S(new CloseOut({ name: name + ' deck', x, zF, H }));
+        break;
+      }
+    }
+  });
+}
+/* the jump side, top to bottom, then the street rows beside it, then the pipe; returns the park */
 export function makeJumpLine(plan = null) {
-  setRun(JUMPLINE_RUN);                           // (J, round 9: its own run; the pipe's part is added further down)
+  setRun(JUMPLINE_RUN);
   PQ = okPlan(plan) ? { a: plan, i: 0 } : null; PO = [];
-  const kickers = [], rails = [], meshed = [], pipes = [], ground2 = [], starts = [{ name: 'Top of the course', x: 0, z: JL_START, v: 5 }];
-  rails.panels = [];
-  // the rail sections, then the transitions
-  const zR = JL_START + 56;                       // (56 m to the first rails: room to pick any of the five from the start)
-  RAIL_ROWS.forEach((row, i) => { const zr = zR + i * ROW_GAP; if (i) starts.push({ name: row.name, x: 0, z: zr - 34, v: 6 }); railRow(row, zr, rails, meshed, pipes, i); });
-  // (riders leave the transitions at about 9 m/s: the banked turns' speed)
-  let z = transitions(zR + RAIL_ROWS.length * ROW_GAP + 10, kickers, meshed, pipes, ground2, starts), v = 9;
-  /* Jump 1: the table (a roller rising gently from the snow to it, between the two skews: ride it over the table and
-     off the knuckle), 27 m across, then the two skews turned in by 14 degrees, their lips 5 m down the table. Placed
-     where a rider leaving the transitions at 9 m/s has the skews' speed at their feet. */
-  const TAB = { name: 'Jump 1 roller to the knuckle', group: 'Jump 1', lod: true, x: 0, lip: 0, drop: 0, R: 120, table: 18, land: 35, Rk: 7, wT: 3.6, wTab: 13.5, wD: 3.6, wL: 15, vLip: 12, noCheck: true };
-  const SKW = { group: 'Jump 1', lip: 30, drop: 0.9, land: 35, wT: 2.6, wD: 2.6, wL: 6, Rk: 6, cut: true };
-  const skews = (T, z0) => [-1, 1].map(sd => {
-    const o = Object.assign({}, SKW, { name: `Jump 1 ${sd < 0 ? 'left' : 'right'} skew`, yaw: -sd * 14 * RAD });
-    const lx = sd * (T.wTab - 3.2), lz = T.L.z + 5;
+  const kickers = [], rails = [], meshed = [], pipes = [], jumps = [];
+  rails.panels = []; rails.decor = [];
+  const starts = [{ name: 'Top of the course', x: 0, z: JL_START, v: 5 }, { name: 'Jump side, from the top', x: JX.M, z: JL_START + 2, v: 5 }, { name: 'Street side, from the top', x: 22, z: JL_START + 2, v: 5 }];
+  const add = (k, list = kickers) => { list.push(k); return k; };
+  const lane = (L, n, x, extra = {}) => Object.assign({ group: 'Jump ' + n, x, sideS: JSIDE, landS: JLAND }, LANES[L], extra);
+  // Jump 1: a Medium and a Small tabletop side by side onto one landing, a tube up the Small's takeoff on its middle side
+  const M1 = lane('M', 1, JX.O, { name: 'Jump 1 Medium', table: 14 }), S1 = lane('S', 1, JX.I, { name: 'Jump 1 Small', table: 9, side: 1, wF: FEAT.S.wF });
+  const z1 = memo(() => {
+    let z0 = placeAt(JL_START, 5, 5, zz => new Kicker(Object.assign({}, M1, { z0: zz })), 25, 120);
+    // (and far enough down that the Small lane, up the hill from it, is reached at its own speed too)
+    for (let it = 0; it < 30; it++) { const s = laneOn(new Kicker(Object.assign({}, M1, { z0 })), S1); if (rollTo(JL_START, 5, s.z0, s.vDesign + 0.3).v >= s.vDesign + 0.3) break; z0 += 1.5; }
+    return z0;
+  });
+  const m1 = add(kick(Object.assign({}, M1, { z0: z1 })));
+  const [s1z, s1t] = memo(() => lanePlace(m1, S1));
+  const s1 = add(kick(Object.assign({}, S1, { z0: s1z, table: s1t, Rk: m1.Rk })));
+  rails.push(takeoffFeature(s1, 'tube', 'S', 0, 1));
+  jumps.push({ key: 'Jump 1', fs: [m1, s1] });
+  let vM = exitSpeed(m1), vS = exitSpeed(s1), z = Math.max(m1.zMeet, s1.zMeet);
+  // Jump 2: a Large and a Medium onto one landing
+  const L2 = lane('L', 2, JX.O, { name: 'Jump 2 Large', table: 19 }), M2 = lane('M', 2, JX.I, { name: 'Jump 2 Medium', table: 14 });
+  const l2 = add(kick(Object.assign({}, L2, { z0: memo(() => nextAt(z, vM, vS, L2)) })));
+  const [m2z, m2t] = memo(() => lanePlace(l2, M2));
+  const m2 = add(kick(Object.assign({}, M2, { z0: m2z, table: m2t, Rk: l2.Rk })));
+  jumps.push({ key: 'Jump 2', fs: [l2, m2] });
+  starts.push(startFor('Jump 2 (Large and Medium)', -20, l2.z0 - 50, l2.z0, l2.vDesign));
+  vM = exitSpeed(l2); vS = exitSpeed(m2); z = Math.max(l2.zMeet, m2.zMeet);
+  // Jump 3: a step-down (its table 2.4 m under its lip: the landing's knuckle lower than the takeoff)
+  const D3 = { name: 'Jump 3 Step-down', group: 'Jump 3', x: JX.M, lip: 28, R: 13, drop: 2.4, table: 6, land: 34, wT: 3.4, wD: 4.4, wL: 9, Rk: 4, sideS: JSIDE, landS: JLAND };
+  const d3 = add(kick(Object.assign({}, D3, { z0: memo(() => nextAt(z, vM, vS, D3)) })));
+  jumps.push({ key: 'Jump 3', fs: [d3] });
+  starts.push(startFor('Jump 3 (step-down)', JX.M, d3.z0 - 50, d3.z0, d3.vDesign));
+  vM = vS = exitSpeed(d3); z = d3.zMeet;
+  // Jump 4: a step-up (a takeoff, a gap, a face up to a deck higher than its lip, which you land on)
+  const U4 = { name: 'Jump 4 Step-up', group: 'Jump 4', x: JX.M, lip: 30, R: 11, gap: 2.8, up: 0.9, deckL: 8, land: 32, Rk: 5, hw: 3.2, aim: 0.45 };
+  const u4 = add(new StepUp(Object.assign({}, U4, { z0: memo(() => placeAt(z, vM, vS, z0 => new StepUp(Object.assign({}, U4, { z0 })))) })), meshed);
+  jumps.push({ key: 'Jump 4', fs: [u4] });
+  starts.push(startFor('Jump 4 (step-up)', JX.M, u4.z0 - 50, u4.z0, u4.vDesign));
+  vM = vS = exitStepUp(u4); z = u4.zMeet;
+  /* Jump 5: the transfer: two skews turned in by 14 degrees over one table 22 m across, their lips 5 m down it, a roller
+     rising gently to it between them (ride it over the table and off the knuckle); the right skew is ridden in from the
+     middle of the park */
+  /* (its roller keeps 32 degree sides and a narrow core, and its table widens out under the skews only between 3 and
+     5.2 m past the roller's top, just before their lips (tabZ): widening from its top on, the table's edge crossed the
+     skews' ramps where they were still lower than it and threw riders off a 45 degree hump 3 m before their lips) */
+  const XT = JX.M, TAB = { name: 'Jump 5 roller to the knuckle', group: 'Jump 5', lod: true, x: XT, lip: 0, drop: 0, R: 120, table: 16, land: 35, Rk: 7, wT: 3.0, wTab: 11, wD: 3.0, wL: 11, vLip: 12, noCheck: true, landS: JLAND, tabZ: [3, 5.2] };
+  const SKW = { group: 'Jump 5', lip: 30, drop: 0.9, land: 35, wT: 2.6, wD: 2.6, wL: 6, Rk: 6, cut: true };
+  const skews = T => [-1, 1].map(sd => {
+    const o = Object.assign({}, SKW, { name: `Jump 5 ${sd < 0 ? 'left' : 'right'} skew`, yaw: -sd * 14 * RAD });
+    const lx = T.cxT + sd * (T.wTab - 3.0), lz = T.L.z + 5;
     const [R, fx, fz] = memo(() => skewPlace(o, lx, lz, T.yT));
     return skewKick(Object.assign(o, { R, x: fx, z: fz, table: Math.max(6, (T.K.z - lz) / Math.cos(o.yaw)) }));
   });
-  const z1 = memo(() => {
-    let z0 = z + 60;
-    for (let it = 0; it < 30; it++) {
+  // (placed by the skews' own feet: where riders off the step-up have their speed there, 50 m on at least)
+  const z5 = memo(() => {
+    let z0 = z + 50;
+    for (let it = 0; it < 40; it++) {
       const T = new Kicker(Object.assign({}, TAB, { z0, geomOnly: true })), o = Object.assign({}, SKW, { yaw: 14 * RAD });
-      const [R, fx, fz] = skewPlace(o, -(T.wTab - 3.2), T.L.z + 5, T.yT), sk = new SkewKicker(Object.assign(o, { R, x: fx, z: fz, table: 15 }));
-      if (rollTo(z, v, fz, sk.vDesign + 0.4).v >= sk.vDesign + 0.4) return z0;
-      z0 += 5;
+      const [R, fx, fz] = skewPlace(o, T.cxT - (T.wTab - 3.0), T.L.z + 5, T.yT), sk = new SkewKicker(Object.assign(o, { R, x: fx, z: fz, table: 15 }));
+      if (fz - z >= 50 && rollTo(z, Math.min(vM, vS), fz, sk.vDesign + 0.4).v >= sk.vDesign + 0.4) return z0;
+      z0 += 3;
     }
     return z0;
   });
-  const T1 = kick(Object.assign({}, TAB, { z0: z1 }));
-  kickers.push(T1);
-  const sk1 = skews(T1);
-  meshed.push(...sk1);
-  starts.push(startFor('Jump 1 (skew kickers)', sk1[0].x - 8, sk1[0].z - 50, sk1[0].z, sk1[0].vDesign), { name: 'Jump 1 (the roller to the knuckle)', x: 0, z: T1.z0 - 25, v: 6 });
-  let vM = exitSpeed(sk1[0].k), vS = vM;
-  z = T1.zMeet;
-  // Jump 2: a Large jump and a Small one onto one landing, a quarterpipe down each side of it
-  const L2 = { name: 'Jump 2 Large', group: 'Jump 2', x: -9, lip: 31, R: 18, drop: 1.0, table: 19, land: 35, wT: 3.6, wD: 6, wL: 10, Rk: 6 };
-  const S2 = { name: 'Jump 2 Small', group: 'Jump 2', x: 11, lip: 27, R: 11, drop: 0.6, table: 11, land: 35, wT: 2.8, wD: 4.8, wL: 10 };
-  const z2 = memo(() => nextAt(z, vM, vS, L2));
-  const big2 = kick(Object.assign({}, L2, { z0: z2 }));
-  const [s2z, s2t] = memo(() => lanePlace(big2, S2));
-  const sml2 = kick(Object.assign({}, S2, { z0: s2z, table: s2t, Rk: big2.Rk }));
-  kickers.push(big2, sml2);
-  // (down the landing's sides from just past the knuckle, and on past its foot into the run-out, where riders turn up them)
-  // (long enough that a rider airing out of one comes back down onto it: about 3 s up and down at 10 m/s along)
-  const qz0 = big2.Kend.z + 3, qz1 = big2.zMeet + 50, onLanding = k => (x, z, g) => g + Math.max(0, k.tableY(z) - k.bl(z));
-  for (const [k, dir, nm] of [[big2, -1, 'left'], [sml2, 1, 'right']]) {
-    const q = new Quarter({ name: `Jump 2 ${nm} quarterpipe`, group: 'Jump 2', dir, z0: qz0, z1: qz1, R: 3.4, vert: 0.3, deck: 2.2, entry: 5, exit: 6, xAt: z => k.cxT + dir * k.hwAt(z), base: onLanding(k) });
-    meshed.push(q); pipes.push(q);
-  }
-  starts.push(startFor('Jump 2 (quarterpipe sides)', 1, z2 - 50, z2, big2.vDesign));
-  for (const k of [big2, sml2]) k.vExit = exitSpeed(k);
-  vM = big2.vExit; vS = sml2.vExit; z = Math.max(big2.zMeet, sml2.zMeet);
-  // Jump 3, the money booter: three lanes, a feature on each takeoff
-  const X3 = { L: -20, M: 3, S: 23 };
-  const L3 = Object.assign({ name: 'Jump 3 Large', group: 'Jump 3', x: X3.L, side: 1, wF: FEAT.L.wF }, LANES.L, { table: 21 });
-  const M3 = Object.assign({ name: 'Jump 3 Medium', group: 'Jump 3', x: X3.M, side: 1, wF: FEAT.M.wF }, LANES.M);
-  const S3 = Object.assign({ name: 'Jump 3 Small', group: 'Jump 3', x: X3.S, side: 1, wF: FEAT.S.wF }, LANES.S);
-  const z3 = memo(() => nextAt(z, vM, vS, L3));
-  const big3 = kick(Object.assign({}, L3, { z0: z3 }));
-  const [m3z, m3t] = memo(() => lanePlace(big3, M3)), [s3z, s3t] = memo(() => lanePlace(big3, S3));
-  const ks3 = [big3, kick(Object.assign({}, M3, { z0: m3z, table: m3t, Rk: big3.Rk })), kick(Object.assign({}, S3, { z0: s3z, table: s3t, Rk: big3.Rk }))];
-  kickers.push(...ks3);
-  ks3.forEach((k, i) => { k.size = 1; k.vExit = exitSpeed(k); const r = takeoffFeature(k, ['tube', 'dd', 'box'][i], 'LMS'[i], 2, i); if (r) rails.push(r); });
-  starts.push(startFor('Jump 3 (the money booter)', X3.M, z3 - 50, z3, big3.vDesign));
-  vM = ks3[1].vExit; vS = ks3[2].vExit; z = Math.max(...ks3.map(k => k.zMeet));
-  // the big air, and the drop-in on its table for knuckle hucks
-  const BA = { name: 'Big air', group: 'Big air', lod: true, x: -6, lip: 35, R: 15, drop: 1.4, table: 24, land: 37, wT: 4.2, wTab: 9, wD: 7.5, wL: 14, Rk: 8 };
-  const zB = memo(() => nextAt(z, vM, vS, BA));
-  const ba = kick(Object.assign({}, BA, { z0: zB }));
-  kickers.push(ba);
-  const roll = new Rollin({ group: 'Big air', k: ba, x: ba.cxT + 7 });
+  const t5 = add(kick(Object.assign({}, TAB, { z0: z5 })));
+  const sk5 = skews(t5); meshed.push(...sk5);
+  jumps.push({ key: 'Jump 5', fs: [t5, ...sk5] });
+  starts.push(startFor('Jump 5 (transfer: the skews)', sk5[0].x - 6, sk5[0].z - 50, sk5[0].z, sk5[0].vDesign), { name: 'Jump 5 (the roller to the knuckle)', x: XT, z: t5.z0 - 25, v: 6 });
+  vM = vS = exitSpeed(sk5[0].k); z = t5.zMeet;
+  // Jump 6: a Large with a quarterpipe down each side of its landing, from past the knuckle on into the run-out
+  const L6 = lane('L', 6, JX.M, { name: 'Jump 6 Large', table: 20, wL: 10 });
+  const l6 = add(kick(Object.assign({}, L6, { z0: memo(() => nextAt(z, vM, vS, L6)) })));
+  const onLanding = k => (x, z, g) => g + Math.max(0, k.tableY(z) - k.bl(z));
+  const q6 = [-1, 1].map(dir => {
+    // (the inner one starts further down the landing, where it stands lower: its back keeps off the street side)
+    const zq0 = dir < 0 ? l6.Kend.z + 1 : l6.Kend.z + 0.25 * (l6.zMeet - l6.Kend.z);
+    /* (on to 18 m past where the landing meets the slope: further, they stood in the next jump's in-run. Each rises out
+       of the landing's side over 10 m and falls back into it over 10 m (entry, exit), the shelf it stands on with it:
+       over 5 m its ends were a 45 degree face out of the landing's side slope) */
+    return new Quarter({ name: `Jump 6 ${dir < 0 ? 'left' : 'right'} quarterpipe`, group: 'Jump 6', dir, z0: zq0, z1: l6.zMeet + 18, R: 3.4, vert: 0.3, deck: 2.2, entry: 10, exit: 10, backS: 0.9, xAt: z => l6.cxT + dir * l6.hwAt(z), base: onLanding(l6) });
+  });
+  meshed.push(...q6); pipes.push(...q6);
+  jumps.push({ key: 'Jump 6', fs: [l6, ...q6] });
+  starts.push(startFor('Jump 6 (quarterpipe sides)', JX.M, l6.z0 - 50, l6.z0, l6.vDesign));
+  vM = vS = exitSpeed(l6); z = l6.zMeet;
+  // Jump 7, the money booter: a Large (a donkey dick on its takeoff) and a Medium (a box on its) onto one landing
+  const L7 = lane('L', 7, JX.O, { name: 'Jump 7 Large', table: 21, side: 1, wF: FEAT.L.wF }), M7 = lane('M', 7, JX.I, { name: 'Jump 7 Medium', side: 1, wF: FEAT.M.wF });
+  const l7 = add(kick(Object.assign({}, L7, { z0: memo(() => nextAt(z, vM, vS, L7)) })));
+  const [m7z, m7t] = memo(() => lanePlace(l7, M7));
+  const m7 = add(kick(Object.assign({}, M7, { z0: m7z, table: m7t, Rk: l7.Rk })));
+  rails.push(takeoffFeature(l7, 'dd', 'L', 6, 0), takeoffFeature(m7, 'box', 'M', 6, 1));
+  jumps.push({ key: 'Jump 7', fs: [l7, m7] });
+  starts.push(startFor('Jump 7 (the money booter)', -20, l7.z0 - 50, l7.z0, l7.vDesign));
+  vM = exitSpeed(l7); vS = exitSpeed(m7); z = Math.max(l7.zMeet, m7.zMeet);
+  // the big air (its own group), and the drop-in on its table for knuckle hucks
+  const BA = { name: 'Big air', group: 'Big air', lod: true, x: JX.M, lip: 35, R: 15, drop: 1.4, table: 24, land: 37, wT: 4.2, wTab: 8, wD: 7.5, wL: 10, Rk: 8, sideS: JSIDE, landS: JLAND };
+  const ba = add(kick(Object.assign({}, BA, { z0: memo(() => nextAt(z, vM, vS, BA)) })));
+  /* (J, round 11: its back starts where the table has its full width, 4 m past the lip, and 6 m off the middle: from 1.3 m
+     past the lip, its first metres stood over the table's side as a 0.65 m step, drawn as a slope across) */
+  const roll = new Rollin({ group: 'Big air', k: ba, x: ba.cxT + 6, zIn: ba.tabZ[1] + 2.0 / 0.62 + 0.1 });
   meshed.push(roll);
-  starts.push(startFor('Big air', ba.x, zB - 50, zB, ba.vDesign), { name: 'Knuckle huck (the drop-in)', x: roll.x, z: roll.zA + 0.7, v: 2 });
-  // the superpipe, 45 m below the big air's landing, on a run of its own at 18 degrees
+  jumps.push({ key: 'Big air', fs: [ba, roll] });
+  starts.push(startFor('Big air', ba.x, ba.z0 - 50, ba.z0, ba.vDesign), { name: 'Knuckle huck (the drop-in)', x: roll.x, z: roll.zA + 0.7, v: 2 });
+  // ---- the street side: its first row level with Jump 1's Small takeoff, the last beside the big air's table, the rest
+  // evenly between; each row drawn with the jump it lies beside
+  const zS0 = s1.z0 + 4, zS1 = ba.L.z, street = [];
+  const C = { kickers, rails, meshed, pipes, n: 0, group: '' };
+  const mid = J => { const fs = J.fs, a = Math.min(...fs.map(f => f.zs ?? f.z0)), b = Math.max(...fs.map(f => f.zMeet ?? f.z1)); return (a + b) / 2; };
+  STREET.forEach((row, i) => {
+    const zr = zS0 + (zS1 - zS0) * i / (STREET.length - 1);
+    let best = jumps[0]; for (const J of jumps) if (Math.abs(mid(J) - zr) < Math.abs(mid(best) - zr)) best = J;
+    C.group = best.key;
+    const k0 = kickers.length, m0 = meshed.length, r0 = rails.length;
+    streetRow(row, zr, C);
+    street.push({ name: row.name, z: zr, group: best.key, kickers: kickers.slice(k0), meshed: meshed.slice(m0), rails: rails.slice(r0) });
+    if (i && i % 2 === 0) starts.push({ name: row.name.replace(/^Street \d+: /, 'Street side: '), x: 24, z: zr - 30, v: 7 });
+  });
+  // the superpipe, 45 m below the big air's landing, on a run of its own at 18 degrees, in the middle for both sides
   const zP = ba.zMeet + 45, PL = 215;
   setRun(pipeRun(zP, PL));
   const pipe = new Pipe({ x: 0, z0: zP, z1: zP + PL, F: 3.6, R: 6.3, vert: 0.41, deck: 8, entry: 32, exit: 16, lod: true });
@@ -1141,30 +1395,20 @@ export function makeJumpLine(plan = null) {
     for (let x = k.x0; x < k.cxT; x += 0.5) if (k.bareRel(x, zz) > 0) { fl = Math.min(fl, x); break; }
     for (let x = k.x1; x > k.cxT; x -= 0.5) if (k.bareRel(x, zz) > 0) { fr = Math.max(fr, x); break; }
   }
-  for (const f of meshed) { fl = Math.min(fl, f.x0); fr = Math.max(fr, f.x1); }
+  // (a quarterpipe by its deck's outer edge, where riding it ends: its back falls away behind the fence. The T-bar runs
+  // just outside the right one: tbar.js)
+  for (const f of meshed) {
+    if (f instanceof Quarter) { for (let zz = f.z0; zz <= f.z1; zz += 2) { const e = f.xAt(zz) + f.dir * (f.aDeck + 1); fl = Math.min(fl, e); fr = Math.max(fr, e); } continue; }
+    fl = Math.min(fl, f.x0); fr = Math.max(fr, f.x1);
+  }
   for (const r of rails) for (const p of r.P) { fl = Math.min(fl, p.x - 4); fr = Math.max(fr, p.x + 4); }
   const zF = JL_START + 14;
-  const park = assemble({ kickers, pipe, rails, starts, ground2, meshed, pipes: [pipe, ...pipes], banner: 'JUMP  LINE', fences: [[fl - 2.5, zF, fl - 2.5, zEnd], [fr + 2.5, zF, fr + 2.5, zEnd]] });
+  const park = assemble({ kickers, pipe, rails, starts, meshed, pipes: [pipe, ...pipes], banner: 'JUMP  LINE', fences: [[fl - 2.5, zF, fl - 2.5, zEnd], [fr + 2.5, zF, fr + 2.5, zEnd]] });
   park.archZ = JL_START + 5;                      // (world.js puts the start arch here)
   park.plan = PO;                                 // (2026-11-12: for the next start, memo above)
-  park.course = { skews: sk1, table: T1, big2, sml2, money: ks3, bigAir: ba, roll, zEnd };   // (for tests)
+  park.course = { jumps, street, s1, m1, transfer: { table: t5, skews: sk5 }, q6, money: [l7, m7], bigAir: ba, roll, stepUp: u4, stepDown: d3, zEnd };   // (for tests)
   PQ = null;
   return park;
-}
-/* where the next jump's takeoff starts, from where the last landings meet the slope (z), riders leaving the Medium lane
-   at vM and the Small lane at vS: where both have its design speed and a little more, and at least GAP0 m on, at most
-   130 m on (2026-11-09, J). Its design speed changes with the slope it stands on: placed, measured, placed again. */
-const GAP0 = 100;
-function nextAt(z, vM, vS, o) {
-  let z0 = z + GAP0;
-  for (let it = 0; it < 6; it++) {
-    const k = new Kicker(Object.assign({}, o, { z0 }));
-    const more = 0.6 * smoothstep(13 * RAD, 11 * RAD, pitchAt(z0));
-    const z1 = Math.min(z + 130, Math.max(z + GAP0, rollTo(z, vM, z + 400, k.vDesign + 0.3).z, rollTo(z, vS, z + 400, k.vDesign + 0.3 + more).z));
-    if (Math.abs(z1 - z0) < 0.01) break;
-    z0 = z1;
-  }
-  return z0;
 }
 
 // the backcountry map has no built features
@@ -1194,11 +1438,24 @@ export function featureMesh(f, heightFn, material, fine = true, thin = 0) {
    none of it holds a frame up. The heights are the same numbers as before; the bare ground under each point is worked
    out once (it was twice), and the entry ramps' grids go into typed arrays (they were copied through plain arrays).) */
 export function* featureMeshSteps(f, heightFn, material, fine = true, thin = 0) {
-  const rows = thinOut(f.rows(fine), thin), cols = thinOut(f.cols(fine), thin * 1.4), nx = cols.length, nz = rows.length;
+  // (J, round 11: a far copy of a curved wall (a quarterpipe's) keeps its columns by arc length, colsThin: thinned by
+  // their spacing across, the steep part of the wall lost most of its points and came out up to 16 cm low)
+  // (J, round 11: and a far copy's own rows and columns where the feature has them: rowsFar, colsFar)
+  const rows = thin && f.rowsFar ? f.rowsFar(fine) : thinOut(f.rows(fine), thin), cols = thin && f.colsFar ? f.colsFar(fine) : thin && f.colsThin ? f.colsThin(fine, thin * 1.4) : thinOut(f.cols(fine), thin * 1.4), nx = cols.length, nz = rows.length;
   const pos = new Float32Array(nx * nz * 3), nor = new Float32Array(nx * nz * 3), grm = new Float32Array(nx * nz), dye = new Float32Array(nx * nz);
   const n = new THREE.Vector3();
+  const gv = f instanceof Kicker || f.trim ? new Float32Array(nx * nz) : null, ov = gv ? new Float32Array(nx * nz) : null;   // (J, round 11: the bare ground under each point, and the feature's own snow there)
   // (J, round 10: a shape in a frame of its own, a grid over its own u (cols) and s (rows), placed by toWorld)
   const loc = f.local ? f : null, wp = { x: 0, z: 0 };
+  /* (J, round 11, for "some ramps are also invisible": a frame of its own that is mirrored, as a quarterpipe rising
+     towards -x is (Quarter, dir -1), turned the grid's triangles face down, and the snow is drawn from the front only: the
+     wallride, the left side hit and Jump 2's left quarterpipe were not drawn from above at all, a ramp you rode up but
+     could not see. The order is turned back for such a frame (gfx.js fixWinding in main.js checks every triangle too) */
+  let flip = false;
+  if (loc && nx > 1 && nz > 1) {
+    const p0 = loc.toWorld(cols[0], rows[0], {}), p1 = loc.toWorld(cols[nx - 1], rows[0], {}), p2 = loc.toWorld(cols[0], rows[nz - 1], {});
+    flip = (p1.x - p0.x) * (p2.z - p0.z) - (p1.z - p0.z) * (p2.x - p0.x) < 0;
+  }
   // (J, 2026-11-11: the kicker's own grid is the snow without its features' entry ramps, which are drawn over it by grids
   // of their own, below; f.ents is put back before anything else can read it: within each row, so the physics, which
   // may run between two rows, always sees them)
@@ -1219,7 +1476,7 @@ export function* featureMeshSteps(f, heightFn, material, fine = true, thin = 0) 
         else { y = heightFn(x, z); if (keep) g = ground(x, z); }
         pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
         grm[v] = 0.65; dye[v] = f.dye ? f.dye(x, z) : 0;
-        if (keep) { const fy = f.height(x, z, g); keep[v] = fy > g + 0.003 && fy >= pos[v * 3 + 1] - 0.45 ? 1 : 0; }   // (0.45: the rounding between features lifts the snow by up to 0.4)
+        if (keep) { const fy = f.height(x, z, g); keep[v] = fy > g + 0.003 && fy >= pos[v * 3 + 1] - 0.45 ? 1 : 0; gv[v] = g; ov[v] = fy > g + 0.003 ? fy : -1e9; }   // (0.45: the rounding between features lifts the snow by up to 0.4)
       }
     } finally { if (ents) f.ents = ents; }
     yield;
@@ -1242,13 +1499,28 @@ export function* featureMeshSteps(f, heightFn, material, fine = true, thin = 0) 
     const hz = (pos[(ju * nx + i) * 3 + 1] - pos[(jd * nx + i) * 3 + 1]) / dz;
     n.set(-hx, 1, -hz).normalize(); nor[v * 3] = n.x; nor[v * 3 + 1] = n.y; nor[v * 3 + 2] = n.z;
   }
+  /* (J, round 11, from the drawn-against-ridden check: each mesh draws its own snow. A cell across a feature's foot, where
+     its side meets the snow, cut straight across that corner up to 0.2 m over the snow ridden there (on the low tier the
+     columns are 1.4 m apart), and a cell reaching over another feature drew that one's snow at this one's coarser grid
+     (0.25 m over a quarterpipe's back beside Jump 6's landing). After the normals: a point where this feature stands but
+     another stands higher keeps this one's own height (the other's mesh draws above it); a point outside this feature's
+     snow goes under the ground by 0.3 of its distance to the points beside it (at most 0.45 m), and the terrain's patches,
+     or the other feature's mesh, draw the snow there; the cell then follows the corner to within a few centimetres.) */
+  if (keep) for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    const v = j * nx + i; if (keep[v]) continue;
+    if (ov[v] > -1e8) { pos[v * 3 + 1] = ov[v]; continue; }
+    let h = 0;
+    for (const w of [i > 0 ? v - 1 : -1, i < nx - 1 ? v + 1 : -1, j > 0 ? v - nx : -1, j < nz - 1 ? v + nx : -1]) if (w >= 0) h = Math.max(h, Math.hypot(pos[w * 3] - pos[v * 3], pos[w * 3 + 2] - pos[v * 3 + 2]));
+    pos[v * 3 + 1] = gv[v] - Math.min(thin ? 0.25 : 0.45, 0.3 * h);   // (a far copy's cells are bigger: tucked 0.25 at most)
+  }
   yield;
   const idx = new (nx * nz > 65535 ? Uint32Array : Uint16Array)((nx - 1) * (nz - 1) * 6);
   let k = 0;
   for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
     const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
     if (keep && !(keep[a] | keep[b] | keep[c] | keep[d])) continue;
-    idx[k++] = a; idx[k++] = c; idx[k++] = b; idx[k++] = b; idx[k++] = c; idx[k++] = d;
+    if (flip) { idx[k++] = a; idx[k++] = b; idx[k++] = c; idx[k++] = b; idx[k++] = d; idx[k++] = c; }
+    else { idx[k++] = a; idx[k++] = c; idx[k++] = b; idx[k++] = b; idx[k++] = c; idx[k++] = d; }
   }
   yield;
   // (the vertices no kept cell uses are dropped too)
@@ -1461,6 +1733,25 @@ function boards(G, q, col) {
   });
   for (let i = 0; i < rows.length - 1; i++) { const A = rows[i], B = rows[i + 1]; G.quad(A[0], A[1], B[1], B[0], -d, 0.1, 0); G.quad(A[2], A[3], B[3], B[2], 0, 1, 0); }
 }
+/* (J, round 11) the stair set's wooden treads and risers, and planks over its deck between the handrail's and the ledge's
+   ramps: laid 2 cm over the snow the skis ride (st.snowY), so the snow under them is what is ridden */
+function stairBoards(G, st, col) {
+  const w = 1.75, dk = 0.02;
+  const plank = (z0, z1) => {
+    const n = Math.max(1, Math.ceil((z1 - z0) / 0.5)), row = [];
+    for (let i = 0; i <= n; i++) { const z = z0 + (z1 - z0) * i / n; row.push([G.v(st.x - w, st.snowY(st.x - w, z) + dk, z, 0, 1, 0, col), G.v(st.x + w, st.snowY(st.x + w, z) + dk, z, 0, 1, 0, col)]); }
+    for (let i = 0; i < n; i++) G.quad(row[i][0], row[i][1], row[i + 1][1], row[i + 1][0], 0, 1, 0);
+  };
+  plank(st.zB + 0.6, st.zC - 0.02);
+  for (let i = 0; i < st.N; i++) {
+    const a = st.zC + i * st.tread;
+    plank(a + RW + 0.01, a + st.tread - 0.01);
+    // the riser: upright, facing down the hill
+    const yt = st.snowY(st.x, a - 0.005) + dk, yb = st.snowY(st.x, a + RW + 0.005) + dk, zr = a + RW / 2;
+    const p = [G.v(st.x - w, yt, zr, 0, 0, 1, col), G.v(st.x + w, yt, zr, 0, 0, 1, col), G.v(st.x + w, yb, zr, 0, 0, 1, col), G.v(st.x - w, yb, zr, 0, 0, 1, col)];
+    G.quad(p[0], p[1], p[2], p[3], 0, 0, 1);
+  }
+}
 // a square post from y0 down to y1 at x, z
 function post(G, x, z, y0, y1, w) {
   const h = w / 2, c = [[-h, -h], [h, -h], [h, h], [-h, h]];
@@ -1480,7 +1771,7 @@ function legsUnder(G, r, every, w, from) {
 }
 let benchSrc = null;
 function loadBench() {
-  if (!benchSrc) benchSrc = new GLTFLoader().loadAsync('models/park/bench.glb?v=26').then(g => { let m = null; g.scene.traverse(o => { if (o.isMesh && !m) m = o; }); return m; });
+  if (!benchSrc) benchSrc = new GLTFLoader().loadAsync('models/park/bench.glb?v=27').then(g => { let m = null; g.scene.traverse(o => { if (o.isMesh && !m) m = o; }); return m; });
   return benchSrc;
 }
 // the bench model stretched along a rail's two points: the ends (with their legs) kept, the seat between stretched, the
@@ -1524,11 +1815,20 @@ export function railMeshes(rails, mats) {
   const steel = new Geo(), paint = new Geo(true);
   const col = new THREE.Color(), lin = h => new THREE.Color(h).convertSRGBToLinear();
   const PLASTIC = lin(0x15171a), TOP = lin(0x1d2128), POST = lin(0x2c3036), IRON = lin(0x2b2c2e), RUBBER = lin(0x18181a), WOOD = lin(0x9a6a3c);
+  const TABLE = lin(0x8a5a32), CONCRETE = lin(0x9d9a92);
   for (const r of rails) {
     col.set(r.colour ?? 0xff6a13).convertSRGBToLinear();
     const look = r.look || (r.top === 'flat' ? 'box' : r.kind === 'tube' ? 'tube' : 'steel');
     if (look === 'bench' || r.ownMesh) continue;
     paint.cur = TOP;
+    // (J, round 11: the street side's picnic table and its two benches (planks on legs), and the stair set's concrete ledge)
+    if (look === 'picnic' || look === 'picnicBench') {
+      paint.cur = TABLE; sweepBox(paint, paint, r.P, r.w, r.under, TABLE, 0.05);
+      paint.cur = POST;
+      for (const e of [0.25, r.len - 0.25]) { const p = r.at(e), d = r.dirAt(e), sx = d.z, sz = -d.x, l = Math.hypot(sx, sz) || 1; for (const sg of [-1, 1]) { const o = sg * (r.w / 2 - 0.08) / l; post(paint, p.x + sx * o, p.z + sz * o, p.y - 0.05, r.under(p.x + sx * o, p.z + sz * o) - 0.15, 0.07); } }
+      continue;
+    }
+    if (look === 'ledge') { paint.cur = CONCRETE; sweepBox(paint, paint, r.P, r.w, r.under, CONCRETE, 0); continue; }
     if (look === 'box') sweepBox(paint, paint, r.P, r.w, r.under, col, r.legs ? 0.24 : 0);
     else if (look === 'dd') sweepTube(paint, r.P, r.w / 2, 18, col);
     else if (look === 'tube') sweepTube(paint, r.P, r.w / 2, 18, PLASTIC);
@@ -1546,10 +1846,11 @@ export function railMeshes(rails, mats) {
     else if (r.legs) legsUnder(paint, r, 1.8, 0.08, look === 'box' ? 0.28 : r.w / 2);
   }
   for (const q of rails.panels || []) boards(paint, q, WOOD);   // (J, round 10: the wallride's boards)
+  for (const st of rails.decor || []) stairBoards(paint, st, WOOD);   // (J, round 11: the stair set's treads)
   const add = (G, mat) => { const g = G.geometry(); if (!g) return; const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false; out.add(m); };
   /* scuffed plastic and scratched steel: roughness maps from ambientCG's CC0 "Plastic 010" (its roughness) and "Scratches
      005" (its scratches made into roughness), 512 px */
-  const tl = new THREE.TextureLoader(), rough = f => new Promise(res => tl.load('models/park/' + f + '?v=26', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
+  const tl = new THREE.TextureLoader(), rough = f => new Promise(res => tl.load('models/park/' + f + '?v=27', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
   const plRough = rough('plastic_rough.webp'), stRough = rough('steel_rough.webp');
   const paintM = mats.paint || (mats.paint = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.48, metalness: 0.05 }));
   const steelM = mats.railSteel || (mats.railSteel = new THREE.MeshStandardMaterial({ color: 0xb8bdc2, metalness: 0.9, roughness: 0.32 }));

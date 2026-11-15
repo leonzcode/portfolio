@@ -9,8 +9,8 @@
      physics' walls and the rock drawn on the snow;
    - trees(max, random): where forest is (from the satellite picture's green, Esri World Imagery, as Leonski 2 does it;
      else below a treeline worked out from the latitude), off the runs, lift lines and anything steep. */
-import { simplex, fbm, smoothstep, clamp } from './noise.js?v=26';
-import { lat2my, lon2mx } from './wdem.js?v=26';
+import { simplex, fbm, smoothstep, clamp } from './noise.js?v=27';
+import { lat2my, lon2mx } from './wdem.js?v=27';
 
 const RAD = Math.PI / 180;
 
@@ -128,23 +128,70 @@ export class WorldLand {
   ny(x, z, s = 6) { const e = this.elev, gx = (e.at(x + s, z) - e.at(x - s, z)) / (2 * s), gz = (e.at(x, z + s) - e.at(x, z - s)) / (2 * s); return 1 / Math.sqrt(1 + gx * gx + gz * gz); }
   /* the rock raster over the fine area: a face where the elevation is steeper than about 45 degrees (ny under 0.72),
      worked out once (8 m cells, the slope over 16 m), plus whatever the generated drops add (wpark.js, rock()) */
-  buildRock() {
+  /* (W, round 11, for Leon's "make the rock and cliff more accurate for real ski mountains") the rock from three sources,
+     never on a groomed run's surface:
+     - the elevation's own slope: a face steeper than about 42 degrees shows rock, past about 46 it is a wall
+       (cliffR, 8 m cells), as before;
+     - OpenStreetMap's cliffs (natural=cliff): a wall along the mapped line, 2.5 m either side;
+     - OpenStreetMap's bare rock, scree and boulders: rock drawn on the snow (rockR) but no wall (a rocky slope is
+       ridden over); glaciers keep only the walls, their gentler slopes all snow.
+     A groomed run crossing a mapped cliff stays smooth: the rock is beside it. L: the land cover (wlanddata.js) or null.
+     stats: how much came from each (cells of 8 m). */
+  buildRock(L = null) {
     const E = this.ext, size = Math.max(E.x1 - E.x0, E.z1 - E.z0), cell = 8;
     const C = this.cliffR = new Raster(E.x0, E.z0, size, cell), n = C.n, a = C.a;
     // (the heights on the cells' own grid once, then each cell's slope from its neighbours either side: a quarter of
     // the elevation lookups of asking four points round every cell)
     const M = n + 2, h = new Float32Array(M * M);
     for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) h[j * M + i] = this.elev.at(E.x0 + (i - 0.5) * cell, E.z0 + (j - 0.5) * cell);
+    // (a groomed run's surface, never rock: the cells where its corduroy is)
+    const run = new Uint8Array(n * n), wc = [0, 0];
     let k = 0;
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++, k++) {
+      if (this.groomR.at(E.x0 + (i + 0.5) * cell, E.z0 + (j + 0.5) * cell) > 0.25) { run[k] = 1; continue; }
       const o = (j + 1) * M + i + 1, gx = (h[o + 1] - h[o - 1]) / (2 * cell), gz = (h[o + M] - h[o - M]) / (2 * cell);
       const ny = 1 / Math.sqrt(1 + gx * gx + gz * gz);
       if (ny < 0.74) a[k] = Math.min(255, Math.round((0.74 - ny) / 0.12 * 255));
+      /* (W, round 11) where OpenStreetMap maps a forest, a steep slope is a wooded one, not bare rock: rock shows there
+         from about 52 degrees, a wall from about 55 */
+      if (a[k] && this.woods && !this.woods.empty) { this.woods.cellAt(E.x0 + (i + 0.5) * cell, E.z0 + (j + 0.5) * cell, wc); if (wc[0] >= 2) a[k] = ny < 0.62 ? Math.min(255, Math.round((0.62 - ny) / 0.12 * 255)) : 0; }
     }
+    const st = this.rockStats = { demRock: 0, demWall: 0, osmCliffs: 0, osmCliffM: 0, osmCliffCells: 0, osmRock: 0, osmScree: 0, osmStones: 0, glacier: 0, onRunsCut: 0 };
+    for (k = 0; k < n * n; k++) { if (a[k] > 0) st.demRock++; if (a[k] > 90) st.demWall++; }
+    this.rockR = null;
+    if (L) {
+      const inside = p => p.x > E.x0 && p.x < E.x1 && p.z > E.z0 && p.z < E.z1;
+      // the mapped cliffs: walls along their lines
+      const W = new Raster(E.x0, E.z0, size, cell);
+      for (const l of L.cliff) {
+        if (!l.some(inside)) continue;
+        st.osmCliffs++;
+        for (let i = 0; i < l.length - 1; i++) { const p = l[i], q = l[i + 1]; st.osmCliffM += Math.hypot(q.x - p.x, q.z - p.z); W.line(p.x, p.z, q.x, q.z, 2.5, 3); }
+      }
+      // rock on the snow: bare rock, scree (half), boulders
+      const R = this.rockR = new Raster(E.x0, E.z0, size, cell);
+      for (const rs of L.rock) if (rs.some(r => r.some(inside))) { st.osmRock++; for (const r of rs) R.poly(r, 200); }
+      for (const rs of L.scree) if (rs.some(r => r.some(inside))) { st.osmScree++; for (const r of rs) R.poly(r, 110); }
+      for (const p of L.stones) if (inside(p)) { st.osmStones++; R.line(p.x, p.z, p.x + 0.1, p.z, 2.5, 2, 170); }
+      // glaciers: their snow (the walls kept)
+      const G = new Raster(E.x0, E.z0, size, cell);
+      for (const rs of L.glacier) if (rs.some(r => r.some(inside))) { st.glacier++; for (const r of rs) G.poly(r, 255); }
+      for (k = 0; k < n * n; k++) {
+        if (run[k]) { if (W.a[k] > 90 || R.a[k] > 0) st.onRunsCut++; W.a[k] = 0; R.a[k] = 0; continue; }
+        /* (mapped bare rock and scree are summer's: in winter the snow covers them where the slope holds it, so they
+           show from about 25 degrees, fully from 42) */
+        if (R.a[k]) { const j = (k / n) | 0, i = k - j * n, o = (j + 1) * M + i + 1, gx = (h[o + 1] - h[o - 1]) / (2 * cell), gz = (h[o + M] - h[o - M]) / (2 * cell), ny = 1 / Math.sqrt(1 + gx * gx + gz * gz); R.a[k] = Math.round(R.a[k] * smoothstep(0.906, 0.743, ny)); }
+        if (W.a[k] > a[k]) { if (W.a[k] > 90) st.osmCliffCells++; a[k] = W.a[k]; }
+        if (G.a[k] && a[k] <= 90) a[k] = 0;
+        if (G.a[k]) R.a[k] = 0;
+      }
+      this.cliffW = W;       // (the mapped cliffs alone: wfeat.js builds their drops from it)
+    }
+    this.runCells = run;
     return C;
   }
   cliff(x, z) { return this.cliffR ? this.cliffR.raw(x, z) > 90 : false; }
-  rockAmt(x, z) { return this.cliffR ? this.cliffR.at(x, z) : 0; }
+  rockAmt(x, z) { if (!this.cliffR) return 0; const c = this.cliffR.at(x, z); if (!this.rockR) return c; const r = this.rockR.at(x, z); return r > c ? r : c; }
 }
 
 /* ---- the forest: from the satellite picture (Esri World Imagery), as Leonski 2 reads it -------------------------------

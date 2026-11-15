@@ -6,8 +6,8 @@
    Gondolas, cable cars, T-bars, platters and the rest ride as the chair (Leon's brief allows it); the shortest ones,
    magic carpets and rope tows under 150 m, are left out. All the lifts share one kit: four draw calls for them all. */
 import * as THREE from 'three';
-import { Lift, planLift, liftHeights, liftKit } from './lift.js?v=26';
-import { height, ground } from './terrain.js?v=26';
+import { Lift, planLift, liftHeights, liftKit } from './lift.js?v=27';
+import { height, ground } from './terrain.js?v=27';
 
 const ST_FRONT = 13.29;      // (lift.js ST.front: a station's bull wheel to its line end)
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
@@ -257,6 +257,17 @@ export class WorldLifts {
   get feetOn() { const a = this.active; return a ? a.inner.feetOn : false; }
   pastBottom() { return false; }
   boardNow() { return false; }
+  /* (W11 trail: a lift clicked on the trail map, wtrail.js) the rider put on lift i's load line from wherever they are,
+     and the chair taken as E takes it there (lift.js boardNow: no walk, the tripod at once). A ride on another lift is
+     let go first. */
+  board(i, sk) {
+    const l = this.lifts[i]; if (!l || !this.ready) return false;
+    for (const o of this.lifts) if (o !== l && o.inner.ride) { o.inner.ride = null; o.inner.sit = 0; o.inner.feetOn = false; }
+    l.real = sk;
+    const ok = l.inner.boardNow(l.sk);
+    if (l.inner.ride) { l.inner.hint = 30; }
+    return ok;
+  }
   update(dt, g) {
     if (!this.ready) return;
     if (g.camera) this.lod(g.camera.position);

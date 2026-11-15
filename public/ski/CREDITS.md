@@ -44,8 +44,14 @@
   - Runs, lifts, terrain parks, lit runs and place names: OpenStreetMap, (c) OpenStreetMap contributors, ODbL 1.0
     (https://www.openstreetmap.org/copyright), from the Overpass API mirrors; the 17 built-in resorts' answers are the
     ones Leonski 2 already ships in `/legacy/leonski2data/`.
-  - Where the forest is (read from the picture's colours only, never shown): Esri World Imagery, Sources: Esri, Maxar,
-    Earthstar Geographics, and the GIS User Community.
+  - Woods and forests, scrub, single trees and tree rows, lakes, bare rock, scree, glaciers, cliffs, boulders, buildings
+    and mapped halfpipes (W, round 11: where the trees stand, where the runs and lifts are cut through them, where rock
+    and cliffs are): OpenStreetMap, (c) OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright),
+    from the Overpass API (the maps.mail.ru mirror for the bake). For the 17 built-in resorts this is shipped with the game
+    in `data/world/<resort>.json` (simplified outlines in whole metres, made by `tools/ski/bake_world_land.cjs`, a
+    derived database under the same ODbL 1.0 terms); for a searched place it is read live and kept in the browser.
+  - Where the forest is, only where OpenStreetMap maps no woods at all round a place (read from the picture's colours
+    only, never shown): Esri World Imagery, Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community.
   - Place search: Photon by komoot (https://photon.komoot.io) and Nominatim (https://nominatim.openstreetmap.org), both
     on OpenStreetMap data, within their usage policies (Nominatim at most one request a second).
   - Made in the game for it: the side hits, rollers, wind lips, rock drops and the parks' lines, the edge poles and run

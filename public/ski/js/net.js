@@ -164,7 +164,7 @@ export class Net {
     if (this.sendT >= 1 / SEND_HZ && !this.watching) {   // (M: a watcher sends nothing)
       this.sendT = 0;
       const r3 = v => Math.round(v * 1000) / 1000;
-      this.send({ type: 's', p: sk.p.toArray().map(r3), q: sk.q.toArray().map(r3), v: sk.v.toArray().map(r3), st: sk.state === 'lift' ? 0 : ST.indexOf(sk.state),   // (L: on the chairlift x.lf says so; st is ignored then)
+      this.send({ type: 's', p: sk.p.toArray().map(r3), q: sk.q.toArray().map(r3), v: sk.v.toArray().map(r3), st: sk.state === 'lift' || sk.state === 'fly' ? 0 : ST.indexOf(sk.state),   // (L: on the chairlift x.lf says so; st is ignored then)   // (W11 fly: flying, x.fl says so and the others do not draw them; -1 was a crash at the relay)
         c: r3(sk.crouch), e: r3(sk.edge), tk: r3(sk.tuck), pr: r3(sk.press), b: r3(sk.balance || 0), br: r3(sk.brake), sw: sk.sw, g: sk.grab || null, po: sk.pose || null,
         tw: sk.tweak || '', sh: r3(sk.shift || 0), sk: r3(sk.skate || 0), ab: r3(sk.absorb || 0), ra: r3(sk.railAng || 0), rp: r3(sk.railPress || 0), lb: !!sk.lookBack, x: this.xOut(sk) });
     }
@@ -206,6 +206,8 @@ export class Net {
       if (away) continue;
       let a = b[0], c = b[b.length - 1], k = 0;
       for (let i = 0; i < b.length - 1; i++) if (b[i].t <= now && b[i + 1].t >= now) { a = b[i]; c = b[i + 1]; k = (now - a.t) / Math.max(1e-3, c.t - a.t); break; }
+      // (W11 fly: a rider flying (fly.js, x.fl) is not drawn, nor followed by a watcher, until both snapshots used are on the snow)
+      if ((c.s.x && c.s.x.fl) || (now <= c.t && a.s.x && a.s.x.fl)) { if (r.rig) r.rig.root.visible = false; V.shown = false; continue; }
       const p = V.p, q = V.q;
       if (now > c.t) { p.copy(c.p).addScaledVector(c.v, Math.min(0.25, now - c.t)); q.copy(c.q); }
       else { p.lerpVectors(a.p, c.p, k); q.slerpQuaternions(a.q, c.q, k); }

@@ -14,8 +14,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=26';
-import { clamp, smoothstep } from './noise.js?v=26';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=27';
+import { clamp, smoothstep } from './noise.js?v=27';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -329,7 +329,7 @@ export class Skier {
     this.wasBrake = !!I.brake && this.brake > 0.03;
     // forward: a tuck at speed, a skate and a pole push on the flat; Shift (Shredsauce Controls) skates hard, and keeps
     // helping to about 70 km/h (2026-11-03, for "make pressing shift make you go faster more")
-    const skateWant = !I.brake && !I.crouch && !buttering ? Math.max(I.push ? 1 - smoothstep(15, 20, speed) : 0, I.tuck ? 1 - smoothstep(5.5, 9, speed) : 0) : 0;
+    const skateWant = !I.brake && !I.crouch && !buttering ? Math.max(I.push ? 1 - smoothstep(28, 31, speed) : 0, I.tuck ? 1 - smoothstep(5.5, 9, speed) : 0) : 0;
     this.skate += (skateWant - this.skate) * Math.min(1, dt * 5);
     this.tuck += ((I.tuck && !I.crouch ? smoothstep(4.5, 8.5, speed) : 0) - this.tuck) * Math.min(1, dt * 4);
     // crouching loads the pop (the knees bend); letting go pops by the speed you have
@@ -482,8 +482,12 @@ export class Skier {
     if (this.skate > 0.02) {
       this.skateT += dt * (STROKE[this.kind] || STROKE.ski)(speed);
       const pulse = strokePush(!STROKE[this.kind] || this.kind === 'ski', this.skateT % 1);   // a push off each ski in turn (one stroke a cycle on the other rides)
-      const vmax = I.push ? 21 : 9.5, ahead = Math.max(0, vf2 * travel);
-      a.addScaledVector(f, travel * (I.push ? 5.2 : 3.0) * (Kd.skate ?? 1) * this.skate * pulse * clamp(1 - ahead / vmax, 0, 1));
+      const vmax = I.push ? 30 : 9.5, ahead = Math.max(0, vf2 * travel);
+      // Shift (I.push): a hard push that is mostly steady, about 9 m/s2 on average, more than any slope you can stand on
+      // pulls back, so it gains speed uphill too, at full strength to about 80 km/h and gone by 108 (2026-11-14, for
+      // "pressing shift makes you go significantly faster ... even if you are going uphill"); every ride gets most of it
+      if (I.push) a.addScaledVector(f, travel * 11 * Math.max(Kd.skate ?? 1, 0.8) * this.skate * (0.55 + 0.45 * pulse) * clamp((vmax - ahead) / 8, 0, 1));
+      else a.addScaledVector(f, travel * 3.0 * (Kd.skate ?? 1) * this.skate * pulse * clamp(1 - ahead / vmax, 0, 1));
       this.pushT = this.skateT % 1;
     } else { this.pushT = 0; this.skateT = 0; }
     this.pushing = this.skate > 0.02 ? this.skate : 0;

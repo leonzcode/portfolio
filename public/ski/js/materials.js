@@ -4,8 +4,8 @@
 // (env.js: groomed, powder, packed, spring slush, ice), the floodlights' pools by night, and fog the colour of the sky's
 // own horizon in each direction.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=26';
-import { ground, onMountain } from './terrain.js?v=26';
+import { rng } from './noise.js?v=27';
+import { ground, onMountain } from './terrain.js?v=27';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
 // (2026-11-12, loading: the same bytes as before, with each texel's cell worked out once a row and once a column instead
@@ -373,10 +373,15 @@ uniform sampler2D uRockMap; uniform sampler2D uRockMap2; uniform vec4 uRockWin; 
 // (2026-11-11) the field here: (steepness, sky seen, sun reaching it, wind exposure); without the field's light (any map but
 // Freeride) the last three are (1, 1, 0.5)
 vec4 gFld;
-vec4 field(float ny) {
+// (G, round 11: read with the place's own gradients (dx, dy: of vWPos.xz), so it can sit in a branch that most of the
+// snow skips, below; and the coarse window only where the fine one does not wholly cover the place: inside it, the
+// coarse one's value was read and then mixed away entirely. The same values.)
+vec4 field(float ny, vec2 dx, vec2 dy) {
   vec4 f = vec4(ny, 1.0, 1.0, 0.5);
-  if (uRockWin2.w > 0.5) { vec2 u = (vWPos.xz - uRockWin2.xy) * uRockWin2.z; float e = min(min(u.x, 1.0 - u.x), min(u.y, 1.0 - u.y)); f = mix(f, texture2D(uRockMap2, u), smoothstep(0.0, 0.03, e)); }
-  if (uRockWin.w > 0.5) { vec2 u = (vWPos.xz - uRockWin.xy) * uRockWin.z; float e = min(min(u.x, 1.0 - u.x), min(u.y, 1.0 - u.y)); f = mix(f, texture2D(uRockMap, u), smoothstep(0.0, 0.06, e)); }
+  vec2 u1 = (vWPos.xz - uRockWin.xy) * uRockWin.z;
+  float w1 = uRockWin.w > 0.5 ? smoothstep(0.0, 0.06, min(min(u1.x, 1.0 - u1.x), min(u1.y, 1.0 - u1.y))) : 0.0;
+  if (w1 < 1.0 && uRockWin2.w > 0.5) { vec2 u = (vWPos.xz - uRockWin2.xy) * uRockWin2.z; float e = min(min(u.x, 1.0 - u.x), min(u.y, 1.0 - u.y)); f = mix(f, textureGrad(uRockMap2, u, dx * uRockWin2.z, dy * uRockWin2.z), smoothstep(0.0, 0.03, e)); }
+  if (w1 > 0.0) f = mix(f, textureGrad(uRockMap, u1, dx * uRockWin.z, dy * uRockWin.z), w1);
   return uFieldLight > 0.5 ? f : vec4(f.r, 1.0, 1.0, 0.5);
 }`)
       // albedo: rock on steep faces, compacted grey-blue in tracks
@@ -386,7 +391,11 @@ vec4 field(float ny) {
   float camD = length(vWPos - cameraPosition);
   // (2026-11-07: the terrain's steepness from the rock field, not its patch's normals: no patch-shaped edges. The
   // kickers' own meshes (groomed 0.65) keep their normals)
-  gFld = field(wn.y);
+  /* (G, round 11: the field only where it is used: off the groomed run (its steepness, for the rock), or everywhere when it
+     carries the mountain's own light (Freeride). On the groomed run of the other maps, most of the snow on the screen,
+     its two lookups were read and thrown away. The same picture.) */
+  { vec2 fdx = dFdx(vWPos.xz), fdy = dFdy(vWPos.xz);
+    gFld = vGroom < 0.5 || uFieldLight > 0.5 ? field(wn.y, fdx, fdy) : vec4(wn.y, 1.0, 1.0, 0.5); }
   float rny = vGroom < 0.5 ? gFld.r : wn.y;
   float steep = smoothstep(0.80, 0.62, rny);
   // (2026-11-06, the lag pass: rock only where the snow is steep enough for it, so most of the snow skips its three
