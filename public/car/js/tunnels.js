@@ -16,7 +16,7 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south.
 import * as THREE from 'three';
-import { under, indexTube } from './under.js?v=53';
+import { under, indexTube } from './under.js?v=54';
 
 const T = 0.45;            // lining thickness
 const WALK = 0.12;         // the walkway along each wall over the road (roads.js draws it)
@@ -147,18 +147,36 @@ export async function buildTunnels(R, L, opts, group, concrete, stats) {
     const dayAt = (s) => { const d = Math.min(p0 ? s : Infinity, p1 ? e.len - s : Infinity); return d < 40 ? 1 - d / 40 : 0; };
     // the lining's colours: pale tiles low on the walls, grey above; brighter near a portal (daylight)
     const col = (y, day) => { const b = y < 2.4 ? [0.5, 0.5, 0.48] : [0.3, 0.3, 0.29], k = 1 + 0.45 * day; return [b[0] * k, b[1] * k, b[2] * k]; };
+    /* another road crossing over the bore within its height (a street over a shallow tunnel near its portal, where the
+       bore cannot get under it at the tunnel's grade; a ramp beside it at a portal, over its wall's line): the lining
+       and the shell stop 0.3 m under that road's surface, cap (metres over the floor). Drawn whole, they stood up
+       through the street as a concrete wall across its lanes (Porte Maillot: 150 m of the surface streets). */
+    for (const A of S) {
+      A.cap = Infinity;
+      if (!R.roadAcross) continue;
+      for (const o of [0, -dL, dR]) {
+        const q = P(A, o, 0);
+        let h = null; try { h = R.roadAcross(q[0], q[2], A.f + 0.4, A.f + O.crown + 0.6); } catch (err) { h = null; }
+        if (h != null) A.cap = Math.min(A.cap, h - A.f - 0.3);
+      }
+      if (A.cap < Infinity) stats.capped = (stats.capped || 0) + 1;
+    }
+    const cy = (A, y) => Math.min(y, A.cap);
     for (let i = 1; i < N; i++) {
       if ((i & 15) === 0) await Y('L150'); // (a kilometre of bore took 380 ms in one go)
       if (lining.p.length > 150000) cutLining();
       const A = S[i - 1], B = S[i], da = dayAt(A.s), db = dayAt(B.s);
+      // (capped: the lining as far up as it goes under the road over it, P2)
+      const P2 = A.cap < Infinity || B.cap < Infinity ? (Q, o, y) => P(Q, o, cy(Q, y)) : P;
       for (let j = 1; j < I.P.length; j++) {
         const [oa, ya] = I.P[j - 1], [ob, yb] = I.P[j];
+        if (P2 !== P && Math.min(ya, yb) >= Math.min(A.cap, B.cap)) continue;
         // facing into the bore: towards the middle of its cross-section
         const om = (oa + ob) / 2, ym = (ya + yb) / 2, tx = I.mid - om, ty = I.crown * 0.45 - ym;
         const nx = (A.nx + B.nx) / 2 * tx, nz = (A.nz + B.nz) / 2 * tx;
         const va = arc[j - 1] * 0.25, vb = arc[j] * 0.25;
         const ua = [A.s * 0.25, va], ub = [B.s * 0.25, va], uc = [B.s * 0.25, vb], ud = [A.s * 0.25, vb];
-        lining.quad(P(A, oa, ya), P(B, oa, ya), P(B, ob, yb), P(A, ob, yb), [nx, ty, nz], ua, ub, uc, ud, col(ya, da), col(ya, db), col(yb, db), col(yb, da));
+        lining.quad(P2(A, oa, ya), P2(B, oa, ya), P2(B, ob, yb), P2(A, ob, yb), [nx, ty, nz], ua, ub, uc, ud, col(ya, da), col(ya, db), col(yb, db), col(yb, da));
       }
       // the walkway along each wall (its surface is roads.js's, for the wheels and people)
       for (const sd of [-1, 1]) {
@@ -173,9 +191,10 @@ export async function buildTunnels(R, L, opts, group, concrete, stats) {
       const deep = ga !== null && gb !== null && Math.min(ga - A.f, gb - B.f) > O.crown + 3 && dayAt(A.s) === 0 && dayAt(B.s) === 0;
       if (!deep) for (let j = 1; j < O.P.length; j++) {
         const [oa, ya] = O.P[j - 1], [ob, yb] = O.P[j];
+        if (P2 !== P && Math.min(ya, yb) >= Math.min(A.cap, B.cap)) continue;
         const om = (oa + ob) / 2, ym = (ya + yb) / 2, tx = om - O.mid, ty = ym - O.crown * 0.45;
         const nx = (A.nx + B.nx) / 2 * tx, nz = (A.nz + B.nz) / 2 * tx;
-        shell.quad(P(A, oa, ya), P(B, oa, ya), P(B, ob, yb), P(A, ob, yb), [nx, ty, nz], [A.s * 0.25, ya * 0.25], [B.s * 0.25, ya * 0.25], [B.s * 0.25, yb * 0.25], [A.s * 0.25, yb * 0.25]);
+        shell.quad(P2(A, oa, ya), P2(B, oa, ya), P2(B, ob, yb), P2(A, ob, yb), [nx, ty, nz], [A.s * 0.25, ya * 0.25], [B.s * 0.25, ya * 0.25], [B.s * 0.25, yb * 0.25], [A.s * 0.25, yb * 0.25]);
       }
     }
     // lamps along the roof, every 8 m
@@ -185,6 +204,7 @@ export async function buildTunnels(R, L, opts, group, concrete, stats) {
       let i = 1; while (i < N - 1 && S[i].s < s) i++;
       const A = S[i - 1], B = S[i], t = Math.max(0, Math.min(1, (s - A.s) / Math.max(1e-6, B.s - A.s)));
       const x = A.x + (B.x - A.x) * t, z = A.z + (B.z - A.z) * t, f = A.f + (B.f - A.f) * t, nx = (A.nx + B.nx) / 2, nz = (A.nz + B.nz) / 2;
+      if (Math.min(A.cap, B.cap) < I.crown + 0.2) continue; // (no lamp up through a road over the bore)
       const tx = B.x - A.x, tz = B.z - A.z;
       _q.setFromAxisAngle(_Y, Math.atan2(tx, tz));
       for (const o of rows) {
@@ -243,6 +263,8 @@ export async function buildTunnels(R, L, opts, group, concrete, stats) {
     for (const end of [0, 1]) {
       if (!(end ? p1 : p0)) continue;
       const A = S[end ? N - 1 : 0], B = S[end ? N - 2 : 1];
+      // (none where a road crosses over the portal lower than the headwall's top: it stood up through that road)
+      if (A.cap < O.crown + 1.4) { stats.portalCapped = (stats.portalCapped || 0) + 1; continue; }
       let tx = A.x - B.x, tz = A.z - B.z; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl; // out of the tunnel
       // as wide as the bore and the walls along the road it meets there (tunnels.js's cut walls stand at that road's
       // outer edge)

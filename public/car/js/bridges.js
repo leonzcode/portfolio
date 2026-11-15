@@ -13,8 +13,8 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south.
 import * as THREE from 'three';
-import { buildTunnels } from './tunnels.js?v=53';
-import { sharedTexture } from './texcache.js?v=53'; // (round 6, perf P)
+import { buildTunnels } from './tunnels.js?v=54';
+import { sharedTexture } from './texcache.js?v=54'; // (round 6, perf P)
 
 const BASE = new URL('../', import.meta.url).href;
 const PW = 0.32;                // parapet thickness
@@ -27,7 +27,7 @@ const RAIL_TOP = 1.15;          // the parapet's collision reaches this far over
 let MATS = null;
 // (round 6, perf P) the roads' own pictures, one copy each on the graphics card (texcache.js)
 function tex(file, srgb) {
-  return sharedTexture(BASE + 'textures/roads/' + file + '?v=53', { srgb, anisotropy: 4, optional: /_(nor_gl|rough)_/.test(file) });
+  return sharedTexture(BASE + 'textures/roads/' + file + '?v=54', { srgb, anisotropy: 4, optional: /_(nor_gl|rough)_/.test(file) });
 }
 function materials() {
   if (MATS) return MATS;
@@ -312,12 +312,16 @@ export async function build(R, opts = {}) {
             if ((rr && (rr.onRoad || rr.edge < m)) || (r2 && (r2.onRoad || r2.edge < m) && (r2.h == null || r2.h < p.b))) clear = false;
             // (nor a road at any height the pier spans, a tunnel's among them: with no height given the lookup leaves
             // tunnels out, and Shibuya's piers stood in the lanes of the tunnel under the expressway)
-            else if (R.roadAcross) { let h = null; try { h = R.roadAcross(p.x + p.nx * o, p.z + p.nz * o, g - 3.5, p.b - 1.5, -m); } catch (err) { h = null; } if (h != null) clear = false; }
+            // (up to just over the deck's underside: a twin deck beside this one, a metre lower and overlapping it,
+            // had this deck's pier cap and column standing in its lanes, on the Axenstrasse's motorway viaduct)
+            else if (R.roadAcross) { let h = null; try { h = R.roadAcross(p.x + p.nx * o, p.z + p.nz * o, g - 3.5, p.b + 0.3, -m); } catch (err) { h = null; } if (h != null) clear = false; }
           }
           if (clear) { q = { ...p, g }; break; }
         }
         if (!q) continue;
         const h = q.b - q.g, capH = Math.min(1.6, 0.7 + h * 0.03), r = Math.min(1.8, 0.55 + h * 0.014);
+        // (nor a cap whose ends reach over a road that passes within a car's height under them: that twin deck again)
+        if (R.roadAcross && [-0.45, 0.45].some(f => { try { return R.roadAcross(q.x + q.nx * (mid + W * f), q.z + q.nz * (mid + W * f), q.b - capH - 1.5, q.b + 0.3, 0) != null; } catch (err) { return false; } })) continue;
         I.box.push(boxM(q.x + q.nx * mid, q.z + q.nz * mid, q.b - capH, q.b, W * 0.9, 1.6, q.nx, q.nz));
         if (cols === 1) {
           const ww = Math.min(4.5, W * 0.45), th = Math.min(2.4, 1.1 + h * 0.012);

@@ -19,10 +19,10 @@
 // cell's imagery) a cell, so a square kilometre is a few dozen draw calls. Each footprint is a collision polygon,
 // and the meshes go into world.extra so world.raycast hits them.
 import * as THREE from 'three';
-import { frame, project } from './geo.js?v=53';
-import { patchBaked } from './baked.js?v=53';
-import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=53';
-import overture from './overture.js?v=53';
+import { frame, project } from './geo.js?v=54';
+import { patchBaked } from './baked.js?v=54';
+import { makeFacadeMaterial, STYLE, GROUND, FACADE_TIME, FBIT } from './facade.js?v=54';
+import overture from './overture.js?v=54';
 
 export const CELL = 400;
 const LV = 3.2;
@@ -895,7 +895,10 @@ function radialAt(P, x, z) {
 // ---------- the plan of one building ----------
 // heights, roof and look of one record; null when it cannot be drawn
 function plan(b, ctx) {
-  let outer = cleanRing(b.outer || []);
+  // (an open building a lane runs into is drawn cut back to the kerb, or not at all when it stands in the carriageway:
+  // drive.js fitOpenBuildings)
+  if (b.noDraw) return null;
+  let outer = cleanRing(b.drawOuter || b.outer || []);
   if (outer.length < 3) return null;
   if (area2(outer) > 0) outer.reverse();          // counter-clockwise from above (negative shoelace, z south)
   const area = -area2(outer);
@@ -1554,6 +1557,12 @@ function emit(P, ctx, W, R, img) {
   if (P.b.passY != null && isFinite(P.b.passY) && base + H < P.b.passY + 2) return;
   // (a bridge tower standing across a deck: drawn from 5.5 m over the deck, so the road passes under it)
   if (P.b.passY != null && isFinite(P.b.passY) && P.b.passY + 5.5 - base > minH && P.b.passY + 5.5 - base < eave - 3) P.minH = P.b.passY + 5.5 - base;
+  // (a building a street runs right through, drive.js fitOpenBuildings: drawn from 4.5 m over the street, or not at
+  // all when it is too low to span it; drawn whole, its walls stood across the lanes)
+  if (P.b.passStreet != null && isFinite(P.b.passStreet)) {
+    const lift = P.b.passStreet + 4.5 - base;
+    if (lift > minH) { if (lift < eave - 2.5) P.minH = lift; else return; }
+  }
   const yBot = P.minH > 0.3 ? base + P.minH : gmin - 1.2;
   const terms = P.skel ? null : roofTerms(P);
   const yEave = base + eave;
@@ -1710,6 +1719,9 @@ function emit(P, ctx, W, R, img) {
       for (let k = 0; k < nP; k++) {
         // (opposite the house's door, which the shader puts at one end of its plot)
         const sc = k * pw + pw * (hashf(P.id + k, 85) < 0.5 ? 0.66 : 0.34);
+        // (none where the bay's front would be within 0.3 m of a carriageway: from a front at the kerb it stood out
+        // into the outer lane)
+        { const bx = p[0] + ex * sc - ez * 0.75, bz = p[1] + ez * sc + ex * 0.75; let e = null; try { e = ctx.nearRoad ? ctx.nearRoad(bx, bz) : null; } catch (er) { e = null; } if (e && e.dist < e.halfWidth + 0.3) continue; }
         // (two floors high on the taller terraces)
         const top = P.levels >= 3 ? Math.min(P.gh + P.fh, P.eave - 0.5) : Math.min(P.gh, 3.0);
         // (painted white or cream, as most are)
@@ -1947,10 +1959,17 @@ function extras(P, ctx, W, R, terms, base, yEave, uvOf, rc, ground0) {
   if (P.stoop && fr && fr.len >= 4.5 && fr.len < 90) {
     // a stoop up to the parlour floor's door at one side of each house, the door at its top
     const { p, len, ex, ez, nx, nz } = fr, n = Math.max(1, Math.round(len / 6.2)), pw = len / n;
-    const hT = base + P.gh, run = clamp(P.gh * 1.7, 1.8, 3.0), w2 = 0.8, sc = P.wallColour.clone().multiplyScalar(0.85), door = new THREE.Color(0.1, 0.06, 0.04).multiplyScalar(1 / 0.55);
+    const hT = base + P.gh, run0 = clamp(P.gh * 1.7, 1.8, 3.0), w2 = 0.8, sc = P.wallColour.clone().multiplyScalar(0.85), door = new THREE.Color(0.1, 0.06, 0.04).multiplyScalar(1 / 0.55);
+    // (its foot 1 m plus the run out from the wall: where the street's carriageway comes nearer than that, the steps
+    // are made steeper to stay 0.5 m short of it, and left out where even 2.2 m does not fit; a stoop drawn its whole
+    // length stood up to 1.6 m into the outer lane of a wide avenue, Park Avenue's)
+    const street = (x, z) => { let e = null; try { e = ctx.nearRoad ? ctx.nearRoad(x, z) : null; } catch (er) { e = null; } return !!e && e.dist < e.halfWidth + 0.5; };
     for (let k = 0; k < n; k++) {
       const c = k * pw + pw * (hashf(P.id + k, 141) < 0.5 ? 0.24 : 0.76);
       const at = (u, s, y) => [p[0] + ex * u + nx * s, y, p[1] + ez * u + nz * s];
+      let run = run0;
+      while (run >= 1.2 && street(p[0] + ex * c + nx * (1 + run), p[1] + ez * c + nz * (1 + run))) run -= 0.3;
+      if (run < 1.2) continue;
       const g = ground0(p[0] + ex * c + nx * (1 + run), p[1] + ez * c + nz * (1 + run));
       const A0 = at(c - w2, 0, hT), A1 = at(c + w2, 0, hT), B0 = at(c - w2, 1.0, hT), B1 = at(c + w2, 1.0, hT), C0 = at(c - w2, 1.0 + run, g), C1 = at(c + w2, 1.0 + run, g);
       const sl = Math.hypot(run, hT - g) || 1, up = [nx * (hT - g) / sl, run / sl, nz * (hT - g) / sl];
@@ -2512,6 +2531,25 @@ export function build(list, opts = {}) {
   const RD = opts.roads;
   if (RD && !Array.isArray(RD) && typeof RD.nearestEdge === 'function') ctx.nearRoad = (x, z) => RD.nearestEdge(x, z, 80);
   else if (Array.isArray(RD) || Array.isArray(opts.roadList)) ctx.nearRoad = roadIndex(Array.isArray(RD) ? RD : opts.roadList);
+  // a footprint a lane's middle comes within 0.8 m of (along its outline, every metre), or whose inside is
+  // carriageway (a few points of its own box): drive.js's test for opening a building, for footprints it never saw
+  const overLanes = (P) => {
+    if (!RD || typeof RD.laneDist !== 'function' || !P || P.length < 3) return false;
+    const lane = (x, z) => { try { return RD.laneDist(x, z, 0.8, null, 'road') < 0.8 || RD.laneDist(x, z, 0.8, null, 'junction') < 0.8; } catch (e) { return false; } };
+    for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+      const a = P[j], c = P[i], n = Math.max(1, Math.ceil(Math.hypot(c[0] - a[0], c[1] - a[1])));
+      for (let k = 0; k < n; k++) if (lane(a[0] + (c[0] - a[0]) * k / n, a[1] + (c[1] - a[1]) * k / n)) return true;
+    }
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const p of P) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < z0) z0 = p[1]; if (p[1] > z1) z1 = p[1]; }
+    const sx = Math.max(1, (x1 - x0) / 6), sz = Math.max(1, (z1 - z0) / 6);
+    for (let x = x0 + sx / 2; x < x1; x += sx) for (let z = z0 + sz / 2; z < z1; z += sz) {
+      if (!inRing(x, z, P)) continue;
+      if (lane(x, z)) return true;
+      try { const q = RD.surfaceAt(x, z); if (q && q.onRoad && q.edge < -0.5) return true; } catch (e) {}
+    }
+    return false;
+  };
   const recs = [], handles = [], shapeOf = new Map(); // shapeOf: building record -> its collision polygon
   let disposed = false, done = false;
   const stats = { buildings: 0, cells: 0, reused: 0, triangles: 0, lean: [], ms: 0, roofs: 0, pictureRoofs: 0, overture: null };
@@ -2548,6 +2586,9 @@ export function build(list, opts = {}) {
       let cx = 0, cz = 0; for (const q of b.outer) { cx += q[0]; cz += q[1]; } cx /= b.outer.length; cz /= b.outer.length;
       let rp = null; try { rp = ctx.nearRoad ? ctx.nearRoad(cx, cz) : null; } catch (e) {}
       if (rp && rp.dist < Math.sqrt(Math.abs(area2(b.outer))) * 0.5 + 2) { st.offRoad = (st.offRoad || 0) + 1; continue; }
+      // (nor one a lane runs into or a carriageway reaches: these come in after drive.js has opened the map's buildings
+      // a lane passes through, so one there was a solid wall across the street, drawn and blocking)
+      if (overLanes(b.outer)) { st.offLane = (st.offLane || 0) + 1; continue; }
       list.push(b); addCollision(b);
     }
     st.wait = Math.round(performance.now() - t0);
@@ -2634,7 +2675,7 @@ export function build(list, opts = {}) {
       c.density = Math.min(1, a / (CELL * CELL));
       // (what Overture added changes a cell: its tags go into the signature with the ids)
       // (round 6, agent T: a build that leaves the open tileset's buildings out keeps its cells apart from one that does not)
-      c.sig = (typeof opts.realAt === 'function' ? 'v3r:' : 'v3:') + c.key + ':' + c.list.map(b => b.id + (b.ovt ? 'o' : '')).sort().join(',');
+      c.sig = (typeof opts.realAt === 'function' ? 'v3r:' : 'v3:') + c.key + ':' + c.list.map(b => b.id + (b.ovt ? 'o' : '') + (b.drawKey || '')).sort().join(',');
     }
     order = [...cells.values()].sort((a, b) => dist(a) - dist(b));
     ctx.shopsKnown = list.some(b => b.shop);

@@ -24,8 +24,8 @@
 //
 // Frame: geo.js local metres, +x east, +y up, +z south. Heading = degrees clockwise from north.
 import * as THREE from 'three';
-import { unproject } from './geo.js?v=53';
-import { sharedTexture } from './texcache.js?v=53'; // (round 6, perf P)
+import { unproject } from './geo.js?v=54';
+import { sharedTexture } from './texcache.js?v=54'; // (round 6, perf P)
 
 const BASE = new URL('../', import.meta.url).href; // public/car/
 let LIFT = 0.03;
@@ -142,7 +142,7 @@ let MATS = null;
 // (round 6, perf P) one copy of each picture on the graphics card, shared with the bridges (texcache.js); on the
 // low tier no normal or roughness picture
 function texture(file, srgb) {
-  return sharedTexture(BASE + 'textures/roads/' + file + '?v=53', { srgb, anisotropy: 8, optional: /_(nor_gl|rough)_/.test(file) });
+  return sharedTexture(BASE + 'textures/roads/' + file + '?v=54', { srgb, anisotropy: 8, optional: /_(nor_gl|rough)_/.test(file) });
 }
 const NOISE_GLSL = `
 float rdHash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -513,6 +513,17 @@ async function buildTopology(data) {
   await Y();
   const twins = findTwins(data.roads || []);
   await Y();
+  // how many ways that are not tunnels use each node (a short tunnel with the street going on at both ends is a street
+  // under a viaduct or a railway, below)
+  const openUse = new Map(), allUse = new Map();
+  for (const w of data.roads || []) {
+    for (const id of w.nodes || []) allUse.set(id, (allUse.get(id) || 0) + 1);
+    const t = w.tags || {}; if (t.tunnel && t.tunnel !== 'no') continue;
+    for (const id of w.nodes || []) openUse.set(id, (openUse.get(id) || 0) + 1);
+  }
+  // (an end where the street goes on outside a tunnel, or, for a street (not a service road, which may go down into a
+  // garage), one where the map's line just stops: the vector tiles cut some of these short)
+  const openEnd = (w, id) => openUse.get(id) > 0 || (allUse.get(id) === 1 && !/^(service|track)$/.test(w.highway));
   const ways = [];
   for (const w of data.roads || []) {
     await Y();
@@ -530,6 +541,15 @@ async function buildTopology(data) {
         for (let j = 0; j < k; j++) { const t = (j + 0.5) / k; n++; if (inBuilding(a[0] + (q[0] - a[0]) * t, a[1] + (q[1] - a[1]) * t)) inB++; }
       }
       if (L < 250 && n && inB / n >= 0.6) { c.tunnel = 'passage'; c.passage = true; }
+      /* a short "tunnel" (under 45 m) with the street going on, not in a tunnel, at both its ends is a street passing
+         under a viaduct, a railway or a bridge (the cross streets under the Park Avenue viaduct in Manhattan, mapped
+         tunnel=yes for 17 m each, layer -1): nothing over it is drawn, so its bore was a concrete box standing at the
+         street's own level, its lining and walls across the avenue's lanes beside it. It stays a street on the ground,
+         as a passage does. (Not an avalanche gallery: those line the mountain road on purpose.) */
+      else if (L < 45 && !c.gallery && w.nodes && w.nodes.length >= 2) {
+        const a = w.nodes[0], z = w.nodes[w.nodes.length - 1];
+        if ((openUse.get(a) > 0 || openUse.get(z) > 0) && openEnd(w, a) && openEnd(w, z)) { c.tunnel = 'passage'; c.passage = true; c.underpass = true; }
+      }
     }
     let nodes = w.nodes.slice();
     if (c.reverse) nodes.reverse();
@@ -1107,6 +1127,13 @@ async function computeHeights(bbox) {
       n.h = bore ? Math.min(...pool.map(q => q[0])) : Math.max(...pool.map(q => q[0]));
     } else { const g = sampleGround(n.x, n.z); if (g != null) n.h = g; }
     n.anchored = found.length > 0; // (a tunnel's node worked out from the roads it joins: remembered, below)
+    /* a node inside a tunnel (bores on every side of it) worked out from the roads at the portals: remembered for the
+       later builds of this drive, as a bridge's ends are. A later area that loads only part of a long tunnel (the
+       portal the car came in by now past its edge) found no road on the ground to start from and put the floor at
+       the ground over the cut-off ends: on the Axenstrasse the same bore came out 4 to 9 m higher one rebuild and
+       lower the next, the car jumped with it, and for the moment between the roads and the tunnel being swapped in
+       the old lining stood across the new lanes. */
+    if (S.smooth && found.length && bore && n.ends.length && n.ends.every(x => x.e.c.tunnel === 'bore')) { const mem = deckMem(), k = deckKey(n); if (!mem.has(k) && Number.isFinite(n.h)) mem.set(k, n.h); }
     // the height this node had when its bridge was first built in this drive, if it was: kept (deckMem)
     n.frozen = false;
     if (S.smooth) { const m = deckMem().get(deckKey(n)); if (m != null) { n.h = m; n.frozen = true; } }
