@@ -18,8 +18,8 @@
    - Click a run or a place for its card: start at the top of the run, or there. Click open snow to drop in there.
    - Drag to pan, wheel or pinch to zoom (at the pointer), the + and - buttons, the arrow keys, Centre on me, a search
      and list of every lift, run and place that flies to it, a key, Esc to close. */
-import { originOf } from './wplaces.js?v=27';
-import { kindName } from './wlift.js?v=27';
+import { originOf } from './wplaces.js?v=28';
+import { kindName } from './wlift.js?v=28';
 
 const NA = (lat, lon) => lon < -30 || lat < -10 && lon > 100;     // (the Americas, and Australia and New Zealand)
 export function trailColours(lat, lon) {

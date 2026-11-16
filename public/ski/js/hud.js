@@ -1,7 +1,7 @@
 // The heads-up display: speed, score and the line's multiplier, trick names as they land, rail balance, a grab list.
-import { GRABS, guideOf } from './grabs.js?v=27';
-import { keyHelp } from './input.js?v=27';
-import { rideGrabDef, rideGuide } from './board.js?v=27';      // (B: a board's, scooter's... own grab names in the lists)
+import { GRABS, guideOf } from './grabs.js?v=28';
+import { keyHelp } from './input.js?v=28';
+import { rideGrabDef, rideGuide } from './board.js?v=28';      // (B: a board's, scooter's... own grab names in the lists)
 
 const $ = id => document.getElementById(id);
 /* (2026-11-12, Leon: "make it so that controls appear at the top left every time unless the user toggles them off")
@@ -12,6 +12,7 @@ function mainKeys(scheme, kind) {
     ['A / D', 'turn; in the air, spin'], ['W', 'tuck; in the air, front flip'], ['S', 'brake; in the air, back flip'],
     ['Space', 'hold to crouch, let go to pop'], ['Q / E', 'tilt the spin (corks)'],
     ['Shift + W / S', sled ? 'with A / D: spin flat on the snow' : 'butter on the nose / tail'],
+    ['Rail: A / D', 'shift your weight; Q / E turn on it'],   // (R, round 12)
     ['C', 'camera'], ['R', 'start again a little earlier'], ['Backspace', 'back to the top'],
     ['E', 'at a lift: ride it up'], FLY_KEY, ['Esc', 'pause, all keys'],   // (W11 fly: FLY_KEY)
   ];
@@ -19,6 +20,7 @@ function mainKeys(scheme, kind) {
     ['← / →', 'turn; in the air, spin'], ['↑', 'tuck; in the air, front flip'], ['↓', 'brake; in the air, back flip'],
     ['Space', 'hold to crouch, let go to pop'], ['Shift', 'push hard forward, uphill too'], ['G / H', 'Lincoln loop'],
     ['N', sled ? 'with ← / →: spin flat on the snow' : 'butter (with ↓ the tail)'],
+    ['Rail: A / D', 'shift your weight; ← / → turn on it'],   // (R, round 12)
     ['Q', 'camera'], ['Enter', 'back to your last crash; twice: the start'], ['Backspace', 'back to the top'],
     ['E', 'at a lift: ride it up'], FLY_KEY, ['Esc', 'pause, all keys'],   // (W11 fly)
   ];
@@ -74,7 +76,8 @@ export class Hud {
     // (the page's words are only touched when they change: a write every frame makes the browser lay the page out again)
     const onRail = sk.state === 'rail';
     if (onRail !== this.wasRail) { this.rail.classList.toggle('on', onRail); this.wasRail = onRail; }
-    if (onRail) { const l = Math.round((50 + Math.max(-1, Math.min(1, sk.balance)) * 48) * 10) / 10; if (l !== this.railL) { this.railI.style.left = l + '%'; this.railL = l; } }
+    // (R, round 12: the meter is where the skis are across the rail, + right: skier.railPos)
+    if (onRail) { const l = Math.round((50 + Math.max(-1, Math.min(1, sk.railPos ?? sk.balance)) * 48) * 10) / 10; if (l !== this.railL) { this.railI.style.left = l + '%'; this.railL = l; } }
     if (fps == null) this.lastFps = null;
     else if (fps !== this.lastFps) { this.fps.textContent = fps; this.lastFps = fps; }
   }

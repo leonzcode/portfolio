@@ -5,7 +5,7 @@
    Features standing on a slope that runs any way are built in a frame of their own, as the lifts are: a park.js Kicker
    laid out along z in its frame, asked through the frame (Framed). */
 import * as THREE from 'three';
-import { smax } from './noise.js?v=27';
+import { smax } from './noise.js?v=28';
 
 export function makeWorldPark(land) {
   const feats = [];                  // world-frame features: { x0, x1, z0, z1, height(x, z, g), surface(x, z), ownMesh }

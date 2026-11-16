@@ -4,8 +4,8 @@
 // (env.js: groomed, powder, packed, spring slush, ice), the floodlights' pools by night, and fog the colour of the sky's
 // own horizon in each direction.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=27';
-import { ground, onMountain } from './terrain.js?v=27';
+import { rng } from './noise.js?v=28';
+import { ground, onMountain } from './terrain.js?v=28';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
 // (2026-11-12, loading: the same bytes as before, with each texel's cell worked out once a row and once a column instead
@@ -626,8 +626,9 @@ roughnessFactor = mix(roughnessFactor, 0.9, gRock);`)
   vec3 fcol = texture2D(uHorizon, vec2(atan(fdir.z, fdir.x) * 0.1591549 + 0.5, 0.5)).rgb;
   gl_FragColor.rgb = mix(gl_FragColor.rgb, fcol, fogFactor);
 #endif`);
+    if (LOOK.hook) LOOK.hook(s, detail);   // (O, round 12: a map's own change to the snow's shader, set before its first compile: Genting 2022's bare ground, m_oly22.js)
   };
-  m.customProgramCacheKey = () => 'snow' + (detail ? 'D' : 'L') + (LOOK.fr ? 'F' : '');
+  m.customProgramCacheKey = () => 'snow' + (detail ? 'D' : 'L') + (LOOK.fr ? 'F' : '') + (LOOK.key || '');   // (O: LOOK.key, the hook's own program)
   return m;
 }
 

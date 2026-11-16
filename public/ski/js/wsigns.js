@@ -5,9 +5,9 @@
    - A sign at the top of every named run (its colour's shape and its name), beside the run, facing up it: every sign in
      one merged mesh with one small picture holding all the names (one draw call). */
 import * as THREE from 'three';
-import { ground } from './terrain.js?v=27';
-import { trailColours } from './wtrail.js?v=27';
-import { originOf } from './wplaces.js?v=27';
+import { ground } from './terrain.js?v=28';
+import { trailColours } from './wtrail.js?v=28';
+import { originOf } from './wplaces.js?v=28';
 
 export function makeSigns(scene, W, q) {
   const o = originOf(W.place), cols = trailColours(o.lat, o.lon).map(c => new THREE.Color(c)), low = q.tier === 'low';

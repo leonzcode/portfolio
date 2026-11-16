@@ -10,10 +10,13 @@
 //   the game's own cameras (chase, far, first person, filmer), the next or previous rider, their name, Ride to start
 //   riding in the same room, Leave. From the home screen, or from the pause menu while riding in a room.
 import * as THREE from 'three';
-import { countUrl } from './net.js?v=27';
-import { height } from './terrain.js?v=27';
+import { countUrl } from './net.js?v=28';
+import { height } from './terrain.js?v=28';
 
 const MAP_NAMES = { jumpline: 'Jump Line', freeride: 'Freeride' };
+MAP_NAMES.schilthorn23 = 'Schilthorn 2023';   // (N, round 12: the Nines map)
+MAP_NAMES.genting2022 = 'Genting 2022';   // (O, round 12: Genting 2022)
+MAP_NAMES.buttermilk2024 = 'Buttermilk 2024';   // (X, round 12: Buttermilk 2024)
 const CAM_NAMES = { chase: 'Chase', far: 'Far chase', pov: 'First person', film: 'Filmer' };
 const GO = 'ski_go', POLL_MS = 5000;
 const $ = id => document.getElementById(id);

@@ -34,13 +34,13 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Rig, springBank, smooth01, softReach, wob } from './rig.js?v=27';
-import { RIDE_GRABS, RIDE_GUIDES, seatRider, holdOnLift, liftStand } from './board.js?v=27';
-import { clamp, smoothstep } from './noise.js?v=27';
-import { RIDE_SPIN, RIDE_WORDS } from './tricks.js?v=27';
-import { RIDE_ACTS } from './skier.js?v=27';
-import { height } from './terrain.js?v=27';
-import * as INPUT from './input.js?v=27';      // (P: RIDE_KEYS, the rides' own key tables)
+import { Rig, springBank, smooth01, softReach, wob } from './rig.js?v=28';
+import { RIDE_GRABS, RIDE_GUIDES, seatRider, holdOnLift, liftStand } from './board.js?v=28';
+import { clamp, smoothstep } from './noise.js?v=28';
+import { RIDE_SPIN, RIDE_WORDS } from './tricks.js?v=28';
+import { RIDE_ACTS } from './skier.js?v=28';
+import { height } from './terrain.js?v=28';
+import * as INPUT from './input.js?v=28';      // (P: RIDE_KEYS, the rides' own key tables)
 
 // where things are on the model (from tools/makescoot.py's printout): the deck's top, the feet on it, the grips on the
 // bars (in the steering part's own frame, up its axis), how far the boards' bases sit under the feet's frame
@@ -265,7 +265,7 @@ function loadModel(file) {
   if (_gltf[file]) return _gltf[file];
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  _gltf[file] = loader.loadAsync('./models/' + file + '?v=27').catch(e => { _gltf[file] = null; throw e; });
+  _gltf[file] = loader.loadAsync('./models/' + file + '?v=28').catch(e => { _gltf[file] = null; throw e; });
   return _gltf[file];
 }
 const frameLoader = cfg => async (rig) => {
@@ -974,7 +974,8 @@ Rig.poser.scoot = Rig.poser.bike = (rig, S0, dt) => {
   rig._gT = ground && !changed ? (rig._gT || 0) + dt : 0;
   if (ground && rig._gT > 0.06 && dt > 0 && rig._pvOk) { const a = _acc.subVectors(vel, rig._pv).divideScalar(dt); a.y += 9.81; a.applyQuaternion(qi); sx = clamp(a.x, -13, 13); sy = clamp(a.y, -10, 40); }
   (rig._pv || (rig._pv = new THREE.Vector3())).copy(vel); rig._pvOk = true; rig._pst = st;
-  const Sx = sp('ssx', sx, 10), phi = clamp(Math.atan2(-Sx, 9.81), -0.7, 0.7);
+  // (R, round 12: on a rail the rider leans the way the weight goes across it, S.balance + to its right, the deck turned railAng to it)
+  const Sx = sp('ssx', sx, 10), phi = clamp(Math.atan2(-Sx, 9.81) + sp('srb', S.state === 'rail' ? 0.3 * (S.balance || 0) * Math.cos(S.railAng || 0) : 0, 10), -0.7, 0.7);
   /* (2026-11-08) on the snow and rails: one foot off (R, S.oneFoot: the foot on the other side from S.oneSide lifted), the
      feet together (E), a manual on the back of the deck (S, or N with Down: S.press under 0; the bike on its rear ski) or a
      nose manual (N: over 0; on a rail S.railPress), the push on the forward key (S.pushT, S.pushing: the scooter kicks

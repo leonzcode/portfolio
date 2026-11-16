@@ -10,10 +10,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=27';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=27';
-import { height, normal } from './terrain.js?v=27';
-import { gltfLoader, gearParts, gearModel, loadGLB, fetchOnce, LOOK, FIT, TOPS, LOW } from './gear.js?v=27';
+import { clamp, smoothstep } from './noise.js?v=28';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=28';
+import { height, normal } from './terrain.js?v=28';
+import { gltfLoader, gearParts, gearModel, loadGLB, fetchOnce, LOOK, FIT, TOPS, LOW } from './gear.js?v=28';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -166,8 +166,8 @@ const GEAR_K = 3;                    // the lowest few of each piece of gear's o
 const _cx = V(), _cu = V(), _cn = V(), _cn2 = V(), _cb2 = V(), _cs = V(), _pb = V(), _pd = V(), _pn = V(), _cdn = V(), _cbest = new Float64Array(8), _cbi = new Int32Array(8), _ck = new Float64Array(10), _cki = new Int32Array(10);
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=27';
-import { grabDef } from './grabs.js?v=27';
+export { GRABS } from './grabs.js?v=28';
+import { grabDef } from './grabs.js?v=28';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -437,7 +437,7 @@ function maskImage(url) {
 }
 /* (C) the rider's model: the Low tier's own copy (lo: pictures 512 px, WebP; the same meshes and skeleton), else the
    full one; fetched once (fetchOnce), each rider parsed from it. A Low copy that will not come falls back to the full. */
-const riderUrl = (id, lo) => './models/' + id + (lo ? '_lo' : '') + '.glb?v=27';
+const riderUrl = (id, lo) => './models/' + id + (lo ? '_lo' : '') + '.glb?v=28';
 // (a rider parsed ahead by prefetchRider, while the world is built: the first load of that model takes it)
 const _pre = new Map();
 async function riderGltf(id, lo) {
@@ -467,7 +467,7 @@ export function prefetchRider(id, look = {}, kind = 'ski', lo = false) {
   gltfLoader();                                       // (the model decoder's files come down now)
   // (the model is parsed as soon as it is in: its pictures decoded and its meshes unpacked off the main thread)
   const u = riderUrl(id, lo), pre = loadGLB(u); _pre.set(u, pre); swallow(pre);
-  swallow(maskImage('./models/' + id + '_m.png?v=27'));
+  swallow(maskImage('./models/' + id + '_m.png?v=28'));
   swallow(gearModel('goggles')); if (look.head !== 'painted') swallow(gearModel(look.head === 'beanie' ? 'beanie' : 'helmet_c'));
   if (kind === 'ski') { swallow(gearModel('pole')); swallow(gearModel('binding')); if (look.ski && look.ski !== 'park') swallow(gearModel(look.ski === 'pow' ? 'ski_b' : 'ski_a')); }
 }
@@ -628,7 +628,7 @@ export class Rig {
   }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=27';
+    const maskUrl = './models/' + id + '_m.png?v=28';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = new THREE.Texture(await maskImage(maskUrl)); mask.needsUpdate = true;   // (C: the one picture regionMeans used)
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -1028,7 +1028,11 @@ if (uFpNear > 0.0) {
     // turning on a rail: the skis swivel under a steadier upper body, the knees come up a little (a small hop)
     const ra = S.railAng || 0;
     const raRate = rail && this._wasRail && dt > 0 ? Math.abs(wrapPi(ra - (this._pra || 0))) / dt : 0;
-    const swapK = sp('swap', rail ? clamp((raRate - 1.5) / 4, 0, 1) : 0, 16);
+    // (R, round 12: from 2.5 rad/s, the turn keys' twist on the rail; a slow spin the rider came on with is not a swap)
+    const swapK = sp('swap', rail ? clamp((raRate - 2.5) / 3, 0, 1) : 0, 16);
+    /* (R, round 12) the weight across the rail (S.balance, + to the rail's right as seen along the way it goes, 1 about as
+       far as it goes over the feet), in the skis' frame (+X left, +Z forward): the hips go over that way a little */
+    const rbal = rail ? S.balance || 0 : 0, rlx = sp('rlx', -rbal * Math.cos(ra) * 0.1, 10), rlz = sp('rlz', -rbal * Math.sin(ra) * 0.1, 10);
     /* the rail's jolts (2026-11-05, for the "ski schat" on a rail): locking onto a rail or box, and the skis setting
        down at the end of a swap, the knees take it in a quick dip, the chest goes over them and the arms flick out;
        coming off, a small pop. Worked out here from the state (so riders in a room and replays have it too), unless
@@ -1177,9 +1181,9 @@ if (uFpNear > 0.0) {
     H += (0.92 * (1 - crouch * 0.35) + (this.pelvisY - this.hipY) * 0.5 - H) * airW * (1 - lazy);   // (sat down already for a lazy boy landing, and still as the skis touch: the lazy spring, not lzL, which ends at the snow)
     const colL = H - A0;
     // skating: the hips ride over each gliding ski in turn; riding and on rails the weight never quite stops moving
-    let pelX = -Math.sin(phi) * colL - pushS * 0.14 * strk + (0.016 + 0.014 * railW) * wob(tt * (1.7 + 0.9 * railW), 4.4) * (1 - airW) - oneS * stance * 0.95 * oneF;
+    let pelX = -Math.sin(phi) * colL - pushS * 0.14 * strk + (0.016 + 0.014 * railW) * wob(tt * (1.7 + 0.9 * railW), 4.4) * (1 - airW) - oneS * stance * 0.95 * oneF + rlx;   // (R: rlx)
     let pelY = A0 + colL * Math.cos(phi) * Math.cos(psi);
-    const pelZ = -0.08 - 0.12 * crouch + (press > 0 ? 0.42 : 0.28) * press * (1 - lazy) - 0.05 * tuck + Math.sin(psi) * colL * 0.8 - 0.8 * lazy - FP.hips * fpW * (1 - airW) - 0.07 * tbW;    // (a lazy boy: the hips back over the tails, the legs reaching forward to the boots)
+    const pelZ = -0.08 - 0.12 * crouch + (press > 0 ? 0.42 : 0.28) * press * (1 - lazy) - 0.05 * tuck + Math.sin(psi) * colL * 0.8 - 0.8 * lazy - FP.hips * fpW * (1 - airW) - 0.07 * tbW + rlz;    // (a lazy boy: the hips back over the tails, the legs reaching forward to the boots) (R: rlz)
     // ---- where the upper body and head go
     let face = 0;
     if (ground && speed > 0.8) face = clamp(S.sw ? Math.atan2(-vb.x, -vb.z) : Math.atan2(vb.x, vb.z), -1.5, 1.5) * smoothstep(0.8, 2.5, speed);
@@ -1220,8 +1224,11 @@ if (uFpNear > 0.0) {
       if (!this._wasRail || !P.alpha) { const tw0 = P.tw ? P.tw.x : 0; (P.alpha || (P.alpha = new Spring(0))).set(tw0 + ra); }
       const aCur = P.alpha.x, alpha = sp('alpha', aCur + wrapPi(aT - aCur), 6);
       twT = wrapPi(alpha - ra);
-      sdT = (S.balance || 0) * 0.35 + 0.05 * wob(tt * 2.2, 7.7);           // balance corrections all the way along
-      lnT = 0.24 + 0.4 * pressN - 0.25 * pressT;
+      // (R, round 12) the chest leans the way the weight goes across the rail, in its own frame (turned alpha to the rail):
+      // rolled for the part across it, bent forward or back for the part along it
+      const bx = -(S.balance || 0) * Math.cos(alpha), bz = -(S.balance || 0) * Math.sin(alpha);
+      sdT = -0.4 * bx + 0.05 * wob(tt * 2.2, 7.7);                       // balance corrections all the way along
+      lnT = 0.24 + 0.4 * pressN - 0.25 * pressT + 0.35 * bz;
       // the head looks down the rail over the nearer shoulder (kept until the chest has come right round), and turns
       // with the body while the skis swivel
       const aw = wrapPi(alpha);
@@ -1443,7 +1450,10 @@ if (uFpNear > 0.0) {
         if (gd && gd.arms) { lat += 0.05 * wob(tt * 1.3, 31 + k * 4); up += 0.07 * wob(tt * 1.6, 33 + k * 3); fwd += 0.06 * wob(tt * 1.1, 37 + k * 5); }
       } else if (rail) {
         const bal = S.balance || 0;
-        lat = 0.27 + 0.08 * Math.abs(bal) + 0.07 * swapK;   // (out wide to the sides on a rail, as in photos of rail riders: 0.21 before) up = -0.23 - s * bal * 0.2 + 0.08 * swapK; fwd = 0.2 + 0.08 * s * Math.sin(ra);   // loose, the hand on the travel's side ahead
+        // (out wide to the sides on a rail, as in photos of rail riders: 0.21 before) (R, round 12: up and fwd had ended up
+        // inside this comment since v20, so on a rail they were never set; the arm away from the weight goes up)
+        lat = 0.27 + 0.08 * Math.abs(bal) + 0.07 * swapK;
+        up = -0.23 + s * bal * Math.cos(ra) * 0.2 + 0.08 * swapK; fwd = 0.2 + 0.08 * s * Math.sin(ra);   // loose, the hand on the travel's side ahead
         lat += 0.13 * oneF; up += 0.08 * oneF + (s === oneS ? 0.06 * oneF : 0);   // (one ski: both out for balance)
       } else {
         // forward and a little wide of the hips, elbows soft
@@ -1673,7 +1683,7 @@ if (uFpNear > 0.0) {
   // main.js passes the physics' rail events here (power about 0.5 to 1.2); the pose also finds them itself (own)
   react(type, power = 1, own = false) {
     const s = this.p.rk || (this.p.rk = new Spring(0));
-    const k = type === 'railOff' ? -0.45 : type === 'railSwap' ? 0.85 : 1;
+    const k = type === 'railOff' ? -0.45 : type === 'railSwap' ? 0.45 : 1;   // (R, round 12: a swap is a twist on the top now, a smaller jolt: 0.85)
     s.v += 38 * clamp(power, 0, 1.5) * k;
     if (!own) { const n = this._now ?? 0; if (type === 'railSwap') this._evSw = n; else this._evAt = n; }
   }

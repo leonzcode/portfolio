@@ -13,11 +13,11 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Rig, springBank, smooth01, wrapPi, softReach, wob, segSeg } from './rig.js?v=27';
-import { clamp, smoothstep } from './noise.js?v=27';
-import { height } from './terrain.js?v=27';
-import { LOOK } from './gear.js?v=27';
-import { RIDE_KEYS, RIDE_HELP } from './input.js?v=27';
+import { Rig, springBank, smooth01, wrapPi, softReach, wob, segSeg } from './rig.js?v=28';
+import { clamp, smoothstep } from './noise.js?v=28';
+import { height } from './terrain.js?v=28';
+import { LOOK } from './gear.js?v=28';
+import { RIDE_KEYS, RIDE_HELP } from './input.js?v=28';
 
 const D = Math.PI / 180;
 // the board's size (the model is scaled to it), where the bindings are, and their angles (a mild duck stance)
@@ -240,7 +240,7 @@ function loadModel() {
   if (_gltf) return _gltf;
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  _gltf = loader.loadAsync('./models/board/board.glb?v=27').catch(e => { _gltf = null; throw e; });
+  _gltf = loader.loadAsync('./models/board/board.glb?v=28').catch(e => { _gltf = null; throw e; });
   return _gltf;
 }
 // the board's half width along it (at -1 tail .. +1 nose), measured from the model once
@@ -596,8 +596,12 @@ Rig.poser.board = (rig, S0, dt) => {
   const colL = H - A0;
   // in the board's frame: across the board into the turn; along it towards a press, a pop's loaded end, a pushing foot
   let pelX = -Math.sin(phi) * colL + (0.016 + 0.014 * railW) * wob(tt * (1.7 + 0.9 * railW), 4.4) * (1 - airW);
+  /* (R, round 12) the weight across the rail (S.balance, + to the rail's right as seen along the way it goes): the hips
+     over that way a little, in the board's frame (the rail's left there is (cos a, sin a), a the board's angle to it) */
+  const rba = S.railAng || 0, rbal = rail ? S.balance || 0 : 0;
+  pelX += sp('brlx', -rbal * Math.cos(rba) * 0.08, 10);
   let pelY = A0 + colL * Math.cos(phi);
-  let pelZ = (0.14 + 0.1 * tipX) * pr + (ground && S.loading ? (bd.lastPress > 0.3 ? 0.06 : -0.06) : 0) + 0.12 * skate + 0.08 * one1 - (tb ? 0.05 : 0);
+  let pelZ = (0.14 + 0.1 * tipX) * pr + (ground && S.loading ? (bd.lastPress > 0.3 ? 0.06 : -0.06) : 0) + 0.12 * skate + 0.08 * one1 - (tb ? 0.05 : 0) + sp('brlz', -rbal * Math.sin(rba) * 0.08, 10);   // (R: the weight)
   // (first person: the hips a little towards the trailing end, the head over the middle of the board, 2026-11-06)
   pelZ -= BFP.hips * (S.sw ? -1 : 1) * sp('bfpW0', rig.fp ? 1 : 0, 6) * (1 - airW);
   // heel side: hips back over the heels (sitting down a little); toe side: knees and hips forward
@@ -613,7 +617,7 @@ Rig.poser.board = (rig, S0, dt) => {
   if (t > gl.next || t < gl.next - 30) { gl.yaw = (Math.random() - 0.5) * 0.7; gl.pitch = (Math.random() - 0.35) * 0.2; gl.until = t + 0.6 + Math.random() * 0.8; gl.next = gl.until + 2.5 + Math.random() * 4; }
   const glance = t < gl.until && ground && Math.abs(S.edge || 0) < 0.5 && brake < 0.2;
   const spinLead = sp('bspinLead', air ? clamp(Wy * 0.09, -0.8, 0.8) * (1 - 0.75 * gW) : 0, 16);   // (2026-11-13: less with a grab held)
-  let twT, sdT, lnT, hyT, hpT;
+  let twT, sdT, lnT, hyT, hpT, rbx = 0;   // (R: rbx, the weight across a rail in the chest's frame, for the arms)
   if (air) {
     const sway = 0.08 * gW + 0.18 * flow;
     twT = (gd ? gd.twist * noseX : 0.38 * travelX) + sway * wob(tt * 1.25, 8.8);
@@ -627,8 +631,13 @@ Rig.poser.board = (rig, S0, dt) => {
   } else if (rail) {
     // on a rail the chest turns down it, the head looks along it, the arms out for balance
     twT = clamp(look * 0.45, -0.9, 0.9);
-    sdT = (S.balance || 0) * 0.3 * -noseX + 0.05 * wob(tt * 2.2, 7.7);
-    lnT = 0.32 + 0.3 * Math.abs(press) + 0.1 * tog - 0.06 * one1;
+    /* (R, round 12) the chest leans the way the weight goes across the rail, in its own frame: the rider faces the toe
+       edge, so across a 50-50 that is towards the toes or heels (bent forward or back) and across a boardslide towards
+       the nose or tail (rolled) */
+    const rl = goofy ? [-Math.sin(rba), Math.cos(rba)] : [Math.sin(rba), -Math.cos(rba)], ph = Math.atan2(rl[0], rl[1]) - twT;
+    rbx = -rbal * Math.sin(ph); const rbz = -rbal * Math.cos(ph);
+    sdT = -0.4 * rbx + 0.05 * wob(tt * 2.2, 7.7);
+    lnT = 0.32 + 0.3 * Math.abs(press) + 0.1 * tog - 0.06 * one1 + 0.3 * rbz;
     hyT = look; hpT = 0.18;
   } else {
     twT = openT + 0.2 * travelX * Math.abs(toeK) + clamp(Wy * 0.05, -0.2, 0.2) + 0.55 * skate * noseX;
@@ -850,7 +859,7 @@ Rig.poser.board = (rig, S0, dt) => {
     } else if (rail) {
       const bal = S.balance || 0;
       // out for balance, the front one a little higher (a boardslide's arms, B/ref/ "Frontside Boardslide")
-      lat = 0.32 + 0.08 * Math.abs(bal) + 0.08 * hitK; up = (front ? -0.08 : -0.18) + s * bal * 0.15 + 0.06 * hitK; fwd = 0.06;
+      lat = 0.32 + 0.08 * Math.abs(bal) + 0.08 * hitK; up = (front ? -0.08 : -0.18) - s * rbx * 0.15 + 0.06 * hitK; fwd = 0.06;   // (R: the arm away from the weight up)
       lat += 0.1 * one1 - 0.14 * tog; up += 0.08 * one1; fwd += 0.1 * tog;
     } else {
       // riding: the front hand ahead over the front knee, the back one by the back hip; on the heels the arms reach

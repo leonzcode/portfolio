@@ -26,13 +26,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { Rig, springBank, smooth01, softReach, wob, wrapPi } from './rig.js?v=27';
-import { RIDE_GRABS, RIDE_GUIDES, seatRider, holdOnLift, firstPersonEyes, FPV } from './board.js?v=27';
-import { clamp, smoothstep } from './noise.js?v=27';
-import { RIDE_SPIN } from './tricks.js?v=27';
-import { rideSpin } from './scoot.js?v=27';
-import { RIDE_ACTS } from './skier.js?v=27';
-import { RIDE_KEYS, RIDE_HELP } from './input.js?v=27';
+import { Rig, springBank, smooth01, softReach, wob, wrapPi } from './rig.js?v=28';
+import { RIDE_GRABS, RIDE_GUIDES, seatRider, holdOnLift, firstPersonEyes, FPV } from './board.js?v=28';
+import { clamp, smoothstep } from './noise.js?v=28';
+import { RIDE_SPIN } from './tricks.js?v=28';
+import { rideSpin } from './scoot.js?v=28';
+import { RIDE_ACTS } from './skier.js?v=28';
+import { RIDE_KEYS, RIDE_HELP } from './input.js?v=28';
 
 // the slats' top (m over the snow), where the hands hold (each side, up, forward), where the hips lie
 export const SLED = { top: 0.213, hand: [0.2, 0.24, 0.22], hips: -0.32 };
@@ -142,7 +142,7 @@ let _gltf = null;
 Rig.loader.sled = async (rig) => {
   if (!_gltf) {
     const loader = new GLTFLoader(), draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-    _gltf = loader.loadAsync('./models/sled/sled.glb?v=27').catch(e => { _gltf = null; throw e; });
+    _gltf = loader.loadAsync('./models/sled/sled.glb?v=28').catch(e => { _gltf = null; throw e; });
   }
   const gl = await _gltf;
   let mesh = null; gl.scene.traverse(o => { if (o.isMesh && !mesh) mesh = o; });
@@ -278,7 +278,8 @@ Rig.poser.sled = (rig, S0, dt) => {
   rig._gT = ground && !changed ? (rig._gT || 0) + dt : 0;
   if (ground && rig._gT > 0.06 && dt > 0 && rig._pvOk) { const a = _acc.subVectors(vel, rig._pv).divideScalar(dt); a.y += 9.81; a.applyQuaternion(qi); sx = clamp(a.x, -13, 13); }
   (rig._pv || (rig._pv = new THREE.Vector3())).copy(vel); rig._pvOk = true; rig._pst = st;
-  const phi = sp('lphi', clamp(Math.atan2(-sx, 9.81), -0.6, 0.6), 8);
+  // (R, round 12: on a rail the rider and sled lean the way the weight goes across it, S.balance + to its right)
+  const phi = sp('lphi', clamp(Math.atan2(-sx, 9.81) + (rail ? 0.3 * (S.balance || 0) * Math.cos(S.railAng || 0) : 0), -0.6, 0.6), 8);
   const airW = sp('lairW', air ? 1 : 0, 9), crashW = sp('lcrash', crash ? 1 : 0, 6);
   const gid = air ? (S.grab || S.pose || null) : null, tr = gid ? sledTrickDef(gid, S.tweak || '') : null;
   const prep = air ? 1 - smoothstep(0.09, 0.36, rig.timeToGround(S.p, vel)) : 0;

@@ -1,0 +1,42 @@
+{
+ "lat": 46.55926,
+ "lon": 7.8473,
+ "az": 122.5,
+ "treeline": 1950,
+ "grids": [
+  {
+   "name": "near",
+   "x0": -1000,
+   "z0": -1000,
+   "step": 5,
+   "nx": 401,
+   "nz": 401,
+   "zoom": 15,
+   "hmin": 2001.7466151888648,
+   "hmax": 2937.5984729817897
+  },
+  {
+   "name": "mid",
+   "x0": -10000,
+   "z0": -10000,
+   "step": 50,
+   "nx": 401,
+   "nz": 401,
+   "zoom": 13,
+   "hmin": 554.3167558879105,
+   "hmax": 4059.3112847954753
+  },
+  {
+   "name": "far",
+   "x0": -20000,
+   "z0": -20000,
+   "step": 125,
+   "nx": 321,
+   "nz": 321,
+   "zoom": 11,
+   "hmin": 544.3396046279533,
+   "hmax": 4110.394432284518
+  }
+ ],
+ "credit": "Elevation: AWS Terrain Tiles (open data: SRTM, EU-DEM and others, collected by Mapzen)"
+}

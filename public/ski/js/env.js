@@ -12,10 +12,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { snowUniforms, setFieldSun } from './materials.js?v=27';
-import { height, runHalf, getPark } from './terrain.js?v=27';
-import { installShadowOnly } from './shadowproxy.js?v=27';
-import { bake } from './gear.js?v=27';
+import { snowUniforms, setFieldSun } from './materials.js?v=28';
+import { height, runHalf, getPark } from './terrain.js?v=28';
+import { installShadowOnly } from './shadowproxy.js?v=28';
+import { bake } from './gear.js?v=28';
 
 const KEY = 'ski_env';
 export const ENV = Object.assign({ time: 12.5, sky: 'clear', snow: 'groomed' },
@@ -65,7 +65,11 @@ export const TIMES = [['Dawn', 6.3], ['Morning', 9], ['Noon', 12.5], ['Afternoon
 
 // the sun's path: up at 6:30, down at 18:30, 50 degrees high at 12:30; from behind the start on the left round to the
 // left of the way down (so a sunset is in front of you as you ride)
+// (N, round 12: a map at a real place may give the sun's real path there: setSunPath(f), f(t, out) -> { el, dir })
+let sunPath = null;
+export function setSunPath(f) { sunPath = f; }
 export function sunAt(t, out = new THREE.Vector3()) {
+  if (sunPath) return sunPath(t, out);   // (N, round 12)
   const el = 50 * Math.sin(Math.PI * (t - 6.5) / 12), az = THREE.MathUtils.degToRad(165 - (t - 6.5) / 12 * 145);
   out.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - el), az);
   return { el, dir: out };

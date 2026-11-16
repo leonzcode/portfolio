@@ -4,9 +4,9 @@
 //   [Switch] [Left|Right] [Double] Cork|Rodeo|Bio|Misty 1080 [Mute to Tail]   or   Back Flip, Lincoln Loop, 360...
 // Rails: entry spin, 50-50 or slide, swaps and presses, exit spin ("Left 270 On, Slide, Back Swap, 270 Out").
 import * as THREE from 'three';
-import { GRABS, grabDef } from './grabs.js?v=27';
+import { GRABS, grabDef } from './grabs.js?v=28';
 // (B: on a snowboard the grabs, spins and slides have the board's own names, board.js)
-import { rideGrabDef, boardSpinParts, boardRailName } from './board.js?v=27';
+import { rideGrabDef, boardSpinParts, boardRailName } from './board.js?v=28';
 
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3();
 // (P: the extra rides name their own spins and flips: RIDE_SPIN[kind](A) gives the parts for a rotation, or null for
@@ -89,7 +89,7 @@ export class Tricks {
         R.swaps.push(half ? (e.mode === 'slide' ? (e.front ? 'Front Swap' : 'Back Swap') : '180 Switch-Up')
           : e.mode === 'slide' ? (flat ? 'to Boardslide' : 'to Lip Slide') : Math.cos(e.to) < 0 ? 'to Switch 50-50' : 'to 50-50');
       } break;
-      case 'railOff': if (this.railT) { this.railT.done = true; this.railT.press = e.press || 0; this.railT.how = e.how; this.railT.one = this.railT.one || !!e.one; } break;
+      case 'railOff': if (this.railT) { this.railT.done = true; this.railT.press = e.press || 0; this.railT.how = e.how; this.railT.one = this.railT.one || !!e.one; this.railT.dev = e.dev || 0; } break;   // (R: dev, degrees)
       case 'railFall': this.railT = null; break;
       case 'butter': { const W = RIDE_WORDS[sk.kind]; this.award(`${(W && (e.nose ? W.nose : W.tail)) || (e.nose ? 'Nose Butter' : 'Tail Butter')} ${round180(e.deg)}`, 100 + round180(e.deg) / 180 * 110, 'clean'); break; }   // (S: RIDE_WORDS)
       case 'revert': if (this.combo) this.award('Revert', 60, 'clean'); break;
@@ -119,12 +119,16 @@ export class Tricks {
       const flat = R.top ? R.top === 'flat' : /^(box|bench|ledge|table|picnic)$/.test(R.kind || '');
       // (P, 2026-11-08: ridden on one ski or foot, R held, for 0.4 s or more)
       if (R.one) name.push((RIDE_WORDS[sk.kind] && RIDE_WORDS[sk.kind].oneFoot) || (sk.kind && sk.kind !== 'ski' ? 'One-Footed' : 'One-Ski'));
-      name.push((onBoard && boardRailName(R.mode, sk.railLock || 0, sk.goofy)) || (R.mode === 'slide' ? (flat ? 'Boardslide' : 'Lip Slide') : (R.sw ? 'Switch 50-50' : '50-50')));
+      // (R, round 12: the skis ride at whatever angle they came on at; named for the nearest of 50-50, slide and switch,
+      // and "Diagonal" when they were on average 25 degrees or more from it)
+      const pos = (onBoard && boardRailName(R.mode, sk.railLock || 0, sk.goofy)) || (R.mode === 'slide' ? (flat ? 'Boardslide' : 'Lip Slide') : (R.sw ? 'Switch 50-50' : '50-50'));
+      name.push((R.dev || 0) >= 25 ? 'Diagonal ' + pos : pos);
       if (Math.abs(R.press) > 0.35) name.push(R.press > 0 ? 'Nose Press' : 'Tail Press');
       name.push(...R.swaps);
-      // (the quarter turn back to the travel off a slide is not a spin out)
-      const exit = round90(Math.max(0, spinAbs - Math.abs(A.unslide || 0)));
-      if (exit >= 90) name.push(`${exit} Out`);
+      // (R, round 12: nothing turns the skis back to the travel off a slide now; the quarter turn the rider makes back to
+      // it is not named, a 180 or more is)
+      const exit = round90(spinAbs);
+      if (exit >= 180) name.push(`${exit} Out`);
       else if (e.sw !== R.preSw && R.mode === '5050') name.push('to Fakie');
       for (const g of grabs) name.push(gDef(g.id) ? gDef(g.id).name : g.id);
       pts = 160 + R.t * 140 + R.entry / 90 * 70 + exit / 90 * 70 + R.swaps.length * 130 + (Math.abs(R.press) > 0.35 ? 100 : 0) + (R.mode === 'slide' ? 60 : 0) + (R.one ? 110 : 0);
