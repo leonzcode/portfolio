@@ -10,8 +10,8 @@
    Everything is merged by material: the bricks (one draw), the painted things (one, colours in the vertices), the printed
    things (one, one picture for all of them), the dark rails (one), the turbines (one). */
 import * as THREE from 'three';
-import { height, ground } from './terrain.js?v=29';
-import { rng, smoothstep } from './noise.js?v=29';
+import { height, ground } from './terrain.js?v=30';
+import { rng, smoothstep } from './noise.js?v=30';
 
 // ---- a geometry builder (positions, normals, uvs, colours) -------------------------------------------------------
 class Geo {

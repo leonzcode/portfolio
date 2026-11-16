@@ -16,9 +16,9 @@
    them dry brown grass with snow lying in the shade and in hollows, bare larch woods (red-brown), birch groves (white
    stems), young pines planted in rows across the slopes, wind turbines on the far ridges. */
 import * as THREE from 'three';
-import { baseLine } from './terrain.js?v=29';
-import { fbm, simplex, smoothstep, clamp, rng } from './noise.js?v=29';
-import { snowUniforms } from './materials.js?v=29';
+import { baseLine } from './terrain.js?v=30';
+import { fbm, simplex, smoothstep, clamp, rng } from './noise.js?v=30';
+import { snowUniforms } from './materials.js?v=30';
 
 const NEAR = { X0: -2600, Z0: -2300, st: 20, n: 261 };
 const FAR = { X0: -24000, Z0: -23700, st: 200, n: 241 };
@@ -167,8 +167,8 @@ export class Land {
 
 export async function loadLand(base) {
   const [buf, osm] = await Promise.all([
-    fetch(new URL('../data/genting2022/dem.bin?v=29', base)).then(r => { if (!r.ok) throw new Error('ground ' + r.status); return r.arrayBuffer(); }),
-    fetch(new URL('../data/genting2022/osm.json?v=29', base)).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(new URL('../data/genting2022/dem.bin?v=30', base)).then(r => { if (!r.ok) throw new Error('ground ' + r.status); return r.arrayBuffer(); }),
+    fetch(new URL('../data/genting2022/osm.json?v=30', base)).then(r => r.ok ? r.json() : null).catch(() => null),
   ]);
   return new Land(buf, osm);
 }

@@ -8,7 +8,7 @@
    own side slope over a rounded shoulder down into the ground, as packed snow does. The ends of the extruded direction
    fall the same way, or are cut square (ends: 'cut'), or tapered into the ground (ends: 'taper').
    Each Ext has a mesh of its own (main.js builds it with the jumps: park.js featureMeshSteps reads toWorld, rows, cols). */
-import { smoothstep, clamp, smax } from './noise.js?v=29';
+import { smoothstep, clamp, smax } from './noise.js?v=30';
 
 const RAD = Math.PI / 180;
 const uniq = a => [...new Set(a.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
@@ -67,7 +67,7 @@ export class Ext {
     const P = this.prof.S, hMax = Math.max(...P.Y) - Math.min(...P.Y) + 2;
     this.reach = this.shoulder + hMax / this.side + 1;
     if (this.ext === 's') { this.u0 = -this.w - this.reach; this.u1 = this.w + this.reach; this.s0 = P.t0; this.s1 = P.t1; }
-    else { this.u0 = P.t0; this.u1 = P.t1; this.s0 = -this.w - (this.ends === 'fall' ? this.reach : 0); this.s1 = this.w + (this.ends === 'fall' ? this.reach : 0); }
+    else if (this.ext === 'u') { this.u0 = P.t0; this.u1 = P.t1; this.s0 = -this.w - (this.ends === 'fall' ? this.reach : 0); this.s1 = this.w + (this.ends === 'fall' ? this.reach : 0); }
     this.bound();
   }
   toWorld(u, s, out) { out.x = this.x + u * this.cy + s * this.sy; out.z = this.z - u * this.sy + s * this.cy; return out; }
@@ -98,7 +98,7 @@ export class Ext {
     if (x < this.x0 || x > this.x1 || z < this.zs || z > this.z1) return -Infinity;
     const L = this.toLocal(x, z, this._l || (this._l = {}));
     let y = this.yAt(L.u, L.s);
-    if (this.blendG && y > -Infinity) y = smax(y, g, this.blendG);   // (blendG: run out into the snow, rounded over that many metres)
+    if (this.blendG && y > -Infinity && (this.blendFrom == null || (this.ext === 's' ? L.s : L.u) > this.blendFrom)) y = smax(y, g, this.blendG);   // (blendG: run out into the snow, rounded over that many metres; only past blendFrom along the profile)
     return y > g + 0.002 ? y : -Infinity;
   }
   surface(x, z) {
@@ -117,8 +117,9 @@ export class Ext {
   }
   cols(fine) {
     if (this.ext === 'u') return this.profRows(fine, this.u0, this.u1);
-    const c = span(this.u0, this.u1, fine ? 0.8 : 1.3), hw = this.wMax || this.w;
-    for (const sg of [-1, 1]) for (const e of [-0.25, 0, 0.2, 0.45, 0.8, 1.2]) c.push(sg * (hw + e));
+    const c = span(this.u0, this.u1, fine ? 0.8 : 1.3);
+    // (the core's edge where it is widest and narrowest: a core that flares, wAt, gets both)
+    for (const hw of [this.wMax || this.w, this.wMin].filter(Boolean)) for (const sg of [-1, 1]) for (const e of [-0.25, 0, 0.2, 0.45, 0.8, 1.2]) c.push(sg * (hw + e));
     return uniq(c.filter(v => v >= this.u0 && v <= this.u1));
   }
   // along the profile: every 0.5 m (0.9 on the low tier) where it is straight, 0.15 (0.3) through its arcs, fine at breaks

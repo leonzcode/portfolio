@@ -8,8 +8,8 @@
    Everything that never moves is merged by material: a handful of draw calls. */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { smoothstep, fbm } from './noise.js?v=29';
-import { snowUniforms } from './materials.js?v=29';
+import { smoothstep, fbm } from './noise.js?v=30';
+import { snowUniforms } from './materials.js?v=30';
 
 // ---- a merging kit: shapes go into buckets by material, each bucket one mesh ---------------------------------------
 export class Kit {
@@ -70,7 +70,9 @@ export function makeSkyline(scene, q, land) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setIndex(I); g.computeVertexNormals();
   const nn = g.attributes.normal.array, tl = land.meta.treeline - land.y0, snowL = land.meta.snowline - land.y0;
-  const SNOW = [0.9, 0.92, 0.96], ROCK = [0.085, 0.082, 0.08], WOOD = [0.05, 0.08, 0.055], MEADOW = [0.33, 0.36, 0.28];
+  // (round 1 of the comparisons: the rock was near black and the valley floors a green smear; the photos' far rock is a
+  // grey-brown under blue haze, the valley sides dark)
+  const SNOW = [0.9, 0.92, 0.96], ROCK = [0.15, 0.145, 0.14], WOOD = [0.035, 0.05, 0.04], MEADOW = [0.13, 0.15, 0.12];
   for (let k = 0; k < P.length / 3; k++) {
     const x = P[k * 3], y = P[k * 3 + 1], z = P[k * 3 + 2], ny = nn[k * 3 + 1], n = fbm(x * 0.003, z * 0.003, 2);
     // (in April snow lies to about 1500 m on open ground; above it the steep faces stay rock. The 125 m grid softens the
@@ -98,9 +100,12 @@ export function makeSkyline(scene, q, land) {
       .replace('#include <color_fragment>', `#include <color_fragment>
 {
   gWN = normalize(cross(dFdx(vTW), dFdy(vTW))); if (gWN.y < 0.0) gWN = -gWN;
+  // (mostly the smooth normal: the faces' own slope alone showed every triangle as a facet)
+  vec3 sWN = inverseTransformDirection(normalize(vNormal), viewMatrix); if (sWN.y < 0.0) sWN = -sWN;
+  gWN = normalize(mix(sWN, gWN, 0.3));
   float nz = texture2D(uNoise, vTW.xz * 0.0013).b * 0.6 + texture2D(uNoise, vTW.xz * 0.0051 + 0.3).b * 0.4;
   float hi = smoothstep(${(snowL - 250).toFixed(1)}, ${(snowL + 150).toFixed(1)}, vTW.y);
-  float rk = smoothstep(0.72, 0.6, gWN.y + (nz - 0.5) * 0.3) * hi;
+  float rk = smoothstep(0.84, 0.7, gWN.y + (nz - 0.5) * 0.3) * hi;
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${ROCK.join(', ')}) * (0.8 + 0.4 * nz), rk);
 }`)
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize((viewMatrix * vec4(gWN, 0.0)).xyz);')
@@ -109,12 +114,12 @@ outgoingLight += diffuseColor.rgb * vec3(0.12, 0.15, 0.21) * (1.0 - uNight);
 #include <opaque_fragment>`)
       .replace('#include <fog_fragment>', `#ifdef USE_FOG
   float dd = length(vTW - cameraPosition), kk = fogDensity / 0.00016;
-  float hz = 1.0 - exp(-dd * 0.000018 * kk);
+  float hz = 1.0 - exp(-dd * 0.00004 * kk);
   vec3 fdir = normalize(vTW - cameraPosition);
-  gl_FragColor.rgb = mix(gl_FragColor.rgb, texture2D(uHorizon, vec2(atan(fdir.z, fdir.x) * 0.1591549 + 0.5, 0.5)).rgb, clamp(hz, 0.0, 0.85));
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, texture2D(uHorizon, vec2(atan(fdir.z, fdir.x) * 0.1591549 + 0.5, 0.5)).rgb * vec3(0.86, 0.93, 1.04), clamp(hz, 0.0, 0.8));   // (the air's blue)
 #endif`);
   };
-  m.customProgramCacheKey = () => 'ninessky2';
+  m.customProgramCacheKey = () => 'ninessky3';
   const mesh = new THREE.Mesh(g, m);
   mesh.name = 'nines skyline'; mesh.matrixAutoUpdate = false; mesh.frustumCulled = false; mesh.renderOrder = 1e5;
   scene.add(mesh);
@@ -128,7 +133,7 @@ export function dressMats() {
     concrete: std(0xb9b6ae, { roughness: 0.9 }), glass: std(0x2a3540, { roughness: 0.15, metalness: 0.6 }), steel: std(0x8a8f95, { metalness: 0.7, roughness: 0.4 }),
     dark: std(0x24272c, { roughness: 0.6 }), white: std(0xf2f2ef, { roughness: 0.7, side: THREE.DoubleSide }), black: std(0x18191b, { roughness: 0.6, side: THREE.DoubleSide }),
     red: std(0xc8202a, { roughness: 0.5 }), yellow: std(0xe8b311, { roughness: 0.5 }), orange: std(0xff6a13, { roughness: 0.75, side: THREE.DoubleSide }),
-    grey: std(0x6f7277, { roughness: 0.7 }), wood: std(0xa8743f, { roughness: 0.85 }), rope: new THREE.LineBasicMaterial({ color: 0x2a2c30 }),
+    grey: std(0x4a4d52, { roughness: 0.7, side: THREE.DoubleSide }), blue: std(0x1f2f5e, { roughness: 0.7, side: THREE.DoubleSide }), wood: std(0xa8743f, { roughness: 0.85 }), rope: new THREE.LineBasicMaterial({ color: 0x2a2c30 }),
   };
 }
 

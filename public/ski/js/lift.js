@@ -24,7 +24,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { ground, height } from './terrain.js?v=29';
+import { ground, height } from './terrain.js?v=30';
 /* (W, round 10, Any mountain: a real lift's line runs any way. wlift.js plans and runs each one in a frame of its own,
    turned so that its line runs along z as here, and while it does, these two give that frame's heights; everywhere else
    they are terrain.js's own, as before) */
@@ -895,7 +895,7 @@ export class Lift {
 export async function liftKit(q) {   // (W: exported, wlift.js builds its lifts' kit)
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  const gltf = await loader.loadAsync('./models/lift/lift.glb?v=29');
+  const gltf = await loader.loadAsync('./models/lift/lift.glb?v=30');
   draco.dispose();
   const part = name => { let m = null; gltf.scene.traverse(o => { if (o.isMesh && o.name === name) m = o; }); if (!m) throw new Error('lift: no ' + name); return m; };
   const chair = part('chair'), chairLo = part('chair_lo'), tower = part('tower'), towerLo = part('tower_lo'), station = part('station'), bull = part('bull');

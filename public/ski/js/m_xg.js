@@ -13,9 +13,9 @@
    line of the real slope, the pipe's floor a straight line cut into the hill; the features stand on that.
    Where a number is the event's own it says so; the rest are measured from the ground data or estimated from the
    photos (NOTES.md, the feature sheet). */
-import { Kicker, Rail, Quarter, Shape, assemble } from './park.js?v=29';
-import { setMountain, ground } from './terrain.js?v=29';
-import { smoothstep, clamp, fbm, smax } from './noise.js?v=29';
+import { Kicker, Rail, Quarter, Shape, assemble } from './park.js?v=30';
+import { setMountain, ground } from './terrain.js?v=30';
+import { smoothstep, clamp, fbm, smax } from './noise.js?v=30';
 
 export const MAP_ID = 'buttermilk2024';
 export const MAP_NAME = 'Buttermilk 2024';
@@ -29,7 +29,7 @@ export const ORIGIN = { lat: 39.20495, lon: -106.86080, bearing: 40 };
 
 // ---- the elevation grids -------------------------------------------------------------------------------------------
 async function decode(name) {
-  const r = await fetch(new URL(name + '.png?v=29', DATA));
+  const r = await fetch(new URL(name + '.png?v=30', DATA));
   if (!r.ok) throw new Error(name + ' ' + r.status);
   const bmp = await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
   const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(bmp.width, bmp.height) : Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height });

@@ -9,13 +9,13 @@
    knuckles. Everything static is merged into a few meshes by material. */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeXg, courseX, MAP_NAME, MAP_SUB, MAP_ID } from './m_xg.js?v=29';
-import { height, ground } from './terrain.js?v=29';
-import { planLift, liftHeights } from './lift.js?v=29';
-import { WorldLifts } from './wlift.js?v=29';
-import { snowUniforms, setRockSource } from './materials.js?v=29';
-import { setSunPath } from './env.js?v=29';
-import { fbm, simplex, smoothstep, clamp } from './noise.js?v=29';
+import { makeXg, courseX, MAP_NAME, MAP_SUB, MAP_ID } from './m_xg.js?v=30';
+import { height, ground } from './terrain.js?v=30';
+import { planLift, liftHeights } from './lift.js?v=30';
+import { WorldLifts } from './wlift.js?v=30';
+import { snowUniforms, setRockSource } from './materials.js?v=30';
+import { setSunPath } from './env.js?v=30';
+import { fbm, simplex, smoothstep, clamp } from './noise.js?v=30';
 
 export { MAP_NAME, MAP_SUB, MAP_ID };
 const DATA = new URL('../data/' + MAP_ID + '/', import.meta.url);
@@ -79,7 +79,7 @@ export async function makeXgMap(q, step) {
   setSunPath(buttermilkSun);
   const X = await makeXg(q, step);
   const { park, land, mtn } = X;
-  const osm = await fetch(new URL('osm.json?v=29', DATA)).then(r => r.ok ? r.json() : null).catch(() => null) || { woods: [], buildings: [], roads: [], pistes: [] };
+  const osm = await fetch(new URL('osm.json?v=30', DATA)).then(r => r.ok ? r.json() : null).catch(() => null) || { woods: [], buildings: [], roads: [], pistes: [] };
   X.osm = osm;
   // ---- where things may not stand: the course and its sides, the pipe and its decks, the base, the lift line
   const P = park.PIPE;

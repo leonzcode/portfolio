@@ -42,11 +42,13 @@ export class NinesLand {
     if (meta.snowline == null) meta.snowline = 1600;
     /* rock tops the elevation model smooths away (its source is about 25 m a sample here): a smooth bump of h metres,
        r round, raising the ground to the height a mapped point really has (the Birg station's rock, the summit) */
-    this.bumps = [];
+    this.bumps = []; this.mods = [];
   }
   bump(x, z) { let a = 0; for (const b of this.bumps) { const d = Math.hypot(x - b.x, z - b.z) / b.r; if (d < 1) { const c = Math.cos(d * Math.PI) * 0.5 + 0.5; a += b.h * Math.pow(c, b.k || 1); } } return a; }
   // the natural ground, relative to the start
-  at(x, z) { return this.nat(x, z) + (this.bumps.length ? this.bump(x, z) : 0); }
+  // (mods: the course's earthworks, f(x, z, y) -> y: the Formation Jump's landing is cut into the slope, its snow pushed up
+  // into the block, as builders do)
+  at(x, z) { let y = this.nat(x, z) + (this.bumps.length ? this.bump(x, z) : 0); for (const f of this.mods) y = f(x, z, y); return y; }
   nat(x, z) {
     const d = this.near.inside(x, z);
     if (d >= this.band) return this.near.at(x, z) - this.y0;
@@ -66,8 +68,8 @@ export class NinesLand {
 }
 // the land of map id: data/<id>/dem.json, near.png, far.png
 export async function loadLand(base) {
-  const meta = await (await fetch(base + 'dem.json?v=29')).json();
+  const meta = await (await fetch(base + 'dem.json?v=30')).json();
   const gi = n => meta.grids.find(g => g.name === n);
-  const [near, far, mid] = await Promise.all([loadGrid(base + 'near.png?v=29', gi('near')), loadGrid(base + 'far.png?v=29', gi('far')), gi('mid') ? loadGrid(base + 'mid.png?v=29', gi('mid')) : null]);
+  const [near, far, mid] = await Promise.all([loadGrid(base + 'near.png?v=30', gi('near')), loadGrid(base + 'far.png?v=30', gi('far')), gi('mid') ? loadGrid(base + 'mid.png?v=30', gi('mid')) : null]);
   return new NinesLand(near, far, meta, mid);
 }

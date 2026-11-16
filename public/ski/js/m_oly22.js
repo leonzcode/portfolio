@@ -7,14 +7,14 @@
      { mtn, park, land, makeLift(scene, q), dress(scene, mats, q, forest), runOverAt(p) }
    The map's name on screen is the place and the year only. */
 import * as THREE from 'three';
-import { setMountain } from './terrain.js?v=29';
-import { LOOK, snowUniforms } from './materials.js?v=29';
-import { setSunPath } from './env.js?v=29';
-import { liftLines, planWorldLifts, WorldLifts } from './wlift.js?v=29';
-import { loadLand, makeFarHills, plantTrees, makeTrees, CORRIDOR } from './m_olyland.js?v=29';
-import { setProfile, makeCourse } from './m_olycourse.js?v=29';
-import { buildVenue } from './m_olybuild.js?v=29';
-import { smoothstep } from './noise.js?v=29';
+import { setMountain } from './terrain.js?v=30';
+import { LOOK, snowUniforms } from './materials.js?v=30';
+import { setSunPath } from './env.js?v=30';
+import { liftLines, planWorldLifts, WorldLifts } from './wlift.js?v=30';
+import { loadLand, makeFarHills, plantTrees, makeTrees, CORRIDOR } from './m_olyland.js?v=30';
+import { setProfile, makeCourse } from './m_olycourse.js?v=30';
+import { buildVenue } from './m_olybuild.js?v=30';
+import { smoothstep } from './noise.js?v=30';
 
 export const MAP_ID = 'genting2022';
 export const MAP_NAME = 'Genting 2022';

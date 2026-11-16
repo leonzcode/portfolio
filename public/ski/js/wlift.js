@@ -6,8 +6,8 @@
    Gondolas, cable cars, T-bars, platters and the rest ride as the chair (Leon's brief allows it); the shortest ones,
    magic carpets and rope tows under 150 m, are left out. All the lifts share one kit: four draw calls for them all. */
 import * as THREE from 'three';
-import { Lift, planLift, liftHeights, liftKit } from './lift.js?v=29';
-import { height, ground } from './terrain.js?v=29';
+import { Lift, planLift, liftHeights, liftKit } from './lift.js?v=30';
+import { height, ground } from './terrain.js?v=30';
 
 const ST_FRONT = 13.29;      // (lift.js ST.front: a station's bull wheel to its line end)
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();

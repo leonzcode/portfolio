@@ -14,9 +14,9 @@
    fight over the same snow). All of it is one rock mesh and one snow mesh, two draw calls (the rock slab of the jibs
    goes in the rock mesh too). */
 import * as THREE from 'three';
-import { snowUniforms, FIELD_GLSL, fieldUniforms } from './materials.js?v=29';
-import { simplex, clamp, smoothstep, rng } from './noise.js?v=29';
-import { rockArrays, stripsOf, ZONES } from './frrockgeo.js?v=29';   // (2026-11-12: the curtains' sums, for a worker too)
+import { snowUniforms, FIELD_GLSL, fieldUniforms } from './materials.js?v=30';
+import { simplex, clamp, smoothstep, rng } from './noise.js?v=30';
+import { rockArrays, stripsOf, ZONES } from './frrockgeo.js?v=30';   // (2026-11-12: the curtains' sums, for a worker too)
 export { stripsOf };
 
 // ---- the rock material: grey stone with strata, cracks and streaks, snow where it faces up -----------------------------
