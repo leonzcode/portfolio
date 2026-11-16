@@ -7,14 +7,14 @@
    main.js: makeNines(q, say) before the terrain is built (it puts the ground in through terrain.js's mountain hook and
    returns the park); then dress(scene, mats, q) for the structures and the skyline. */
 import * as THREE from 'three';
-import { setMountain } from './terrain.js?v=28';
-import { assemble, Rail } from './park.js?v=28';
-import { setRockSource, freerideLook } from './materials.js?v=28';
-import { smoothstep, fbm } from './noise.js?v=28';
-import { loadLand } from './m_nines_land.js?v=28';
-import { Prof, Ext, Round, Fn } from './m_nines_shapes.js?v=28';
-import { Kit, makeSkyline, dressMats, tent, domeTent, snowcat, excavator, banner, fence } from './m_nines_dress.js?v=28';
-import { setSunPath } from './env.js?v=28';
+import { setMountain } from './terrain.js?v=29';
+import { assemble, Rail } from './park.js?v=29';
+import { setRockSource, freerideLook } from './materials.js?v=29';
+import { smoothstep, fbm } from './noise.js?v=29';
+import { loadLand } from './m_nines_land.js?v=29';
+import { Prof, Ext, Round, Fn } from './m_nines_shapes.js?v=29';
+import { Kit, makeSkyline, dressMats, tent, domeTent, snowcat, excavator, banner, fence } from './m_nines_dress.js?v=29';
+import { setSunPath } from './env.js?v=29';
 
 export const NINES_ID = 'schilthorn23';
 export const NINES_NAME = 'Schilthorn 2023';

@@ -10,8 +10,8 @@
    Everything is merged by material: the bricks (one draw), the painted things (one, colours in the vertices), the printed
    things (one, one picture for all of them), the dark rails (one), the turbines (one). */
 import * as THREE from 'three';
-import { height, ground } from './terrain.js?v=28';
-import { rng, smoothstep } from './noise.js?v=28';
+import { height, ground } from './terrain.js?v=29';
+import { rng, smoothstep } from './noise.js?v=29';
 
 // ---- a geometry builder (positions, normals, uvs, colours) -------------------------------------------------------
 class Geo {
@@ -105,7 +105,7 @@ function printTexture() {
   };
   const font = (px, w = 800) => `italic ${w} ${px}px "Barlow Condensed", "Arial Narrow", Arial, sans-serif`;
   // 0: panels
-  { const grd = g.createLinearGradient(0, 0, 0, 256); grd.addColorStop(0, '#0d3f8f'); grd.addColorStop(0.55, '#1f6fc4'); grd.addColorStop(1, '#4fb0e6'); g.fillStyle = grd; g.fillRect(0, 0, W, 256);
+  { const grd = g.createLinearGradient(0, 0, 0, 256); grd.addColorStop(0, '#0f5aa8'); grd.addColorStop(0.5, '#1d8fd2'); grd.addColorStop(1, '#5cc8ee'); g.fillStyle = grd; g.fillRect(0, 0, W, 256);
     waves(0, 256, ['#9fd8f5', '#e8f6ff', '#5fc0ee'], 0.12, 0.004, 0.75);
     g.fillStyle = '#ffffff'; g.font = font(64); g.textBaseline = 'middle';
     for (let x = 120; x < W; x += 1024) g.fillText('GENTING 2022', x, 92);
@@ -138,13 +138,13 @@ export function buildVenue(scene, park, q, land) {
   const bricks = new Geo(), paint = new Geo(), prints = new Geo(), dark = new Geo();
   bricks.wuv = true;
   const H = (x, z) => height(x, z), Gd = (x, z) => ground(x, z);
-  const WHITE = lin(0xf3f1ec), PLASTER = lin(0xf1eee6), ROOF = lin(0xe6eaef), TRIM = lin(0x24272b), STEEL = lin(0x8d949c), DK = lin(0x2d3136);
+  const WHITE = lin(0xf3f1ec), PLASTER = lin(0xf1eee6), ROOF = lin(0x8c939b), TRIM = lin(0x24272b), STEEL = lin(0x8d949c), DK = lin(0x2d3136);
   const BLUE = lin(0x1f62bd), TEAL = lin(0x1aa3a8), YEL = lin(0xe8b424), WOOD = lin(0x9b6b3d), CREAM = lin(0xd9cfb7), RED = lin(0xb23a2a);
 
   // ---- the walls: each Block of the Great Wall, standing on the ground under it, its top H over it, crenellations on top
   const wall = (b, step) => {
-    const dx = Math.sin(b.yaw), dz = Math.cos(b.yaw), sx = dz, sz = -dx, h = b.t / 2, L = b.L, n = Math.max(1, Math.ceil(L / 1.6));
-    const MER = b.H > 2.5 ? 0.85 : 0.6, body = b.H - MER;
+    const dx = Math.sin(b.yaw), dz = Math.cos(b.yaw), sx = dz, sz = -dx, h = b.t / 2, L = b.L, n = Math.max(1, Math.ceil(L / 2.0));
+    const MER = b.H > 2.5 ? 1.0 : 0.6, body = b.H - MER;
     const at = (s, u) => [b.x + dx * s + sx * u, b.z + dz * s + sz * u];
     // (its foot, as the physics has it: the snow it stands on, held level over each merlon's length on a stepped wall)
     const gy = s => { const [x, z] = at(s, 0), g = Gd(x, z); return b.base ? b.base(x, z, g) : g; };
@@ -162,10 +162,7 @@ export function buildVenue(scene, park, q, land) {
       bricks.face([[a0x, g0 + body, a0z], [a1x, g1 + body, a1z], [b1x, g1 + body, b1z], [b0x, g0 + body, b0z]], [[s0 / 2.4, 0], [s1 / 2.4, 0], [s1 / 2.4, b.t / 2.4], [s0 / 2.4, b.t / 2.4]]);
       // the merlons: on both edges, 0.9 m long, 0.45 m deep
       const sm = (s0 + s1) / 2, gm = (g0 + g1) / 2;
-      for (const sg of [-1, 1]) {
-        const [mx, mz] = at(sm, sg * (h - 0.25));
-        bricks.obox(mx, mz, b.yaw + Math.PI / 2, 1.0, Math.min(0.6, b.t * 0.35), gm + body - 0.05, gm + b.H, null);
-      }
+      { const [mx, mz] = at(sm, 0); bricks.obox(mx, mz, b.yaw + Math.PI / 2, Math.min(1.25, (s1 - s0) * 0.62), b.t + 0.04, gm + body - 0.05, gm + b.H, null); }
       if (step && i < n - 1) {        // (a stepped wall: the riser between two steps)
         const g2 = gy((s1 + L * (i + 2) / n) / 2), [ex, ez] = at(s1, -h), [fx, fz] = at(s1, h);
         const lo = Math.min(g0, g2) + body, hi = Math.max(g0, g2) + body;
@@ -299,14 +296,12 @@ export function buildVenue(scene, park, q, land) {
     bannerAt(prints, -9, 9, F.z0 - 0.3, yF + 3.3, yF + 4.6, 1);
     // the boards round the corral, 1.1 m tall, and down both sides of the jump sections
     boards(prints, paint, [[F.x0, F.z0 - 2], [F.x0, F.z1], [F.x1, F.z1], [F.x1, F.z0 - 2]], H, STEEL);
-    boards(prints, paint, [[-45, 250], [-45, F.z0 - 2]], H, STEEL);
-    boards(prints, paint, [[44, 250], [44, F.z0 - 2]], H, STEEL);
     // the grandstand: facing up the course at the corral's end, 13 rows of blue seats on a grey frame
     const sz0 = F.z1 + 3, sy = H(0, sz0);
     for (let k = 0; k < 13; k++) {
       const y = sy + 0.45 * k, z = sz0 + 0.85 * k;
       paint.box(-26, y, z, 26, y + 0.45, z + 0.85, lin(0x7c838c));
-      paint.box(-25.6, y + 0.45, z + 0.15, 25.6, y + 0.62, z + 0.55, k % 4 === 3 ? lin(0xe8eef4) : BLUE);
+      paint.box(-25.6, y + 0.45, z + 0.15, 25.6, y + 0.62, z + 0.55, k % 4 === 3 ? lin(0xe8eef4) : lin(0x2f8fd8));
     }
     paint.box(-26.5, sy + 5.85, sz0 + 11, 26.5, sy + 7.0, sz0 + 11.4, lin(0x7c838c));
     for (const x of [-26, -13, 0, 13, 26]) paint.obox(x, sz0 + 11.2, 0, 0.3, 0.3, sy - 0.5, sy + 9.5, STEEL);
@@ -331,12 +326,12 @@ export function buildVenue(scene, park, q, land) {
         const t0 = k / n, t1 = (k + 1) / n, x0 = ax + (bx - ax) * t0, z0 = az + (bz - az) * t0, x1 = ax + (bx - ax) * t1, z1 = az + (bz - az) * t1;
         const g0 = H(x0, z0), g1 = H(x1, z1), sl = Math.hypot(x1 - x0, z1 - z0);
         const uv = [[s / 24, rowV(ROW.wind, 0)], [(s + sl) / 24, rowV(ROW.wind, 0)], [(s + sl) / 24, rowV(ROW.wind, 1)], [s / 24, rowV(ROW.wind, 1)]];
-        prints.face([[x0, g0 + 0.8, z0], [x1, g1 + 0.8, z1], [x1, g1 + 9.6, z1], [x0, g0 + 9.6, z0]], uv);
-        prints.face([[x1, g1 + 0.8, z1], [x0, g0 + 0.8, z0], [x0, g0 + 9.6, z0], [x1, g1 + 9.6, z1]], [uv[1], uv[0], uv[3], uv[2]]);
-        truss(paint, x0, z0, g0, 10.4, STEEL);
+        prints.face([[x0, g0 + 0.8, z0], [x1, g1 + 0.8, z1], [x1, g1 + 12.2, z1], [x0, g0 + 12.2, z0]], uv);
+        prints.face([[x1, g1 + 0.8, z1], [x0, g0 + 0.8, z0], [x0, g0 + 12.2, z0], [x1, g1 + 12.2, z1]], [uv[1], uv[0], uv[3], uv[2]]);
+        truss(paint, x0, z0, g0, 13.0, STEEL);
         s += sl;
       }
-      truss(paint, bx, bz, H(bx, bz), 10.4, STEEL);
+      truss(paint, bx, bz, H(bx, bz), 13.0, STEEL);
     }
   }
   // ---- the camera scaffolds (beside the jumps, on the rider's right) and the judges' tower ---------------------------
@@ -349,7 +344,7 @@ export function buildVenue(scene, park, q, land) {
     paint.box(x - 2.7, y + 10, z - 2.7, x + 2.7, y + 10.3, z + 2.7, BLUE);
   }
   // ---- the snow guns: fan guns on 6 m masts down both sides, every 45 m ------------------------------------------------
-  for (let z = -10; z < C.finish.z0; z += 45) for (const x of [-42, 41]) {
+  for (let z = -10; z < C.finish.z0; z += 90) for (const x of [-42, 41]) {
     if (x > 0 && z < 246) continue;          // (the Great Wall's side: none on it)
     const y = H(x, z), d = x < 0 ? 1 : -1;
     paint.obox(x, z, 0, 0.18, 0.18, y - 0.3, y + 5.6, lin(0x3d6fb3));
@@ -363,6 +358,7 @@ export function buildVenue(scene, park, q, land) {
     for (let k = 0; k < 9; k++) { const t = k / 8, w = 4.8 * (1 - t) + 0.6, yy = y + 9 + t * 13.5; paint.obox(x, z, k * 0.5, w, w, yy, yy + 1.1, lin(0x2f4a33)); }
   }
   // ---- the venue's buildings by the finish (temporary halls and offices) -----------------------------------------------
+  { const y = H(-30, 860); paint.box(-110, y - 1, 845, 70, y + 19, 870, CREAM); for (let k = 1; k < 6; k++) paint.box(-110.1, y + k * 3.2, 844.9, 70.1, y + k * 3.2 + 1.2, 845, lin(0x5f6f80)); }
   for (const [x, z, w, d, h, c] of [[-70, 770, 30, 14, 6, WHITE], [-40, 800, 24, 12, 5, lin(0xdfe4ea)], [0, 790, 36, 16, 7, WHITE], [44, 784, 20, 10, 4, lin(0xc9d3dd)], [-110, 740, 26, 14, 6, lin(0xe5e2da)]]) {
     const y = H(x, z);
     paint.box(x - w / 2, y - 0.5, z - d / 2, x + w / 2, y + h, z + d / 2, c);
@@ -374,7 +370,7 @@ export function buildVenue(scene, park, q, land) {
   // (two-sided: the faces here are wound as they come, so both sides are drawn, each lit from its own side)
   const brickMat = new THREE.MeshStandardMaterial({ map: brickTexture(), roughness: 0.82, metalness: 0, color: 0xffffff, side: THREE.DoubleSide });
   const paintMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.05, side: THREE.DoubleSide });
-  const printMat = new THREE.MeshStandardMaterial({ map: printTexture(), roughness: 0.55, metalness: 0, side: THREE.FrontSide });
+  const printMat = new THREE.MeshStandardMaterial({ map: printTexture(), roughness: 0.32, metalness: 0, side: THREE.FrontSide });
   const darkMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.4 });
   add(bricks, brickMat, 'Genting walls', true);
   add(paint, paintMat, 'Genting structures', true);
@@ -425,7 +421,7 @@ function scaffold(G, x, z, y, h, steel, wood, w = 2.6) {
 function turbines(land, q) {
   const r = rng(41), spots = [];
   for (let tries = 0; tries < 6000 && spots.length < 160; tries++) {
-    const a = r() * Math.PI * 2, d = 3000 + r() * 6000, x = Math.sin(a) * d, z = 300 + Math.cos(a) * d, y = land.far(x, z);
+    const a = r() * Math.PI * 2, d = 2500 + r() * 3500, x = Math.sin(a) * d, z = 300 + Math.cos(a) * d, y = land.far(x, z);
     let top = true; for (const [ox, oz] of [[300, 0], [-300, 0], [0, 300], [0, -300], [210, 210], [-210, -210], [210, -210], [-210, 210]]) if (land.far(x + ox, z + oz) > y + 4) { top = false; break; }
     if (top) spots.push({ x, z, y });
   }

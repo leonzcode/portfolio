@@ -9,13 +9,13 @@
    knuckles. Everything static is merged into a few meshes by material. */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeXg, courseX, MAP_NAME, MAP_SUB, MAP_ID } from './m_xg.js?v=28';
-import { height, ground } from './terrain.js?v=28';
-import { planLift, liftHeights } from './lift.js?v=28';
-import { WorldLifts } from './wlift.js?v=28';
-import { snowUniforms, setRockSource } from './materials.js?v=28';
-import { setSunPath } from './env.js?v=28';
-import { fbm, simplex, smoothstep, clamp } from './noise.js?v=28';
+import { makeXg, courseX, MAP_NAME, MAP_SUB, MAP_ID } from './m_xg.js?v=29';
+import { height, ground } from './terrain.js?v=29';
+import { planLift, liftHeights } from './lift.js?v=29';
+import { WorldLifts } from './wlift.js?v=29';
+import { snowUniforms, setRockSource } from './materials.js?v=29';
+import { setSunPath } from './env.js?v=29';
+import { fbm, simplex, smoothstep, clamp } from './noise.js?v=29';
 
 export { MAP_NAME, MAP_SUB, MAP_ID };
 const DATA = new URL('../data/' + MAP_ID + '/', import.meta.url);
@@ -79,7 +79,7 @@ export async function makeXgMap(q, step) {
   setSunPath(buttermilkSun);
   const X = await makeXg(q, step);
   const { park, land, mtn } = X;
-  const osm = await fetch(new URL('osm.json?v=28', DATA)).then(r => r.ok ? r.json() : null).catch(() => null) || { woods: [], buildings: [], roads: [], pistes: [] };
+  const osm = await fetch(new URL('osm.json?v=29', DATA)).then(r => r.ok ? r.json() : null).catch(() => null) || { woods: [], buildings: [], roads: [], pistes: [] };
   X.osm = osm;
   // ---- where things may not stand: the course and its sides, the pipe and its decks, the base, the lift line
   const P = park.PIPE;
@@ -157,7 +157,7 @@ export async function makeXgMap(q, step) {
   /* stands the photos show by the course (2024 corral photo 1852: tall spruces between the lift and the big air's
      landing; the 2023 photos: big spruces behind the top rail section and along the course's sides; summer aerial
      photos: a dark clump in the open slope at about (-31, -184)): [x, z, radius, how many] */
-  const STANDS = [[-31, -184, 9, 16], [-30, -100, 7, 10], [-36, -40, 6, 6], [-34, -430, 14, 22], [24, -440, 12, 16], [-38, -300, 9, 10], [-40, -360, 10, 12], [36, -380, 9, 10], [40, -320, 8, 8]];
+  const STANDS = [[-31, -184, 9, 16], [-30, -100, 7, 10], [-50, -70, 8, 12], [-50, -125, 8, 10], [-34, -430, 14, 22], [24, -440, 12, 16], [-38, -300, 9, 10], [-40, -360, 10, 12], [36, -380, 9, 10], [40, -320, 8, 8]];
   mtn.trees = (max, r) => {
     const out = [];
     for (const [sx, sz, sr, n] of STANDS) for (let k = 0, t = 0; k < n && t < n * 8; t++) {
@@ -346,7 +346,7 @@ function dress(X, scene, mats, q) {
   for (const s of [-1, 1]) { const pts = []; for (let t = -10; t <= P.len + 40; t += 8) { const p = park.pipeAt(t, s * (P.W + 0.8)); pts.push([p.x, p.z]); } fenceLine(pts, pipeQuads, 1.0, BLACK, 4); }
   const quads = (list, mat, name, uvScale) => {
     // (mat null: the black fabric and the pipe decks' blue-violet banners in one mesh, the colour in each quad's 8th entry)
-    const pos = [], uv = [], col = [], FAB = [new THREE.Color(0x141518).convertSRGBToLinear(), new THREE.Color(0x4f4ab8).convertSRGBToLinear()];
+    const pos = [], uv = [], col = [], FAB = [new THREE.Color(0x141518).convertSRGBToLinear(), new THREE.Color(0x8c86dc).convertSRGBToLinear()];
     for (const [x0, y0, z0, x1, y1, z1, h, ci = 0] of list) {
       const L = Math.hypot(x1 - x0, z1 - z0);
       pos.push(x0, y0 + 0.1, z0, x1, y1 + 0.1, z1, x1, y1 + h, z1, x0, y0 + 0.1, z0, x1, y1 + h, z1, x0, y0 + h, z0);
@@ -414,7 +414,7 @@ function dress(X, scene, mats, q) {
   for (let x = cx - 14; x < cx + 22; x += 2.5) {
     const z = 8, y = H(x + 1.25, z);
     M.box(x + 1.25, y + 1.1, z, 2.5, 0.06, 0.08, BLACK); M.box(x + 1.25, y + 0.12, z, 2.5, 0.05, 0.05, BLACK); M.box(x, y + 0.6, z, 0.06, 1.15, 0.06, BLACK);
-    M.bar(V(x, y + 0.12, z), V(x + 2.5, y + 1.1, z), 0.02, BLACK, 3); M.bar(V(x + 2.5, y + 0.12, z), V(x, y + 1.1, z), 0.02, BLACK, 3);
+    for (let b = 0.2; b < 2.45; b += 0.2) M.box(x + b, y + 0.6, z, 0.025, 0.98, 0.025, BLACK);
   }
   // the judges' stand (not seen in any photo found: a scaffold stand with a cabin at the corral's lift side, estimated)
   { const x = cx - 28, z = 46, y = H(x, z); for (const [dx, dz] of [[-2, -2], [2, -2], [2, 2], [-2, 2]]) M.box(x + dx, y + 1.6, z + dz, 0.08, 3.2, 0.08, STEEL); M.box(x, y + 3.25, z, 4.4, 0.15, 4.4, STEEL); M.box(x, y + 4.6, z, 4.2, 2.6, 4.2, 0x1c1e22); Mlit.box(x, y + 4.8, z - 2.12, 3.6, 1.0, 0.04, 0x9ec3e6); }
@@ -466,12 +466,16 @@ function dress(X, scene, mats, q) {
       let mz = 0, mx = 0; for (const q of r.p) { mz += q[1]; mx += q[0]; } mz /= r.p.length; mx /= r.p.length;
       if (Math.hypot(mx, mz) > 1400) continue;
       if (/service|track|unclassified/.test(r.k) && mz < 30 && mx > -500 && mx < 400) continue;
+      if (mx > -130 && mx < 130 && mz > -120 && mz < 160 && r.k !== 'trunk' && r.k !== 'primary') continue;   // (the venue's own ground: under the event's snow and structures)
       for (let i = 0; i < r.p.length - 1; i++) {
         const [ax, az] = r.p[i], [bx, bz] = r.p[i + 1], L = Math.hypot(bx - ax, bz - az); if (L < 0.5) continue;
         const nx = -(bz - az) / L * w, nz = (bx - ax) / L * w, n = Math.max(1, Math.ceil(L / 12));
         for (let k = 0; k < n; k++) {
           const x0 = ax + (bx - ax) * k / n, z0 = az + (bz - az) * k / n, x1 = ax + (bx - ax) * (k + 1) / n, z1 = az + (bz - az) * (k + 1) / n;
-          const p = (x, z) => [x, G0(x, z) + 0.12, z];
+          const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2, big = r.k === 'trunk' || r.k === 'primary' || r.k === 'runway' || r.k === 'taxiway';
+          if (!big && ((mx > -150 && mx < 150 && mz > -150 && mz < 170) || (mz < 60 && mx > -450 && mx < 350))) continue;   // (the venue's ground and the ski area's own tracks: under snow in January)
+          const far = Math.hypot(mx, mz) > 600 ? 0.6 : 0.15;
+          const p = (x, z) => [x, G0(x, z) + far, z];
           const a = p(x0 + nx, z0 + nz), b = p(x0 - nx, z0 - nz), c = p(x1 - nx, z1 - nz), d = p(x1 + nx, z1 + nz);
           pos.push(...a, ...b, ...c, ...a, ...c, ...d);
         }
@@ -528,10 +532,11 @@ function dress(X, scene, mats, q) {
     const spots = [], rr = (s => () => (s = (s * 48271) % 2147483647) / 2147483647)(7);
     const area = (x0, x1, z0, z1, n) => { for (let i = 0; i < n; i++) spots.push([x0 + rr() * (x1 - x0), z0 + rr() * (z1 - z0)]); };
     const n = low ? 1 : 2;
-    area(cx - 6, cx + 22, 63, 76, 90 * n);            // (behind the finish, the corral's spectators)
+    area(cx - 12, cx + 22, 9, 14, 90 * n);            // (packed along the corral's barrier)
+    area(cx - 6, cx + 22, 63, 70, 40 * n);            // (behind the finish fence)
     area(cx + 26, cx + 40, 0, 50, 40 * n);            // (along the pipe's foot)
     area(-70, -30, 60, 95, 40 * n); area(20, 80, 80, 120, 50 * n);
-    const JACKETS = [0x1b1c20, 0x2b2f38, 0x3c2a24, 0x9e2b25, 0x1f4f8a, 0xd9d4c7, 0x4a5a3a, 0x222222, 0xe0a020];
+    const JACKETS = [0x1b1c20, 0x2b2f38, 0x1e2433, 0xd9d6cf, 0x3a3d42, 0x222222, 0x5a6068, 0x1a1d24, 0x7a2a26];   // (mostly black, navy, grey and white, as the crowds in the photos)
     const im = new THREE.InstancedMesh(pg, new THREE.MeshLambertMaterial({ vertexColors: true }), spots.length);
     const col = new THREE.Color();
     spots.forEach(([x, z], i) => { im.setMatrixAt(i, _m.compose(V(x, G0(x, z) - 0.05, z), _q.setFromAxisAngle(_Y, rr() * 6.28), _s.set(1, 0.85 + rr() * 0.3, 1))); im.setColorAt(i, col.set(JACKETS[i % JACKETS.length])); });

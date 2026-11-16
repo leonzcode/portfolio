@@ -16,9 +16,9 @@
    them dry brown grass with snow lying in the shade and in hollows, bare larch woods (red-brown), birch groves (white
    stems), young pines planted in rows across the slopes, wind turbines on the far ridges. */
 import * as THREE from 'three';
-import { baseLine } from './terrain.js?v=28';
-import { fbm, simplex, smoothstep, clamp, rng } from './noise.js?v=28';
-import { snowUniforms } from './materials.js?v=28';
+import { baseLine } from './terrain.js?v=29';
+import { fbm, simplex, smoothstep, clamp, rng } from './noise.js?v=29';
+import { snowUniforms } from './materials.js?v=29';
 
 const NEAR = { X0: -2600, Z0: -2300, st: 20, n: 261 };
 const FAR = { X0: -24000, Z0: -23700, st: 200, n: 241 };
@@ -167,8 +167,8 @@ export class Land {
 
 export async function loadLand(base) {
   const [buf, osm] = await Promise.all([
-    fetch(new URL('../data/genting2022/dem.bin?v=28', base)).then(r => { if (!r.ok) throw new Error('ground ' + r.status); return r.arrayBuffer(); }),
-    fetch(new URL('../data/genting2022/osm.json?v=28', base)).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(new URL('../data/genting2022/dem.bin?v=29', base)).then(r => { if (!r.ok) throw new Error('ground ' + r.status); return r.arrayBuffer(); }),
+    fetch(new URL('../data/genting2022/osm.json?v=29', base)).then(r => r.ok ? r.json() : null).catch(() => null),
   ]);
   return new Land(buf, osm);
 }
@@ -178,7 +178,7 @@ export async function loadLand(base) {
 export function makeFarHills(scene, q, land) {
   const low = q.tier === 'low', step = low ? 2 : 1, n = Math.floor((FAR.n - 1) / step) + 1;
   const P = new Float32Array(n * n * 3), C = new Float32Array(n * n * 3), I = [];
-  const BR = [0.25, 0.2, 0.15], DK = [0.12, 0.1, 0.08], SN = [0.8, 0.82, 0.86], WD = [0.11, 0.085, 0.07];
+  const BR = [0.17, 0.145, 0.12], DK = [0.09, 0.08, 0.07], SN = [0.78, 0.8, 0.84], WD = [0.08, 0.07, 0.06];
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const x = FAR.X0 + i * step * FAR.st, z = FAR.Z0 + j * step * FAR.st, k = j * n + i;
     let y = land.far(x, z);
@@ -244,7 +244,7 @@ function treeAtlas() {
     // (the crown's mass: a soft cone of brown haze, broken by the noise into tufts, under the twigs)
     for (let k = 0; k < 900; k++) {
       const t = r(), y = 22 + t * 214, w = (4 + 46 * t) * (0.25 + 0.75 * Math.sqrt(r())), sg = r() < 0.5 ? -1 : 1;
-      g.fillStyle = `rgba(${128 + r() * 34 | 0},${80 + r() * 18 | 0},${58 + r() * 14 | 0},0.7)`;
+      g.fillStyle = `rgba(${104 + r() * 26 | 0},${78 + r() * 16 | 0},${64 + r() * 12 | 0},0.7)`;
       g.fillRect(cx + sg * w * r(), y, 2 + r() * 3, 1 + r() * 2);
     }
     g.strokeStyle = '#3e2d25'; g.lineWidth = 4; g.beginPath(); g.moveTo(cx, 254); g.lineTo(cx, 6); g.stroke();
@@ -304,7 +304,7 @@ export function plantTrees(land, q, course) {
     if (Math.hypot(gx, gz) > 0.9) continue;
     const stand = fbm(x * 0.005 + 2, z * 0.005 - 5, 3) + 0.35 * fbm(x * 0.02, z * 0.02, 2), dV = Math.hypot(x, z - 300);
     let kind = -1, s = 0;
-    if (stand > 0.2) {
+    if (stand > 0.3) {
       if (r() > 0.92) continue;
       const birch = fbm(x * 0.011 - 4, z * 0.011 + 8, 2) > 0.12 && dV < 1000;
       kind = birch ? 1 : 0; s = birch ? 9 + r() * 5 : 13 + r() * 8;

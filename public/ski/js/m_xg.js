@@ -13,9 +13,9 @@
    line of the real slope, the pipe's floor a straight line cut into the hill; the features stand on that.
    Where a number is the event's own it says so; the rest are measured from the ground data or estimated from the
    photos (NOTES.md, the feature sheet). */
-import { Kicker, Rail, Quarter, Shape, assemble } from './park.js?v=28';
-import { setMountain, ground } from './terrain.js?v=28';
-import { smoothstep, clamp, fbm } from './noise.js?v=28';
+import { Kicker, Rail, Quarter, Shape, assemble } from './park.js?v=29';
+import { setMountain, ground } from './terrain.js?v=29';
+import { smoothstep, clamp, fbm, smax } from './noise.js?v=29';
 
 export const MAP_ID = 'buttermilk2024';
 export const MAP_NAME = 'Buttermilk 2024';
@@ -29,7 +29,7 @@ export const ORIGIN = { lat: 39.20495, lon: -106.86080, bearing: 40 };
 
 // ---- the elevation grids -------------------------------------------------------------------------------------------
 async function decode(name) {
-  const r = await fetch(new URL(name + '.png?v=28', DATA));
+  const r = await fetch(new URL(name + '.png?v=29', DATA));
   if (!r.ok) throw new Error(name + ' ' + r.status);
   const bmp = await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
   const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(bmp.width, bmp.height) : Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height });
@@ -155,10 +155,39 @@ class XgKicker extends Kicker {
   dye(x, z) {
     const dx = Math.abs(x - this.cxT), hw = this.hwT;
     if (z > this.L.z - 0.32 && z < this.L.z + 0.02 && dx < hw + 0.1) return 1;
-    if (z > this.L.z - 4 && z < this.L.z && Math.abs(dx - hw) < 0.18) return 1;
+    if (z > this.z0 + 1 && z < this.L.z && Math.abs(dx - hw) < 0.2) return 1;
+    if (z > this.L.z && z < this.K.z && Math.abs(dx - this.hwAt(z)) < 0.2) return 1;
     if (Math.abs(z - this.K.z - 0.35) < 0.22 && dx < this.hwAt(this.K.z) + 0.1) return 1;
-    if (z > this.K.z && z < this.Kend.z + 10 && Math.abs(dx - this.hwAt(z)) < 0.2) return 1;
+    if (z > this.K.z && z < this.zMeet - 2 && Math.abs(dx - this.hwAt(z)) < 0.22) return 1;
     return 0;
+  }
+}
+/* a rail section's deck: as XgKicker, but its deck falls gently down the hill (the decks in the renderings and the 2023
+   photos run down at a few degrees, so riders keep their speed to the rails: a level one stopped them dead after the
+   start, 2026-11-16), at the lip's own angle (lip -7: down 7 deg), then a round knuckle of radius Rk and the landing.
+   Worked out again after park.js's Kicker has made its level one. */
+class DeckKicker extends XgKicker {
+  constructor(o) {
+    super(o);
+    const d = -this.lip * RAD, la = this.land * RAD, Rk = this.Rk;
+    this.td = Math.tan(d);
+    this.K = { z: this.L.z + this.table, y: this.L.y - this.table * this.td };
+    this.kc = { z: this.K.z - Rk * Math.sin(d), y: this.K.y - Rk * Math.cos(d) };          // (the knuckle's centre, under it)
+    this.Kend = { z: this.kc.z + Rk * Math.sin(la), y: this.kc.y + Rk * Math.cos(la) };
+    this.tl = Math.tan(la); this._bl = undefined;
+    let z = this.Kend.z;
+    while (z < this.Kend.z + 200 && this.Kend.y - (z - this.Kend.z) * this.tl > this.bl(z)) z += 0.25;
+    this.zMeet = z; this.z1 = z + 14;
+    this.knuckleH = this.K.y - this.bl(this.K.z);
+    const hMax = Math.max(this.lipH, this.knuckleH) + 0.3;
+    const reach = Math.max(this.hwT + this.splay, this.hwLand) + hMax / Math.min(this.sideS, this.landS) + this.shoulder + this.toe + 0.5;
+    this.x0 = this.cxT - reach; this.x1 = this.cxT + reach;
+  }
+  tableY(z) {
+    if (!this.kc) return super.tableY(z);                  // (park.js's own constructor asks before this one has run)
+    if (z < this.K.z) return this.L.y - (z - this.L.z) * this.td;
+    if (z < this.Kend.z) { const dz = z - this.kc.z; return this.kc.y + Math.sqrt(Math.max(0, this.Rk * this.Rk - dz * dz)); }
+    return smax(this.Kend.y - (z - this.Kend.z) * this.tl, this.bl(z), this.blend());
   }
 }
 /* the ramp up to a rail on a rail section's deck (photos 077, 078: a compact kicker of cut snow about a metre tall,
@@ -167,8 +196,8 @@ class XgKicker extends Kicker {
    of its own along +z (u across, s from its foot). */
 class RailRamp extends Shape {
   constructor(o) {
-    super(Object.assign({ len: 2.4, top: 0.6, H: 0.95, hw: 1.3, name: 'Rail ramp', group: 'Course' }, o));
-    this.u0 = -this.hw - this.H / 1.8 - 0.1; this.u1 = -this.u0; this.s0 = -0.05; this.s1 = this.len + this.top + this.H / 1.8 + 0.1;
+    super(Object.assign({ len: 2.0, top: 0.5, H: 0.95, hw: 1.0, name: 'Rail ramp', group: 'Course' }, o));
+    this.u0 = -this.hw - this.H / 1.8 - 0.1; this.u1 = -this.u0; this.s0 = -0.05; this.s1 = this.len + this.top + this.H / 0.9 + 0.1;
     this.bound();
   }
   prof(s) {
@@ -176,7 +205,7 @@ class RailRamp extends Shape {
     if (s <= 0) return 0;
     if (s < L) { const t = s / L; return this.H * t * t * (1.25 - 0.25 * t); }     // (concave, steepening to its top)
     if (s <= T) return this.H;
-    return this.H - (s - T) * 1.8;                                                  // (its back, under the rail)
+    return this.H - (s - T) * 0.9;                                                  // (its back, under the rail: 42 deg, so a rider who misses the rail rolls off it, not into a pit under the rail)
   }
   rel(u, s) { const p = this.prof(s); if (!(p > 0)) return -Infinity; const d = Math.abs(u) - this.hw; return d <= 0 ? p : p - d * 1.8; }
   height(x, z, g) {
@@ -188,7 +217,7 @@ class RailRamp extends Shape {
   cols(fine) { const a = [], st = fine ? 0.25 : 0.35; for (let u = this.u0; u <= this.u1 + 1e-6; u += st) a.push(u); for (const sg of [-1, 1]) for (const e of [-0.06, 0, 0.06]) a.push(sg * (this.hw + e)); return [...new Set(a.map(v => Math.round(v * 1000) / 1000))].sort((p, q) => p - q); }
   rowsFar() { return [this.s0, this.len * 0.5, this.len, this.len + this.top, this.s1]; }
   colsFar() { return [this.u0, -this.hw, 0, this.hw, this.u1]; }
-  dye(x, z) { const L = this.toLocal(x, z, { u: 0, s: 0 }), T = this.len + this.top; return (L.s > T - 0.25 && L.s < T + 0.02 && Math.abs(L.u) < this.hw + 0.05) || (L.s > this.len * 0.4 && L.s < T && Math.abs(Math.abs(L.u) - this.hw) < 0.12) ? 1 : 0; }
+  dye(x, z) { const L = this.toLocal(x, z, { u: 0, s: 0 }), T = this.len + this.top, au = Math.abs(L.u); return L.s > T - 0.35 && L.s < T + 0.02 && au > this.hw - 0.3 && au < this.hw + 0.08 ? 1 : 0; }   // (small marks at its top corners)
 }
 
 // ---- the course --------------------------------------------------------------------------------------------------------
@@ -208,13 +237,14 @@ function buildCourse(land, q) {
   };
   // ---- the start: a deck at the top, the start tent behind it
   const x0 = courseX(-400);
-  const starts = [{ name: 'Start: the top of the course', x: x0, z: -404, v: 3 }];
+  const starts = [{ name: 'Start: the top of the course', x: x0 + 2.5, z: -404, v: 3 }];   // (between two lanes of rail section 1: let go, you roll over its deck and down its landing)
 
   // ---- the three rail sections ("three rail features at the top", the event's course text; the renderings show each
   // as a deck with kicker-shaped snow ramps up to the rails, the rails going off its end down a landing)
   const section = (name, zFoot, opt) => {
     const xc = courseX(zFoot + opt.inrun + opt.deck * 0.5);
-    const d = K(Object.assign({ name, x: xc, z0: zFoot, lip: opt.lip ?? -6, R: 30, drop: 0, table: opt.deck, Rk: 5, land: opt.land ?? 27, wT: opt.hw, wD: opt.hw + 1, wL: opt.hw + 1, sideS: 1.05, landS: 0.95, shoulder: 0.3, noCheck: true, rails: true, lod: true }, opt.k || {}));   // (lod: in its group's far copy, main.js)
+    const d = new DeckKicker(Object.assign({ base, pitch, group: 'Course', name, x: xc, z0: zFoot, lip: opt.lip ?? -7, R: 30, drop: 0, table: opt.deck, Rk: 5, land: opt.land ?? 27, wT: opt.hw, wD: opt.hw + 1, wL: opt.hw + 1, sideS: 1.05, landS: 0.95, shoulder: 0.3, noCheck: true, rails: true, lod: true, toe: 0.2 }, opt.k || {}));   // (lod: in its group's far copy, main.js)
+    kickers.push(d);
     return d;
   };
   // each section's foot a little past the last one's landing (placed down the real slope: their sizes, estimated from
@@ -230,8 +260,9 @@ function buildCourse(land, q) {
   const lanes = (S, list) => {
     const zk = S.K.z;
     for (const [dx, kind, name, o = {}] of list) {
-      // (every rail starts just over its ramp's top: the ramp 0.95 m tall, the rail 6 cm over it)
-      const x = S.x + dx, rampH = o.rampH ?? 0.95, h0 = rampH + 0.06;
+      // (every rail starts flush with its ramp's flat top, 0.25 m before the ramp ends, so the skis slide from the snow onto
+      // it with no step up: 6 cm over the ramp, the new rails bumped a rider who did not pop to a stop, 2026-11-16)
+      const x = S.x + dx, rampH = o.rampH ?? 0.95, h0 = rampH - 0.03;
       let spec;
       // (a down rail bends over the knuckle's end, then runs parallel to the landing: straight from the deck to its end it
       // stood 1.2 m up at its start once raised clear of the knuckle)
@@ -244,7 +275,7 @@ function buildCourse(land, q) {
       else if (kind === 'box') spec = [[-2.0, h0], [(S.Kend.z - zk) + 0.6, 0.6], [o.len ?? 9, 0.55]];
       // the ramp up to its start, ending where the rail begins (a mesh of its own: RailRamp)
       const z1 = zk + spec[0][0];
-      meshed.push(new RailRamp({ x, z: z1 - 3.0, deck: S, H: rampH, hw: o.rampW ?? (kind === 'box' ? 1.5 : 1.25), name: name + ' ramp' }));
+      meshed.push(new RailRamp({ x, z: z1 - 2.25, deck: S, H: rampH, hw: o.rampW ?? (kind === 'box' ? 1.2 : 1.0), name: name + ' ramp' }));
       // its points on the snow (the ramp's top under the first)
       let pts = spec.map(([dz, h, ddx = 0]) => [x + ddx, zk + dz, S.snowY(x + ddx, zk + dz) + h]);
       // clearance: between points, never closer than 0.25 m to the snow
@@ -278,7 +309,7 @@ function buildCourse(land, q) {
   ]);
   lanes(S3, [
     [-8, 'angled', 'Angled down rail', { len: 11, turn: 9 }],
-    [-2.7, 'rainbow', 'Rainbow box', { len: 10, rise: 0.6, top: 'flat', look: 'box', w: 0.7 }],
+    [-2.7, 'rainbow', 'Rainbow box', { len: 8.5, rise: 0.6, top: 'flat', look: 'box', w: 0.7 }],
     [2.7, 'down', 'Down rail', { len: 10 }],
     [8, 'aframe', 'Up-down rail', { len: 8, rise: 0.8 }],
   ]);
@@ -286,10 +317,10 @@ function buildCourse(land, q) {
 
   // ---- the jumps ("the remaining three booters": a 50 ft and a 60 ft higher up, the big air's "70' gap" last). Tables
   // as stated (15.2, 18.3 and 21.3 m from lip to knuckle); lips, radii and landings estimated from the photos.
-  const J1 = K({ name: 'Jump 1', x: courseX(S3.zMeet + 30), z0: S3.zMeet + 24, lip: 29, R: 13, drop: 0.8, table: 15.2, Rk: 6, land: 33, wT: 4.2, wD: 6.5, wL: 10 });
+  const J1 = K({ name: 'Jump 1', x: courseX(S3.zMeet + 36), z0: S3.zMeet + 30, lip: 29, R: 13, drop: 0.8, table: 15.2, Rk: 6, land: 33, wT: 4.2, wD: 6.5, wL: 10 });
   const z2 = J1.zMeet + 26, J2a = K({ name: 'Jump 2 (left)', x: courseX(z2) + 7.5, z0: z2, lip: 30, R: 15, drop: 0.9, table: 18.3, Rk: 6, land: 33, wT: 3.4, wD: 5.6, wL: 10 });
   const J2b = K({ name: 'Jump 2 (right)', x: courseX(z2) - 7.5, z0: z2, lip: 30, R: 15, drop: 0.9, table: 18.3, Rk: 6, land: 33, wT: 3.4, wD: 5.6, wL: 10 });
-  const z3 = J2a.zMeet + 46, J3 = K({ name: 'Jump 3: the big air', x: courseX(z3), z0: z3, lip: 31, R: 18, drop: 1.1, table: 21.3, Rk: 7, land: 34, wT: 4.8, wD: 7.2, wL: 11 });
+  const z3 = J2a.zMeet + 56, J3 = K({ name: 'Jump 3: the big air', x: courseX(z3), z0: z3, lip: 31, R: 18, drop: 1.1, table: 21.3, Rk: 7, land: 34, wT: 4.8, wD: 7.2, wL: 15, landS: 1.0 });
   starts.push({ name: 'Jump 1', x: J1.x, z: J1.z0 - 22, v: 10 }, { name: 'Jump 2', x: courseX(z2 - 22), z: z2 - 22, v: 10 }, { name: 'The big air', x: J3.x, z: J3.z0 - 26, v: 11 });
 
   // ---- the superpipe: two quarterpipe walls (park.js Quarter) facing each other across its line, on its floor (the

@@ -7,14 +7,14 @@
      { mtn, park, land, makeLift(scene, q), dress(scene, mats, q, forest), runOverAt(p) }
    The map's name on screen is the place and the year only. */
 import * as THREE from 'three';
-import { setMountain } from './terrain.js?v=28';
-import { LOOK, snowUniforms } from './materials.js?v=28';
-import { setSunPath } from './env.js?v=28';
-import { liftLines, planWorldLifts, WorldLifts } from './wlift.js?v=28';
-import { loadLand, makeFarHills, plantTrees, makeTrees, CORRIDOR } from './m_olyland.js?v=28';
-import { setProfile, makeCourse } from './m_olycourse.js?v=28';
-import { buildVenue } from './m_olybuild.js?v=28';
-import { smoothstep } from './noise.js?v=28';
+import { setMountain } from './terrain.js?v=29';
+import { LOOK, snowUniforms } from './materials.js?v=29';
+import { setSunPath } from './env.js?v=29';
+import { liftLines, planWorldLifts, WorldLifts } from './wlift.js?v=29';
+import { loadLand, makeFarHills, plantTrees, makeTrees, CORRIDOR } from './m_olyland.js?v=29';
+import { setProfile, makeCourse } from './m_olycourse.js?v=29';
+import { buildVenue } from './m_olybuild.js?v=29';
+import { smoothstep } from './noise.js?v=29';
 
 export const MAP_ID = 'genting2022';
 export const MAP_NAME = 'Genting 2022';
@@ -36,10 +36,10 @@ function bareHook(tex, win) {
   vec4 bm = inW ? texture2D(uBare, bu) : vec4(0.3, 0.5, 0.5, 0.0);
   // (the edge of the snow broken up, crisp near by)
   float nz = texture2D(uNoise, vWPos.xz * 0.045).b + texture2D(uNoise, vWPos.xz * 0.23).b * 0.45 - 0.72;
-  float bare = (1.0 - smoothstep(0.44, 0.56, bm.r + nz * 0.32)) * (1.0 - vGroom);
+  float bare = (1.0 - smoothstep(0.36, 0.64, bm.r + nz * 0.32)) * (1.0 - vGroom);
   float camG = length(vWPos - cameraPosition);
   if (bare > 0.002) {
-    vec3 grass = mix(vec3(0.11, 0.075, 0.042), vec3(0.24, 0.18, 0.1), bm.g);
+    vec3 grass = mix(vec3(0.075, 0.06, 0.045), vec3(0.17, 0.135, 0.095), bm.g);
     grass = mix(grass, vec3(0.07, 0.048, 0.03), smoothstep(0.55, 0.9, bm.b) * 0.65);
     grass *= 0.8 + 0.4 * texture2D(uNoise, vWPos.xz * 0.7 + 0.3).b;
     diffuseColor.rgb = mix(diffuseColor.rgb, grass, bare);
@@ -51,7 +51,7 @@ function bareHook(tex, win) {
   if (veg > 0.01 && bm.a > 0.2) {
     if (bm.a < 0.75) {
       float w = smoothstep(0.25, 0.4, bm.a) * (0.55 + 0.45 * texture2D(uNoise, vWPos.xz * 0.11 + 0.5).b);
-      vec3 wood = mix(vec3(0.16, 0.075, 0.05), vec3(0.3, 0.15, 0.09), texture2D(uNoise, vWPos.xz * 0.37).b);
+      vec3 wood = mix(vec3(0.1, 0.07, 0.055), vec3(0.2, 0.13, 0.095), texture2D(uNoise, vWPos.xz * 0.37).b);
       diffuseColor.rgb = mix(diffuseColor.rgb, wood, w * veg * 0.85);
     } else {
       // (rows 4 m apart, a dot every 3 m, a little uneven; faded out where they would only shimmer)
@@ -60,7 +60,7 @@ function bareHook(tex, win) {
       float jit = texture2D(uNoise, floor(cell) * 0.031).b;
       float dot_ = 1.0 - smoothstep(0.18, 0.32, length(f * vec2(1.0, 1.3)) + (jit - 0.5) * 0.12);
       float far = smoothstep(350.0, 1500.0, camG);
-      float k = mix(dot_, 0.22, far) * smoothstep(0.75, 0.95, bm.a) * veg;
+      float k = mix(dot_, 0.18, far) * smoothstep(0.75, 0.95, bm.a) * veg * (1.0 - 0.75 * bare) * 0.8;
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.05, 0.035), k * 0.9);
     }
   }
@@ -115,11 +115,7 @@ export async function makeGenting(q, say = () => Promise.resolve()) {
     groom: (x, z) => Math.max(groom(x, z), land.runAt ? land.runAt(x, z) * 0.8 : 0),
     spot: { treeline: 9999 },
     // (a row of dark conifers stands just outside the Great Wall, on the rider's left, in the drone footage)
-    trees: (max, r) => {
-      const out = [];
-      for (let z = -24; z < 250 && out.length < max; z += 3.2 + r() * 1.4) for (const x of [35 + r() * 2, 40 + r() * 3]) out.push({ x, y: land.at(x, z) - 0.3, z, s: 4.5 + r() * 3, rot: r() * 6.28 });
-      return out;
-    },
+    trees: () => [],
   };
   if (q && q.tier === 'low') mtn.lodK = 0.85;
   setMountain(mtn);
@@ -168,6 +164,9 @@ export async function makeGenting(q, say = () => Promise.resolve()) {
     dress(scene, mats, q2, forest) {
       makeFarHills(scene, q2, land);
       const list = plantTrees(land, q2, park.course);
+      // (a row of dark young pines just outside the Great Wall, on the rider's left, in the drone footage)
+      { let s = 7; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+        for (let z = -24; z < 250; z += 3.4 + r() * 1.6) { const x = 37 + r() * 2; list.push({ x, y: land.at(x, z) - 0.2, z, s: 3.6 + r() * 2.2, k: 2, rot: r() * 6.28 }); } }
       makeTrees(scene, q2, list);
       // (the trees near the course are ridden into, as the Forest's are)
       if (forest && forest.grid) for (const t of list) { if (Math.abs(t.x) > 160 || t.z < -200 || t.z > 900) continue; const k = Math.floor(t.x / 8) + ',' + Math.floor(t.z / 8); if (!forest.grid.has(k)) forest.grid.set(k, []); forest.grid.get(k).push({ x: t.x, y: t.y, z: t.z, s: t.s * 0.8 }); }

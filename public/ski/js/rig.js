@@ -10,10 +10,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { clamp, smoothstep } from './noise.js?v=28';
-import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=28';
-import { height, normal } from './terrain.js?v=28';
-import { gltfLoader, gearParts, gearModel, loadGLB, fetchOnce, LOOK, FIT, TOPS, LOW } from './gear.js?v=28';
+import { clamp, smoothstep } from './noise.js?v=29';
+import { Spring, springBank, smooth01, wrapPi } from './motion.js?v=29';
+import { height, normal } from './terrain.js?v=29';
+import { gltfLoader, gearParts, gearModel, loadGLB, fetchOnce, LOOK, FIT, TOPS, LOW } from './gear.js?v=29';
 
 const V = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
 const _p = V(), _s = V(), _q = Q();
@@ -24,6 +24,11 @@ const _aa = V(), _ab = V(), _aq = Q(), _aq2 = Q(), _tH = V(), _tD = V(), _tP = V
 const _qi = Q(), _q1 = Q(), _q2 = Q(), _q3 = Q(), _ub = V(), _acc = V(), _vb = V(), _v2 = V(), _v3 = V(), _v4 = V(), _v5 = V(), _v6 = V();
 const _cFl = V(), _sh = V(), _pelQ = Q(), _chQ = Q(), _hdQ = Q(), _eu = new THREE.Euler(), _kd = V(), _cF = V(), _cL = V(), _wr = V(), _fd = V(), _pa = V(), _el = V(), _tip = V();
 const _kq = Q(), _kv = V(), _kx = V(), _ky = V();
+const SEPL = ['cLx', 'cLy', 'cLz'], SEPR = ['cRx', 'cRy', 'cRz'];   // (G: the skis' eased clearances)
+const _po = [V(), V(), V(), V(), V(), V(), V(), V(), V()], _pp = V(), _pq = V(), _pa2 = V(), _pb2 = V();   // (G: poleOffBody)
+// (pelvis 0, neck 1, head 2, left thigh, knee, ankle 3 4 5, right 6 7 8: the torso, the head, the thighs and shins, radii)
+const POLE_CAPS = [[0, 1, 0.17], [1, 2, 0.15], [3, 4, 0.1], [4, 5, 0.085], [6, 7, 0.1], [7, 8, 0.085]];
+const _kH = V(), _kD = V(), _kK = V(), _kP = V(), _kM = V(), _kc1 = V(), _kc2 = V(), _kN = V(), _kU = V(), _kS0 = V(), _kS1 = V(), _kO = V();   // (G: clearKnee)
 const _qi2 = Q(), _ca = V(), _cb = V(), _cc = V(), _cd = V(), _ce = V(), _cf = V(), _cg = V();
 const TG = new Float64Array(6);
 const SKN = [['sL0', 'sL1', 'sL2', 'sL3', 'sL4', 'sL5'], ['sR0', 'sR1', 'sR2', 'sR3', 'sR4', 'sR5']], HWN = ['hwL', 'hwR'], PULLN = [['pLx', 'pLy', 'pLz'], ['pRx', 'pRy', 'pRz']], ARMN = [['aLx', 'aLy', 'aLz'], ['aRx', 'aRy', 'aRz']];
@@ -51,9 +56,11 @@ function segSeg(p1, q1, p2, q2, c1, c2) {
   c1.copy(p1).addScaledVector(d1, s); c2.copy(p2).addScaledVector(d2, t);
   return c1.distanceTo(c2);
 }
-const ARM_MODE = { out: [0.22, -0.22, 0.2], up: [0.19, 0.25, -0.08], wide: [0.3, -0.2, 0.1], high: [0.24, 0.4, -0.12],
-  side: [0.46, 0.03, 0.06],   // (side: straight out at the shoulder, as the free arm in photos of mutes and blunts)
-  between: [-0.13, -0.5, 0.26], scream: [0.42, 0.22, 0.05], back: [0.24, -0.14, -0.24], fwd: [0.17, 0.04, 0.34] };   // (back: behind for balance, as in nose grab photos; fwd: out in front, as in tail grab photos)   // (between: both hands together low in front, the poles down between the legs; scream: thrown out wide and up)   // (high: thrown up over the head with the pole, as in photos of mutes and japans)
+// (G, round 12, against photos and a review: "up" and "high" put the hand beside the helmet with the elbow bent sharp,
+// "side" locked the elbow straight out at the shoulder like a signpost: now out further and higher, the elbow soft)
+const ARM_MODE = { out: [0.22, -0.22, 0.2], up: [0.5, 0.26, -0.05], wide: [0.4, -0.08, 0.02], high: [0.42, 0.34, -0.12],
+  side: [0.42, 0.12, -0.04],   // (side: out at the shoulder, a little up, as the free arm in photos of mutes and blunts)
+  between: [-0.13, -0.5, 0.26], scream: [0.48, 0.3, 0.02], back: [0.24, -0.14, -0.24], fwd: [0.17, 0.04, 0.34] };   // (back: behind for balance, as in nose grab photos; fwd: out in front, as in tail grab photos)   // (between: both hands together low in front, the poles down between the legs; scream: thrown out wide and up)   // (high: thrown up over the head with the pole, as in photos of mutes and japans)
 // small continuous motion: a sum of three sines, about -1..1, never repeating soon (a is a phase per channel)
 // a reach that is kept short of a limb's full length: as it is up to a share a of the length, then easing towards b
 // (a hard stop near full reach makes the joint flick, since the angle changes fastest there)
@@ -166,8 +173,8 @@ const GEAR_K = 3;                    // the lowest few of each piece of gear's o
 const _cx = V(), _cu = V(), _cn = V(), _cn2 = V(), _cb2 = V(), _cs = V(), _pb = V(), _pd = V(), _pn = V(), _cdn = V(), _cbest = new Float64Array(8), _cbi = new Int32Array(8), _ck = new Float64Array(10), _cki = new Int32Array(10);
 
 // grabs and positions are data in grabs.js (with their mirror images and variations)
-export { GRABS } from './grabs.js?v=28';
-import { grabDef } from './grabs.js?v=28';
+export { GRABS } from './grabs.js?v=29';
+import { grabDef } from './grabs.js?v=29';
 
 // ---- gear -------------------------------------------------------------------------------------------------------------
 function skiGeometry() {
@@ -437,7 +444,7 @@ function maskImage(url) {
 }
 /* (C) the rider's model: the Low tier's own copy (lo: pictures 512 px, WebP; the same meshes and skeleton), else the
    full one; fetched once (fetchOnce), each rider parsed from it. A Low copy that will not come falls back to the full. */
-const riderUrl = (id, lo) => './models/' + id + (lo ? '_lo' : '') + '.glb?v=28';
+const riderUrl = (id, lo) => './models/' + id + (lo ? '_lo' : '') + '.glb?v=29';
 // (a rider parsed ahead by prefetchRider, while the world is built: the first load of that model takes it)
 const _pre = new Map();
 async function riderGltf(id, lo) {
@@ -467,7 +474,7 @@ export function prefetchRider(id, look = {}, kind = 'ski', lo = false) {
   gltfLoader();                                       // (the model decoder's files come down now)
   // (the model is parsed as soon as it is in: its pictures decoded and its meshes unpacked off the main thread)
   const u = riderUrl(id, lo), pre = loadGLB(u); _pre.set(u, pre); swallow(pre);
-  swallow(maskImage('./models/' + id + '_m.png?v=28'));
+  swallow(maskImage('./models/' + id + '_m.png?v=29'));
   swallow(gearModel('goggles')); if (look.head !== 'painted') swallow(gearModel(look.head === 'beanie' ? 'beanie' : 'helmet_c'));
   if (kind === 'ski') { swallow(gearModel('pole')); swallow(gearModel('binding')); if (look.ski && look.ski !== 'park') swallow(gearModel(look.ski === 'pow' ? 'ski_b' : 'ski_a')); }
 }
@@ -628,7 +635,7 @@ export class Rig {
   }
   async dress(mat, id) {
     const map = mat.map; if (!map) return;
-    const maskUrl = './models/' + id + '_m.png?v=28';
+    const maskUrl = './models/' + id + '_m.png?v=29';
     const means = await regionMeans(map, maskUrl).catch(() => [0.2, 0.2, 0.2]);
     const mask = new THREE.Texture(await maskImage(maskUrl)); mask.needsUpdate = true;   // (C: the one picture regionMeans used)
     mask.flipY = map.flipY; mask.colorSpace = THREE.NoColorSpace;
@@ -1056,6 +1063,7 @@ if (uFpNear > 0.0) {
     const gid = air ? (S.grab || S.pose || null) : null;
     const gd = gid ? grabDef(gid, S.tweak || '') : null;
     if (gd) this.lastG = gd;
+    this._hadG = air && (this._hadG || !!gd);   // (G: a grab held in this air)
     this.grabHeld = gid && gid === this.gid ? (this.grabHeld || 0) + dt : 0; this.gid = gid;
     const gW = sp('gw', gd ? 1 : 0, gd ? 13 : 9);
     /* flips (2026-11-05, for "a laid out backflip when you press the backwards arrow in the air and ... a tuck frontflip
@@ -1125,7 +1133,7 @@ if (uFpNear > 0.0) {
       // the skis trail the rotation: a flip or spin thrown leaves them behind, and they swing past when it stops (the
       // second ski a little later than the first); held in a grab, half as much
       if (air) { const lag = (gd ? 0.5 : 1) * (1 + 0.35 * k); TG[4] += clamp(-Ax * 0.04 * lag, -0.45, 0.45); TG[3] += clamp(-Ay * 0.018 * lag, -0.3, 0.3); TG[2] += clamp(-Ax * 0.012 * lag, -0.12, 0.12); }
-      for (let i = 0; i < 6; i++) A[i] = sp(N[i], TG[i], gd ? 14 + 2 * k : 11 - 1.5 * k, air ? (gd ? 0.74 : 0.72) : 1);
+      for (let i = 0; i < 6; i++) A[i] = sp(N[i], TG[i], gd ? 14 + 2 * k : (this._hadG ? 9.5 : 11) - 1.5 * k, air ? (gd ? 0.74 : 0.72) : 1);   // (G: let go in the air, the skis come back over about 0.3 s: they swung 40 to 60 degrees in 0.1 s)
     }
     const kneeUp = sp('kneeUp', (gd ? 0.12 + 0.5 * gd.tuck : air ? Math.max(0, (0.13 + 0.28 * crouch + clamp(Math.abs(Wx) * 0.02, 0, 0.1) + clamp(Math.abs(Wy) * 0.008, 0, 0.05)) * (1 - 0.9 * lay - 0.7 * hk) + 0.05 * hk - 0.16 * opening + 0.08 * flow * wob(tt * 1.15, 17.3) + 0.1 * (TO && toE ? clamp(TO.crouch || 0, 0, 1) : 0) * toE) : 0) * (1 - popK), gd ? 15 : 12, air ? 0.8 : 1);
     // ---- skis, in the body's frame
@@ -1294,10 +1302,55 @@ if (uFpNear > 0.0) {
     // the spine shares the turn from the pelvis to the chest
     this.blendBone(b.pelvis, 'pelvis', pelQ, chQ, 0);
     this.blendBone(b.spine, 'spine', pelQ, chQ, 0.35); this.blendBone(b.spine1, 'spine1', pelQ, chQ, 0.7); this.blendBone(b.chest, 'chest', pelQ, chQ, 1);
+    /* (G, round 12, for "make all grabs more realistic ... not scuffed") a grab is reached as riders reach it, as the
+       board's is since round 10: the upper body bends and turns about the hips towards the point each hand holds until
+       its shoulder is within the arm's reach (two passes, at most 0.85 rad more than the grab's own lean, half of any turn
+       about the chest's own up left out), and only what is still out of reach brings the ski up to the hand (below, at
+       most 0.45 m). The grabs' own leans are smaller now: the chest was folded 57 to 80 degrees down onto the knees with
+       the head down, where photos show it at 30 to 50 degrees with the head up. The bend is eased in the body's frame,
+       so a spin or flip carries it round; the head keeps most of it off (below). */
+    const GB = this._gb || (this._gb = { bend: V(), bn: V(), ax: V(), up: V(), a: V(), c: V(), piv: V(), q0: Q(), bq: Q(), gp: gpOut(), loc: V(), sh: [V(), V()], wr: [V(), V()], on: [0, 0] });
+    GB.bend.set(0, 0, 0); GB.on[0] = GB.on[1] = 0;
+    if (air && gd && gd.hands.length && ext > 0.02) {
+      GB.q0.copy(chQ);
+      const reach = (this.len.ua + this.len.fa) * 0.93 + 0.04;
+      for (let it = 0; it < 2; it++) {
+        this.blendBone(b.clL, 'clL', chQ, chQ, 0); this.blendBone(b.clR, 'clR', chQ, chQ, 0);
+        GB.bn.set(0, 0, 0); let nh = 0;
+        for (const h of gd.hands) {
+          const k = h[0] === 'L' ? 0 : 1, w = ext > 0.55 ? gW : 0; if (w < 0.02) continue;
+          const ua = k ? b.uaR : b.uaL; ua.updateWorldMatrix(false, false);
+          GB.piv.setFromMatrixPosition(b.pelvis.matrixWorld);
+          const a = GB.a.setFromMatrixPosition(ua.matrixWorld).sub(GB.piv);
+          const g = this.skiPoint(this.sk[h[1] === 'L' ? 0 : 1], h[1], h[2], h[3], GB.gp);
+          const c = GB.c.copy(g.pt).addScaledVector(g.fingers, -0.07).addScaledVector(g.palm, -0.03).sub(GB.piv);
+          const la = a.length(), lc = c.length(); if (la < 1e-4 || lc < 1e-4) continue;
+          const cw = (la * la + lc * lc - reach * reach) / (2 * la * lc), th = a.angleTo(c), th2 = cw >= 1 ? 0 : cw <= -1 ? Math.PI : Math.acos(cw);
+          if (th > th2) {
+            GB.ax.crossVectors(a, c); GB.up.set(0, 1, 0).applyQuaternion(chQ); GB.ax.addScaledVector(GB.up, -0.5 * GB.ax.dot(GB.up));
+            if (GB.ax.lengthSq() > 1e-12) { GB.bn.addScaledVector(GB.ax.normalize(), (th - th2) * 1.25 * w); nh++; }
+          }
+        }
+        if (!nh) break;
+        if (nh > 1) GB.bn.multiplyScalar(1 / nh);
+        const add = GB.bn.length(), room = 0.85 - GB.bend.length();
+        if (room <= 0.001) break;
+        if (add > room) GB.bn.multiplyScalar(room / add);
+        GB.bend.add(GB.bn);
+        if (GB.bn.lengthSq() > 1e-10) { chQ.premultiply(GB.bq.setFromAxisAngle(GB.ax.copy(GB.bn).normalize(), GB.bn.length())); this.blendBone(b.spine, 'spine', pelQ, chQ, 0.35); this.blendBone(b.spine1, 'spine1', pelQ, chQ, 0.7); this.blendBone(b.chest, 'chest', pelQ, chQ, 1); }
+      }
+      chQ.copy(GB.q0);
+    }
+    // (eased in the body's frame, then laid on the chest)
+    GB.loc.copy(GB.bend).applyQuaternion(qi);
+    GB.loc.set(sp('gbx', GB.loc.x, 11), sp('gby', GB.loc.y, 11), sp('gbz', GB.loc.z, 11));
+    const bendA = GB.loc.length();
+    if (bendA > 1e-5) { GB.ax.copy(GB.loc).applyQuaternion(R).divideScalar(bendA); chQ.premultiply(GB.bq.setFromAxisAngle(GB.ax, bendA)); this.blendBone(b.spine, 'spine', pelQ, chQ, 0.35); this.blendBone(b.spine1, 'spine1', pelQ, chQ, 0.7); this.blendBone(b.chest, 'chest', pelQ, chQ, 1); }
     // the head: steady, eyes kept level, looking where it goes (into the turn, round a spin, down the rail, back riding switch)
     // on the snow and rails the head's aim is against the skis (so the chest's turn is taken off it); in the air it mostly keeps with the body
     const hdYaw = clamp(sp('hdYawF', hy - tw * (1 - 0.4 * airW) + lowYaw * 0.32, 11, 0.7) + 0.06 * wob(tt * 0.7, 2.9) * onSnow, -1.45, 1.45);
     const hdQ = _hdQ.copy(chQ).multiply(_q1.setFromAxisAngle(Y, hdYaw)).multiply(_q1.setFromAxisAngle(Z, -chRoll * 0.5)).multiply(_q1.setFromAxisAngle(X, hp - lean * 0.62));
+    if (bendA > 1e-5) hdQ.premultiply(_q1.setFromAxisAngle(GB.ax, -0.75 * bendA));   // (G: the head keeps most of a grab's bend off, looking out)
     this.blendBone(b.neck, 'neck', chQ, hdQ, 0.5); this.blendBone(b.head, 'head', hdQ, hdQ, 0);
     this.blendBone(b.clL, 'clL', chQ, chQ, 0); this.blendBone(b.clR, 'clR', chQ, chQ, 0);
     // ---- grabs: which point each hand holds, cross-fading from the one it held before; let go as the landing comes
@@ -1326,7 +1379,8 @@ if (uFpNear > 0.0) {
           const kk = spec[1] === 'L' ? 0 : 1, gp = this.skiPoint(this.sk[kk], spec[1], spec[2], spec[3], this.gpB);
           this._hold[kk] = Math.max(this._hold[kk], wj);
           const wp = _v4.copy(gp.pt).addScaledVector(gp.fingers, -0.07).addScaledVector(gp.palm, -0.03), dd = wp.distanceTo(sh);
-          if (dd > reach) this._pt[kk].addScaledVector(_v3.subVectors(sh, wp).normalize().applyQuaternion(qi), Math.min(0.6, dd - reach) * wj);
+          if (dd > reach) this._pt[kk].addScaledVector(_v3.subVectors(sh, wp).normalize().applyQuaternion(qi), Math.min(0.45, dd - reach) * wj);   // (G: at most 0.45 m, the bend above takes the rest; 0.6)
+          if (j === 0) { GB.sh[k].copy(sh); GB.wr[k].copy(wp); GB.on[k] = wj; }   // (G: the arm's line, for the knees to keep clear of)
         }
       }
     }
@@ -1335,7 +1389,7 @@ if (uFpNear > 0.0) {
       pl.set(sp(N3[0], this._pt[k].x, 20), sp(N3[1], this._pt[k].y, 20), sp(N3[2], this._pt[k].z, 20));
       this.sk[k].pos.add(pl);
       // a held ski is kept out of the torso (a straight pull to the shoulder can go through it), as firmly as it is held
-      if (this._hold[k] > 0.01) this.clearTorso(this.sk[k], this._hold[k]);
+      // (G: the held ski kept out of the torso below, with the skis' other clearances, all eased)
     }
     // keep each ski within its leg's reach, short of full lock (a locked knee snaps when its target moves)
     for (let k = 0; k < 2; k++) {
@@ -1344,8 +1398,22 @@ if (uFpNear > 0.0) {
       const dd = ank.distanceTo(hip), L = this.legLen;
       const lim = Math.min(dd, 0.975 * L) + (softReach(dd, L, 0.86, 0.975) - Math.min(dd, 0.975 * L)) * airW;
       if (dd > lim) this.sk[k].pos.addScaledVector(_v4.subVectors(hip, ank).normalize().applyQuaternion(qi), dd - lim);
+      /* (G, round 12) and in the air never folded tighter than a leg folds in photos of grabs (the ankle at least 0.42 of
+         the leg's length from its hip, the knee bent to about 50 degrees): the boots came up to the seat, the knees
+         past the chin, and the knees went into the chest and the thighs into the arms (G's clear.cjs) */
+      const fold = 0.42 * L;
+      if (airW > 0.01 && dd < fold) this.sk[k].pos.addScaledVector(_v4.subVectors(ank, hip).normalize().applyQuaternion(qi), (fold - dd) * airW);
     }
     // (a few rounds: pushing one ski off the body can bring it to the other)
+    /* (G, round 12, for grabs that "pop" in and out) the clearances (a held ski out of the torso, the skis out of each
+       other, the other leg and the head) are worked out from where the shape and the hand put the skis, as before, but
+       what they move the skis by is eased (about 0.1 s), and a ski pair that has crossed through each other is pushed
+       back to the side it came from (separateSkis): a ski passing the torso's or the other ski's middle flipped the push
+       from one side to the other, and the foot jumped up to 0.75 m in one frame (G's clear.cjs: 2000 to 3000 m/s2 at
+       the feet as grabs came and went) */
+    const rawL = GB.rawL || (GB.rawL = [V(), V()]);
+    rawL[0].copy(this.sk[0].pos); rawL[1].copy(this.sk[1].pos);
+    for (let k = 0; k < 2; k++) if (this._hold[k] > 0.01) this.clearTorso(this.sk[k], this._hold[k]);
     if (!ground) for (let it = 0; it < 4; it++) this.separateSkis(Math.max(airW, railW));
     this.placeSki(this.skiL, this.sk[0]); this.placeSki(this.skiR, this.sk[1]);
     // (and a landing bends them a moment, and a hard carve at speed a little, the skis flexing under the weight, 2026-11-05)
@@ -1358,8 +1426,19 @@ if (uFpNear > 0.0) {
     // ---- legs: to the boots, knees along the skis and pushed into the turn by as much as the edge is past the lean
     // (2026-11-10: in the air, if a ski still went into the other leg as the legs came out, the skis are kept off the
     // legs as now posed and the legs posed again: a second pass, only then)
-    for (let pass = 0; pass < 2; pass++) {
-    if (pass) { this._legF = -9; for (let it = 0; it < 3; it++) this.separateSkis(Math.max(airW, railW)); this.placeSki(this.skiL, this.sk[0]); this.placeSki(this.skiR, this.sk[1]); }
+    // (G: now the first pass is posed in the air and on rails only, to find what the legs as posed still need; the skis'
+    // clearances are then eased (above) and the legs posed again, every frame there)
+    const pre = !ground && Math.max(airW, railW) >= 0.3;
+    // (G: how far the knees open out in the air: a grab's own (0 together over the skis, 1 as riding), eased)
+    const kOut = sp('kOut', gd && gd.knees !== undefined ? gd.knees : 1, 10);
+    for (let pass = pre ? 0 : 1; pass < 2; pass++) {
+    if (pass) {
+      for (let k = 0; k < 2; k++) {
+        const o = _v4.subVectors(this.sk[k].pos, rawL[k]), N3 = k ? SEPR : SEPL, ease = air ? 30 : 60;
+        this.sk[k].pos.copy(rawL[k]).add(o.set(sp(N3[0], o.x, ease), sp(N3[1], o.y, ease), sp(N3[2], o.z, ease)));
+      }
+      this.placeSki(this.skiL, this.sk[0]); this.placeSki(this.skiR, this.sk[1]);
+    }
     for (let k = 0; k < 2; k++) {
       const s = k ? -1 : 1, spk = this.sk[k];
       const ank = this.ankleOf(spk, _v5), skiQ = _q2.copy(R).multiply(spk.q);
@@ -1367,8 +1446,9 @@ if (uFpNear > 0.0) {
       if (kf.lengthSq() < 0.01) kf.set(0, 0, 1);
       kf.normalize();
       const kneeIn = ground ? clamp(this._roll[k] - phi, -0.9, 0.9) * 0.8 : 0;
-      kf.x += s * 0.12 * (1 - 0.75 * tog) - kneeIn; kf.y += 0.25; kf.applyQuaternion(R);
+      kf.x += s * 0.12 * (1 - 0.75 * tog) * kOut - kneeIn; kf.y += 0.25; kf.applyQuaternion(R);   // (G: kOut, a grab's own knees)
       const th = k ? b.thR : b.thL, ca = k ? b.caR : b.caL, ft = k ? b.ftR : b.ftL;
+      if (airW > 0.3 && !crash) this.clearKnee(th, ank, kf, airW, GB, (k ? b.caL : b.caR));   // (G: the knee round its circle, clear of a grabbing arm, the chest and the other knee)
       this.twoBone(th, ca, k ? 'thR' : 'thL', k ? 'caR' : 'caL', ank, kf, Z);
       this.setWorldQ(ft, _q3.copy(skiQ).multiply(this.rest[k ? 'ftR' : 'ftL'].q));
       const cuff = k ? this.bootR.cuff : this.bootL.cuff;
@@ -1377,7 +1457,7 @@ if (uFpNear > 0.0) {
       cuff.position.copy(ap).addScaledVector(shin, -0.1).addScaledVector(_v6.set(0, 0, 1).applyQuaternion(skiQ), 0.012);
       cuff.quaternion.setFromUnitVectors(Y, shin.negate());
     }
-    if (pass || ground || Math.max(airW, railW) < 0.3 || this.legPen() < 0.01) break;
+    if (!pass && this.legPen() >= 0.01) { this._legF = -9; for (let it = 0; it < 3; it++) this.separateSkis(Math.max(airW, railW)); }
     }
     // (the legs' joints as just posed, in the body's own frame: next frame's ski check takes them through the body's new
     // place and turn, so in a flip or spin they are where the legs are now, not 7 cm behind, 2026-11-10)
@@ -1439,6 +1519,7 @@ if (uFpNear > 0.0) {
         // a spin past a 180: the arms hugged in, hands together in front of the chest, elbows to the ribs
         lat += (-0.075 - lat) * armsIn; up += (-0.2 - up) * armsIn; fwd += (0.1 - fwd) * armsIn;
         if (gd && gd.arms) { const m = ARM_MODE[gd.arms]; if (m) { lat = m[0]; up = m[1]; fwd = m[2]; } }
+        if (gd && gd.arms && !gd.hands.length && k === 1 && gd.arms !== 'between') { up -= 0.15; fwd += 0.12; lat -= 0.05; }   // (G: both arms free, not a mirror pair)
         // (a butter landing coming: the arms set as they ride it, out and forward over a nose butter, forward for a tail
         // press, the free arm out in front and the dragging hand back down towards the snow for a lazy boy)
         if (lzIn > 0.01) {
@@ -1448,6 +1529,9 @@ if (uFpNear > 0.0) {
         }
         // (the free arm of a grab floats, not held up stiff)
         if (gd && gd.arms) { lat += 0.05 * wob(tt * 1.3, 31 + k * 4); up += 0.07 * wob(tt * 1.6, 33 + k * 3); fwd += 0.06 * wob(tt * 1.1, 37 + k * 5); }
+        // (G, round 12: as the landing comes a grab's free arm comes down, forward and out for balance; it stayed up in the
+        // air into the landing)
+        if (gd && gd.arms && prep > 0.01) { lat += (0.24 - lat) * prep; up += (-0.22 - up) * prep; fwd += (0.28 - fwd) * prep; }
       } else if (rail) {
         const bal = S.balance || 0;
         // (out wide to the sides on a rail, as in photos of rail riders: 0.21 before) (R, round 12: up and fwd had ended up
@@ -1477,7 +1561,8 @@ if (uFpNear > 0.0) {
       if (crashW > 0.5) { lat = 0.36 - 0.1 * brc + (0.3 - 0.26) * limp; up = 0.2 - 0.6 * brc - 0.5 * limp; fwd = 0.38 * brc + 0.05 * limp; }
       const AN = ARMN[k];
       const zArm = air ? 0.6 : 0.72;
-      lat = sp(AN[0], lat, 10, zArm); up = sp(AN[1], up, 10, zArm); fwd = sp(AN[2], fwd, 10, zArm);
+      const ar = !gd && this._hadG ? 7 : 10;   // (G: a free arm let go in the air comes down over about 0.4 s)
+      lat = sp(AN[0], lat, ar, zArm); up = sp(AN[1], up, ar, zArm); fwd = sp(AN[2], fwd, ar, zArm);
       // what moves faster than a spring follows goes on top: strides, pole pushes, plants, the hands' own small moves
       const pk = onSnow > 0.5 && this.plantK === k && this.plantT < 0.35 ? Math.sin(Math.PI * this.plantT / 0.35) : 0;
       if (onSnow > 0.01) {
@@ -1548,22 +1633,27 @@ if (uFpNear > 0.0) {
       // the pole: from the grip down and back; forward into a plant; hanging from the strap while grabbing
       if (this.poles) {
         const pole = k ? this.poleR : this.poleL, aw = Math.max(airW, railW);
-        let tx = s * 0.08 + s * 0.02 * aw, ty = -1 + 0.25 * aw, tz = -0.55 - 0.35 * aw;
+        // (G, round 12: in the air down and back at about 50 degrees under level, as in photos of airs; they trailed
+        // nearly level behind, "poles trailing horizontally backwards")
+        let tx = s * 0.08 + s * 0.04 * aw, ty = -1 + 0.1 * aw, tz = -0.55 - 0.2 * aw;
         // (seen in first person on the snow the poles hang more forward and out, so their shafts go down past the skis in
         // view under the grips instead of straight back behind the hands, as on a helmet camera)
         if (fpW > 0.01) { const w = fpW * (1 - aw); tx += (s * 0.2 - tx) * w; tz += (-0.22 - tz) * w; }
         if (pk > 0) { const w = 0.85 * pk; tx += (s * 0.12 - tx) * w; ty += (-1 - ty) * w; tz += (0.3 - tz) * w; }
         if (dpW > 0.01) { const fx = s * 0.12, fy = -1 + 0.4 * dpK, fz = 0.1 - 1.1 * dpK; tx += (fx - tx) * dpW; ty += (fy - ty) * dpW; tz += (fz - tz) * dpW; }
-        if (Hs.w > 0.02) { const w = Math.min(1, Hs.w * 1.4); tx += (s * 0.35 - tx) * w; ty += (0.15 - ty) * w; tz += (-1 - tz) * w; }
+        // (a grabbing hand keeps its pole, trailing back and a little down out of the way: it pointed level behind, and
+        // through the body when the hand was forward, G round 12)
+        if (Hs.w > 0.02) { const w = Math.min(1, Hs.w * 1.4); tx += (s * 0.3 - tx) * w; ty += (-0.45 - ty) * w; tz += (-0.85 - tz) * w; }
         // (a grab's free arm thrown up or out carries its pole up and back like a flag, as in photos of slopestyle runs)
         if (gd && !(Hs.w > 0.5) && (gd.arms === 'high' || gd.arms === 'up' || gd.arms === 'scream' || gd.arms === 'wide' || gd.arms === 'side')) {
           const w = gW * smooth01(ext * 1.5) * (1 - (Hs.w || 0)), wide = gd.arms === 'wide' || gd.arms === 'side';
-          tx += ((wide ? 0.75 : 0.32) * s - tx) * w; ty += ((wide ? 0.05 : 0.6) - ty) * w; tz += ((wide ? -0.65 : -0.75) - tz) * w;
+          tx += ((wide ? 0.5 : 0.3) * s - tx) * w; ty += ((wide ? -0.45 : 0.65) - ty) * w; tz += ((wide ? -0.7 : -0.65) - tz) * w;   // (G: out to the side it hangs down and back, not level like a signpost)
         }
         if (gd && gd.poles === 'between') { const w = gW * smooth01(ext * 1.5); tx += (-s * 0.1 - tx) * w; ty += (-1 - ty) * w; tz += (0.06 - tz) * w; }   // (the spread eagle's poles down between the legs)
         if (dragW > 0.01) { tx += (s * 0.35 - tx) * dragW; ty += (-0.1 - ty) * dragW; tz += (-1 - tz) * dragW; }   // trailing behind the hand drag
         const tip = _tip.set(tx, ty, tz).normalize().applyQuaternion(R);
         pole.position.copy(_v2.setFromMatrixPosition(ha.matrixWorld)).addScaledVector(fd, 0.06).addScaledVector(pa, 0.025);
+        if (aw > 0.01) this.poleOffBody(pole.position, tip);   // (G: and never through the body or the legs)
         this.clearPole(pole.position, tip, R, ground);
         pole.quaternion.setFromUnitVectors(Y, tip.negate());
       }
@@ -1666,6 +1756,28 @@ if (uFpNear > 0.0) {
     let lo = 0, hi = 1;
     for (let i = 0; i < (flat ? 7 : 4); i++) { const mid = (lo + hi) / 2; if (ok(_pd.copy(dir).lerp(back, mid).normalize())) hi = mid; else lo = mid; }
     dir.lerp(back, hi).normalize();
+  }
+  /* (G, round 12) a pole turned out of the body: points along it against the torso, the head and the legs as posed
+     (capsules round the bones), and while one is inside, the pole is turned away about its grip by as much (three
+     rounds). A grabbing hand forward put its pole's shaft through the thighs, the chest or the shoulder. */
+  poleOffBody(grip, dir) {
+    const b = this.b, P = _po;
+    P[0].setFromMatrixPosition(b.pelvis.matrixWorld); P[1].setFromMatrixPosition(b.neck.matrixWorld); P[2].setFromMatrixPosition(b.head.matrixWorld);
+    P[3].setFromMatrixPosition(b.thL.matrixWorld); P[4].setFromMatrixPosition(b.caL.matrixWorld); P[5].setFromMatrixPosition(b.ftL.matrixWorld);
+    P[6].setFromMatrixPosition(b.thR.matrixWorld); P[7].setFromMatrixPosition(b.caR.matrixWorld); P[8].setFromMatrixPosition(b.ftR.matrixWorld);
+    for (let it = 0; it < 3; it++) {
+      _pq.set(0, 0, 0); let any = false;
+      for (let i = 1; i <= 6; i++) {
+        const t = 0.12 + 0.18 * i, p = _pp.copy(grip).addScaledVector(dir, t);
+        for (let c = 0; c < POLE_CAPS.length; c++) {
+          const cap = POLE_CAPS[c], A = P[cap[0]], B = P[cap[1]], r = cap[2], ab = _pa2.subVectors(B, A), L2 = Math.max(1e-6, ab.lengthSq());
+          const u = clamp(_pb2.subVectors(p, A).dot(ab) / L2, 0, 1), q = _pb2.copy(A).addScaledVector(ab, u), d = p.distanceTo(q), pen = r - d;
+          if (pen > 0 && d > 1e-5) { _pq.addScaledVector(_pb2.subVectors(p, q), pen / (d * t)); any = true; }
+        }
+      }
+      if (!any) return;
+      _pq.addScaledVector(dir, -_pq.dot(dir)); dir.addScaledVector(_pq, 1.2).normalize();
+    }
   }
   /* a new trick in the air, after the one before it (2026-11-08, for "the whole body reacts ... to the order of tricks"):
      a kick into the springs it moves through, so the same trick looks different after another: a flip started out of a
@@ -1984,6 +2096,47 @@ if (uFpNear > 0.0) {
     }
     if (wsum > 0 && _cg.lengthSq() > 1e-10) sk.pos.addScaledVector(_cg.normalize().applyQuaternion(qi), worst * w);
   }
+  /* (G, round 12) a knee kept clear of a grabbing arm (its shoulder to where its wrist goes on the ski) and of the chest
+     (spine1 to the neck), as the board's knees are (board.js clearKnee): where two-bone IK will put the knee from the hip,
+     the ankle and the pole is worked out, and while the thigh or the shin is nearer the arm, or the knee nearer the chest,
+     than their thicknesses, the knee is moved round its circle about the hip-ankle line, away, by turning the pole. In the
+     air (w), three rounds at most. */
+  clearKnee(th, ank, pole, w, GB, other) {
+    th.updateWorldMatrix(false, false);
+    const H = _kH.setFromMatrixPosition(th.matrixWorld), l1 = this.len.th, l2 = this.len.ca, b = this.b;
+    const dn = _kD.subVectors(ank, H); let dist = dn.length(); dn.divideScalar(dist || 1);
+    dist = clamp(dist, Math.abs(l1 - l2) + 0.01, (l1 + l2) * 0.999);
+    const a = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+    const mid = _kM.copy(H).addScaledVector(dn, a);
+    _kS0.setFromMatrixPosition(b.spine1.matrixWorld); _kS1.setFromMatrixPosition(b.neck.matrixWorld);
+    // (the other knee where it was last posed: this frame's first pass, or the leg just posed)
+    const OK = _kO.setFromMatrixPosition(other.matrixWorld);
+    for (let it = 0; it < 3; it++) {
+      const p = _kP.copy(pole).addScaledVector(dn, -pole.dot(dn)); if (p.lengthSq() < 1e-8) return; p.normalize();
+      const K = _kK.copy(mid).addScaledVector(p, h);
+      _kN.set(0, 0, 0); let worst = 0;
+      for (let k = 0; k < 2; k++) {
+        if (GB.on[k] < 0.01) continue;
+        for (let s = 0; s < 2; s++) {
+          const r = (s ? 0.075 : 0.085) + 0.055 + 0.02;
+          const d = s ? segSeg(K, ank, GB.sh[k], GB.wr[k], _kc1, _kc2) : segSeg(H, K, GB.sh[k], GB.wr[k], _kc1, _kc2), need = (r - d) * GB.on[k];
+          if (need <= 0) continue;
+          const u = _kU.subVectors(_kc1, _kc2); u.addScaledVector(dn, -u.dot(dn));
+          if (u.lengthSq() < 1e-10) continue;
+          _kN.addScaledVector(u.normalize(), need); if (need > worst) worst = need;
+        }
+      }
+      { const d = K.distanceTo(OK), need = 0.19 - d;
+        if (need > 0 && d > 1e-4) { const u = _kU.subVectors(K, OK); u.addScaledVector(dn, -u.dot(dn)); if (u.lengthSq() > 1e-10) { _kN.addScaledVector(u.normalize(), need); if (need > worst) worst = need; } } }
+      { const d = segSeg(K, K, _kS0, _kS1, _kc1, _kc2), need = 0.235 - d;
+        if (need > 0) { const u = _kU.subVectors(_kc1, _kc2); u.addScaledVector(dn, -u.dot(dn)); if (u.lengthSq() > 1e-10) { _kN.addScaledVector(u.normalize(), need); if (need > worst) worst = need; } } }
+      if (worst <= 0.002) return;
+      _kN.normalize().multiplyScalar(worst * w * 1.2);
+      K.add(_kN).sub(mid); K.addScaledVector(dn, -K.dot(dn));
+      if (K.lengthSq() < 1e-8) return;
+      pole.copy(K);
+    }
+  }
   // how far either ski comes into the other leg as now posed (thigh 0.11 m, shin 0.1 m round) or the torso, for the second pass
   legPen() {
     const R = this.rootQ, base = this.body.position, b = this.b, E = SKI.len * 0.47;
@@ -2013,9 +2166,15 @@ if (uFpNear > 0.0) {
       A.set(0, SKI.thick, E).applyQuaternion(q).add(c); B.set(0, SKI.thick, -E).applyQuaternion(q).add(c); };
     line(0, _sa0, _sb0); line(1, _sa1, _sb1);
     const MIN = 0.075, d = segSeg(_sa0, _sb0, _sa1, _sb1, _sp0, _sp1);
-    if (d < MIN) {
+    const SN = this._sepN || (this._sepN = V());
+    if (d < MIN + 0.06) {
       const n = _sd.subVectors(_sp0, _sp1); if (n.lengthSq() < 1e-8) n.set(0, 1, 0).applyQuaternion(R); n.normalize().applyQuaternion(qi);
-      const push = (MIN - d) * 0.5 * w; this.sk[0].pos.addScaledVector(n, push); this.sk[1].pos.addScaledVector(n, -push);
+      // (G: the side the skis are on is kept while they are near: crossed through each other, they go back the way they
+      // came, by the whole way through)
+      let need = MIN - d;
+      if (this._sepF >= this._frame - 2 && n.dot(SN) < 0) { n.negate(); need = MIN + d; }
+      SN.copy(n); this._sepF = this._frame;
+      if (need > 0) { const push = need * 0.5 * w; this.sk[0].pos.addScaledVector(n, push); this.sk[1].pos.addScaledVector(n, -push); }
     }
     const LJ = this._legF === this._frame - 1 ? this._legLoc : null, bm = this.body.matrixWorld;
     const pos = (bn, out) => {

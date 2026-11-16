@@ -15,9 +15,9 @@
    The lips, humps, bands and ramps are drawn by the terrain's own patches (no mesh of their own); the parks' kickers have
    meshes of their own (dress), all of them in one draw call. */
 import * as THREE from 'three';
-import { Kicker, Rail } from './park.js?v=28';
-import { ground, height } from './terrain.js?v=28';
-import { smoothstep, clamp, simplex, rng } from './noise.js?v=28';
+import { Kicker, Rail } from './park.js?v=29';
+import { ground, height } from './terrain.js?v=29';
+import { smoothstep, clamp, simplex, rng } from './noise.js?v=29';
 
 const RAD = Math.PI / 180;
 const _l = { x: 0, z: 0 };

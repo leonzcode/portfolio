@@ -13,11 +13,11 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Rig, springBank, smooth01, wrapPi, softReach, wob, segSeg } from './rig.js?v=28';
-import { clamp, smoothstep } from './noise.js?v=28';
-import { height } from './terrain.js?v=28';
-import { LOOK } from './gear.js?v=28';
-import { RIDE_KEYS, RIDE_HELP } from './input.js?v=28';
+import { Rig, springBank, smooth01, wrapPi, softReach, wob, segSeg } from './rig.js?v=29';
+import { clamp, smoothstep } from './noise.js?v=29';
+import { height } from './terrain.js?v=29';
+import { LOOK } from './gear.js?v=29';
+import { RIDE_KEYS, RIDE_HELP } from './input.js?v=29';
 
 const D = Math.PI / 180;
 // the board's size (the model is scaled to it), where the bindings are, and their angles (a mild duck stance)
@@ -37,28 +37,28 @@ export const BOARD = { len: 1.55, half: 0.775, top: 0.037, stance: 0.54, angF: 1
 // between the legs to the heel edge; Japan: a mute pulled up behind, front knee down; Crail: back hand to the nose;
 // Tindy: an indy slid back towards the tail).
 export const BOARD_GRABS = {
-  indy:      { name: 'Indy', hands: [['B', -0.12, 'toe']], board: [0, 0.04, -0.01, 0, -0.089, -0.06], tuck: 0.85, lean: 0.84, twist: 0.504, side: -0.25, knees: 0.25, arms: 'raise' },
-  mute:      { name: 'Mute', hands: [['F', 0.12, 'toe']], board: [0, 0.04, 0.092, 0, -0.06, -0.27], tuck: 0.898, lean: 0.628, twist: -0.51, side: -0.042, knees: 0.218, arms: 'out' },
-  melon:     { name: 'Melon', hands: [['F', 0.08, 'heel']], board: [0, 0.02, 0.04, 0.05, 0.12, 0.186], tuck: 0.829, lean: 0.196, twist: 0.66, side: 0.4, knees: 0.2, arms: 'out' },
-  stalefish: { name: 'Stalefish', hands: [['B', -0.18, 'heel']], board: [0, 0.02, -0.04, 0, -0.192, 0.4], tuck: 0.757, lean: 0.218, twist: -0.9, side: -0.237, knees: 0.2, arms: 'out' },
-  method:    { name: 'Method', hands: [['F', 0.06, 'heel']], board: [0.02, 0.16, -0.171, 0, 0.201, 0.859], tuck: 0.874, lean: 0.006, twist: 0.403, side: 0.484, knees: 0.093, arms: 'up' },
-  nose:      { name: 'Nose', hands: [['F', 1, 'end']], board: [0.04, -0.02, 0.06, 0.08, 0.314, -0.05], tuck: 0.424, lean: 0.7, twist: 0.4, side: 0.42, knees: 0.1, arms: 'out' },
-  tail:      { name: 'Tail', hands: [['B', -1, 'end']], board: [-0.04, -0.02, 0.02, -0.08, -0.535, 0.05], tuck: 0.45, lean: 0.45, twist: -0.18, side: -0.391, knees: 0.1, arms: 'out' },
-  roastbeef: { name: 'Roast Beef', hands: [['B', -0.15, 'heel']], board: [0, 0.03, 0.1, 0, 0.504, 0.42], tuck: 0.72, lean: 0.56, twist: -0.25, side: 0.042, knees: 0.09, arms: 'out' },
-  japan:     { name: 'Japan', hands: [['F', 0.12, 'toe']], board: [0, 0.14, -0.12, 0, 0.397, 0.72], tuck: 0.532, lean: 0.95, twist: -0.3, side: 0.428, knees: 0.15, arms: 'out' },
-  crail:     { name: 'Crail', hands: [['B', 0.6, 'toe']], board: [0.06, 0, 0.1, 0.3, 0.07, -0.026], tuck: 0.62, lean: 1.032, twist: 0.732, side: 0.104, knees: 0.1, bone: 'B', arms: 'out' },
-  seatbelt:  { name: 'Seatbelt', hands: [['F', -1, 'end']], board: [-0.03, 0.02, 0.064, -0.12, -0.46, -0.035], tuck: 0.338, lean: 1.062, twist: -1.049, side: -0.138, knees: 0, arms: 'out' },
-  truck:     { name: 'Truck Driver', hands: [['F', 0.08, 'heel'], ['B', -0.12, 'toe']], board: [0, 0.04, 0.14, 0, -0.36, 0.3], tuck: 0.84, lean: 0.7, twist: 0.75, side: -0.336, knees: 0.1 },
-  tindy:     { name: 'Tindy', hands: [['B', -0.62, 'toe']], board: [0, 0, 0.04, -0.06, -0.16, -0.23], tuck: 0.55, lean: 0.55, twist: -0.19, side: -0.306, knees: 0.046, arms: 'out' },
-  swiss:     { name: 'Swiss Cheese', hands: [['B', 0.45, 'heel']], board: [0, 0, 0.193, 0.05, 0.381, 0.404], tuck: 0.573, lean: 1.06, twist: 1.06, side: 0.606, knees: 0.174, bone: 'B', arms: 'out' },
-  rocket:    { name: 'Rocket', hands: [['F', 1, 'end'], ['B', 0.93, 'toe']], board: [0.04, 0.04, 0.169, 0.1, 0.73, -0.018], tuck: 0.343, lean: 0.692, twist: 1.1, side: 0.378, knees: 0.19, bone: 'B' },
-  slob:      { name: 'Slob', hands: [['F', 0.62, 'toe']], board: [0, -0.04, 0.06, 0, 0.08, -0.21], tuck: 0.54, lean: 0.62, twist: 0.19, side: 0.3, knees: 0.1, bone: 'B', arms: 'wide' },
-  dracula:   { name: 'Bloody Dracula', hands: [['B', -1, 'end'], ['F', -0.7, 'heel']], board: [-0.04, 0.04, 0.16, -0.1, -0.329, 0.482], tuck: 0.158, lean: 0.95, twist: -1.046, side: 0.1, knees: 0.18 },
+  indy:      { name: 'Indy', hands: [['B', -0.12, 'toe']], board: [0, 0.04, -0.061, 0, -0.116, -0.101], tuck: 0.804, lean: 0.556, twist: 0.581, side: -0.214, knees: 0.143, arms: 'raise' },
+  mute:      { name: 'Mute', hands: [['F', 0.12, 'toe']], board: [0, 0.04, 0.092, 0, 0.06, -0.27], tuck: 0.97, lean: 0.75, twist: -0.96, side: -0.042, knees: 0.15, arms: 'out' },
+  melon:     { name: 'Melon', hands: [['F', 0.08, 'heel']], board: [0, 0.02, 0.04, 0.05, 0.12, 0.186], tuck: 0.829, lean: 0.196, twist: 0.66, side: 0.4, knees: 0.15, arms: 'raise' },
+  stalefish: { name: 'Stalefish', hands: [['B', -0.18, 'heel']], board: [0, 0.02, -0.04, 0, -0.192, 0.4], tuck: 0.757, lean: 0.218, twist: -0.9, side: -0.237, knees: 0.15, arms: 'raise' },
+  method:    { name: 'Method', hands: [['F', 0.06, 'heel']], board: [0.02, 0.3, -0.3, 0, 0.25, 1.2], tuck: 0.7, lean: -0.3, twist: 0.6, side: 0.5, knees: 0.09, arms: 'up' },
+  nose:      { name: 'Nose', hands: [['F', 1, 'end']], board: [0.04, -0.02, 0.06, 0.08, 0.314, -0.05], tuck: 0.424, lean: 0.55, twist: 0.4, side: 0.42, knees: 0.1, arms: 'raise' },
+  tail:      { name: 'Tail', hands: [['B', -1, 'end']], board: [-0.04, -0.02, 0.02, -0.08, -0.612, 0.05], tuck: 0.493, lean: 0.45, twist: -0.18, side: -0.391, knees: 0.1, arms: 'out' },
+  roastbeef: { name: 'Roast Beef', hands: [['B', -0.15, 'heel']], board: [0, 0.03, 0.1, 0, 0.1, 0.42], tuck: 0.72, lean: 0.7, twist: -0.04, side: 0.042, knees: 0.3, arms: 'raise' },
+  japan:     { name: 'Japan', hands: [['F', 0.12, 'toe']], board: [0, 0.14, -0.14, 0, 0.45, 0.72], tuck: 0.45, lean: 0.87, twist: -0.3, side: 0.648, knees: 0.38, arms: 'raise' },
+  crail:     { name: 'Crail', hands: [['B', 0.6, 'toe']], board: [0.06, 0, 0.1, 0.3, 0.07, -0.026], tuck: 0.62, lean: 0.75, twist: 0.882, side: -0.016, knees: 0.1, bone: 'B', arms: 'out' },
+  seatbelt:  { name: 'Seatbelt', hands: [['F', -1, 'end']], board: [-0.03, 0.02, 0.064, -0.12, -0.46, -0.035], tuck: 0.338, lean: 0.9, twist: -1.1, side: -0.018, knees: 0, bone: 'F', arms: 'up' },
+  truck:     { name: 'Truck Driver', hands: [['F', 0.12, 'heel'], ['B', -0.12, 'toe']], board: [0, 0.04, 0.12, 0, -0.3, 0.45], tuck: 0.637, lean: 0.77, twist: 0.704, side: -0.36, knees: 0.4 },
+  tindy:     { name: 'Tindy', hands: [['B', -0.62, 'toe']], board: [0, 0, 0.04, -0.06, -0.35, -0.23], tuck: 0.55, lean: 0.3, twist: -0.19, side: -0.306, knees: 0.046, arms: 'raise' },
+  swiss:     { name: 'Swiss Cheese', hands: [['B', 0.45, 'heel']], board: [0, 0, 0.193, 0.05, 0.12, 0.404], tuck: 0.573, lean: 0.89, twist: 1.1, side: 0.606, knees: 0.174, bone: 'B', arms: 'out' },
+  rocket:    { name: 'Rocket', hands: [['F', 1, 'end'], ['B', 0.93, 'toe']], board: [0.04, 0.04, 0.149, 0.1, 0.876, 0.1], tuck: 0.343, lean: 0.21, twist: 0.95, side: 0.404, knees: 0.19, bone: 'B' },
+  slob:      { name: 'Slob', hands: [['F', 0.62, 'toe']], board: [0, -0.04, 0.06, 0, 0.08, -0.21], tuck: 0.54, lean: 0.5, twist: 0.19, side: 0.3, knees: 0.1, bone: 'B', arms: 'wide' },
+  dracula:   { name: 'Bloody Dracula', hands: [['B', -1, 'end'], ['F', -0.7, 'heel']], board: [-0.04, 0.04, 0.16, -0.1, -0.329, 0.482], tuck: 0.158, lean: 0.8, twist: -1.1, side: 0.22, knees: 0.18 },
   // positions without a hand: a leg kicked straight ("boned"), or both knees tucked up
-  nosebone:  { name: 'Nose Bone', pos: true, hands: [], board: [0.06, -0.12, 0.08, 0.1, -0.32, -0.05], tuck: 0.25, lean: 0.25, twist: 0.3, side: 0.1, bone: 'F', arms: 'wide' },
-  tailbone:  { name: 'Tail Bone', pos: true, hands: [], board: [-0.06, -0.12, 0.08, -0.1, 0.32, -0.05], tuck: 0.25, lean: 0.25, twist: -0.3, side: -0.1, bone: 'B', arms: 'wide' },
-  tuckknee:  { name: 'Tuck Knee', pos: true, hands: [], board: [0, 0.08, 0.02, 0, 0, 0], tuck: 0.98, lean: 0.55, twist: 0, side: 0, arms: 'out' },
-  stiffy:    { name: 'Stiffy', pos: true, hands: [], board: [0, -0.14, 0.04, 0, 0, -0.1], tuck: 0.05, lean: 0.15, twist: 0, side: 0, bone: 'FB', arms: 'wide' },
+  nosebone:  { name: 'Nose Bone', pos: true, hands: [], board: [0.06, -0.12, 0.08, 0.1, -0.5, -0.05], tuck: 0.25, lean: 0.3, twist: 0.3, side: 0.1, bone: 'F', arms: 'wide' },
+  tailbone:  { name: 'Tail Bone', pos: true, hands: [], board: [-0.06, -0.12, 0.08, -0.1, 0.5, -0.05], tuck: 0.25, lean: 0.3, twist: -0.3, side: -0.1, bone: 'B', arms: 'wide' },
+  tuckknee:  { name: 'Tuck Knee', pos: true, hands: [], board: [0, 0.1, 0.08, 0, 0, 0], tuck: 0.9, lean: 0.6, twist: 0.1, side: 0, knees: 0.2, arms: 'out' },
+  stiffy:    { name: 'Stiffy', pos: true, hands: [], board: [0, -0.05, 0.3, 0.2, 0.3, -0.35], tuck: 0, lean: -0.15, twist: 0.25, side: -0.1, bone: 'FB', arms: 'wide' },   // (G, round 12: both legs straight and the board kicked out in front, tweaked; a held indy was out of reach)
 };
 // the ski grab keys (input.js, grabs.js ids) to board grabs: the common ones on the keys the ski's common ones use
 export const BOARD_FOR = {
@@ -81,65 +81,67 @@ export const BOARD_FOR = {
    edge), Nuclear (the back hand across the front of the body to the heel edge by the nose), Cross Rocket (both hands on
    the nose, crossed), the Seatbelt's front leg boned. */
 export const BOARD_VARS = {
-  indy: [{ name: 'Indy Tail Bone', knees: 0.55, bone: 'B', board: [0, 0, 0.21, -0.06, -0.2, -0.47], tuck: 0.48, lean: 0.95, twist: 0.3, side: -0.18, arms: 'up' },
-    { name: 'Tindy', hands: [['B', -0.62, 'toe']], board: [-0.02, 0, 0.061, -0.08, -0.34, -0.1], tuck: 0.626, lean: 0.55, twist: -0.35, side: -0.36, knees: 0.218 },
+  indy: [{ name: 'Indy Tail Bone', knees: 0.264, bone: 'B', board: [0, 0, 0.15, -0.06, 0.25, -0.2], tuck: 0.48, lean: 0.6, twist: 0.236, side: -0.202, arms: 'up' },
+    { name: 'Tindy', hands: [['B', -0.62, 'toe']], board: [-0.02, 0, 0.061, -0.08, -0.4, -0.1], tuck: 0.626, lean: 0.4, twist: -0.35, side: -0.36, knees: 0.218 },
     { board: [-0.025, 0, 0.063, -0.108, -0.391, -0.135], tuck: 0.626, lean: 0.63, twist: -0.305, side: -0.468, knees: 0.218 }],
-  mute: [{ name: 'Mute Tail Bone', knees: 0.35, bone: 'B', board: [0.02, 0.06, 0, 0.1, 0.2, 0.15], tuck: 0.48, lean: 0.9, twist: 0.004, side: 0.12, arms: 'up' },
-    { name: 'Taipan', hands: [['F', 0.02, 'toe']], board: [0, 0.12, -0.11, 0.04, 0.389, 0.62], tuck: 0.586, lean: 1.07, twist: -0.278, side: 0.302, knees: 0 },
-    { board: [0, 0.15, -0.088, 0.054, 0.447, 0.837], tuck: 0.66, lean: 1.2, twist: -0.526, side: 0.546, knees: 0.4 }],
-  melon: [{ name: 'Boned Melon', knees: 0.2, bone: 'F', board: [0.02, -0.06, 0.07, 0.12, 0.18, 0.03], tuck: 0.76, lean: 0.596, twist: 0.676, side: 0.56, arms: 'wide' },
-    { name: 'Lien Air', hands: [['F', 0.5, 'heel']], board: [0.04, 0, 0.17, 0.16, 0.446, -0.164], tuck: 0.45, lean: 0.9, twist: 0.76, side: 0.52, knees: 0.2 },
+  mute: [{ name: 'Mute Tail Bone', knees: 0.3, bone: 'B', board: [0.02, 0.06, 0.05, 0.1, 0.202, 0.15], tuck: 0.36, lean: 0.9, twist: -0.236, side: 0.24, arms: 'up' },
+    { name: 'Taipan', hands: [['F', 0.02, 'toe']], board: [0, 0.12, -0.16, 0.04, 0.269, 0.62], tuck: 0.466, lean: 1.2, twist: -0.428, side: 0.182, knees: 0.3 },
+    { board: [0, 0.15, -0.088, 0.054, 0.524, 0.537], tuck: 0.43, lean: 1.054, twist: -0.698, side: 0.383, knees: 0.546 }],
+  melon: [{ name: 'Boned Melon', knees: 0.2, bone: 'F', board: [0.02, -0.06, 0.05, 0.12, -0.2, 0.03], tuck: 1, lean: 0.25, twist: 0.712, side: 0.44, arms: 'wide' },
+    { name: 'Lien Air', hands: [['F', 0.5, 'heel']], board: [0.04, 0, 0.17, 0.16, 0.05, 0], tuck: 0.45, lean: 0.45, twist: 0.76, side: 0.52, knees: 0.2 },
     { board: [0.05, 0, 0.212, 0.216, 0.576, -0.149], tuck: 0.476, lean: 1.012, twist: 0.793, side: 0.65, knees: 0.2 }],
   stalefish: [{ name: 'Stalefish Nose Bone', knees: 0.2, bone: 'F', board: [0, 0.14, -0.25, -0.08, -0.3, 1], tuck: 0.702, lean: 0.3, twist: -0.58, side: -0.526, arms: 'up' },
-    { name: 'Canadian Bacon', hands: [['B', -0.12, 'toe']], board: [0, 0.1, -0.08, -0.04, -0.28, 0.47], tuck: 0.54, lean: 1.05, twist: 0.25, side: -0.46, knees: 0.65 },
-    { board: [0, 0.125, -0.1, -0.054, -0.336, 0.837], tuck: 0.54, lean: 1.2, twist: 0.43, side: -0.598, knees: 0.296 }],
-  method: [{ name: 'Power Method', board: [0.04, 0.3, -0.25, 0.05, 0.42, 1.468], tuck: 0.926, lean: -0.25, twist: 0.818, side: 0.447, knees: 0.093, arms: 'up' },
+    { name: 'Canadian Bacon', hands: [['B', -0.12, 'toe']], board: [0, 0.06, -0.092, -0.04, -0.12, 0.45], tuck: 0.42, lean: 0.9, twist: 0.4, side: -0.465, knees: 0.764 },
+    { board: [0, 0.125, -0.15, -0.054, -0.336, 0.837], tuck: 0.42, lean: 1.2, twist: 0.58, side: -0.478, knees: 0.446 }],
+  method: [{ name: 'Power Method', board: [0.04, 0.38, -0.33, 0.05, 0.4, 1.5], tuck: 0.8, lean: -0.42, twist: 0.818, side: 0.327, knees: 0.093, arms: 'up' },
     { name: 'Two-Handed Method', hands: [['F', 0.08, 'heel'], ['B', -0.08, 'heel']], board: [0, 0.2, -0.248, 0, 0.022, 0.6], tuck: 0.61, lean: -0.14, twist: -0.014, side: 0.12, knees: 0.093 },
     { board: [0, 0.25, -0.275, 0, 0, 1.215], tuck: 0.61, lean: 0.022, twist: -0.181, side: 0.151, knees: 0.093 }],
-  nose: [{ name: 'Boned Nose', knees: 0.1, bone: 'B', board: [0.06, -0.04, 0.08, 0.14, 0.457, -0.05], tuck: 0.3, lean: 0.8, twist: 0.5, side: 0.5, arms: 'wide' },
+  nose: [{ name: 'Boned Nose', knees: 0.1, bone: 'F', board: [0.06, -0.04, 0.15, 0.14, 0.108, 0.25], tuck: 0.514, lean: 0.81, twist: 0.5, side: 0.692, arms: 'wide' },
     { name: 'Two-Handed Nose', hands: [['F', 1, 'end'], ['B', 0.8, 'toe']], board: [0.05, 0.06, 0.05, 0.12, 0.648, -0.05], tuck: 0.576, lean: 0.886, twist: 1.1, side: 0.374, knees: 0 },
-    { board: [0.062, 0.075, 0.086, 0.162, 0.836, -0.036], tuck: 0.43, lean: 1.015, twist: 1.183, side: 0.364, knees: 0.1 }],
+    { board: [0.062, 0.075, 0.086, 0.162, 0.5, 0.124], tuck: 0.378, lean: 0.8, twist: 1.1, side: 0.386, knees: 0.1 }],
   tail: [{ name: 'Boned Tail', knees: 0.186, bone: 'F', board: [-0.06, -0.04, 0.028, -0.14, -0.74, -0.004], tuck: 0.3, lean: 0.45, twist: -0.242, side: -0.5, arms: 'wide' },
     { name: 'Two-Handed Tail', hands: [['B', -1, 'end'], ['F', -0.86, 'toe']], board: [-0.05, 0.06, 0.08, -0.12, -0.7, 0.05], tuck: 0.55, lean: 0.65, twist: -1.01, side: -0.194, knees: 0 },
     { board: [-0.062, 0.075, 0.05, -0.162, -0.945, 0.068], tuck: 0.43, lean: 0.752, twist: -1.1, side: -0.283, knees: 0.1 }],
-  roastbeef: [{ name: 'Roast Beef Tail Bone', knees: 0.321, bone: 'B', board: [0.02, -0.02, 0.067, 0.06, 0.349, 0.151], tuck: 0.6, lean: 0.911, twist: 0.295, side: -0.335, arms: 'up' },
-    { name: 'Chicken Salad', hands: [['F', 0, 'heel']], board: [0, 0.03, 0.032, 0.04, 0.1, 0.15], tuck: 0.835, lean: 0.598, twist: 0.7, side: 0.2, knees: 0.09 },
+  roastbeef: [{ name: 'Roast Beef Tail Bone', knees: 0.441, bone: 'B', board: [0.02, -0.02, 0.117, 0.06, 0.469, 0.151], tuck: 0.528, lean: 1.061, twist: 0.595, side: -0.383, arms: 'up' },
+    { name: 'Chicken Salad', hands: [['F', 0, 'heel']], board: [0, 0.03, 0.032, 0.04, 0.1, 0.15], tuck: 0.643, lean: 0.6, twist: 0.31, side: 0.248, knees: 0.35 },
     { board: [0, 0.037, 0.043, 0.054, 0.178, 0.203], tuck: 0.835, lean: 0.684, twist: 1.1, side: 0.26, knees: 0.09 }],
-  japan: [{ name: 'Japan Tail Bone', knees: 0.25, bone: 'B', board: [0, 0.16, -0.17, 0.05, 0.3, 0.6], tuck: 0.68, lean: 1.2, twist: -0.15, side: 0.721, arms: 'up' },
-    { name: 'Nuclear', hands: [['B', 0.62, 'heel']], board: [0.04, 0.04, 0.14, 0.2, 0.1, 0.4], tuck: 0.365, lean: 1.054, twist: 0.836, side: 0.327, knees: 0.09 },
+  japan: [{ name: 'Japan Tail Bone', knees: 0.4, bone: 'B', board: [0, 0.16, -0.188, 0.05, 0.377, 0.45], tuck: 0.608, lean: 1.2, twist: -0.3, side: 0.68, arms: 'up' },
+    { name: 'Nuclear', hands: [['B', 0.62, 'heel']], board: [0.04, 0.04, 0.14, 0.2, 0.1, 0.4], tuck: 0.245, lean: 1.2, twist: 0.926, side: 0.207, knees: 0.24 },
     { board: [0.05, 0.05, 0.275, 0.27, 0.057, 0.232], tuck: 0.48, lean: 0.93, twist: 1.1, side: 0.325, knees: 0.1 }],
-  crail: [{ name: 'Crail, Nose Down', knees: 0.1, bone: 'B', board: [0.08, -0.04, 0.14, 0.42, -0.063, -0.188], tuck: 0.596, lean: 1.2, twist: 0.872, side: 0.204 },
+  crail: [{ name: 'Crail, Nose Down', knees: 0.1, bone: 'B', board: [0.08, -0.04, 0.14, 0.42, -0.063, -0.188], tuck: 0.596, lean: 0.9, twist: 1.022, side: 0.084 },
     { name: 'Two-Handed Crail', hands: [['B', 0.6, 'toe'], ['F', 0.62, 'heel']], board: [0.06, 0.04, 0.091, 0.25, 0.1, 0.072], knees: 0.1, bone: '', tuck: 0.65, lean: 0.932, twist: 0.622, side: 0.2 },
     { board: [0.075, 0.05, 0.114, 0.338, 0.135, 0.03], tuck: 0.65, lean: 1.012, twist: 0.731, side: 0.26, knees: 0.1 }],
   seatbelt: [{ name: 'Seatbelt Nose Bone', knees: 0.06, bone: 'F', board: [-0.05, -0.02, 0.2, -0.2, -0.67, 0.14], tuck: 0.52, lean: 0.706, twist: -1.1, side: -0.038, arms: 'up' },
     { name: 'Two-Handed Seatbelt', hands: [['F', -1, 'end'], ['B', -0.7, 'heel']], board: [-0.04, 0.06, 0.065, -0.14, -0.463, -0.018], tuck: 0.496, lean: 0.824, twist: -1.1, side: -0.048, knees: 0.032 },
     { board: [-0.05, 0.075, 0.043, -0.189, -0.564, -0.182], tuck: 0.48, lean: 1.012, twist: -1.1, side: -0.053, knees: 0 }],
-  truck: [{ name: 'Stretched Truck Driver', board: [0, 0.08, 0.15, 0.15, -0.16, 0.4], tuck: 0.7, lean: 0.9, twist: 0.9, side: -0.097, knees: 0.1 },
-    { name: 'Double Mute', hands: [['F', 0.18, 'toe'], ['B', -0.15, 'toe']], board: [0, 0.06, 0.11, 0, 0, -0.118], tuck: 0.66, lean: 0.7, twist: -0.072, side: 0, knees: 0.106 },
-    { board: [0, 0.075, 0.075, 0, 0, -0.203], tuck: 0.54, lean: 0.78, twist: -0.259, side: 0.166, knees: 0.09 }],
+  truck: [{ name: 'Stretched Truck Driver', board: [0, 0.08, 0.18, 0.15, -0.28, 0.46], tuck: 0.551, lean: 1.02, twist: 0.99, side: 0.023, knees: 0.25 },
+    { name: 'Double Mute', hands: [['F', 0.18, 'toe'], ['B', -0.15, 'toe']], board: [0, 0.06, 0.16, 0, 0.12, -0.118], tuck: 0.3, lean: 1, twist: -0.522, side: 0, knees: 0.052 },
+    { board: [0, 0.075, 0.155, 0, 0.12, -0.203], tuck: 0.403, lean: 0.962, twist: 0.041, side: 0.123, knees: 0.24 }],
   tindy: [{ name: 'Tindy Nose Bone', knees: 0.068, bone: 'F', board: [-0.03, -0.02, 0.1, -0.12, -0.343, -0.152], tuck: 0.476, lean: 0.632, twist: -0.554, side: -0.45, arms: 'up' },
-    { name: 'Two-Handed Tindy', hands: [['B', -0.62, 'toe'], ['F', -0.1, 'toe']], board: [-0.02, 0.05, 0.01, -0.08, -0.248, -0.34], tuck: 0.794, lean: 0.828, twist: -0.378, side: -0.176, knees: 0 },
-    { board: [-0.025, 0.062, 0.094, -0.108, -0.412, -0.459], tuck: 0.722, lean: 0.94, twist: -0.115, side: -0.292, knees: 0.304 }],
+    { name: 'Two-Handed Tindy', hands: [['B', -0.62, 'toe'], ['F', -0.42, 'toe']], board: [-0.02, 0.05, 0.01, -0.08, -0.06, -0.286], tuck: 0.554, lean: 0.9, twist: -0.71, side: -0.253, knees: 0 },
+    { board: [-0.025, 0.062, 0.126, -0.108, -0.172, -0.277], tuck: 0.602, lean: 1.09, twist: -0.115, side: -0.007, knees: 0.304 }],
   swiss: [{ name: 'Stretched Swiss Cheese', board: [0, 0, 0.2, 0.08, 0.382, 0.009], tuck: 0.457, lean: 1.05, twist: 1.1, side: 0.509, knees: 0.032, arms: 'up' },
     { name: 'Swiss Cheese Nose Bone', knees: 0.188, bone: 'F', board: [0.04, -0.06, 0.156, 0.1, 0.459, 0.133], tuck: 0.314, lean: 0.962, twist: 1.1, side: 0.493 },
     { board: [0.05, -0.075, 0.225, 0.135, 0.502, -0.024], tuck: 0.619, lean: 1.2, twist: 1.1, side: 0.726, knees: 0.226 }],
-  rocket: [{ name: 'Stretched Rocket', board: [0.06, 0.06, 0.22, 0.15, 0.786, -0.023], tuck: 0.224, lean: 0.775, twist: 1.1, side: 0.475, knees: 0.09 },
-    { name: 'Cross Rocket', hands: [['F', 0.82, 'toe'], ['B', 0.82, 'heel']], board: [0.04, 0.04, 0.16, 0.12, 0.56, 0.31], tuck: 0.223, lean: 1.094, twist: 0.47, side: 0.095, knees: 0 },
-    { board: [0.05, 0.05, 0.177, 0.162, 0.683, 0.09], tuck: 0.108, lean: 1.11, twist: 0.68, side: 0.005, knees: 0.09 }],
-  slob: [{ name: 'Stretched Slob', board: [0, -0.06, 0.05, 0.05, 0.04, -0.12], tuck: 0.47, lean: 0.85, twist: 0.4, side: 0.52, knees: 0.1, arms: 'up' },
+  rocket: [{ name: 'Stretched Rocket', board: [0.06, 0.06, 0.27, 0.15, 0.786, -0.023], tuck: 0.219, lean: 0.931, twist: 1.01, side: 0.485, knees: 0.09 },
+    { name: 'Cross Rocket', hands: [['F', 0.82, 'toe'], ['B', 0.82, 'heel']], board: [0.04, 0.04, 0.181, 0.12, 0.626, 0.038], tuck: 0.203, lean: 0.92, twist: 0.874, side: -0.37, knees: 0 },
+    { board: [0.05, 0.05, 0.218, 0.162, 0.488, -0.036], tuck: 0.259, lean: 1.2, twist: 0.829, side: -0.115, knees: 0.11 }],
+  slob: [{ name: 'Stretched Slob', board: [0, -0.06, 0.05, 0.05, 0.04, -0.12], tuck: 0.47, lean: 0.6, twist: 0.4, side: 0.52, knees: 0.1, arms: 'raise' },
     { name: 'Two-Handed Slob', hands: [['F', 0.08, 'toe'], ['B', -0.08, 'toe']], board: [0, -0.02, 0.084, 0, 0.01, -0.368], tuck: 0.642, lean: 1.07, twist: -0.101, side: 0.202, knees: 0, arms: undefined },
     { board: [0, -0.025, 0.13, 0, -0.083, -0.486], tuck: 0.642, lean: 1.14, twist: -0.032, side: 0.286, knees: 0.01 }],
-  dracula: [{ name: 'Stretched Bloody Dracula', board: [-0.06, 0.08, 0.084, -0.15, -0.331, 0.52], tuck: 0.15, lean: 0.996, twist: -1.1, side: 0.06, knees: 0.1 },
+  dracula: [{ name: 'Stretched Bloody Dracula', board: [-0.06, 0.08, 0.134, -0.15, -0.408, 0.52], tuck: 0.15, lean: 1.2, twist: -1.1, side: 0.18, knees: 0.1 },
     { name: 'Bloody Dracula Nose Bone', knees: 0.1, bone: 'F', board: [-0.05, 0.02, 0.13, -0.12, -0.506, 0.51], tuck: 0, lean: 1.012, twist: -1.1, side: 0.158 },
-    { board: [-0.062, 0.025, 0.131, -0.162, -0.48, 0.66], tuck: 0, lean: 1.03, twist: -1.3, side: 0.292, knees: 0 }],
+    { board: [-0.062, 0.025, 0.113, -0.162, -0.523, 0.66], tuck: 0, lean: 1.036, twist: -1.3, side: 0.369, knees: 0 }],
   nosebone: [{ name: 'Stretched Nose Bone', board: [0.08, -0.18, 0.12, 0.16, -0.48, -0.08], tuck: 0.2, lean: 0.3, twist: 0.45, side: 0.15 },
     { name: 'Nose Bone, Arms Up', arms: 'up', board: [0.06, -0.12, 0.08, 0.1, -0.32, -0.05], tuck: 0.25, lean: 0.1, twist: 0.3, side: 0.1 }],
   tailbone: [{ name: 'Stretched Tail Bone', board: [-0.08, -0.18, 0.12, -0.16, 0.48, -0.08], tuck: 0.2, lean: 0.3, twist: -0.45, side: -0.15 },
     { name: 'Tail Bone, Arms Up', arms: 'up', board: [-0.06, -0.12, 0.08, -0.1, 0.32, -0.05], tuck: 0.25, lean: 0.1, twist: -0.3, side: -0.1 }],
-  tuckknee: [{ name: 'Deep Tuck Knee', board: [0, 0.08, -0.04, 0.12, 0.2, 0.2], tuck: 0.95, lean: 0.7, twist: 0.3, side: 0.15 },
-    { name: 'Tuck Knee, Arms Up', arms: 'up', board: [0, 0.1, 0.02, 0, 0, 0], tuck: 0.98, lean: 0.35, twist: 0, side: 0 }],
-  stiffy: [{ name: 'Stretched Stiffy', board: [0, -0.18, 0.08, 0.15, 0.15, -0.2], tuck: 0, lean: 0.3, twist: 0.3, side: 0.15 },
-    { name: 'Stiffy, Arms Up', arms: 'up', board: [0, -0.14, 0.04, 0, 0, -0.1], tuck: 0.05, lean: -0.05, twist: 0, side: 0 }],
+  tuckknee: [{ name: 'Deep Tuck Knee', board: [0, 0.08, -0.04, 0.12, 0.2, 0.2], tuck: 0.86, lean: 0.7, twist: 0.3, side: 0.15 },
+    { name: 'Tuck Knee, Arms Up', arms: 'up', board: [0, 0.08, 0.04, 0, 0, 0], tuck: 0.8, lean: 0.35, twist: 0, side: 0 },
+    { board: [0, 0.1, 0.05, 0, 0, 0], tuck: 0.68, lean: 0.28, twist: 0, side: -0.12, knees: 0 }],
+  stiffy: [{ name: 'Stretched Stiffy', hands: [], arms: 'wide', board: [0, -0.18, 0.13, 0.15, 0.03, -0.35], tuck: 0.2, lean: 0.4, twist: 0.21, side: -0.042, knees: 0.1 },   // (G: no hand: a stiffy's legs pushed out further than a hand reaches)
+    { name: 'Stiffy, Arms Up', hands: [], knees: 0.1, arms: 'up', board: [0, -0.14, 0.028, 0, 0, -0.25], tuck: 0.05, lean: -0.05, twist: 0.054, side: -0.192 },
+    { board: [0, -0.175, 0, 0, -0.043, -0.339], tuck: 0.17, lean: 0.03, twist: 0, side: -0.12, knees: 0.09 }],
 };
 const _cache = new Map();
 export function boardGrabDef(id, mod = '') {
@@ -240,7 +242,7 @@ function loadModel() {
   if (_gltf) return _gltf;
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  _gltf = loader.loadAsync('./models/board/board.glb?v=28').catch(e => { _gltf = null; throw e; });
+  _gltf = loader.loadAsync('./models/board/board.glb?v=29').catch(e => { _gltf = null; throw e; });
   return _gltf;
 }
 // the board's half width along it (at -1 tail .. +1 nose), measured from the model once
@@ -348,7 +350,7 @@ const _gw2 = V(), _bend = V(), _bl = V(), _bn = V(), _bx = V(), _bt = V(), _ba =
    bent about the hips by at most BEND_MAX more than the grab's own lean, the collarbone dropped and forward by at most
    CLAV_MAX (rad), then the board brought up to the hand by at most PULL_MAX (m); each ankle kept at least
    FOLD_MIN x the leg's length from its hip */
-const REACH = 0.95, BEND_MAX = 0.9, CLAV_MAX = 0.42, PULL_MAX = 0.12, FOLD_MIN = 0.3;
+const REACH = 0.95, BEND_MAX = 0.85, CLAV_MAX = 0.42, PULL_MAX = 0.18, FOLD_MIN = 0.3;   // (G, round 12: the board brought up to the hand a little more (0.12), the chest bending a little less (0.9))
 // (2026-11-13) the wrist's distance out from the edge it holds (the palm's thickness): 3 cm put the hand into the board
 const PALM = 0.045;
 // first person on the snow (2026-11-06): how much more upright the chest is (rad), how far the hips sit towards the
@@ -366,8 +368,11 @@ const HAND_W = ['bhL', 'bhR'], ARMN = [['baLx', 'baLy', 'baLz'], ['baRx', 'baRy'
 // (a grab's free arm out to the side at about shoulder height, as riders hold it in photos of grabs: Commons, "Snowboard
 // IndyGrab2.jpg", "Snowboard.jpg", B/ref/; up: raised over the head, for a method)
 // (2026-11-13: further out, the elbow only a little bent, as in the photos; raise: out and up, as many indies hold it)
-const ARM_MODE = { out: [0.46, -0.02, 0.06], up: [0.2, 0.5, 0.0], wide: [0.5, -0.08, 0.0], raise: [0.38, 0.42, 0.06] };
+// (G, round 12, against photos and reviews: out was held level and locked like a pointer, up put the fist at the face;
+// now long and a little up and behind with a soft elbow)
+const ARM_MODE = { out: [0.4, 0.14, -0.14], up: [0.38, 0.42, -0.1], wide: [0.44, 0.02, -0.14], raise: [0.42, 0.38, -0.12] };
 const TG = new Float64Array(6), SH = new Float64Array(6);
+const _bo0 = V(), _bo1 = Q();   // (G: the board before a bone, to take it back)
 
 // a point on the board (board-local) and the hand's palm and fingers there, all in the world (into out)
 function boardPoint(bd, at, edge, fb, out) {
@@ -533,7 +538,7 @@ Rig.poser.board = (rig, S0, dt) => {
   else rig._gdLast = null;
   rig.grabHeld = gid && gid === rig.gid ? (rig.grabHeld || 0) + dt : 0; rig.gid = gid;
   const gW = sp('bgw', gd ? 1 : 0, gd ? 13 : 9);
-  const prep = air ? 1 - smoothstep(0.09, 0.36, rig.timeToGround(S.p, vel)) : 0;
+  const prep = air ? 1 - smoothstep(0.12, 0.55, rig.timeToGround(S.p, vel, true)) : 0;   // (G, round 12, reviews: a tweak or a boned leg still held at the snow: let go from about half a second out, 0.36)
   const ext = sp('bext', air ? 1 - Math.max(prep, intoK) : 0, air ? 28 : 32);
   const twk = 1 + 0.18 * smooth01((rig.grabHeld - 0.45) / 0.75) + 0.04 * Math.sin(rig.grabHeld * 3.4) * smooth01(rig.grabHeld / 0.6);
   const flF = sp('bflF', air ? smoothstep(0.7, 4.2, Wx) : 0, 7, 0.75), flB = sp('bflB', air ? smoothstep(0.7, 4.2, -Wx) : 0, 7, 0.75);
@@ -555,9 +560,10 @@ Rig.poser.board = (rig, S0, dt) => {
   rig._pWx = Wx;
   for (let i = 0; i < 6; i++) SH[i] = sp(BSH[i], TG[i], gd ? 14 : 11, air ? (gd ? 0.74 : 0.72) : 1);
   // (2026-11-13: a grab cuts the pop's stretch short, the knees coming up to meet the hand)
-  const kneeUp = sp('bkneeUp', (gd ? 0.05 + 0.32 * gd.tuck : air ? (0.05 + 0.1 * crouch + 0.05 * spinning) * (1 - lay) + 0.34 * tkF - 0.06 * lay : 0) * (1 - popK * (1 - 0.7 * gW)), gd ? 15 : 12, air ? 0.8 : 1);
+  const kneeUp = sp('bkneeUp', (gd ? 0.03 + 0.25 * gd.tuck :   // (G, round 12, reviews: the hips sat on the heels, thighs flat: the board lower under the hips, 0.05 + 0.32 x tuck)
+     air ? (0.05 + 0.1 * crouch + 0.05 * spinning) * (1 - lay) + 0.34 * tkF - 0.06 * lay : 0) * (1 - popK * (1 - 0.7 * gW)), gd ? 15 : 12, air ? 0.8 : 1);
   // (2026-11-13) how far the knees open along the board in the air (a grab's own `knees`)
-  const kneeOut = sp('bkneeOut', air ? 0.1 + (gd ? (gd.knees ?? 0.1) : 0.05 * crouch) : 0, 12);
+  const kneeOut = sp('bkneeOut', air ? (gd ? -0.05 + 0.45 * (gd.knees ?? 0.1) : 0.04 + 0.05 * crouch) : 0, 12);   // (G: in a grab the knees come in towards each other: they splayed along the board in a frog squat)
   const boneF = sp('bboneF', gd && gd.bone && gd.bone.includes('F') ? 1 : 0, 12), boneB = sp('bboneB', gd && gd.bone && gd.bone.includes('B') ? 1 : 0, 12);
   // ---- the board, in the body's frame
   const lp = _bp.set(0, 0, 0), lq = _lq.identity();
@@ -748,7 +754,7 @@ Rig.poser.board = (rig, S0, dt) => {
   const hdYaw = clamp(hy - tw * (1 - 0.3 * airW), -1.45, 1.45);
   // (the head keeps most of the grab's bend off, looking out rather than down at the snow, as in the photos)
   const hdQ = _hdQ.copy(chQ).multiply(_q1.setFromAxisAngle(Y, hdYaw)).multiply(_q1.setFromAxisAngle(Z, -chRoll * 0.5)).multiply(_q1.setFromAxisAngle(X, hp - lean * 0.6 + 0.2 * hardL));
-  if (bendA > 1e-5) hdQ.premultiply(_q1.setFromAxisAngle(_bl, -0.75 * bendA));
+  if (bendA > 1e-5) hdQ.premultiply(_q1.setFromAxisAngle(_bl, -0.9 * bendA));   // (G: 0.75; the helmet's top faced the camera)
   rig.blendBone(b.neck, 'neck', chQ, hdQ, 0.5); rig.blendBone(b.head, 'head', hdQ, hdQ, 0);
   rig.blendBone(b.clL, 'clL', chQ, chQ, 0); rig.blendBone(b.clR, 'clR', chQ, chQ, 0);
   // the collarbone: the shoulder dropped and forward towards the grab, for what the bend left
@@ -798,6 +804,40 @@ Rig.poser.board = (rig, S0, dt) => {
       if (dd < lo) { const ex = lo - dd; if (ex > worst) worst = ex; _v5.addScaledVector(_v6.subVectors(an, hip).normalize(), ex); }
     }
     if (worst > 0) { _v5.normalize().multiplyScalar(worst * airW); bw.position.add(_v5); }
+  }
+  /* (G, round 12, a review: "most bone versions do not straighten the named leg") a boned leg is straightened: the board
+     turned about the other binding (both boned: moved away from the hips) until that ankle is 0.94 of the leg's length
+     from its hip, whatever the grab's own numbers do; three rounds, at most 0.35 rad of turn in all (more stood the board up and took the grab out of reach) */
+  let boneTurn = 0;
+  const bone0 = boneF > 0.01 || boneB > 0.01; if (bone0) { _bo0.copy(bw.position); _bo1.copy(bw.quaternion); }
+  if (airW > 0.01 && (boneF > 0.01 || boneB > 0.01)) for (let it = 0; it < 3; it++) {
+    bindingAnkles(rig, bd, fb);
+    const both = boneF > 0.01 && boneB > 0.01;
+    for (let j = 0; j < 2; j++) {
+      const w = (j ? boneB : boneF) * airW * ext; if (w < 0.01) continue;   // (and let go as the landing comes, with the grab's shape)
+      const kk = legBinding(0, noseX) === j ? 0 : 1, thb = rigLegThigh(rig, kk); thb.updateWorldMatrix(false, false);
+      const hip = _hip.setFromMatrixPosition(thb.matrixWorld), an = _ank[j], dd = an.distanceTo(hip), T = 0.88 * rig.legLen;
+      if (dd >= T) continue;
+      const away = _v5.subVectors(an, hip).normalize();
+      if (both) { bw.position.addScaledVector(away, Math.min(0.05, (T - dd) * 0.5) * w); continue; }
+      const piv = _ank[1 - j], arm = _v6.subVectors(an, piv), la = arm.length(); if (la < 0.05) continue;
+      const ax = _bx.crossVectors(arm, away); if (ax.lengthSq() < 1e-8) continue; ax.normalize();
+      const turn = Math.min(0.2, (T - dd) / la, 0.35 - boneTurn); if (turn <= 0.002) continue; boneTurn += turn;
+      _bendQ.setFromAxisAngle(ax, turn * w);
+      bw.position.sub(piv).applyQuaternion(_bendQ).add(piv); bw.quaternion.premultiply(_bendQ);
+    }
+  }
+  // (and never so far that a holding hand can no longer reach its grab: taken back half way, up to three times)
+  if (bone0 && airW > 0.01) for (let it = 0; it < 3; it++) {
+    let out = false;
+    for (let k = 0; k < 2 && !out; k++) {
+      const Hs = rig.hs[k]; if (!Hs.cur || Hs.w < 0.3) continue;
+      const ua = k ? b.uaR : b.uaL; ua.updateWorldMatrix(false, false);
+      const g = boardPoint(bd, Hs.cur[1], Hs.cur[2], fb, gp), sh = _v3.setFromMatrixPosition(ua.matrixWorld);
+      if (_v4.copy(g.pt).addScaledVector(g.fingers, -0.07).addScaledVector(g.palm, -PALM).distanceTo(sh) > (rig.len.ua + rig.len.fa) * 0.985) out = true;
+    }
+    if (!out) break;
+    bw.position.lerp(_bo0, 0.5); bw.quaternion.slerp(_bo1, 0.5);
   }
   // keep both bindings within their legs' reach (pulled towards the hips, a boned leg nearly straight)
   for (let it = 0; it < 2; it++) {
@@ -856,6 +896,9 @@ Rig.poser.board = (rig, S0, dt) => {
       // (set for a press: out for balance, the arm over the pressed end reaching forward and down over it, the other up)
       if (intoK > 0.01 && into !== 'lazy') { const over = (pr > 0) === front; lat += 0.12 * intoK; fwd += (over ? 0.12 : -0.04) * intoK; up += (over ? -0.12 : 0.12) * intoK; }
       if (gd && gd.arms) { const m = ARM_MODE[gd.arms]; lat = m[0]; up = m[1]; fwd = m[2]; lat += 0.05 * wob(tt * 1.3, 31 + k * 4); up += 0.06 * wob(tt * 1.6, 33 + k * 3); }
+      if (gd && gd.arms && !gd.hands.length && !front) { up -= 0.16; fwd += 0.12; lat -= 0.05; }   // (G: both arms free, not a mirror pair: the back one lower and forward)
+      // (G, round 12, a review: "the rider lands with the arms in the air": as the landing comes they come down and out)
+      if (prep > 0.01) { lat += (0.3 - lat) * prep; up += (-0.16 - up) * prep; fwd += (0.2 - fwd) * prep; }
     } else if (rail) {
       const bal = S.balance || 0;
       // out for balance, the front one a little higher (a boardslide's arms, B/ref/ "Frontside Boardslide")
@@ -898,12 +941,12 @@ Rig.poser.board = (rig, S0, dt) => {
     // from the grab went up by the head when the chest bent down to it)
     // (and partly along the board, the way the photos hold it out for balance: along a chest turned for the grab it went
     // out in front)
-    const cLa = gW > 0.01 && !(Hs.w > 0.5) ? _v6.copy(cL).addScaledVector(ub, -cL.dot(ub) * gW).normalize().multiplyScalar(1 - 0.6 * gW).addScaledVector(_v5.set(1, 0, 0).applyQuaternion(Rr), 0.6 * gW).normalize() : cL;
+    const cLa = gW > 0.01 && !(Hs.w > 0.5) ? _v6.copy(cL).addScaledVector(ub, -cL.dot(ub) * gW).normalize().multiplyScalar(1 - 0.4 * gW).addScaledVector(_v5.set(1, 0, 0).applyQuaternion(Rr), 0.4 * gW).normalize() : cL;
     const wr = _wr.copy(sh).addScaledVector(cLa, s * lat).addScaledVector(ub, up).addScaledVector(cFl, fwd);
     // a hand drag (the lazy boy key on a board): the back hand trails in the snow beside the heel edge, behind the back foot
     const drag = !front && (ground || into === 'lazy') ? lazy : 0;
     if (drag > 0.01) wr.lerp(_v2.set(-fb * (halfWidth(-0.35) + 0.14), 0.04 - (S.sink || 0), -BOARD.stance / 2 - 0.05).applyQuaternion(R).add(BP), drag);
-    { const fr = gW * (1 - (Hs.w || 0)), d = wr.distanceTo(sh), m = softReach(d, armL, 0.78 + 0.14 * drag + 0.1 * fr, 0.93 + 0.065 * drag + 0.04 * fr); if (m < d) wr.sub(sh).multiplyScalar(m / d).add(sh); }   // (fr: a free arm in a grab held nearly straight)
+    { const fr = gW * (1 - (Hs.w || 0)), d = wr.distanceTo(sh), m = softReach(d, armL, 0.78 + 0.14 * drag + 0.03 * fr, 0.93 + 0.065 * drag + 0.01 * fr); if (m < d) wr.sub(sh).multiplyScalar(m / d).add(sh); }   // (fr: a free arm in a grab; G, round 12: its elbow soft now, it was held nearly straight)
     const fd = _fd.copy(cF).addScaledVector(ub, -0.35).normalize(), pa = _pa.copy(cL).multiplyScalar(-s);
     if (drag > 0.01) { fd.lerp(_v2.set(0, 0, -1).applyQuaternion(R), drag).normalize(); pa.lerp(_v6.copy(ub).negate(), drag).normalize(); }
     let curl = 0.6 - 0.3 * drag;
@@ -947,6 +990,8 @@ Rig.poser.board = (rig, S0, dt) => {
     const j = legBinding(k, noseX), toe = _toe[j];
     const th = k ? b.thR : b.thL, ca = k ? b.caR : b.caL, ft = k ? b.ftR : b.ftL;
     const kp = _kp.copy(toe).addScaledVector(ub, 0.35);
+    // (G, round 12: in the air the knees come forward over the toe edge, towards each other, not out along the toes' duck)
+    if (airW > 0.01) kp.lerp(_v3.set(fb, 0, 0).applyQuaternion(bw.quaternion).addScaledVector(ub, 0.6), 0.85 * airW);
     kp.addScaledVector(_v3.set(fb, 0, 0).applyQuaternion(R), 0.4 * toeK);
     // (2026-11-13) in the air the knees open along the board, the front one towards the nose and the back one towards the
     // tail, as a tucked rider's do (photos of indies and melons, B/ref/): the chest and a grabbing arm go down between them

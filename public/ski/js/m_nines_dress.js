@@ -8,8 +8,8 @@
    Everything that never moves is merged by material: a handful of draw calls. */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { smoothstep, fbm } from './noise.js?v=28';
-import { snowUniforms } from './materials.js?v=28';
+import { smoothstep, fbm } from './noise.js?v=29';
+import { snowUniforms } from './materials.js?v=29';
 
 // ---- a merging kit: shapes go into buckets by material, each bucket one mesh ---------------------------------------
 export class Kit {

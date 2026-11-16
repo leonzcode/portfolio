@@ -6,7 +6,7 @@
      areas a little higher.
    - The built-in resorts are listed by region; their pistes and lifts ship with the site, so they open fastest.
    Picking a place keeps it (ski_opts: map 'world', place) and starts the game again there. */
-import { PRESETS, presetOf, keepPlace, worldId } from './wplaces.js?v=28';
+import { PRESETS, presetOf, keepPlace, worldId } from './wplaces.js?v=29';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
