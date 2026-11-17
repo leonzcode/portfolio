@@ -16,9 +16,9 @@
    them dry brown grass with snow lying in the shade and in hollows, bare larch woods (red-brown), birch groves (white
    stems), young pines planted in rows across the slopes, wind turbines on the far ridges. */
 import * as THREE from 'three';
-import { baseLine } from './terrain.js?v=30';
-import { fbm, simplex, smoothstep, clamp, rng } from './noise.js?v=30';
-import { snowUniforms } from './materials.js?v=30';
+import { baseLine } from './terrain.js?v=31';
+import { fbm, simplex, smoothstep, clamp, rng } from './noise.js?v=31';
+import { snowUniforms } from './materials.js?v=31';
 
 const NEAR = { X0: -2600, Z0: -2300, st: 20, n: 261 };
 const FAR = { X0: -24000, Z0: -23700, st: 200, n: 241 };
@@ -143,7 +143,7 @@ export class Land {
     if (this.runAt && this.runAt(x, z) > 0.15) return 0;
     const stand = fbm(x * 0.005 + 2, z * 0.005 - 5, 3) + 0.35 * fbm(x * 0.02, z * 0.02, 2);
     if (stand > 0.2) return 0.5;
-    if (stand < -0.06 && Math.hypot(x, z - 300) > 200) return 1;
+    if (stand < -0.06 && Math.hypot(x, z - 300) > 420) return 1;
     return 0;
   }
   // the snow cover as a texture for the snow shader's bare ground (m_oly22.js): 512 x 512 over 5.12 km, round the course
@@ -167,8 +167,8 @@ export class Land {
 
 export async function loadLand(base) {
   const [buf, osm] = await Promise.all([
-    fetch(new URL('../data/genting2022/dem.bin?v=30', base)).then(r => { if (!r.ok) throw new Error('ground ' + r.status); return r.arrayBuffer(); }),
-    fetch(new URL('../data/genting2022/osm.json?v=30', base)).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(new URL('../data/genting2022/dem.bin?v=31', base)).then(r => { if (!r.ok) throw new Error('ground ' + r.status); return r.arrayBuffer(); }),
+    fetch(new URL('../data/genting2022/osm.json?v=31', base)).then(r => r.ok ? r.json() : null).catch(() => null),
   ]);
   return new Land(buf, osm);
 }
@@ -178,7 +178,7 @@ export async function loadLand(base) {
 export function makeFarHills(scene, q, land) {
   const low = q.tier === 'low', step = low ? 2 : 1, n = Math.floor((FAR.n - 1) / step) + 1;
   const P = new Float32Array(n * n * 3), C = new Float32Array(n * n * 3), I = [];
-  const BR = [0.17, 0.145, 0.12], DK = [0.09, 0.08, 0.07], SN = [0.78, 0.8, 0.84], WD = [0.08, 0.07, 0.06];
+  const BR = [0.15, 0.1, 0.068], DK = [0.07, 0.048, 0.035], SN = [0.78, 0.8, 0.84], WD = [0.085, 0.055, 0.04];   // (warm dark browns: the photos' hills)
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const x = FAR.X0 + i * step * FAR.st, z = FAR.Z0 + j * step * FAR.st, k = j * n + i;
     let y = land.far(x, z);
@@ -238,23 +238,24 @@ function treeAtlas() {
     const n = depth > 3 ? 2 : 3;
     for (let k = 0; k < n; k++) branch(x2, y2, a + (r() - 0.5) * 1.1, len * (0.62 + r() * 0.15), Math.max(0.6, w * 0.62), col, depth - 1);
   };
-  // 0: a bare larch: a straight stem, a narrow crown of fine grey-brown twigs, dense enough to read as a mass far off
+  /* 0: a bare larch in winter: a straight stem, an uneven narrow crown of fine grey-brown twigs in tufts with gaps
+     between them (a clean cone of haze read as a cartoon tree from afar) */
   {
     const cx = 64;
-    // (the crown's mass: a soft cone of brown haze, broken by the noise into tufts, under the twigs)
-    for (let k = 0; k < 900; k++) {
-      const t = r(), y = 22 + t * 214, w = (4 + 46 * t) * (0.25 + 0.75 * Math.sqrt(r())), sg = r() < 0.5 ? -1 : 1;
-      g.fillStyle = `rgba(${104 + r() * 26 | 0},${78 + r() * 16 | 0},${64 + r() * 12 | 0},0.7)`;
-      g.fillRect(cx + sg * w * r(), y, 2 + r() * 3, 1 + r() * 2);
-    }
-    g.strokeStyle = '#3e2d25'; g.lineWidth = 4; g.beginPath(); g.moveTo(cx, 254); g.lineTo(cx, 6); g.stroke();
-    for (let y = 26; y < 236; y += 4) {
-      const t = (y - 20) / 220, len = 5 + 46 * t;
+    g.strokeStyle = '#4a3a32'; g.lineWidth = 3.5; g.beginPath(); g.moveTo(cx, 254); g.lineTo(cx + 2, 8); g.stroke();
+    // (tufts: clusters of short twigs along the stem, each tuft its own reach, so the outline is ragged)
+    for (let y = 16; y < 228; y += 5 + r() * 6) {
+      const t = (y - 10) / 220, reach = (8 + 40 * Math.pow(t, 0.8)) * (0.45 + 0.75 * r());
       for (const sg of [-1, 1]) {
-        g.strokeStyle = `rgba(${104 + r() * 30 | 0},${68 + r() * 16 | 0},${50 + r() * 12 | 0},0.95)`; g.lineWidth = 1.1;
-        const ex = cx + sg * len * (0.7 + r() * 0.4), ey = y + 3 + r() * 6;
-        g.beginPath(); g.moveTo(cx, y); g.quadraticCurveTo(cx + sg * len * 0.5, y - 2, ex, ey); g.stroke();
-        for (let k = 0; k < 5; k++) { const t2 = r(); const px = cx + sg * len * t2 * 0.9, py = y + t2 * 5; g.beginPath(); g.moveTo(px, py); g.lineTo(px + sg * (3 + r() * 6), py + 3 + r() * 6); g.stroke(); }
+        if (r() < 0.22) continue;
+        const ex = cx + sg * reach, ey = y + 4 + r() * 8;
+        g.strokeStyle = `rgba(${92 + r() * 22 | 0},${74 + r() * 14 | 0},${66 + r() * 12 | 0},0.92)`; g.lineWidth = 1.2;
+        g.beginPath(); g.moveTo(cx, y); g.quadraticCurveTo(cx + sg * reach * 0.5, y - 1, ex, ey); g.stroke();
+        for (let k = 0; k < 9; k++) {
+          const t2 = 0.25 + 0.75 * r(), px = cx + sg * reach * t2, py = y + t2 * 6;
+          g.fillStyle = `rgba(${98 + r() * 24 | 0},${80 + r() * 16 | 0},${72 + r() * 14 | 0},0.75)`;
+          g.fillRect(px - 2 + (r() - 0.5) * 6, py - 3 + (r() - 0.5) * 8, 2 + r() * 3, 2 + r() * 2);
+        }
       }
     }
   }
@@ -269,15 +270,20 @@ function treeAtlas() {
     g.lineCap = 'round';
     for (let k = 0; k < 26; k++) branch(cx + (r() - 0.5) * 20, 150 - r() * 60, Math.PI / 2 + (r() - 0.5) * 1.6, 18 + r() * 22, 2.2, 'rgba(96,70,72,0.85)', 5);
   }
-  // 2: a young pine (dark green, dense, a little snow)
+  /* 2: a young planted pine: whorls of drooping branches, each a fan of short needle strokes, dark blue-green with
+     lighter tips and a little snow, the outline ragged (stacked triangles read as cartoon cones) */
   {
     const cx = 320;
-    g.fillStyle = '#3a2a1c'; g.fillRect(cx - 3, 220, 6, 34);
-    for (let y = 228; y > 20; y -= 5) {
-      const t = (y - 20) / 210, w = 6 + 50 * t;
-      g.fillStyle = `rgb(${24 + r() * 14 | 0},${46 + r() * 18 | 0},${32 + r() * 12 | 0})`;
-      g.beginPath(); g.moveTo(cx - w, y + 6); g.lineTo(cx, y - 12); g.lineTo(cx + w, y + 6); g.closePath(); g.fill();
-      if (r() < 0.35) { g.fillStyle = 'rgba(230,234,240,0.8)'; g.fillRect(cx - w * 0.6 + r() * w, y - 2, 6, 2); }
+    g.fillStyle = '#3a2a1c'; g.fillRect(cx - 2, 214, 4, 40);
+    for (let y = 222; y > 18; y -= 7 + r() * 5) {
+      const t = (y - 14) / 214, reach = (5 + 50 * t) * (0.8 + 0.35 * r());
+      for (let k = 0; k < 26 + 30 * t; k++) {
+        const sg = r() < 0.5 ? -1 : 1, d = Math.pow(r(), 0.7) * reach, px = cx + sg * d, py = y + d * 0.28 + (r() - 0.5) * 6;
+        const tip = d / Math.max(1, reach);
+        g.strokeStyle = `rgba(${18 + tip * 26 + r() * 10 | 0},${38 + tip * 30 + r() * 14 | 0},${30 + tip * 18 + r() * 10 | 0},0.95)`;
+        g.lineWidth = 1.4 + r() * 1.4; g.beginPath(); g.moveTo(px, py); g.lineTo(px + sg * (3 + r() * 5), py + 2 + r() * 5); g.stroke();
+      }
+      if (r() < 0.5) { g.fillStyle = 'rgba(232,236,242,0.85)'; const d = r() * reach * 0.8; g.fillRect(cx + (r() < 0.5 ? -d : d) - 3, y - 2 + d * 0.28, 5 + r() * 4, 2); }
     }
   }
   // 3: a scrub bush (low, brown)
@@ -297,22 +303,25 @@ export function plantTrees(land, q, course) {
   const lanes = course.clear || (() => false);
   for (let tries = 0; out.length < max && tries < max * 18; tries++) {
     const x = (r() - 0.5) * 1800, z = 300 + (r() - 0.5) * 1800;
+    // (what would grow here first, from the noise alone: most tries are open grass, and the ground's own sums for
+    // them were most of this loop's time while loading)
+    const stand = fbm(x * 0.005 + 2, z * 0.005 - 5, 3) + 0.35 * fbm(x * 0.02, z * 0.02, 2), dV = Math.hypot(x, z - 300);
+    const wood = stand > 0.3, planted = !wood && stand < -0.08 && dV > 220, roll = r();
+    if (!wood && !planted && roll >= 0.04) continue;
     if (lanes(x, z)) continue;
     const run = land.runAt ? land.runAt(x, z) : 0;
     if (run > 0.2) continue;
     const y = land.at(x, z), e = 6, gx = (land.at(x + e, z) - land.at(x - e, z)) / (2 * e), gz = (land.at(x, z + e) - land.at(x, z - e)) / (2 * e);
     if (Math.hypot(gx, gz) > 0.9) continue;
-    const stand = fbm(x * 0.005 + 2, z * 0.005 - 5, 3) + 0.35 * fbm(x * 0.02, z * 0.02, 2), dV = Math.hypot(x, z - 300);
     let kind = -1, s = 0;
-    if (stand > 0.3) {
-      if (r() > 0.92) continue;
+    if (wood) {
       const birch = fbm(x * 0.011 - 4, z * 0.011 + 8, 2) > 0.12 && dV < 1000;
-      kind = birch ? 1 : 0; s = birch ? 9 + r() * 5 : 13 + r() * 8;
-    } else if (stand < -0.08 && dV > 220) {
+      kind = birch ? 1 : 0; s = birch ? 8 + r() * 5 : 9 + r() * 6;
+    } else if (planted) {
       // (planted rows: on the contour, the rows about 4 m apart up the slope)
       const ph = ((y / 2.0) % 1 + 1) % 1;
       if (Math.abs(ph - 0.5) < 0.1 && r() < 0.7) { kind = 2; s = 1.4 + r() * 1.4; }
-    } else if (r() < 0.04) { kind = 3; s = 1.0 + r() * 1.2; }
+    } else { kind = 3; s = 1.0 + r() * 1.2; }
     if (kind < 0) continue;
     out.push({ x, y: y - 0.2, z, s, k: kind, rot: r() * 6.283 });
   }

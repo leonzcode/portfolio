@@ -21,9 +21,9 @@
 
    The frame (m_olyland.js): x the rider's left, z down the course, the start at z 0. */
 import * as THREE from 'three';
-import { setRun, baseLine, pitchAt, ground } from './terrain.js?v=30';
-import { Kicker, Rail, Shape, SkewKicker, Quarter, assemble } from './park.js?v=30';
-import { smoothstep, clamp } from './noise.js?v=30';
+import { setRun, baseLine, pitchAt, ground } from './terrain.js?v=31';
+import { Kicker, Rail, Shape, SkewKicker, Quarter, assemble } from './park.js?v=31';
+import { smoothstep, clamp } from './noise.js?v=31';
 
 const RAD = Math.PI / 180;
 // ---- the course's profile (terrain.js run sections: [z where a pitch starts, degrees], 30 m smoothing) --------------
@@ -32,7 +32,10 @@ const ZF = 600;                       // the finish line
 function sections(jumpDeg) {
   return [[-900, 9], [-220, 10], [-46, 6], [-6, 6], [0, 24], [18, 19.5], [236, 15], [262, jumpDeg], [592, 9], [616, 3], [705, 2], [770, 7]];
 }
+const J_SOLVED = 17.83264124;          // (the last answer: checked first, so a load skips the 30 rebuilds of the run)
 export function setProfile() {
+  setRun(sections(J_SOLVED));
+  if (Math.abs(baseLine(0) - baseLine(ZF) - 198) < 0.02) return J_SOLVED;
   let lo = 10, hi = 30;
   for (let it = 0; it < 30; it++) { const m = (lo + hi) / 2; setRun(sections(m)); if (baseLine(0) - baseLine(ZF) < 198) lo = m; else hi = m; }
   setRun(sections((lo + hi) / 2));
@@ -128,8 +131,8 @@ class Deck extends Shape {
   dye(x, z) {
     for (const a of this.adds) if (a.dye && a.dye(x, z)) return 1;
     const u = x - this.x, d = Math.abs(u) - this.hw;
-    if (Math.abs(z - this.zB + 0.25) < 0.12 && d < 0) return 1;
-    if (z > this.zA + 2 && z < this.zB && Math.abs(d + 0.25) < 0.08) return 1;
+    // (the front edge only: a line down each side too drew the terraces as outlined plates)
+    if (Math.abs(z - this.zB + 0.25) < 0.12 && d < -0.5) return 1;
     return 0;
   }
 }
@@ -222,24 +225,23 @@ export function makeCourse(land) {
   const shapes = [];
   const snow = (x, z) => { const g = land.at(x, z); let y = g; for (const f of shapes) { const h = f.height(x, z, g); if (h > y) y = h; } return y; };
 
-  // ---- the jib sections: three terraces each, left (highest) to right (lowest) ---------------------------------------
-  // [deck back zA, deck front zB, the three decks' front heights over the slope (left, middle, right)]
-  const LANES = { L: [6, 25], M: [-8, 6], R: [-34, -8] };
-  const deckSet = (n, zA, zB, H, face) => {
+  // ---- the jib sections: terraces stepping down across the course from the Great Wall (the rider's left, x 29.2) ---------
+  /* (second pass, from the federation's captioned drone preview frame by frame: the features stand in a band about 22 m
+     wide against the wall, the highest terrace along the wall, the rails parallel to it; the faces between the terraces
+     are 1 to 4 m, soft and rounded where they face down the course, upright brick where a terrace steps down across it.
+     Sizes scaled from the 1 m panels and the wall's 0.6 x 0.3 m bricks: lengths about +-3 m, heights about +-30 %) */
+  const decks = [];
+  const deckSet = (n, zA, zB, spec) => {
     const out = {};
-    for (const [k, [x0, x1]] of Object.entries(LANES)) {
+    for (const [k, s] of Object.entries(spec)) {
       // the deck's own pitch from the height its front edge stands over the slope
-      const h = H[k], deck = Math.atan(Math.tan(pitchAt((zA + zB) / 2)) - h / (zB - zA)) / RAD;
-      // (shaped as the footage shows the steps: big soft rounded edges and shoulders, not sharp boxes)
-      const d = new Deck({ name: `Section ${n} ${k === 'L' ? 'left' : k === 'M' ? 'middle' : 'right'} deck`, group: `Jib ${n}`, x0, x1, zA, zB, deck, face: face || 32, Rk: 3.0, shoulder: 1.4, sideS: 0.8 });
+      const deck = Math.atan(Math.tan(pitchAt((zA + zB) / 2)) - s.H / (zB - zA)) / RAD;
+      const d = new Deck({ name: `Section ${n} ${k === 'L' ? 'upper' : k === 'M' ? 'middle' : 'lower'} terrace`, group: `Jib ${n}`, x0: s.x0, x1: s.x1, zA, zB, deck, face: s.face || 40, Rk: s.Rk || 4.5, toeW: 1.2, shoulder: s.shoulder, sideS: s.sideS });
       meshed.push(d); shapes.push(d); decks.push(d); out[k] = d;
-      note(d.name, { kind: 'deck', x0, x1, zA, zB, deck: +deck.toFixed(1), frontH: +d.H.toFixed(2), face: d.face, src: 'estimated (terraces in the drone footage and the satellite picture of the earthworks)' });
+      note(d.name, { kind: 'deck', x0: s.x0, x1: s.x1, zA, zB, deck: +deck.toFixed(1), frontH: +d.H.toFixed(2), face: d.face, src: 'measured roughly from the drone preview (panels and bricks for scale); heights +-30 %' });
     }
     return out;
   };
-  // the deck's snow along a line at x (y), and down its face
-  // (the snow as the shapes made so far have it, kept: what a ramp or a block made now stands on)
-  const decks = [];
   const deckUnder = (x, z) => decks.find(d => x > d.x - d.hw - 0.5 && x < d.x + d.hw + 0.5 && z > d.zA - 6 && z < d.zMeet);
   const place = (f, x, z) => { const d = deckUnder(x, z); if (d) d.add(f); else meshed.push(f); return f; };
   const snowNow = () => { const l = shapes.slice(); return (x, z) => { const g = land.at(x, z); let y = g; for (const f of l) { const h = f.height(x, z, g); if (h > y) y = h; } return y; }; };
@@ -247,133 +249,147 @@ export function makeCourse(land) {
      panel down to the snow, or a tube, a box). ramp: a snow ramp up to its start, standing on the deck there (park.js's
      own ramps, Wedge, stand on the ground under the decks, out of sight) */
   const R_ = (o) => {
-    const ramp = o.ramp; delete o.ramp;
+    const ramp = o.ramp, gap = o.gap != null ? o.gap : 0.7; delete o.ramp; delete o.gap;
     const r = new Rail(Object.assign({ abs: true, ownMesh: true }, o)); rails.push(r);
     if (ramp) {
-      /* as park.js's own (Wedge): a kick rising over 3.5 m to its lip 0.7 m short of the rail's start, the rail's top a
-         tenth of a metre over the lip (a box's 5 cm), then falling away under the rail over 1.2 m */
-      const p0 = r.P[0], d = r.dirAt(0), yaw = Math.atan2(d.x, d.z), len = 3.5, back = 0.7 + len, under = snowNow();
-      const hr = Math.max(0.15, p0.y - under(p0.x - Math.sin(yaw) * 0.7, p0.z - Math.cos(yaw) * 0.7) - (r.kind === 'box' ? 0.05 : 0.1));
-      const b = new Bank({ name: o.name + ' ramp', group: o.group || 'Ramps', x: p0.x - Math.sin(yaw) * back, z: p0.z - Math.cos(yaw) * back, yaw, len, h: hr, top: 0, fall: 1.2, kick: true, hw: r.kind === 'box' ? Math.max(1.3, r.w / 2 + 0.6) : 1.2 });
+      /* as park.js's own (Wedge): a kick rising over 3.5 m to its lip `gap` short of the rail's start (0.7 m), the rail's
+         top a tenth of a metre over the lip (a box's 5 cm; a butter box sits on its ramp, 2 cm over a lip 0.25 m off),
+         then falling away under the rail over 1.2 m */
+      const p0 = r.P[0], d = r.dirAt(0), yaw = Math.atan2(d.x, d.z), len = 3.5, back = gap + len, under = snowNow();
+      const lipUnder = o.lipUnder != null ? o.lipUnder : r.kind === 'box' ? 0.05 : 0.1;
+      const hr = Math.max(0.15, p0.y - under(p0.x - Math.sin(yaw) * gap, p0.z - Math.cos(yaw) * gap) - lipUnder);
+      const b = new Bank({ name: o.name + ' ramp', group: o.group || 'Ramps', x: p0.x - Math.sin(yaw) * back, z: p0.z - Math.cos(yaw) * back, yaw, len, h: hr, top: 0, fall: Math.max(0.5, gap + 0.5), kick: true, hw: r.kind === 'box' ? Math.max(1.3, r.w / 2 + 0.6) : 1.2 });
       place(b, p0.x - Math.sin(yaw) * back, p0.z - Math.cos(yaw) * back); r.rampShape = b;
     }
     return r;
   };
-  // a rail along x from za to zb whose top is h over the snow, following it (the snow's own line, smoothed), with kinks at
-  // the given z's: pts [[z, h], ...] (h over the snow there)
-  const along = (x, pts) => pts.map(([z, h]) => [x, z, snow(x, z) + h]);
-  const rail = (name, kind, x, pts, o = {}) => {
-    if (o.panel !== false) pts = pts.map(([z, h]) => [z, h + 0.3]);
+  // a rail through points [[x, z, h]] (h over the snow there), the panel's 0.3 m added to h; or along one x, [[z, h]]
+  const railXZ = (name, kind, pts, o = {}) => {
+    if (o.panel !== false) pts = pts.map(([x, z, h]) => [x, z, h + 0.3]);
     if (kind === 'rail' && (o.w || 0) <= 0.14) o = Object.assign({}, o, { w: 0.17 });
-    const r = R_(Object.assign({ name, kind, pts: along(x, pts), panel: o.panel !== false }, o));
-    note(name, { kind, x, from: pts[0][0], to: pts[pts.length - 1][0], len: +r.len.toFixed(1), h0: pts[0][1], src: o.src || 'estimated (drone footage)' });
+    const r = R_(Object.assign({ name, kind, pts: pts.map(([x, z, h]) => [x, z, snow(x, z) + h]), panel: o.panel !== false }, o));
+    note(name, { kind, x: +pts[0][0].toFixed(1), from: pts[0][1], to: pts[pts.length - 1][1], len: +r.len.toFixed(1), h0: +pts[0][2].toFixed(2), src: o.src || 'measured roughly from the drone preview (panels for scale): place and length about +-3 m' });
     return r;
   };
+  const rail = (name, kind, x, pts, o = {}) => railXZ(name, kind, pts.map(([z, h]) => [x, z, h]), o);
 
-  // ---- Section 1 (z 22 to about 66) -------------------------------------------------------------------------------
+  // ---- Section 1 (z 26 to about 60): an upper terrace along the wall (the rainbow, the tank, the flat rail and the
+  // transfer box's first leg), its side an upright brick face down to the middle terrace, whose own right side is brick
+  // with a parapet: the transfer box's second leg, the two down rails and the down-flat-down rail on it --------------------
   const S1 = { zA: 26, zB: 46 };
-  const d1 = deckSet(1, S1.zA, S1.zB, { L: 6.0, M: 4.8, R: 3.4 }, 36);
+  const d1 = deckSet(1, S1.zA, S1.zB, {
+    L: { x0: 17.5, x1: 27.6, H: 3.6, sideS: 3.2, shoulder: 0.25 },
+    M: { x0: 2.5, x1: 17.5, H: 2.5, sideS: 3.2, shoulder: 0.25 },
+  });
   {
-    const L = d1.L, M = d1.M, R = d1.R;
-    // the rainbow to down rail ("industry"): an arch over the left deck along the wall, then down the deck's face
-    const xa = 23.2, za = S1.zA + 4, zc = L.zB, zd = L.zMeet - 2.5, P = [];
-    for (let i = 0; i <= 10; i++) { const t = i / 10, z = za + (zc - 1 - za) * t; P.push([z, 0.55 + 1.35 * Math.sin(Math.PI * t)]); }
-    P.push([zc + 0.6, 0.85], [zd, 0.8]);
-    rail('Rainbow to down rail', 'rail', xa, P, { ramp: 0.4, w: 0.14, src: 'stated name (federation and broadcaster); shape from the drone footage; size estimated' });
-    // the tank: a fat black tube flat along the left deck's front edge, hanging out over its face
-    { const za = L.zB - 6.5, y0 = snow(12.5, za) + 0.7, zb = L.zB + 3.2;
-      R_({ name: 'Tank', kind: 'tube', w: 0.62, ramp: 0.42, panel: false, look: 'tube', pts: [[12.5, za, y0], [12.5, zb, y0 - (zb - za) * L.td]] });
-      note('Tank', { kind: 'tube', x: 12.5, from: za, to: zb, dia: 0.62, src: 'stated name (a straight tube hanging off a ledge); a fat black tube in the footage; size estimated' }); }
-    // the flat rail on the middle deck, and the down-flat-down rail beside it, ending down the middle deck's face
-    rail('Flat rail', 'rail', 2.5, [[M.zA + 5, 0.6], [M.zA + 13, 0.6]], { ramp: 0.4, w: 0.12 });
-    rail('Down-flat-down rail', 'rail', -4.5, [[M.zA + 6, 0.75], [M.zA + 10.5, 0.7], [M.zB - 0.5, 0.7], [M.zMeet - 1.5, 0.75]], { ramp: 0.48, w: 0.12 });
-    // the transfer mailbox: a box on the right deck's top, two down rails below it off the deck's front
-    rail('Transfer mailbox', 'box', -14, [[R.zA + 6, 0.55], [R.zB - 1, 0.55]], { w: 0.34, ramp: 0.38, look: 'mailbox' });
-    rail('Down rail (right, inner)', 'rail', -22, [[R.zB - 3.5, 0.7], [R.zMeet + 6, 0.65]], { ramp: 0.45, w: 0.12 });
-    rail('Down rail (right, outer)', 'rail', -29, [[R.zB - 3.5, 0.7], [R.zMeet + 6, 0.65]], { ramp: 0.45, w: 0.12 });
+    const L = d1.L, M = d1.M;
+    // the rainbow to down rail ("industry"): an arch about 8 m across and 1 m tall a metre off the wall, its top line
+    // carrying on as a down rail over the terrace's front
+    const xa = 26.4, za = S1.zA + 6, zc = za + 8, P = [];
+    for (let i = 0; i <= 10; i++) { const t = i / 10; P.push([za + (zc - za) * t, 0.5 + 1.0 * Math.sin(Math.PI * t)]); }
+    P.push([L.zB - 0.6, 0.6], [L.zMeet - 2.0, 0.7]);
+    rail('Rainbow to down rail', 'rail', xa, P, { ramp: 0.4, src: 'stated name; shape and size from the drone preview (an arch about 8 m across and 1 m tall a metre off the wall, its line going on down the front): measured roughly' });
+    // the tank: a fat black tube, flat, parallel to the wall, 3.4 m out from it, hanging over the terrace's front
+    { const x = 24.0, za = L.zB - 5.5, y0 = snow(x, za) + 0.5, zb = L.zB + 1.0;
+      R_({ name: 'Tank', kind: 'tube', w: 0.5, ramp: 0.42, gap: 0.3, lipUnder: 0.04, panel: false, look: 'tube', pts: [[x, za, y0], [x, zb, y0 - (zb - za) * L.td]] });
+      note('Tank', { kind: 'tube', x, from: za, to: zb, dia: 0.5, src: 'stated name; a fat black tube about 0.45 m across and 6 m long, flat, about 3 m off the wall in the preview: measured roughly' }); }
+    rail('Flat rail', 'rail', 21.3, [[L.zA + 8, 0.7], [L.zA + 12.5, 0.7]], { ramp: 0.4 });
+    // the transfer box: a leg along the upper terrace, then a leg turned 30 degrees off it down over the brick side onto
+    // the middle terrace (the preview shows a sharper turn, about 70 degrees: ridden as one box it would throw riders off)
+    railXZ('Transfer box', 'box', [[18.8, L.zA + 7, 0.65], [18.8, L.zA + 12, 0.65], [15.2, L.zA + 18.2, 0.6]], { w: 0.34, ramp: 0.38, look: 'mailbox', src: 'stated name (transfer mailbox); a dog-leg in plan in the preview, the first leg along the wall, the second down onto the lower terrace: measured roughly, the turn eased' });
+    // (two short round rails down the middle terrace's front: seen from below, two parallel rails come down its face; from
+    // above, the same two read as short black-topped boxes)
+    rail('Down rail (left)', 'rail', 10.2, [[M.zB - 3, 0.7], [M.zMeet + 1, 0.65]], { ramp: 0.45, src: 'two short parallel round-top rails down the front of the lower terrace (from below and from above in the preview): length about 5 m, measured roughly' });
+    rail('Down rail (right)', 'rail', 7.2, [[M.zB - 3, 0.7], [M.zMeet + 1, 0.65]], { ramp: 0.45, src: 'two short parallel round-top rails down the front of the lower terrace (from below and from above in the preview): length about 5 m, measured roughly' });
+    rail('Down-flat-down rail', 'rail', 4.2, [[M.zA + 6, 0.75], [M.zA + 10, 0.7], [M.zB - 0.5, 0.7], [M.zMeet - 1.0, 0.75]], { ramp: 0.48, src: 'stated name; near the middle terrace\'s brick right edge in the preview, 12 to 14 m long: measured roughly' });
   }
-  // ---- Section 2 (z about 92 to 140): the watchtower ---------------------------------------------------------------
+  // ---- Section 2 (z about 94 to 130): the watchtower in the wall's corner at the top, three rails on soft terraces -------
   const S2 = { zA: 94, zB: 114 };
-  const d2 = deckSet(2, S2.zA, S2.zB, { L: 6.0, M: 4.8, R: 3.4 }, 36);
+  const d2 = deckSet(2, S2.zA, S2.zB, {
+    L: { x0: 17.5, x1: 27.6, H: 3.0, sideS: 1.1, shoulder: 2.2 },
+    M: { x0: 6.5, x1: 17.5, H: 2.2, sideS: 1.1, shoulder: 2.2 },
+    R: { x0: -6, x1: 6.5, H: 1.5, sideS: 0.8, shoulder: 2.6, Rk: 6 },
+  });
   {
-    const L = d2.L, M = d2.M, R = d2.R;
-    /* the watchtower, at the top of the section in the Great Wall's corner (the drone footage): a 6 x 6.6 m white
-       plastered body standing on the left deck's back, 3.2 m to its eaves, a roof with dark upturned eaves whose ridge
-       runs down its length. Behind it the in-run is built up into a platform level with the ridge (brick-faced, as the
-       photos' platform): ride the platform, kick onto the ridge, slide it, drop off its front onto the deck below */
-    const tx = 17.5, tz0 = S2.zA + 0.8, tz1 = S2.zA + 8.2, onL = snowNow();
-    const body = new Block({ name: 'Watchtower', group: 'Jib 2', a: [tx, tz0], b: [tx, tz1], t: 7.0, H: 3.6, roof: 2.0, eave: 0.9, gable: true, base: (x, z, g) => onL(x, z) });
+    const L = d2.L, M = d2.M;
+    /* the watchtower, on the wall at the section's top (the preview: a white body about 5 x 6.5 m, 3.2 m to its eaves, a
+       roof rising 1.8 m with dark upturned eaves). Behind it the in-run is built up level with its ridge: ride that,
+       slide the ridge, drop off its front onto the terrace (the preview shows riders reaching the roof from a stepped
+       bank on its right; the ridge runs along the course here so it can be slid) */
+    const tx = 23.6, tz0 = S2.zA + 1.0, tz1 = S2.zA + 7.5, onL = snowNow();
+    const body = new Block({ name: 'Watchtower', group: 'Jib 2', a: [tx, tz0], b: [tx, tz1], t: 5.2, H: 3.2, roof: 1.8, eave: 0.8, gable: true, base: (x, z, g) => onL(x, z) });
     ground2.push(body); blocks.push(body); shapes.push(body);
-    const gr = z => onL(tx, z) + 3.6 + 2.0 + 0.06;
-    { const hP = gr(tz0) - 0.3 - land.at(tx, S2.zA + 0.5), zA = S2.zA - 18, zB = S2.zA + 0.5;
-      const plat = new Deck({ name: 'Section 2 tower platform', group: 'Jib 2', x0: 13.0, x1: 22.0, zA, zB, deck: Math.atan(Math.tan(pitchAt((zA + zB) / 2)) - hP / (zB - zA)) / RAD, face: 62, sideS: 2.2, shoulder: 0.3, Rk: 0.6 });
+    const gr = z => onL(tx, z) + 3.2 + 1.8 + 0.06;
+    { const hP = gr(tz0) - 0.3 - land.at(tx, S2.zA + 0.5), zA = S2.zA - 28, zB = S2.zA + 0.5;
+      const plat = new Deck({ name: 'Section 2 tower platform', group: 'Jib 2', x0: 21.4, x1: 26.4, zA, zB, deck: Math.atan(Math.tan(pitchAt((zA + zB) / 2)) - hP / (zB - zA)) / RAD, face: 62, sideS: 4.0, shoulder: 0.3, Rk: 0.6 });
       meshed.push(plat); shapes.push(plat); decks.unshift(plat);
-      note(plat.name, { kind: 'deck', x0: 13.6, x1: 21.4, zA, zB, frontH: +plat.H.toFixed(2), src: 'estimated: the snow behind the tower built up to its ridge (the footage shows riders sliding the ridge)' }); }
+      { const top = snowNow(); const w = new Block({ name: 'Great Wall', group: 'Walls', a: [20.9, zA + 4], b: [20.9, zB - 0.5], t: 1.0, H: 1.1, step: true, base: (x, z) => top(21.6, z) - 0.1 }); ground2.push(w); walls.push(w); }
+      note(plat.name, { kind: 'deck', x0: 21.4, x1: 26.4, zA, zB, frontH: +plat.H.toFixed(2), src: 'estimated: the snow behind the tower built up to its ridge' }); }
     const r = R_({ name: 'Watchtower ridge', kind: 'rail', w: 0.22, ramp: 0.4, pts: [[tx, tz0 - 0.5, gr(tz0 - 0.5)], [tx, tz1 + 0.5, gr(tz1 + 0.5)]], panel: false, look: 'ridge' });
-    decor.towers.push({ x: tx, z0: tz0, z1: tz1, w: 7.0, H: 3.6, roof: 2.0, eave: 0.9, gable: true, y0: onL(tx, tz0), y1: onL(tx, tz1), ridge: r });
-    note('Watchtower and its ridge rail', { kind: 'tower', x: tx, z0: tz0, z1: tz1, w: 7, eaves: 3.6, roof: 2.0, ridgeOverDeck: +(gr(tz0) - snow(tx, tz0 - 1)).toFixed(2), src: 'stated (a watchtower whose roof ridge is slid); size from the footage (riders for scale): estimated' });
-    rail('Down mailbox', 'box', 6, [[M.zB - 4, 0.6], [M.zMeet + 3, 0.6]], { w: 0.34, ramp: 0.4, look: 'mailbox', src: 'stated name; place and size estimated' });
-    rail('Flat-down rail', 'rail', -3.5, [[M.zA + 4, 0.6], [M.zB - 0.4, 0.6], [M.zMeet + 2, 0.7]], { ramp: 0.4, w: 0.12, src: 'stated name; estimated' });
-    rail('Down-flat-down mailbox', 'box', -19, [[R.zA + 6, 0.7], [R.zA + 10, 0.6], [R.zB - 0.5, 0.6], [R.zMeet + 3, 0.65]], { w: 0.34, ramp: 0.45, look: 'mailbox', src: 'stated name; estimated' });
-    rail('Flat box (right)', 'box', -30, [[R.zA + 7, 0.4], [R.zB - 1, 0.4]], { w: 0.6, ramp: 0.3, look: 'mailbox', src: 'seen in the footage (a short flat box on the right): estimated' });
+    decor.towers.push({ x: tx, z0: tz0, z1: tz1, w: 5.2, H: 3.2, roof: 1.8, eave: 0.8, gable: true, y0: onL(tx, tz0), y1: onL(tx, tz1), ridge: r });
+    note('Watchtower and its ridge rail', { kind: 'tower', x: tx, z0: tz0, z1: tz1, w: 5.2, eaves: 3.2, roof: 1.8, ridgeOverDeck: +(gr(tz0) - snow(tx, tz0 - 1)).toFixed(2), src: 'stated (a watchtower); size from the preview (walls about 3 m, roof 1.5 to 2 m): measured roughly; the way onto its ridge estimated' });
+    rail('Down mailbox', 'box', 24.4, [[L.zB - 4.5, 0.6], [L.zMeet + 2.5, 0.6]], { w: 0.34, ramp: 0.4, look: 'mailbox', src: 'stated name; 3 to 4 m off the wall, about 8 m, down the terrace\'s front in the preview: measured roughly' });
+    rail('Flat-down rail', 'rail', 18.6, [[L.zB - 6.5, 0.6], [L.zB - 0.4, 0.6], [L.zMeet + 3.5, 0.7]], { ramp: 0.4, src: 'stated name; 8 to 10 m off the wall, a 6 m flat then a long down leg over the step in the preview: measured roughly' });
+    rail('Down-flat-down mailbox', 'box', 12.6, [[M.zA + 7, 0.7], [M.zA + 10, 0.6], [M.zB - 0.5, 0.6], [M.zMeet + 2, 0.65]], { w: 0.34, ramp: 0.45, look: 'mailbox', src: 'stated name; 14 to 16 m off the wall, about 10 m in three pieces in the preview: measured roughly' });
   }
-  // ---- Section 3 (z about 160 to 214): the combination section -----------------------------------------------------
-  const S3 = { zA: 162, zB: 182 };
-  const d3 = deckSet(3, S3.zA, S3.zB, { L: 5.8, M: 4.6, R: 3.2 }, 36);
+  // ---- Section 3 (z about 162 to 236): three long shelves down the slope side by side, the highest by the wall, steep
+  // steps between them (the preview from below: long smooth lanes with the features at their tops), the gap rail, the
+  // roller and the butter box at the top, the cannon on its brick ledge at the bottom by the gate --------------------------
+  const S3 = { zA: 162, zB: 230 };
+  const d3 = deckSet(3, S3.zA, S3.zB, {
+    L: { x0: 17.5, x1: 27.6, H: 3.6, sideS: 2.6, shoulder: 0.4 },
+    M: { x0: 6.5, x1: 17.5, H: 2.4, sideS: 2.6, shoulder: 0.4 },
+    R: { x0: -6, x1: 6.5, H: 1.4, sideS: 1.0, shoulder: 2.0, Rk: 6 },
+  });
   {
     const L = d3.L, M = d3.M, R = d3.R;
-    // the second watchtower, on the wall at the section's top (a look only: its ridge is not a line anyone takes)
-    const tx = 20.5, tz0 = S3.zA - 6, tz1 = S3.zA, base = (x, z, g) => snow(x, z);
-    const t2 = new Block({ name: 'Upper watchtower', group: 'Jib 3', a: [tx, tz0], b: [tx, tz1], t: 5.4, H: 3.0, roof: 1.4, eave: 0.55 });
-    ground2.push(t2); blocks.push(t2);
-    decor.towers.push({ x: tx, z0: tz0, z1: tz1, w: 5.4, H: 3.0, roof: 1.4, eave: 0.55, y0: land.at(tx, tz0), y1: land.at(tx, tz1) });
-    // gap to flat rail: a small kick on the left deck, a gap, then a flat rail on a raised block (a brick ledge)
-    const gx = 11, kz = L.zB - 9;
+    // gap to flat rail: a small kick on the upper shelf, a gap, then a flat rail on a raised brick ledge by the wall
+    const gx = 25.0, kz = L.zA + 6;
     const kick = new Bank({ name: 'Gap kick', group: 'Jib 3', x: gx, z: kz, len: 3.4, h: 1.1, top: 0, fall: 1.0, hw: 1.3, kick: true });
     const deckAt = snowNow(), yl = deckAt(gx, kz + 5.4);
     place(kick, gx, kz);
-    const ledge = new Block({ name: 'Ledge under the gap rail', group: 'Jib 3', a: [gx, kz + 5.3], b: [gx, kz + 11.3], t: 1.4, H: 0.7, base: (x, z, g) => deckAt(x, z) });
+    const ledge = new Block({ name: 'Ledge under the gap rail', group: 'Jib 3', a: [gx, kz + 5.3], b: [gx, kz + 11.8], t: 1.4, H: 0.7, base: (x, z, g) => deckAt(x, z) });
     place(ledge, gx, kz + 6); blocks.push(ledge); ledge.y0 = yl;
-    R_({ name: 'Gap to flat rail', kind: 'rail', w: 0.12, pts: [[gx, kz + 5.4, yl + 0.7 + 0.28], [gx, kz + 11.2, yl + 0.7 + 0.28 - 5.8 * 0.06]], panel: true });
-    note('Gap to flat rail', { kind: 'rail', x: gx, kick: 1.1, gap: 2.0, from: kz + 5.4, to: kz + 11.2, h: 0.98, src: 'stated name; sizes estimated' });
-    // the roller jump: a roller across the middle deck, a round rail following it 0.5 m over its top
-    const rz = M.zA + 5, roll = new Bank({ name: 'Roller', group: 'Jib 3', x: 0.5, z: rz, len: 4, h: 1.2, top: 1.0, fall: 4, hw: 3 });
-    place(roll, 0.5, rz);
-    const RP = []; for (let i = 0; i <= 12; i++) { const z = rz + 2.2 + 6.4 * i / 12; RP.push([z, 0.5]); }
-    rail('Roller rail', 'rail', -2.2, RP, { w: 0.12, ramp: 0.4, src: 'stated ("roller jump: a rounded rail parallel to the snow"); estimated' });
-    // the cannon: a ramp, then a rail rising at 9 degrees off it into the air
-    const cz = M.zA + 3, cx = -10;
-    const ramp = new Bank({ name: 'Cannon ramp', group: 'Jib 3', x: cx, z: cz, len: 4, h: 0.6, top: 0.5, fall: 1.5, hw: 1.2 });
-    place(ramp, cx, cz);
-    const y0 = snow(cx, cz + 4.2) + 0.25;
-    R_({ name: 'Cannon', kind: 'rail', w: 0.14, look: 'cannon', pts: [[cx, cz + 4.2, y0], [cx, cz + 10.2, y0 + 6 * Math.tan(9 * RAD) - 6 * 0]], panel: false });
-    note('Cannon', { kind: 'cannon', x: cx, from: cz + 4.2, to: cz + 10.2, rise: 9, src: 'stated ("cannon industry: a rounded rail angled upward off the ramp"); estimated' });
-    // the butter box: a long low wide box on the right deck
-    rail('Butter box', 'box', -21, [[R.zA + 4, 0.3], [R.zB - 1.5, 0.3]], { w: 1.1, ramp: 0.2, look: 'mailbox', src: 'stated ("butter box"); estimated' });
-    rail('Down rail (right)', 'rail', -30, [[R.zB - 3, 0.65], [R.zMeet + 5, 0.6]], { ramp: 0.42, w: 0.12 });
-    // the gate bastion with its arched door, at the section's lower right (outside the riding)
+    R_({ name: 'Gap to flat rail', kind: 'rail', w: 0.12, pts: [[gx, kz + 5.4, yl + 0.7 + 0.28], [gx, kz + 11.7, yl + 0.7 + 0.28 - 6.3 * L.td]], panel: true });
+    note('Gap to flat rail', { kind: 'rail', x: gx, kick: 1.1, gap: 2.0, from: kz + 5.4, to: kz + 11.7, h: 0.98, src: 'stated name; by the wall at the top left of the section, about 6.5 m, in the preview: measured roughly' });
+    // the roller jump: a long roller on the upper shelf, a round rail following it 0.5 m over the snow from its foot
+    const rx = 20.4, rz = L.zA + 3, roll = new Bank({ name: 'Roller', group: 'Jib 3', x: rx, z: rz, len: 6, h: 1.3, top: 2, fall: 6, hw: 1.8 });
+    place(roll, rx, rz);
+    const RP = []; for (let z = rz - 1.5; z <= rz + 14.5 + 1e-6; z += 1) RP.push([z, 0.5]);
+    rail('Roller rail', 'rail', rx, RP, { ramp: 0.4, gap: 0.35, lipUnder: 0.04, src: 'stated ("roller jump: a rounded rail parallel to the snow"); a long roller on the shelf by the wall: estimated' });
+    // the butter box: a long, low, wide box at the top of the lower shelf, its ramp right up to it
+    rail('Butter box', 'box', 0.5, [[R.zA + 5, 0.06], [R.zA + 19, 0.06]], { w: 1.1, ramp: 0.2, gap: 0.25, lipUnder: 0.02, look: 'mailbox', src: 'stated ("butter box"); not seen in the preview: place and size estimated' });
+    /* the cannon at the bottom by the gate (the preview from below: a flat-topped brick ledge about 1.2 m high and 6 m long,
+       a bar rising off its end): a snow ramp up onto the ledge, the ledge, the bar rising 18 degrees (25 to 30 there) */
+    const cx = 13.5, cz = M.zMeet + 2;
+    const ramp = new Bank({ name: 'Cannon ramp', group: 'Jib 3', x: cx, z: cz, len: 4.5, h: 1.15, top: 0.4, fall: 0, hw: 1.0 });
+    meshed.push(ramp); shapes.push(ramp);
+    const onR = snowNow();
+    const led = new Block({ name: 'Ledge under the cannon', group: 'Jib 3', a: [cx, cz + 4.8], b: [cx, cz + 10.8], t: 1.8, H: 1.2, base: (x, z) => land.at(x, z) });
+    ground2.push(led); blocks.push(led); shapes.push(led); led.y0 = onR(cx, cz + 5);
+    const y0 = land.at(cx, cz + 10.7) + 1.2 + 0.08, run = 3.4, rise = Math.tan(18 * RAD) * run;
+    R_({ name: 'Cannon', kind: 'rail', w: 0.14, look: 'cannon', pts: [[cx, cz + 10.7, y0], [cx, cz + 10.7 + run, y0 + rise]], panel: false });
+    note('Cannon', { kind: 'cannon', x: cx, from: cz + 10.7, to: cz + 10.7 + run, rise: 18, src: 'stated ("cannon industry: a rounded rail angled upward off the ramp"); off the end of a brick ledge about 1.2 m high and 6 m long at the bottom of the section by the gate in the preview (25 to 30 degrees there): eased to 18' });
+    // the gate bastion with its arched door, where the wall ends below the section (outside the riding)
     const bz = 244, bx = 30.2;
-    const bas = new Block({ name: 'Gate bastion', group: 'Jib 3', a: [bx, bz], b: [bx, bz + 8], t: 8, H: 4.6 });
+    const bas = new Block({ name: 'Gate bastion', group: 'Jib 3', a: [bx, bz], b: [bx, bz + 8], t: 8, H: 5.0 });
     ground2.push(bas); blocks.push(bas);
-    decor.gates.push({ x: bx, z0: bz, z1: bz + 8, t: 8, H: 4.6 });
-    note('Gate bastion', { kind: 'block', x: bx, z0: bz, z1: bz + 8, src: 'render and footage from below section 3 (a crenellated block with an arched door where the Great Wall ends, rider\'s left): size estimated' });
+    decor.gates.push({ x: bx, z0: bz, z1: bz + 8, t: 8, H: 5.0 });
+    note('Gate bastion', { kind: 'block', x: bx, z0: bz, z1: bz + 8, src: 'the preview and renders (a crenellated block with an arched door where the wall ends, rider\'s left): size estimated' });
   }
-  // ---- the Great Wall: down the rider's left beside the jib sections (x 28.5), across behind each left deck's top,
-  // with steps down at each section; about 3.5 m tall, 1.6 m thick, crenellated (m_olybuild.js draws it) ---------------
+  // ---- the Great Wall: down the rider's left beside the jib sections, 5 m over the terraces it shelters, 3 m thick,
+  // crenellated (m_olybuild.js draws it); across the top of the course; a brick parapet on section 1's middle terrace -----
   {
     const X = 29.2, snowBy = snowNow();
-    // (its foot: the highest snow within 3.5 m of it, so it stands 4 m over the deck it shelters, as in the footage)
+    // (its foot: the highest snow within 3.5 m of it, so it stands 5 m over the terrace beside it, as in the footage)
     const foot = (x, z, g) => { let y = g; for (const [dx, dz] of [[-3.5, 0], [-2, 0], [0, 2.5], [0, -2.5], [-2.5, 2.5]]) y = Math.max(y, snowBy(x + dx, z + dz) - 0.25); return y; };
-    // (the cross wall at section 2's top runs into the watchtower, which stands on its line: the platform up to the ridge
-    // comes in beside it)
-    const segs = [[[X, -30], [X, 244]], [[X, S2.zA - 3], [22.4, S2.zA - 3]], [[X, S3.zA - 8], [15, S3.zA - 8]], [[X - 1, -30], [14, -30]]];
-    for (const [a, b] of segs) {
-      const w = new Block({ name: 'Great Wall', group: 'Walls', a, b, t: 2.4, H: 4.5, base: foot });
+    for (const [a, b] of [[[X, -30], [X, 244]], [[X - 1.5, -30], [14, -30]]]) {
+      const w = new Block({ name: 'Great Wall', group: 'Walls', a, b, t: 3.0, H: 5.0, base: foot });
       ground2.push(w); walls.push(w);
     }
-    // a crenellated piece across the left deck's front in section 1, between the rainbow rail and the tank (the footage's)
-    { const L = d1.L, z = L.zB - 0.6; const w = new Block({ name: 'Great Wall', group: 'Walls', a: [20.6, z], b: [15.4, z], t: 1.4, H: 1.6, base: (x, zz, g) => snowBy(x, zz) }); ground2.push(w); walls.push(w); }
-    note('Great Wall (left)', { kind: 'wall', x: X, z0: -30, z1: 244, H: 4.5, t: 2.4, src: 'stated (a replica on the rider\'s left through the first three sections); height from the footage (a worker for scale); estimated' });
+    // the middle terrace's brick right edge in section 1, with merlons (the preview's)
+    { const M = d1.M, x = 2.0; const w = new Block({ name: 'Great Wall', group: 'Walls', a: [x, M.zA + 4], b: [x, M.zB - 1.5], t: 1.6, H: 2.0, base: (xx, z) => snowBy(x + 1.2, z) - 0.15 }); ground2.push(w); walls.push(w); }
+    note('Great Wall (left)', { kind: 'wall', x: X, z0: -30, z1: 244, H: 5.0, t: 3.0, src: 'stated (a replica on the rider\'s left through the first three sections); about 5 m over the terraces and 3 m thick from the preview (bricks 0.6 x 0.3 m, a worker for scale)' });
   }
 
   // ---- Section 4: the twin skews over one table ("Twisted Sisters") --------------------------------------------------
@@ -400,7 +416,7 @@ export function makeCourse(land) {
 
   // ---- Section 5: the pile ("The Matrix"): a roller to the knuckle peaking at 9 m, transfer kickers either side, twin
   // quarterpipes down the landing's sides --------------------------------------------------------------------------------
-  const T5 = { name: 'Section 5 roller to the knuckle', group: 'Jump 5', x: 0, lip: 0, drop: 0, table: 4.5, land: 35, Rk: 8, wT: 4.0, wTab: 0, wD: 5, wL: 17, vLip: 14, noCheck: true, sideS: 2.2, shoulder: 0.4, landS: 0.6 };
+  const T5 = { name: 'Section 5 roller to the knuckle', group: 'Jump 5', x: 0, lip: 0, drop: 0, table: 4.5, land: 35, Rk: 8, wT: 4.0, wTab: 0, wD: 5, wL: 17, vLip: 14, noCheck: true, sideS: 2.2, shoulder: 1.4, landS: 0.6 };
   // (the roller's radius for its top 9 m over the slope at the knuckle, the figure the builders gave)
   {
     let lo = 40, hi = 600, z0 = t4.zMeet + 38;
@@ -439,7 +455,7 @@ export function makeCourse(land) {
   });
 
   // ---- Section 6: one straight kicker, 5 m tall, over a 21 m table --------------------------------------------------
-  const K6 = { name: 'Section 6 kicker', group: 'Jump 6', x: 0, lip: 31, drop: 1.2, table: 21, land: 35, Rk: 8, wT: 5.5, wD: 8, wL: 14, sideS: 2.4, shoulder: 0.3, landS: 0.6, z0: t5.zMeet + 30 };
+  const K6 = { name: 'Section 6 kicker', group: 'Jump 6', x: 0, lip: 31, drop: 1.2, table: 21, land: 35, Rk: 8, wT: 5.5, wD: 8, wL: 14, sideS: 2.4, shoulder: 1.4, landS: 0.6, z0: t5.zMeet + 30 };
   K6.R = kickerFor(K6, 5);
   const k6 = new Kicker(K6);
   kickers.push(k6); shapes.push(k6);
@@ -467,8 +483,8 @@ export function makeCourse(land) {
   // ---- the starts --------------------------------------------------------------------------------------------------
   const starts = [
     { name: 'Start (the top of the course)', x: 0, z: -12, v: 2.5 },
-    { name: 'Section 2 (the watchtower)', x: 4, z: S2.zA - 26, v: 7 },
-    { name: 'Section 3 (gap, roller, cannon)', x: 0, z: S3.zA - 24, v: 7 },
+    { name: 'Section 2 (the watchtower)', x: 14, z: S2.zA - 26, v: 7 },
+    { name: 'Section 3 (gap, roller, cannon)', x: 14, z: S3.zA - 24, v: 7 },
     startFor('Section 4 (the twin skews)', -10, sk4[0].z - 50, sk4[0].z, sk4[0].vDesign, { yaw: 0 }),
     // (each from just past the landing above it, as a rider dropping in there would: a start on a landing is no start)
     startFor('Section 5 (the roller and the transfers)', 0, t4.zMeet + 3, t5.z0, 15),

@@ -44,10 +44,16 @@ function read() {
 }
 function write(s) { try { if (s) localStorage.setItem(KEY, JSON.stringify(s)); else localStorage.removeItem(KEY); } catch (e) {} }
 
-async function call(path, body) {
+/* (2026-11-16, offline) never wait long on the login server: with no connection nothing is asked, and a request a
+   network leaves hanging (a filtered network often does) counts as no answer after `ms` (the start-up's check is
+   shorter: a kept session then stands for singleplayer at once instead of after the browser's own half a minute) */
+async function call(path, body, ms = 15000) {
+  if (navigator.onLine === false) return { error: NO_CONNECTION, code: 'down' };
   let r;
-  try { r = await fetch(httpBase() + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), cache: 'no-store' }); }
-  catch (e) { return { error: NO_CONNECTION, code: 'down' }; }
+  const ac = typeof AbortController === 'function' ? new AbortController() : null, to = ac ? setTimeout(() => ac.abort(), ms) : 0;
+  try { r = await fetch(httpBase() + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), cache: 'no-store', signal: ac ? ac.signal : undefined }); }
+  catch (e) { clearTimeout(to); return { error: NO_CONNECTION, code: 'down' }; }
+  clearTimeout(to);
   if (!r.ok) return { error: NO_CONNECTION, code: 'down' };
   try { return await r.json(); } catch (e) { return { error: NO_CONNECTION, code: 'down' }; }
 }
@@ -108,7 +114,7 @@ export const Account = {
     const s = this.session = read();
     if (!s) { this.checked = false; this.changed(); return false; }
     if (s.guest) { this.checked = true; this.offline = false; this.changed(); return true; }
-    const r = await call('/lc2/account/me', { token: s.token });
+    const r = await call('/lc2/account/me', { token: s.token }, 6000);
     if (r.ok) { this.session = Object.assign({}, s, { name: r.name, admin: !!r.admin, mod: !!r.mod, staffAdmin: !!r.staffAdmin }); write(this.session); this.checked = true; this.offline = false; this.changed(); return true; }
     if (r.code === 'down') { this.offline = true; this.changed(); return 'offline'; }
     // stale, forged, banned or deleted: log in again (a ban is said on the login screen)

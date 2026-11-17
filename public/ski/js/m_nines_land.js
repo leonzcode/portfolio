@@ -68,8 +68,8 @@ export class NinesLand {
 }
 // the land of map id: data/<id>/dem.json, near.png, far.png
 export async function loadLand(base) {
-  const meta = await (await fetch(base + 'dem.json?v=30')).json();
+  const meta = await (await fetch(base + 'dem.json?v=31')).json();
   const gi = n => meta.grids.find(g => g.name === n);
-  const [near, far, mid] = await Promise.all([loadGrid(base + 'near.png?v=30', gi('near')), loadGrid(base + 'far.png?v=30', gi('far')), gi('mid') ? loadGrid(base + 'mid.png?v=30', gi('mid')) : null]);
+  const [near, far, mid] = await Promise.all([loadGrid(base + 'near.png?v=31', gi('near')), loadGrid(base + 'far.png?v=31', gi('far')), gi('mid') ? loadGrid(base + 'mid.png?v=31', gi('mid')) : null]);
   return new NinesLand(near, far, meta, mid);
 }

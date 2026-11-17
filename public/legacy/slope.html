@@ -2149,7 +2149,9 @@ function esc(t){ return String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt
 
 async function boardLoad(){
   try{
-    const r = await fetch(BOARD_API + '/scores?game=slope', { cache:'no-store' });
+    // (2026-11-16, offline: nothing asked with no connection; an answer that never comes is given up after 8 s)
+    if(navigator.onLine === false) throw new Error('offline');
+    const r = await fetch(BOARD_API + '/scores?game=slope', { cache:'no-store', signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(8000) : undefined });
     const j = await r.json();
     if(j && j.board){ boardPaint(j.board, undefined, j.board.length ? '' : 'be the first'); return true; }
     boardPaint([], '', 'unavailable');
@@ -2165,6 +2167,7 @@ async function boardSubmit(score){
   try{
     const r = await fetch(BOARD_API + '/scores', {
       method:'POST', headers:{ 'Content-Type':'application/json' },
+      signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(10000) : undefined,
       body: JSON.stringify({ game:'slope', name:boardName, score:Math.floor(score) })
     });
     const j = await r.json();

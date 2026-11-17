@@ -5,8 +5,8 @@
    3. the Overpass mirrors, raced, each with a time limit (the public ones take 20 to 50 s; overpass-api.de and some
       others fail from some networks, maps.mail.ru answers browsers).
    Everything has a time limit and a progress line; nothing found is a bare mountain, still rideable. */
-import { Frame } from './wdem.js?v=30';
-import { landQuery, bboxOf, build as buildLand, encode as encodeLand, decode as decodeLand, LAND_HALF } from './wlanddata.js?v=30';
+import { Frame } from './wdem.js?v=31';
+import { landQuery, bboxOf, build as buildLand, encode as encodeLand, decode as decodeLand, LAND_HALF } from './wlanddata.js?v=31';
 
 const MIRRORS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
@@ -88,7 +88,7 @@ export async function loadLand(place, frame, say = () => {}, signal) {
   if (place.preset) {
     try {
       const ac = new AbortController(), t = setTimeout(() => ac.abort(), 20000);
-      const r = await fetch(new URL('../data/world/' + place.preset + '.json?v=30', import.meta.url), { signal: ac.signal }); clearTimeout(t);
+      const r = await fetch(new URL('../data/world/' + place.preset + '.json?v=31', import.meta.url), { signal: ac.signal }); clearTimeout(t);
       if (r.ok) { const o = await r.json(); const land = decodeLand(o, shiftOf(o.o)); land.from = 'site'; land.missing = o.missing || null; return { land, from: 'site' }; }
     } catch (e) { console.warn('baked land', e); }
   }

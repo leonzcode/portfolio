@@ -16,6 +16,10 @@ const ST = ['ground', 'air', 'rail', 'crash'];
    slope, crashes and is put back by itself). */
 export const IDLE_CODE = 4001;
 const IDLE_WORDS = 'This room closed after 10 minutes with nobody active.', ACT_MS = 20000;
+// (2026-11-16, offline: net.connect)
+const CONNECT_MS = 9000;
+const OFFLINE_WORDS = 'You are offline. Riding on your own still works.';
+const NO_SERVER_WORDS = 'Could not reach the park server. Riding on your own still works.';
 
 function serverUrl() {
   const q = new URLSearchParams(location.search).get('mp');
@@ -70,13 +74,23 @@ export class Net {
   connect(name, rider, { code = '', priv = false, watch = false } = {}) {
     this.close();
     this.want = { name, rider, code, priv, watch };
+    /* (2026-11-16, offline) with no connection at all nothing is tried; a park server that does not answer (a network
+       that filters it often just leaves the connection hanging) is given up on after CONNECT_MS. Riding on your own
+       never waits for it. */
+    if (navigator.onLine === false) { this.onStatus(OFFLINE_WORDS); return; }
     let ws;
     try { ws = this.ws = new WebSocket(serverUrl()); } catch (e) { this.onStatus('Could not reach the park server.'); return; }
     this.onStatus('Connecting...');
+    clearTimeout(this.connT);
+    this.connT = setTimeout(() => {
+      if (this.ws !== ws || this.open) return;
+      this.ws = null; try { ws.close(); } catch (e) {}
+      this.onStatus(NO_SERVER_WORDS);
+    }, CONNECT_MS);
     // (look: how this rider looks to the others, e.g. ride: 'ski' | 'board' and stance; the relay passes it on as it is)
     // (M: map, the map's own public park; watch, in to watch)
     // (act: this page sends act messages and reads closed, 2026-11-12)
-    ws.onopen = () => { this.open = true; this.actAt = 0; ws.send(JSON.stringify({ type: 'join', name, rider, code, priv, map: this.map || 'jumpline', watch: !!watch, act: true, look: this.getLook ? this.getLook() : undefined })); };
+    ws.onopen = () => { clearTimeout(this.connT); this.open = true; this.actAt = 0; ws.send(JSON.stringify({ type: 'join', name, rider, code, priv, map: this.map || 'jumpline', watch: !!watch, act: true, look: this.getLook ? this.getLook() : undefined })); };
     ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (err) { return; } this.message(m); };
     ws.onclose = e => {
       const was = this.code; this.open = false; this.code = ''; this.clearRemotes();
@@ -84,11 +98,11 @@ export class Net {
       // (closed by the relay because nobody was active in the room: no reconnecting; the closed message says why, this is
       // in case it did not come)
       if (e && e.code === IDLE_CODE) { this.ws = null; this.idleClosed({ text: IDLE_WORDS }); return; }
-      this.onStatus(was ? 'Lost the connection to the park.' : 'Could not reach the park server.'); if (was && this.want) this.retry = setTimeout(() => this.connect(this.want.name, this.want.rider, { code: was, priv: this.want.priv, watch: this.watching }), 2500);
+      this.onStatus(was ? 'Lost the connection to the park.' : NO_SERVER_WORDS); if (was && this.want) this.retry = setTimeout(() => this.connect(this.want.name, this.want.rider, { code: was, priv: this.want.priv, watch: this.watching }), 2500);
     };
     ws.onerror = () => {};
   }
-  close() { clearTimeout(this.retry); if (this.ws) { const w = this.ws; this.ws = null; try { w.close(); } catch (e) {} } this.code = ''; this.watchN = 0; this.watching = false; this.clearRemotes(); }
+  close() { clearTimeout(this.retry); clearTimeout(this.connT); if (this.ws) { const w = this.ws; this.ws = null; try { w.close(); } catch (e) {} } this.code = ''; this.watchN = 0; this.watching = false; this.clearRemotes(); }
   leave() { this.want = null; this.close(); this.onStatus(''); }
   send(m) { if (this.ws && this.open && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); }
   message(m) {

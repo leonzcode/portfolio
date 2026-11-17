@@ -8,8 +8,8 @@
    Everything that never moves is merged by material: a handful of draw calls. */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { smoothstep, fbm } from './noise.js?v=30';
-import { snowUniforms } from './materials.js?v=30';
+import { smoothstep, fbm } from './noise.js?v=31';
+import { snowUniforms } from './materials.js?v=31';
 
 // ---- a merging kit: shapes go into buckets by material, each bucket one mesh ---------------------------------------
 export class Kit {
@@ -72,23 +72,12 @@ export function makeSkyline(scene, q, land) {
   const nn = g.attributes.normal.array, tl = land.meta.treeline - land.y0, snowL = land.meta.snowline - land.y0;
   // (round 1 of the comparisons: the rock was near black and the valley floors a green smear; the photos' far rock is a
   // grey-brown under blue haze, the valley sides dark)
-  const SNOW = [0.9, 0.92, 0.96], ROCK = [0.15, 0.145, 0.14], WOOD = [0.035, 0.05, 0.04], MEADOW = [0.13, 0.15, 0.12];
-  for (let k = 0; k < P.length / 3; k++) {
-    const x = P[k * 3], y = P[k * 3 + 1], z = P[k * 3 + 2], ny = nn[k * 3 + 1], n = fbm(x * 0.003, z * 0.003, 2);
-    // (in April snow lies to about 1500 m on open ground; above it the steep faces stay rock. The 125 m grid softens the
-    // faces, a real 55 degree wall comes out at about 40 here, so rock from about 33 degrees)
-    // (the rock on the snowy heights is worked out per pixel below, from the faces' own slope: here only the forest and
-    // the green valley floors under the snow line)
-    const wood = (1 - smoothstep(tl - 120, tl + 40, y + n * 70)) * smoothstep(0.55, 0.8, ny);
-    const bare = 1 - smoothstep(snowL - 250, snowL + 50, y + n * 80);
-    for (let t = 0; t < 3; t++) {
-      let c = SNOW[t];
-      c += (MEADOW[t] - c) * bare * 0.8; c += (WOOD[t] - c) * wood * 0.88;
-      K.push(c);
-    }
-  }
-  g.setAttribute('color', new THREE.Float32BufferAttribute(K, 3));
-  const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+  // (second pass, review round 3: still too neutral and green; the valley sides read as streaks: darker, bluer, nearer
+  // one another, so the long triangles' blends do not show)
+  const SNOW = [0.9, 0.92, 0.96], ROCK = [0.13, 0.14, 0.16], WOOD = [0.04, 0.05, 0.06], MEADOW = [0.09, 0.1, 0.11];
+  // (the forest and the bare valley floors are worked out per pixel too, below: as colours at the points, blended along
+  // the far rings' long triangles, they showed as streaks down the valley sides; second pass)
+  const m = new THREE.MeshLambertMaterial({ color: 0xffffff });
   /* per pixel: each face lit by its own slope (the derivatives of the place: crisp ridges and gullies, not the smoothed
      vertex normals), rock where the face is steeper than about 36 degrees above the snow line, broken by noise into
      bands as the Jungfrau's and the Lauterbrunnen wall's faces are; and the air's haze, more the further, as the far
@@ -102,10 +91,19 @@ export function makeSkyline(scene, q, land) {
   gWN = normalize(cross(dFdx(vTW), dFdy(vTW))); if (gWN.y < 0.0) gWN = -gWN;
   // (mostly the smooth normal: the faces' own slope alone showed every triangle as a facet)
   vec3 sWN = inverseTransformDirection(normalize(vNormal), viewMatrix); if (sWN.y < 0.0) sWN = -sWN;
-  gWN = normalize(mix(sWN, gWN, 0.3));
+  gWN = normalize(mix(sWN, gWN, 0.15));
   float nz = texture2D(uNoise, vTW.xz * 0.0013).b * 0.6 + texture2D(uNoise, vTW.xz * 0.0051 + 0.3).b * 0.4;
   float hi = smoothstep(${(snowL - 250).toFixed(1)}, ${(snowL + 150).toFixed(1)}, vTW.y);
-  float rk = smoothstep(0.84, 0.7, gWN.y + (nz - 0.5) * 0.3) * hi;
+  float wood = (1.0 - smoothstep(${(tl - 120).toFixed(1)}, ${(tl + 40).toFixed(1)}, vTW.y + (nz - 0.5) * 140.0)) * smoothstep(0.55, 0.8, gWN.y);
+  float bare = 1.0 - smoothstep(${(snowL - 250).toFixed(1)}, ${(snowL + 50).toFixed(1)}, vTW.y + (nz - 0.5) * 160.0);
+  diffuseColor.rgb = mix(mix(vec3(${SNOW.join(', ')}), vec3(${MEADOW.join(', ')}), bare * 0.8), vec3(${WOOD.join(', ')}), wood * 0.88);
+  // (decided from the smooth slope with coarser noise: from the faces' own slopes the rock hung in vertical streaks)
+  float rk = smoothstep(0.84, 0.7, sWN.y + (nz - 0.5) * 0.45) * hi;
+  // (glaciers: the high snow on the gentler slopes lies whole over the rock, a little blue in its hollows: the saddles and
+  // icefalls of the massif across the valley in 006, above about 3000 m)
+  float gl = smoothstep(${(3000 - land.y0).toFixed(1)}, ${(3250 - land.y0).toFixed(1)}, vTW.y + (nz - 0.5) * 120.0) * smoothstep(0.62, 0.8, gWN.y);
+  rk *= 1.0 - gl;
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.84, 0.9, 0.98), gl * 0.5 * smoothstep(0.35, 0.65, nz));
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${ROCK.join(', ')}) * (0.8 + 0.4 * nz), rk);
 }`)
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize((viewMatrix * vec4(gWN, 0.0)).xyz);')
@@ -114,12 +112,12 @@ outgoingLight += diffuseColor.rgb * vec3(0.12, 0.15, 0.21) * (1.0 - uNight);
 #include <opaque_fragment>`)
       .replace('#include <fog_fragment>', `#ifdef USE_FOG
   float dd = length(vTW - cameraPosition), kk = fogDensity / 0.00016;
-  float hz = 1.0 - exp(-dd * 0.00004 * kk);
+  float hz = 1.0 - exp(-dd * 0.000055 * kk);
   vec3 fdir = normalize(vTW - cameraPosition);
-  gl_FragColor.rgb = mix(gl_FragColor.rgb, texture2D(uHorizon, vec2(atan(fdir.z, fdir.x) * 0.1591549 + 0.5, 0.5)).rgb * vec3(0.86, 0.93, 1.04), clamp(hz, 0.0, 0.8));   // (the air's blue)
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, texture2D(uHorizon, vec2(atan(fdir.z, fdir.x) * 0.1591549 + 0.5, 0.5)).rgb * vec3(0.76, 0.88, 1.06), clamp(hz, 0.0, 0.82));   // (the air's blue: the photos' far rock is a hazed blue, 65 109 155)
 #endif`);
   };
-  m.customProgramCacheKey = () => 'ninessky3';
+  m.customProgramCacheKey = () => 'ninessky6';
   const mesh = new THREE.Mesh(g, m);
   mesh.name = 'nines skyline'; mesh.matrixAutoUpdate = false; mesh.frustumCulled = false; mesh.renderOrder = 1e5;
   scene.add(mesh);
@@ -133,7 +131,7 @@ export function dressMats() {
     concrete: std(0xb9b6ae, { roughness: 0.9 }), glass: std(0x2a3540, { roughness: 0.15, metalness: 0.6 }), steel: std(0x8a8f95, { metalness: 0.7, roughness: 0.4 }),
     dark: std(0x24272c, { roughness: 0.6 }), white: std(0xf2f2ef, { roughness: 0.7, side: THREE.DoubleSide }), black: std(0x18191b, { roughness: 0.6, side: THREE.DoubleSide }),
     red: std(0xc8202a, { roughness: 0.5 }), yellow: std(0xe8b311, { roughness: 0.5 }), orange: std(0xff6a13, { roughness: 0.75, side: THREE.DoubleSide }),
-    grey: std(0x4a4d52, { roughness: 0.7, side: THREE.DoubleSide }), blue: std(0x1f2f5e, { roughness: 0.7, side: THREE.DoubleSide }), wood: std(0xa8743f, { roughness: 0.85 }), rope: new THREE.LineBasicMaterial({ color: 0x2a2c30 }),
+    grey: std(0x4a4d52, { roughness: 0.7, side: THREE.DoubleSide }), blue: std(0x1f2f5e, { roughness: 0.7, side: THREE.DoubleSide }), wood: std(0xa8743f, { roughness: 0.85 }), shade: std(0xb3c0cf, { roughness: 0.9, side: THREE.DoubleSide }), tunnel: std(0x7a8696, { roughness: 0.95, side: THREE.DoubleSide }), rope: new THREE.LineBasicMaterial({ color: 0x2a2c30 }),
   };
 }
 

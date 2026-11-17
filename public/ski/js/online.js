@@ -10,8 +10,8 @@
 //   the game's own cameras (chase, far, first person, filmer), the next or previous rider, their name, Ride to start
 //   riding in the same room, Leave. From the home screen, or from the pause menu while riding in a room.
 import * as THREE from 'three';
-import { countUrl } from './net.js?v=30';
-import { height } from './terrain.js?v=30';
+import { countUrl } from './net.js?v=31';
+import { height } from './terrain.js?v=31';
 
 const MAP_NAMES = { jumpline: 'Jump Line', freeride: 'Freeride' };
 MAP_NAMES.schilthorn23 = 'Schilthorn 2023';   // (N, round 12: the Nines map)
@@ -54,10 +54,12 @@ export class Online {
     this.poll();
     setInterval(() => this.poll(), POLL_MS);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.poll(); });
+    addEventListener('online', () => this.poll()); addEventListener('offline', () => this.show(null));   // (2026-11-16)
   }
   menuUp() { const m = $('menu'); return m && !m.classList.contains('hidden'); }
   async poll() {
     if (document.hidden || !this.menuUp() || this.polling) return;
+    if (navigator.onLine === false) { this.show(null); return; }   // (2026-11-16: no connection, nothing to ask)
     this.polling = true;
     const ac = new AbortController(), to = setTimeout(() => ac.abort(), 4000);
     let c = null;
@@ -72,12 +74,13 @@ export class Online {
     for (const tile of el.querySelectorAll('[data-online]')) {
       // (W, round 10: Any mountain's tile counts every place's riders, maps w_...)
       const m = c ? (tile.dataset.online === 'world' ? Object.keys(c.maps).filter(k => /^w_/.test(k)).reduce((t, k) => ({ ride: t.ride + (c.maps[k].ride | 0), watch: t.watch + (c.maps[k].watch | 0) }), { ride: 0, watch: 0 }) : c.maps[tile.dataset.online] || { ride: 0, watch: 0 }) : null, n = m ? m.ride | 0 : 0, w = m ? m.watch | 0 : 0;
-      const html = m ? `<b data-n="ride">${n}</b> riding${w ? ` &middot; <b data-n="watch">${w}</b> watching` : ''}` : 'No count right now';
+      const html = m ? `<b data-n="ride">${n}</b> riding${w ? ` &middot; <b data-n="watch">${w}</b> watching` : ''}` : navigator.onLine === false ? 'Needs a connection' : 'No count right now';
       const box = tile.querySelector('.oncount'); if (box.innerHTML !== html) box.innerHTML = html;
       tile.classList.toggle('busy', n > 0);
     }
     const tot = $('ontotal');
-    if (!c) { tot.textContent = 'The park server is not answering right now'; el.classList.add('down'); return; }
+    // (2026-11-16, offline: riding on your own never needs the park server, so the board says so plainly)
+    if (!c) { tot.textContent = navigator.onLine === false ? 'Offline. Riding on your own still works' : 'The park server is not answering. Riding on your own still works'; el.classList.add('down'); return; }
     el.classList.remove('down');
     tot.textContent = c.ride ? `${c.ride} riding now${c.watch ? `, ${c.watch} watching` : ''}` : c.watch ? `Nobody riding, ${c.watch} watching` : 'Nobody riding yet';
   }
@@ -252,7 +255,7 @@ export class Online {
   // the bar's words, written only when they change
   label(L, r) {
     const map = MAP_NAMES[this.opts.map] || this.mapName || this.opts.map,   /* (W: a place's name) */ i = r ? L.indexOf(r) : -1, w = this.net.watchN;
-    const name = r ? r.name : this.net.inRoom ? 'Nobody riding yet' : 'Joining the park...';
+    const name = r ? r.name : this.net.inRoom ? 'Nobody riding yet' : this.net.ws ? 'Joining the park...' : 'Not connected';   // (2026-11-16: no socket, the server not reached)
     const meta = r ? `${map} · ${i + 1} of ${L.length}${w > 1 ? ` · ${w} watching` : ''}` : this.net.inRoom ? `${map} · riders show up here as they drop in` : this.statusText || map;
     const cam = CAM_NAMES[this.cams.mode] || 'Chase', key = name + '|' + meta + '|' + cam + '|' + (L.length > 1);
     if (key === this.shown) return;

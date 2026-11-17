@@ -10,8 +10,8 @@
    Everything is merged by material: the bricks (one draw), the painted things (one, colours in the vertices), the printed
    things (one, one picture for all of them), the dark rails (one), the turbines (one). */
 import * as THREE from 'three';
-import { height, ground } from './terrain.js?v=30';
-import { rng, smoothstep } from './noise.js?v=30';
+import { height, ground } from './terrain.js?v=31';
+import { rng, smoothstep } from './noise.js?v=31';
 
 // ---- a geometry builder (positions, normals, uvs, colours) -------------------------------------------------------
 class Geo {
@@ -143,8 +143,8 @@ export function buildVenue(scene, park, q, land) {
 
   // ---- the walls: each Block of the Great Wall, standing on the ground under it, its top H over it, crenellations on top
   const wall = (b, step) => {
-    const dx = Math.sin(b.yaw), dz = Math.cos(b.yaw), sx = dz, sz = -dx, h = b.t / 2, L = b.L, n = Math.max(1, Math.ceil(L / 2.0));
-    const MER = b.H > 2.5 ? 1.0 : 0.6, body = b.H - MER;
+    const dx = Math.sin(b.yaw), dz = Math.cos(b.yaw), sx = dz, sz = -dx, h = b.t / 2, L = b.L, n = Math.max(1, Math.ceil(L / 2.6));
+    const MER = b.H > 2.5 ? 1.4 : 0.6, body = b.H - MER;
     const at = (s, u) => [b.x + dx * s + sx * u, b.z + dz * s + sz * u];
     // (its foot, as the physics has it: the snow it stands on, held level over each merlon's length on a stepped wall)
     const gy = s => { const [x, z] = at(s, 0), g = Gd(x, z); return b.base ? b.base(x, z, g) : g; };
@@ -162,7 +162,7 @@ export function buildVenue(scene, park, q, land) {
       bricks.face([[a0x, g0 + body, a0z], [a1x, g1 + body, a1z], [b1x, g1 + body, b1z], [b0x, g0 + body, b0z]], [[s0 / 2.4, 0], [s1 / 2.4, 0], [s1 / 2.4, b.t / 2.4], [s0 / 2.4, b.t / 2.4]]);
       // the merlons: on both edges, 0.9 m long, 0.45 m deep
       const sm = (s0 + s1) / 2, gm = (g0 + g1) / 2;
-      { const [mx, mz] = at(sm, 0); bricks.obox(mx, mz, b.yaw + Math.PI / 2, Math.min(1.25, (s1 - s0) * 0.62), b.t + 0.04, gm + body - 0.05, gm + b.H, null); }
+      { const [mx, mz] = at(sm, 0); bricks.obox(mx, mz, b.yaw + Math.PI / 2, Math.min(1.6, (s1 - s0) * 0.62), b.t + 0.04, gm + body - 0.05, gm + b.H, null); }
       if (step && i < n - 1) {        // (a stepped wall: the riser between two steps)
         const g2 = gy((s1 + L * (i + 2) / n) / 2), [ex, ez] = at(s1, -h), [fx, fz] = at(s1, h);
         const lo = Math.min(g0, g2) + body, hi = Math.max(g0, g2) + body;
@@ -179,7 +179,15 @@ export function buildVenue(scene, park, q, land) {
   for (const w of C.walls) wall(w, !!w.step);
   // the ledge under the gap rail: a plain brick block
   for (const b of C.blocks) {
-    if (/Ledge/.test(b.name)) wall(Object.assign(Object.create(b), { H: b.H + 0.62 - 0.3 }), false);
+    if (/cannon/.test(b.name)) {
+      // (the cannon's ledge: a plain flat-topped brick block, its top where the physics has it)
+      const dx = Math.sin(b.yaw), dz = Math.cos(b.yaw), sx = dz, sz = -dx, h = b.t / 2, at = (sv, u) => [b.x + dx * sv + sx * u, b.z + dz * sv + sz * u];
+      const top = sv => { const [x, z] = at(sv, 0); return b.base(x, z, 0) + b.H; }, y0 = Math.min(top(0), top(b.L)) - b.H - 0.6;
+      const c = [at(0, -h), at(b.L, -h), at(b.L, h), at(0, h)], T = [top(0), top(b.L), top(b.L), top(0)];
+      const Fb = P => bricks.face(P, P.map(p => [(p[0] + p[2]) / 2.4, (p[1] - y0) / 2.4]));
+      for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; Fb([[c[i][0], y0, c[i][1]], [c[j][0], y0, c[j][1]], [c[j][0], T[j], c[j][1]], [c[i][0], T[i], c[i][1]]]); }
+      Fb([[c[0][0], T[0], c[0][1]], [c[1][0], T[1], c[1][1]], [c[2][0], T[2], c[2][1]], [c[3][0], T[3], c[3][1]]]);
+    } else if (/Ledge/.test(b.name)) wall(Object.assign(Object.create(b), { H: b.H + 0.62 - 0.3 }), false);
   }
   // ---- the gate bastion: a brick block with a battered front, crenellated, an arched door on its downhill face
   for (const gb of C.decor.gates) {
@@ -197,40 +205,51 @@ export function buildVenue(scene, park, q, land) {
     const ring = [[gb.x + 1, yd - 0.2], ...P, [gb.x - 1, yd - 0.2]].map(([x, y]) => paint.v(x, y, dz1, 0, 0, 1));
     for (let k = 0; k < ring.length - 1; k++) paint.i.push(m, ring[k], ring[k + 1]);
   }
-  // ---- the watchtowers: white plaster bodies, hipped roofs (grey, snow on them), dark upturned eaves, a dark ridge
+  // ---- the watchtowers: white plaster bodies under a curved roof (snow white on top, thick black rims, the eaves swept
+  // up at the corners, as the photos show the gatehouse), on a crenellated terrace with a blue light strip along its front
   for (const T of C.decor.towers) {
     const h = T.w / 2, e = T.eave, x0 = T.x - h, x1 = T.x + h, z0 = T.z0, z1 = T.z1;
     const yb0 = Math.min(T.y0, T.y1) - 0.6, yE0 = T.y0 + T.H, yE1 = T.y1 + T.H;
+    const ye = (z) => yE0 + (yE1 - yE0) * (z - z0) / (z1 - z0);
     // (the body: its top follows the snow it stands on, so the eaves are level with it front and back as the physics has it)
-    paint.col = PLASTER;
     const F = (P) => paint.face(P, null, PLASTER);
     F([[x0, yb0, z1], [x1, yb0, z1], [x1, yE1, z1], [x0, yE1, z1]]); F([[x1, yb0, z0], [x0, yb0, z0], [x0, yE0, z0], [x1, yE0, z0]]);
     F([[x1, yb0, z1], [x1, yb0, z0], [x1, yE0, z0], [x1, yE1, z1]]); F([[x0, yb0, z0], [x0, yb0, z1], [x0, yE1, z1], [x0, yE0, z0]]);
-    // a darker band (the timber frieze) under the eaves, and a door and two windows on the downhill face
-    paint.col = lin(0x6b4a33);
-    paint.face([[x0 - 0.01, yE1 - 0.45, z1 + 0.01], [x1 + 0.01, yE1 - 0.45, z1 + 0.01], [x1 + 0.01, yE1, z1 + 0.01], [x0 - 0.01, yE1, z1 + 0.01]]);
-    paint.col = lin(0x3a3530);
-    paint.face([[T.x - 0.6, T.y1, z1 + 0.02], [T.x + 0.6, T.y1, z1 + 0.02], [T.x + 0.6, T.y1 + 2.0, z1 + 0.02], [T.x - 0.6, T.y1 + 2.0, z1 + 0.02]]);
-    for (const sg of [-1, 1]) paint.face([[T.x + sg * 1.9 - 0.4, T.y1 + 1.2, z1 + 0.02], [T.x + sg * 1.9 + 0.4, T.y1 + 1.2, z1 + 0.02], [T.x + sg * 1.9 + 0.4, T.y1 + 2.0, z1 + 0.02], [T.x + sg * 1.9 - 0.4, T.y1 + 2.0, z1 + 0.02]]);
-    // the roof: four planes from the eaves (overhanging by e, the corners turned up 0.35 m) to the ridge
-    const ex0 = x0 - e, ex1 = x1 + e, ez0 = z0 - e, ez1 = z1 + e, w = h + e, k = T.roof / w;
-    // (a gabled roof, the ridge rail's: its ridge the whole length, the gable ends plastered; else hipped)
-    const rz0 = T.gable ? ez0 : z0 - e + w, rz1 = T.gable ? ez1 : z1 + e - w, yr = (z) => yE0 + (yE1 - yE0) * (z - z0) / (z1 - z0) + T.roof;
-    const ye = (z) => yE0 + (yE1 - yE0) * (z - z0) / (z1 - z0), up = 0.55;
-    const R0 = [T.x, yr(rz0), T.gable ? rz0 : Math.min(rz0, (z0 + z1) / 2)], R1 = [T.x, yr(rz1), T.gable ? rz1 : Math.max(rz1, (z0 + z1) / 2)];
-    const c00 = [ex0, ye(ez0) + up, ez0], c10 = [ex1, ye(ez0) + up, ez0], c11 = [ex1, ye(ez1) + up, ez1], c01 = [ex0, ye(ez1) + up, ez1];
-    paint.face([c01, c00, R0, R1], null, ROOF); paint.face([c10, c11, R1, R0], null, ROOF);
-    if (T.gable) { paint.face([[x0, yE0, z0], [x1, yE0, z0], [T.x, yr(z0), z0], [T.x, yr(z0), z0]], null, PLASTER); paint.face([[x1, yE1, z1], [x0, yE1, z1], [T.x, yr(z1), z1], [T.x, yr(z1), z1]], null, PLASTER); }
-    else { paint.face([c00, c10, R0, R0], null, ROOF); paint.face([c11, c01, R1, R1], null, ROOF); }
-    // the eaves' dark edge and the dark ridge
-    const edge = (a, b) => { const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), M = A.clone().lerp(B, 0.5); M.y -= up * 0.85; dark.tube([A, A.clone().lerp(M, 0.5).setY((A.y + M.y) / 2 - 0.12), M, M.clone().lerp(B, 0.5).setY((M.y + B.y) / 2 - 0.12), B], 0.16, 6, TRIM, true); };
-    edge(c00, c10); edge(c10, c11); edge(c11, c01); edge(c01, c00);
-    dark.tube([new THREE.Vector3(...R0).setY(R0[1] + 0.05), new THREE.Vector3(...R1).setY(R1[1] + 0.05)], 0.13, 8, TRIM, true);
-    for (const [a, b] of [[c00, R0], [c10, R0], [c11, R1], [c01, R1]]) dark.tube([new THREE.Vector3(...a), new THREE.Vector3(...b)], 0.07, 5, TRIM, false);
-    // (its ridge, a rail: a dark round beam with up-curled ends, as the footage shows riders sliding it)
-    if (T.ridge) { const P = T.ridge.P; dark.tube([P[0].clone().setY(P[0].y - 0.11), P[P.length - 1].clone().setY(P[P.length - 1].y - 0.11)], 0.11, 10, TRIM, true); }
-    // the low crenellated parapet round its front (the terrace it stands on)
-    for (let x = x0 - 1.2; x <= x1 + 1.2; x += 1.6) bricks.obox(x, z1 + 1.4, 0, 0.9, 0.5, H(x, z1 + 1.4) - 0.3, H(x, z1 + 1.4) + 0.75, null);
+    // a grey door on the downhill face
+    paint.face([[T.x - 0.6, T.y1, z1 + 0.02], [T.x + 0.6, T.y1, z1 + 0.02], [T.x + 0.6, T.y1 + 2.0, z1 + 0.02], [T.x - 0.6, T.y1 + 2.0, z1 + 0.02]], null, lin(0x8e959c));
+    /* the roof: a grid over each side, from the ridge (a 0) out to the eaves (a 1) and along (b 0..1): concave (steep by
+       the ridge, flattening to the eaves), the eaves turned up a little all along and much more at the four corners */
+    const ez0 = z0 - e, ez1 = z1 + e, w = h + e, NA = low ? 5 : 8, NB = low ? 6 : 10, up = 0.75;
+    const roofY = (a, b) => { const z = ez0 + (ez1 - ez0) * b; return ye(z) + T.roof * Math.pow(1 - a, 1.7) + up * (0.12 * Math.pow(a, 2) + Math.pow(a, 2.5) * Math.pow(Math.abs(2 * b - 1), 4)); };
+    const RP = (sg, a, b) => [T.x + sg * a * w, roofY(a, b), ez0 + (ez1 - ez0) * b];
+    const SNOW = lin(0xf6f7f8);
+    for (const sg of [-1, 1]) for (let i = 0; i < NA; i++) for (let j = 0; j < NB; j++) {
+      const a0 = i / NA, a1 = (i + 1) / NA, b0 = j / NB, b1 = (j + 1) / NB;
+      const Q = [RP(sg, a0, b0), RP(sg, a1, b0), RP(sg, a1, b1), RP(sg, a0, b1)];
+      paint.face(sg > 0 ? Q : [Q[1], Q[0], Q[3], Q[2]], null, SNOW);
+    }
+    // the gable ends: plaster up to the roof's line, between the eaves' height and the curve
+    for (const [b, z] of [[e / (ez1 - ez0), z0], [1 - e / (ez1 - ez0), z1]]) for (const sg of [-1, 1]) for (let i = 0; i < NA; i++) {
+      const a0 = i / NA, a1 = Math.min((i + 1) / NA, h / w);
+      if (a0 * w >= h) break;
+      const xA = T.x + sg * a0 * w, xB = T.x + sg * a1 * w, P = [[xA, ye(z), z], [xB, ye(z), z], [xB, roofY(a1, b) - 0.05, z], [xA, roofY(a0, b) - 0.05, z]];
+      paint.face(P, null, PLASTER);
+    }
+    // the rims: thick black tubes along the eaves and up the gable edges, the ridge a thick black beam with curled ends
+    const V = p => new THREE.Vector3(p[0], p[1], p[2]);
+    for (const sg of [-1, 1]) {
+      const eave = [], gA = [], gB = [];
+      for (let j = 0; j <= NB; j++) eave.push(V(RP(sg, 1, j / NB)).setY(roofY(1, j / NB) - 0.06));
+      for (let i = 0; i <= NA; i++) { gA.push(V(RP(sg, i / NA, 0)).setY(roofY(i / NA, 0) + 0.04)); gB.push(V(RP(sg, i / NA, 1)).setY(roofY(i / NA, 1) + 0.04)); }
+      dark.tube(eave, 0.2, low ? 6 : 8, TRIM, true); dark.tube(gA, 0.16, 6, TRIM, true); dark.tube(gB, 0.16, 6, TRIM, true);
+    }
+    { const yR0 = roofY(0, 0), yR1 = roofY(0, 1);
+      // (its top at the ridge rail's line, so a rider slides on it, not in it)
+      dark.tube([V([T.x, yR0 + 0.3, ez0 - 0.25]), V([T.x, yR0 - 0.14, ez0 + 0.2]), V([T.x, yR1 - 0.14, ez1 - 0.2]), V([T.x, yR1 + 0.3, ez1 + 0.25])], 0.2, 8, TRIM, true); }
+    // the low crenellated parapet round its terrace's front, a blue light strip along its foot
+    const zp = z1 + 1.4;
+    for (let x = x0 - 1.2; x <= x1 + 1.2; x += 1.6) bricks.obox(x, zp, 0, 0.95, 0.5, H(x, zp) - 0.3, H(x, zp) + 0.9, null);
+    paint.box(x0 - 1.7, H(T.x, zp) + 0.02, zp + 0.26, x1 + 1.7, H(T.x, zp) + 0.2, zp + 0.3, lin(0x2fa8ff));
   }
   // ---- the rails ---------------------------------------------------------------------------------------------------
   const BLACK = lin(0x15171a);
@@ -257,7 +276,7 @@ export function buildVenue(scene, park, q, land) {
         const A0 = [a.x - sx * w, a.y, a.z - sz * w], A1 = [a.x + sx * w, a.y, a.z + sz * w], B0 = [b.x - sx * w, b.y, b.z - sz * w], B1 = [b.x + sx * w, b.y, b.z + sz * w];
         dark.face([A0, B0, B1, A1], null, BLACK);
       }
-    } else dark.tube(pts.map(p => p.clone().setY(p.y - r.w / 2)), r.w / 2, low ? 8 : 12, BLACK, true);
+    } else { const rr = Math.max(r.w / 2, 0.1); dark.tube(pts.map(p => p.clone().setY(p.y - rr)), rr, low ? 8 : 12, BLACK, true); }   // (the footage's round tops are about 0.2 m across)
     // the printed panel under it, down to the snow (both faces, 0.05 m apart), the picture along its length
     if (r.panel === false || r.look === 'cannon' || r.look === 'tube') continue;
     const half = r.look === 'mailbox' ? r.w / 2 - 0.02 : 0.03;
@@ -297,20 +316,22 @@ export function buildVenue(scene, park, q, land) {
     // the boards round the corral, 1.1 m tall, and down both sides of the jump sections
     boards(prints, paint, [[F.x0, F.z0 - 2], [F.x0, F.z1], [F.x1, F.z1], [F.x1, F.z0 - 2]], H, STEEL);
     // the grandstand: facing up the course at the corral's end, 13 rows of blue seats on a grey frame
-    const sz0 = F.z1 + 3, sy = H(0, sz0);
-    for (let k = 0; k < 13; k++) {
+    // (the footage's stands are big: about 100 m across and 18 rows, under a white canopy)
+    const sz0 = F.z1 + 3, sy = H(0, sz0), SW = 50, NR = 18;
+    for (let k = 0; k < NR; k++) {
       const y = sy + 0.45 * k, z = sz0 + 0.85 * k;
-      paint.box(-26, y, z, 26, y + 0.45, z + 0.85, lin(0x7c838c));
-      paint.box(-25.6, y + 0.45, z + 0.15, 25.6, y + 0.62, z + 0.55, k % 4 === 3 ? lin(0xe8eef4) : lin(0x2f8fd8));
+      paint.box(-SW, y, z, SW, y + 0.45, z + 0.85, lin(0x7c838c));
+      paint.box(-SW + 0.4, y + 0.45, z + 0.15, SW - 0.4, y + 0.62, z + 0.55, k % 5 === 4 ? lin(0xe8eef4) : lin(0x2f8fd8));
     }
-    paint.box(-26.5, sy + 5.85, sz0 + 11, 26.5, sy + 7.0, sz0 + 11.4, lin(0x7c838c));
-    for (const x of [-26, -13, 0, 13, 26]) paint.obox(x, sz0 + 11.2, 0, 0.3, 0.3, sy - 0.5, sy + 9.5, STEEL);
-    paint.box(-27, sy + 9.3, sz0 - 1, 27, sy + 9.6, sz0 + 12, lin(0xe9edf1));
+    const zb = sz0 + 0.85 * NR, yb = sy + 0.45 * NR;
+    paint.box(-SW - 0.5, Math.min(sy, H(-SW, zb), H(SW, zb)) - 1, zb, SW + 0.5, yb + 1.2, zb + 0.4, lin(0x7c838c));
+    for (let x = -SW; x <= SW + 0.1; x += 12.5) paint.obox(x, zb + 0.2, 0, 0.3, 0.3, sy - 0.5, yb + 4.5, STEEL);
+    paint.box(-SW - 1, yb + 4.3, sz0 - 1, SW + 1, yb + 4.6, zb + 1, lin(0xe9edf1));
     // the container stacks either side (teal and yellow, two high), as the venue's stands and rooms were built
-    for (const [x0, cols] of [[-50, [TEAL, YEL, TEAL]], [36, [YEL, TEAL, YEL]]]) {
-      for (let k = 0; k < 3; k++) for (let lv = 0; lv < 2; lv++) {
+    for (const [x0, cols] of [[-50, [TEAL, YEL, TEAL, BLUE]], [36, [YEL, TEAL, YEL, BLUE]]]) {
+      for (let k = 0; k < 5; k++) for (let lv = 0; lv < 3; lv++) {
         const z = F.z0 + 18 + k * 6.6, y = H(x0 + 6, z) + lv * 2.6;
-        paint.box(x0, y - 0.2, z, x0 + 12.2, y + 2.6, z + 2.45, cols[(k + lv) % 3]);
+        paint.box(x0, y - 0.2, z, x0 + 12.2, y + 2.6, z + 2.45, cols[(k + lv) % 4]);
         paint.box(x0 + 0.3, y + 1.0, z - 0.01, x0 + 11.9, y + 1.9, z, lin(0x203a4a));
       }
     }
@@ -328,10 +349,10 @@ export function buildVenue(scene, park, q, land) {
         const uv = [[s / 24, rowV(ROW.wind, 0)], [(s + sl) / 24, rowV(ROW.wind, 0)], [(s + sl) / 24, rowV(ROW.wind, 1)], [s / 24, rowV(ROW.wind, 1)]];
         prints.face([[x0, g0 + 0.8, z0], [x1, g1 + 0.8, z1], [x1, g1 + 12.2, z1], [x0, g0 + 12.2, z0]], uv);
         prints.face([[x1, g1 + 0.8, z1], [x0, g0 + 0.8, z0], [x0, g0 + 12.2, z0], [x1, g1 + 12.2, z1]], [uv[1], uv[0], uv[3], uv[2]]);
-        truss(paint, x0, z0, g0, 13.0, STEEL);
+        mast(paint, x0, z0, g0, 13.0, STEEL);
         s += sl;
       }
-      truss(paint, bx, bz, H(bx, bz), 13.0, STEEL);
+      mast(paint, bx, bz, H(bx, bz), 13.0, STEEL);
     }
   }
   // ---- the camera scaffolds (beside the jumps, on the rider's right) and the judges' tower ---------------------------
@@ -358,7 +379,35 @@ export function buildVenue(scene, park, q, land) {
     for (let k = 0; k < 9; k++) { const t = k / 8, w = 4.8 * (1 - t) + 0.6, yy = y + 9 + t * 13.5; paint.obox(x, z, k * 0.5, w, w, yy, yy + 1.1, lin(0x2f4a33)); }
   }
   // ---- the venue's buildings by the finish (temporary halls and offices) -----------------------------------------------
-  { const y = H(-30, 860); paint.box(-110, y - 1, 845, 70, y + 19, 870, CREAM); for (let k = 1; k < 6; k++) paint.box(-110.1, y + k * 3.2, 844.9, 70.1, y + k * 3.2 + 1.2, 845, lin(0x5f6f80)); }
+  { // (the long hall past the finish: three tiers stepping back up the hill, white with blue glass bands and a blue roof
+    // edge, its foot down to the lowest ground under it so it never stands on air)
+    const ys = [H(-110, 845), H(70, 845), H(-110, 870), H(70, 870), H(-20, 858)], y = Math.max(...ys), y0 = Math.min(...ys) - 1;
+    for (const [zf, top] of [[845, 8], [851, 13.5], [857, 19]]) {
+      paint.box(-110, y0, zf, 70, y + top, 870, WHITE);
+      for (let b = 1.8; b < top - 1.2; b += 3.2) paint.box(-110.1, y + b, zf - 0.03, 70.1, y + b + 1.3, zf, lin(0x3b6fa8));
+      paint.box(-110.3, y + top, zf - 0.3, 70.3, y + top + 0.45, 870, BLUE);
+    }
+  }
+  /* the buildings OpenStreetMap has round the resort (osm.json: the row of apartment blocks on the rider's right past the
+     finish, the hotel, the huts), at their real places: walls up from the lowest ground under each, a flat roof; heights
+     from their tags, else by kind (apartments six floors, a house one, the rest three) */
+  const OB = land.osm && land.osm.buildings;
+  if (OB) for (const b of OB) {
+    const P = b.p, n = P.length; if (n < 3) continue;
+    const lv = b.levels || (b.kind === 'apartments' ? 6 : b.kind === 'hotel' ? 8 : b.kind === 'house' ? 1 : 3), ht = b.h || lv * 3.2 + 0.8;
+    let g0 = Infinity, g1 = -Infinity; for (const [x, z] of P) { const g = H(x, z); g0 = Math.min(g0, g); g1 = Math.max(g1, g); }
+    const yb = g0 - 1, yt = g1 + ht, col = b.kind === 'apartments' || b.kind === 'hotel' ? lin(0xe7e1d4) : lin(0xd8dde3);
+    // (the outline's turn, so each wall's window bands stand 5 cm out from it, not in it)
+    let area = 0; for (let i = 0; i < n; i++) { const [ax, az] = P[i], [bx, bz] = P[(i + 1) % n]; area += ax * bz - bx * az; }
+    const sg = area > 0 ? 1 : -1;
+    for (let i = 0; i < n; i++) {
+      const [ax, az] = P[i], [bx, bz] = P[(i + 1) % n], l = Math.hypot(bx - ax, bz - az) || 1, ox = sg * (bz - az) / l * 0.05, oz = -sg * (bx - ax) / l * 0.05;
+      paint.face([[ax, yb, az], [bx, yb, bz], [bx, yt, bz], [ax, yt, az]], null, col);
+      for (let y = g1 + 1.6; y < yt - 1.0; y += 3.2) paint.face([[ax + ox, y, az + oz], [bx + ox, y, bz + oz], [bx + ox, y + 1.1, bz + oz], [ax + ox, y + 1.1, az + oz]], null, lin(0x51657a));
+    }
+    const tri = THREE.ShapeUtils.triangulateShape(P.map(([x, z]) => new THREE.Vector2(x, z)), []);
+    for (const [a, c, d] of tri) paint.face([[P[a][0], yt, P[a][1]], [P[c][0], yt, P[c][1]], [P[d][0], yt, P[d][1]], [P[d][0], yt, P[d][1]]], null, lin(0x7d8896));
+  }
   for (const [x, z, w, d, h, c] of [[-70, 770, 30, 14, 6, WHITE], [-40, 800, 24, 12, 5, lin(0xdfe4ea)], [0, 790, 36, 16, 7, WHITE], [44, 784, 20, 10, 4, lin(0xc9d3dd)], [-110, 740, 26, 14, 6, lin(0xe5e2da)]]) {
     const y = H(x, z);
     paint.box(x - w / 2, y - 0.5, z - d / 2, x + w / 2, y + h, z + d / 2, c);
@@ -402,6 +451,11 @@ function boards(G, P, pts, H, steel) {
       s += sl;
     }
   }
+}
+// a plain mast h tall at x, z (a steel pole, a cap)
+function mast(G, x, z, y, h, col) {
+  G.obox(x, z, Math.PI / 4, 0.32, 0.32, y - 0.3, y + h, col); G.obox(x, z, 0, 0.32, 0.32, y - 0.3, y + h, col);
+  G.obox(x, z, 0, 0.5, 0.5, y + h, y + h + 0.25, col);
 }
 // a lattice mast of four tubes h tall at x, z
 function truss(G, x, z, y, h, col) {

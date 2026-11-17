@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { riderShadow } from './shadowproxy.js?v=30';   // (E: the rider's shadow in a few draws)
+import { riderShadow, riderBatch } from './shadowproxy.js?v=31';   // (E: the rider's shadow in a few draws)   // (L, round 12: riderBatch, its plain pieces in one draw)
 
 /* Downloaded gear (2026-11-05, models/gear/, credits in CREDITS.md): goggles, a beanie, a bike lid, two skis and a pole,
    loaded once each and shared by every rider (each rider gets its own copies of the materials, for its colours).
@@ -67,7 +67,7 @@ export const LOW = { baggy: 1, regular: 0.4, slim: 0 };
 export const FIT = { baggy: 1, regular: 0.7, slim: 0.45 };
 const _gear = new Map();
 export function gearModel(name) {
-  if (!_gear.has(name)) _gear.set(name, loadGLB('./models/gear/' + name + '.glb?v=30').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));   // (C: tried again, a time limit; a gear part that never comes is left out, our own stands in)
+  if (!_gear.has(name)) _gear.set(name, loadGLB('./models/gear/' + name + '.glb?v=31').then(g => { g.scene.updateMatrixWorld(true); return g.scene; }).catch(e => { console.warn('gear', name, e); return null; }));   // (C: tried again, a time limit; a gear part that never comes is left out, our own stands in)
   return _gear.get(name);
 }
 /* (2026-11-12, loading) BufferGeometry.applyMatrix4 for plain float positions and normals: the same sums three does
@@ -148,6 +148,48 @@ function mergeInto(group, keep = () => false) {
   return mesh;
 }
 
+/* (L, round 12, for "less laggy") our own ski (rig.js makeSki) is one shape drawn three times, once for each of its
+   surfaces (the top sheet's picture, the dark base, the steel edges), each with the ski's bend in its shader. Here it is
+   one draw: the surfaces' corners apart (each corner keeps the normal it had), each carrying its surface's colour, its
+   roughness and metalness, and whether it shows the picture; the same bend (the first surface's own shader patch, run
+   first). The same picture: rig.js's shading in one program. */
+export function oneSki(ski, force) {
+  const ms = ski && ski.material;
+  if (!Array.isArray(ms) || ms.length !== 3 || !ski.userData.bend || !ski.geometry.index || ski.geometry.groups.length !== 3 || !ms[0].map) return;
+  if (!force && typeof location !== 'undefined' && /[?&]skis3\b/.test(location.search)) return;   // (?skis3: the three draws, for tests)
+  const g = ski.geometry, I = g.index.array, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv;
+  let n = 0; for (const gr of g.groups) n += gr.count;
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), sk = new Float32Array(n * 4), rm = new Float32Array(n * 2);
+  let v = 0;
+  for (const gr of g.groups) {
+    const m = ms[gr.materialIndex], top = m.map ? 1 : 0, c = m.color;
+    for (let j = gr.start; j < gr.start + gr.count; j++, v++) {
+      const i = I[j];
+      pos[v * 3] = P.getX(i); pos[v * 3 + 1] = P.getY(i); pos[v * 3 + 2] = P.getZ(i);
+      nor[v * 3] = N.getX(i); nor[v * 3 + 1] = N.getY(i); nor[v * 3 + 2] = N.getZ(i);
+      uv[v * 2] = U.getX(i); uv[v * 2 + 1] = U.getY(i);
+      sk[v * 4] = c.r; sk[v * 4 + 1] = c.g; sk[v * 4 + 2] = c.b; sk[v * 4 + 3] = top;
+      rm[v * 2] = m.roughness; rm[v * 2 + 1] = m.metalness;
+    }
+  }
+  const ng = new THREE.BufferGeometry();
+  ng.setAttribute('position', new THREE.BufferAttribute(pos, 3)); ng.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); ng.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  ng.setAttribute('aSkC', new THREE.BufferAttribute(sk, 4)); ng.setAttribute('aRM', new THREE.BufferAttribute(rm, 2));
+  ng.computeBoundingBox(); ng.computeBoundingSphere();
+  const flex = ms[0].onBeforeCompile;           // (rig.js skiFlex: the bend, with its own uniforms)
+  const m = new THREE.MeshStandardMaterial({ map: ms[0].map, color: 0xffffff });
+  m.onBeforeCompile = s => {
+    flex(s);
+    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aSkC; attribute vec2 aRM; varying vec4 vSkC; varying vec2 vRM;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvSkC = aSkC; vRM = aRM;');
+    s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec4 vSkC; varying vec2 vRM;')
+      .replace('#include <map_fragment>', '#ifdef USE_MAP\n  diffuseColor *= mix(vec4(vSkC.rgb, 1.0), texture2D(map, vMapUv), vSkC.a);\n#endif')
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vRM.x;').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vRM.y;');
+  };
+  m.customProgramCacheKey = () => 'ski-one';
+  g.dispose(); for (const x of ms) x.dispose();
+  ski.geometry = ng; ski.material = m;
+}
+
 export function mergeGear(rig) {
   if (!rig || !rig.ready || rig._merged) return;
   rig._merged = true;
@@ -161,6 +203,7 @@ export function mergeGear(rig) {
   }
   for (const b of [rig.bootL, rig.bootR]) { mergeInto(b.lower); mergeInto(b.cuff); }
   for (const p of [rig.poleL, rig.poleR]) mergeInto(p);
+  for (const ski of [rig.skiL, rig.skiR]) oneSki(ski);   // (L, round 12: each ski's three surfaces in one draw)
   }
   // the helmet: everything but the mirrored lens
   const lens = [];
@@ -169,4 +212,5 @@ export function mergeGear(rig) {
   mergeInto(rig.helmet, o => lens.includes(o) || !!(o.material && o.material.map) || !!o.userData.keep);   // (keep: the hood, recoloured live)
   // (E, 2026-11-09: every rigid piece's shadow, skis, boots, poles, helmet, a board or a scooter..., in one draw)
   riderShadow(rig);
+  riderBatch(rig);                     // (L, round 12: the plain pieces in the view in one draw, shadowproxy.js)
 }

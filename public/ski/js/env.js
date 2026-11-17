@@ -12,10 +12,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { snowUniforms, setFieldSun } from './materials.js?v=30';
-import { height, runHalf, getPark } from './terrain.js?v=30';
-import { installShadowOnly } from './shadowproxy.js?v=30';
-import { bake } from './gear.js?v=30';
+import { snowUniforms, setFieldSun } from './materials.js?v=31';
+import { height, runHalf, getPark } from './terrain.js?v=31';
+import { installShadowOnly } from './shadowproxy.js?v=31';
+import { bake } from './gear.js?v=31';
 
 const KEY = 'ski_env';
 export const ENV = Object.assign({ time: 12.5, sky: 'clear', snow: 'groomed' },
@@ -333,6 +333,9 @@ export class Env {
     snowUniforms.uNight.value = night;
     snowUniforms.uLamps.value = lampOn;
     if (this.lights && this.lights.lamps) this.lights.lamps.material.emissiveIntensity = lampOn * 3.5;
+    // (L, round 12: the glow's points are all dropped in its shader while the lamps are off, still a draw: left out then;
+    // its program is built at the start whatever the time, main.js buildPrograms walks hidden things too)
+    if (this.lights && this.lights.glow) this.lights.glow.visible = lampOn > 0.001;
     this.envDirty = true;
   }
   makeEnvMap() {

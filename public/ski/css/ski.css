@@ -72,6 +72,10 @@ select { font: 500 15px var(--body); padding: 6px 8px; border: 1px solid #b8c4cf
 #keys div { break-inside: avoid; }
 #keys kbd { font-family: var(--mono); font-size: 12px; background: var(--shade); color: #fff; padding: 0 5px; margin-right: 4px; }
 .fine { font-size: 11px; color: #6b7783; margin: 12px 0 0; }
+/* (2026-11-16) how the offline copy stands (js/offline.js) */
+.offl { margin: 8px 0 0; padding: 6px 9px; font-size: 12.5px; line-height: 1.4; color: #2d3b48; background: #eef3f7; border-left: 3px solid var(--ice); }
+.offl[data-kind="off"] { border-left-color: var(--signal); }
+.offl[data-kind="ok"] { border-left-color: #3f8f5a; }
 @media (max-height: 520px) { .card { padding: 14px 18px 12px; } h1 { font-size: 40px; } .tag { margin-bottom: 8px; } }
 @media (max-width: 640px) {
   .opts { grid-template-columns: 1fr; }

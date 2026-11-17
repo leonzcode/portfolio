@@ -13,9 +13,9 @@
    line of the real slope, the pipe's floor a straight line cut into the hill; the features stand on that.
    Where a number is the event's own it says so; the rest are measured from the ground data or estimated from the
    photos (NOTES.md, the feature sheet). */
-import { Kicker, Rail, Quarter, Shape, assemble } from './park.js?v=30';
-import { setMountain, ground } from './terrain.js?v=30';
-import { smoothstep, clamp, fbm, smax } from './noise.js?v=30';
+import { Kicker, Rail, Quarter, assemble } from './park.js?v=31';
+import { setMountain, ground } from './terrain.js?v=31';
+import { smoothstep, clamp, fbm, smax } from './noise.js?v=31';
 
 export const MAP_ID = 'buttermilk2024';
 export const MAP_NAME = 'Buttermilk 2024';
@@ -29,7 +29,7 @@ export const ORIGIN = { lat: 39.20495, lon: -106.86080, bearing: 40 };
 
 // ---- the elevation grids -------------------------------------------------------------------------------------------
 async function decode(name) {
-  const r = await fetch(new URL(name + '.png?v=30', DATA));
+  const r = await fetch(new URL(name + '.png?v=31', DATA));
   if (!r.ok) throw new Error(name + ' ' + r.status);
   const bmp = await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
   const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(bmp.width, bmp.height) : Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height });
@@ -166,6 +166,7 @@ class XgKicker extends Kicker {
    photos run down at a few degrees, so riders keep their speed to the rails: a level one stopped them dead after the
    start, 2026-11-16), at the lip's own angle (lip -7: down 7 deg), then a round knuckle of radius Rk and the landing.
    Worked out again after park.js's Kicker has made its level one. */
+const RAMP_RUN = 1.9;
 class DeckKicker extends XgKicker {
   constructor(o) {
     super(o);
@@ -183,6 +184,37 @@ class DeckKicker extends XgKicker {
     const reach = Math.max(this.hwT + this.splay, this.hwLand) + hMax / Math.min(this.sideS, this.landS) + this.shoulder + this.toe + 0.5;
     this.x0 = this.cxT - reach; this.x1 = this.cxT + reach;
   }
+  dye(x, z) {
+    for (const e of this.ents) if (z > e.z1 - 0.5 && z < e.z1 + 0.2) { const a = Math.abs(x - e.x); if (a > e.hw - 0.3 && a < e.hw + 0.3) return 1; }
+    return 0;   // (no dye round the deck itself: none of the photos, the footage or the renderings show any, round 4 review)
+  }
+  /* the ramps up to the rails as the crews cut them (photos 077, 078 and the 2024 footage: a block of snow with a
+     concave face, a flat top and cut sides, its top corners dyed): the face rising over RAMP_RUN (1.9 m) to a flat top
+     0.5 m long that runs on 0.2 m under the rail's start, then falling away under the rail as park.js's own; its sides a
+     6 cm round, then 45 deg (the physics takes a park face over about 49 as a wall). Part of the deck's own snow, so no
+     rounding between two shapes. */
+  entryRel(x, z) {
+    let best = 0;
+    for (const e of this.ents) {
+      if (z < e.z0 || z > e.z1 + 1.8) continue;
+      const ax = Math.abs(x - e.x), dx = ax - e.hw; if (dx > e.h + 0.2) continue;
+      const zt = e.z1 - 0.5, zf = zt - RAMP_RUN, back = 0.6 + smoothstep(e.hw - 0.35, e.hw + 0.25, ax);
+      let r;
+      if (z <= zt) { const u = Math.max(0, (z - zf) / RAMP_RUN); r = -smax(-e.h * u * u, -e.h, 0.12); }   // (concave, its edge rounded over about 0.1 m)
+      else r = z < e.z1 + 0.2 ? e.h : e.h * (1 - smoothstep(e.z1 + 0.2, e.z1 + 0.2 + back, z));
+      if (dx > 0) r -= dx < 0.06 ? dx * dx / 0.12 : dx - 0.03;
+      if (r > best) best = r;
+    }
+    return best;
+  }
+  // (and their grids: points at the top's edges, the sides' feet and where the top begins, so the cut edges stay sharp)
+  entryGrid(e, step) {
+    const g = super.entryGrid(e, Math.max(step, 0.45)), xs = [...g.xs], zs = [...g.zs], zt = e.z1 - 0.5, zf = zt - RAMP_RUN;   // (a block of flat faces: a coarser grid than park.js's 0.25 to 0.35 m, its edges kept)
+    for (const sg of [-1, 1]) for (const d of [-0.06, 0.06, 0.3, e.h + 0.03]) xs.push(e.x + sg * (e.hw + d));
+    for (let k = 0; k <= 8; k++) zs.push(zf + RAMP_RUN * k / 8); zs.push(zt - 0.05, zt + 0.05);
+    const u = a => [...new Set(a.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
+    return { xs: u(xs), zs: u(zs) };
+  }
   tableY(z) {
     if (!this.kc) return super.tableY(z);                  // (park.js's own constructor asks before this one has run)
     if (z < this.K.z) return this.L.y - (z - this.L.z) * this.td;
@@ -190,36 +222,6 @@ class DeckKicker extends XgKicker {
     return smax(this.Kend.y - (z - this.Kend.z) * this.tl, this.bl(z), this.blend());
   }
 }
-/* the ramp up to a rail on a rail section's deck (photos 077, 078: a compact kicker of cut snow about a metre tall,
-   flat on top, its sides upright, its corners dyed blue): rising over len to H, flat for top, the rail starting at its
-   end; its sides fall at 61 deg (the physics' wall). Its height is over the deck's own snow (deck.snowY), in a frame
-   of its own along +z (u across, s from its foot). */
-class RailRamp extends Shape {
-  constructor(o) {
-    super(Object.assign({ len: 2.0, top: 0.5, H: 0.95, hw: 1.0, name: 'Rail ramp', group: 'Course' }, o));
-    this.u0 = -this.hw - this.H / 1.8 - 0.1; this.u1 = -this.u0; this.s0 = -0.05; this.s1 = this.len + this.top + this.H / 0.9 + 0.1;
-    this.bound();
-  }
-  prof(s) {
-    const L = this.len, T = L + this.top;
-    if (s <= 0) return 0;
-    if (s < L) { const t = s / L; return this.H * t * t * (1.25 - 0.25 * t); }     // (concave, steepening to its top)
-    if (s <= T) return this.H;
-    return this.H - (s - T) * 0.9;                                                  // (its back, under the rail: 42 deg, so a rider who misses the rail rolls off it, not into a pit under the rail)
-  }
-  rel(u, s) { const p = this.prof(s); if (!(p > 0)) return -Infinity; const d = Math.abs(u) - this.hw; return d <= 0 ? p : p - d * 1.8; }
-  height(x, z, g) {
-    if (x < this.x0 || x > this.x1 || z < this.zs || z > this.z1) return -Infinity;
-    const L = this.toLocal(x, z, { u: 0, s: 0 }), r = this.rel(L.u, L.s);
-    return r > 0.003 ? this.deck.snowY(x, z) + r : -Infinity;
-  }
-  rows(fine) { const a = [], st = fine ? 0.2 : 0.3, e = this.s1; for (let s = this.s0; s <= e + 1e-6; s += st) a.push(s); a.push(this.len, this.len + this.top, this.len + this.top + 0.05); return [...new Set(a.map(v => Math.round(v * 1000) / 1000))].sort((p, q) => p - q); }
-  cols(fine) { const a = [], st = fine ? 0.25 : 0.35; for (let u = this.u0; u <= this.u1 + 1e-6; u += st) a.push(u); for (const sg of [-1, 1]) for (const e of [-0.06, 0, 0.06]) a.push(sg * (this.hw + e)); return [...new Set(a.map(v => Math.round(v * 1000) / 1000))].sort((p, q) => p - q); }
-  rowsFar() { return [this.s0, this.len * 0.5, this.len, this.len + this.top, this.s1]; }
-  colsFar() { return [this.u0, -this.hw, 0, this.hw, this.u1]; }
-  dye(x, z) { const L = this.toLocal(x, z, { u: 0, s: 0 }), T = this.len + this.top, au = Math.abs(L.u); return L.s > T - 0.35 && L.s < T + 0.02 && au > this.hw - 0.3 && au < this.hw + 0.08 ? 1 : 0; }   // (small marks at its top corners)
-}
-
 // ---- the course --------------------------------------------------------------------------------------------------------
 function buildCourse(land, q) {
   const { courseY, coursePitch } = land;
@@ -249,9 +251,13 @@ function buildCourse(land, q) {
   };
   // each section's foot a little past the last one's landing (placed down the real slope: their sizes, estimated from
   // the renderings and the 2023 build photos, set where they end)
+  /* (2026-11-16, second pass: four rail sections, as every 2024 run in the footage hits four in the same order, the
+     riders on each about 4 to 5 s apart (Tjader's own run, Hall's and Gerard's broadcast runs: scratchpad
+     ski12/X/foot/FOOTAGE.md), where the event's text says three; the footage is the stronger evidence) */
   const S1 = section('Rail section 1', -394, { inrun: 5, deck: 15, hw: 19 });
-  const S2 = section('Rail section 2', S1.zMeet + 7, { inrun: 5, deck: 13, hw: 18 });
-  const S3 = section('Rail section 3', S2.zMeet + 7, { inrun: 5, deck: 13, hw: 18 });
+  const S2 = section('Rail section 2', S1.zMeet + 6, { inrun: 5, deck: 13, hw: 18 });
+  const S3 = section('Rail section 3', S2.zMeet + 6, { inrun: 5, deck: 13, hw: 18 });
+  const S4 = section('Rail section 4', S3.zMeet + 6, { inrun: 5, deck: 13, hw: 19 });
   /* (lanes about 5 m apart, as the 2023 photos show five ramps side by side across about 22 m)
      the rails: each set off its deck's front edge (the knuckle, K), its start on the deck after a kicker-shaped snow
      ramp, then over the knuckle and down the landing, or on the deck itself (the rainbow). A rail is given as points
@@ -260,9 +266,12 @@ function buildCourse(land, q) {
   const lanes = (S, list) => {
     const zk = S.K.z;
     for (const [dx, kind, name, o = {}] of list) {
-      // (every rail starts flush with its ramp's flat top, 0.25 m before the ramp ends, so the skis slide from the snow onto
-      // it with no step up: 6 cm over the ramp, the new rails bumped a rider who did not pop to a stop, 2026-11-16)
-      const x = S.x + dx, rampH = o.rampH ?? 0.95, h0 = rampH - 0.03;
+      /* (the ramp up to each rail is the deck's own snow: an entry ramp on the deck (park.js's Kicker ents, as the Jump
+         Line's takeoff features have), rising over 2.8 m to 2 cm under the rail's start, flat 0.2 m under it, then easing
+         away. Second pass, 2026-11-16: as shapes of their own on the deck, the park's rounding between two features that
+         stand over the ground raised each ramp's edge by up to 0.34 m in one step where it began, a step that stopped
+         riders at the ramps' feet and sides) */
+      const x = S.x + dx, rampH = kind === 'ledge' ? 0.55 : o.rampH ?? 0.95, h0 = rampH - 0.03;
       let spec;
       // (a down rail bends over the knuckle's end, then runs parallel to the landing: straight from the deck to its end it
       // stood 1.2 m up at its start once raised clear of the knuckle)
@@ -270,12 +279,16 @@ function buildCourse(land, q) {
       else if (kind === 'flatDown') spec = [[-4.5, h0], [0.4, h0], [o.len ?? 10, 0.65]];
       else if (kind === 'dfd') spec = [[-1.5, h0], [4, 0.7], [7.5, 1.05], [o.len ?? 12, 0.65]];
       else if (kind === 'angled') { const t = (o.turn ?? 10) * RAD, L = o.len ?? 12, k1 = (S.Kend.z - zk) + 2.1; spec = [[-1.5, h0, 0], [k1, 0.74, Math.tan(t) * (k1 + 1.5)], [-1.5 + Math.cos(t) * L, 0.7, Math.sin(t) * L]]; }
-      else if (kind === 'rainbow') { spec = []; const L = o.len ?? 10, a = -L - 0.6; for (let i = 0; i <= 12; i++) { const t = i / 12; spec.push([a + t * L, h0 + (o.rise ?? 0.75) * Math.sin(Math.PI * t)]); } }
+      // (a rainbow ends lower than it starts, 0.45 m over the deck, as real ones do: one ending a metre up left a rider who fell
+      // off its side wedged under its end)
+      else if (kind === 'rainbow') { spec = []; const L = o.len ?? 10, a = -L - 0.6; for (let i = 0; i <= 12; i++) { const t = i / 12; spec.push([a + t * L, h0 - (h0 - 0.45) * t + (o.rise ?? 0.75) * Math.sin(Math.PI * t)]); } }
       else if (kind === 'aframe') spec = [[-7.5, h0], [-4, h0 + (o.rise ?? 0.6)], [-0.2, h0 + (o.rise ?? 0.6)], [o.len ?? 8, 0.7]];
       else if (kind === 'box') spec = [[-2.0, h0], [(S.Kend.z - zk) + 0.6, 0.6], [o.len ?? 9, 0.55]];
-      // the ramp up to its start, ending where the rail begins (a mesh of its own: RailRamp)
+      else if (kind === 'ledge') spec = [[-5.5, 0.55], [-0.4, 0.55], [o.len ?? 6, 0.5]];
+      else if (kind === 'kinkDown') spec = [[-3.5, h0], [0.2, h0], [(S.Kend.z - zk) + 1.0, 0.65], [o.len ?? 11, 0.62]];
+      // the ramp up to its start, ending where the rail begins (an entry ramp on the deck)
       const z1 = zk + spec[0][0];
-      meshed.push(new RailRamp({ x, z: z1 - 2.25, deck: S, H: rampH, hw: o.rampW ?? (kind === 'box' ? 1.2 : 1.0), name: name + ' ramp' }));
+      S.ents.push({ x, z0: z1 - 0.5 - RAMP_RUN - 0.1, z1, h: Math.max(0.05, h0 - 0.02), hw: o.rampW ?? (kind === 'box' || kind === 'ledge' ? 1.2 : 1.0) });
       // its points on the snow (the ramp's top under the first)
       let pts = spec.map(([dz, h, ddx = 0]) => [x + ddx, zk + dz, S.snowY(x + ddx, zk + dz) + h]);
       // clearance: between points, never closer than 0.25 m to the snow
@@ -289,39 +302,60 @@ function buildCourse(land, q) {
         pts[wi][2] += worst; pts[wi + 1][2] += worst;
       }
       const under = (X, Z) => S.snowY(X, Z);
-      const r = new Rail(Object.assign({ colour: BLACK, look: kind === 'box' || o.look === 'box' ? 'box' : 'dd', legs: true, w: kind === 'box' ? 0.7 : 0.16 }, o,
-        { name, kind: kind === 'box' ? 'box' : kind === 'rainbow' ? 'rainbow' : /dfd|aframe|flatDown/.test(kind) ? 'kink' : 'rail', pts, abs: true, under }));
+      const flat = kind === 'box' || kind === 'ledge';
+      const r = new Rail(Object.assign({ colour: BLACK, look: flat || o.look === 'box' ? 'box' : 'dd', legs: true, w: kind === 'ledge' ? 0.9 : flat ? 0.7 : 0.16 }, o,
+        { name, kind: flat ? 'box' : kind === 'rainbow' ? 'rainbow' : /dfd|aframe|flatDown|kinkDown/.test(kind) ? 'kink' : 'rail', pts, abs: true, under, section: S.name }));
       rails.push(r);
     }
   };
+  /* the lanes as the 2024 footage shows them, left to right looking down (+x is the left), each kind as seen; lane
+     counts are the least seen (Tjader's POV, the broadcast runs); where a lane's kind could not be told it is marked
+     estimated in the feature sheet */
+  const LIME = 0xa8d421, CAMO = 0x2f68c9;
   lanes(S1, [
-    [-10, 'flatDown', 'Flat-down rail', { len: 10 }],
-    [-5, 'down', 'Down rail', { len: 10 }],
-    [0, 'rainbow', 'Rainbow rail', { len: 10, rise: 0.75 }],
-    [5, 'dfd', 'Down-flat-down rail', { len: 12 }],
-    [10, 'angled', 'Long down rail', { len: 12, turn: -9 }],
+    [10, 'angled', 'Long angled rail', { len: 12, turn: -9 }],                // (far left, across the deck: drone frame)
+    [5, 'down', 'Round down rail', { len: 10 }],                             // (Tjader's lane)
+    [0, 'box', 'Down box', { len: 9 }],                                      // (black, black side panels: Hall's)
+    [-5, 'flatDown', 'High flat-down rail', { len: 10, rampH: 1.05 }],       // (a high rail on a tall square post)
+    [-10, 'box', 'Flat-down box', { len: 9 }],                               // (a second black box: estimated)
   ]);
   lanes(S2, [
-    [-7.5, 'box', 'Down box', { len: 9, h0: 0.62, rampW: 1.6 }],
-    [-2.5, 'aframe', 'A-frame rail', { len: 8, rise: 0.6 }],
-    [2.5, 'flatDown', 'Flat-down ladder rail', { len: 10 }],
-    [7.5, 'dfd', 'Long flat-down rail', { len: 12 }],
+    [7.5, 'ledge', 'Low ledge box', { len: 6, colour: LIME }],               // (low and flat-topped, green edges)
+    [2.5, 'flatDown', 'Flat-down rail', { len: 10, colour: LIME }],          // (green, on posts, flat then down)
+    [-2.5, 'rainbow', 'Arched box', { len: 8.5, rise: 0.6, top: 'flat', look: 'box', w: 0.7, colour: LIME }],
+    [-7.5, 'down', 'Down rail', { len: 10, colour: LIME }],                  // (estimated)
   ]);
   lanes(S3, [
-    [-8, 'angled', 'Angled down rail', { len: 11, turn: 9 }],
-    [-2.7, 'rainbow', 'Rainbow box', { len: 8.5, rise: 0.6, top: 'flat', look: 'box', w: 0.7 }],
-    [2.7, 'down', 'Down rail', { len: 10 }],
-    [8, 'aframe', 'Up-down rail', { len: 8, rise: 0.8 }],
+    [7.5, 'flatDown', 'Flat-down rail', { len: 10, skirt: true }],           // (black, red skirts: the skirt shows flat then down)
+    [2.5, 'dfd', 'Down-flat-down rail', { len: 12, skirt: true }],
+    [-2.5, 'kinkDown', 'Kinked rail', { len: 11, skirt: true }],
+    [-7.5, 'down', 'Down rail', { len: 10, skirt: true }],                    // (estimated)
   ]);
-  starts.push({ name: 'Rail section 2', x: S2.x, z: S2.z0 - 14, v: 6 }, { name: 'Rail section 3', x: S3.x, z: S3.z0 - 14, v: 6 });
+  lanes(S4, [
+    [10, 'aframe', 'A-frame rail', { len: 8, rise: 0.6 }],                   // (A-frame legs, on the left)
+    [5, 'down', 'Ring rail', { len: 10, ring: true }],                       // (a plain hoop on it, in the middle)
+    [0, 'flatDown', 'Long rail on zigzag legs', { len: 13 }],                // (Tjader's last rail)
+    [-5, 'angled', 'Curved rail', { len: 11, turn: 11 }],                    // (curved, behind those: drawn as a turning rail)
+    [-10, 'box', 'Wedge box', { len: 9, colour: CAMO }],                     // (blue and yellow camouflage sides: blue here)
+  ]);
+  starts.push({ name: 'Rail section 2', x: S2.x, z: S2.z0 - 14, v: 6 }, { name: 'Rail section 3', x: S3.x, z: S3.z0 - 14, v: 6 }, { name: 'Rail section 4', x: S4.x, z: S4.z0 - 14, v: 6 });
 
-  // ---- the jumps ("the remaining three booters": a 50 ft and a 60 ft higher up, the big air's "70' gap" last). Tables
-  // as stated (15.2, 18.3 and 21.3 m from lip to knuckle); lips, radii and landings estimated from the photos.
-  const J1 = K({ name: 'Jump 1', x: courseX(S3.zMeet + 36), z0: S3.zMeet + 30, lip: 29, R: 13, drop: 0.8, table: 15.2, Rk: 6, land: 33, wT: 4.2, wD: 6.5, wL: 10 });
-  const z2 = J1.zMeet + 26, J2a = K({ name: 'Jump 2 (left)', x: courseX(z2) + 7.5, z0: z2, lip: 30, R: 15, drop: 0.9, table: 18.3, Rk: 6, land: 33, wT: 3.4, wD: 5.6, wL: 10 });
-  const J2b = K({ name: 'Jump 2 (right)', x: courseX(z2) - 7.5, z0: z2, lip: 30, R: 15, drop: 0.9, table: 18.3, Rk: 6, land: 33, wT: 3.4, wD: 5.6, wL: 10 });
-  const z3 = J2a.zMeet + 56, J3 = K({ name: 'Jump 3: the big air', x: courseX(z3), z0: z3, lip: 31, R: 18, drop: 1.1, table: 21.3, Rk: 7, land: 34, wT: 4.8, wD: 7.2, wL: 15, landS: 1.0 });
-  starts.push({ name: 'Jump 1', x: J1.x, z: J1.z0 - 22, v: 10 }, { name: 'Jump 2', x: courseX(z2 - 22), z: z2 - 22, v: 10 }, { name: 'The big air', x: J3.x, z: J3.z0 - 26, v: 11 });
+  /* ---- the jumps ("the remaining three booters": a 50 ft and a 60 ft higher up, the big air's "70' gap" last). Tables
+     as stated (15.2, 18.3 and 21.3 m from lip to knuckle); lips, radii and landings estimated from the photos. Each one
+     takeoff (the 2024 footage shows one on jump 2 too, tall and fairly narrow). Spaced as the footage times them as
+     the ground allows (about 7 s lip to lip: 80 to 90 m here), the big air kept on the step down to the base, where the
+     real ground steepens and its landing can stand tall over the finish. */
+  /* (second pass, 2026-11-16: jump 2's table 16.5 m, not the 18.3 (60 ft) of the 2021 report: on this ground a rider who lets
+     go at the top reaches it at about 15.8 m/s, and at 18.3 m landed on its knuckle every time) */
+  /* (second pass: the first two with their lips a little higher over their knuckles (lip 31 deg, the knuckle 2.2 and 3.0 m under it), and the
+     first's in-run longer: riders came off the last rail section at about 10 m/s and reached the first two jumps 1.5 m/s
+     under the speed they were built for, landing on their knuckles. The big air 14 m further down than the first version:
+     from the corral (photo 1852) the chairlift's first tower stands beside the landing's foot, 20 to 30 m up from the
+     barrier, and the footage puts about 7 s between the jumps' lips, where the first version gave riders about 5) */
+  const J1 = K({ name: 'Jump 1', x: courseX(S4.zMeet + 32), z0: S4.zMeet + 30, lip: 31, R: 13, drop: 2.2, table: 15.2, Rk: 6, land: 33, wT: 4.2, wD: 6.5, wL: 10 });
+  const z2 = J1.zMeet + 46, J2 = K({ name: 'Jump 2', x: courseX(z2), z0: z2, lip: 31, R: 15, drop: 3.0, table: 16.5, Rk: 6, land: 33, wT: 3.6, wD: 6.0, wL: 10 });
+  const z3 = J2.zMeet + 40, J3 = K({ name: 'Jump 3: the big air', x: courseX(z3), z0: z3, lip: 32, R: 17, drop: 1.4, table: 21.3, Rk: 7, land: 34, wT: 4.8, wD: 6.0, wL: 15, wTab: 14.2, tabZ: [0.5, 5], landS: 1.0, shoulder: 0.15 });   // (shoulder 0.15: the photos' squared lip and table edges)
+  starts.push({ name: 'Jump 1', x: J1.x, z: J1.z0 - 22, v: 16 }, { name: 'Jump 2', x: courseX(z2 - 22), z: z2 - 22, v: 16 }, { name: 'The big air', x: J3.x, z: J3.z0 - 26, v: 16 });   // (the speed a rider who lets go at the top passes there with, measured: 16.0 to 16.4 m/s)
 
   // ---- the superpipe: two quarterpipe walls (park.js Quarter) facing each other across its line, on its floor (the
   // ground there is the floor, cut flat across: makeXg). Its walls 6.4 m transitions with 0.3 m of vert: 6.7 m, "22'";

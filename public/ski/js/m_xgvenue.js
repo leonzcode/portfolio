@@ -9,13 +9,13 @@
    knuckles. Everything static is merged into a few meshes by material. */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeXg, courseX, MAP_NAME, MAP_SUB, MAP_ID } from './m_xg.js?v=30';
-import { height, ground } from './terrain.js?v=30';
-import { planLift, liftHeights } from './lift.js?v=30';
-import { WorldLifts } from './wlift.js?v=30';
-import { snowUniforms, setRockSource } from './materials.js?v=30';
-import { setSunPath } from './env.js?v=30';
-import { fbm, simplex, smoothstep, clamp } from './noise.js?v=30';
+import { makeXg, courseX, MAP_NAME, MAP_SUB, MAP_ID } from './m_xg.js?v=31';
+import { height, ground } from './terrain.js?v=31';
+import { planLift, liftHeights } from './lift.js?v=31';
+import { WorldLifts } from './wlift.js?v=31';
+import { snowUniforms, setRockSource } from './materials.js?v=31';
+import { setSunPath } from './env.js?v=31';
+import { fbm, simplex, smoothstep, clamp } from './noise.js?v=31';
 
 export { MAP_NAME, MAP_SUB, MAP_ID };
 const DATA = new URL('../data/' + MAP_ID + '/', import.meta.url);
@@ -61,6 +61,7 @@ class XgLifts extends WorldLifts {
   // (on the low tier the lift's 42 000 triangles are not drawn a second time into the shadow map: the course runs
   // beside the line, so its shadow stand-in was in every frame there)
   lod(cam) { super.lod(cam); if (this.q.tier === 'low') for (const l of this.lifts) if (l.shadow) l.shadow.visible = false; }
+  update(...a) { const r = super.update(...a); if (this.q && this.q.tier === 'low') for (const l of this.lifts) if (l.shadow) l.shadow.visible = false; return r; }   // (and every frame: the stand-in was found shown on Low, 2026-11-16)
 }
 
 /* the sun as it is at Buttermilk in late January (the event's dates, 26 to 28 January): latitude 39.2 N, the sun's
@@ -77,9 +78,11 @@ function buttermilkSun(t, out = new THREE.Vector3()) {
 
 export async function makeXgMap(q, step) {
   setSunPath(buttermilkSun);
+  // (the crews' dye as the photos show it: a light azure, about sRGB 20, 170, 235; the snow shader's uDye, this map only)
+  snowUniforms.uDye.value.set(0.007, 0.40, 0.83);
   const X = await makeXg(q, step);
   const { park, land, mtn } = X;
-  const osm = await fetch(new URL('osm.json?v=30', DATA)).then(r => r.ok ? r.json() : null).catch(() => null) || { woods: [], buildings: [], roads: [], pistes: [] };
+  const osm = await fetch(new URL('osm.json?v=31', DATA)).then(r => r.ok ? r.json() : null).catch(() => null) || { woods: [], buildings: [], roads: [], pistes: [] };
   X.osm = osm;
   // ---- where things may not stand: the course and its sides, the pipe and its decks, the base, the lift line
   const P = park.PIPE;
@@ -224,7 +227,7 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
 // ---- the far mountains: the far grid as one mesh, out to 32 km -------------------------------------------------------
 function farMountains(X, q) {
-  const G = X.GRIDS.far, h = X.grids.hr, low = q.tier === 'low', N = low ? 110 : 180;
+  const G = X.GRIDS.far, h = X.grids.hr, low = q.tier === 'low', N = low ? 92 : 180;
   const pos = new Float32Array((N + 1) * (N + 1) * 3), col = new Float32Array((N + 1) * (N + 1) * 3), idx = [];
   const span = (G.n - 1) * G.step;
   const at = (x, z) => { const fx = clamp((x - G.x0) / G.step, 0, G.n - 1.001), fz = clamp((z - G.z0) / G.step, 0, G.n - 1.001), i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j, n = G.n;
@@ -250,7 +253,7 @@ function farMountains(X, q) {
     c.copy(MEADOW);
     const flat = smoothstep(0.1, 0.03, steep), tl = 3450 + n * 120;
     if (y < tl) {
-      c.lerp(BRUSH, sunny * (1 - flat) * (1 - smoothstep(2850, 3150, y + n * 100)) * 0.85);
+      c.lerp(BRUSH, clamp(0.3 + 0.6 * sunny + 0.25 * (n - 0.5), 0, 1) * (1 - flat * 0.75) * (1 - smoothstep(2850, 3150, y + n * 100)) * 0.88);   // (round 4: browner, the photos' hills grey-brown through thin snow on most sides, not only the sunny ones)
       c.lerp(FOREST, (1 - flat * 0.85) * clamp((1 - sunny) * 0.9 + smoothstep(2800, 3100, y) * 0.6, 0, 1) * (0.6 + 0.35 * n) * (1 - smoothstep(tl - 150, tl, y)) * smoothstep(2250, 2380, y));
     } else c.copy(SNOW);
     c.lerp(ROCK, smoothstep(0.42, 0.62, steep + n * 0.1) * 0.85);
@@ -334,11 +337,11 @@ function dress(X, scene, mats, q) {
   fenceLine(side(1, -430, 0, half), netQuads, 1.3, POLE);
   fenceLine(side(-1, -430, 0, half), netQuads, 1.3, POLE);
   // the finish: black fabric across the bottom and down its sides, the corral inside it
-  const cx = courseX(40);
-  fenceLine([[cx - 14, -8], [cx - 14, 62], [cx + 24, 62], [cx + 24, -8]], fabricQuads, 1.1, POLE, 2.5);
+  const cx = courseX(40), J3 = park.kickers.find(k => /^Jump 3/.test(k.name)), zc = Math.min(40, Math.round(J3.zMeet + 34));   // (zc: the corral's barrier, 34 m past the big air's landing)
+  fenceLine([[cx - 14, zc - 16], [cx - 14, Math.max(62, zc + 24)], [cx + 24, Math.max(62, zc + 24)], [cx + 24, zc - 16]], fabricQuads, 1.1, POLE, 2.5);
   // (black windscreen fabric down both sides of each jump's in-run and table, at its side's foot, as photo 083 shows)
   for (const k of park.kickers) if (/^Jump/.test(k.name)) for (const sg of [-1, 1]) {
-    const pts = []; for (let z = k.z0 - 18; z <= k.K.z + 1; z += 4) { const hw = k.hwAt(Math.max(k.z0, z)) + Math.max(0.5, (k.rel(Math.max(k.z0 + 0.01, Math.min(z, k.K.z)), 0) || 0) / 1.05 + 1.2); pts.push([k.cxT + sg * hw, z]); }
+    const pts = []; for (let z = /^Jump 3/.test(k.name) ? k.z0 + 2 : k.z0 - 18; z <= k.K.z + 1; z += 4) {   /* (the big air's in-run left open, as the 2024 footage shows it) */ const hw = k.hwAt(Math.max(k.z0, z)) + Math.max(0.5, (k.rel(Math.max(k.z0 + 0.01, Math.min(z, k.K.z)), 0) || 0) / 1.05 + 1.2); pts.push([k.cxT + sg * hw, z]); }
     if (k.name.includes('(left)') && sg < 0 || k.name.includes('(right)') && sg > 0) continue;
     fenceLine(pts, fabricQuads, 1.2, POLE, 2.5);
   }
@@ -361,9 +364,9 @@ function dress(X, scene, mats, q) {
   // the net's picture: blue diamond mesh, see-through between the strands
   const netTex = (() => {
     const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
-    x.strokeStyle = '#3d6cc4'; x.lineWidth = 3;
+    x.strokeStyle = '#6886ab'; x.lineWidth = 2.2;   // (round 4: the photos' netting samples about (104, 134, 171), a see-through steel blue)
     x.beginPath(); x.moveTo(0, 0); x.lineTo(64, 64); x.moveTo(64, 0); x.lineTo(0, 64); x.moveTo(-32, 32); x.lineTo(32, -32); x.moveTo(32, 96); x.lineTo(96, 32); x.moveTo(-32, 32); x.lineTo(32, 96); x.moveTo(32, -32); x.lineTo(96, 32); x.stroke();
-    x.fillStyle = '#3d6cc4'; x.fillRect(0, 0, 64, 3); x.fillRect(0, 61, 64, 3);
+    x.fillStyle = '#6886ab'; x.fillRect(0, 0, 64, 2); x.fillRect(0, 62, 64, 2);
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
   })();
   quads(netQuads, new THREE.MeshLambertMaterial({ map: netTex, alphaTest: 0.5, side: THREE.DoubleSide }), 'course netting', 7);
@@ -376,7 +379,7 @@ function dress(X, scene, mats, q) {
       const y = i * 128; x.fillStyle = bg; x.fillRect(0, y, 1024, 128); x.fillStyle = stripe; x.fillRect(0, y + 112, 1024, 10);
       x.font = '800 64px "Barlow Condensed", Arial Narrow, sans-serif'; x.fillStyle = fg; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, 512, y + 58);
     };
-    row(0, 'BUTTERMILK  2024'); row(1, 'START'); row(2, 'FINISH'); row(3, 'SLOPESTYLE   ·   SUPERPIPE');
+    row(0, 'BUTTERMILK  2024'); row(1, 'START'); row(2, 'BUTTERMILK  2024', '#eef1f5', '#1b2a44', '#2a63d9');   // (a light panel: most of the landing's banners are light, photo 1852) row(3, 'SLOPESTYLE   ·   SUPERPIPE');
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
   })();
   const bannerPos = [], bannerUv = [];
@@ -386,7 +389,7 @@ function dress(X, scene, mats, q) {
     bannerUv.push(0, v0, 1, v0, 1, v1, 0, v0, 1, v1, 0, v1);
   };
   // along the big air's landing, both sides, and round the corral (black banners, as along the 2024 landing)
-  for (let z = -60; z < -2; z += 9) { const hw = 16; banner(courseX(z) + hw, z, courseX(z + 8) + hw, z + 8, undefined, 1.0, z % 18 === 0 ? 3 : 0); banner(courseX(z + 8) - hw, z + 8, courseX(z) - hw, z, undefined, 1.0, 0); }
+  for (let z = Math.round(J3.K.z) - 4; z < J3.zMeet + 4; z += 9) { const hw = 20; banner(courseX(z) + hw, z, courseX(z + 8) + hw, z + 8, undefined, 1.0, z % 27 === 0 ? 0 : 2); banner(courseX(z + 8) - hw, z + 8, courseX(z) - hw, z, undefined, 1.0, 0); }
   for (let x = cx - 7; x < cx + 22; x += 9.5) banner(x + 9, 61.8, x, 61.8, undefined, 1.0, 3);
 
   // ---- the start: a deck at the top, a black-roofed tent behind it, a gate with its banner
@@ -410,9 +413,15 @@ function dress(X, scene, mats, q) {
   camTower(courseX(-380) + 27, -380); camTower(courseX(-330) - 27, -330); camTower(courseX(-282) + 26, -282);
   camTower(courseX(-210) - 25, -210); camTower(courseX(-140) - 25, -140); camTower(courseX(-60) - 21, -75, 5);
 
+  // ---- rail dressing seen in the 2024 footage: a plain hoop on the ring rail (section 4) and red skirts under section
+  // 3's rails, from the rail down to the snow
+  for (const r of park.rails) {
+    if (r.ring) { const p = r.at(r.len * 0.45), d = r.dirAt(r.len * 0.45); const t = new THREE.TorusGeometry(0.42, 0.035, 5, 18); t.rotateX(Math.PI / 2); t.rotateZ(Math.PI / 2); M.add(t, 0xc9ced4, _m.makeRotationY(Math.atan2(d.x, d.z)).setPosition(p.x, p.y, p.z)); }
+    if (r.skirt) for (let sAt = 0.4; sAt < r.len - 0.3; sAt += 0.5) { const p = r.at(sAt), d = r.dirAt(sAt), sy = r.under(p.x, p.z), h = p.y - 0.09 - sy; if (h > 0.08) M.box(p.x, sy + h / 2, p.z, 0.035, h, 0.52, 0xc23a2e, Math.atan2(d.x, d.z)); }
+  }
   // ---- the finish: the corral's black railings (photo: black frames crossed with an X, a black top rail)
   for (let x = cx - 14; x < cx + 22; x += 2.5) {
-    const z = 8, y = H(x + 1.25, z);
+    const z = zc, y = H(x + 1.25, z);
     M.box(x + 1.25, y + 1.1, z, 2.5, 0.06, 0.08, BLACK); M.box(x + 1.25, y + 0.12, z, 2.5, 0.05, 0.05, BLACK); M.box(x, y + 0.6, z, 0.06, 1.15, 0.06, BLACK);
     for (let b = 0.2; b < 2.45; b += 0.2) M.box(x + b, y + 0.6, z, 0.025, 0.98, 0.025, BLACK);
   }
@@ -444,7 +453,7 @@ function dress(X, scene, mats, q) {
   // (the knuckles' tall feather flags, photos 082, 083: a bent pole and a long narrow blue banner)
   const feather = (x, z) => { const y = H(x, z); M.cyl(x, y + 1.9, z, 0.025, 0.03, 3.8, 0x2a2d31, 5); M.box(x + 0.36, y + 2.4, z, 0.7, 2.6, 0.02, 0x2456c8); M.box(x + 0.3, y + 3.85, z, 0.55, 0.35, 0.02, 0x2456c8); };
   for (const k of park.kickers) for (const s of [-1, 1]) { const w = k.hwAt ? k.hwAt(k.K.z) : k.wD; feather(k.cxT + s * (w + 1.4), k.K.z); }
-  for (const x of [cx - 10, cx + 2, cx + 14]) flag(x, 5, RED);
+  for (const x of [cx - 10, cx + 2, cx + 14]) flag(x, zc - 3, RED);
 
   // ---- the base area's buildings (OpenStreetMap footprints, heights from their tags or about two storeys), snow on top
   for (const b of osm.buildings) {
@@ -456,7 +465,22 @@ function dress(X, scene, mats, q) {
     // (walls: wood and stone browns; roofs: snow)
     const wall = (b.k === 'residential' || b.k === 'apartments') ? 0x7a5a42 : (b.r > 30 ? 0x8b7a66 : 0x6e5440);
     M.add(g, wall);
-    const top = new THREE.ShapeGeometry(shape); top.rotateX(-Math.PI / 2); top.translate(0, ymin - 1 + hh + 0.4, 0); M.add(top, 0xf4f6f8);
+    const top = new THREE.ShapeGeometry(shape); top.rotateX(-Math.PI / 2); top.translate(0, ymin - 1 + hh + 0.05, 0); M.add(top, 0xf4f6f8);
+    // (the lodges and houses round the base have gabled roofs under snow (photos 077, 082, 1842): a gable along the
+    // footprint's longest side over its bounding box turned that way; the big flat-roofed hotel and halls keep flat ones)
+    if (b.r < 40 && b.k !== 'commercial' && b.k !== 'retail') {
+      let best = 0, a = 0;
+      for (let i = 0; i < b.p.length; i++) { const [x0, z0] = b.p[i], [x1, z1] = b.p[(i + 1) % b.p.length], L = Math.hypot(x1 - x0, z1 - z0); if (L > best) { best = L; a = Math.atan2(z1 - z0, x1 - x0); } }
+      const ca = Math.cos(a), sa = Math.sin(a); let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      for (const [x, z] of b.p) { const u = x * ca + z * sa, v = -x * sa + z * ca; u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); }
+      const L = u1 - u0 + 0.8, W = v1 - v0 + 0.8, rh = Math.min(6, W * 0.32);
+      const tri = new THREE.Shape([new THREE.Vector2(-W / 2, 0), new THREE.Vector2(W / 2, 0), new THREE.Vector2(0, rh)]);
+      const rg = new THREE.ExtrudeGeometry(tri, { depth: L, bevelEnabled: false }); rg.translate(0, 0, -L / 2);
+      const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
+      rg.rotateY(Math.PI / 2 - a);     // (its length, along z, turned onto the longest side's direction)
+      rg.translate(uc * ca - vc * sa, ymin - 1 + hh, uc * sa + vc * ca);
+      M.add(rg, 0xe9edf1);
+    }
   }
   // ---- the roads (the highway along the valley, the base's roads) and the airport's runway across it, laid on the snow
   {
@@ -495,7 +519,7 @@ function dress(X, scene, mats, q) {
     for (let k = 0; k < 4; k++) { const a = k * 2.4, y = 4.4 + k * 0.9; one.bar(V(0, y, 0), V(Math.cos(a) * 1.5, y + 1.9, Math.sin(a) * 1.5), 0.04, 0xbdb8ae, 3); }
     const tg = mergeGeometries(one.list, false);
     const list = [], r = (s => () => (s = (s * 16807) % 2147483647) / 2147483647)(91);
-    const max = low ? 650 : 1800;
+    const max = low ? 450 : 1800;
     for (let tries = 0; list.length < max && tries < max * 14; tries++) {
       const x = -700 + r() * 1300, z = -950 + r() * 1100;
       if (r() > X.treeAt(x, z, true) * 1.4) continue;
@@ -523,23 +547,50 @@ function dress(X, scene, mats, q) {
   // the award stage by the pipe's foot
   { const x = 46, z = 10, y = G0(x, z); M.box(x, y + 0.9, z, 10, 1.8, 6, 0x1d1f23); M.box(x, y + 4.5, z + 2.8, 10, 5.4, 0.3, 0x111215); }
   // ---- the crowd: people in winter clothes in the finish area behind the corral, along the pipe's foot and round the
-  // base, one instanced mesh of a body and a head (a few dark and bright jackets, as in the photos)
+  // base, one instanced mesh: trousers, a jacket with its arms, a face and a beanie, each part its own colour per person
+  // (second pass: one colour multiplied the whole figure, so every face and pair of trousers came out as dark as the
+  // jacket and the crowd read as black blocks)
   {
-    const body = new Merge();
-    body.add(new THREE.CylinderGeometry(0.2, 0.24, 1.25, 5, 1, true), 0xffffff, _m.makeTranslation(0, 0.62, 0));
-    body.add(new THREE.SphereGeometry(0.13, 5, 3), 0xffffff, _m.makeTranslation(0, 1.42, 0));
-    const pg = mergeGeometries(body.list, false);
+    const body = new Merge(), parts = [];
+    const part = (g, k, m) => { const gg = body.add(g, 0xffffff, m); parts.push([gg.attributes.position.count, k]); };   // (counted after Merge has unindexed it)
+    part(new THREE.CylinderGeometry(0.16, 0.13, 0.8, 5, 1, true), 0, _m.makeTranslation(0, 0.4, 0));                // (trousers)
+    part(new THREE.CylinderGeometry(0.23, 0.2, 0.66, 6, 1, true), 1, _m.makeTranslation(0, 1.12, 0));               // (the jacket)
+    part(new THREE.CylinderGeometry(0.08, 0.23, 0.07, 6), 1, _m.makeTranslation(0, 1.48, 0));                        // (its shoulders)
+    for (const sx of [-1, 1]) part(new THREE.CylinderGeometry(0.06, 0.055, 0.6, 4, 1, true), 1, _m.makeRotationZ(sx * 0.12).setPosition(sx * 0.27, 1.12, 0));   // (arms)
+    part(new THREE.SphereGeometry(0.11, 6, 3), 2, _m.makeTranslation(0, 1.62, 0));                                   // (the face)
+    part(new THREE.SphereGeometry(0.122, 6, 2, 0, Math.PI * 2, 0, Math.PI * 0.5), 3, _m.makeTranslation(0, 1.64, 0));   // (a beanie or a helmet)
+    const pg = mergeGeometries(body.list, false), kind = new Float32Array(pg.attributes.position.count);
+    { let o = 0; for (const [c, k] of parts) { kind.fill(k, o, o + c); o += c; } }
+    pg.setAttribute('aPart', new THREE.BufferAttribute(kind, 1));
     const spots = [], rr = (s => () => (s = (s * 48271) % 2147483647) / 2147483647)(7);
     const area = (x0, x1, z0, z1, n) => { for (let i = 0; i < n; i++) spots.push([x0 + rr() * (x1 - x0), z0 + rr() * (z1 - z0)]); };
     const n = low ? 1 : 2;
-    area(cx - 12, cx + 22, 9, 14, 90 * n);            // (packed along the corral's barrier)
-    area(cx - 6, cx + 22, 63, 70, 40 * n);            // (behind the finish fence)
-    area(cx + 26, cx + 40, 0, 50, 40 * n);            // (along the pipe's foot)
-    area(-70, -30, 60, 95, 40 * n); area(20, 80, 80, 120, 50 * n);
-    const JACKETS = [0x1b1c20, 0x2b2f38, 0x1e2433, 0xd9d6cf, 0x3a3d42, 0x222222, 0x5a6068, 0x1a1d24, 0x7a2a26];   // (mostly black, navy, grey and white, as the crowds in the photos)
+    area(cx - 12, cx + 22, zc + 1, zc + 6, 90 * n);    // (packed along the corral's barrier)
+    const m = low ? 0.5 : n;                          // (on Low, half the crowd away from the corral's barrier)
+    area(cx - 6, cx + 22, 63, 70, 40 * m);            // (behind the finish fence)
+    area(cx + 26, cx + 40, 0, 50, 40 * m);            // (along the pipe's foot)
+    area(-70, -30, 60, 95, 40 * m); area(20, 80, 80, 120, 50 * m);
+    // (the crowds in the 2024 photos: mostly black, grey, navy and white jackets, a few bright ones; dark or grey
+    // trousers; beanies and helmets of every colour)
+    const JACKETS = [0x1b1c20, 0x2b2f38, 0x1e2433, 0xe4e2dc, 0x3a3d42, 0x222222, 0x6a7078, 0x1a1d24, 0x8a2e28, 0xd8d6d0, 0x2d4a6e, 0xc9a23a];
+    const TROUSERS = [0x15161a, 0x2a2c31, 0x3c4048, 0x1d2230, 0x5a5e66, 0x111214];
+    const HATS = [0x111214, 0xe8e6e0, 0x9c2a22, 0x2f5f9a, 0x3a3d42, 0xd9b23c, 0x2e6a3c, 0x6b6f76, 0x1d2a44, 0xd47a2a];
+    const SKIN = [0xe8c4a8, 0xd9ad8c, 0xc08a66, 0x9a6a4a, 0xf0d0b8, 0x7a4e36];
     const im = new THREE.InstancedMesh(pg, new THREE.MeshLambertMaterial({ vertexColors: true }), spots.length);
-    const col = new THREE.Color();
-    spots.forEach(([x, z], i) => { im.setMatrixAt(i, _m.compose(V(x, G0(x, z) - 0.05, z), _q.setFromAxisAngle(_Y, rr() * 6.28), _s.set(1, 0.85 + rr() * 0.3, 1))); im.setColorAt(i, col.set(JACKETS[i % JACKETS.length])); });
+    const aLeg = new Float32Array(spots.length * 3), aHat = new Float32Array(spots.length * 3), aSkin = new Float32Array(spots.length * 3), col = new THREE.Color();
+    spots.forEach(([x, z], i) => {
+      im.setMatrixAt(i, _m.compose(V(x, G0(x, z) - 0.05, z), _q.setFromAxisAngle(_Y, rr() * 6.28), _s.set(1, 0.85 + rr() * 0.3, 1)));
+      im.setColorAt(i, col.set(JACKETS[Math.floor(rr() * JACKETS.length)]));
+      col.set(TROUSERS[Math.floor(rr() * TROUSERS.length)]).toArray(aLeg, i * 3);
+      col.set(HATS[Math.floor(rr() * HATS.length)]).toArray(aHat, i * 3);
+      col.set(SKIN[Math.floor(rr() * SKIN.length)]).toArray(aSkin, i * 3);
+    });
+    pg.setAttribute('aLeg', new THREE.InstancedBufferAttribute(aLeg, 3)); pg.setAttribute('aHat', new THREE.InstancedBufferAttribute(aHat, 3)); pg.setAttribute('aSkin', new THREE.InstancedBufferAttribute(aSkin, 3));
+    im.material.onBeforeCompile = sh => {
+      sh.vertexShader = 'attribute float aPart; attribute vec3 aLeg; attribute vec3 aHat; attribute vec3 aSkin;\n' + sh.vertexShader.replace('#include <color_vertex>',
+        '#include <color_vertex>\n#ifdef USE_INSTANCING_COLOR\n  vColor.xyz /= max(instanceColor.xyz, vec3(1e-3));\n#endif\n  vColor.xyz *= aPart < 0.5 ? aLeg : aPart < 1.5 ? instanceColor.xyz : aPart < 2.5 ? aSkin : aHat;');
+    };
+    im.material.customProgramCacheKey = () => 'xg-crowd';
     im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
     im.name = 'crowd'; im.castShadow = false; im.matrixAutoUpdate = false; im.computeBoundingSphere(); group.add(im);
   }

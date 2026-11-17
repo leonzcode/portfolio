@@ -15,8 +15,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=30';
-import { clamp, smoothstep } from './noise.js?v=30';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=31';
+import { clamp, smoothstep } from './noise.js?v=31';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -498,6 +498,14 @@ export class Skier {
       const want = this.p.z < k.z0 ? k.vDesign : Math.sqrt(k.vLip * k.vLip + 2 * 9.81 * Math.max(0, k.L.y - this.p.y) * 1.05);
       const over = speed - want;
       if (over > 0.2) { const d = Math.min(3.2, over * 1.6); a.addScaledVector(this.v, -d / speed); this.scrub = d; }
+    }
+    // (N, round 12: a map's own in-runs that are not Kickers, park.inruns, each { want(p) -> m/s or null }: the Nines map's
+    // Formation Jump decks. Checked tucking or not, a tuck buying 0.8 m/s more: a rider tucking from its start reached
+    // 28 m/s at the lips and landed past the landing)
+    if (this.park.inruns && speed > 4) for (const k of this.park.inruns) {
+      const want = k.want(this.p); if (want == null) continue;
+      const over = speed - want - (I.push ? 0 : I.tuck ? 0.8 : 0);
+      if (over > 0.2) { const d = Math.min(I.push ? 20 : 3.2, over * (I.push ? 10 : 1.6)); a.addScaledVector(this.v, -d / speed); this.scrub = Math.max(this.scrub, d); }   // (a hard push, about 9 to 11 m/s2, needs a harder check)
     }
     // pumping the pipe's transitions: riders extend their legs going up the curve and gain speed doing it
     for (const pp of (this.park.pipes || [this.park.pipe, this.park.qp])) {

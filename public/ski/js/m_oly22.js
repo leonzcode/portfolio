@@ -7,14 +7,14 @@
      { mtn, park, land, makeLift(scene, q), dress(scene, mats, q, forest), runOverAt(p) }
    The map's name on screen is the place and the year only. */
 import * as THREE from 'three';
-import { setMountain } from './terrain.js?v=30';
-import { LOOK, snowUniforms } from './materials.js?v=30';
-import { setSunPath } from './env.js?v=30';
-import { liftLines, planWorldLifts, WorldLifts } from './wlift.js?v=30';
-import { loadLand, makeFarHills, plantTrees, makeTrees, CORRIDOR } from './m_olyland.js?v=30';
-import { setProfile, makeCourse } from './m_olycourse.js?v=30';
-import { buildVenue } from './m_olybuild.js?v=30';
-import { smoothstep } from './noise.js?v=30';
+import { setMountain } from './terrain.js?v=31';
+import { LOOK, snowUniforms } from './materials.js?v=31';
+import { setSunPath } from './env.js?v=31';
+import { liftLines, planWorldLifts, WorldLifts } from './wlift.js?v=31';
+import { loadLand, makeFarHills, plantTrees, makeTrees, CORRIDOR } from './m_olyland.js?v=31';
+import { setProfile, makeCourse } from './m_olycourse.js?v=31';
+import { buildVenue } from './m_olybuild.js?v=31';
+import { smoothstep } from './noise.js?v=31';
 
 export const MAP_ID = 'genting2022';
 export const MAP_NAME = 'Genting 2022';
@@ -39,8 +39,9 @@ function bareHook(tex, win) {
   float bare = (1.0 - smoothstep(0.36, 0.64, bm.r + nz * 0.32)) * (1.0 - vGroom);
   float camG = length(vWPos - cameraPosition);
   if (bare > 0.002) {
-    vec3 grass = mix(vec3(0.075, 0.06, 0.045), vec3(0.17, 0.135, 0.095), bm.g);
-    grass = mix(grass, vec3(0.07, 0.048, 0.03), smoothstep(0.55, 0.9, bm.b) * 0.65);
+    // (the dry grass of the hills, a warm dark brown, browner and darker where the soil shows: the photos' hills)
+    vec3 grass = mix(vec3(0.062, 0.04, 0.028), vec3(0.15, 0.092, 0.058), bm.g);
+    grass = mix(grass, vec3(0.06, 0.036, 0.022), smoothstep(0.55, 0.9, bm.b) * 0.65);
     grass *= 0.8 + 0.4 * texture2D(uNoise, vWPos.xz * 0.7 + 0.3).b;
     diffuseColor.rgb = mix(diffuseColor.rgb, grass, bare);
     gRock = max(gRock, bare);
@@ -54,21 +55,22 @@ function bareHook(tex, win) {
       vec3 wood = mix(vec3(0.1, 0.07, 0.055), vec3(0.2, 0.13, 0.095), texture2D(uNoise, vWPos.xz * 0.37).b);
       diffuseColor.rgb = mix(diffuseColor.rgb, wood, w * veg * 0.85);
     } else {
-      // (rows 4 m apart, a dot every 3 m, a little uneven; faded out where they would only shimmer)
-      vec2 rq = vec2(vWPos.x * 0.83 + vWPos.z * 0.56, -vWPos.x * 0.56 + vWPos.z * 0.83);
-      vec2 cell = vec2(rq.x / 3.0, rq.y / 4.0), f = fract(cell) - 0.5;
-      float jit = texture2D(uNoise, floor(cell) * 0.031).b;
-      float dot_ = 1.0 - smoothstep(0.18, 0.32, length(f * vec2(1.0, 1.3)) + (jit - 0.5) * 0.12);
-      float far = smoothstep(350.0, 1500.0, camG);
-      float k = mix(dot_, 0.18, far) * smoothstep(0.75, 0.95, bm.a) * veg * (1.0 - 0.75 * bare) * 0.8;
-      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.05, 0.035), k * 0.9);
+      /* (young pines planted along the contours: rows about 2 m apart up the hill, following its height lines, broken up
+         by a fine speckle of trees; from afar a dark mottle over the hill, as the photos show the planted slopes) */
+      float rowsA = fract(vWPos.y / 1.9 + texture2D(uNoise, vWPos.xz * 0.012).b * 0.8);
+      float rows = mix(0.55, 1.0, 1.0 - smoothstep(0.16, 0.36, abs(rowsA - 0.5)));
+      float speck = smoothstep(0.38, 0.6, texture2D(uNoise, vWPos.xz * 0.55 + 0.17).b) * (0.7 + 0.3 * texture2D(uNoise, vWPos.xz * 2.1).b);
+      float far = smoothstep(250.0, 1200.0, camG);
+      float dens = mix(rows * speck, 0.5 + 0.25 * texture2D(uNoise, vWPos.xz * 0.02).b, far);
+      float k = dens * smoothstep(0.75, 0.95, bm.a) * veg * (0.25 + 0.75 * smoothstep(0.2, 0.7, bare + far * 0.35));
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.026, 0.034, 0.026), clamp(k, 0.0, 1.0) * 0.92);
     }
   }
   /* the course's built faces in snow bricks (the takeoffs' upright sides, the steps' faces, as the builders cut them):
      on anything steeper than about 55 degrees on the course, rows 0.3 m high, bricks 0.6 m long, the joints pale grey */
   {
     vec3 wn = normalize(vWNor);
-    float bk = (1.0 - smoothstep(0.5, 0.62, abs(wn.y))) * (1.0 - smoothstep(48.0, 56.0, abs(vWPos.x))) * step(-60.0, vWPos.z) * step(vWPos.z, 640.0) * (1.0 - smoothstep(30.0, 90.0, camG));
+    float bk = (1.0 - smoothstep(0.5, 0.62, abs(wn.y))) * (1.0 - smoothstep(48.0, 56.0, abs(vWPos.x))) * step(-60.0, vWPos.z) * step(vWPos.z, 255.0) * (1.0 - smoothstep(30.0, 90.0, camG));
     if (bk > 0.001) {
       vec2 t = normalize(vec2(-wn.z, wn.x) + vec2(1e-5));
       float hh = dot(vWPos.xz, t), yy = vWPos.y / 0.3, row = floor(yy);
@@ -123,7 +125,7 @@ export async function makeGenting(q, say = () => Promise.resolve()) {
   park.mapName = MAP_NAME;
   await say('Shaping the snow', 0.34);
   land.clear = (x, z) => (Math.abs(x) < 70 && z > -90 && z < 830) || (x < -40 && x > -190 && z > 330 && z < 700);
-  const cover = land.snowTexture(q && q.tier === 'low' ? 384 : 512);
+  const cover = land.snowTexture(q && q.tier === 'low' ? 256 : 512);   // (Low: 20 m texels; it is the far ground's cover)
   bareHook(cover.tex, cover.win);
   // ---- the chairlift on the rider's right (OpenStreetMap's "6"), the way back up: its line in the course's frame
   const L6 = land.osm && land.osm.lifts.find(l => /^6/.test(l.name) && l.kind === 'chair_lift');
@@ -164,13 +166,16 @@ export async function makeGenting(q, say = () => Promise.resolve()) {
     dress(scene, mats, q2, forest) {
       makeFarHills(scene, q2, land);
       const list = plantTrees(land, q2, park.course);
-      // (a row of dark young pines just outside the Great Wall, on the rider's left, in the drone footage)
+      // (a band of dark young pines planted in four rows a few metres outside the Great Wall, on the rider's left, about
+      // 2.5 to 3.5 m tall, beside sections 2 and 3: the drone preview's plan view of section 2)
       { let s = 7; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
-        for (let z = -24; z < 250; z += 3.4 + r() * 1.6) { const x = 37 + r() * 2; list.push({ x, y: land.at(x, z) - 0.2, z, s: 3.6 + r() * 2.2, k: 2, rot: r() * 6.28 }); } }
+        for (const x0 of [35.5, 38.0, 40.5, 43.0]) for (let z = 62 + r() * 2; z < 250; z += 2.2 + r() * 0.8) { const x = x0 + (r() - 0.5) * 0.8; list.push({ x, y: land.at(x, z) - 0.2, z, s: 2.4 + r() * 1.2, k: 2, rot: r() * 6.28 }); } }
       makeTrees(scene, q2, list);
       // (the trees near the course are ridden into, as the Forest's are)
       if (forest && forest.grid) for (const t of list) { if (Math.abs(t.x) > 160 || t.z < -200 || t.z > 900) continue; const k = Math.floor(t.x / 8) + ',' + Math.floor(t.z / 8); if (!forest.grid.has(k)) forest.grid.set(k, []); forest.grid.get(k).push({ x: t.x, y: t.y, z: t.z, s: t.s * 0.8 }); }
       buildVenue(scene, park, q2, land);
+      // (the sky over the venue in the photos is a deep clear blue: the dome's colour turned up from 1.4, this map only)
+      { const dome = scene.getObjectByName('sky'); const u = dome && dome.material && dome.material.uniforms; if (u && u.uSat) u.uSat.value = 1.85; }
     },
   };
 }

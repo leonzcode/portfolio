@@ -3855,11 +3855,16 @@ function connect() {
     D.url = duelUrl(); D.http = httpBase(D.url);
     if (D.phase === 'off') D.phase = 'connecting';
     let ws;
+    // (2026-11-16, offline: with no connection nothing is tried; a server that leaves the line hanging is given up after
+    // 8 s, and after a second such try the panel says so, instead of saying "connecting" for minutes)
+    if (navigator.onLine === false) { D.want = false; D.phase = 'off'; D.err = 'You are offline. Online 1v1 needs a connection; the other modes work.'; renderPanel(); return; }
     try { ws = new WebSocket(D.url); } catch (e) { retry(); return; }
     D.ws = ws;
+    const giveUp = setTimeout(function () { if (D.ws === ws && ws.readyState === 0) { D.retries = Math.max(D.retries, 4); try { ws.close(); } catch (e) {} } }, 8000);
     ws.onopen = function () {
+        clearTimeout(giveUp);
         if (D.ws !== ws) return;
-        D.connected = true; D.retries = 0;
+        D.connected = true; D.retries = 0; D.everOpen = true;
         D.tok = token();
         send({ t: 'hello', tok: D.tok, name: gameSettings.playerName || 'Player' });
     };
@@ -3885,7 +3890,8 @@ function retry() {
     clearTimeout(D.retryTimer);
     D.retries++;
     const inMatch = D.phase === 'match';
-    if ((!inMatch && D.retries > 5) || D.retries > 90) {
+    // (2026-11-16: a server never reached on this visit is given up sooner, so the panel says so)
+    if ((!inMatch && D.retries > (D.everOpen ? 5 : 2)) || D.retries > 90) {
         D.want = false;
         if (inMatch && G && G.online) lostMatch('Could not reach the game server again.');
         D.phase = 'off'; D.err = 'Could not reach the game server. Try again in a moment.';

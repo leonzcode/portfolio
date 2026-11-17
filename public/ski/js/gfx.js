@@ -13,7 +13,7 @@
      rim. The same program as the snow (a copy of its material), so nothing new is built. */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { ground } from './terrain.js?v=30';
+import { ground } from './terrain.js?v=31';
 
 // ---- smoothing the edges where the canvas has no multisampling (the low and medium tiers) --------------------------------
 /* The scene is drawn into a picture the size of the canvas, then onto the canvas through a light FXAA pass (after the
@@ -100,6 +100,88 @@ export function* fixWinding(g, chunk = 8000) {
   return flipped;
 }
 export function fixWindingNow(g) { const it = fixWinding(g, Infinity); let r = it.next(); while (!r.done) r = it.next(); return r.value; }
+
+/* ---- (L, round 12, for "less laggy") still things in plain colours, one draw per kind --------------------------------------
+   A map's dressing comes as a mesh per colour (the Nines venue's concrete, glass, steel, red, blue...: eleven draws, each
+   about 0.3 ms of the page's own work a frame on a slow Chromebook processor). Here the meshes under root that never
+   move (matrixAutoUpdate off), in a plain material (three's standard or Lambert, no picture, no shader of its own, solid),
+   are put together: one mesh for each kind of material, side, shadow cast and taken; each corner carries its mesh's
+   colour (times its own corner colours) and, for the standard material, its roughness and metalness, so the picture is
+   the same. Anything else under root is left as it is. Returns how many meshes went into how many. */
+const _baseCompile = THREE.Material.prototype.onBeforeCompile, _baseRender = THREE.Object3D.prototype.onBeforeRender;
+const RM_KEY = 'plainrm';
+function rmMaterial(side) {
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, side });
+  m.onBeforeCompile = s => {
+    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aRM; varying vec2 vRM;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvRM = aRM;');
+    s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vRM;')
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vRM.x;').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vRM.y;');
+  };
+  m.customProgramCacheKey = () => RM_KEY;
+  return m;
+}
+export function mergeStill(root, shadowOnly = null) {
+  if (!root) return [0, 0];
+  root.updateMatrixWorld(true);
+  const groups = new Map();
+  const still = o => { for (let q = o; q; q = q.parent) { if (!q.visible) return false; if (q === root) break; } return true; };
+  root.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || o.isBatchedMesh || o.matrixAutoUpdate !== false || Array.isArray(o.material)) return;
+    if (o.onBeforeRender !== _baseRender || o.renderOrder || o.layers.mask !== 1 || (shadowOnly && shadowOnly.has(o)) || !still(o)) return;
+    const m = o.material, g = o.geometry;
+    const std = m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial, lam = m.isMeshLambertMaterial;
+    if (!(std || lam) || !m.visible || m.transparent || m.opacity < 1 || m.alphaTest > 0 || m.wireframe || m.flatShading || m.side === THREE.BackSide || m.onBeforeCompile !== _baseCompile || !m.fog) return;
+    for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap', 'envMap', 'lightMap', 'bumpMap', 'displacementMap', 'specularMap']) if (m[k]) return;
+    if (m.emissive && (m.emissive.r || m.emissive.g || m.emissive.b)) return;
+    if (!g || !g.attributes.position || !g.attributes.normal || (m.vertexColors && !g.attributes.color) || (g.morphAttributes && Object.keys(g.morphAttributes).length)) return;
+    if (g.attributes.position.isInterleavedBufferAttribute || g.attributes.normal.isInterleavedBufferAttribute) return;
+    if (m.polygonOffset || !m.depthTest || !m.depthWrite || m.colorWrite === false) return;
+    const key = [std ? 'S' : 'L', m.side, o.castShadow ? 1 : 0, o.receiveShadow ? 1 : 0, o.frustumCulled ? 1 : 0].join(',');
+    if (!groups.has(key)) groups.set(key, { std, side: m.side, cast: o.castShadow, receive: o.receiveShadow, fc: o.frustumCulled, list: [] });
+    groups.get(key).list.push(o);
+  });
+  let nIn = 0, nOut = 0;
+  const nm = new THREE.Matrix3();
+  for (const G of groups.values()) {
+    if (G.list.length < 2) continue;
+    let nv = 0, ni = 0;
+    for (const o of G.list) { const g = o.geometry; nv += g.attributes.position.count; ni += g.index ? g.index.count : g.attributes.position.count; }
+    const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3), rm = G.std ? new Float32Array(nv * 2) : null, idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+    let vo = 0, io = 0;
+    for (const o of G.list) {
+      const g = o.geometry, A = g.attributes.position, N = g.attributes.normal, C = o.material.vertexColors ? g.attributes.color : null, n = A.count, e = o.matrixWorld.elements, c = o.material.color;
+      const f = nm.getNormalMatrix(o.matrixWorld).elements;
+      for (let i = 0; i < n; i++) {
+        const v = vo + i, x = A.getX(i), y = A.getY(i), z = A.getZ(i);
+        pos[v * 3] = e[0] * x + e[4] * y + e[8] * z + e[12]; pos[v * 3 + 1] = e[1] * x + e[5] * y + e[9] * z + e[13]; pos[v * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+        const a = N.getX(i), b = N.getY(i), d = N.getZ(i), nx = f[0] * a + f[3] * b + f[6] * d, ny = f[1] * a + f[4] * b + f[7] * d, nz = f[2] * a + f[5] * b + f[8] * d, l = Math.hypot(nx, ny, nz) || 1;
+        nor[v * 3] = nx / l; nor[v * 3 + 1] = ny / l; nor[v * 3 + 2] = nz / l;
+        col[v * 3] = c.r * (C ? C.getX(i) : 1); col[v * 3 + 1] = c.g * (C ? C.getY(i) : 1); col[v * 3 + 2] = c.b * (C ? C.getZ(i) : 1);
+        if (rm) { rm[v * 2] = o.material.roughness; rm[v * 2 + 1] = o.material.metalness; }
+      }
+      // (a mirrored mesh's triangles turned back, as three does by its front face)
+      const flip = o.matrixWorld.determinant() < 0;
+      if (g.index) { const I = g.index.array; for (let i = 0; i < I.length; i += 3) { idx[io + i] = I[i] + vo; idx[io + i + 1] = I[flip ? i + 2 : i + 1] + vo; idx[io + i + 2] = I[flip ? i + 1 : i + 2] + vo; } io += I.length; }
+      else { for (let i = 0; i < n; i += 3) { idx[io + i] = vo + i; idx[io + i + 1] = vo + (flip ? i + 2 : i + 1); idx[io + i + 2] = vo + (flip ? i + 1 : i + 2); } io += n; }
+      vo += n;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    if (rm) geo.setAttribute('aRM', new THREE.BufferAttribute(rm, 2));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1)); geo.computeBoundingSphere(); geo.computeBoundingBox();
+    const mat = G.std ? rmMaterial(G.side) : new THREE.MeshLambertMaterial({ vertexColors: true, side: G.side });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'still ' + (G.std ? 'standard' : 'lambert') + ' (' + G.list.length + ')'; mesh.castShadow = G.cast; mesh.receiveShadow = G.receive; mesh.frustumCulled = G.fc;
+    mesh.matrixAutoUpdate = false; mesh.updateMatrix(); mesh.updateMatrixWorld();
+    for (const o of G.list) { o.parent.remove(o); o.geometry.dispose(); }
+    root.add(mesh);
+    // (root's own transform: the corners are in the world's frame)
+    if (root.matrixWorld && !root.matrixWorld.equals(_I4)) { mesh.matrix.copy(root.matrixWorld).invert(); mesh.matrixWorld.identity(); }
+    nIn += G.list.length; nOut++;
+  }
+  return [nIn, nOut];
+}
+const _I4 = new THREE.Matrix4();
 
 // ---- small terrain-drawn features ------------------------------------------------------------------------------------------
 // the features the terrain's patches draw (no mesh of their own) small enough that the patches cannot: a side under 40 m

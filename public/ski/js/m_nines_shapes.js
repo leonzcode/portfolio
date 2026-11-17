@@ -8,7 +8,7 @@
    own side slope over a rounded shoulder down into the ground, as packed snow does. The ends of the extruded direction
    fall the same way, or are cut square (ends: 'cut'), or tapered into the ground (ends: 'taper').
    Each Ext has a mesh of its own (main.js builds it with the jumps: park.js featureMeshSteps reads toWorld, rows, cols). */
-import { smoothstep, clamp, smax } from './noise.js?v=30';
+import { smoothstep, clamp, smax } from './noise.js?v=31';
 
 const RAD = Math.PI / 180;
 const uniq = a => [...new Set(a.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
@@ -216,8 +216,11 @@ export class Fn extends Ext {
   }
   yAt(u, s) { return u < this.u0 || u > this.u1 || s < this.s0 || s > this.s1 ? -Infinity : this.y(u, s); }
   lines(a, b, st, br) { const o = span(a, b, st); for (const v of br) for (const e of [-0.12, -0.04, 0, 0.04, 0.12]) o.push(v + e); return uniq(o.filter(v => v >= a && v <= b)); }
-  rows(fine) { return this.lines(this.s0, this.s1, fine ? this.step : this.stepLow, this.breaksS); }
-  cols(fine) { return this.lines(this.u0, this.u1, fine ? this.step : this.stepLow, this.breaksU); }
+  // (denseS, denseU: [[a, b, step], ...] bands where the grid is finer: round a skate bowl's or dome's rim, which a coarse
+  // square grid draws sawtooth; the far copy keeps the plain grid)
+  dense(o, bands, fine) { if (bands) for (const [a, b, st] of bands) for (const v of span(a, b, fine ? st : st * 1.8)) o.push(v); return o; }
+  rows(fine) { return uniq(this.dense(this.lines(this.s0, this.s1, fine ? this.step : this.stepLow, this.breaksS), this.denseS, fine).filter(v => v >= this.s0 && v <= this.s1)); }
+  cols(fine) { return uniq(this.dense(this.lines(this.u0, this.u1, fine ? this.step : this.stepLow, this.breaksU), this.denseU, fine).filter(v => v >= this.u0 && v <= this.u1)); }
   rowsFar() { return this.lines(this.s0, this.s1, this.stepLow * 2, []); }
   colsFar() { return this.lines(this.u0, this.u1, this.stepLow * 2, []); }
   dye(x, z) { if (!this.dyeAt) return 0; const L = this.toLocal(x, z, this._l3 || (this._l3 = {})); return this.dyeAt(L.u, L.s) ? 1 : 0; }

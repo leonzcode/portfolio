@@ -4,8 +4,8 @@
 // (env.js: groomed, powder, packed, spring slush, ice), the floodlights' pools by night, and fog the colour of the sky's
 // own horizon in each direction.
 import * as THREE from 'three';
-import { rng } from './noise.js?v=30';
-import { ground, onMountain } from './terrain.js?v=30';
+import { rng } from './noise.js?v=31';
+import { ground, onMountain } from './terrain.js?v=31';
 
 // a tileable height/normal picture: periodic value noise in a few octaves
 // (2026-11-12, loading: the same bytes as before, with each texel's cell worked out once a row and once a column instead
@@ -66,6 +66,7 @@ export const snowUniforms = {
   // set by env.js: the horizon's colour round the compass (for the fog), the snow kind's look (groom, lumps, wet, ice),
   // its roughness, how dark it is (0 day, 1 night) and the floodlight towers (x of the two rows, first z, spacing; count)
   uHorizon: { value: null },
+  uDye: { value: new THREE.Vector3(0.12, 0.3, 0.78) },   // (X, round 12: the crews' dye colour, a map may set its own: Buttermilk's lighter azure)
   uSnowLook: { value: new THREE.Vector4(1, 0.15, 0, 0) },
   uSnowRough: { value: 0.78 },
   uNight: { value: 0 },
@@ -362,7 +363,7 @@ vec4 trTap(vec2 p, float wf, float wc) {
   return r;
 }
 uniform vec3 uSunDir; uniform float uSparkle; uniform float uTime;
-uniform sampler2D uHorizon; uniform vec4 uSnowLook; uniform float uSnowRough; uniform float uNight;
+uniform sampler2D uHorizon; uniform vec4 uSnowLook; uniform float uSnowRough; uniform float uNight; uniform vec3 uDye;
 uniform sampler2D uRockCol; uniform sampler2D uRockNrm; uniform float uRockTex; vec3 gRN;
 uniform float uLamps; varying vec4 vLamp; uniform vec2 uFarFade; uniform sampler2D uGrain; uniform sampler2D uLumps; uniform float uTrackDepth;
 float hash13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
@@ -447,7 +448,7 @@ vec4 field(float ny, vec2 dx, vec2 dy) {
     }
   }
   // the crews' blue dye on lips and knuckles, soaked into the snow unevenly
-  if (vDye > 0.01) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.12, 0.3, 0.78), vDye * (0.65 + 0.3 * texture2D(uNoise, vWPos.xz * 1.7).b));
+  if (vDye > 0.01) diffuseColor.rgb = mix(diffuseColor.rgb, uDye, vDye * (0.65 + 0.3 * texture2D(uNoise, vWPos.xz * 1.7).b));   // (X: uDye, was vec3(0.12, 0.3, 0.78))
   // big soft variation so the snow is never one flat white
   float big = texture2D(uNoise, vWPos.xz * 0.004).b - 0.5;
   diffuseColor.rgb *= 1.0 + big * 0.05;

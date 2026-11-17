@@ -23,8 +23,11 @@ export function installShadowOnly(scene, light) {
   const before = scene.onBeforeRender;
   scene.onBeforeRender = function (...a) {
     for (const o of shadowOnly) o.visible = false;
+    hideQuiet();                                 // (L, round 12: the riders' bones, walked for nothing: riderBatch below)
     if (before) before.apply(this, a);
   };
+  const after = scene.onAfterRender;
+  scene.onAfterRender = function (...a) { showQuiet(); if (after) after.apply(this, a); };   // (L, round 12)
   const sh = light.shadow, upd = sh.updateMatrices.bind(sh);
   let sorted = false;
   sh.updateMatrices = function (l, vp) {
@@ -142,3 +145,137 @@ function proxyOf(rig, parts, side) {
   shadowOnly.add(proxy);
   return proxy;
 }
+
+/* ---- (L, round 12, for "less laggy": every draw call is about 0.3 ms of the page's own work a frame on a slow
+   Chromebook processor) The rider's plain pieces in one draw. Each rider was about twenty draws in the view: the body
+   and the head (skinned), the painted shell, the skis' three surfaces each (they bend, a shader of their own), and
+   eleven plain pieces (the bindings, the boots' shells and cuffs, the poles, the helmet's merged parts, the hood, the
+   goggles' lens). Those plain pieces are copied into one skinned mesh, as the shadow's stand-in above is: a "bone" a
+   piece, filled each frame from the piece's own place (folded to nothing when the piece is hidden or on a layer the
+   camera does not show: first person), each corner carrying the piece's colour, roughness and metalness, so the picture
+   is the same. The pieces stay where they are (the rig moves them, the tracks and crashes read them), only their own
+   draw is left out (their material's visible flag). A colour changed live (the locker: lens, hood) is copied in. */
+const _rbBase = THREE.Material.prototype.onBeforeCompile;
+const plainPiece = o => {
+  if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh || shadowOnly.has(o) || Array.isArray(o.material) || o.renderOrder) return false;
+  const g = o.geometry, m = o.material;
+  if (!g || !g.attributes.position || !g.attributes.normal || g.attributes.position.isInterleavedBufferAttribute || g.attributes.normal.isInterleavedBufferAttribute) return false;
+  if (g.morphAttributes && Object.keys(g.morphAttributes).length) return false;
+  if (!m || !m.isMeshStandardMaterial || m.isMeshPhysicalMaterial || !m.visible || m.transparent || m.opacity < 1 || m.alphaTest > 0 || m.wireframe || m.flatShading || m.side === THREE.BackSide) return false;
+  for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap', 'envMap', 'lightMap', 'bumpMap', 'displacementMap']) if (m[k]) return false;
+  if (m.onBeforeCompile !== _rbBase || (m.emissive && (m.emissive.r || m.emissive.g || m.emissive.b))) return false;
+  if (m.vertexColors && !g.attributes.color) return false;
+  return true;
+};
+export function riderBatch(rig) {
+  if (!rig || !rig.root || rig._viewBatch) return null;
+  rig.root.updateMatrixWorld(true);
+  const all = []; rig.root.traverse(o => { if (o !== rig.root && plainPiece(o)) all.push(o); });
+  if (all.length < 3) return null;
+  // (one batch for the pieces drawn from the front only, one for the two-sided: a one-sided piece drawn from both sides
+  // showed its inside, the poles' baskets from above)
+  const front = all.filter(o => o.material.side === THREE.FrontSide), both = all.filter(o => o.material.side !== THREE.FrontSide);
+  // (both share one skeleton: its matrices filled and sent to the graphics card once a frame, by the first drawn)
+  const lists = [front, both].filter(l => l.length), P = [], n = lists.reduce((a, l) => a + l.length, 0);
+  const skel = new THREE.Skeleton(Array.from({ length: n }, () => new THREE.Bone()), Array.from({ length: n }, () => new THREE.Matrix4()));
+  skel.computeBoneTexture();
+  skel.update = () => {};                    // (filled in just before it is drawn, below)
+  const shown = o => { for (let q = o; q && q !== rig.root; q = q.parent) if (!q.visible) return false; return true; };
+  let last = -1;
+  const fill = (renderer, scene, camera) => {
+    const f = renderer.info.render.frame; if (f === last) return; last = f;
+    const M = skel.boneMatrices;
+    for (let b = 0; b < P.length; b++) {
+      const p = P[b], o = p.o;
+      if (o.parent && shown(o) && o.layers.test(camera.layers)) {
+        const e = o.matrixWorld.elements, k = p.k, j = b * 16;
+        M[j] = e[0] * k[0]; M[j + 1] = e[1] * k[0]; M[j + 2] = e[2] * k[0]; M[j + 3] = 0;
+        M[j + 4] = e[4] * k[1]; M[j + 5] = e[5] * k[1]; M[j + 6] = e[6] * k[1]; M[j + 7] = 0;
+        M[j + 8] = e[8] * k[2]; M[j + 9] = e[9] * k[2]; M[j + 10] = e[10] * k[2]; M[j + 11] = 0;
+        M[j + 12] = e[12]; M[j + 13] = e[13]; M[j + 14] = e[14]; M[j + 15] = 1;
+        const c = o.material.color;
+        if (c.r !== p.c[0] || c.g !== p.c[1] || c.b !== p.c[2]) { p.paint(p); p.colA.needsUpdate = true; }
+      } else M.fill(0, b * 16, b * 16 + 16);   // (folded to a point: nothing drawn)
+    }
+    skel.boneTexture.needsUpdate = true;
+  };
+  rig._viewBatch = lists.map(l => batchOf(rig, l, l === front ? THREE.FrontSide : THREE.DoubleSide, skel, P, fill));
+  quietBones(rig);
+  return rig._viewBatch;
+}
+function batchOf(rig, parts, side, skel, PS, fill) {
+  let nv = 0, ni = 0;
+  for (const o of parts) { const g = o.geometry; nv += g.attributes.position.count; ni += g.index ? g.index.count : g.attributes.position.count; }
+  const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3), rm = new Float32Array(nv * 2), sIdx = new Uint16Array(nv * 4), sW = new Float32Array(nv * 4), idx = new Uint32Array(ni);
+  // each piece: its first corner, how many, its own scale (taken into its corners, so its "bone" turns and moves it only
+  // and the normals stay true: the hood is scaled unevenly), the colour last copied in
+  const P = [], base = PS.length;
+  let vo = 0, io = 0, receive = false;
+  parts.forEach((o, b) => {
+    const g = o.geometry, A = g.attributes.position, N = g.attributes.normal, C = o.material.vertexColors ? g.attributes.color : null, n = A.count, e = o.matrixWorld.elements;
+    const sx = Math.hypot(e[0], e[1], e[2]) || 1, sy = Math.hypot(e[4], e[5], e[6]) || 1, sz = Math.hypot(e[8], e[9], e[10]) || 1;
+    for (let i = 0; i < n; i++) {
+      const v = vo + i;
+      pos[v * 3] = A.getX(i) * sx; pos[v * 3 + 1] = A.getY(i) * sy; pos[v * 3 + 2] = A.getZ(i) * sz;
+      const nx = N.getX(i) / sx, ny = N.getY(i) / sy, nz = N.getZ(i) / sz, l = Math.hypot(nx, ny, nz) || 1;
+      nor[v * 3] = nx / l; nor[v * 3 + 1] = ny / l; nor[v * 3 + 2] = nz / l;
+      rm[v * 2] = o.material.roughness; rm[v * 2 + 1] = o.material.metalness;
+      sIdx[v * 4] = base + b; sW[v * 4] = 1;
+    }
+    if (g.index) { const I = g.index.array; for (let i = 0; i < I.length; i++) idx[io + i] = I[i] + vo; io += I.length; }
+    else { for (let i = 0; i < n; i++) idx[io + i] = vo + i; io += n; }
+    P.push({ o, v0: vo, n, C, k: [1 / sx, 1 / sy, 1 / sz], c: [-1, -1, -1] });
+    if (o.receiveShadow) receive = true;
+    vo += n;
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  const colA = new THREE.BufferAttribute(col, 3); geo.setAttribute('color', colA);
+  geo.setAttribute('aRM', new THREE.BufferAttribute(rm, 2));
+  geo.setAttribute('skinIndex', new THREE.BufferAttribute(sIdx, 4));
+  geo.setAttribute('skinWeight', new THREE.BufferAttribute(sW, 4));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+  // the colours: the piece's material colour times its own corner colours (the merged pieces carry theirs in them)
+  const paint = p => {
+    const c = p.o.material.color, C = p.C;
+    for (let i = 0; i < p.n; i++) { const v = p.v0 + i; col[v * 3] = c.r * (C ? C.getX(i) : 1); col[v * 3 + 1] = c.g * (C ? C.getY(i) : 1); col[v * 3 + 2] = c.b * (C ? C.getZ(i) : 1); }
+    p.c[0] = c.r; p.c[1] = c.g; p.c[2] = c.b;
+  };
+  for (const p of P) { paint(p); p.paint = paint; p.colA = colA; PS.push(p); }
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, side });
+  mat.name = 'rider pieces';
+  mat.onBeforeCompile = s => {
+    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aRM; varying vec2 vRM;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvRM = aRM;');
+    s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vRM;')
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vRM.x;').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vRM.y;');
+  };
+  mat.customProgramCacheKey = () => 'riderpieces';   // (one program: the side is not part of it)
+  const batch = new THREE.SkinnedMesh(geo, mat);
+  batch.name = 'rider pieces'; batch.castShadow = false; batch.receiveShadow = receive; batch.frustumCulled = false;
+  batch.bindMode = 'detached'; batch.bind(skel, _I);
+  batch.matrixAutoUpdate = false; batch.matrix.identity(); batch.matrixWorld.identity();
+  batch.updateMatrixWorld = () => {}; batch.updateWorldMatrix = () => {};
+  batch.onBeforeRender = fill;
+  for (const o of parts) o.material.visible = false;   // (their own draw left out; they stay for the rig, the tracks, the crashes)
+  rig.root.add(batch);
+  return batch;
+}
+/* (L, round 12) The renderer walks every node of the scene twice a frame (the view and the shadow map), each rider's 80
+   bones among them though they draw nothing. Bones whose whole subtree draws nothing are hidden while the scene is drawn
+   (nothing reads their visible flag then: the skins read the bones' matrices) and shown again after (installShadowOnly). */
+const QUIET = new Set(), _qOff = [];
+const isUnder = (o, t) => { for (let q = o.parent; q; q = q.parent) if (q === t) return true; return false; };
+function quietBones(rig) {
+  const draws = o => { let d = false; o.traverse(c => { if (c.isMesh || c.isPoints || c.isLine || c.isSprite) d = true; }); return d; };
+  const list = [];
+  rig.root.traverse(o => { if (o.isBone && !draws(o)) list.push(o); });
+  // (the top of each quiet subtree only)
+  const tops = list.filter(o => !list.some(t => t !== o && isUnder(o, t)));
+  for (const o of tops) QUIET.add(o);
+  const dispose = rig.dispose;
+  rig.dispose = function (...a) { for (const o of tops) QUIET.delete(o); return dispose ? dispose.apply(this, a) : undefined; };
+}
+function hideQuiet() { _qOff.length = 0; for (const o of QUIET) if (o.visible) { o.visible = false; _qOff.push(o); } }
+function showQuiet() { for (const o of _qOff) o.visible = true; _qOff.length = 0; }

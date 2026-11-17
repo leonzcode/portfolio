@@ -113,7 +113,9 @@ export class Home {
       + '<p class="mph-lede">Drive anywhere on the real map, from satellite photos and OpenStreetMap.</p>'
       + '<button class="mph-opt" data-go="one"><div class="mph-ico">' + ICON.one + '</div><div><b>Singleplayer</b><span>Pick any place on the map and drive</span></div></button>'
       + '<button class="mph-opt" data-go="many"><div class="mph-ico">' + ICON.many + '</div><div><b>Multiplayer</b><span>Drive with other people in a room, with chat</span></div></button>'
-      + '<div class="mph-foot">' + (matchMedia('(pointer: coarse)').matches ? 'Drive with the buttons on the screen. E gets you out of the car.' : 'W A S D to drive, E to get out, H for all the keys.') + '</div>';
+      + '<div class="mph-foot">' + (matchMedia('(pointer: coarse)').matches ? 'Drive with the buttons on the screen. E gets you out of the car.' : 'W A S D to drive, E to get out, H for all the keys.') + '</div>'
+      // (2026-11-16) the maps and photos come live from the internet: there is no offline copy of Earth Drive
+      + (navigator.onLine === false ? '<div class="mph-foot">You are offline. Earth Drive needs a connection for its maps and photos.</div>' : '');
     this.card.querySelector('[data-go="one"]').onclick = () => { this.hide(); this.G.openMap(); };
     this.card.querySelector('[data-go="many"]').onclick = () => this.show(store.get('car_mpname') ? 'rooms' : 'name');
     setTimeout(() => { const b = this.card.querySelector('button'); if (b) b.focus(); }, 0);

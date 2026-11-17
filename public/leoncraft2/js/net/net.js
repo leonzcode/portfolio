@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=123';
-import { idx, H } from '../world-const.js?v=123';
-import { DIMS, DIM_IDS } from '../dims.js?v=123';
-import { Save } from '../save.js?v=123';
-import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=123';
-import { glints } from '../render/armor.js?v=123';
-import { containerKind } from '../containers.js?v=123';
-import { getSkinSettings } from '../render/avatar.js?v=123';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=123';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=123';
-import { Y0 } from '../world-const.js?v=123';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=123';
-import { Projectile } from '../entities/projectiles.js?v=123';
-import { Combat } from '../combat/combat.js?v=123';
-import { Vehicles } from './vehicles.js?v=123';
-import { Mobs, Orbs } from './mobs.js?v=123';
-import { Events } from './events.js?v=123';
-import { EndSync } from './endfight.js?v=123';
-import { Hub } from './hub.js?v=123';
-import { Account, wsBase, httpBase } from './account.js?v=123';
-import { rankTag } from './players.js?v=123';
+import { B, BLOCKS } from '../blocks.js?v=124';
+import { idx, H } from '../world-const.js?v=124';
+import { DIMS, DIM_IDS } from '../dims.js?v=124';
+import { Save } from '../save.js?v=124';
+import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=124';
+import { glints } from '../render/armor.js?v=124';
+import { containerKind } from '../containers.js?v=124';
+import { getSkinSettings } from '../render/avatar.js?v=124';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=124';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=124';
+import { Y0 } from '../world-const.js?v=124';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=124';
+import { Projectile } from '../entities/projectiles.js?v=124';
+import { Combat } from '../combat/combat.js?v=124';
+import { Vehicles } from './vehicles.js?v=124';
+import { Mobs, Orbs } from './mobs.js?v=124';
+import { Events } from './events.js?v=124';
+import { EndSync } from './endfight.js?v=124';
+import { Hub } from './hub.js?v=124';
+import { Account, wsBase, httpBase } from './account.js?v=124';
+import { rankTag } from './players.js?v=124';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -112,10 +112,12 @@ async function answer(r) {
   const text = await r.text();
   try { return JSON.parse(text); } catch (e) { throw { kind: SERVER_OLD }; }
 }
+// (2026-11-16, offline) a request a network leaves hanging counts as no answer after a while (no time limit before)
+const limit = ms => (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined);
 // (with your session, so the server knows who asks; and this browser, for a server made before accounts)
 async function post(path, body) {
   let r;
-  try { r = await fetch(httpBase() + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ device: deviceId(), token: Account.token }, body)) }); }
+  try { r = await fetch(httpBase() + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ device: deviceId(), token: Account.token }, body)), signal: limit(20000) }); }
   catch (e) { return { error: FAIL_TEXT.down[1] }; }
   try { return await answer(r); } catch (e) { return { error: FAIL_TEXT[e.kind || SERVER_DOWN][1] }; }
 }
@@ -123,7 +125,7 @@ async function post(path, body) {
 export async function listServers() {
   const t0 = performance.now();
   let r;
-  try { r = await fetch(httpBase() + '/lc2/servers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: Account.token, device: deviceId() }), cache: 'no-store' }); }
+  try { r = await fetch(httpBase() + '/lc2/servers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: Account.token, device: deviceId() }), cache: 'no-store', signal: limit(10000) }); }
   catch (e) { throw { kind: SERVER_DOWN }; }
   const j = await answer(r);
   if (!j || !Array.isArray(j.servers)) throw { kind: SERVER_OLD };

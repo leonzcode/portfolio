@@ -10,11 +10,11 @@
 <!-- (C, 2026-11-11) the fonts no longer hold the game up: a stylesheet in the head is waited for before any script
      runs, so a slow or blocked fonts server held the whole game at its first line; it now loads beside it -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,800;1,700;1,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" media="print" onload="this.media='all'">
-<link rel="stylesheet" href="./css/ski.css?v=30">
+<link rel="stylesheet" href="./css/ski.css?v=31">
 <script type="importmap">
 {
   "imports": {
-    "three": "/car/vendor/three/three.module.js?v=ski30",
+    "three": "/car/vendor/three/three.module.js?v=ski31",
     "three/addons/": "/car/vendor/three/addons/"
   }
 }
@@ -27,7 +27,7 @@
    - nothing loads for ever without saying so: a file that failed to come (the page is tried once more by itself),
      an error while starting, no WebGL, or no step for a long while each say what happened, with a button to try again. */
 (function () {
-  var V = '?v=30', map = 'jumpline', ride = 'ski';
+  var V = '?v=31', map = 'jumpline', ride = 'ski';
   try { var o = JSON.parse(localStorage.getItem('ski_opts') || '{}'); if (o.map === 'freeride') map = 'freeride'; if (o.ride) ride = o.ride; } catch (e) {}
   try { var o2 = JSON.parse(localStorage.getItem('ski_opts') || '{}'); if (o2.map === 'world') map = 'world'; } catch (e) {}   // (W, round 10: Any mountain)
   try { var o3 = JSON.parse(localStorage.getItem('ski_opts') || '{}'); if (o3.map === 'schilthorn23') map = o3.map; } catch (e) {}   // (N, round 12: the Nines map)
@@ -42,10 +42,9 @@
   // (W, round 10: Any mountain's own modules, and the home screen's place picker on every map)
   js = js.concat(map === 'world' ? ['wmap', 'wdem', 'wosm', 'wland', 'wpark', 'wlift', 'wfeat', 'wtrail', 'wsigns', 'wplaces', 'wsearch', 'lift', 'wlanddata', 'wtrees'] : ['wplaces', 'wsearch']);   // (W11: wlanddata, wtrees)
   js = js.concat(ride === 'scoot' || ride === 'bike' ? ['scoot'] : ride === 'sled' ? ['scoot', 'sled'] : []);   // (the other rides' modules come when needed)
-  var urls = ['/car/vendor/three/three.module.js?v=ski30', '/car/vendor/three/three.core.js', '/car/vendor/three/addons/loaders/GLTFLoader.js', '/car/vendor/three/addons/loaders/DRACOLoader.js', '/car/vendor/three/addons/utils/BufferGeometryUtils.js', './js/main.js' + V];
+  var urls = ['/car/vendor/three/three.module.js?v=ski31', '/car/vendor/three/three.core.js', '/car/vendor/three/addons/loaders/GLTFLoader.js', '/car/vendor/three/addons/loaders/DRACOLoader.js', '/car/vendor/three/addons/utils/BufferGeometryUtils.js', './js/main.js' + V];
   for (var i = 0; i < js.length; i++) urls.push('./js/' + js[i] + '.js' + V);
-  for (var k = 0; k < urls.length; k++) { var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = urls[k]; document.head.appendChild(l); }
-  var B = window.__skiBoot = { t0: performance.now(), last: performance.now(), frac: 0, done: false, files: urls.length, got: 0, kb: 0, paint: 0 };
+  for (var k = 0; k < urls.length; k++) { var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = urls[k]; document.head.appendChild(l); }  var B = window.__skiBoot = { t0: performance.now(), last: performance.now(), frac: 0, done: false, files: urls.length, got: 0, kb: 0, paint: 0 };
   var $ = function (id) { return document.getElementById(id); };
   function show(label, f) {
     var bar = $('loadbar'); if (!bar) return;
@@ -179,6 +178,8 @@
     <div id="loadbar" class="loadbar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="loadtxt"><i></i><span id="loadtxt">Loading the game&hellip;</span></div>
     <div id="loadwait" class="loadwait hidden">Still going. A slow connection or computer can take a minute. <button type="button" onclick="__skiBoot.retry()">Reload</button></div>
     <div id="loaderr" class="loaderr hidden" role="alert"><p></p><small></small><button type="button" class="big" onclick="__skiBoot.retry()">Try again</button></div>
+    <!-- (2026-11-16) saved on this device for riding with no connection: js/offline.js, sw.js -->
+    <p id="offline" class="offl" role="status" hidden></p>
     <!-- (M) riding online: each map's public park, with how many ride and watch there now (online.js) -->
     <section class="online" id="online" aria-labelledby="onlab">
       <div class="onhead">
@@ -289,9 +290,11 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=30" onerror="__skiBoot.noModule()"></script>
+<script type="module" src="./js/main.js?v=31" onerror="__skiBoot.noModule()"></script>
 <!-- (W, round 10) the place picker, on its own so it works even if the game could not start -->
-<script type="module" src="./js/wsearch.js?v=30"></script>
+<script type="module" src="./js/wsearch.js?v=31"></script>
+<!-- (2026-11-16) the offline copy, on its own so it never holds the game up -->
+<script type="module" src="./js/offline.js?v=31"></script>
 <div id="wtrail" class="wtrail hidden" role="dialog" aria-modal="true" aria-labelledby="wtname"></div>
 <script defer src="/others/presence.js?v=1" data-project="leon-freeski"></script>
 </body>

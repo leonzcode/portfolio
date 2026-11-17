@@ -19,7 +19,7 @@
    window.__skiFly = { on, start(), stop({ place = true }) }: stop({ place: false }) ends the flight without putting
    the rider down (for a caller that puts them somewhere itself straight after). */
 import * as THREE from 'three';
-import { height, normal } from './terrain.js?v=30';
+import { height, normal } from './terrain.js?v=31';
 
 /* Speeds (m/s, m/s/s). Leonski 2's are 55 to start, 360 at most (900 with Ctrl) and 190 a second each second. Here the
    start is slower, for placing yourself over a jump on a park 1.4 km long, and the top is lower. On Any mountain the fine

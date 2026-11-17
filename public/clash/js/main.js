@@ -413,7 +413,9 @@ async function renderLeaders() {
   $(".ld-status").textContent = "Loading";
   list.innerHTML = "";
   try {
-    const r = await fetch(httpBase() + "top", { cache: "no-store" });
+    // (2026-11-16, offline: nothing asked with no connection, and an answer that never comes is given up after 8 s)
+    if (navigator.onLine === false) throw new Error("offline");
+    const r = await fetch(httpBase() + "top", { cache: "no-store", signal: typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
     const j = await r.json();
     const rows = j.top || [];
     if (!rows.length) { $(".ld-status").textContent = "Nobody has trophies yet. Win an online match to be first."; return; }
@@ -445,7 +447,15 @@ $(".set-motion").addEventListener("change", function () { settings.reducedMotion
 go("home");
 loadArt(BASE).then(function () { paintArt(document); });
 // say hello quietly so the home screen knows our trophies
-setTimeout(function () { ensureNet(); }, 300);
+// (2026-11-16, offline: with no connection nothing is tried until one comes back)
+setTimeout(function () {
+  if (navigator.onLine === false) {
+    $(".hm-status").textContent = "Offline. Practice still works; trophies need a connection.";
+    addEventListener("online", function () { ensureNet(); }, { once: true });
+    return;
+  }
+  ensureNet();
+}, 300);
 window.__clash = {
   sim, DB, get battle() { return battle; }, set battle(b) { battle = b; },
   get state() { return battle && battle.state; },
