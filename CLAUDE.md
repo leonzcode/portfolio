@@ -108,6 +108,8 @@ portfolio/
 - **AI card images** live in `public/cards/`. Each AI project's `image` field in `src/data/projects.ts` references `/cards/...`. The detail-page template falls back to this image as its hero when no `screenshots[]` array is provided — so one PNG serves both the card thumbnail and the detail-page hero.
 
 ## Demo URL mapping for AI projects (in `src/data/projects.ts`)
+**Since 2026-11-16 the three Hetzner demos are embedded from `https://ml.leonzhao.dev/{avalanche,ai-art,litterbot}/`**, not `apps.leonzhao.dev` (the table below still shows the old host). Same server and containers: mlhub's Caddyfile has a second site block for `ml.leonzhao.dev` with only those three routes, and a DNS A record `ml` -> 5.78.220.92, DNS only (grey cloud; proxied, Caddy cannot get its certificate). The old `apps.leonzhao.dev/<app>/` links still work. Why: Leon's school network blocked `apps.leonzhao.dev` (which also carries all the online play) while `leonzhao.dev` loaded; the demos now sit on an address of their own. Not done to dodge a filter and not promised to pass one. `src/pages/ai/[slug].astro` also probes `<demo>/_stcore/health` (no-cors, 8 s) and, when it does not answer, covers the frame with the card picture, a note, Try again and the code link.
+
 | Project | Demo URL | Hosted on | On detail page |
 |---|---|---|---|
 | Avalanche Risk Forecasting | `https://apps.leonzhao.dev/avalanche/` | Hetzner CCX13 via Caddy (Streamlit) | embedded iframe + "Open full screen" + "View code" → repo |
