@@ -10,8 +10,8 @@
    Everything is merged by material: the bricks (one draw), the painted things (one, colours in the vertices), the printed
    things (one, one picture for all of them), the dark rails (one), the turbines (one). */
 import * as THREE from 'three';
-import { height, ground } from './terrain.js?v=31';
-import { rng, smoothstep } from './noise.js?v=31';
+import { height, ground } from './terrain.js?v=32';
+import { rng, smoothstep } from './noise.js?v=32';
 
 // ---- a geometry builder (positions, normals, uvs, colours) -------------------------------------------------------
 class Geo {
@@ -138,6 +138,9 @@ export function buildVenue(scene, park, q, land) {
   const bricks = new Geo(), paint = new Geo(), prints = new Geo(), dark = new Geo();
   bricks.wuv = true;
   const H = (x, z) => height(x, z), Gd = (x, z) => ground(x, z);
+  // (v32, for "the house is kind of submerged": a box's floor at the highest snow under its footprint, its walls down to
+  // the lowest: placed at its centre's height, on a slope its uphill side was buried and its downhill side stood on air)
+  const seat = (x0, z0, x1, z1) => { let lo = Infinity, hi = -Infinity; for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) { const y = H(x0 + (x1 - x0) * i / 4, z0 + (z1 - z0) * j / 4); lo = Math.min(lo, y); hi = Math.max(hi, y); } return { lo, hi }; };
   const WHITE = lin(0xf3f1ec), PLASTER = lin(0xf1eee6), ROOF = lin(0x8c939b), TRIM = lin(0x24272b), STEEL = lin(0x8d949c), DK = lin(0x2d3136);
   const BLUE = lin(0x1f62bd), TEAL = lin(0x1aa3a8), YEL = lin(0xe8b424), WOOD = lin(0x9b6b3d), CREAM = lin(0xd9cfb7), RED = lin(0xb23a2a);
 
@@ -209,13 +212,16 @@ export function buildVenue(scene, park, q, land) {
   // up at the corners, as the photos show the gatehouse), on a crenellated terrace with a blue light strip along its front
   for (const T of C.decor.towers) {
     const h = T.w / 2, e = T.eave, x0 = T.x - h, x1 = T.x + h, z0 = T.z0, z1 = T.z1;
-    const yb0 = Math.min(T.y0, T.y1) - 0.6, yE0 = T.y0 + T.H, yE1 = T.y1 + T.H;
+    const yb0 = (T.yLow != null ? Math.min(T.yLow, T.y0, T.y1) : Math.min(T.y0, T.y1)) - 0.6, yE0 = T.y0 + T.H, yE1 = T.y1 + T.H;
+    // (its base course: a brick plinth from below the snow to the floor, 0.12 m proud of the walls, level)
+    if (T.base) bricks.box(x0 - 0.12, yb0, z0 - 0.12, x1 + 0.12, Math.min(T.y0, T.y1), z1 + 0.12, null, 2.4);
     const ye = (z) => yE0 + (yE1 - yE0) * (z - z0) / (z1 - z0);
     // (the body: its top follows the snow it stands on, so the eaves are level with it front and back as the physics has it)
     const F = (P) => paint.face(P, null, PLASTER);
-    F([[x0, yb0, z1], [x1, yb0, z1], [x1, yE1, z1], [x0, yE1, z1]]); F([[x1, yb0, z0], [x0, yb0, z0], [x0, yE0, z0], [x1, yE0, z0]]);
-    F([[x1, yb0, z1], [x1, yb0, z0], [x1, yE0, z0], [x1, yE1, z1]]); F([[x0, yb0, z0], [x0, yb0, z1], [x0, yE1, z1], [x0, yE0, z0]]);
-    // a grey door on the downhill face
+    const yw = T.base ? Math.min(T.y0, T.y1) : yb0;
+    F([[x0, yw, z1], [x1, yw, z1], [x1, yE1, z1], [x0, yE1, z1]]); F([[x1, yw, z0], [x0, yw, z0], [x0, yE0, z0], [x1, yE0, z0]]);
+    F([[x1, yw, z1], [x1, yw, z0], [x1, yE0, z0], [x1, yE1, z1]]); F([[x0, yw, z0], [x0, yw, z1], [x0, yE1, z1], [x0, yE0, z0]]);
+    // a grey door on the downhill face, on the base course
     paint.face([[T.x - 0.6, T.y1, z1 + 0.02], [T.x + 0.6, T.y1, z1 + 0.02], [T.x + 0.6, T.y1 + 2.0, z1 + 0.02], [T.x - 0.6, T.y1 + 2.0, z1 + 0.02]], null, lin(0x8e959c));
     /* the roof: a grid over each side, from the ridge (a 0) out to the eaves (a 1) and along (b 0..1): concave (steep by
        the ridge, flattening to the eaves), the eaves turned up a little all along and much more at the four corners */
@@ -291,7 +297,8 @@ export function buildVenue(scene, park, q, land) {
         // (v: the top of the picture at the panel's top, down to where the snow cuts it, the picture's lower part)
         const va = Math.min(1, fa / 1.0), vb = Math.min(1, fb / 1.0), u0 = s / 9, u1 = (s + sl) / 9;
         const uv = [[u0, rowV(ROW.panel, 1)], [u1, rowV(ROW.panel, 1)], [u1, rowV(ROW.panel, 1 - vb)], [u0, rowV(ROW.panel, 1 - va)]];
-        if (sg > 0) prints.face([A, B, Bl, Al], uv); else prints.face([B, A, Al, Bl], [uv[1], uv[0], uv[3], uv[2]]);
+        // (the face for the viewer with B on the left reads with u running from B to A: its own copy, u negated)
+        if (sg > 0) prints.face([A, B, Bl, Al], uv.map(([u, v]) => [-u, v])); else prints.face([B, A, Al, Bl], [uv[1], uv[0], uv[3], uv[2]]);
       }
       s += sl;
     }
@@ -300,8 +307,8 @@ export function buildVenue(scene, park, q, land) {
   {
     const z = -6, yS = H(0, z);
     paint.box(-9, yS - 0.4, -16, 9, yS + 0.05, -10, lin(0x9aa2ab));
-    const hx = 15, hz = -22, hy = H(hx, hz);
-    paint.box(hx - 1.3, hy - 0.3, hz - 3.1, hx + 1.3, hy + 2.6, hz + 3.1, WHITE);
+    const hx = 15, hz = -22, st = seat(hx - 1.3, hz - 3.1, hx + 1.3, hz + 3.1), hy = st.hi;
+    paint.box(hx - 1.3, st.lo - 0.3, hz - 3.1, hx + 1.3, hy + 2.6, hz + 3.1, WHITE);
     paint.box(hx - 1.31, hy + 1.9, hz - 3.11, hx + 1.31, hy + 2.25, hz + 3.11, BLUE);
     for (const x of [-4.2, 4.2]) paint.obox(x, z, 0, 0.25, 0.25, yS - 0.3, yS + 3.4, STEEL);
     bannerAt(prints, -4.2, 4.2, z, yS + 2.4, yS + 3.3, 0);
@@ -330,8 +337,8 @@ export function buildVenue(scene, park, q, land) {
     // the container stacks either side (teal and yellow, two high), as the venue's stands and rooms were built
     for (const [x0, cols] of [[-50, [TEAL, YEL, TEAL, BLUE]], [36, [YEL, TEAL, YEL, BLUE]]]) {
       for (let k = 0; k < 5; k++) for (let lv = 0; lv < 3; lv++) {
-        const z = F.z0 + 18 + k * 6.6, y = H(x0 + 6, z) + lv * 2.6;
-        paint.box(x0, y - 0.2, z, x0 + 12.2, y + 2.6, z + 2.45, cols[(k + lv) % 4]);
+        const z = F.z0 + 18 + k * 6.6, st = seat(x0, z, x0 + 12.2, z + 2.45), y = st.hi + lv * 2.6;
+        paint.box(x0, lv ? y - 0.2 : st.lo - 0.3, z, x0 + 12.2, y + 2.6, z + 2.45, cols[(k + lv) % 4]);
         paint.box(x0 + 0.3, y + 1.0, z - 0.01, x0 + 11.9, y + 1.9, z, lin(0x203a4a));
       }
     }
@@ -348,7 +355,8 @@ export function buildVenue(scene, park, q, land) {
         const g0 = H(x0, z0), g1 = H(x1, z1), sl = Math.hypot(x1 - x0, z1 - z0);
         const uv = [[s / 24, rowV(ROW.wind, 0)], [(s + sl) / 24, rowV(ROW.wind, 0)], [(s + sl) / 24, rowV(ROW.wind, 1)], [s / 24, rowV(ROW.wind, 1)]];
         prints.face([[x0, g0 + 0.8, z0], [x1, g1 + 0.8, z1], [x1, g1 + 12.2, z1], [x0, g0 + 12.2, z0]], uv);
-        prints.face([[x1, g1 + 0.8, z1], [x0, g0 + 0.8, z0], [x0, g0 + 12.2, z0], [x1, g1 + 12.2, z1]], [uv[1], uv[0], uv[3], uv[2]]);
+        // (the far side read backwards: its own copy of the print, running the way a viewer on that side reads)
+        prints.face([[x1, g1 + 0.8, z1], [x0, g0 + 0.8, z0], [x0, g0 + 12.2, z0], [x1, g1 + 12.2, z1]], [uv[1], uv[0], uv[3], uv[2]].map(([u, v]) => [-u, v]));
         mast(paint, x0, z0, g0, 13.0, STEEL);
         s += sl;
       }
@@ -409,8 +417,8 @@ export function buildVenue(scene, park, q, land) {
     for (const [a, c, d] of tri) paint.face([[P[a][0], yt, P[a][1]], [P[c][0], yt, P[c][1]], [P[d][0], yt, P[d][1]], [P[d][0], yt, P[d][1]]], null, lin(0x7d8896));
   }
   for (const [x, z, w, d, h, c] of [[-70, 770, 30, 14, 6, WHITE], [-40, 800, 24, 12, 5, lin(0xdfe4ea)], [0, 790, 36, 16, 7, WHITE], [44, 784, 20, 10, 4, lin(0xc9d3dd)], [-110, 740, 26, 14, 6, lin(0xe5e2da)]]) {
-    const y = H(x, z);
-    paint.box(x - w / 2, y - 0.5, z - d / 2, x + w / 2, y + h, z + d / 2, c);
+    const st = seat(x - w / 2, z - d / 2, x + w / 2, z + d / 2), y = st.hi;
+    paint.box(x - w / 2, st.lo - 0.5, z - d / 2, x + w / 2, y + h, z + d / 2, c);
     paint.box(x - w / 2 - 0.3, y + h, z - d / 2 - 0.3, x + w / 2 + 0.3, y + h + 0.3, z + d / 2 + 0.3, lin(0x41607f));
   }
   // ---- the meshes ----------------------------------------------------------------------------------------------------
@@ -446,7 +454,7 @@ function boards(G, P, pts, H, steel) {
       const g0 = H(x0, z0), g1 = H(x1, z1), sl = L / n;
       const uv = [[s / 6, rowV(ROW.board, 0)], [(s + sl) / 6, rowV(ROW.board, 0)], [(s + sl) / 6, rowV(ROW.board, 1)], [s / 6, rowV(ROW.board, 1)]];
       G.face([[x0, g0 + 0.05, z0], [x1, g1 + 0.05, z1], [x1, g1 + 1.15, z1], [x0, g0 + 1.15, z0]], uv);
-      G.face([[x1, g1 + 0.05, z1], [x0, g0 + 0.05, z0], [x0, g0 + 1.15, z0], [x1, g1 + 1.15, z1]], [uv[1], uv[0], uv[3], uv[2]]);
+      G.face([[x1, g1 + 0.05, z1], [x0, g0 + 0.05, z0], [x0, g0 + 1.15, z0], [x1, g1 + 1.15, z1]], [uv[1], uv[0], uv[3], uv[2]].map(([u, v]) => [-u, v]));   // (its own copy, reading the right way from this side)
       P.obox(x0, z0, 0, 0.06, 0.06, g0 - 0.2, g0 + 1.2, steel);
       s += sl;
     }

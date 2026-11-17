@@ -6,7 +6,7 @@
 
    - The page (/ski/, /ski/?map=...): the network first, the copy here if no answer comes in HTML_MS or there is no
      connection. So an update is always seen on a visit with a connection.
-   - The game's code with a stamp (js/x.js?v=31, the css, three.js's ?v=ski31): kept by its whole address, answered
+   - The game's code with a stamp (js/x.js?v=32, the css, three.js's ?v=ski32): kept by its whole address, answered
      from the copy at once and asked of the network behind (a new stamp is a new address, so it comes fresh; a file
      changed without a new stamp is picked up for the next visit, as the browser's own cache did). The page
      (js/offline.js) drops older stamps' copies once a new stamp has loaded.

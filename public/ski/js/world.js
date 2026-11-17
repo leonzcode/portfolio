@@ -3,11 +3,11 @@
 // background and replace with just a blue sky for now".)
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { height, ground, runHalf, baseLine, normal, getPark } from './terrain.js?v=31';
-import { fbm, ridged, rng, smoothstep } from './noise.js?v=31';
-import { Env, buildPanel } from './env.js?v=31';
-import { snowUniforms, FIELD_GLSL, fieldUniforms } from './materials.js?v=31';
-import { bake } from './gear.js?v=31';
+import { height, ground, runHalf, baseLine, normal, getPark } from './terrain.js?v=32';
+import { fbm, ridged, rng, smoothstep } from './noise.js?v=32';
+import { Env, buildPanel } from './env.js?v=32';
+import { snowUniforms, FIELD_GLSL, fieldUniforms } from './materials.js?v=32';
+import { bake } from './gear.js?v=32';
 
 // the sky, the sun and sky light, the fog and the reflections are env.js's (photographs of real skies, the time of
 // day and the weather chosen on the home screen); makeSky keeps its old shape for main.js: { sky, sun, hemi, sunDir, follow }

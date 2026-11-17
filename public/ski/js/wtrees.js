@@ -15,9 +15,9 @@
    the same draw calls and triangles). A cell's trees are the same every time (seeded by the cell), so moving on only
    adds or drops far ones. Drawn by world.js's Forest (near conifers, far cards), here given a list that changes. */
 import * as THREE from 'three';
-import { Forest } from './world.js?v=31';
-import { ground } from './terrain.js?v=31';
-import { simplex, smoothstep, fbm } from './noise.js?v=31';
+import { Forest } from './world.js?v=32';
+import { ground } from './terrain.js?v=32';
+import { simplex, smoothstep, fbm } from './noise.js?v=32';
 
 const frac = x => ((x % 1) + 1) % 1;
 // a cell's own random numbers (mulberry32 from a hash of the cell)

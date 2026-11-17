@@ -7,14 +7,14 @@
    main.js: makeNines(q, say) before the terrain is built (it puts the ground in through terrain.js's mountain hook and
    returns the park); then dress(scene, mats, q) for the structures and the skyline. */
 import * as THREE from 'three';
-import { setMountain } from './terrain.js?v=31';
-import { assemble, Rail } from './park.js?v=31';
-import { setRockSource, freerideLook } from './materials.js?v=31';
-import { smoothstep, fbm } from './noise.js?v=31';
-import { loadLand } from './m_nines_land.js?v=31';
-import { Prof, Ext, Round, Fn } from './m_nines_shapes.js?v=31';
-import { Kit, makeSkyline, dressMats, tent, domeTent, snowcat, excavator, banner, fence } from './m_nines_dress.js?v=31';
-import { setSunPath } from './env.js?v=31';
+import { setMountain } from './terrain.js?v=32';
+import { assemble, Rail } from './park.js?v=32';
+import { setRockSource, freerideLook } from './materials.js?v=32';
+import { smoothstep, fbm } from './noise.js?v=32';
+import { loadLand } from './m_nines_land.js?v=32';
+import { Prof, Ext, Round, Fn } from './m_nines_shapes.js?v=32';
+import { Kit, makeSkyline, dressMats, tent, domeTent, snowcat, excavator, banner, fence } from './m_nines_dress.js?v=32';
+import { setSunPath } from './env.js?v=32';
 
 export const NINES_ID = 'schilthorn23';
 export const NINES_NAME = 'Schilthorn 2023';
@@ -136,7 +136,9 @@ function buildCourse(land, G, q) {
   const FJ = parts.formation = {
     decks: [{ u: 8.2, wLip: 5.0, wUp: 3.3, name: 'left' }, { u: 0, wLip: 7.6, wUp: 6.1, name: 'middle' }, { u: -8.1, wLip: 4.6, wUp: 3.2, name: 'right' }],
     chans: [{ u: 11.35, wLip: 1.3, wUp: 2.8 }, { u: 4.75, wLip: 1.9, wUp: 2.8 }, { u: -4.8, wLip: 2.0, wUp: 2.8 }, { u: -11.55, wLip: 2.3, wUp: 2.8 }],
-    end: -33, flare: [-14, -11], lipH: 5.2, lip: 30, R: 9, tableDrop: 5.4, knuckle: 11, land: 30, lowerS: 0.2, lowerDrop: 2.4, lowerLip: 6, front: 17.1, startS: -62,
+    // (Leon, after the second pass: "less kicky": the lips from 30 to 25 degrees, the transition's radius from 9 to 16 m [the
+    // photos fix neither: 30 and 9 were estimates])
+    end: -33, flare: [-14, -11], lipH: 5.2, lip: 25, R: 16, tableDrop: 5.4, knuckle: 11, land: 30, lowerS: 0.2, lowerDrop: 2.4, lowerLip: 6, front: 17.1, startS: -62,
   };
   const yL = at(0, 0) + FJ.lipH;
   FJ.yL = yL;
@@ -248,19 +250,22 @@ function buildCourse(land, G, q) {
      low pad with an up rail on the axis between them, climbing the back of one big rounded landing mound downhill */
   const LB = parts.love = {
     kickers: [{ s: 116.7, u: 6.5, yaw: -33, name: 'left' }, { s: 116.95, u: -7.35, yaw: 33, name: 'right' }],
-    lipH: 3.0, lip: 27, wLip: 7.0, len: 8, pad: { s0: 112.3, s1: 115.9, u0: -2.8, u1: 1.4, h: 0.4 },
+    // (Leon: bigger jumps towards the end, less kicky: lips 3.0 to 4.0 m over the snow, 27 to 25 degrees, which takes the
+    // transition's radius from about 18.5 to 28 m; the landing mound 12 to 15 m round, 3.5 to 4.5 m high, its top 1 m further on [all
+    // beyond the photo estimates, by request])
+    lipH: 4.0, lip: 25, wLip: 7.0, len: 8, pad: { s0: 112.3, s1: 115.9, u0: -2.8, u1: 1.4, h: 0.4 },
     // (the rail's h0 over the pad: 0.12 so riders slide onto it from the pad; at 0.45 its end stopped them [estimated])
-    rail: { a: [114.9, -0.5], b: [120.6, -0.7], h0: 0.12, h1: 2.4 }, mound: { s: 126, u: -0.7, r: 12, h: 3.5 },   // (r 9.5 measured on 004 at its crest; round 1 of the comparisons: broader in 003, so it is let out to 12 with a gentler fall [estimated])
+    rail: { a: [114.9, -0.5], b: [120.6, -0.7], h0: 0.12, h1: 2.4 }, mound: { s: 127, u: -0.7, r: 15, h: 4.5 },   // (r 9.5 measured on 004 at its crest; round 1 of the comparisons: broader in 003, so it is let out to 12 with a gentler fall [estimated])
   };
   for (const k of LB.kickers) {
     const yaw = k.yaw * D, gs = t => G(X0 + k.u + Math.sin(yaw) * t, Z0 + k.s + Math.cos(yaw) * t);
     const p = Math.atan((gs(-12) - gs(0)) / 12) / D, pr = kick(0, gs, LB.lipH, LB.lip, p);
-    pr.dropTo(0.7, pr.y - 2.6);       // (its back face nearly upright, about as tall as the lip: 003 and review round 4; the mound takes over below)
-    put(new Ext({ name: `Love Bump ${k.name} kicker`, group: 'Love Bump', x: X0 + k.u, z: Z0 + k.s, yaw, prof: pr.done(), w: LB.wLip / 2, side: 0.75, shoulder: 0.6, dyeBands: [[-0.34, -0.1]] }));
+    pr.dropTo(0.8, pr.y - 3.4);       // (its back face nearly upright, about as tall as the lip: 003 and review round 4; the mound takes over below)
+    put(new Ext({ name: `Love Bump ${k.name} kicker`, group: 'Love Bump', x: X0 + k.u, z: Z0 + k.s, yaw, prof: pr.done(), w: LB.wLip / 2, side: 1.5, shoulder: 0.4, dyeBands: [[-0.34, -0.1]] }));   // (steep built sides: at 4 m their slopes would have closed the 8 m between the lips' inner corners, where the pad and the rail are)
   }
   {
     const P = LB.pad, um = (P.u0 + P.u1) / 2, y = at(um, P.s0) + P.h;
-    put(new Ext({ name: 'Love Bump pad', group: 'Love Bump', x: X0 + um, z: Z0 + P.s0, prof: new Prof(-1.2, at(um, P.s0 - 1.2), 0).dropTo(0, y).flat(P.s1 - P.s0).dropTo(P.s1 - P.s0 + 1.2, at(um, P.s1 + 1.2)).done(), w: (P.u1 - P.u0) / 2, side: 0.5, shoulder: 0.3 }));
+    put(new Ext({ name: 'Love Bump pad', group: 'Love Bump', x: X0 + um, z: Z0 + P.s0, prof: new Prof(-3.0, at(um, P.s0 - 3.0), 0).dropTo(0, y).flat(P.s1 - P.s0).dropTo(P.s1 - P.s0 + 1.2, at(um, P.s1 + 1.2)).done(), w: (P.u1 - P.u0) / 2, side: 0.5, shoulder: 0.3 }));
     const M = LB.mound, ym = at(M.u, M.s), pm = new Prof(0, ym + M.h, 0);
     for (let i = 1; i <= 36; i++) { const r = M.r * i / 36; pm.dropTo(r, ym + M.h * (0.5 + 0.5 * Math.cos(Math.PI * i / 36)) - 0.25 * i / 36); }
     put(new Round({ name: 'Love Bump landing mound', group: 'Love Bump', x: X0 + M.u, z: Z0 + M.s, prof: pm.done(), RR: 6 }));
@@ -269,9 +274,10 @@ function buildCourse(land, G, q) {
   }
   starts.push({ name: 'The Love Bump', x: X0, z: Z0 + 78, v: 7 });
   for (const k of LB.kickers) {
-    // (riders come to it off the Formation Jump's run-out at 12 to 15 m/s: started with that speed, 26 m back along its line)
-    const yaw = k.yaw * D, sx = X0 + k.u - Math.sin(yaw) * 26, sz = Z0 + k.s - Math.cos(yaw) * 26;
-    lines.push({ name: `Love Bump ${k.name} kicker`, start: { x: sx, z: sz, v: 13, yaw }, path: [[sz, sx], [Z0 + k.s, X0 + k.u], [Z0 + k.s + 20, X0 + k.u + Math.sin(yaw) * 20]], until: Z0 + 150 });
+    // (riders come to it off the Formation Jump's run-out at about 15.5 m/s (the top-to-bottom bot's speed there): started
+    // at 14.5 m/s, 18 m back along its line)
+    const yaw = k.yaw * D, sx = X0 + k.u - Math.sin(yaw) * 18, sz = Z0 + k.s - Math.cos(yaw) * 18;
+    lines.push({ name: `Love Bump ${k.name} kicker`, start: { x: sx, z: sz, v: 14.5, yaw }, path: [[sz, sx], [Z0 + k.s, X0 + k.u], [Z0 + k.s + 20, X0 + k.u + Math.sin(yaw) * 20]], until: Z0 + 150 });
   }
   lines.push({ name: 'Love Bump up rail', start: { x: X0 - 0.5, z: Z0 + LB.rail.a[0] - 22, v: 7 }, path: [[Z0 + 80, X0 - 0.5], [Z0 + 150, X0 - 0.6]], until: Z0 + 150 });
 
@@ -288,9 +294,15 @@ function buildCourse(land, G, q) {
     // (the tunnels: the one into the bowl [measured on 014], and one under the dome's uphill side [estimated from 014 and
     // 015: its arched opening in the platform's uphill wall below the dome])
     tunnels: [{ from: [183.2, 16.2], to: [192.2, 9.6], w: 1.8, h: 2.5 }, { from: [182.6, -10.4], to: [189.4, -11.2], w: 1.8, h: 2.5 }],
-    hump: { s: 203.8, u: -1.7, r: 4.6, h: 2.7 },
-    cones: [{ s: 233.3, u: 9.1 }, { s: 233.6, u: -11.3 }], coneR: 2.9, coneH: 3.4,   // (steeper than the sheet's estimate: 019 and 020 show them about 0.6 as tall as wide, review round 4)
+    // (the hump: 8 m past the pool's middle as review round 5 reads 004, and by Leon's request larger and gentler: r 4.6 to
+    // 6.0, 2.7 to 3.2 m high; its steepest 43 to 33 degrees) [beyond the photo estimate, by request]
+    hump: { s: 205.3, u: -1.7, r: 6.0, h: 3.2 },
+    // (Leon: larger: 2.9 to 3.6 m round, 3.4 to 3.9 m high [beyond the photo estimate, by request]; and a rounded top in
+    // place of the point, which threw riders up at about 49 degrees)
+    cones: [{ s: 233.3, u: 9.1 }, { s: 233.6, u: -11.3 }], coneR: 3.6, coneH: 3.9,   // (steeper than the sheet's estimate: 019 and 020 show them about 0.6 as tall as wide, review round 4)
   };
+  // (a cone's height over its foot at k of its radius: a bell, rounded on top, its flanks steep and flaring at the foot)
+  const coneProf = k => SC.coneH * Math.pow(Math.max(0, 1 - k * k), 1.6);
   {
     const [cs, cu] = SC.c, P = SC.plat, yP = at(cu, cs) + P.h, B = SC.bowl, Dm = SC.dome, H = SC.hump, Pl = SC.pool;
     SC.yP = yP;
@@ -313,7 +325,9 @@ function buildCourse(land, G, q) {
       // 016 and 011 show the arches cut into sloped snow under the bowl's ring and the dome's collar, not an upright wall)
       let sl = slope;
       for (const { T, ta, tb, tL } of TN) { const tx = (u - ta[0]) * (tb[0] - ta[0]) / tL + (s - ta[1]) * (tb[1] - ta[1]) / tL, ty = Math.abs(-(u - ta[0]) * (tb[1] - ta[1]) / tL + (s - ta[1]) * (tb[0] - ta[0]) / tL); if (tx < 1 && ty < T.w / 2 + 2.2) { const k = 1 - smoothstep(T.w / 2 + 0.8, T.w / 2 + 2.2, ty); sl = sl * (1 - k) + 1.15 * k; } }
-      let h = d <= 0 ? yP : yP - (d < 0.6 ? sl * d * d / 1.2 : sl * (d - 0.3));
+      // (rounded into the deck over 0.6 m, and over 2.5 m on the ramp, which threw riders up as they reached the deck)
+      const r0 = qs < -hz + P.r ? 0.6 + 1.9 * mid : 0.6;
+      let h = d <= 0 ? yP : yP - (d < r0 ? sl * d * d / (2 * r0) : sl * (d - r0 / 2));
       // the pool sunk into it (floor, transitions, coping), and its wooden step at the downhill end
       const dp = sdP(u, s);
       // (its walls an arc of radius R from the floor, R more than the depth so they stop short of upright at the coping,
@@ -339,8 +353,8 @@ function buildCourse(land, G, q) {
       const rh = Math.hypot((u - hu) * 0.85, s - hs);
       if (rh < H.r) h = Math.max(h, yP + H.h * (0.5 + 0.5 * Math.cos(Math.PI * rh / H.r)));
       // (its uphill face scooped into a shallow dish where the sign sits, 015 and 014: second pass) [size estimated]
-      const rsc = Math.hypot(u - hu, s - (hs - 1.5));
-      if (rsc < 2.3 && h > yP + 0.2) h = Math.min(h, yP + 0.55 + 1.5 * (rsc / 2.3) ** 2);
+      const rsc = Math.hypot(u - hu, s - (hs - 2.0));
+      if (rsc < 2.6 && h > yP + 0.2) h = Math.min(h, yP + 0.6 + 1.7 * (rsc / 2.6) ** 2);
       // the tunnel into the bowl: a channel at the bowl floor's height from the platform's uphill corner (its roof is
       // drawn over it, dress below: the ground here is one height, so the tunnel is open to the sky for the physics)
       // (the tunnels themselves are drawn on the wall, dress below: the heightfield cannot have a roof, and a trench cut
@@ -372,7 +386,7 @@ function buildCourse(land, G, q) {
     // (their heights over the snow under them, the complex's own surface included: abs; a snow ramp up to each one that
     // stands on the plain snow, as park rails have)
     // (the cones' own surface too: their rails lie along their flanks)
-    const coneY = (s0, u0) => { let y = -Infinity; for (const c of SC.cones) { const k = Math.hypot(s0 - c.s, u0 - c.u) / SC.coneR; if (k < 1) y = Math.max(y, at(c.u, c.s) + SC.coneH * (1 - Math.pow(k, 0.8)) * (1 - 0.15 * k * k) - 0.05); } return y; };
+    const coneY = (s0, u0) => { let y = -Infinity; for (const c of SC.cones) { const k = Math.hypot(s0 - c.s, u0 - c.u) / SC.coneR; if (k < 1) y = Math.max(y, at(c.u, c.s) + coneProf(k) - 0.05); } return y; };
     const sy = (s0, u0) => Math.max(G(X0 + u0, Z0 + s0), Math.abs(u0 - cu) < 28 && Math.abs(s0 - cs) < 22 ? y(u0 - cu, s0 - cs) : -Infinity, coneY(s0, u0));
     const R = (name, a, b, h0, h1, ramp) => {
       rails.push(new Rail({ name, kind: 'rail', group: 'Skate Complex', abs: true, pts: [[X0 + a[1], Z0 + a[0], sy(a[0], a[1]) + h0], [X0 + b[1], Z0 + b[0], sy(b[0], b[1]) + h1]], colour: 0x1d1f23, legs: true }));
@@ -380,13 +394,15 @@ function buildCourse(land, G, q) {
       // its snow ramp along its own line, the park's own shape (park.js Wedge: rising as the 1.3 power over 3.5 m to 12 cm
       // under the rail's start, 0.7 m short of it, then falling away over 1.2 m; second pass: the old ramp's kink at its
       // foot threw riders over the rail) [heights estimated]
-      const L = Math.hypot(b[0] - a[0], b[1] - a[1]), ds = (b[0] - a[0]) / L, du = (b[1] - a[1]) / L, hR = h0 - 0.12, Lw = typeof ramp === 'number' ? ramp : 3.5;
+      // (Leon: "less kicky", rail ramps low and gentle: 5.5 m long, rising as smootherstep (level at its foot and at its top,
+      // steepest 13 degrees in the middle), to 8 cm under the rail, 0.4 m short of it, so riders slide on with no pop)
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]), ds = (b[0] - a[0]) / L, du = (b[1] - a[1]) / L, hR = h0 - 0.08, Lw = typeof ramp === 'number' ? ramp : 5.5, gap = 0.4;
       const g = t => sy(a[0] + ds * t, a[1] + du * t);
       // (from half a metre under the snow: started level with a feature's top (the skate deck), the features' rounded
       // join made an 8 cm step at its very edge, an upright face that stopped riders dead)
-      const pr = new Prof(-0.7 - Lw - 0.8, g(-0.7 - Lw - 0.8) - 0.5).dropTo(-0.7 - Lw, g(-0.7 - Lw) - 0.02);
-      for (let t = -0.7 - Lw + 0.25; t <= -0.7 + 1e-6; t += 0.25) pr.dropTo(t, g(t) + hR * ((t + 0.7 + Lw) / Lw) ** 1.3);
-      for (let t = -0.45; t <= 0.5 + 1e-6; t += 0.25) pr.dropTo(t, g(t) + Math.max(-0.05, hR - (t + 0.7) * hR / 1.2));
+      const t0 = -gap - Lw, pr = new Prof(t0 - 0.8, g(t0 - 0.8) - 0.5).dropTo(t0, g(t0) - 0.02);
+      for (let t = t0 + 0.25; t <= -gap + 1e-6; t += 0.25) { const x = (t - t0) / Lw; pr.dropTo(t, g(t) - 0.02 + (hR + 0.02) * x * x * (3 - 2 * x)); }
+      for (let t = -gap + 0.25; t <= 0.6 + 1e-6; t += 0.2) pr.dropTo(t, g(t) + Math.max(-0.05, hR - (t + gap) * hR / 1.0));
       put(new Ext({ name: name + ' ramp', group: 'Skate Complex', x: X0 + a[1], z: Z0 + a[0], yaw: Math.atan2(du, ds), prof: pr.done(), w: 1.2, side: 1.1, shoulder: 0.1 }));
     };
     R('Skate Complex front up rail', [188.1, 2.95], [192.1, 4.0], 0.12, 0.6);   // (an up rail starting just over the platform's ramped face, so riders slide onto it from the face: second pass; it stood 0.5 m over it and only an ollie got on)
@@ -394,15 +410,24 @@ function buildCourse(land, G, q) {
     R('Down rail on the left', [219.1, 22.7], [224.4, 19.1], 1.0, 0.6, true);
     R('Down rail on the right', [220.0, -22.2], [222.9, -27.3], 1.0, 0.6, true);
     rails.push(new Rail({ name: 'Pool rail', kind: 'box', group: 'Skate Complex', abs: true, w: 0.12, pts: [[X0 + cu - 1.5, Z0 + cs - Pl.hz + 1.3, yP - Pl.depth + 0.35], [X0 + cu + 1.5, Z0 + cs - Pl.hz + 1.3, yP - Pl.depth + 0.35]], colour: 0x1d1f23, legs: true }));
-    // the two cones: peaked mounds with a curved fin of a top, a rail down each one's outer flank
+    /* the two cones: bells with a rounded top and a curved fin, a rail along each one's base flank. (The rails' plan lines
+       from the sheet (014) ran within 0.8 m of the cones' middles, over their tops, where riders met the rails' raised
+       starts on the climb and no rider got on; review round 5 reads them starting at the foot, so each line is moved
+       sideways, kept parallel, to run along its cone's foot on the same side [moved up to 2.7 m from the sheet's line].) */
+    for (const c of SC.cones) {
+      const [ra, rb] = c.u > 0 ? [[232.3, 7.9], [237.4, 9.8]] : [[232.3, -10.7], [238.6, -13.1]];
+      const rl = Math.hypot(rb[0] - ra[0], rb[1] - ra[1]), dS = (rb[0] - ra[0]) / rl, dU = (rb[1] - ra[1]) / rl, nS = -dU, nU = dS;
+      const dc = (c.s - ra[0]) * nS + (c.u - ra[1]) * nU, D = (SC.coneR - 0.45) * Math.sign(dc || 1), sh = dc - D;
+      c.rail = [[ra[0] + nS * sh, ra[1] + nU * sh], [rb[0] + nS * sh, rb[1] + nU * sh]];
+    }
     for (const c of SC.cones) {
       const yc = at(c.u, c.s), pr = new Prof(0, yc + SC.coneH, 0);
-      for (let i = 1; i <= 24; i++) { const r = SC.coneR * i / 24, k = i / 24; pr.dropTo(r, yc + SC.coneH * (1 - Math.pow(k, 0.8)) * (1 - 0.15 * k * k) - 0.05); }
+      for (let i = 1; i <= 24; i++) { const r = SC.coneR * i / 24, k = i / 24; pr.dropTo(r, yc + coneProf(k) - 0.05); }
       put(new Round({ name: `Cone (${c.u > 0 ? 'left' : 'right'})`, group: 'Skate Complex', x: X0 + c.u, z: Z0 + c.s, prof: pr.done(), RR: 2 }));
       /* its fin (019, 020): a thin upright slab with a rounded top on the far side of the peak from the cone's rail and
          along it (019: the rail low on the near flank, the fin behind the peak), about 2.3 m long and 0.45 m thick, its top
          0.75 m over the peak [sizes estimated from 019 and 020; second pass: across the course it stood on the rail's line] */
-      const [ra, rb] = c.u > 0 ? [[232.3, 7.9], [237.4, 9.8]] : [[232.3, -10.7], [238.6, -13.1]];
+      const [ra, rb] = c.rail;
       const rl = Math.hypot(rb[0] - ra[0], rb[1] - ra[1]), dS = (rb[0] - ra[0]) / rl, dU = (rb[1] - ra[1]) / rl;
       let nU = dS, nS = -dU; if ((c.u - ra[1]) * nU + (c.s - ra[0]) * nS < 0) { nU = -nU; nS = -nS; }   // (away from the rail)
       const fx = X0 + c.u + nU * 0.65, fz = Z0 + c.s + nS * 0.65;
@@ -414,8 +439,8 @@ function buildCourse(land, G, q) {
       put(new Fn({ name: `Cone fin (${c.u > 0 ? 'left' : 'right'})`, group: 'Skate Complex', x: fx, z: fz, yaw: Math.atan2(nU, nS), y: fy, u0: -1.2, u1: 1.2, s0: -0.25, s1: 0.25, step: 0.05, stepLow: 0.1 }));
     }
     // (low along the flank, from high on the cone down past its foot: ridden off the cone's top [heights estimated])
-    R('Cone rail on the left', [232.3, 7.9], [237.4, 9.8], 0.45, 0.5);
-    R('Cone rail on the right', [232.3, -10.7], [238.6, -13.1], 0.45, 0.5);
+    R('Cone rail on the left', SC.cones[0].rail[0], SC.cones[0].rail[1], 0.5, 0.5, true);
+    R('Cone rail on the right', SC.cones[1].rail[0], SC.cones[1].rail[1], 0.5, 0.5, true);
   }
   starts.push({ name: 'The Skate Complex', x: X0 - 1.5, z: Z0 + 160, v: 6 });
   // (the pool ridden across from the deck: dropped into on one side, up the transition on the other, as skaters ride it)
@@ -425,14 +450,14 @@ function buildCourse(land, G, q) {
     lines.push({ name, nosteer, start: { x: x0, z: z0, v, yaw: Math.atan2(du, ds) }, path: [[z0, x0], [Z0 + b[0] + ds * 12, X0 + b[1] + du * 12]], until: Z0 + b[0] + ds * 12 }); };
   // (straight along its line from 10 m back: up the platform's ramped face onto it)
   along('Skate Complex front up rail', [188.1, 2.95], [192.1, 4.0], 9, 10);
-  along('Cone rail (left)', [232.3, 7.9], [237.4, 9.8], 11);   // (up over the cone's back first: more speed)
-  along('Cone rail (right)', [232.3, -10.7], [238.6, -13.1], 13, 14);   // (fast enough to leave the cone's flank and come down on the rail)
+  along('Cone rail (left)', SC.cones[0].rail[0], SC.cones[0].rail[1], 7, 9);
+  along('Cone rail (right)', SC.cones[1].rail[0], SC.cones[1].rail[1], 7, 9);
   along('Down rail on the left', [219.1, 22.7], [224.4, 19.1]);
   // (these two run across the hill: ridden straight on from a short way back along their line, as riders come at them)
   along('Down rail on the right', [220.0, -22.2], [222.9, -27.3], 6.5, 5, true);
   along('Skate Complex rail on the right', [198.7, -17.2], [204.1, -20.4], 6.5, 3.4, true);
   // the whole course top to bottom down the middle deck
-  lines.push({ name: 'Top to bottom (middle deck, Love Bump rail, over the skate platform past the pool, right cone rail)', start: fjStart(0), path: [[Z0 + FJ.startS, X0], [Z0 + 60, X0], [Z0 + 100, X0 - 0.5], [Z0 + 160, X0 - 1], [Z0 + 186, X0 - 5.5], [Z0 + 200, X0 - 6.3], [Z0 + 212, X0 - 7], [Z0 + 226, X0 - 9.5], [Z0 + 232.3, X0 - 10.7], [Z0 + 238.6, X0 - 13.1], [Z0 + 255, X0 - 14]], until: Z0 + 255, maxT: 60 });
+  lines.push({ name: 'Top to bottom (middle deck, Love Bump rail, over the skate platform past the pool, right cone rail)', start: fjStart(0), path: [[Z0 + FJ.startS, X0], [Z0 + 60, X0], [Z0 + 100, X0 - 0.5], [Z0 + 160, X0 - 1], [Z0 + 186, X0 - 5.5], [Z0 + 200, X0 - 6.3], [Z0 + 212, X0 - 7], ...(() => { const [ra, rb] = SC.cones[1].rail; return [[Z0 + ra[0] - 6, X0 + ra[1] + 1.5], [Z0 + ra[0], X0 + ra[1]], [Z0 + rb[0], X0 + rb[1]], [Z0 + 255, X0 + rb[1] - 1]]; })()], until: Z0 + 255, maxT: 60 });   // (onto the right cone's rail where it now runs, along the cone's foot)
 
   /* the Formation Jump's in-run speed check (skier.js park.inruns, second pass): on each deck and lower channel, from 10 m
      above the start to its lip, the speed a rider with no input has at that height (the lips leave at 12.4 m/s, the lower

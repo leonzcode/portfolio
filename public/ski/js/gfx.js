@@ -13,7 +13,7 @@
      rim. The same program as the snow (a copy of its material), so nothing new is built. */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { ground } from './terrain.js?v=31';
+import { ground } from './terrain.js?v=32';
 
 // ---- smoothing the edges where the canvas has no multisampling (the low and medium tiers) --------------------------------
 /* The scene is drawn into a picture the size of the canvas, then onto the canvas through a light FXAA pass (after the

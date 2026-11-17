@@ -5,19 +5,19 @@
    The place is opts.place: { name, sub, lat, lon, preset } (a built-in resort has preset, its slug; a searched one not).
    Its id (worldId) goes in the room's map, so riders at other places are not mixed (the relay takes 16 letters, digits
    and underscores). */
-import { setMountain, height, ground, normal } from './terrain.js?v=31';
-import { Frame, Elevation, demStats } from './wdem.js?v=31';
-import { loadOsm, loadLand, parse, skiExtent } from './wosm.js?v=31';
-import { PRESETS, MAMMOTH, worldId, originOf } from './wplaces.js?v=31';
-import { WorldLand, forestCover, treelineFor } from './wland.js?v=31';
-import { TreeStream, WorldForest, woodIndex, fitRunWidths } from './wtrees.js?v=31';
-import { makeWorldPark, fallYaw } from './wpark.js?v=31';
-import { liftLines, planWorldLifts, WorldLifts, kindName } from './wlift.js?v=31';
-import { addFeatures } from './wfeat.js?v=31';
-import { TrailMap } from './wtrail.js?v=31';
-import { makeSigns } from './wsigns.js?v=31';
-import { setRockSource, rebakeRockField, freerideLook } from './materials.js?v=31';
-import { smoothstep, fbm } from './noise.js?v=31';
+import { setMountain, height, ground, normal } from './terrain.js?v=32';
+import { Frame, Elevation, demStats } from './wdem.js?v=32';
+import { loadOsm, loadLand, parse, skiExtent } from './wosm.js?v=32';
+import { PRESETS, MAMMOTH, worldId, originOf } from './wplaces.js?v=32';
+import { WorldLand, forestCover, treelineFor } from './wland.js?v=32';
+import { TreeStream, WorldForest, woodIndex, fitRunWidths } from './wtrees.js?v=32';
+import { makeWorldPark, fallYaw } from './wpark.js?v=32';
+import { liftLines, planWorldLifts, WorldLifts, kindName } from './wlift.js?v=32';
+import { addFeatures } from './wfeat.js?v=32';
+import { TrailMap } from './wtrail.js?v=32';
+import { makeSigns } from './wsigns.js?v=32';
+import { setRockSource, rebakeRockField, freerideLook } from './materials.js?v=32';
+import { smoothstep, fbm } from './noise.js?v=32';
 
 export { PRESETS, MAMMOTH, worldId, originOf };
 

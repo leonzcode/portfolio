@@ -4,8 +4,8 @@
    { slabs } (frrock.js slabArrays: the jibs' rock slabs, made on the page with the rest of Freeride), which go in after
    the faces, as before; then it posts { r } (rockArrays' result) or { err }. On a slow processor this was about 3.7 s
    of the page's own start; here it runs beside it. */
-import { Land } from './frland.js?v=31';
-import { rockFaces, rockFinish } from './frrockgeo.js?v=31';
+import { Land } from './frland.js?v=32';
+import { rockFaces, rockFinish } from './frrockgeo.js?v=32';
 
 let faces = null, t0 = 0, failed = null;
 onmessage = e => {

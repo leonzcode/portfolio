@@ -9,13 +9,13 @@
    knuckles. Everything static is merged into a few meshes by material. */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeXg, courseX, MAP_NAME, MAP_SUB, MAP_ID } from './m_xg.js?v=31';
-import { height, ground } from './terrain.js?v=31';
-import { planLift, liftHeights } from './lift.js?v=31';
-import { WorldLifts } from './wlift.js?v=31';
-import { snowUniforms, setRockSource } from './materials.js?v=31';
-import { setSunPath } from './env.js?v=31';
-import { fbm, simplex, smoothstep, clamp } from './noise.js?v=31';
+import { makeXg, courseX, courseHalf, S1_FOOT, MAP_NAME, MAP_SUB, MAP_ID } from './m_xg.js?v=32';
+import { height, ground } from './terrain.js?v=32';
+import { planLift, liftHeights } from './lift.js?v=32';
+import { WorldLifts } from './wlift.js?v=32';
+import { snowUniforms, setRockSource } from './materials.js?v=32';
+import { setSunPath } from './env.js?v=32';
+import { fbm, simplex, smoothstep, clamp } from './noise.js?v=32';
 
 export { MAP_NAME, MAP_SUB, MAP_ID };
 const DATA = new URL('../data/' + MAP_ID + '/', import.meta.url);
@@ -82,11 +82,11 @@ export async function makeXgMap(q, step) {
   snowUniforms.uDye.value.set(0.007, 0.40, 0.83);
   const X = await makeXg(q, step);
   const { park, land, mtn } = X;
-  const osm = await fetch(new URL('osm.json?v=31', DATA)).then(r => r.ok ? r.json() : null).catch(() => null) || { woods: [], buildings: [], roads: [], pistes: [] };
+  const osm = await fetch(new URL('osm.json?v=32', DATA)).then(r => r.ok ? r.json() : null).catch(() => null) || { woods: [], buildings: [], roads: [], pistes: [] };
   X.osm = osm;
   // ---- where things may not stand: the course and its sides, the pipe and its decks, the base, the lift line
   const P = park.PIPE;
-  const onCourse = (x, z, m = 0) => z > -440 - m && z < 70 + m && Math.abs(x - courseX(z)) < 24 + m;
+  const onCourse = (x, z, m = 0) => z > S1_FOOT - 46 - m && z < 70 + m && Math.abs(x - courseX(z)) < 24 + m;   // (S1_FOOT: the course's top, m_xg.js)
   const onPipe = (x, z, m = 0) => { const L = park.pipeLocal(x, z); return L.s > -20 - m && L.s < P.len + 45 + m && Math.abs(L.u) < P.W + m; };
   X.onCourse = onCourse; X.onPipe = onPipe;
   const pyl = (x, z) => { let d = Infinity; for (const [px, pz] of PYLONS) d = Math.min(d, Math.hypot(x - px, z - pz)); return d; };
@@ -110,7 +110,7 @@ export async function makeXgMap(q, step) {
     const P = park.PIPE, edge = (s, side) => park.pipeAt(s, side * (P.W + 2.5));
     const pipeRow = side => { const a = edge(8, side), b = edge(32, side); return { x0: a.x, z0: a.z, dx: b.x - a.x, dz: b.z - a.z, n: Math.floor((P.len + 2) / 24) + 1, ax: -side * P.P.ux, az: -side * P.P.uz, h: 17, power: 170 }; };
     park.lightTowers = [{ x0: 0, z0: 60000, dx: 0, dz: 0, n: 1, ax: 1, az: 0, h: 11, power: 0 }];
-    park.stationLamps = (park.stationLamps || []).concat([pipeRow(-1), pipeRow(1), { x0: courseX(-255) - 19, z0: -255, dx: 0, dz: 35, n: 8, ax: 1, az: 0, h: 19, power: 170 }]);
+    park.stationLamps = (park.stationLamps || []).concat([pipeRow(-1), pipeRow(1), (() => { const j1 = park.kickers.find(k => /^Jump 1/.test(k.name)), j3 = park.kickers.find(k => /^Jump 3/.test(k.name)), z0 = Math.round(j1.z0); return { x0: courseX(z0) - 19, z0, dx: 0, dz: 35, n: Math.max(2, Math.ceil((j3.zMeet - z0) / 35) + 1), ax: 1, az: 0, h: 19, power: 170 }; })()]);   // (down the jump line, from the first jump's foot)
   }
   X.liftPlan = LP;
   // the lift's top: a start up the mountain, where the chair leaves you
@@ -333,11 +333,11 @@ function dress(X, scene, mats, q) {
     }
   };
   const side = (s, z0, z1, off) => { const p = []; for (let z = z0; z <= z1; z += 6) p.push([courseX(z) + s * (off(z)), z]); return p; };
-  const half = z => 24 + 4 * smoothstep(-5, 25, z) - 4 * smoothstep(-270, -230, z);
-  fenceLine(side(1, -430, 0, half), netQuads, 1.3, POLE);
-  fenceLine(side(-1, -430, 0, half), netQuads, 1.3, POLE);
+  const half = z => courseHalf(z) + 1;
+  fenceLine(side(1, S1_FOOT - 36, 0, half), netQuads, 1.3, POLE);
+  fenceLine(side(-1, S1_FOOT - 36, 0, half), netQuads, 1.3, POLE);
   // the finish: black fabric across the bottom and down its sides, the corral inside it
-  const cx = courseX(40), J3 = park.kickers.find(k => /^Jump 3/.test(k.name)), zc = Math.min(40, Math.round(J3.zMeet + 34));   // (zc: the corral's barrier, 34 m past the big air's landing)
+  const cx = courseX(40), J3 = park.kickers.find(k => /^Jump 3/.test(k.name)), zc = Math.min(56, Math.round(J3.zMeet + 34));   // (zc: the corral's barrier, 34 m past the big air's landing)
   fenceLine([[cx - 14, zc - 16], [cx - 14, Math.max(62, zc + 24)], [cx + 24, Math.max(62, zc + 24)], [cx + 24, zc - 16]], fabricQuads, 1.1, POLE, 2.5);
   // (black windscreen fabric down both sides of each jump's in-run and table, at its side's foot, as photo 083 shows)
   for (const k of park.kickers) if (/^Jump/.test(k.name)) for (const sg of [-1, 1]) {
@@ -394,7 +394,7 @@ function dress(X, scene, mats, q) {
 
   // ---- the start: a deck at the top, a black-roofed tent behind it, a gate with its banner
   {
-    const z = -414, x = courseX(z), y = H(x, z);
+    const z = S1_FOOT - 20, x = courseX(z), y = H(x, z);
     M.box(x, y + 1.3, z - 2, 10, 2.6, 6, 0xf1f2f4);                         // the tent's walls
     M.box(x, y + 2.9, z - 2, 10.6, 0.6, 6.6, BLACK);                          // its roof
     for (const s of [-1, 1]) M.box(x + s * 5, y + 1.6, z + 3.4, 0.2, 3.2, 0.2, BLACK);
@@ -410,8 +410,10 @@ function dress(X, scene, mats, q) {
     M.box(x, y + h + 0.05, z, 2.7, 0.1, 2.7, STEEL);
     M.box(x, y + h + 0.6, z, 0.35, 0.35, 0.7, BLACK); M.cyl(x, y + h + 0.3, z, 0.04, 0.04, 0.6, BLACK, 5);
   };
-  camTower(courseX(-380) + 27, -380); camTower(courseX(-330) - 27, -330); camTower(courseX(-282) + 26, -282);
-  camTower(courseX(-210) - 25, -210); camTower(courseX(-140) - 25, -140); camTower(courseX(-60) - 21, -75, 5);
+  { const KS = park.kickers, at = n => KS.find(k => k.name.startsWith(n));
+    camTower(courseX(at('Rail section 1').K.z) + 27, at('Rail section 1').K.z); camTower(courseX(at('Rail section 2').K.z) - 27, at('Rail section 2').K.z); camTower(courseX(at('Rail section 4').K.z) + 26, at('Rail section 4').K.z);
+    for (const n of ['Jump 1', 'Jump 2']) { const k = at(n); camTower(k.cxT - 25, k.L.z + 4); }
+    const k3 = at('Jump 3'); camTower(k3.cxT - 21, k3.L.z - 10, 5); }
 
   // ---- rail dressing seen in the 2024 footage: a plain hoop on the ring rail (section 4) and red skirts under section
   // 3's rails, from the rail down to the snow
