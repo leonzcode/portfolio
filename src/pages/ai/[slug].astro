@@ -34,6 +34,12 @@ if (project.href && project.href.startsWith("http")) {
   }
 }
 const hasEmbeddedPlayable = !!playableHref;
+// The demos on apps.leonzhao.dev run on a separate server that some networks block: the page asks
+// its health address first and shows a fallback instead of a dead frame (script at the end).
+const probeHref =
+  playableHref && new URL(playableHref).hostname === "apps.leonzhao.dev"
+    ? playableHref.replace(/\/?$/, "/") + "_stcore/health"
+    : undefined;
 const hasExternalSource = !!project.href && !!playableHref;
 ---
 
@@ -163,13 +169,60 @@ const hasExternalSource = !!project.href && !!playableHref;
 
     {
       hasEmbeddedPlayable && (
-        <div class="w-full h-[78vh] min-h-[560px] rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 mb-12">
+        <div
+          data-embed
+          data-probe={probeHref}
+          class="relative w-full h-[78vh] min-h-[560px] rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 mb-12"
+        >
           <iframe
             src={playableHref}
             title={`${project.title} embedded app`}
             class="w-full h-full"
             loading="lazy"
           ></iframe>
+          {/* shown by the script below when the demo's server cannot be reached from this network */}
+          <div
+            data-embed-fallback
+            hidden
+            class="absolute inset-0 flex flex-col bg-white dark:bg-neutral-900"
+          >
+            {project.image && (
+              <img
+                src={project.image}
+                alt={`${project.title} preview`}
+                class="w-full flex-1 min-h-0 object-cover object-top"
+              />
+            )}
+            <div class="p-6 border-t border-neutral-200 dark:border-neutral-800">
+              <p class="text-[15px] font-medium text-neutral-900 dark:text-neutral-100 mb-1">
+                The live demo could not be reached from this network.
+              </p>
+              <p class="text-[14.5px] leading-relaxed text-neutral-600 dark:text-neutral-400 max-w-2xl">
+                It runs on a separate server, which some school and office
+                networks block. The write-up below covers how it works
+                {project.repo ? ", and the code and model files are in the repo." : "."}
+              </p>
+              <div class="flex flex-wrap items-center gap-3 mt-4">
+                <button
+                  type="button"
+                  data-embed-retry
+                  class="inline-flex items-center px-4 py-2 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
+                >
+                  Try again
+                </button>
+                {project.repo && (
+                  <a
+                    href={project.repo}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center px-4 py-2 rounded-md border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-neutral-100 text-[14px] font-medium hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    View code
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )
     }
@@ -246,3 +299,30 @@ const hasExternalSource = !!project.href && !!playableHref;
     }
   </article>
 </BaseLayout>
+
+<script>
+  // A demo whose server does not answer within 8 s gets the fallback panel; "Try again" asks once more.
+  const box = document.querySelector<HTMLElement>("[data-embed][data-probe]");
+  if (box) {
+    const fallback = box.querySelector<HTMLElement>("[data-embed-fallback]")!;
+    const frame = box.querySelector<HTMLIFrameElement>("iframe")!;
+    const probe = async () => {
+      const stop = new AbortController();
+      const timer = setTimeout(() => stop.abort(), 8000);
+      try {
+        // no-cors: any answer at all resolves, a blocked or dead server rejects
+        await fetch(box.dataset.probe!, { mode: "no-cors", cache: "no-store", signal: stop.signal });
+        if (!fallback.hidden) {
+          fallback.hidden = true;
+          frame.src = frame.src;
+        }
+      } catch {
+        fallback.hidden = false;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    box.querySelector("[data-embed-retry]")?.addEventListener("click", probe);
+    probe();
+  }
+</script>
