@@ -27,7 +27,7 @@ export const aiProjects: Project[] = [
     title: "Avalanche Risk Forecasting",
     description:
       "Physics-informed ML model that forecasts avalanche risk at 2–5 km resolution from satellite, snowpack, and weather data. 3rd Place, Engineering — Golden Gate STEM Fair.",
-    href: "https://apps.leonzhao.dev/avalanche/",
+    href: "https://ml.leonzhao.dev/avalanche/",
     repo: "https://github.com/leonzcode/avalanche-risk-forecasting",
     image: "/cards/card_avalanche.png",
     tag: "Live demo",
@@ -44,7 +44,7 @@ export const aiProjects: Project[] = [
     title: "AI Art Detection",
     description:
       "CNN classifier that distinguishes AI-generated images from human-made art, built during COSMOS @ UC San Diego.",
-    href: "https://apps.leonzhao.dev/ai-art/",
+    href: "https://ml.leonzhao.dev/ai-art/",
     repo: "https://github.com/leonzcode/ai-art-detector",
     image: "/cards/card_art_detector.png",
     tag: "Live demo",
@@ -59,7 +59,7 @@ export const aiProjects: Project[] = [
     title: "LitterBot AI",
     description:
       "EfficientNetV2 CNN that sorts a photo of waste into 9 recycling categories and tells you which bin it belongs in, built in Litterbot design, achieved DSWA innovation award at Diamond Challenge finalists.",
-    href: "https://apps.leonzhao.dev/litterbot/",
+    href: "https://ml.leonzhao.dev/litterbot/",
     repo: "https://github.com/leonzcode/litterbot-ai",
     image: "/cards/card_litterbot.png",
     tag: "Live demo",

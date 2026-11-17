@@ -34,10 +34,10 @@ if (project.href && project.href.startsWith("http")) {
   }
 }
 const hasEmbeddedPlayable = !!playableHref;
-// The demos on apps.leonzhao.dev run on a separate server that some networks block: the page asks
+// The demos on ml.leonzhao.dev (the three AI apps, on an address apart from the online play since 2026-11-16) run on a separate server that some networks block: the page asks
 // its health address first and shows a fallback instead of a dead frame (script at the end).
 const probeHref =
-  playableHref && new URL(playableHref).hostname === "apps.leonzhao.dev"
+  playableHref && ["ml.leonzhao.dev", "apps.leonzhao.dev"].includes(new URL(playableHref).hostname)
     ? playableHref.replace(/\/?$/, "/") + "_stcore/health"
     : undefined;
 const hasExternalSource = !!project.href && !!playableHref;
