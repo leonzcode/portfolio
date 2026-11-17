@@ -29,7 +29,7 @@ export function wsBase() {
     const q = new URLSearchParams(location.search).get('mp');
     if (q && /^wss?:\/\//.test(q)) return q;
   }
-  if (h.endsWith('leonzhao.dev')) return 'wss://apps.leonzhao.dev/mc/ws';
+  if (h.endsWith('leonzhao.dev')) return 'wss://ml.leonzhao.dev/mc/ws';
   return 'ws://' + h + ':8600/mc/ws';
 }
 export const httpBase = () => wsBase().replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/ws$/, '');
