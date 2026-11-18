@@ -5,29 +5,32 @@
    the page itself, so the site stays static. A view is counted once a day
    for each visitor; a like is one each and the same button takes it back.
    Comments were taken off every project on 2026-11-06 (Leon). */
+import { savedCount } from "../data/counts";
 interface Props {
   /** "games/ski", "ai/avalanche": the category and the project's slug */
   slugKey: string;
 }
 const { slugKey } = Astro.props;
+// the counts at build time: shown until (or in place of) the live ones
+const saved = savedCount(slugKey);
 ---
 
 <div class="mt-5" data-social data-key={slugKey}>
   <div class="flex flex-wrap items-center gap-2 text-[13px]">
     <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400" title="Views">
       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
-      <b data-views class="font-medium tabular-nums">–</b> <span class="sr-only">views</span>
+      <b data-views class="font-medium tabular-nums">{saved?.views ?? "–"}</b> <span class="sr-only">views</span>
     </span>
     <button type="button" data-like aria-pressed="false"
       class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600 transition-colors aria-pressed:text-rose-600 aria-pressed:border-rose-300 dark:aria-pressed:border-rose-800">
       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 2.9 4.5 6.7 4.5c2.1 0 3.6 1.2 5.3 3.1 1.7-1.9 3.2-3.1 5.3-3.1 3.8 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21Z"/></svg>
-      <b data-likes class="font-medium tabular-nums">–</b> <span class="sr-only">likes</span>
+      <b data-likes class="font-medium tabular-nums">{saved?.likes ?? "–"}</b> <span class="sr-only">likes</span>
     </button>
   </div>
 </div>
 
 <script>
-  import { SITE_API as API, cachedEdits, rememberEdits, applyText } from "../scripts/siteedits";
+  import { SITE_API as API, cachedEdits, rememberEdits, applyText, cachedCounts, rememberCounts } from "../scripts/siteedits";
   // one id a browser: what stops a like being counted twice. Not a login.
   function visitor(): string {
     try {
@@ -65,7 +68,11 @@ const { slugKey } = Astro.props;
       if (typeof j.views === "number") $("[data-views]").textContent = String(j.views);
       if (typeof j.likes === "number") $("[data-likes]").textContent = String(j.likes);
       if (typeof j.liked === "boolean") likeBtn.setAttribute("aria-pressed", String(j.liked));
+      if (typeof j.views === "number" && typeof j.likes === "number") rememberCounts({ [key]: j });
     };
+    // the last counts this browser saw, over the ones the page was built with, until the live ones come
+    const last = cachedCounts()[key];
+    if (last) { $("[data-views]").textContent = String(last.views); $("[data-likes]").textContent = String(last.likes); }
     post("/view", { slug: key, vid }).then(setCounts).catch(() => {});
 
     likeBtn.addEventListener("click", () => {

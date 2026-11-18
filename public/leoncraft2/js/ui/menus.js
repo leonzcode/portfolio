@@ -26,19 +26,19 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, DEFAULT_KEYS2, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=124';
-import { Packs } from './pack.js?v=124';
-import { Account } from '../net/account.js?v=124';
-import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=124';
-import { packArtSummary } from '../entities/packart.js?v=124';
-import { LanScreen } from './lan.js?v=124';
-import { parseSeed } from '../gen/random.js?v=124';
-import { SOUND_CREDITS } from '../sound/credits.js?v=124';
-import { PAINTING_ART } from '../paintingdata.js?v=124';
-import { SkinGalleryScreen, skinCredits } from './skins.js?v=124';
-import { SkinsScreen, skinData } from './skinmenu.js?v=124';
-import { FlatCustomizeScreen } from './flat.js?v=124';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=124';
+} from './gui.js?v=125';
+import { Packs } from './pack.js?v=125';
+import { Account } from '../net/account.js?v=125';
+import { withAccount, AccountScreen, AdminScreen, LoginScreen, logOut } from './account.js?v=125';
+import { packArtSummary } from '../entities/packart.js?v=125';
+import { LanScreen } from './lan.js?v=125';
+import { parseSeed } from '../gen/random.js?v=125';
+import { SOUND_CREDITS } from '../sound/credits.js?v=125';
+import { PAINTING_ART } from '../paintingdata.js?v=125';
+import { SkinGalleryScreen, skinCredits } from './skins.js?v=125';
+import { SkinsScreen, skinData } from './skinmenu.js?v=125';
+import { FlatCustomizeScreen } from './flat.js?v=125';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=125';
 
 const PI = Math.PI;
 
@@ -250,7 +250,7 @@ export class TitleScreen extends Screen {
     })));
     const mp = this.add(new Button(W / 2 - 100, l + 24, 200, 20, 'Multiplayer', () => withAccount(g, () => (this.hooks.multiplayer ? this.hooks.multiplayer() : g.open(new NoticeScreen('Multiplayer', 'Multiplayer is not available in Leoncraft 2 yet.'))))));
     // (offline, with only the kept session: no servers to reach)
-    if (Account.offline && !Account.checked) { mp.active = false; mp.tooltip = "Can't reach the login server"; }
+    if (Account.offline && !Account.checked) { mp.active = false; mp.tooltip = 'The school blocked my server network :( -Leon'; }
     // who you are, top left (Account: change your password), Log Out and, for an admin, Admin top right
     this.acctSig = Account.name + '|' + Account.ready + '|' + Account.offline + '|' + Account.admin;
     if (Account.guest) {
@@ -410,7 +410,7 @@ export class SelectWorldScreen extends Screen {
     if (this.importing) return;
     this.importing = true; this.lc1B.active = false; this.lc1B.message = 'Importing...'; this.gui.markDirty();
     const done = msg => { this.importing = false; if (this.lc1B) { this.lc1B.active = true; this.lc1B.message = 'Import from Leoncraft 1'; } this.gui.markDirty(); if (msg) this.gui.open(new NoticeScreen('Import from Leoncraft 1', msg)); };
-    import('../lc1/spimport.js?v=124').then(m => {
+    import('../lc1/spimport.js?v=125').then(m => {
       const saves = m.lc1Saves();
       if (!saves.length) return done('There is no Leoncraft 1 world in this browser.');
       return m.importLC1(saves[0].key, Worlds).then(r => {
@@ -745,9 +745,9 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=124';
-import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=124';
-import { minimapButtons } from './minimap.js?v=124';
+export { VideoSettingsScreen } from './video.js?v=125';
+import { VideoSettingsScreen, shadersButton, fullbrightButton } from './video.js?v=125';
+import { minimapButtons } from './minimap.js?v=125';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }

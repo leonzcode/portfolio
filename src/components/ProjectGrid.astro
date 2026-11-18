@@ -67,7 +67,7 @@ const keyOf = (p: Project) => p.socialKey ?? (p.detailHref ? p.detailHref.replac
 </div>
 
 <script>
-  import { SITE_API, cachedEdits, rememberEdits, applyText, applyOrder } from "../scripts/siteedits";
+  import { SITE_API, cachedEdits, rememberEdits, applyText, applyOrder, cachedCounts, rememberCounts, lastCount } from "../scripts/siteedits";
   import { setCounts, sortGrid } from "../scripts/sortgrid";
   // every card's views and likes, and the admin's edits, from one request for the whole page
   {
@@ -98,6 +98,15 @@ const keyOf = (p: Project) => p.socialKey ?? (p.detailHref ? p.detailHref.replac
         c.dataset.search = c.dataset.searchOrig + (t ? " " + [t.title, t.description].filter(Boolean).join(" ").toLowerCase() : "");
       }
     };
+    const showCount = (c: HTMLElement, s: { views: number; likes: number }) => {
+      const bits = [s.views + (s.views === 1 ? " view" : " views"), s.likes + (s.likes === 1 ? " like" : " likes")];
+      c.textContent = bits.join(" · ");
+      c.hidden = false;
+      setCounts(c.closest<HTMLElement>("[data-card]"), s.views, s.likes);
+    };
+    // the last counts known (this browser's, else the build's) at once: they stay if the server cannot be reached
+    const keptCounts = cachedCounts();
+    for (const c of cards) { const s = lastCount(c.dataset.socialKey!, c, keptCounts); if (s) showCount(c, s); }
     const kept = cachedEdits();
     edit(kept.text, kept.order);
     if (keys.length) {
@@ -112,12 +121,10 @@ const keyOf = (p: Project) => p.socialKey ?? (p.detailHref ? p.detailHref.replac
           }
           for (const c of cards) {
             const s = j && j[c.dataset.socialKey!];
-            if (!s) continue;
-            const bits = [s.views + (s.views === 1 ? " view" : " views"), s.likes + (s.likes === 1 ? " like" : " likes")];
-            c.textContent = bits.join(" · ");
-            c.hidden = false;
-            setCounts(c.closest<HTMLElement>("[data-card]"), s.views, s.likes);
+            if (!s || !Number.isFinite(s.views) || !Number.isFinite(s.likes)) continue;
+            showCount(c, s);
           }
+          if (j) rememberCounts(j);
           arrange();
         })
         .catch(() => {});

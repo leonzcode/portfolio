@@ -27,12 +27,12 @@
                  with Strength meanwhile; the villager it becomes gives the
                  one who cured it its best prices.
 --------------------------------------------------------------------------- */
-import { Villager } from './mobs4.js?v=124';
-import { ZombieVillager, register, TYPES } from './mobs.js?v=124';
-import { Goal, MOVE, LOOK, JUMP } from './entity.js?v=124';
-import './villagerart.js?v=124';
-import { B, BLOCKS } from '../blocks.js?v=124';
-import * as T from '../trading.js?v=124';
+import { Villager } from './mobs4.js?v=125';
+import { ZombieVillager, register, TYPES } from './mobs.js?v=125';
+import { Goal, MOVE, LOOK, JUMP } from './entity.js?v=125';
+import './villagerart.js?v=125';
+import { B, BLOCKS } from '../blocks.js?v=125';
+import * as T from '../trading.js?v=125';
 
 const R = () => Math.random();
 const RI = n => Math.floor(Math.random() * n);

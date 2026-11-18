@@ -19,9 +19,9 @@
    too, and another of them approves it: your own request's Approve is
    greyed (but for the owner's, who never needs to ask).
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, WHITE, GREY } from './gui.js?v=124';
-import { mapRequests, mapReview, srvRequests, srvReview } from '../net/net.js?v=124';
-import { Account } from '../net/account.js?v=124';
+import { Screen, Button, TextField, WHITE, GREY } from './gui.js?v=125';
+import { mapRequests, mapReview, srvRequests, srvReview } from '../net/net.js?v=125';
+import { Account } from '../net/account.js?v=125';
 
 const PER_PAGE = 6;
 const STATUS = { draft: '§7Draft', pending: '§eWaiting', approved: '§aApproved', denied: '§cDenied' };

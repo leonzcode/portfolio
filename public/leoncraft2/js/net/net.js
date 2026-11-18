@@ -61,27 +61,27 @@
                   they and their part of the world make, chest lids, bells,
                   explosions, the cracks on the block they mine (events.js)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=124';
-import { idx, H } from '../world-const.js?v=124';
-import { DIMS, DIM_IDS } from '../dims.js?v=124';
-import { Save } from '../save.js?v=124';
-import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=124';
-import { glints } from '../render/armor.js?v=124';
-import { containerKind } from '../containers.js?v=124';
-import { getSkinSettings } from '../render/avatar.js?v=124';
-import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=124';
-import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=124';
-import { Y0 } from '../world-const.js?v=124';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=124';
-import { Projectile } from '../entities/projectiles.js?v=124';
-import { Combat } from '../combat/combat.js?v=124';
-import { Vehicles } from './vehicles.js?v=124';
-import { Mobs, Orbs } from './mobs.js?v=124';
-import { Events } from './events.js?v=124';
-import { EndSync } from './endfight.js?v=124';
-import { Hub } from './hub.js?v=124';
-import { Account, wsBase, httpBase } from './account.js?v=124';
-import { rankTag } from './players.js?v=124';
+import { B, BLOCKS } from '../blocks.js?v=125';
+import { idx, H } from '../world-const.js?v=125';
+import { DIMS, DIM_IDS } from '../dims.js?v=125';
+import { Save } from '../save.js?v=125';
+import { itemName, stackToJSON, stackFromJSON, maxStack, sameItem } from '../items.js?v=125';
+import { glints } from '../render/armor.js?v=125';
+import { containerKind } from '../containers.js?v=125';
+import { getSkinSettings } from '../render/avatar.js?v=125';
+import { RemotePlayers, PlayerList, F, USE_KINDS, playerSize, nameRule } from './players.js?v=125';
+import { register, commandDef, execute, gameRule, homeBed, fail, moveSelf, setPlayerNames } from '../commands.js?v=125';
+import { Y0 } from '../world-const.js?v=125';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=125';
+import { Projectile } from '../entities/projectiles.js?v=125';
+import { Combat } from '../combat/combat.js?v=125';
+import { Vehicles } from './vehicles.js?v=125';
+import { Mobs, Orbs } from './mobs.js?v=125';
+import { Events } from './events.js?v=125';
+import { EndSync } from './endfight.js?v=125';
+import { Hub } from './hub.js?v=125';
+import { Account, wsBase, httpBase } from './account.js?v=125';
+import { rankTag } from './players.js?v=125';
 export { wsBase, httpBase };
 
 /* ---- who you are, and where the server is ---- */
@@ -104,7 +104,7 @@ export const cleanName = s => String(s || '').replace(/[^A-Za-z0-9_]/g, '').trim
            game's welcome on the socket): it has not been updated yet */
 export const SERVER_DOWN = 'down', SERVER_OLD = 'old';
 export const FAIL_TEXT = {
-  down: ["Can't connect to server", 'The multiplayer server is not answering. It may be restarting, so try again in a minute.'],
+  down: ["Can't connect to server", 'The school blocked my server network :( -Leon'],   // (Leon's own words, 2026-11-17)
   old: ['Outdated server!', 'The multiplayer server has not been updated for Leoncraft 2 yet.'],
 };
 async function answer(r) {

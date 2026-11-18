@@ -1,4 +1,4 @@
-import { SITE_API, applyOrder, applyText, cachedEdits, rememberEdits, type TextEdit } from "./siteedits";
+import { SITE_API, applyOrder, applyText, cachedCounts, cachedEdits, lastCount, rememberCounts, rememberEdits, type TextEdit } from "./siteedits";
 import { setCounts, sortGrid } from "./sortgrid";
 
 const catalog = document.querySelector<HTMLElement>("[data-others-catalog]");
@@ -52,6 +52,23 @@ if (catalog) {
   sort.addEventListener("change", refresh);
   clear.addEventListener("click", clearSearch);
   catalog.querySelector("[data-others-reset]")?.addEventListener("click", clearSearch);
+  const showCount = (card: HTMLElement, values: { views: number; likes: number }) => {
+    const region = card.querySelector<HTMLElement>("[data-others-stats]")!;
+    const views = Math.max(0, values.views);
+    const likes = Math.max(0, values.likes);
+    region.querySelector("[data-others-views]")!.textContent = views.toLocaleString();
+    region.querySelector("[data-others-likes]")!.textContent = likes.toLocaleString();
+    region.setAttribute("aria-label", `${views} views, ${likes} likes`);
+    region.title = `${views} views, ${likes} likes`;
+    region.hidden = false;
+    setCounts(card, views, likes);
+  };
+  // the last counts known (this browser's, else the build's) at once: they stay if the server cannot be reached
+  const keptCounts = cachedCounts();
+  for (const card of cards) {
+    const last = lastCount(card.dataset.key!, card.querySelector<HTMLElement>("[data-others-stats]"), keptCounts);
+    if (last) showCount(card, last);
+  }
   const cached = cachedEdits();
   setEdits(cached.text, cached.order);
 
@@ -73,16 +90,9 @@ if (catalog) {
         for (const card of cards) {
           const values = stats[card.dataset.key!];
           if (!values || !Number.isFinite(values.views) || !Number.isFinite(values.likes)) continue;
-          const region = card.querySelector<HTMLElement>("[data-others-stats]")!;
-          const views = Math.max(0, values.views);
-          const likes = Math.max(0, values.likes);
-          region.querySelector("[data-others-views]")!.textContent = views.toLocaleString();
-          region.querySelector("[data-others-likes]")!.textContent = likes.toLocaleString();
-          region.setAttribute("aria-label", `${views} views, ${likes} likes`);
-          region.title = `${views} views, ${likes} likes`;
-          region.hidden = false;
-          setCounts(card, views, likes);
+          showCount(card, values);
         }
+        rememberCounts(stats);
         // a views or likes sort chosen before the counts came is put right now
         refresh();
       })

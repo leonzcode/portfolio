@@ -10,10 +10,14 @@ if (projects.length) {
   function show(project: string, count: number | undefined) {
     for (const badge of badges.filter((item) => item.dataset.projectOnline === project)) {
       const valid = Number.isSafeInteger(count) && count! >= 0;
-      badge.dataset.onlineState = valid ? (count! > 0 ? "active" : "idle") : "unavailable";
-      badge.querySelector("[data-online-value]")!.textContent = valid ? `${count!.toLocaleString()} online` : "Unavailable";
-      badge.setAttribute("aria-label", valid ? `${count} active browsers online` : "Online count unavailable");
-      badge.title = valid ? "Active browsers in the last 45 seconds" : "The online count could not be refreshed";
+      // with no answer the badge is left out (a kept online count would be stale at once); the card still
+      // shows its last saved views and likes (Leon, 2026-11-17)
+      badge.hidden = !valid;
+      if (!valid) continue;
+      badge.dataset.onlineState = count! > 0 ? "active" : "idle";
+      badge.querySelector("[data-online-value]")!.textContent = `${count!.toLocaleString()} online`;
+      badge.setAttribute("aria-label", `${count} active browsers online`);
+      badge.title = "Active browsers in the last 45 seconds";
     }
   }
 

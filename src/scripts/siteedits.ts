@@ -29,6 +29,32 @@ export function rememberEdits(keys: string[], cats: string[], text: Record<strin
   try { localStorage.setItem(KEY, JSON.stringify(e)); } catch {}
 }
 
+/* The last views and likes the server gave, kept in this browser: shown when
+   the server cannot be reached, in place of nothing. */
+export type Count = { views: number; likes: number };
+const CKEY = "siteCounts";
+export function cachedCounts(): Record<string, Count> {
+  try {
+    const j = JSON.parse(localStorage.getItem(CKEY) || "null");
+    if (j && typeof j === "object") return j;
+  } catch {}
+  return {};
+}
+export function rememberCounts(counts: Record<string, any>) {
+  const kept = cachedCounts();
+  for (const k in counts) {
+    const s = counts[k];
+    if (s && Number.isFinite(s.views) && Number.isFinite(s.likes)) kept[k] = { views: Math.max(0, s.views), likes: Math.max(0, s.likes) };
+  }
+  try { localStorage.setItem(CKEY, JSON.stringify(kept)); } catch {}
+}
+// the count kept in this browser, else the one the page was built with (data-saved-views / data-saved-likes)
+export function lastCount(key: string, el: HTMLElement | null, kept = cachedCounts()): Count | undefined {
+  if (kept[key]) return kept[key];
+  const v = Number(el?.dataset.savedViews), l = Number(el?.dataset.savedLikes);
+  return el?.dataset.savedViews !== undefined && Number.isFinite(v) && Number.isFinite(l) ? { views: v, likes: l } : undefined;
+}
+
 /* Every element marked data-edit="title" or "desc" for this project gets the
    edited words, or its own back when the edit was taken away. */
 export function applyText(key: string, edit: TextEdit | null | undefined, root: ParentNode = document) {

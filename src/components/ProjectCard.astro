@@ -1,5 +1,6 @@
 ---
 import type { Project } from "../data/projects";
+import { savedCount } from "../data/counts";
 
 interface Props extends Project {}
 
@@ -10,6 +11,8 @@ const isExternal = !isInternalDetail && linkHref.startsWith("http");
 const isPlaceholder = linkHref === "#";
 // "ai/avalanche" from "/ai/avalanche" (or the key the project names): which project's views and likes this card shows
 const socialKey = keyGiven ?? (isInternalDetail ? detailHref!.replace(/^\//, "").replace(/\/$/, "") : null);
+// the counts at build time: shown until (or in place of) the live ones
+const saved = savedCount(socialKey);
 ---
 
 <article class="group">
@@ -77,6 +80,6 @@ const socialKey = keyGiven ?? (isInternalDetail ? detailHref!.replace(/^\//, "")
     <p data-edit={socialKey ? "desc" : undefined} data-edit-key={socialKey ?? undefined} class="mt-2 text-[14.5px] leading-relaxed text-neutral-600 dark:text-neutral-400">
       {description}
     </p>
-    {socialKey && <p class="mt-1.5 text-[12px] text-neutral-400 dark:text-neutral-500 tabular-nums" data-social-key={socialKey} hidden></p>}
+    {socialKey && <p class="mt-1.5 text-[12px] text-neutral-400 dark:text-neutral-500 tabular-nums" data-social-key={socialKey} data-saved-views={saved?.views} data-saved-likes={saved?.likes} hidden></p>}
   </a>
 </article>

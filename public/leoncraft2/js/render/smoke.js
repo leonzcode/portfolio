@@ -11,8 +11,8 @@
    (soft particles); sorted far to near; the picture's alpha is left as it
    was (the eye's measure reads it: post.js FS_LUM).
 --------------------------------------------------------------------------- */
-import { COMMON } from './glsl.js?v=124';
-import { Terrain } from '../entities/terrain.js?v=124';
+import { COMMON } from './glsl.js?v=125';
+import { Terrain } from '../entities/terrain.js?v=125';
 const THREE = window.THREE;
 
 const MAX = 240;
