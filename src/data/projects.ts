@@ -109,28 +109,6 @@ aiProjects.forEach((p) => {
 
 export const otherProjects: Project[] = [
   {
-    slug: "leoncraft2",
-    multiplayer: true,
-    title: "Leoncraft 2",
-    description:
-      "A second, much bigger take on a Minecraft-style world in the browser: terrain made the way Minecraft makes it, survival, the Nether and the End, shader levels from plain to cinematic, and online servers with accounts.",
-    href: "/leoncraft2/",
-    image: "/cards/card_leoncraft2.png",
-    tag: "Online",
-    story: [
-      "Leoncraft 2 is a new engine, not an update to the first Leoncraft. I wanted to see how close a browser version could get to the real thing, so the terrain follows Minecraft's own world generation: the same biome tables, caves, aquifers, ore veins and structures, built from the seed into chunks by a pool of web workers as you move around.",
-      "Most of survival is in: crafting, mining, hunger, mobs, farming, redstone, enchanting and brewing, the Nether and the End with the dragon fight, advancements and statistics. The graphics have a Shaders button with five levels, from Off (lit the way vanilla Minecraft lights its blocks) up to a full pipeline with soft shadows, volumetric clouds, water reflections and light shafts.",
-      "The online side runs on a Node server on my own VPS. You make an account, then join or create servers; mobs, items, explosions and the dragon fight are shared by everyone on a server, and server owners get the commands and settings a real server owner has. None of the art or sound comes from Mojang: the textures are openly licensed packs I audited and patched, and the sounds are CC0 recordings and my own synthesis.",
-    ],
-    tech: [
-      "Three.js (WebGL 2) with hand-written GLSL, plain ES modules, no build step",
-      "Minecraft-style world generation (noise router, aquifers, carvers, structures) in web workers, cached in IndexedDB",
-      "Five shader levels: vanilla-style lighting up to shadows, bloom, volumetric clouds and screen-space reflections",
-      "Node + ws server on a Hetzner VPS: accounts, shared mobs, server owners and commands",
-      "Openly licensed textures and sounds only, checked against Minecraft's own files",
-    ],
-  },
-  {
     slug: "earth-drive",
     multiplayer: true,
     title: "Earth Drive",
@@ -150,6 +128,28 @@ export const otherProjects: Project[] = [
       "Open elevation tiles and Esri World Imagery for the ground",
       "Vehicle physics with raycast suspension, tyre model and gearbox, and geometry-based crash damage",
       "Node + ws server on a Hetzner VPS for Online rooms with shared traffic and pedestrians",
+    ],
+  },
+  {
+    slug: "leoncraft2",
+    multiplayer: true,
+    title: "Leoncraft 2",
+    description:
+      "A second, much bigger take on a Minecraft-style world in the browser: terrain made the way Minecraft makes it, survival, the Nether and the End, shader levels from plain to cinematic, and online servers with accounts.",
+    href: "/leoncraft2/",
+    image: "/cards/card_leoncraft2.png",
+    tag: "Online",
+    story: [
+      "Leoncraft 2 is a new engine, not an update to the first Leoncraft. I wanted to see how close a browser version could get to the real thing, so the terrain follows Minecraft's own world generation: the same biome tables, caves, aquifers, ore veins and structures, built from the seed into chunks by a pool of web workers as you move around.",
+      "Most of survival is in: crafting, mining, hunger, mobs, farming, redstone, enchanting and brewing, the Nether and the End with the dragon fight, advancements and statistics. The graphics have a Shaders button with five levels, from Off (lit the way vanilla Minecraft lights its blocks) up to a full pipeline with soft shadows, volumetric clouds, water reflections and light shafts.",
+      "The online side runs on a Node server on my own VPS. You make an account, then join or create servers; mobs, items, explosions and the dragon fight are shared by everyone on a server, and server owners get the commands and settings a real server owner has. None of the art or sound comes from Mojang: the textures are openly licensed packs I audited and patched, and the sounds are CC0 recordings and my own synthesis.",
+    ],
+    tech: [
+      "Three.js (WebGL 2) with hand-written GLSL, plain ES modules, no build step",
+      "Minecraft-style world generation (noise router, aquifers, carvers, structures) in web workers, cached in IndexedDB",
+      "Five shader levels: vanilla-style lighting up to shadows, bloom, volumetric clouds and screen-space reflections",
+      "Node + ws server on a Hetzner VPS: accounts, shared mobs, server owners and commands",
+      "Openly licensed textures and sounds only, checked against Minecraft's own files",
     ],
   },
   /* Leon Freeski: off the listing for now (Leon, 2026-11-12); the game is still at /ski. Uncomment to list it again, and put "leon-freeski" back in others.ts PINNED.
