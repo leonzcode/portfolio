@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>File box</title>
+<link rel="icon" href="/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafaf9; --panel: #ffffff; --ink: #171717; --soft: #6b6b6b; --line: #e4e4e2;
+    --fill: #e9f1ff; --accent: #1d4ed8; --danger: #b42318; --ok: #15803d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f0f10; --panel: #17171a; --ink: #f1f1f1; --soft: #9a9aa0; --line: #2a2a2e;
+      --fill: #17233f; --accent: #8ab4ff; --danger: #ff8a7a; --ok: #86efac; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 16px/1.5 Geist, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 760px; margin: 0 auto; padding: 56px 16px 80px; }
+  h1 { font-size: 32px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 8px; }
+  .lede { color: var(--soft); margin: 0 0 32px; max-width: 54ch; }
+  [hidden] { display: none !important; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .gate { display: flex; gap: 8px; max-width: 380px; }
+  .gate input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  .btn { height: 44px; padding: 0 18px; border-radius: 8px; border: 1px solid var(--ink); background: var(--ink); color: var(--bg); font-weight: 500; font-size: 14px; white-space: nowrap; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .note { min-height: 24px; margin: 10px 0 0; font-size: 14px; color: var(--danger); }
+
+  .drop { display: block; border: 1.5px dashed var(--line); border-radius: 12px; background: var(--panel); padding: 36px 20px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--fill); }
+  .drop strong { display: block; font-weight: 500; font-size: 17px; }
+  .drop span { display: block; margin-top: 4px; color: var(--soft); font-size: 14px; }
+  .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+  .bar { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 36px 0 8px; }
+  .bar h2 { font-size: 18px; font-weight: 600; margin: 0; }
+  .bar p { margin: 0; font: 12.5px 'Geist Mono', ui-monospace, monospace; color: var(--soft); }
+  .link { background: none; border: 0; padding: 0; color: var(--soft); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
+  .link:hover { color: var(--ink); }
+
+  ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+  li { position: relative; display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-top: 1px solid var(--line); }
+  li:first-child { border-top: 0; }
+  /* an upload's row fills from the left as its bytes arrive */
+  li .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--fill); transition: width .25s linear; }
+  li > :not(.fill) { position: relative; }
+  .what { flex: 1; min-width: 0; }
+  .name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .meta { display: block; font: 12.5px 'Geist Mono', ui-monospace, monospace; color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta.bad { color: var(--danger); }
+  .act { display: flex; gap: 6px; flex: none; }
+  .act a, .act button { height: 36px; padding: 0 12px; display: inline-flex; align-items: center; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 14px; text-decoration: none; }
+  .act a:hover, .act button:hover { border-color: var(--ink); }
+  .act .del { color: var(--danger); }
+  .act .sure { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .empty { padding: 28px 16px; color: var(--soft); text-align: center; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .foot { margin-top: 28px; display: flex; justify-content: space-between; gap: 12px; color: var(--soft); font-size: 14px; }
+  @media (max-width: 520px) {
+    main { padding-top: 36px; }
+    li { flex-wrap: wrap; }
+    .what { flex-basis: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>File box</h1>
+
+  <section id="gate" hidden>
+    <p class="lede">Enter the password to send and get files.</p>
+    <form class="gate" id="gateForm">
+      <input id="pw" type="password" autocomplete="current-password" aria-label="Password" placeholder="Password" required>
+      <button class="btn" id="go">Open</button>
+    </form>
+    <p class="note" id="gateNote" role="alert"></p>
+  </section>
+
+  <section id="box" hidden>
+    <p class="lede">Anyone with the password can add, download and delete files here. Files are kept exactly as sent, so a video comes out at its full quality.</p>
+    <label class="drop" id="drop">
+      <input id="pick" type="file" multiple>
+      <strong>Choose files or drop them here</strong>
+      <span id="limit">Large videos are fine. Keep this tab open while they upload.</span>
+    </label>
+    <p class="note" id="boxNote" role="alert"></p>
+
+    <div id="upWrap" hidden>
+      <div class="bar"><h2>Uploading</h2><p id="upSum"></p></div>
+      <ul id="ups"></ul>
+    </div>
+
+    <div class="bar"><h2>Files</h2><p id="room"></p></div>
+    <ul id="files" hidden></ul>
+    <div class="empty" id="empty">No files yet.</div>
+    <div class="foot"><span id="state"></span><button class="link" id="out">Lock</button></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  var over = local && new URLSearchParams(location.search).get("api");
+  var API = over || "https://apps.leonzhao.dev/mc/drop";
+  var $ = function (id) { return document.getElementById(id); };
+  var tok = null; try { tok = localStorage.getItem("drop_tok"); } catch (e) {}
+  var CHUNK = 8 * 1024 * 1024, maxFile = 0;
+  var queue = [], running = null, listTimer = 0;
+
+  function size(n) {
+    if (n < 1024) return n + " B";
+    var u = ["KB", "MB", "GB"], i = -1;
+    do { n /= 1024; i++; } while (n >= 1024 && i < 2);
+    return (n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2)) + " " + u[i];
+  }
+  function span(s) {
+    if (!isFinite(s)) return "";
+    s = Math.round(s);
+    return s < 60 ? s + " s" : s < 3600 ? Math.floor(s / 60) + " min " + (s % 60) + " s" : Math.floor(s / 3600) + " h " + Math.floor(s % 3600 / 60) + " min";
+  }
+  function when(t) { return new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); }
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  function call(path, body) {
+    return fetch(API + path, body ? { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(body) } : { cache: "no-store" })
+      .then(function (r) { return r.json().then(function (j) { if (r.status === 401) locked(); return j; }); });
+  }
+
+  // ---- the password ---------------------------------------------------------------
+  function show(open) { $("gate").hidden = open; $("box").hidden = !open; if (!open) $("pw").focus(); }
+  function locked() { tok = null; try { localStorage.removeItem("drop_tok"); } catch (e) {} clearTimeout(listTimer); show(false); }
+  $("gateForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    $("go").disabled = true; $("gateNote").textContent = "";
+    call("/login", { pw: $("pw").value }).then(function (j) {
+      if (!j.tok) { $("gateNote").textContent = j.error || "Wrong password."; return; }
+      tok = j.tok; try { localStorage.setItem("drop_tok", tok); } catch (e) {}
+      $("pw").value = ""; show(true); list();
+    }).catch(function () { $("gateNote").textContent = "Could not reach the server. Try again in a moment."; })
+      .then(function () { $("go").disabled = false; });
+  });
+  $("out").addEventListener("click", function () {
+    if (running && !confirm("Uploads are still going. Lock and stop them?")) return;
+    queue.slice().forEach(cancel); locked();
+  });
+
+  // ---- the list -------------------------------------------------------------------
+  function list() {
+    clearTimeout(listTimer);
+    if (!tok) return;
+    call("/list?tok=" + encodeURIComponent(tok)).then(function (j) {
+      if (!j.files) return;
+      CHUNK = j.chunk || CHUNK; maxFile = j.maxFile || 0;
+      $("room").textContent = size(j.used) + " of " + size(j.cap) + " used";
+      if (maxFile) $("limit").textContent = "Large videos are fine, up to " + size(maxFile) + " a file. Keep this tab open while they upload.";
+      draw(j.files); $("state").textContent = "";
+    }).catch(function () { $("state").textContent = "Could not reach the server. Trying again."; })
+      .then(function () { listTimer = setTimeout(list, 15000); });
+  }
+  function draw(files) {
+    var ul = $("files"); ul.textContent = "";
+    files.slice().sort(function (a, b) { return b.at - a.at; }).forEach(function (f) {
+      var li = el("li"), what = el("div", "what"), act = el("div", "act");
+      what.appendChild(el("span", "name", f.name)); what.lastChild.title = f.name;
+      what.appendChild(el("span", "meta", size(f.size) + " · " + when(f.at)));
+      var a = el("a", "", "Download");
+      a.href = API + "/get?tok=" + encodeURIComponent(tok) + "&id=" + f.id; a.setAttribute("download", f.name);
+      var del = el("button", "del", "Delete"), sure = 0;
+      del.addEventListener("click", function () {
+        if (!del.classList.contains("sure")) {
+          del.classList.add("sure"); del.textContent = "Delete for everyone?";
+          sure = setTimeout(function () { del.classList.remove("sure"); del.textContent = "Delete"; }, 4000);
+          return;
+        }
+        clearTimeout(sure); del.disabled = true; del.textContent = "Deleting";
+        call("/delete", { tok: tok, id: f.id }).then(function (j) { if (j.error && !j.auth) $("boxNote").textContent = j.error; list(); })
+          .catch(function () { $("boxNote").textContent = "Could not delete that. Try again."; list(); });
+      });
+      act.appendChild(a); act.appendChild(del);
+      li.appendChild(what); li.appendChild(act); ul.appendChild(li);
+    });
+    ul.hidden = !files.length; $("empty").hidden = !!files.length;
+  }
+
+  // ---- uploads: one file at a time, in pieces, each piece tried again until it lands ----
+  function add(fileList) {
+    $("boxNote").textContent = "";
+    Array.prototype.forEach.call(fileList, function (file) {
+      if (!file.size) { $("boxNote").textContent = file.name + " is empty, so it was left out."; return; }
+      if (maxFile && file.size > maxFile) { $("boxNote").textContent = file.name + " is over the " + size(maxFile) + " limit."; return; }
+      var u = { file: file, id: null, got: 0, stop: false, xhr: null, li: el("li") };
+      u.fill = el("div", "fill"); var what = el("div", "what"), act = el("div", "act");
+      what.appendChild(el("span", "name", file.name));
+      u.meta = el("span", "meta", size(file.size) + " · waiting"); what.appendChild(u.meta);
+      var x = el("button", "", "Cancel"); x.addEventListener("click", function () { cancel(u); });
+      act.appendChild(x);
+      u.li.appendChild(u.fill); u.li.appendChild(what); u.li.appendChild(act);
+      $("ups").appendChild(u.li); queue.push(u);
+    });
+    $("upWrap").hidden = !queue.length; sum();
+    if (!running) next();
+  }
+  function sum() { $("upSum").textContent = queue.length ? queue.length + (queue.length === 1 ? " file left" : " files left") : ""; }
+  function gone(u) {
+    var i = queue.indexOf(u); if (i >= 0) queue.splice(i, 1);
+    u.li.remove(); $("upWrap").hidden = !queue.length; sum();
+  }
+  function cancel(u) {
+    u.stop = true; if (u.xhr) u.xhr.abort();
+    if (u.id && tok) call("/delete", { tok: tok, id: u.id }).catch(function () {});
+    if (u !== running) gone(u);
+  }
+  function fail(u, text) { u.failed = true; u.meta.textContent = text; u.meta.className = "meta bad"; u.fill.style.width = "0"; u.li.querySelector("button").textContent = "Dismiss"; }
+  function next() {
+    running = queue.filter(function (u) { return !u.failed; })[0] || null;
+    if (!running) return;
+    var u = running;
+    send(u).then(function () { gone(u); list(); }, function (err) {
+      if (u.stop) gone(u); else fail(u, (err && err.message) || "This upload did not finish.");
+    }).then(next);
+  }
+  // one piece; resolves with how much the server now holds
+  function piece(u, off) {
+    return new Promise(function (done, bad) {
+      var x = new XMLHttpRequest(); u.xhr = x;
+      x.open("POST", API + "/chunk?tok=" + encodeURIComponent(tok) + "&id=" + u.id + "&off=" + off);
+      x.setRequestHeader("Content-Type", "application/octet-stream");
+      x.upload.onprogress = function (e) { tick(u, off + e.loaded); };
+      x.onload = function () {
+        var j = {}; try { j = JSON.parse(x.responseText); } catch (e) {}
+        if (x.status === 401) { locked(); return bad({ fatal: "Log in again to carry on." }); }
+        if (x.status === 404) return bad({ fatal: "The server no longer has this upload. Add the file again." });
+        if (typeof j.got === "number") return done({ got: j.got, busy: j.busy });
+        bad({});
+      };
+      x.onerror = x.ontimeout = function () { bad({}); };
+      x.onabort = function () { bad({ fatal: "Stopped." }); };
+      x.send(u.file.slice(off, Math.min(u.file.size, off + CHUNK)));
+    });
+  }
+  function tick(u, sent) {
+    var now = Date.now();
+    if (!u.t0) { u.t0 = now; u.b0 = sent; }
+    var rate = now - u.t0 > 1500 ? (sent - u.b0) / ((now - u.t0) / 1000) : 0;
+    u.fill.style.width = (100 * sent / u.file.size).toFixed(2) + "%";
+    u.meta.className = "meta";
+    u.meta.textContent = size(sent) + " of " + size(u.file.size) + (rate > 0 ? " · " + size(rate) + "/s · " + span((u.file.size - sent) / rate) + " left" : "");
+  }
+  async function send(u) {
+    var misses = 0, j;
+    function trouble(fatal) {
+      if (u.stop) throw new Error("Stopped.");
+      if (fatal) throw new Error(fatal);
+      if (++misses > 60) throw new Error("The connection kept dropping. Add the file again to retry.");
+      u.meta.textContent = "Connection lost. Trying again."; u.t0 = 0;
+      return wait(Math.min(15000, 1000 * misses));
+    }
+    for (;;) {
+      try { j = await call("/start", { tok: tok, name: u.file.name, size: u.file.size, type: u.file.type }); } catch (e) { await trouble(); continue; }
+      if (j.id) { u.id = j.id; break; }
+      throw new Error(j.auth ? "Log in again to carry on." : j.error || "The server did not take this file.");
+    }
+    while (u.got < u.file.size) {
+      if (u.stop) throw new Error("Stopped.");
+      try {
+        var r = await piece(u, u.got);
+        if (r.busy) await wait(1500);
+        u.got = r.got; misses = 0; tick(u, u.got);
+      } catch (e) { await trouble(e && e.fatal); }
+    }
+    u.meta.textContent = "Finishing";
+    for (;;) {
+      try { j = await call("/finish", { tok: tok, id: u.id }); } catch (e) { await trouble(); continue; }
+      if (j.file) return;
+      throw new Error(j.error || "The server could not finish this file.");
+    }
+  }
+
+  $("pick").addEventListener("change", function () { add(this.files); this.value = ""; });
+  var drop = $("drop");
+  ["dragenter", "dragover"].forEach(function (n) { drop.addEventListener(n, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
+  ["dragleave", "drop"].forEach(function (n) { drop.addEventListener(n, function (e) { e.preventDefault(); drop.classList.remove("over"); }); });
+  drop.addEventListener("drop", function (e) { if (e.dataTransfer && e.dataTransfer.files.length) add(e.dataTransfer.files); });
+  window.addEventListener("dragover", function (e) { e.preventDefault(); });
+  window.addEventListener("drop", function (e) { e.preventDefault(); });
+  window.addEventListener("beforeunload", function (e) { if (running) { e.preventDefault(); e.returnValue = ""; } });
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("#ups button");
+    if (b && b.textContent === "Dismiss") { var u = queue.filter(function (q) { return q.li.contains(b); })[0]; if (u) gone(u); }
+  });
+
+  window.__drop = { queue: queue, add: add };
+  show(!!tok); if (tok) list();
+})();
+</script>
+</body>
+</html>
