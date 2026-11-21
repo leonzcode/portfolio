@@ -18,7 +18,7 @@ const here = new URL('../', import.meta.url);                // https://leonzhao
 const qs = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const MAPS = 'Jump Line, Freeride, Schilthorn 2023, Buttermilk 2024 and Genting 2022';
+const MAPS = 'Jump Line, Freeride, X-Games and Beijing 2022 Olympics';
 const OFF_WORDS = 'Offline. Riding on your own works; riding online and new places on Any mountain come back with the connection.';
 
 // the same place in the copy as the worker gives a file (sw.js keyOf)

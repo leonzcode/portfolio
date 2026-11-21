@@ -1,37 +1,37 @@
 // Leon Freeski: boot, settings, the frame loop.
 import * as THREE from 'three';
-import { Terrain, setPark, setMountain, height, normal, baseLine, ground, runHalf } from './terrain.js?v=32';
-import { fixWinding, smallFeatures, overlaySteps, overlayMaterial, overlayDip, PostAA, mergeStill } from './gfx.js?v=32';   // (G, round 11)   // (L, round 12: mergeStill)
-import { makePark, makeJumpLine, emptyPark, featureMeshSteps, railMeshes } from './park.js?v=32';
-import { makeMaterials, snowUniforms, rockFieldAfter } from './materials.js?v=32';
-import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=32';
-import { Mountain, SPOTS } from './dem.js?v=32';
-import { Skier } from './skier.js?v=32';
-import { Rig, prefetchRider } from './rig.js?v=32';
-import './board.js?v=32';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
+import { Terrain, setPark, setMountain, height, normal, baseLine, ground, runHalf } from './terrain.js?v=33';
+import { fixWinding, smallFeatures, overlaySteps, overlayMaterial, overlayDip, PostAA, mergeStill } from './gfx.js?v=33';   // (G, round 11)   // (L, round 12: mergeStill)
+import { makePark, makeJumpLine, emptyPark, featureMeshSteps, railMeshes } from './park.js?v=33';
+import { makeMaterials, snowUniforms, rockFieldAfter } from './materials.js?v=33';
+import { makeSky, Forest, makeRanges, makeMountainRanges, makeProps } from './world.js?v=33';
+import { Mountain, SPOTS } from './dem.js?v=33';
+import { Skier } from './skier.js?v=33';
+import { Rig, prefetchRider } from './rig.js?v=33';
+import './board.js?v=33';                 // (B: registers the snowboard with the rig: Rig.loader.board, Rig.poser.board)
 // (B: the snow scooter and snowbike (scoot.js: Rig.loader.scoot / bike, Rig.poser.scoot / bike) and the sled (sled.js:
 // Rig.loader.sled, Rig.poser.sled) register the same way; C, 2026-11-11, loading: they come in when a ride needs them,
 // yours or another rider's (needRide below), not with the game's first files)
-import { Tricks } from './tricks.js?v=32';
-import { Input } from './input.js?v=32';
-import { Cams } from './camera.js?v=32';
-import { Tracks, Spray } from './snow.js?v=32';
-import { Hud } from './hud.js?v=32';
-import { Sound } from './sound.js?v=32';
-import { Net } from './net.js?v=32';
-import { mergeGear } from './gear.js?v=32';
-import { shadowOnly } from './shadowproxy.js?v=32';
+import { Tricks } from './tricks.js?v=33';
+import { Input } from './input.js?v=33';
+import { Cams } from './camera.js?v=33';
+import { Tracks, Spray } from './snow.js?v=33';
+import { Hud } from './hud.js?v=33';
+import { Sound } from './sound.js?v=33';
+import { Net } from './net.js?v=33';
+import { mergeGear } from './gear.js?v=33';
+import { shadowOnly } from './shadowproxy.js?v=33';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Touch, TOUCH_GRABS } from './touch.js?v=32';
-import { Locker, loadLook, cleanLook } from './locker.js?v=32';
+import { Touch, TOUCH_GRABS } from './touch.js?v=33';
+import { Locker, loadLook, cleanLook } from './locker.js?v=33';
 // (C, 2026-11-11, loading: the map's own modules come in below, only for that map: the chairlift (L: lift.js), the
 // Freeride mountain (F: freeride.js, frrock.js) on Freeride, the T-bar (J: tbar.js) on the Jump Line)
-import { Online } from './online.js?v=32';            // (M: the home screen's online buttons, and watching others)
+import { Online } from './online.js?v=33';            // (M: the home screen's online buttons, and watching others)
 
 const $ = id => document.getElementById(id);
 const STEP = 1 / 120;
 // (C, 2026-11-11, loading) the scooter's, the bike's and the sled's modules, fetched the first time a ride needs them
-const RIDE_MODS = { scoot: './scoot.js?v=32', bike: './scoot.js?v=32', sled: './sled.js?v=32' };
+const RIDE_MODS = { scoot: './scoot.js?v=33', bike: './scoot.js?v=33', sled: './sled.js?v=33' };
 const needRide = kind => RIDE_MODS[kind] ? import(RIDE_MODS[kind]).catch(e => console.warn('ride', kind, e)) : Promise.resolve();
 /* (C, 2026-11-11, for "leonski never loads on chromebook and takes too long to load") The start-up's progress bar and
    failures are index.html's (__skiBoot, there before any module): step(label, share) shows a step and gives the page a
@@ -56,8 +56,7 @@ if (opts.scheme !== 'keys' && opts.scheme !== 'shred') opts.scheme = 'shred';
 // only the Jump Line is offered for now (Leon, 2026-11-05: "Remove mamoth map for now and also remove the other map as well
 // just keep jump line for now"); the other maps stay in the code and open with ?map= for tests
 // (F, 2026-11-06: and Freeride, the made-up big-mountain face, picked on the home screen)
-if (opts.map !== 'freeride' && opts.map !== 'world' && opts.map !== 'genting2022') opts.map = 'jumpline';   // (O, round 12: and Genting 2022, m_oly22.js)   // (W, round 10: and Any mountain, its place in opts.place: wmap.js)
-if (saved.map === 'schilthorn23') opts.map = saved.map;   // (N, round 12: the Nines map, m_nines.js)
+if (opts.map !== 'freeride' && opts.map !== 'genting2022') opts.map = 'jumpline';   // (2026-11-20, Leon: Any mountain and the Schilthorn map are not offered for now; ?map= still opens them)   // (O, round 12: and Genting 2022, m_oly22.js)   // (W, round 10: and Any mountain, its place in opts.place: wmap.js)
 if (saved.map === 'buttermilk2024') opts.map = saved.map;   // (X, round 12: the X Games course map, m_xg.js)
 const qs = new URLSearchParams(location.search);
 if (qs.get('gfx')) opts.gfx = qs.get('gfx');
@@ -88,8 +87,8 @@ function detectTier() {
    only when that matches, so a change to that code is worked out again, never mistaken. Asked for at once, beside the
    downloads; null when there is none to use. */
 const PLANS = {
-  jumpline: { key: 'ski_jlplan', files: ['./park.js?v=32', './terrain.js?v=32', './noise.js?v=32'] },
-  freeride: { key: 'ski_frplan', files: ['./freeride.js?v=32', './frland.js?v=32', './park.js?v=32', './terrain.js?v=32', './noise.js?v=32'] },
+  jumpline: { key: 'ski_jlplan', files: ['./park.js?v=33', './terrain.js?v=33', './noise.js?v=33'] },
+  freeride: { key: 'ski_frplan', files: ['./freeride.js?v=33', './frland.js?v=33', './park.js?v=33', './terrain.js?v=33', './noise.js?v=33'] },
 };
 function codePrint(texts) {
   let h = 0x811c9dc5, n = 0;
@@ -102,7 +101,7 @@ const planP = PL ? (async () => {
     const texts = await Promise.all(PL.files.map(f => fetch(new URL(f, import.meta.url), { cache: 'force-cache' }).then(r => { if (!r.ok) throw new Error(f + ' ' + r.status); return r.text(); })));
     const print = codePrint(texts);
     try { const k = JSON.parse(localStorage.getItem(PL.key) || 'null'); if (k && k.print === print && k.plan) return { print, plan: k.plan }; } catch (e) {}
-    try { const r = await fetch(new URL('../data/' + planMap + '.json?v=32', import.meta.url)); if (r.ok) { const d = await r.json(); if (d && d.print === print && d.plan) return { print, plan: d.plan, keep: true }; } } catch (e) {}
+    try { const r = await fetch(new URL('../data/' + planMap + '.json?v=33', import.meta.url)); if (r.ok) { const d = await r.json(); if (d && d.print === print && d.plan) return { print, plan: d.plan, keep: true }; } } catch (e) {}
     return { print, plan: null };
   } catch (e) { return null; }
 })() : null;
@@ -113,7 +112,7 @@ const tier = opts.gfx === 'auto' ? det.tier : opts.gfx;
 // (2026-11-12) Freeride's rock faces: their worker starts now, beside the rest of the start (rockP, below)
 let rockWorker = null;
 if ((qs.get('map') || opts.map) === 'freeride') {
-  try { const w = rockWorker = new Worker(new URL('./frrockworker.js?v=32', import.meta.url), { type: 'module' }); w.onerror = () => { w.failed = true; }; w.postMessage({ low: tier === 'low' }); } catch (e) { rockWorker = null; }
+  try { const w = rockWorker = new Worker(new URL('./frrockworker.js?v=33', import.meta.url), { type: 'module' }); w.onerror = () => { w.failed = true; }; w.postMessage({ low: tier === 'low' }); } catch (e) { rockWorker = null; }
 }
 const Q = {
   // (E, 2026-11-08, the lag pass: bigger terrain patches split later, the same detail on the screen in about a third
@@ -182,16 +181,16 @@ await step(opts.map === 'freeride' ? 'Building the mountain' : 'Building the jum
 // (one that does not come down: the page is tried once more by itself, then says so, as for the first files)
 bt('step1');
 const mapMod = u => import(u).catch(e => { if (BOOT.noModule) BOOT.noModule(); throw e; });
-const [LM, TM, FM, RM] = await Promise.all([opts.map === 'freeride' ? mapMod('./lift.js?v=32') : {}, opts.map === 'jumpline' ? mapMod('./tbar.js?v=32') : {},
-  opts.map === 'freeride' ? mapMod('./freeride.js?v=32') : {}, opts.map === 'freeride' ? mapMod('./frrock.js?v=32') : {}, needRide(opts.ride)]);   // (and your ride's own module, when it is not skis or a board)
+const [LM, TM, FM, RM] = await Promise.all([opts.map === 'freeride' ? mapMod('./lift.js?v=33') : {}, opts.map === 'jumpline' ? mapMod('./tbar.js?v=33') : {},
+  opts.map === 'freeride' ? mapMod('./freeride.js?v=33') : {}, opts.map === 'freeride' ? mapMod('./frrock.js?v=33') : {}, needRide(opts.ride)]);   // (and your ride's own module, when it is not skis or a board)
 const { planLift, Lift } = LM, { planTbar, Tbar } = TM, { makeFreeride } = FM, { buildRock, buildJibs } = RM;
 // (W, round 10: Any mountain's own modules, wmap.js and what it imports)
-const WM = opts.map === 'world' ? await mapMod('./wmap.js?v=32') : {};
+const WM = opts.map === 'world' ? await mapMod('./wmap.js?v=33') : {};
 // (N, round 12: the Nines map's own modules, m_nines.js, and the T-bar it shares with the Jump Line: the venue's surface lift)
-const [NM, NTM] = opts.map === 'schilthorn23' ? await Promise.all([mapMod('./m_nines.js?v=32'), mapMod('./tbar.js?v=32')]) : [null, null];
+const [NM, NTM] = opts.map === 'schilthorn23' ? await Promise.all([mapMod('./m_nines.js?v=33'), mapMod('./tbar.js?v=33')]) : [null, null];
 // (X, round 12: the X Games course map's own modules, m_xg.js and m_xgvenue.js; its chairlift is wlift.js's, turned)
-const XM = opts.map === 'buttermilk2024' ? await mapMod('./m_xgvenue.js?v=32') : null;
-const OM = opts.map === 'genting2022' ? await mapMod('./m_oly22.js?v=32') : null;   // (O, round 12: Genting 2022's own modules, m_oly22.js and what it imports)
+const XM = opts.map === 'buttermilk2024' ? await mapMod('./m_xgvenue.js?v=33') : null;
+const OM = opts.map === 'genting2022' ? await mapMod('./m_oly22.js?v=33') : null;   // (O, round 12: Genting 2022's own modules, m_oly22.js and what it imports)
 bt('imports');
 let mtn = null;
 if (SPOTS[opts.map]) {
@@ -790,7 +789,7 @@ addEventListener('keydown', e => {
   e.preventDefault();
   if (!playing || paused || replay || online.watching) return;
   if (fly) { fly.toggle(); return; }
-  if (!flyP) flyP = import('./fly.js?v=32').then(m => { fly = m.makeFly(flyCtx); fly.toggle(); }).catch(err => { flyP = null; console.warn('fly', err); hud.flash('Fly mode did not load', 1600); });
+  if (!flyP) flyP = import('./fly.js?v=33').then(m => { fly = m.makeFly(flyCtx); fly.toggle(); }).catch(err => { flyP = null; console.warn('fly', err); hud.flash('Fly mode did not load', 1600); });
 });
 
 // ---- the loop --------------------------------------------------------------------------------------------------------

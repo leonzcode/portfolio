@@ -21,9 +21,9 @@
 
    The frame (m_olyland.js): x the rider's left, z down the course, the start at z 0. */
 import * as THREE from 'three';
-import { setRun, baseLine, pitchAt, ground } from './terrain.js?v=32';
-import { Kicker, Rail, Shape, SkewKicker, Quarter, assemble } from './park.js?v=32';
-import { smoothstep, clamp } from './noise.js?v=32';
+import { setRun, baseLine, pitchAt, ground } from './terrain.js?v=33';
+import { Kicker, Rail, Shape, SkewKicker, Quarter, assemble } from './park.js?v=33';
+import { smoothstep, clamp } from './noise.js?v=33';
 
 const RAD = Math.PI / 180;
 // ---- the course's profile (terrain.js run sections: [z where a pitch starts, degrees], 30 m smoothing) --------------

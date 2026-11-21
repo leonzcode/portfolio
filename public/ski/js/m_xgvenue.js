@@ -9,13 +9,13 @@
    knuckles. Everything static is merged into a few meshes by material. */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeXg, courseX, courseHalf, S1_FOOT, MAP_NAME, MAP_SUB, MAP_ID } from './m_xg.js?v=32';
-import { height, ground } from './terrain.js?v=32';
-import { planLift, liftHeights } from './lift.js?v=32';
-import { WorldLifts } from './wlift.js?v=32';
-import { snowUniforms, setRockSource } from './materials.js?v=32';
-import { setSunPath } from './env.js?v=32';
-import { fbm, simplex, smoothstep, clamp } from './noise.js?v=32';
+import { makeXg, courseX, courseHalf, S1_FOOT, MAP_NAME, MAP_SUB, MAP_ID } from './m_xg.js?v=33';
+import { height, ground } from './terrain.js?v=33';
+import { planLift, liftHeights } from './lift.js?v=33';
+import { WorldLifts } from './wlift.js?v=33';
+import { snowUniforms, setRockSource } from './materials.js?v=33';
+import { setSunPath } from './env.js?v=33';
+import { fbm, simplex, smoothstep, clamp } from './noise.js?v=33';
 
 export { MAP_NAME, MAP_SUB, MAP_ID };
 const DATA = new URL('../data/' + MAP_ID + '/', import.meta.url);
@@ -82,7 +82,7 @@ export async function makeXgMap(q, step) {
   snowUniforms.uDye.value.set(0.007, 0.40, 0.83);
   const X = await makeXg(q, step);
   const { park, land, mtn } = X;
-  const osm = await fetch(new URL('osm.json?v=32', DATA)).then(r => r.ok ? r.json() : null).catch(() => null) || { woods: [], buildings: [], roads: [], pistes: [] };
+  const osm = await fetch(new URL('osm.json?v=33', DATA)).then(r => r.ok ? r.json() : null).catch(() => null) || { woods: [], buildings: [], roads: [], pistes: [] };
   X.osm = osm;
   // ---- where things may not stand: the course and its sides, the pipe and its decks, the base, the lift line
   const P = park.PIPE;

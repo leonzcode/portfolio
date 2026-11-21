@@ -13,11 +13,11 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Rig, springBank, smooth01, wrapPi, softReach, wob, segSeg } from './rig.js?v=32';
-import { clamp, smoothstep } from './noise.js?v=32';
-import { height } from './terrain.js?v=32';
-import { LOOK } from './gear.js?v=32';
-import { RIDE_KEYS, RIDE_HELP } from './input.js?v=32';
+import { Rig, springBank, smooth01, wrapPi, softReach, wob, segSeg } from './rig.js?v=33';
+import { clamp, smoothstep } from './noise.js?v=33';
+import { height } from './terrain.js?v=33';
+import { LOOK } from './gear.js?v=33';
+import { RIDE_KEYS, RIDE_HELP } from './input.js?v=33';
 
 const D = Math.PI / 180;
 // the board's size (the model is scaled to it), where the bindings are, and their angles (a mild duck stance)
@@ -242,7 +242,7 @@ function loadModel() {
   if (_gltf) return _gltf;
   const loader = new GLTFLoader();
   const draco = new DRACOLoader(); draco.setDecoderPath('/car/vendor/three/addons/libs/draco/'); loader.setDRACOLoader(draco);
-  _gltf = loader.loadAsync('./models/board/board.glb?v=32').catch(e => { _gltf = null; throw e; });
+  _gltf = loader.loadAsync('./models/board/board.glb?v=33').catch(e => { _gltf = null; throw e; });
   return _gltf;
 }
 // the board's half width along it (at -1 tail .. +1 nose), measured from the model once
@@ -360,7 +360,7 @@ const PALM = 0.045;
 // 1.00; the sleeve no longer fills the bottom left)
 const BFP = { lean: 0.25, hips: 0.3, lat: 0.06, up: -0.04, fwd: 0.12 };
 // first person: how far down the view looks (tan of the angle under the level), for the board and the sled
-export const FPV = { board: 0.7, sled: 0.62 };
+export const FPV = { board: 0.56, sled: 0.62 };   // (2026-11-20: the board's view less far down, with the wider lens)
 Rig.BFP = BFP;
 const _eu = new THREE.Euler(), _m4 = new THREE.Matrix4();
 const gp = { pt: V(), palm: V(), fingers: V() }, gp2 = { pt: V(), palm: V(), fingers: V() };
@@ -1012,7 +1012,7 @@ Rig.poser.board = (rig, S0, dt) => {
   bd.backOut = false;
   rig.placeHead(hdQ);
   // (in the air the camera's own way: the body's turn, looking down at a grab)
-  if (!air) firstPersonEyes(rig, R, S.vel || ZERO, speed, S.sw ? -1 : 1, FPV.board, 0.12);
+  if (!air) firstPersonEyes(rig, R, S.vel || ZERO, speed, S.sw ? -1 : 1, FPV.board, 0.2);
   rig.flushTree(rig.body);
 };
 /* (2026-11-08, R's first person for every ride: rig.fpEye, rig.fpLook, set after placeHead) the eyes (placeHead's own,

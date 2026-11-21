@@ -8,7 +8,7 @@
    own side slope over a rounded shoulder down into the ground, as packed snow does. The ends of the extruded direction
    fall the same way, or are cut square (ends: 'cut'), or tapered into the ground (ends: 'taper').
    Each Ext has a mesh of its own (main.js builds it with the jumps: park.js featureMeshSteps reads toWorld, rows, cols). */
-import { smoothstep, clamp, smax } from './noise.js?v=32';
+import { smoothstep, clamp, smax } from './noise.js?v=33';
 
 const RAD = Math.PI / 180;
 const uniq = a => [...new Set(a.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);

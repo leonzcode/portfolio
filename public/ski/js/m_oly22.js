@@ -7,17 +7,17 @@
      { mtn, park, land, makeLift(scene, q), dress(scene, mats, q, forest), runOverAt(p) }
    The map's name on screen is the place and the year only. */
 import * as THREE from 'three';
-import { setMountain } from './terrain.js?v=32';
-import { LOOK, snowUniforms } from './materials.js?v=32';
-import { setSunPath } from './env.js?v=32';
-import { liftLines, planWorldLifts, WorldLifts } from './wlift.js?v=32';
-import { loadLand, makeFarHills, plantTrees, makeTrees, CORRIDOR } from './m_olyland.js?v=32';
-import { setProfile, makeCourse } from './m_olycourse.js?v=32';
-import { buildVenue } from './m_olybuild.js?v=32';
-import { smoothstep } from './noise.js?v=32';
+import { setMountain } from './terrain.js?v=33';
+import { LOOK, snowUniforms } from './materials.js?v=33';
+import { setSunPath } from './env.js?v=33';
+import { liftLines, planWorldLifts, WorldLifts } from './wlift.js?v=33';
+import { loadLand, makeFarHills, plantTrees, makeTrees, CORRIDOR } from './m_olyland.js?v=33';
+import { setProfile, makeCourse } from './m_olycourse.js?v=33';
+import { buildVenue } from './m_olybuild.js?v=33';
+import { smoothstep } from './noise.js?v=33';
 
 export const MAP_ID = 'genting2022';
-export const MAP_NAME = 'Genting 2022';
+export const MAP_NAME = 'Beijing 2022 Olympics';   // (2026-11-20, Leon's name for it)
 export const MAP_SUB = 'based on the slopestyle course built there for the 2022 Winter Games';
 
 /* the bare ground, in the snow's shader (materials.js calls LOOK.hook(shader, detail) when it compiles the snow, the

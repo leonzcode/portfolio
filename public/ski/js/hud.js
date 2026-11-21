@@ -1,7 +1,7 @@
 // The heads-up display: speed, score and the line's multiplier, trick names as they land, rail balance, a grab list.
-import { GRABS, guideOf } from './grabs.js?v=32';
-import { keyHelp } from './input.js?v=32';
-import { rideGrabDef, rideGuide } from './board.js?v=32';      // (B: a board's, scooter's... own grab names in the lists)
+import { GRABS, guideOf } from './grabs.js?v=33';
+import { keyHelp } from './input.js?v=33';
+import { rideGrabDef, rideGuide } from './board.js?v=33';      // (B: a board's, scooter's... own grab names in the lists)
 
 const $ = id => document.getElementById(id);
 /* (2026-11-12, Leon: "make it so that controls appear at the top left every time unless the user toggles them off")
@@ -12,7 +12,7 @@ function mainKeys(scheme, kind) {
     ['A / D', 'turn; in the air, spin'], ['W', 'tuck; in the air, front flip'], ['S', 'brake; in the air, back flip'],
     ['Space', 'hold to crouch, let go to pop'], ['Q / E', 'tilt the spin (corks)'],
     ['Shift + W / S', sled ? 'with A / D: spin flat on the snow' : 'butter on the nose / tail'],
-    ['Rail: A / D', 'shift your weight; Q / E turn on it'],   // (R, round 12)
+    ['Rail: A / D', 'turn the skis on it (Q / E too)'],   // (R, round 12)
     ['C', 'camera'], ['R', 'start again a little earlier'], ['Backspace', 'back to the top'],
     ['E', 'at a lift: ride it up'], FLY_KEY, ['Esc', 'pause, all keys'],   // (W11 fly: FLY_KEY)
   ];
@@ -20,7 +20,7 @@ function mainKeys(scheme, kind) {
     ['← / →', 'turn; in the air, spin'], ['↑', 'tuck; in the air, front flip'], ['↓', 'brake; in the air, back flip'],
     ['Space', 'hold to crouch, let go to pop'], ['Shift', 'push hard forward, uphill too'], ['G / H', 'Lincoln loop'],
     ['N', sled ? 'with ← / →: spin flat on the snow' : 'butter (with ↓ the tail)'],
-    ['Rail: A / D', 'shift your weight; ← / → turn on it'],   // (R, round 12)
+    ['Rail: A / D', 'turn the skis on it (← / → too)'],   // (R, round 12)
     ['Q', 'camera'], ['Enter', 'back to your last crash; twice: the start'], ['Backspace', 'back to the top'],
     ['E', 'at a lift: ride it up'], FLY_KEY, ['Esc', 'pause, all keys'],   // (W11 fly)
   ];

@@ -1,8 +1,8 @@
 // Cameras: chase (behind the travel, held steady through spins), far chase, first person (a helmet camera at the
 // rider's eyes, turning with the head) and filmer (tripod spots beside the features, panning and zooming to follow).
 import * as THREE from 'three';
-import { height } from './terrain.js?v=32';
-import { FollowQ } from './rig.js?v=32';
+import { height } from './terrain.js?v=33';
+import { FollowQ } from './rig.js?v=33';
 
 const MODES = ['chase', 'far', 'pov', 'film'];
 const _lf = new THREE.Vector3(), _Y = new THREE.Vector3(0, 1, 0);   // (L: the chairlift's look round)
@@ -283,7 +283,9 @@ export class Cams {
        swing out the camera was, and for a few frames of a crash the body was seen from half a metre away with no head) */
     if (t.distanceToSquared(EYE) < 0.09) cam.layers.disable(1);
     // about 104 degrees across whatever the screen's shape (66 to 96 up and down), a little wider with speed
-    const want = THREE.MathUtils.clamp(2 * Math.atan(Math.tan(52 * Math.PI / 180) / (cam.aspect || 1.6)) * 180 / Math.PI, 66, 96) + Math.min(4, sk.v.length() * 0.15);
+    // (2026-11-20, Leon: "see both skis and forward more at the same time instead of having to just look down": wider,
+    // about 122 degrees across and at least 84 up and down, with the view aimed less far down, POV below)
+    const want = THREE.MathUtils.clamp(2 * Math.atan(Math.tan(61 * Math.PI / 180) / (cam.aspect || 1.6)) * 180 / Math.PI, 84, 100) + Math.min(4, sk.v.length() * 0.15);
     this.fov = reset ? want : this.fov + (want - this.fov) * Math.min(1, dt * 4);
     cam.near = 0.06;
   }
@@ -293,11 +295,11 @@ export class Cams {
 // eyeballs' middle, placeHead puts the eye 2 cm in front of it); its lowest
 // over the snow (m)
 const POV = {
-  ski: { pitch: -0.7, down: 0.4, trick: 0.3, fwd: -0.02, low: 0.25 },   // (2026-11-08: further down, more of the skis and both pole grips in view with the way ahead)
-  board: { pitch: -0.64, down: 0.38, trick: 0.3, fwd: -0.02, low: 0.25 },
-  scoot: { pitch: -0.62, down: 0.26, trick: 0.12, fwd: -0.02, low: 0.25 },
-  bike: { pitch: -0.56, down: 0.24, trick: 0.12, fwd: -0.02, low: 0.25 },
-  sled: { pitch: -0.52, down: 0.3, trick: 0.25, fwd: 0.04, low: 0.12 },
+  ski: { pitch: -0.46, down: 0.3, trick: 0.3, fwd: -0.02, low: 0.25 },   // (2026-11-08: further down, more of the skis and both pole grips in view with the way ahead)
+  board: { pitch: -0.44, down: 0.3, trick: 0.3, fwd: -0.02, low: 0.25 },
+  scoot: { pitch: -0.44, down: 0.24, trick: 0.12, fwd: -0.02, low: 0.25 },
+  bike: { pitch: -0.42, down: 0.22, trick: 0.12, fwd: -0.02, low: 0.25 },
+  sled: { pitch: -0.4, down: 0.26, trick: 0.25, fwd: 0.04, low: 0.12 },
 };
 Cams.POV = POV;   // (for tests)
 const _G = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _pf = new THREE.Vector3(), _pu = new THREE.Vector3(), _pl = new THREE.Vector3(), _pc = new THREE.Vector3(), _pt = new THREE.Vector3();

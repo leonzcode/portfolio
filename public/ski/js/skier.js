@@ -15,8 +15,8 @@
 //   crash   tumbling to a stop, then back to a safe spot a few seconds earlier
 // Frames: world +z downhill, +y up. The body frame: +Z the skis' forward, +Y up, +X the skier's left.
 import * as THREE from 'three';
-import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=32';
-import { clamp, smoothstep } from './noise.js?v=32';
+import { height, normal, normalBehind, surface, baseLine } from './terrain.js?v=33';
+import { clamp, smoothstep } from './noise.js?v=33';
 
 const G = 9.81, UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _n2 = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
@@ -121,6 +121,11 @@ const RAILP = {
   guide: { rail: 5.0, tube: 3.3, flat: 5.0, rough: 5.5 },
   turn: 2.5, turnAcc: 8, lean: 0.2, leanShift: 0.32, shift: 0.12, leanK: 12,
   hold: { rail: 0.02, tube: 0.04 },
+  /* (2026-11-20, Leon: "rails are easier to ride and have a little magnetic pull thing but not too strong") catch: how
+     far past the footprint's reach a landing still locks on (m), brought in to the reach's edge; over: how far over the
+     top it may still be (m); centre, damp: a soft spring that draws the feet back to the top's middle while riding it
+     (1/s^2, 1/s); land: the share of the sideways speed a landing keeps */
+  catch: 0.2, over: 0.16, centre: 7, damp: 2.2, land: 0.55,
 };
 // a round top of a rail (steel) or a fat tube; a flat plastic top, or a wooden or stone one
 const topClass = r => topOf(r) === 'round' ? (r.w >= 0.3 ? 'tube' : 'rail') : /^(bench|ledge|picnic)$/.test(r.kind) ? 'rough' : 'flat';
@@ -1038,7 +1043,7 @@ export class Skier {
     for (const r of this.park.rails) {
       if (r.box.distanceToPoint(this.p) > 0.6) continue;     // (R: a slide reaches up to 1.9 m from a wide top's line, past its box)
       const c = r.closest(this.p, _rc);
-      if (c.dy < -0.14 - railDrop(r, c.dh) || c.dy > 0.1) continue;
+      if (c.dy < -0.14 - railDrop(r, c.dh) || c.dy > RAILP.over) continue;
       const along = this.v.dot(c.dir);
       if (Math.abs(along) < 1.2) continue;
       // (going across it at more than about 45 degrees is going over it, not onto it)
@@ -1071,9 +1076,11 @@ export class Skier {
       }
       // (R, round 12: only where the top is under the footprint; it reached 0.28 m or more past it, and a pull brought
       // riders in from 0.3 to 0.6 m further: railPull is gone)
-      if (across > this.railReach(r, ang)) continue;
+      const reachL = this.railReach(r, ang);
+      if (across > reachL + RAILP.catch) continue;
       const leftH = new THREE.Vector3(dH.z, 0, -dH.x);
-      const off = (this.p.x - c.x) * leftH.x + (this.p.z - c.z) * leftH.z;
+      // (a landing just past the reach is drawn in to its edge: the small pull)
+      const off = clamp((this.p.x - c.x) * leftH.x + (this.p.z - c.z) * leftH.z, -(reachL - 0.03), reachL - 0.03);
       this.lockRail(r, c, along, ang, off, leftH, atEnd * past);
       return true;
     }
@@ -1122,7 +1129,7 @@ export class Skier {
     if (vs > 1e-4) { const k = Math.max(0, 1 - imp / vs); vAl *= k; vLat *= k; }
     const dw = imp * RAILP.rC[kind] * (topOf(r) === 'round' ? 1 : 1.4) / RAILP.k2[kind];
     w = Math.sign(w) * Math.max(0, Math.abs(w) - dw);
-    this.railV = Math.max(0.5, vAl); this.railOffV = vLat; this.railOff = off; this.railAngV = w;
+    this.railV = Math.max(0.5, vAl); this.railOffV = vLat * RAILP.land; this.railOff = off; this.railAngV = w;
     // (the weight across it: where the body's middle is over the feet as they meet it)
     this.railLean = clamp(this.comH() * _v.set(0, 1, 0).applyQuaternion(this.q).dot(leftH), -RAILP.leanShift, RAILP.leanShift); this.railLeanV = 0; this.railKeyDir = 0;
     this.railTilt = 0; this.railPos = 0;
@@ -1248,7 +1255,7 @@ export class Skier {
     this.railLeanV += (kL * kL * (lT - this.railLean) - 2 * kL * this.railLeanV) * dt;
     this.railLean += this.railLeanV * dt;
     const cm = x + this.railLean, past = cm - clamp(cm, sup[0], sup[1]);
-    const ax = G * past / comH - need + got - mu * gN * this.railOffV / vs;
+    const ax = G * past / comH - need + got - mu * gN * this.railOffV / vs - RAILP.centre * x - RAILP.damp * this.railOffV;
     this.railOffV += ax * dt;
     this.railOff += this.railOffV * dt;
     /* (for the pose, the HUD and the others: balance, the body's lean, + to the right: the weight over the feet and the lean

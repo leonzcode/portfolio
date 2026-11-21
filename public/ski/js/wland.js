@@ -9,8 +9,8 @@
      physics' walls and the rock drawn on the snow;
    - trees(max, random): where forest is (from the satellite picture's green, Esri World Imagery, as Leonski 2 does it;
      else below a treeline worked out from the latitude), off the runs, lift lines and anything steep. */
-import { simplex, fbm, smoothstep, clamp } from './noise.js?v=32';
-import { lat2my, lon2mx } from './wdem.js?v=32';
+import { simplex, fbm, smoothstep, clamp } from './noise.js?v=33';
+import { lat2my, lon2mx } from './wdem.js?v=33';
 
 const RAD = Math.PI / 180;
 

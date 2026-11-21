@@ -10,11 +10,11 @@
 <!-- (C, 2026-11-11) the fonts no longer hold the game up: a stylesheet in the head is waited for before any script
      runs, so a slow or blocked fonts server held the whole game at its first line; it now loads beside it -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,800;1,700;1,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" media="print" onload="this.media='all'">
-<link rel="stylesheet" href="./css/ski.css?v=32">
+<link rel="stylesheet" href="./css/ski.css?v=33">
 <script type="importmap">
 {
   "imports": {
-    "three": "/car/vendor/three/three.module.js?v=ski32",
+    "three": "/car/vendor/three/three.module.js?v=ski33",
     "three/addons/": "/car/vendor/three/addons/"
   }
 }
@@ -27,10 +27,9 @@
    - nothing loads for ever without saying so: a file that failed to come (the page is tried once more by itself),
      an error while starting, no WebGL, or no step for a long while each say what happened, with a button to try again. */
 (function () {
-  var V = '?v=32', map = 'jumpline', ride = 'ski';
+  var V = '?v=33', map = 'jumpline', ride = 'ski';
   try { var o = JSON.parse(localStorage.getItem('ski_opts') || '{}'); if (o.map === 'freeride') map = 'freeride'; if (o.ride) ride = o.ride; } catch (e) {}
-  try { var o2 = JSON.parse(localStorage.getItem('ski_opts') || '{}'); if (o2.map === 'world') map = 'world'; } catch (e) {}   // (W, round 10: Any mountain)
-  try { var o3 = JSON.parse(localStorage.getItem('ski_opts') || '{}'); if (o3.map === 'schilthorn23') map = o3.map; } catch (e) {}   // (N, round 12: the Nines map)
+  // (2026-11-20, Leon: Any mountain and the Schilthorn map are off the home screen for now; they still open with ?map=)
   try { var o4 = JSON.parse(localStorage.getItem('ski_opts') || '{}'); if (o4.map === 'genting2022') map = o4.map; } catch (e) {}   // (O, round 12: Genting 2022)
   try { var o5 = JSON.parse(localStorage.getItem('ski_opts') || '{}'); if (o5.map === 'buttermilk2024') map = o5.map; } catch (e) {}   // (X, round 12: Buttermilk 2024)
   try { var qm = new URLSearchParams(location.search).get('map'); if (qm) map = qm; } catch (e) {}
@@ -42,7 +41,7 @@
   // (W, round 10: Any mountain's own modules, and the home screen's place picker on every map)
   js = js.concat(map === 'world' ? ['wmap', 'wdem', 'wosm', 'wland', 'wpark', 'wlift', 'wfeat', 'wtrail', 'wsigns', 'wplaces', 'wsearch', 'lift', 'wlanddata', 'wtrees'] : ['wplaces', 'wsearch']);   // (W11: wlanddata, wtrees)
   js = js.concat(ride === 'scoot' || ride === 'bike' ? ['scoot'] : ride === 'sled' ? ['scoot', 'sled'] : []);   // (the other rides' modules come when needed)
-  var urls = ['/car/vendor/three/three.module.js?v=ski32', '/car/vendor/three/three.core.js', '/car/vendor/three/addons/loaders/GLTFLoader.js', '/car/vendor/three/addons/loaders/DRACOLoader.js', '/car/vendor/three/addons/utils/BufferGeometryUtils.js', './js/main.js' + V];
+  var urls = ['/car/vendor/three/three.module.js?v=ski33', '/car/vendor/three/three.core.js', '/car/vendor/three/addons/loaders/GLTFLoader.js', '/car/vendor/three/addons/loaders/DRACOLoader.js', '/car/vendor/three/addons/utils/BufferGeometryUtils.js', './js/main.js' + V];
   for (var i = 0; i < js.length; i++) urls.push('./js/' + js[i] + '.js' + V);
   for (var k = 0; k < urls.length; k++) { var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = urls[k]; document.head.appendChild(l); }  var B = window.__skiBoot = { t0: performance.now(), last: performance.now(), frac: 0, done: false, files: urls.length, got: 0, kb: 0, paint: 0 };
   var $ = function (id) { return document.getElementById(id); };
@@ -143,13 +142,13 @@
       <button class="map" data-map="jumpline" role="radio"><span class="sign park" aria-hidden="true">Park</span><b>Jump Line</b><small>Rails, transitions, jumps, big air, pipe</small></button>
       <button class="map" data-map="freeride" role="radio"><span class="sign diamond" aria-hidden="true"><i></i><i></i></span><b>Freeride</b><small>Cliffs, chutes and a big face</small></button>
       <!-- (N, round 12) the Nines map: m_nines.js -->
-      <button class="map" data-map="schilthorn23" role="radio"><span class="sign park" aria-hidden="true">2023</span><b>Schilthorn 2023</b><small>Based on the slopestyle course built there in 2023</small></button>
+      <button class="map" data-map="schilthorn23" role="radio" hidden style="display:none"><span class="sign park" aria-hidden="true">2023</span><b>Schilthorn 2023</b><small>Based on the slopestyle course built there in 2023</small></button>
       <!-- (O, round 12) Genting 2022: m_oly22.js -->
-      <button class="map" data-map="genting2022" role="radio"><span class="sign park" aria-hidden="true">2022</span><b>Genting 2022</b><small>Based on the slopestyle course built there for the 2022 Winter Games</small></button>
+      <button class="map" data-map="genting2022" role="radio"><span class="sign park" aria-hidden="true">2022</span><b>Beijing 2022 Olympics</b><small>Based on the slopestyle course built for the 2022 Winter Games</small></button>
       <!-- (X, round 12) Buttermilk 2024: m_xgvenue.js, m_xg.js -->
-      <button class="map" data-map="buttermilk2024" role="radio"><span class="sign park" aria-hidden="true">2024</span><b>Buttermilk 2024</b><small>Based on the slopestyle course built there in 2024</small></button>
+      <button class="map" data-map="buttermilk2024" role="radio"><span class="sign park" aria-hidden="true">2024</span><b>X-Games</b><small>Based on the slopestyle course built at Buttermilk in 2024</small></button>
       <!-- (W, round 10) a real ski area anywhere: its picker below (wsearch.js) -->
-      <button class="map" data-wmap="world" role="radio" aria-controls="wpanel"><span class="sign peak" aria-hidden="true"><i></i></span><b>Any mountain</b><small>A real ski area, anywhere</small></button>
+      <button class="map" data-wmap="world" role="radio" aria-controls="wpanel" hidden style="display:none"><span class="sign peak" aria-hidden="true"><i></i></span><b>Any mountain</b><small>A real ski area, anywhere</small></button>
     </div>
     <section id="wpanel" class="wpanel hidden" aria-label="Pick a mountain">
       <div id="wnow" class="wnow" hidden><span id="wnowlab" class="wlab">Riding</span><b></b><small></small></div>
@@ -198,25 +197,25 @@
           <div class="onacts"><button class="onride" data-act="ride">Ride online</button><button class="onwatch" data-act="watch">Watch</button></div>
         </div>
         <!-- (N, round 12) the Nines map -->
-        <div class="onmap" data-online="schilthorn23">
+        <div class="onmap" data-online="schilthorn23" hidden style="display:none">
           <div class="ontitle"><span class="sign park" aria-hidden="true">2023</span><b>Schilthorn 2023</b></div>
           <div class="oncount">Counting&hellip;</div>
           <div class="onacts"><button class="onride" data-act="ride">Ride online</button><button class="onwatch" data-act="watch">Watch</button></div>
         </div>
         <!-- (X, round 12) Buttermilk 2024 -->
         <div class="onmap" data-online="buttermilk2024">
-          <div class="ontitle"><span class="sign park" aria-hidden="true">2024</span><b>Buttermilk 2024</b></div>
+          <div class="ontitle"><span class="sign park" aria-hidden="true">2024</span><b>X-Games</b></div>
           <div class="oncount">Counting&hellip;</div>
           <div class="onacts"><button class="onride" data-act="ride">Ride online</button><button class="onwatch" data-act="watch">Watch</button></div>
         </div>
         <!-- (O, round 12) Genting 2022 -->
         <div class="onmap" data-online="genting2022">
-          <div class="ontitle"><span class="sign park" aria-hidden="true">2022</span><b>Genting 2022</b></div>
+          <div class="ontitle"><span class="sign park" aria-hidden="true">2022</span><b>Beijing 2022 Olympics</b></div>
           <div class="oncount">Counting&hellip;</div>
           <div class="onacts"><button class="onride" data-act="ride">Ride online</button><button class="onwatch" data-act="watch">Watch</button></div>
         </div>
         <!-- (W, round 10) Any mountain: the public park at the place last picked (wsearch.js names it); the count is every place's -->
-        <div class="onmap onworld" data-online="world">
+        <div class="onmap onworld" data-online="world" hidden style="display:none">
           <div class="ontitle"><span class="sign peak" aria-hidden="true"><i></i></span><b>Any mountain</b></div>
           <div class="onplace" id="onplace"></div>
           <div class="oncount">Counting&hellip;</div>
@@ -240,7 +239,7 @@
     <details class="fold">
       <summary>Settings</summary>
       <div class="opts">
-        <select id="map" hidden><option value="jumpline">Jump Line</option><option value="freeride">Freeride</option><option value="schilthorn23">Schilthorn 2023</option><option value="genting2022">Genting 2022</option><option value="buttermilk2024">Buttermilk 2024</option></select>
+        <select id="map" hidden><option value="jumpline">Jump Line</option><option value="freeride">Freeride</option><option value="schilthorn23">Schilthorn 2023</option><option value="genting2022">Beijing 2022 Olympics</option><option value="buttermilk2024">X-Games</option></select>
         <select id="scheme" hidden><option value="keys">Keyboard</option><option value="shred">Shredsauce Controls</option></select>
         <label>Camera
           <select id="cammode"><option value="chase">Chase</option><option value="far">Far chase</option><option value="pov">First person</option><option value="film">Filmer</option></select>
@@ -290,11 +289,11 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=32" onerror="__skiBoot.noModule()"></script>
+<script type="module" src="./js/main.js?v=33" onerror="__skiBoot.noModule()"></script>
 <!-- (W, round 10) the place picker, on its own so it works even if the game could not start -->
-<script type="module" src="./js/wsearch.js?v=32"></script>
+<script type="module" src="./js/wsearch.js?v=33"></script>
 <!-- (2026-11-16) the offline copy, on its own so it never holds the game up -->
-<script type="module" src="./js/offline.js?v=32"></script>
+<script type="module" src="./js/offline.js?v=33"></script>
 <div id="wtrail" class="wtrail hidden" role="dialog" aria-modal="true" aria-labelledby="wtname"></div>
 <script defer src="/others/presence.js?v=1" data-project="leon-freeski"></script>
 </body>

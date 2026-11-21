@@ -18,7 +18,7 @@
 // A press is only used within 0.3 s of being made, so an old one never fires later.
 // All: C changes the camera (Q in the shred scheme), Backspace goes back to the top, Esc pauses; R starts again a
 // little earlier (mouse and keys; in the shred scheme R is a tweak key and Enter does it).
-import { POSITIONS } from './grabs.js?v=32';
+import { POSITIONS } from './grabs.js?v=33';
 export { POSITIONS };
 
 const GRAB_KEYS = {
@@ -74,7 +74,7 @@ export function keyHelp(scheme, kind = 'ski') {
     ['Shift', 'push hard forward, uphill too; in the air a shifty (Left Shift left, Right Shift or Alt right)'], ['Air: A / D', 'left / right shifty'], ...(sTrick ? [] : [['S', hl.lazy]]), ['G / H', 'Lincoln loop'],
     ['Space', 'crouch for less drag, let go to pop'], ['N', hl.butter],
     ['N N', 'just after a landing: a revert'], ['Air: ← ← / → →', 'a quick second press spins faster'],
-    ['Rail: A / D', 'shift your weight to that side; held, it takes you off that side'], ['Rail: ← / →', 'turn the skis on it; they keep turning until you stop them'],   // (R, round 12)
+    ['Rail: A / D or ← / →', 'turn the skis on it; they keep turning until you stop them'],   // (R, round 12)
     ['R (snow or rail)', hl.oneFoot], ['E (snow or rail)', hl.together],
     ['Grab + E / R', 'a different version of it'],
     ['Tab', 'set a marker'], ['Enter', 'back to your last crash (or your marker); twice: the start'], ['P', 'look over the other shoulder riding switch'], ['T', 'chat (in a room)'],
@@ -83,7 +83,7 @@ export function keyHelp(scheme, kind = 'ski') {
     ['A / D', 'turn'], ['W', 'tuck, skate on the flat'], ['S', 'brake (hold harder to stop)'], ['Space', 'hold to crouch, let go to pop'],
     ['Air: A / D', 'spin'], ['Air: W / S', 'front / back flip'], ['Q / E', 'tilt the axis (corks)'], ['Air: Shift + A / D', 'shifty'], ['Shift + W / S', 'butter on the nose / tail'],
     ['F (snow or rail)', hl.oneFoot], ['G (snow or rail)', hl.together],
-    ['Rail: A / D', 'shift your weight to that side; held, it takes you off that side'], ['Rail: Q / E', 'turn the skis on it; they keep turning until you stop them'],   // (R, round 12)
+    ['Rail: A / D or Q / E', 'turn the skis on it; they keep turning until you stop them'],   // (R, round 12)
   ];
   base.push([scheme === 'shred' ? 'Q' : 'C', 'camera (chase, far, first person, filmer)']);
   if (scheme !== 'shred') base.push(['R', 'start again a little earlier']);
@@ -176,7 +176,9 @@ export class Input {
       }
       I.tweak = (k.down('KeyE') ? 'E' : '') + (k.down('KeyR') ? 'R' : '');
       // on a rail the arrows turn the skis on it, and A and D shift the weight to that side (R, round 12)
-      if (onRail && !air) { I.spin = 0; I.weight = (k.down('KeyD') ? 1 : 0) - (k.down('KeyA') ? 1 : 0); if (I.weight) this.railAD = true; }
+      // (2026-11-20, Leon: "pressing a and d ... actually makes your skis, snowboard, ect turn on the rail": A and D turn
+      // them as the arrows do; nothing shifts the weight by a key any more)
+      if (onRail && !air) { I.spin = 0; const ad = (k.down('KeyD') ? 1 : 0) - (k.down('KeyA') ? 1 : 0); if (ad) { I.steer = ad; this.railAD = true; } }
     } else {
       const L = k.down('KeyA', 'ArrowLeft'), R = k.down('KeyD', 'ArrowRight'), F = k.down('KeyW', 'ArrowUp'), B = k.down('KeyS', 'ArrowDown');
       const shift = k.down('ShiftLeft', 'ShiftRight');
@@ -213,7 +215,8 @@ export class Input {
         }
       }
       // (R, round 12) on a rail A / D (the turn keys here) shift the weight to that side and Q / E turn the skis on it
-      if (onRail && !air) { I.weight = I.steer; I.steer = (k.down('KeyE') ? 1 : 0) - (k.down('KeyQ') ? 1 : 0); I.spin = 0; I.tilt = 0; }
+      // (2026-11-20: A / D, the turn keys here, turn the skis on a rail, and Q / E still do)
+      if (onRail && !air) { const qe = (k.down('KeyE') ? 1 : 0) - (k.down('KeyQ') ? 1 : 0); if (qe) I.steer = qe; I.spin = 0; I.tilt = 0; }
       /* (2026-11-08) one ski and feet together here too, on keys no grab or ride trick uses in these schemes: F and G
          with the keys, Y and U with the mouse (R and E are start-again and the tilt here) */
       if (!air) { I.oneFoot = k.down(mouse ? 'KeyY' : 'KeyF'); I.together = k.down(mouse ? 'KeyU' : 'KeyG'); }
@@ -228,7 +231,7 @@ export class Input {
       if (!air) { if (T.one) I.oneFoot = true; if (T.tog) I.together = true; }
       if (!air) {
         // (R, round 12: on a rail the stick shifts the weight; with Grab held it turns the skis on it)
-        if (Math.abs(T.jx) > 0.1) { if (onRail && !T.grab) I.weight = T.jx; else I.steer = T.jx; I.mouse = undefined; }
+        if (Math.abs(T.jx) > 0.1) { I.steer = T.jx;   /* (2026-11-20: on a rail too, the stick turns the skis) */ I.mouse = undefined; }
         if (!T.butter) { if (T.jy < -0.5) I.tuck = true; if (T.jy > 0.55) I.brake = true; }
       } else { if (Math.abs(T.jx) > 0.15) I.spin = T.jx; if (Math.abs(T.jy) > 0.25) I.flip = -T.jy; }
       if (T.pop) I.crouch = true;
